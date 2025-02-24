@@ -147,10 +147,6 @@ export default function ConfigureBusiness() {
               {/* Business Numbers */}
               <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="gst">Goods & Services Tax (GST) Number</Label>
-                  <Input id="gst" placeholder="Enter GST number" />
-                </div>
-                <div className="space-y-2">
                   <Label htmlFor="abn">Australian Business Number (ABN)</Label>
                   <Input 
                     id="abn" 
