@@ -8,7 +8,8 @@ export function Header() {
   const router = useRouter();
 
   const handleLogout = () => {
-    document.cookie = `token=; path=/; max-age=86400; secure; samesite=strict`;
+    // In a real app, you would handle logout logic here
+    // For now, we'll just redirect to the login page
     router.push("/");
   };
 
