@@ -8,10 +8,12 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useState, useEffect } from "react";
 import axios from "axios";
-import { getCookie, isTokenValid } from './utils/cookies';
+import { getCookie, isTokenValid } from "./utils/cookies";
+import { useAppContext } from "@/app/context/index";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { setUser } = useAppContext();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -22,7 +24,8 @@ export default function LoginPage() {
       if (token) {
         try {
           const valid = await isTokenValid(token);
-          if (valid) {
+          if (valid.status === 200) {
+            setUser(valid.data.user);
             router.push('/dashboard');
           } else {
             document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;';
@@ -34,7 +37,7 @@ export default function LoginPage() {
     };
 
     checkToken();
-  }, [router]);
+  }, []);
 
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,6 +50,7 @@ export default function LoginPage() {
 
       if (response.status == 200) {
         document.cookie = `token=${response.data.token}; path=/; max-age=86400; secure; samesite=strict`;
+        setUser(response.data.user);
         router.push('/dashboard');
       } else {
         setError("Credential is not correct!");
@@ -76,13 +80,14 @@ export default function LoginPage() {
       window.addEventListener('message', async (event) => {
         if (event.data.type === 'AUTH_SUCCESS') {
           try {
+            document.cookie = `Authorization=${event.data.accessToken}; path=/; max-age=86400; secure; samesite=strict`;
             const response = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/oauth-login`, {
               oauthData: event.data.data
             });
 
             if (response.status === 200) {
-              const { token, user } = response.data;
               document.cookie = `token=${response.data.token}; path=/; max-age=86400; secure; samesite=strict`;
+            setUser(response.data.user);
               router.push('/dashboard');
             } else {
               throw new Error('Login failed');
@@ -109,7 +114,11 @@ export default function LoginPage() {
             <TabsTrigger value="isoplus">ISO+ Login</TabsTrigger>
             <TabsTrigger value="admin">Admin Login</TabsTrigger>
           </TabsList>
-
+          {error && (
+            <div className="mb-4 p-3 text-sm text-red-500 bg-red-50 rounded-md">
+              {error}
+            </div>
+          )}
           <TabsContent value="isoplus">
             <div className="space-y-4 text-center">
               <p className="text-muted-foreground">
@@ -127,11 +136,6 @@ export default function LoginPage() {
 
           <TabsContent value="admin">
             <form onSubmit={handleAdminLogin} className="space-y-4">
-              {error && (
-                <div className="mb-4 p-3 text-sm text-red-500 bg-red-50 rounded-md">
-                  {error}
-                </div>
-              )}
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input

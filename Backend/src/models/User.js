@@ -21,6 +21,7 @@ const userSchema = new mongoose.Schema({
     default: Date.now
   },
   oauthId: String,
+  avatar: String
 });
 
 userSchema.pre('save', async function(next) {

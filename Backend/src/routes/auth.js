@@ -111,7 +111,7 @@ router.get("/isoplus/redirect", (req, res) => {
     client_id: process.env.CLIENT_ID,
     redirect_uri: `http://localhost:3001${process.env.CALLBACK_URL}`,
     response_type: "code",
-    scope: "", 
+    scope: "public-api internal-api",
     state: state,
   });
 
@@ -140,7 +140,7 @@ router.get("/isoplus/callback", async (req, res) => {
     });
 
     const accessToken = tokenResponse.data.access_token;
-
+    
     if (!accessToken) {
       return res.status(400).json({ error: "Failed to retrieve access token" });
     }
@@ -158,7 +158,8 @@ router.get("/isoplus/callback", async (req, res) => {
           <script>
             window.opener.postMessage(${JSON.stringify({
               type: 'AUTH_SUCCESS',
-              data: userResponse.data
+              data: userResponse.data,
+              accessToken: `Bearer ${accessToken}`
             })}, '*');
             window.close();
           </script>
@@ -195,6 +196,7 @@ router.post('/oauth-login', async (req, res) => {
         name: oauthData.name,
         password: "",
         oauthId: oauthData.id,
+        avatar: oauthData.photo_url,
       });
       await user.save();
     }
@@ -210,7 +212,8 @@ router.post('/oauth-login', async (req, res) => {
       user: { 
         id: user._id, 
         email: user.email, 
-        name: user.name 
+        name: user.name,
+        avatar: user.avatar
       } 
     });
   } catch (error) {
