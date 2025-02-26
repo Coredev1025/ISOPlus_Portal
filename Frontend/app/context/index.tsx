@@ -2,14 +2,14 @@
 
 import React, { createContext, useState, Dispatch, SetStateAction, ReactNode, useContext, useEffect } from 'react';
 
-interface User {
+export interface User {
     id: string;
     name: string;
     email: string;
     avatar?: string;
 }
 
-interface Workspace {
+export interface Workspace {
     id: number;
     name: string;
     owner_id: number;

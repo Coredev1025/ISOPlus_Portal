@@ -105,10 +105,13 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-md p-8">
-        <h1 className="text-3xl font-bold text-center mb-8">Welcome Back</h1>
-
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-primary mb-2">Welcome Back</h1>
+          <p className="text-muted-foreground">Sign in to continue to your workspace</p>
+        </div>
+        
         <Tabs defaultValue="isoplus" className="space-y-6">
           <TabsList className="grid grid-cols-2 w-full">
             <TabsTrigger value="isoplus">ISO+ Login</TabsTrigger>
@@ -126,8 +129,8 @@ export default function LoginPage() {
               </p>
               <Button
                 onClick={handleISOPlusLogin}
-                className="w-full"
-                variant="outline"
+                className="w-full gap-2 bg-primary hover:bg-primary/90"
+                size="lg"
               >
                 Continue with ISO+
               </Button>
@@ -158,12 +161,18 @@ export default function LoginPage() {
                   required
                 />
               </div>
-              <Button type="submit" className="w-full">
+              <Button type="submit" className="w-full" size="lg">
                 Login as Admin
               </Button>
             </form>
           </TabsContent>
         </Tabs>
+
+        <div className="mt-6 pt-6 border-t text-center">
+          <p className="text-sm text-muted-foreground">
+            By continuing, you agree to our Terms of Service and Privacy Policy.
+          </p>
+        </div>
       </Card>
     </div>
   );
