@@ -34,6 +34,7 @@ const logger = winston.createLogger({
   ),
   transports: [
     new winston.transports.Console({
+      level: 'debug', // Set to the lowest level to log all levels
       format: combine(
         colorize({ all: true }),
         timestamp({ format: 'YYYY/MM/DD, HH:mm:ss' }),
@@ -41,6 +42,7 @@ const logger = winston.createLogger({
       )
     }),
     new winston.transports.DailyRotateFile({
+      level: 'debug', // Set to the lowest level to log all levels
       filename: 'logs/application-%DATE%.log',
       datePattern: 'YYYY-MM-DD',
       zippedArchive: true,
@@ -48,7 +50,7 @@ const logger = winston.createLogger({
       maxFiles: '14d'
     }),
     new winston.transports.MongoDB({
-      level: 'info',
+      level: 'debug', // Set to the lowest level to log all levels
       db: MONGODB_URI,
       options: {
         useUnifiedTopology: true

@@ -41,10 +41,10 @@ router.get('/', authenticateToken, async (req, res) => {
                 res.status(500).json({ message: 'Error fetching workspaces' });
               });
             }
-            info('Workspace-Service', 'Successfully fetching workspace', { userId: req.user.userId });
             get_workspace();
           }
         }
+        info('Workspace-Service', 'Successfully fetching workspace', { userId: req.user.userId });
         res.json({ workspace });
       })
       .catch((err) => {
@@ -74,6 +74,7 @@ router.get('/me', authenticateToken, async (req, res) => {
         if (response.status === 200) {
           workspace = workspace.concat(response.data);
         }
+        info('Workspace-Service', 'Successfully fetching workspace', { userId: req.user.userId });
         res.json({ workspace });
       })
       .catch((err) => {

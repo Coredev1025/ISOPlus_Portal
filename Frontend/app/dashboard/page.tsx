@@ -146,7 +146,7 @@ function WorkspacesList({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => router.push(`/ workspace / ${workspace.id} `)}
+                      onClick={() => router.push(`/workspace/${workspace.id} `)}
                     >
                       Manage Workspace
                     </Button>
