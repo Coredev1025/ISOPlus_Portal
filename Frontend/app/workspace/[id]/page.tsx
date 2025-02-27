@@ -56,7 +56,7 @@ const LABEL_COLORS: Record<NonNullable<BoardLabel>, string> = {
 };
 
 interface Board {
-  id: number;
+  id: string;
   name: string;
   label?: BoardLabel;
 }
@@ -122,7 +122,13 @@ export default function WorkspaceDetail() {
     setLoadingBoards(true);
     try {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceID=${id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
-      setBoards(response.data.board);
+      const boards: Board[] = await Promise.all(
+        response.data.board.map(async (board: any) => {
+          const boardResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
+          return { ...board, label: boardResponse.data.board.label };
+        })
+      );
+      setBoards(boards);
     } catch (error) {
       console.error("Error fetching boards:", error);
     } finally {
@@ -130,12 +136,24 @@ export default function WorkspaceDetail() {
     }
   }
 
-  const handleLabelChange = (boardId: string, newLabel: BoardLabel) => {
-    setBoards(
-      boards?.map(board =>
-        board.id === Number(boardId) ? { ...board, label: newLabel } : board
-      ) || []
-    );
+  const handleLabelChange = async (boardId: string, newLabel: BoardLabel) => {
+    try {
+      // Update the label locally
+      setBoards(
+        boards?.map(board =>
+          board.id === boardId ? { ...board, label: newLabel } : board
+        ) || []
+      );
+
+      // Make an API call to update the label on the server
+      await axios.put(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards`,
+        { boardId, label: newLabel },
+        { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } }
+      );
+    } catch (error) {
+      console.error("Error updating board label:", error);
+    }
   };
 
   const suggestLabel = (boardId: string) => {

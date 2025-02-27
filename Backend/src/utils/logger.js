@@ -19,9 +19,9 @@ const colors = {
 
 winston.addColors(colors);
 
-const consoleFormat = printf(({ level, message, timestamp, source, ...metadata }) => {
+const consoleFormat = printf(({ level, message, timestamp, source, ip, userId, ...metadata }) => {
   const metaString = Object.keys(metadata).length ? JSON.stringify(metadata) : '';
-  return `${timestamp} [${level.toUpperCase()}] ${source || 'App'}: ${message} ${metaString}`;
+  return `${timestamp}===> [${level}]: ${ip || 'N/A'}==>${userId || 'N/A'}=> ${source || 'App'}: ${message} ${metaString}`;
 });
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/business-dashboard';
@@ -65,12 +65,14 @@ const logger = winston.createLogger({
   ]
 });
 
-const log = (level, source, message, meta = {}) => {
-  logger.log(level, message, { source, ...meta });
+const log = (level, source, message, meta = {}, req = {}) => {
+  const ip = req.ip?.split(':').pop() || 'N/A';
+  const userId = req.userId || 'N/A';
+  logger.log(level, message, { source, ip, userId, ...meta });
 };
 
-export const error = (source, message, meta) => log('error', source, message, meta);
-export const warn = (source, message, meta) => log('warn', source, message, meta);
-export const info = (source, message, meta) => log('info', source, message, meta);
-export const debug = (source, message, meta) => log('debug', source, message, meta);
+export const error = (source, message, meta, req) => log('error', source, message, meta, req);
+export const warn = (source, message, meta, req) => log('warn', source, message, meta, req);
+export const info = (source, message, meta, req) => log('info', source, message, meta, req);
+export const debug = (source, message, meta, req) => log('debug', source, message, meta, req);
 export default logger;

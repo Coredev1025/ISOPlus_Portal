@@ -18,7 +18,7 @@ router.post('/register',
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      warn('User-Service', 'Validation failed during registration', { errors: errors.array() });
+      warn('User-Service', 'Validation failed during registration', { errors: errors.array() }, req);
       return res.status(400).json({ errors: errors.array() });
     }
 
@@ -27,7 +27,7 @@ router.post('/register',
 
       const existingUser = await User.findOne({ email });
       if (existingUser) {
-        warn('User-Service', 'User already exists', { email });
+        warn('User-Service', 'User already exists', { email }, req);
         return res.status(400).json({ message: 'User already exists' });
       }
 
@@ -40,10 +40,10 @@ router.post('/register',
         { expiresIn: '24h' }
       );
 
-      info('User-Service', 'User registered successfully', { userId: user._id, email });
+      info('User-Service', 'User registered successfully', { userId: user._id, email }, req);
       res.status(201).json({ token, user: { id: user._id, email, name } });
-    } catch (error) {
-      error('User-Service', 'Server error during registration', { error: error.message });
+    } catch (err) {
+      error('User-Service', 'Server error during registration', { error: err.message }, req);
       res.status(500).json({ message: 'Server error' });
     }
   }
@@ -57,7 +57,7 @@ router.post('/login',
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      warn('User-Service', 'Validation failed during login', { errors: errors.array() });
+      warn('User-Service', 'Validation failed during login', { errors: errors.array() }, req);
       return res.status(400).json({ errors: errors.array() });
     }
 
@@ -66,7 +66,7 @@ router.post('/login',
       const user = await User.findOne({ email });
 
       if (!user || !(await user.comparePassword(password))) {
-        warn('User-Service', 'Invalid credentials', { email });
+        warn('User-Service', 'Invalid credentials', { email }, req);
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
@@ -76,10 +76,10 @@ router.post('/login',
         { expiresIn: '24h' }
       );
 
-      info('User-Service', 'User logged in successfully', { userId: user._id, email });
+      info('User-Service', 'User logged in successfully', { userId: user._id, email }, req);
       res.json({ token, user: { id: user._id, email, name: user.name } });
-    } catch (error) {
-      error('User-Service', 'Server error during login', { error: error.message });
+    } catch (err) {
+      error('User-Service', 'Server error during login', { error: err.message }, req);
       res.status(500).json({ message: 'Server error' });
     }
   }
@@ -89,7 +89,7 @@ router.get('/verify', authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).select('-password');
     if (!user) {
-      warn('User-Service', 'User not found during verification', { userId: req.user.userId });
+      warn('User-Service', 'User not found during verification', { userId: req.user.userId }, req);
       return res.status(404).json({ message: 'User not found' });
     }
 
@@ -99,7 +99,7 @@ router.get('/verify', authenticateToken, async (req, res) => {
       { expiresIn: '24h' }
     );
 
-    info('User-Service', 'User verified successfully', { userId: user._id, email });
+    info('User-Service', 'User verified successfully', { userId: user._id, email: user.email }, req);
     res.json({
       token,
       user: {
@@ -108,8 +108,8 @@ router.get('/verify', authenticateToken, async (req, res) => {
         name: user.name
       }
     });
-  } catch (error) {
-    error('User-Service', 'Server error during verification', { error: error.message });
+  } catch (err) {
+    error('User-Service', 'Server error during verification', { error: err.message }, req);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -125,7 +125,7 @@ router.get("/isoplus/redirect", (req, res) => {
     state: state,
   });
 
-  info('User-Service', 'Redirecting to authorization endpoint', { state });
+  info('User-Service', 'Redirecting to authorization endpoint', { state }, req);
   res.json({ redirect_uri: `${process.env.AUTHORIZATION_ENDPOINT}?${query}` });
 });
 
@@ -133,7 +133,7 @@ router.get("/isoplus/callback", async (req, res) => {
   const { code, state } = req.query;
 
   if (!code) {
-    warn('User-Service', 'Authorization code is missing', { state });
+    warn('User-Service', 'Authorization code is missing', { state }, req);
     return res.status(400).json({ error: "Authorization code is missing" });
   }
 
@@ -153,7 +153,7 @@ router.get("/isoplus/callback", async (req, res) => {
     const accessToken = tokenResponse.data.access_token;
     
     if (!accessToken) {
-      warn('User-Service', 'Failed to retrieve access token', { state });
+      warn('User-Service', 'Failed to retrieve access token', { state }, req);
       return res.status(400).json({ error: "Failed to retrieve access token" });
     }
 
@@ -164,7 +164,7 @@ router.get("/isoplus/callback", async (req, res) => {
       }
     });
 
-    info('User-Service', 'OAuth callback successful', { state, user: userResponse.data });
+    info('User-Service', 'OAuth callback successful', { state, user: userResponse.data }, req);
     res.send(`
       <html>
         <body>
@@ -179,8 +179,8 @@ router.get("/isoplus/callback", async (req, res) => {
         </body>
       </html>
     `);
-  } catch (error) {
-    error('User-Service', 'Token exchange error', { error: error.message, state });
+  } catch (err) {
+    error('User-Service', 'Token exchange error', { error: err.message, state }, req);
     res.send(`
       <html>
         <body>
@@ -220,7 +220,7 @@ router.post('/oauth-login', async (req, res) => {
       { expiresIn: '24h' }
     );
 
-    info('User-Service', 'OAuth login successful', { userId: user._id, email: user.email });
+    info('User-Service', 'OAuth login successful', { userId: user._id, email: user.email }, req);
     res.json({ 
       token, 
       user: { 
@@ -231,7 +231,7 @@ router.post('/oauth-login', async (req, res) => {
       } 
     });
   } catch (err) {
-    error('User-Service', 'Server error during OAuth login', { error: err.message });
+    error('User-Service', 'Server error during OAuth login', { error: err.message }, req);
     res.status(500).json({ message: 'Server error during OAuth login' });
   }
 });

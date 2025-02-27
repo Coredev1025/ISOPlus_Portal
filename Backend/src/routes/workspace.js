@@ -37,22 +37,22 @@ router.get('/', authenticateToken, async (req, res) => {
                 }
               })
               .catch(err => {
-                error('Workspace-Service', 'Error fetching workspaces', { message: err.message });
+                error('Workspace-Service', 'Error fetching workspaces', { message: err.message }, req);
                 res.status(500).json({ message: 'Error fetching workspaces' });
               });
             }
             get_workspace();
           }
         }
-        info('Workspace-Service', 'Successfully fetching workspace', { userId: req.user.userId });
+        info('Workspace-Service', 'Successfully fetching workspace', { userId: req.user.userId }, req);
         res.json({ workspace });
       })
       .catch((err) => {
-        error('Workspace-Service', 'Error fetching workspaces', { message: err.message });
+        error('Workspace-Service', 'Error fetching workspaces', { message: err.message }, req);
         res.status(500).json({ message: 'Error fetching workspaces' });
       });
   } catch (err) {
-    error('Workspace-Service', 'Server error', { message: err.message });
+    error('Workspace-Service', 'Server error', { message: err.message }, req);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -74,15 +74,15 @@ router.get('/me', authenticateToken, async (req, res) => {
         if (response.status === 200) {
           workspace = workspace.concat(response.data);
         }
-        info('Workspace-Service', 'Successfully fetching workspace', { userId: req.user.userId });
+        info('Workspace-Service', 'Successfully fetching workspace', { userId: req.user.userId }, req);
         res.json({ workspace });
       })
       .catch((err) => {
-        error('Workspace-Service', 'Error fetching workspaces', { message: err.message });
+        error('Workspace-Service', 'Error fetching workspaces', { message: err.message }, req);
         res.status(500).json({ message: 'Error fetching workspaces' });
       });
   } catch (err) {
-    error('Workspace-Service', 'Server error', { message: err.message });
+    error('Workspace-Service', 'Server error', { message: err.message }, req);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -118,25 +118,25 @@ router.get('/boards', authenticateToken, async (req, res) => {
                 }
               })
               .catch(err => {
-                error('Workspace-Service', 'Error fetching boards', { message: err.message });
+                error('Workspace-Service', 'Error fetching boards', { message: err.message }, req);
                 res.status(500).json({ message: 'Error fetching boards' });
               });
           }
           get_board();
         }
       }
-      info('Workspace-Service', 'Successfully fetching boards', { userId: req.user.userId, workspaceID: req.query.workspaceID });
+      info('Workspace-Service', 'Successfully fetching boards', { userId: req.user.userId, workspaceID: req.query.workspaceID }, req);
       res.json({ board });
     })
     .catch(err => {
-      error('Workspace-Service', 'Error fetching boards', { message: err.message });
+      error('Workspace-Service', 'Error fetching boards', { message: err.message }, req);
       res.status(500).json({ message: 'Error fetching boards' });
     });
 });
 
 router.post('/', authenticateToken, async (req, res) => {
   try {
-    info('Workspace-Service', 'POST / request received', { userId: req.user.userId, body: req.body });
+    info('Workspace-Service', 'POST / request received', { userId: req.user.userId, body: req.body }, req);
     const { name, businessId } = req.body;
     const workspace = new Workspace({
       name,
@@ -144,10 +144,10 @@ router.post('/', authenticateToken, async (req, res) => {
       userId: req.user.userId
     });
     await workspace.save();
-    info('Workspace-Service', 'New workspace created', { userId: req.user.userId, workspaceId: workspace._id });
+    info('Workspace-Service', 'New workspace created', { userId: req.user.userId, workspaceId: workspace._id }, req);
     res.status(201).json(workspace);
   } catch (err) {
-    error('Workspace-Service', 'Server error', { message: err.message });
+    error('Workspace-Service', 'Server error', { message: err.message }, req);
     res.status(500).json({ message: 'Server error' });
   }
 });

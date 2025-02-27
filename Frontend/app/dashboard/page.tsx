@@ -302,13 +302,13 @@ function GlobalApplicationLogs() {
   const getLogs = async () => {
     setLoading(true);
     try {
-      axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/log`)
+      axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/log`, { headers:{ token: getCookie("token") }})
         .then(res => {
           return res.data.map((item: any, i: number) => {
             return {
               id: `log - ${i + 1} `,
               timestamp: item.timestamp,
-              level: item.level,
+              level: item.level.toUpperCase(),
               message: item.message,
               source: item.metadata.source,
               details: {
