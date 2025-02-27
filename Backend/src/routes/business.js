@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import { authenticateToken } from '../middleware/auth.js';
 import Business from '../models/Business.js';
+import { info, error, warn } from '../utils/logger.js';
 
 const router = express.Router();
 const upload = multer({ dest: 'uploads/' });
@@ -10,10 +11,12 @@ router.get('/profile', authenticateToken, async (req, res) => {
   try {
     const business = await Business.findOne({ userId: req.user.userId });
     if (!business) {
+      warn('Business-Service', 'Business profile not found', { userId: req.user.userId });
       return res.status(404).json({ message: 'Business profile not found' });
     }
     res.json(business);
-  } catch (error) {
+  } catch (err) {
+    error('Business-Service', 'Server error', { message: err.message });
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -40,16 +43,19 @@ router.put('/profile',
           updateData,
           { new: true }
         );
+        info('Business-Service', 'Business profile updated', { userId: req.user.userId, businessId: business._id });
       } else {
         business = new Business({
           userId: req.user.userId,
           ...updateData
         });
         await business.save();
+        info('Business-Service', 'New business profile created', { userId: req.user.userId, businessId: business._id });
       }
 
       res.json(business);
-    } catch (error) {
+    } catch (err) {
+      error('Business-Service', 'Server error', { message: err.message });
       res.status(500).json({ message: 'Server error' });
     }
   }

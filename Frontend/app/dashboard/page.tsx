@@ -14,7 +14,7 @@ import {
 import Spinner from "@/components/ui/spin";
 import React, { useEffect, useState } from "react";
 import axios from "axios";
-import { Search, History, Terminal, Download, Filter, AlertTriangle, AlertCircle, Info, Bug, XCircle, Type } from "lucide-react";
+import { Search, History, Terminal, Download, Filter, AlertTriangle, AlertCircle, Info, Bug, XCircle } from "lucide-react";
 import { Header } from "@/components/ui/header";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -27,6 +27,16 @@ import {
 } from "@/components/ui/select";
 import { getCookie } from "../utils/cookies";
 import { useAppContext, Workspace } from "../context";
+
+interface Log {
+  id: string;
+  timestamp: string;
+  level: string;
+  message: string;
+  source: string;
+  details: Object;
+};
+
 
 // Mock data for audit trail
 const generateAuditTrail = () => Array.from({ length: 50 }, (_, i) => {
@@ -54,84 +64,14 @@ const generateAuditTrail = () => Array.from({ length: 50 }, (_, i) => {
   ];
 
   return {
-    id: `audit-${i + 1}`,
+    id: `audit - ${i + 1} `,
     timestamp: date.toISOString(),
     action: actions[Math.floor(Math.random() * actions.length)],
     user: users[Math.floor(Math.random() * users.length)],
-    ipAddress: `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
+    ipAddress: `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)} `,
     details: {
-      resourceId: `resource-${Math.floor(Math.random() * 1000)}`,
+      resourceId: `resource - ${Math.floor(Math.random() * 1000)} `,
       changes: Math.random() > 0.5 ? { before: "old value", after: "new value" } : null
-    }
-  };
-});
-
-// Mock data for application logs
-const generateLogs = () => Array.from({ length: 100 }, (_, i) => {
-  const date = new Date();
-  date.setMinutes(date.getMinutes() - i);
-
-  const levels: LogLevel[] = ['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'];
-  const level = levels[Math.floor(Math.random() * levels.length)];
-
-  const sources = [
-    'UserService',
-    'AuthenticationService',
-    'DatabaseService',
-    'PDFGenerationService',
-    'XeroIntegrationService'
-  ];
-
-  const messages = {
-    DEBUG: [
-      'Processing request parameters',
-      'Validating input data',
-      'Checking cache status',
-      'Executing database query'
-    ],
-    INFO: [
-      'User logged in successfully',
-      'PDF document generated',
-      'Data synchronized with Xero',
-      'Email notification sent'
-    ],
-    WARN: [
-      'Rate limit threshold reached',
-      'Deprecated API endpoint accessed',
-      'High memory usage detected',
-      'Slow query execution'
-    ],
-    ERROR: [
-      'Failed to connect to database',
-      'API request timeout',
-      'Invalid data format',
-      'Authentication failed'
-    ],
-    FATAL: [
-      'System crash detected',
-      'Critical security breach',
-      'Database corruption',
-      'Unrecoverable error'
-    ]
-  };
-
-  return {
-    id: `log-${i + 1}`,
-    timestamp: date.toISOString(),
-    level,
-    message: messages[level][Math.floor(Math.random() * messages[level].length)],
-    source: sources[Math.floor(Math.random() * sources.length)],
-    details: level === 'ERROR' || level === 'FATAL' ? {
-      stackTrace: 'Error: Something went wrong\n  at Function.Module._load (module.js:417:25)\n  at Module.require (module.js:497:17)',
-      metadata: {
-        requestId: `req-${Math.random().toString(36).substr(2, 9)}`,
-        userId: `user-${Math.random().toString(36).substr(2, 9)}`
-      }
-    } : {
-      metadata: {
-        duration: `${Math.floor(Math.random() * 1000)}ms`,
-        requestId: `req-${Math.random().toString(36).substr(2, 9)}`
-      }
     }
   };
 });
@@ -206,7 +146,7 @@ function WorkspacesList({
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => router.push(`/workspace/${workspace.id}`)}
+                      onClick={() => router.push(`/ workspace / ${workspace.id} `)}
                     >
                       Manage Workspace
                     </Button>
@@ -352,13 +292,45 @@ function GlobalApplicationLogs() {
   const [levelFilter, setLevelFilter] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
-  const [logs] = useState(() => generateLogs());
+  const [isLoading, setLoading] = useState(false);
+  const [logs, setLogs] = useState<Log[]>([]);
 
-  // Get unique sources for filter
-  const uniqueSources = Array.from(new Set(logs.map(log => log.source)));
+  useEffect(() => {
+    getLogs();
+  }, []);
 
-  // Filter logs based on search and filters
-  const filteredLogs = logs.filter(log => {
+  const getLogs = async () => {
+    setLoading(true);
+    try {
+      axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/log`)
+        .then(res => {
+          return res.data.map((item: any, i: number) => {
+            return {
+              id: `log - ${i + 1} `,
+              timestamp: item.timestamp,
+              level: item.level,
+              message: item.message,
+              source: item.metadata.source,
+              details: {
+                metadata: {
+                  ...item.metadata
+                }
+              }
+            }
+          });
+        }).then(data => {
+          setLogs(data);
+        });
+    } catch (error) {
+      console.error("Error fetching logs:", error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const uniqueSources = (logs || []).map(log => log.source).filter((value, index, self) => self.indexOf(value) === index);
+
+  const filteredLogs = (logs || []).filter(log => {
     const matchesSearch =
       log.message.toLowerCase().includes(searchQuery.toLowerCase()) ||
       log.source.toLowerCase().includes(searchQuery.toLowerCase());
@@ -420,69 +392,75 @@ function GlobalApplicationLogs() {
             <SelectContent>
               <SelectItem value="all">All Sources</SelectItem>
               {uniqueSources.map(source => (
-                <SelectItem key={source} value={source}>{source}</SelectItem>
+                <SelectItem key={source as string} value={source as string}>{source}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
       </div>
-
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Timestamp</TableHead>
-            <TableHead>Level</TableHead>
-            <TableHead>Source</TableHead>
-            <TableHead>Message</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {filteredLogs.map((log) => (
-            <React.Fragment key={log.id}>
-              <TableRow
-                className="cursor-pointer hover:bg-muted/50"
-                onClick={() => setExpandedLog(expandedLog === log.id ? null : log.id)}
-              >
-                <TableCell className="whitespace-nowrap">
-                  {new Date(log.timestamp).toLocaleString()}
-                </TableCell>
-                <TableCell>
-                  <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${LOG_LEVEL_COLORS[log.level]}`}>
-                    {LOG_LEVEL_ICONS[log.level]}
-                    {log.level}
-                  </span>
-                </TableCell>
-                <TableCell>{log.source}</TableCell>
-                <TableCell className="max-w-xl truncate">
-                  {log.message}
-                </TableCell>
+      {isLoading ?
+        <div className="text-center py-8 text-muted-foreground">
+          Loading workspaces...
+          <Spinner />
+        </div>
+        :
+        <>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Timestamp</TableHead>
+                <TableHead>Level</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead>Message</TableHead>
               </TableRow>
-              {expandedLog === log.id && (
-                <TableRow>
-                  <TableCell colSpan={4} className="bg-muted/30">
-                    <div className="p-4 space-y-4">
-                      <div>
-                        <h4 className="text-sm font-medium mb-2">Metadata</h4>
-                        <pre className="text-sm bg-muted p-2 rounded-md overflow-x-auto">
-                          {JSON.stringify(log.details.metadata, null, 2)}
-                        </pre>
-                      </div>
-                      {log.details.stackTrace && (
-                        <div>
-                          <h4 className="text-sm font-medium mb-2">Stack Trace</h4>
-                          <pre className="text-sm bg-muted p-2 rounded-md overflow-x-auto">
-                            {log.details.stackTrace}
-                          </pre>
+            </TableHeader>
+            <TableBody>
+              {filteredLogs.map((log) => (
+                <React.Fragment key={log.id as string}>
+                  <TableRow
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => setExpandedLog(expandedLog === log.id ? null : log.id as string)}
+                  >
+                    <TableCell className="whitespace-nowrap">
+                      {new Date(log.timestamp as string).toLocaleString()}
+                    </TableCell>
+                    <TableCell>
+                      <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${LOG_LEVEL_COLORS[log.level as LogLevel]}`}>
+                        {LOG_LEVEL_ICONS[log.level as LogLevel]}
+                        {log.level}
+                      </span>
+                    </TableCell>
+                    <TableCell>{log.source}</TableCell>
+                    <TableCell className="max-w-xl truncate">
+                      {log.message}
+                    </TableCell>
+                  </TableRow>
+                  {expandedLog === log.id && (
+                    <TableRow>
+                      <TableCell colSpan={4} className="bg-muted/30">
+                        <div className="p-4 space-y-4">
+                          <div>
+                            <h4 className="text-sm font-medium mb-2">Metadata</h4>
+                            <pre className="text-sm bg-muted p-2 rounded-md overflow-x-auto">
+                              {JSON.stringify(log.details, null, 2)}
+                            </pre>
+                          </div>
                         </div>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              )}
-            </React.Fragment>
-          ))}
-        </TableBody>
-      </Table>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </React.Fragment>
+              ))}
+            </TableBody>
+          </Table>
+
+          {filteredLogs.length === 0 && (
+            <div className="text-center py-8 text-muted-foreground">
+              No logs found matching your search.
+            </div>
+          )}
+        </>
+      }
     </Card>
   );
 }
@@ -491,6 +469,7 @@ export default function Dashboard() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
   const { workspaces, setWorkspaces } = useAppContext();
+  const [logs, setLogs] = useState<Log[]>([]);
   const [loading, setLoading] = useState(true);
 
   const filteredWorkspaces = workspaces.filter(item =>

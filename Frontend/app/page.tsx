@@ -62,45 +62,55 @@ export default function LoginPage() {
   };
 
   const handleISOPlusLogin = async () => {
-    const redirectUrl = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/isoplus/redirect`);
+    try {
+      const redirectUrl = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/isoplus/redirect`);
 
-    if (redirectUrl.status == 200) {
+      if (redirectUrl.status == 200) {
+        const width = 600;
+        const height = 600;
+        const left = window.screenX + (window.outerWidth - width) / 2;
+        const top = window.screenY + (window.outerHeight - height) / 2;
 
-      const width = 600;
-      const height = 600;
-      const left = window.screenX + (window.outerWidth - width) / 2;
-      const top = window.screenY + (window.outerHeight - height) / 2;
+        window.open(
+          redirectUrl.data.redirect_uri,
+          'OAuth2 Login',
+          `width=${width},height=${height},left=${left},top=${top},status=yes,scrollbars=yes`
+        );
 
-      window.open(
-        redirectUrl.data.redirect_uri,
-        'OAuth2 Login',
-        `width=${width},height=${height},left=${left},top=${top},status=yes,scrollbars=yes`
-      );
+        const handleMessage = async (event: MessageEvent) => {
+          if (event.data.type === 'AUTH_SUCCESS') {
+            try {
+              document.cookie = `Authorization=${event.data.accessToken}; path=/; max-age=86400; secure; samesite=strict`;
+              const response = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/oauth-login`, {
+                oauthData: event.data.data
+              });
 
-      window.addEventListener('message', async (event) => {
-        if (event.data.type === 'AUTH_SUCCESS') {
-          try {
-            document.cookie = `Authorization=${event.data.accessToken}; path=/; max-age=86400; secure; samesite=strict`;
-            const response = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/oauth-login`, {
-              oauthData: event.data.data
-            });
-
-            if (response.status === 200) {
-              document.cookie = `token=${response.data.token}; path=/; max-age=86400; secure; samesite=strict`;
-            setUser(response.data.user);
-              router.push('/dashboard');
-            } else {
-              throw new Error('Login failed');
+              if (response.status === 200) {
+                document.cookie = `token=${response.data.token}; path=/; max-age=86400; secure; samesite=strict`;
+                setUser(response.data.user);
+                router.push('/dashboard');
+              } else {
+                throw new Error('Login failed');
+              }
+            } catch (error) {
+              console.error('Login error:', error);
+              setError("Login Failed");
             }
-          } catch (error) {
-            console.error('Login error:', error);
-            setError("Login Failed");
+          } else if (event.data.type === 'AUTH_ERROR') {
+            console.error('Authentication failed:', event.data.error);
+            setError(event.data.error);
           }
-        } else if (event.data.type === 'AUTH_ERROR') {
-          console.error('Authentication failed:', event.data.error);
-          setError(event.data.error);
-        }
-      });
+        };
+
+        window.addEventListener('message', handleMessage);
+
+        return () => {
+          window.removeEventListener('message', handleMessage);
+        };
+      }
+    } catch (error) {
+      console.error('Redirect URL fetch failed:', error);
+      setError("Login Failed");
     }
   };
 
