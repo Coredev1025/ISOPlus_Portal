@@ -1,7 +1,7 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import Board from '../models/Board.js';
-import mongoose from 'mongoose';
+import TimeTrack from '../models/TimeTrack.js';
 import { info, error, warn } from '../utils/logger.js';
 
 const router = express.Router();

@@ -77,7 +77,7 @@ router.post('/login',
       );
 
       info('User-Service', 'User logged in successfully', { email }, req);
-      res.json({ token, user: { id: user._id, email, name: user.name } });
+      res.json({ token, user: { id: user._id, email, name: user.name, role: 'admin' } });
     } catch (err) {
       error('User-Service', 'Server error during login', { error: err.message }, req);
       res.status(500).json({ message: 'Server error' });
@@ -144,7 +144,8 @@ router.get("/isoplus/callback", async (req, res) => {
       code: code
     }, {
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-API-Version': '2024-12-17.morava'
       }
     });
 
@@ -225,7 +226,8 @@ router.post('/oauth-login', async (req, res) => {
         id: user._id, 
         email: user.email, 
         name: user.name,
-        avatar: user.avatar
+        avatar: user.avatar, 
+        role: 'user'
       } 
     });
   } catch (err) {

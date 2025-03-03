@@ -63,7 +63,7 @@ export default function LoginPage() {
 
   const handleISOPlusLogin = async () => {
     try {
-      const redirectUrl = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/isoplus/redirect`);
+      const redirectUrl = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/isoplus/redirect`, { headers: { 'X-API-Version': '2024-12-17.morava' } });
 
       if (redirectUrl.status == 200) {
         const width = 600;
@@ -121,7 +121,7 @@ export default function LoginPage() {
           <h1 className="text-3xl font-bold text-primary mb-2">Welcome Back</h1>
           <p className="text-muted-foreground">Sign in to continue to your workspace</p>
         </div>
-        
+
         <Tabs defaultValue="isoplus" className="space-y-6">
           <TabsList className="grid grid-cols-2 w-full">
             <TabsTrigger value="isoplus">ISO+ Login</TabsTrigger>

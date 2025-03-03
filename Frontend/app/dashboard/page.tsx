@@ -301,7 +301,7 @@ function GlobalApplicationLogs() {
   const getLogs = async () => {
     setLoading(true);
     try {
-      axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/log`, { headers:{ token: getCookie("token") }})
+      axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/log`, { headers: { token: getCookie("token") } })
         .then(res => {
           return res.data.map((item: any, i: number) => {
             return {
@@ -467,7 +467,7 @@ function GlobalApplicationLogs() {
 export default function Dashboard() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
-  const { workspaces, setWorkspaces } = useAppContext();
+  const { workspaces, setWorkspaces, user } = useAppContext();
   const [loading, setLoading] = useState(false);
 
   const filteredWorkspaces = workspaces.filter(item =>
@@ -499,14 +499,18 @@ export default function Dashboard() {
         <Tabs defaultValue="workspaces" className="space-y-6">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
-            <TabsTrigger value="audit" className="gap-2">
-              <History className="h-4 w-4" />
-              Global Audit Trail
-            </TabsTrigger>
-            <TabsTrigger value="logs" className="gap-2">
-              <Terminal className="h-4 w-4" />
-              Application Logs
-            </TabsTrigger>
+            {user.role === "admin" && (
+              <TabsTrigger value="audit" className="gap-2">
+                <History className="h-4 w-4" />
+                Global Audit Trail
+              </TabsTrigger>
+            )}
+            {user.role === "admin" && (
+              <TabsTrigger value="logs" className="gap-2">
+                <Terminal className="h-4 w-4" />
+                Application Logs
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="workspaces">
@@ -519,13 +523,17 @@ export default function Dashboard() {
             />
           </TabsContent>
 
-          <TabsContent value="audit">
-            <GlobalAuditTrail />
-          </TabsContent>
+          {user.role === "admin" && (
+            <TabsContent value="audit">
+              <GlobalAuditTrail />
+            </TabsContent>
+          )}
 
-          <TabsContent value="logs">
-            <GlobalApplicationLogs />
-          </TabsContent>
+          {user.role === "admin" && (
+            <TabsContent value="logs">
+              <GlobalApplicationLogs />
+            </TabsContent>
+          )}
         </Tabs>
       </div>
     </div>

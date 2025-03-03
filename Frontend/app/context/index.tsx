@@ -7,6 +7,7 @@ export interface User {
     name: string;
     email: string;
     avatar?: string;
+    role: string;
 }
 
 export interface Workspace {
@@ -41,7 +42,8 @@ export function ContextProvider({ children }: { children: ReactNode }) {
         id: "",
         name: "",
         email: "",
-        avatar: ""
+        avatar: "",
+        role: "user"
     });
     const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
     const [boards, setBoards] = useState<Board[]>([]);
