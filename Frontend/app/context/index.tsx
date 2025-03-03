@@ -18,11 +18,20 @@ export interface Workspace {
     user_role: string;
 }
 
+export interface Board {
+    id: string;
+    name: string;
+    label: string
+}
+
+
 interface ContextProps {
     user: User;
     setUser: Dispatch<SetStateAction<User>>;
     workspaces: Workspace[];
     setWorkspaces: Dispatch<SetStateAction<Workspace[]>>;
+    boards: Board[];
+    setBoards: Dispatch<SetStateAction<Board[]>>;
 }
 
 export const Context = createContext<ContextProps | null>(null);
@@ -35,16 +44,21 @@ export function ContextProvider({ children }: { children: ReactNode }) {
         avatar: ""
     });
     const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+    const [boards, setBoards] = useState<Board[]>([]);
 
     useEffect(() => {
         const currentUser = window.localStorage.getItem("user");
         const savedWorkspace = JSON.parse(window.localStorage.getItem('workspace') || '[]');
+        const savedBoard = JSON.parse(window.localStorage.getItem('board') || '[]');
 
         if (currentUser) {
             setUser(JSON.parse(currentUser));
         }
         if (savedWorkspace) {
             setWorkspaces(savedWorkspace);
+        }
+        if (savedWorkspace) {
+            setBoards(savedBoard);
         }
     }, []);
 
@@ -55,10 +69,13 @@ export function ContextProvider({ children }: { children: ReactNode }) {
         if (workspaces.length) {
             window.localStorage.setItem('workspace', JSON.stringify(workspaces));
         }
-    }, [user, workspaces]);
+        if (boards.length) {
+            window.localStorage.setItem('board', JSON.stringify(boards));
+        }
+    }, [user, workspaces, boards]);
 
     return (
-        <Context.Provider value={{ user, setUser, workspaces, setWorkspaces }}>
+        <Context.Provider value={{ user, setUser, workspaces, setWorkspaces, boards, setBoards }}>
             {children}
         </Context.Provider>
     );

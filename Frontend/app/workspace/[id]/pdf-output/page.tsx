@@ -11,7 +11,7 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { ArrowLeft, Download } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -31,7 +31,7 @@ import {
     PaginationNext,
     PaginationPrevious,
 } from "@/components/ui/pagination";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { PDFOutput } from "./types";
 
 // Mock data for PDF outputs
@@ -167,16 +167,11 @@ const ITEMS_PER_PAGE = 10;
 
 export default function PDFOutputPage() {
     const router = useRouter();
-    const [id, setId] = useState<string>('');
+    const pathname = usePathname();
+    const id = pathname.split("/")[2];
     const [basicPdfEnabled, setBasicPdfEnabled] = useState(true);
     const [selectedSignatureProvider, setSelectedSignatureProvider] = useState<string | null>("docusign");
     const [currentPage, setCurrentPage] = useState(1);
-
-    useEffect(() => {
-        const pathId = window.location.pathname.split('/')[2];
-        console.log(pathId);
-        setId(pathId);
-    }, [])
 
     const totalPages = Math.ceil(allPdfOutputs.length / ITEMS_PER_PAGE);
     const pdfOutputs = allPdfOutputs.slice(

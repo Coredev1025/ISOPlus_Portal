@@ -468,8 +468,7 @@ export default function Dashboard() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
   const { workspaces, setWorkspaces } = useAppContext();
-  const [logs, setLogs] = useState<Log[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   const filteredWorkspaces = workspaces.filter(item =>
     item.id.toString().includes(searchQuery.toLowerCase()) ||
@@ -477,7 +476,8 @@ export default function Dashboard() {
   );
 
   useEffect(() => {
-    getWorkspaces();
+    if (workspaces.length === 0)
+      getWorkspaces();
   }, []);
 
   const getWorkspaces = async () => {

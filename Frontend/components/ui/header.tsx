@@ -16,6 +16,7 @@ export function Header() {
     document.cookie = `Authorization=; path=/; max-age=0; secure; samesite=strict`;
     localStorage.removeItem("user");
     localStorage.removeItem("workspace");
+    localStorage.removeItem("board");
     router.push("/");
   };
 

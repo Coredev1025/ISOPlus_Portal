@@ -8,6 +8,7 @@ import workspaceRoutes from './routes/workspace.js';
 import boardRoutes from './routes/board.js';
 import xeroRoutes from './routes/xero.js';
 import logRoutes from './routes/log.js';
+import timeTrackToutes from './routes/timetrack.js';
 
 dotenv.config();
 
@@ -21,6 +22,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/business', businessRoutes);
 app.use('/api/workspaces', workspaceRoutes);
 app.use('/api/boards', boardRoutes);
+app.use('/api/timetracks', timeTrackToutes);
 app.use('/api/xero', xeroRoutes);
 app.use('/api/log', logRoutes);
 

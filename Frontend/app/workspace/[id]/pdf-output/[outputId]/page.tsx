@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ArrowLeft, Download } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useEffect } from "react";
 import { allPdfOutputs } from "../page";
@@ -11,7 +11,8 @@ import { PDFOutput } from "../types";
 
 export default function PDFOutputDetailPage() {
   const router = useRouter();
-  const id =  window?.location.pathname.split('/')[1];
+  const pathname = usePathname();
+  const id =  pathname.split('/')[2];
   const output = allPdfOutputs.find(output => output.id === `pdf-${id}`);
 
   useEffect(() => {

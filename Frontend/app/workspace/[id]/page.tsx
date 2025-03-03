@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ArrowLeft, Building2, FileSpreadsheet, FileText, BarChart, Wand2, Info, History } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import {
   Table,
   TableBody,
@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/table";
 import { useEffect, useState } from "react";
 import { Header } from "@/components/ui/header";
-import { useAppContext, Workspace } from "@/app/context";
+import { useAppContext, Board } from "@/app/context";
 import axios from "axios";
 import { getCookie } from "@/app/utils/cookies";
 import Spinner from "@/components/ui/spin";
@@ -43,23 +43,17 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-type BoardLabel = 'Job Management' | 'NDIS' | null;
+type BoardLabel = 'Job Management' | 'Care Management' | null;
 
 const BOARD_LABELS: NonNullable<BoardLabel>[] = [
   'Job Management',
-  'NDIS'
+  'Care Management'
 ];
 
 const LABEL_COLORS: Record<NonNullable<BoardLabel>, string> = {
   'Job Management': 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300',
-  'NDIS': 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300'
+  'Care Management': 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300'
 };
-
-interface Board {
-  id: string;
-  name: string;
-  label?: BoardLabel;
-}
 
 interface SuggestionDialogProps {
   isOpen: boolean;
@@ -92,10 +86,12 @@ function SuggestionDialog({ isOpen, onClose, onConfirm, suggestion, reason }: Su
 
 export default function WorkspaceDetail() {
   const router = useRouter();
-  const { workspaces } = useAppContext();
-  const [workspace, setWorkspace] = useState<Workspace | undefined>(undefined);
-  const [boards, setBoards] = useState<Board[] | undefined>(undefined);
-  const [loadingBoards, setLoadingBoards] = useState<boolean>(true); // Loading state for boards
+  const pathname = usePathname();
+  const { workspaces, boards, setBoards } = useAppContext();
+  
+  const id = pathname.split('/').pop();
+  const workspace = workspaces.find(workspace => workspace.id.toString() === id);
+  const [loadingBoards, setLoadingBoards] = useState<boolean>(false); // Loading state for boards
   const [suggestionDialog, setSuggestionDialog] = useState<{
     isOpen: boolean;
     boardId: string;
@@ -109,20 +105,15 @@ export default function WorkspaceDetail() {
   });
 
   useEffect(() => {
-    const id = window.location.pathname.split('/').pop();
-    const result = workspaces.find((item) => item.id.toString() === id);
+    if (boards.length === 0)
+      getBoards();
+  }, []);
 
-    if (result) {
-      setWorkspace(result);
-      getBoards(result.id.toString());
-    }
-  }, [workspaces, router]);
-
-  const getBoards = async (id: string) => {
+  const getBoards = async () => {
     setLoadingBoards(true);
     try {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
-      const boards: Board[] = await Promise.all(
+      const data: Board[] = await Promise.all(
         response.data.board.map(async (board: any) => {
           try {
             const boardResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
@@ -133,7 +124,7 @@ export default function WorkspaceDetail() {
           }
         })
       );
-      setBoards(boards);
+      setBoards(data);
     } catch (error) {
       console.error("Error fetching boards:", error);
     } finally {
@@ -147,7 +138,7 @@ export default function WorkspaceDetail() {
       setBoards(
         boards?.map(board =>
           board.id === boardId ? { ...board, label: newLabel } : board
-        ) || []
+        ) as Board[]
       );
 
       // Make an API call to update the label on the server
@@ -159,7 +150,7 @@ export default function WorkspaceDetail() {
             { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } }
           );
         }
-      })      
+      })
     } catch (error) {
       console.error("Error updating board label:", error);
     }
@@ -176,9 +167,9 @@ export default function WorkspaceDetail() {
     if (name.includes('job management')) {
       suggestion = 'Job Management';
       reason = "Based on the board name containing 'Job Management', we suggest labeling this as a Job Management board.";
-    } else if (name.includes('ndis')) {
-      suggestion = 'NDIS';
-      reason = "Based on the board name containing 'NDIS', we suggest labeling this as an NDIS board.";
+    } else if (name.includes('care management')) {
+      suggestion = 'Care Management';
+      reason = "Based on the board name containing 'Care Management', we suggest labeling this as an Care Management board.";
     } else {
       reason = "We couldn't automatically determine the board type based on its name. Please select a label manually if needed.";
     }
@@ -309,7 +300,7 @@ export default function WorkspaceDetail() {
           <Card className="p-6 shadow-lg">
             <h2 className="text-xl font-semibold mb-2">Workspace Boards</h2>
             <p className="text-sm text-muted-foreground mb-6">
-              Boards that require integration with external systems or automation features should be labeled as either 'Job Management' or 'NDIS'.
+              Boards that require integration with external systems or automation features should be labeled as either 'Job Management' or 'Care Management'.
               Unlabeled boards will function normally but won't be included in automated processes.
             </p>
             {
@@ -333,7 +324,7 @@ export default function WorkspaceDetail() {
                                   <Info className="h-4 w-4 text-muted-foreground cursor-help" />
                                 </TooltipTrigger>
                                 <TooltipContent className="max-w-xs">
-                                  Label your boards as 'Job Management' or 'NDIS' to enable integration features.
+                                  Label your boards as 'Job Management' or 'Care Management' to enable integration features.
                                   Unlabeled boards will operate normally.
                                 </TooltipContent>
                               </Tooltip>
@@ -350,13 +341,13 @@ export default function WorkspaceDetail() {
                           <TableCell>{board.name}</TableCell>
                           <TableCell>
                             <Select
-                              value={board.label || "none"}
-                              onValueChange={(value) => handleLabelChange(board.id.toString(), value === "none" ? null : value as BoardLabel)}
+                              value={board.label || ""}
+                              onValueChange={(value) => handleLabelChange(board.id.toString(), value === "" ? null : value as BoardLabel)}
                             >
                               <SelectTrigger className="w-[200px]">
                                 <SelectValue>
                                   {board.label ? (
-                                    <Badge variant="outline" className={LABEL_COLORS[board.label]}>
+                                    <Badge variant="outline" className={board.label ? LABEL_COLORS[board.label as NonNullable<BoardLabel>] : ''}>
                                       {board.label}
                                     </Badge>
                                   ) : (
@@ -377,16 +368,25 @@ export default function WorkspaceDetail() {
                             </Select>
                           </TableCell>
                           <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                suggestLabel(board.id.toString());
-                              }}
-                            >
-                              <Wand2 className="h-4 w-4" />
-                            </Button>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  suggestLabel(board.id.toString());
+                                }}
+                              >
+                                <Wand2 className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => router.push(`/workspace/${workspace?.id}/board/${board.id}`)}
+                              >
+                                Open Board
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
