@@ -147,7 +147,7 @@ function WorkspacesList({
                       size="sm"
                       onClick={() => router.push(`/workspace/${workspace.id} `)}
                     >
-                      Manage Workspace
+                      Open Workspace
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -478,13 +478,16 @@ export default function Dashboard() {
   useEffect(() => {
     if (workspaces.length === 0)
       getWorkspaces();
-  }, []);
+    }, []);
 
   const getWorkspaces = async () => {
     setLoading(true);
     try {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/me`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
       setWorkspaces(response.data.workspace);
+
+      if (response.data.workspace.length === 1)
+        router.push(`/workspace/${workspaces[0].id}`);
     } catch (error) {
       console.error("Error fetching workspaces:", error);
     } finally {
