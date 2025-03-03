@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 const boardSchema = new mongoose.Schema({
-  boardID: {
+  boardId: {
     type: String,
     ref: 'Board',
     required: true
@@ -13,10 +13,6 @@ const boardSchema = new mongoose.Schema({
   description: {
     type: String,
     default: ''
-  },
-  userId: {
-    type: [],
-    required: true
   },
   color: {
     type: String,

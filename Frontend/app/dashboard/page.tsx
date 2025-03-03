@@ -37,7 +37,6 @@ interface Log {
   details: Object;
 };
 
-
 // Mock data for audit trail
 const generateAuditTrail = () => Array.from({ length: 50 }, (_, i) => {
   const date = new Date();

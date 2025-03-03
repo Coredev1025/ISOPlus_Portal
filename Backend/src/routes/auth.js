@@ -40,7 +40,7 @@ router.post('/register',
         { expiresIn: '24h' }
       );
 
-      info('User-Service', 'User registered successfully', { userId: user._id, email }, req);
+      info('User-Service', 'User registered successfully', { email }, req);
       res.status(201).json({ token, user: { id: user._id, email, name } });
     } catch (err) {
       error('User-Service', 'Server error during registration', { error: err.message }, req);
@@ -76,7 +76,7 @@ router.post('/login',
         { expiresIn: '24h' }
       );
 
-      info('User-Service', 'User logged in successfully', { userId: user._id, email }, req);
+      info('User-Service', 'User logged in successfully', { email }, req);
       res.json({ token, user: { id: user._id, email, name: user.name } });
     } catch (err) {
       error('User-Service', 'Server error during login', { error: err.message }, req);
@@ -89,7 +89,7 @@ router.get('/verify', authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).select('-password');
     if (!user) {
-      warn('User-Service', 'User not found during verification', { userId: req.user.userId }, req);
+      warn('User-Service', 'User not found during verification', { }, req);
       return res.status(404).json({ message: 'User not found' });
     }
 
@@ -99,7 +99,6 @@ router.get('/verify', authenticateToken, async (req, res) => {
       { expiresIn: '24h' }
     );
 
-    info('User-Service', 'User verified successfully', { userId: user._id, email: user.email }, req);
     res.json({
       token,
       user: {
@@ -125,7 +124,6 @@ router.get("/isoplus/redirect", (req, res) => {
     state: state,
   });
 
-  info('User-Service', 'Redirecting to authorization endpoint', { state }, req);
   res.json({ redirect_uri: `${process.env.AUTHORIZATION_ENDPOINT}?${query}` });
 });
 
@@ -220,7 +218,7 @@ router.post('/oauth-login', async (req, res) => {
       { expiresIn: '24h' }
     );
 
-    info('User-Service', 'OAuth login successful', { userId: user._id, email: user.email }, req);
+    info('User-Service', 'OAuth login successful', { email: user.email }, req);
     res.json({ 
       token, 
       user: { 

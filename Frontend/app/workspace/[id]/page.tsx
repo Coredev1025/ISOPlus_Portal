@@ -121,11 +121,16 @@ export default function WorkspaceDetail() {
   const getBoards = async (id: string) => {
     setLoadingBoards(true);
     try {
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceID=${id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
       const boards: Board[] = await Promise.all(
         response.data.board.map(async (board: any) => {
-          const boardResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
-          return { ...board, label: boardResponse.data.board.label };
+          try {
+            const boardResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
+            return { ...board, label: boardResponse.data.board.label };
+          } catch (error) {
+            console.error("Error fetching board:", error);
+            return { ...board, label: null };
+          }
         })
       );
       setBoards(boards);
@@ -146,11 +151,15 @@ export default function WorkspaceDetail() {
       );
 
       // Make an API call to update the label on the server
-      await axios.put(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards`,
-        { boardId, label: newLabel },
-        { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } }
-      );
+      boards?.map(async (board) => {
+        if (board.id === boardId) {
+          await axios.put(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards`,
+            { ...board, label: newLabel, boardId },
+            { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } }
+          );
+        }
+      })      
     } catch (error) {
       console.error("Error updating board label:", error);
     }

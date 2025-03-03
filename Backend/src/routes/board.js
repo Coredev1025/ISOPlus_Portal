@@ -8,22 +8,20 @@ const router = express.Router();
 
 router.post('/', authenticateToken, async (req, res) => {
     try {
-        const existingBoard = await Board.findOne({ boardID: req.body.id });
+        const existingBoard = await Board.findOne({ boardId: req.body.id });
         if (existingBoard) {
-            await Board.updateOne({ boardID: req.body.boardID }, { $addToSet: { userId: new mongoose.Types.ObjectId(req.body.userId) } });
-            info('Board-Service', 'Existing board updated', { boardID: req.body.boardID, userId: req.body.userId }, req);
+            warn('Board-Service', 'Board already exsit', { boardId: req.body.boardId }, req);
             res.status(200).json({ board: existingBoard });
         } else {
             const newBoard = new Board({
-                boardID: req.body.id || '',
+                boardId: req.body.id || '',
                 name: req.body.name || '',
                 color: req.body.color || '',
                 description: req.body.color || '',
                 og_image: req.body.og_image || '',
-                userId: req.body.userId ? [new mongoose.Types.ObjectId(req.body.userId)] : [],
             });
             await newBoard.save();
-            info('Board-Service', 'New board created', { boardID: req.body.id, userId: req.body.userId }, req);
+            info('Board-Service', 'New board created', { boardId: req.body.id }, req);
             res.status(200).json({ board: newBoard });
         }
     } catch (err) {
@@ -34,13 +32,13 @@ router.post('/', authenticateToken, async (req, res) => {
 
 router.get('/', authenticateToken, async (req, res) => {
     try {
-        const existingBoard = await Board.findOne({ boardID: req.query.id });
+        const existingBoard = await Board.findOne({ boardId: req.query.id });
         
         if (existingBoard) {
-            info('Board-Service', 'Successfully fetching board detail data', { boardID: req.query.id, userId: req.user.userId }, req);
+            info('Board-Service', 'Successfully fetching board detail data', { boardId: req.query.id}, req);
             res.status(200).json({ board: existingBoard });
         } else {
-            warn('Board-Service', 'Failed fetching board detail data', { boardID: req.query.id, userId: req.user.userId }, req);
+            warn('Board-Service', 'Failed fetching board detail data', { boardId: req.query.id }, req);
             res.status(404).json({ message: 'Board not found' });
         }
     } catch (err) {
@@ -51,13 +49,13 @@ router.get('/', authenticateToken, async (req, res) => {
 
 router.put('/', authenticateToken, async (req, res) => {
     try {
-        const result = await Board.updateOne({ boardID: req.body.boardId }, { $set: { label: req.body.label } });
+        const result = await Board.updateOne({ boardId: req.body.boardId }, { $set: { ...req.body } }, { upsert: true});
         if (result.nModified === 0) {
-            warn('Board-Service', 'Board not found', { boardID: req.body.id }, req);
+            warn('Board-Service', 'Board not found', { boardId: req.body.id }, req);
             res.status(404).json({ message: 'Board not found' });
         } else {
-            const updatedBoard = await Board.findOne({ boardID: req.body.boardId });
-            info('Board-Service', 'Board updated', { boardID: req.body.boardId, label: req.body.label }, req);
+            const updatedBoard = await Board.findOne({ boardId: req.body.boardId });
+            info('Board-Service', 'Board updated', { boardId: req.body.boardId, label: req.body.label }, req);
             res.status(200).json({ board: updatedBoard });
         }
     } catch (err) {

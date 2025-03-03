@@ -88,7 +88,7 @@ router.get('/me', authenticateToken, async (req, res) => {
 });
 
 router.get('/boards', authenticateToken, async (req, res) => {
-  const url = `https://app.isoplus.online/api/v2/workspaces/${req.query.workspaceID}/boards`;
+  const url = `https://app.isoplus.online/api/v2/workspaces/${req.query.workspaceId}/boards`;
 
   const params = {
     "limit": "100",
@@ -125,7 +125,7 @@ router.get('/boards', authenticateToken, async (req, res) => {
           get_board();
         }
       }
-      info('Workspace-Service', 'Successfully fetching boards', { userId: req.user.userId, workspaceID: req.query.workspaceID }, req);
+      info('Workspace-Service', 'Successfully fetching boards', { workspaceId: req.query.workspaceId }, req);
       res.json({ board });
     })
     .catch(err => {
@@ -136,7 +136,6 @@ router.get('/boards', authenticateToken, async (req, res) => {
 
 router.post('/', authenticateToken, async (req, res) => {
   try {
-    info('Workspace-Service', 'POST / request received', { userId: req.user.userId, body: req.body }, req);
     const { name, businessId } = req.body;
     const workspace = new Workspace({
       name,
@@ -144,7 +143,7 @@ router.post('/', authenticateToken, async (req, res) => {
       userId: req.user.userId
     });
     await workspace.save();
-    info('Workspace-Service', 'New workspace created', { userId: req.user.userId, workspaceId: workspace._id }, req);
+    info('Workspace-Service', 'New workspace created', { workspaceId: workspace._id }, req);
     res.status(201).json(workspace);
   } catch (err) {
     error('Workspace-Service', 'Server error', { message: err.message }, req);

@@ -11,7 +11,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
   try {
     const business = await Business.findOne({ userId: req.user.userId });
     if (!business) {
-      warn('Business-Service', 'Business profile not found', { userId: req.user.userId }, req);
+      warn('Business-Service', 'Business profile not found', { }, req);
       return res.status(404).json({ message: 'Business profile not found' });
     }
     res.json(business);
@@ -43,14 +43,14 @@ router.put('/profile',
           updateData,
           { new: true }
         );
-        info('Business-Service', 'Business profile updated', { userId: req.user.userId, businessId: business._id }, req);
+        info('Business-Service', 'Business profile updated', { businessId: business._id }, req);
       } else {
         business = new Business({
           userId: req.user.userId,
           ...updateData
         });
         await business.save();
-        info('Business-Service', 'New business profile created', { userId: req.user.userId, businessId: business._id }, req);
+        info('Business-Service', 'New business profile created', { businessId: business._id }, req);
       }
 
       res.json(business);
