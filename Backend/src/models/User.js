@@ -21,7 +21,12 @@ const userSchema = new mongoose.Schema({
     default: Date.now
   },
   oauthId: String,
-  avatar: String
+  avatar: String,
+  role: {
+    type: String,
+    default: 'user',
+    enum: ['user', 'admin']
+  }
 });
 
 userSchema.pre('save', async function(next) {

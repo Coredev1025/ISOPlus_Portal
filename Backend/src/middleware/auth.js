@@ -7,7 +7,6 @@ export const authenticateToken = (req, res, next) => {
 
   if (!token) {
     warn('Authentication-Service', 'No token provided', {
-      requestID: Math.random.toString(36).substring(7),
       error: 'No token provided',
     }, req);
     return res.status(401).json({ message: 'Authentication required' });
@@ -21,7 +20,6 @@ export const authenticateToken = (req, res, next) => {
     next();
   } catch (err) {
     warn('Authentication-Service', 'Invalid or expired token', {
-      requestID: Math.random.toString(36).substring(7),
       error: 'Invalid or expired token',
     }, req);
     return res.status(403).json({ message: 'Invalid or expired token' });

@@ -28,7 +28,11 @@ export default function LoginPage() {
             setUser(valid.data.user);
             router.push('/dashboard');
           } else {
-            document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+            document.cookie = `token=; path=/; max-age=0; secure; samesite=strict`;
+            document.cookie = `Authorization=; path=/; max-age=0; secure; samesite=strict`;
+            localStorage.removeItem("user");
+            localStorage.removeItem("workspace");
+            localStorage.removeItem("board");
           }
         } catch (error) {
           console.error('Token verification failed:', error);

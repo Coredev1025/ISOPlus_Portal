@@ -1,7 +1,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import { authenticateToken } from '../middleware/auth.js';
-import { warn } from 'winston';
+import { warn } from '../utils/logger.js';
 
 const router = express.Router();
 

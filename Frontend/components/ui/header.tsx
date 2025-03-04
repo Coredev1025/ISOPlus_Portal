@@ -1,15 +1,42 @@
 "use client";
 
 import { useAppContext } from "@/app/context";
+import { getCookie, isTokenValid } from "@/app/utils/cookies";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 export function Header() {
   const router = useRouter();
-  const { user } = useAppContext();
+  const { user, setUser } = useAppContext();
+
+  useEffect(() => {
+    const checkToken = async () => {
+      const token = getCookie('token');
+      if (token) {
+        try {
+          const valid = await isTokenValid(token);
+          if (valid.status === 200) {
+            setUser(valid.data.user);
+          } else {
+            document.cookie = `token=; path=/; max-age=0; secure; samesite=strict`;
+            document.cookie = `Authorization=; path=/; max-age=0; secure; samesite=strict`;
+            localStorage.removeItem("user");
+            localStorage.removeItem("workspace");
+            localStorage.removeItem("board");
+            router.push("/");
+          }
+        } catch (error) {
+          console.error('Token verification failed:', error);
+        }
+      }
+    };
+
+    checkToken();
+  }, [router]);
 
   const handleLogout = () => {
     document.cookie = `token=; path=/; max-age=0; secure; samesite=strict`;

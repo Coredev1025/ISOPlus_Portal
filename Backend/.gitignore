@@ -6,6 +6,8 @@ node_modules/
 out/
 dist/
 logs/
+uploads/
+
 # Logs
 npm-debug.log*
 yarn-debug.log*
