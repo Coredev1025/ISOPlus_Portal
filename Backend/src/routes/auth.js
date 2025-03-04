@@ -31,11 +31,11 @@ router.post('/register',
         return res.status(400).json({ message: 'User already exists' });
       }
 
-      const user = new User({ email, password, name });
+      const user = new User({ email, password, name, role: 'admin' });
       await user.save();
 
       const token = jwt.sign(
-        { userId: user._id, email: user.email },
+        { userId: user._id, email: user.email, role: 'admin' },
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
       );
@@ -71,7 +71,7 @@ router.post('/login',
       }
 
       const token = jwt.sign(
-        { userId: user._id, email: user.email },
+        { userId: user._id, email: user.email, role: 'admin' },
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
       );
@@ -94,7 +94,7 @@ router.get('/verify', authenticateToken, async (req, res) => {
     }
 
     const token = jwt.sign(
-      { userId: user._id, email: user.email },
+      { userId: user._id, email: user.email, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -214,7 +214,7 @@ router.post('/oauth-login', async (req, res) => {
     }
 
     const token = jwt.sign(
-      { userId: user._id, email: user.email },
+      { userId: user._id, email: user.email, role: 'user' },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );

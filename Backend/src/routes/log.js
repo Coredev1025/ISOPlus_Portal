@@ -1,6 +1,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import { authenticateToken } from '../middleware/auth.js';
+import { warn } from 'winston';
 
 const router = express.Router();
 
@@ -18,6 +19,10 @@ const Log = mongoose.model('Log', logSchema);
 // Route to get logs
 router.get('/', authenticateToken, async (req, res) => {
     try {
+        if(req.user.role == 'user') {
+            warn('Log-Service', 'Unauthorized access', { email: req.user.email }, req);
+            return res.status(403).json({ message: 'Unauthorized access' });
+        }
         const logs = await Log.find({ 'metadata.email': req.user.email });
         res.json(logs);
     } catch (err) {
