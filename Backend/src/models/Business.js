@@ -10,7 +10,13 @@ const businessSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  logo: {
+  defaultLogo: {
+    type: String
+  },
+  squareLogo: {
+    type: String
+  },
+  wideLogo: {
     type: String
   },
   address: {

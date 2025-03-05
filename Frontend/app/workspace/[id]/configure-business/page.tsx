@@ -17,6 +17,7 @@ import { useEffect, useState } from "react";
 import { Header } from "@/components/ui/header";
 import axios from "axios";
 import { getCookie } from "@/app/utils/cookies";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const AUSTRALIAN_STATES = [
   { value: "act", label: "Australian Capital Territory" },
@@ -34,7 +35,14 @@ export default function ConfigureBusinessPage() {
   const pathname = usePathname();
   const id = pathname.split("/")[2];
   const [logoFile, setLogoFile] = useState<File | null>(null);
-  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [squareLogoFile, setSquareLogoFile] = useState<File | null>(null);
+  const [wideLogoFile, setWideLogoFile] = useState<File | null>(null);
+  const [defaultLogoPreview, setDefaultLogoPreview] = useState<string | null>(null);
+  const [squareLogoPreview, setSquareLogoPreview] = useState<string | null>(null);
+  const [wideLogoPreview, setWideLogoPreview] = useState<string | null>(null);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [showError, setShowError] = useState(false);
+
   const [formData, setFormData] = useState({
     name: "",
     phone: "",
@@ -48,8 +56,6 @@ export default function ConfigureBusinessPage() {
     acn: "",
     workspaceId: id,
   });
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [showError, setShowError] = useState(false);
 
   useEffect(() => {
     // Fetch the saved business profile data when the page loads
@@ -57,6 +63,7 @@ export default function ConfigureBusinessPage() {
       try {
         const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`, { headers: { token: getCookie("token") }, params: { workspaceId: id } });
         const data = response.data;
+        console.log(data);
         setFormData({
           name: data.name || "",
           phone: data.phone || "",
@@ -70,8 +77,14 @@ export default function ConfigureBusinessPage() {
           acn: data.acn || "",
           workspaceId: id
         });
-        if (data.logo) {
-          setLogoPreview(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business${data.logo}`);
+        if (data.defaultLogo) {
+          setDefaultLogoPreview(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business${data.defaultLogo}`);
+        }
+        if (data.defaultLogo) {
+          setSquareLogoPreview(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business${data.squareLogo}`);
+        }
+        if (data.defaultLogo) {
+          setWideLogoPreview(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business${data.wideLogo}`);
         }
       } catch (error) {
         console.error("Failed to fetch business profile:", error);
@@ -81,13 +94,17 @@ export default function ConfigureBusinessPage() {
     fetchBusinessProfile();
   }, []);
 
-  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoChange = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setPreview: React.Dispatch<React.SetStateAction<string | null>>,
+    setFile: React.Dispatch<React.SetStateAction<File | null>>
+  ) => {
     const file = e.target.files?.[0];
     if (file) {
-      setLogoFile(file);
+      setFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
-        setLogoPreview(reader.result as string);
+        setPreview(reader.result as string);
       };
       reader.readAsDataURL(file);
     }
@@ -108,7 +125,13 @@ export default function ConfigureBusinessPage() {
         formDataToSend.append(key, formData[key as keyof typeof formData]);
       });
       if (logoFile) {
-        formDataToSend.append("logo", logoFile);
+        formDataToSend.append("defaultLogo", logoFile);
+      }
+      if (squareLogoFile) {
+        formDataToSend.append("squareLogo", squareLogoFile);
+      }
+      if (wideLogoFile) {
+        formDataToSend.append("wideLogo", wideLogoFile);
       }
 
       const response = await axios.put(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`, formDataToSend, {
@@ -140,44 +163,132 @@ export default function ConfigureBusinessPage() {
         <Card className="max-w-2xl mx-auto p-6">
           <h1 className="text-2xl font-bold mb-6">Configure Your Business</h1>
 
-          {showSuccess && (
-            <div className="mb-4 p-4 text-green-700 bg-green-100 rounded">
-              Business profile saved successfully!
-            </div>
-          )}
-
-          {showError && (
-            <div className="mb-4 p-4 text-green-700 bg-green-100 rounded">
-              Business profile saved failed, please input information correctly!
-            </div>
-          )}
-
           <div className="space-y-6">
-            <div className="space-y-2">
-              <Label>Company Logo</Label>
-              <div className="flex items-center gap-4">
-                <div className="w-32 h-32 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted">
-                  {logoPreview ? (
-                    <img
-                      src={logoPreview}
-                      alt="Preview"
-                      className="w-full h-full object-contain"
-                    />
-                  ) : (
-                    <Upload className="h-8 w-8 text-muted-foreground" />
-                  )}
+            <div className="space-y-4 border rounded-lg p-5">
+              <h3 className="text-lg font-semibold">Company Logos</h3>
+              <p className="text-sm text-muted-foreground">
+                Upload different logo formats for various uses throughout the application
+              </p>
+
+              <div className="bg-muted/30 p-4 rounded-lg mb-4">
+                <div className="flex items-center gap-3">
+                  <Upload className="h-5 w-5 text-primary" />
+                  <div>
+                    <h4 className="text-sm font-medium">Logo Types</h4>
+                    <p className="text-xs text-muted-foreground">
+                      Select a logo type below to upload the appropriate format
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <Input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleLogoChange}
-                    className="max-w-xs"
-                  />
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Recommended size: 512x512px
-                  </p>
-                </div>
+              </div>
+
+              <div className="border rounded-lg p-4">
+                <Tabs defaultValue="default" className="space-y-4">
+                  <TabsList className="grid grid-cols-3 w-full">
+                    <TabsTrigger value="default">Default Logo</TabsTrigger>
+                    <TabsTrigger value="square">Square Logo</TabsTrigger>
+                    <TabsTrigger value="wide">Wide Logo</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="default" className="pt-4">
+                    <div className="flex items-center gap-4">
+                      <div
+                        className="w-32 h-32 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted"
+                      >
+                        {defaultLogoPreview ? (
+                          <img
+                            src={defaultLogoPreview}
+                            alt="Default Logo Preview"
+                            className="w-full h-full object-contain"
+                          />
+                        ) : (
+                          <Upload className="h-8 w-8 text-muted-foreground" />
+                        )}
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-medium mb-2">Default Logo</h4>
+                        <Input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleLogoChange(e, setDefaultLogoPreview, setLogoFile)}
+                          className="max-w-xs"
+                        />
+                        <p className="text-sm text-muted-foreground mt-2">
+                          Recommended size: 512x512px
+                        </p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Used for general application areas and profile displays
+                        </p>
+                      </div>
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="square" className="pt-4">
+                    <div className="flex items-center gap-4">
+                      <div
+                        className="w-32 h-32 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted"
+                      >
+                        {squareLogoPreview ? (
+                          <img
+                            src={squareLogoPreview}
+                            alt="Square Logo Preview"
+                            className="w-full h-full object-contain"
+                          />
+                        ) : (
+                          <Upload className="h-8 w-8 text-muted-foreground" />
+                        )}
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-medium mb-2">Square Logo</h4>
+                        <Input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleLogoChange(e, setSquareLogoPreview, setSquareLogoFile)}
+                          className="max-w-xs"
+                        />
+                        <p className="text-sm text-muted-foreground mt-2">
+                          Recommended size: 256x256px
+                        </p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Used for app icons, avatars, and compact displays
+                        </p>
+                      </div>
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="wide" className="pt-4">
+                    <div className="flex items-center gap-4">
+                      <div
+                        className="w-48 h-24 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted"
+                      >
+                        {wideLogoPreview ? (
+                          <img
+                            src={wideLogoPreview}
+                            alt="Wide Logo Preview"
+                            className="w-full h-full object-contain"
+                          />
+                        ) : (
+                          <Upload className="h-8 w-8 text-muted-foreground" />
+                        )}
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-medium mb-2">Wide Logo</h4>
+                        <Input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleLogoChange(e, setWideLogoPreview, setWideLogoFile)}
+                          className="max-w-xs"
+                        />
+                        <p className="text-sm text-muted-foreground mt-2">
+                          Recommended size: 512x128px
+                        </p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Used for headers, footers, and document letterheads
+                        </p>
+                      </div>
+                    </div>
+                  </TabsContent>
+                </Tabs>
               </div>
             </div>
 
@@ -309,6 +420,17 @@ export default function ConfigureBusinessPage() {
               Save Business Configuration
             </Button>
           </div>
+          {showSuccess && (
+            <div className="mb-4 p-4 text-green-700 bg-green-100 rounded">
+              Business profile saved successfully!
+            </div>
+          )}
+
+          {showError && (
+            <div className="mb-4 p-4 text-green-700 bg-green-100 rounded">
+              Business profile saved failed, please input information correctly!
+            </div>
+          )}
         </Card>
       </div>
     </div>

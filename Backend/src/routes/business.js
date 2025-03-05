@@ -19,7 +19,15 @@ const storage = multer.diskStorage({
     cb(null, `${Date.now()}-${file.originalname}`);
   }
 });
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB limit
+});
+const multiupload = upload.fields([
+  { name: 'defaultLogo', maxCount: 1 },
+  { name: 'squareLogo', maxCount: 1 },
+  { name: 'wideLogo', maxCount: 1 },
+]);
 
 // Serve static files from the uploads directory
 router.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
@@ -39,52 +47,50 @@ router.get('/profile', authenticateToken, async (req, res) => {
   }
 });
 
-router.put('/profile',
-  authenticateToken,
-  upload.single('logo'),
-  async (req, res) => {
-    try {
-      const { name, phone, email, abn, acn, state, city, postcode, street1, street2, workspaceId } = req.body;
-      let business = await Business.findOne({ workspaceId });
+router.put('/profile', authenticateToken, multiupload, async (req, res) => {
+  try {
+    const { name, phone, email, abn, acn, state, city, postcode, street1, street2, workspaceId } = req.body;
+    let business = await Business.findOne({ workspaceId });
 
-      const updateData = {
-        name,
-        address: {
-          street1,
-          street2,
-          city,
-          state,
-          postcode
-        },
-        phone,
-        email,
-        abn,
-        acn,
-        workspaceId,
-        ...(req.file && { logo: `/uploads/${req.file.filename}` })
-      };
+    const updateData = {
+      name,
+      address: {
+        street1,
+        street2,
+        city,
+        state,
+        postcode
+      },
+      phone,
+      email,
+      abn,
+      acn,
+      workspaceId,
+      ...(req.files['defaultLogo'] && { defaultLogo: `/uploads/${req.files['defaultLogo'][0].filename}` }),
+      ...(req.files['squareLogo'] && { squareLogo: `/uploads/${req.files['squareLogo'][0].filename}` }),
+      ...(req.files['wideLogo'] && { wideLogo: `/uploads/${req.files['wideLogo'][0].filename}` })
+    };
 
-      if (business) {
-        business = await Business.findByIdAndUpdate(
-          business._id,
-          updateData,
-          { new: true }
-        );
-        info('Business-Service', 'Business profile updated', { businessName: business.name }, req);
-      } else {
-        business = new Business({
-          ...updateData
-        });
-        await business.save();
-        info('Business-Service', 'New business profile created', { businessName: business.name }, req);
-      }
-
-      res.json(business);
-    } catch (err) {
-      error('Business-Service', 'Server error', { message: err.message }, req);
-      res.status(500).json({ message: 'Server error' });
+    if (business) {
+      business = await Business.findByIdAndUpdate(
+        business._id,
+        updateData,
+        { new: true }
+      );
+      info('Business-Service', 'Business profile updated', { businessName: business.name }, req);
+    } else {
+      business = new Business({
+        ...updateData
+      });
+      await business.save();
+      info('Business-Service', 'New business profile created', { businessName: business.name }, req);
     }
+
+    res.json(business);
+  } catch (err) {
+    error('Business-Service', 'Server error', { message: err.message }, req);
+    res.status(500).json({ message: 'Server error' });
   }
-);
+});
 
 export default router;
