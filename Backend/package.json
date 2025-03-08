@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "debug": "node --inspect-brk src/index.js"
   },
   "dependencies": {
     "@pdfme/common": "^5.3.11",

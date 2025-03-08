@@ -2,7 +2,7 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import Business from '../models/Business.js';
 import axios from 'axios';
-import { info, error } from '../utils/logger.js';
+import { info, error, debug } from '../utils/logger.js';
 import fs from 'fs/promises';
 import { generate } from '@pdfme/generator';
 import { text, table, line, image, multiVariableText } from '@pdfme/schemas';
@@ -18,6 +18,8 @@ const __dirname = path.dirname(__filename);
 const router = express.Router();
 
 router.post('/invoice', async (req, res) => {
+    debug('Webhook-Service', 'Received invoice request', req.body);
+    
     try {
         req.body.items?.map(async (item) => {
             let logoBase64 = '';
@@ -106,4 +108,10 @@ router.get('/uploads/:filename', async (req, res) => {
         res.status(404).json({ message: 'File not found' });
     }
 });
+
+router.get('/echo', async (req, res) => {
+    console.log(req.body);
+    res.json({ message: 'echo!!!' });
+});
+
 export default router;
