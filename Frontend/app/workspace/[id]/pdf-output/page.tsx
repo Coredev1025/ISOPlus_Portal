@@ -237,7 +237,7 @@ export default function PDFOutputPage() {
                 });
             } else {
                 // Load default logo and convert to base64
-                const defaultLogoResponse = await fetch('/path/to/default-logo.png');
+                const defaultLogoResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/uploads/default-logo.png`);
                 const defaultLogoBlob = await defaultLogoResponse.blob();
                 logoBase64 = await new Promise((resolve) => {
                     const reader = new FileReader();
