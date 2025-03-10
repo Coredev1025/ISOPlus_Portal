@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createReadStream } from 'fs';
 import { access } from 'fs/promises';
+import axios from "axios";
 
 // Get the directory name
 const __filename = fileURLToPath(import.meta.url);
@@ -14,9 +15,18 @@ const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
-router.post('/invoice', async (req, res) => {
+router.post('/:clientID/invoice', async (req, res) => {
+    const { clientID } = req.params;
+
     try {
+        const integrationData = process.env.INTEGRATION ? JSON.parse(process.env.INTEGRATION) : {};
+        const clientIntegration = integrationData[clientID];
+        if (!clientIntegration) {
+            return res.status(400).json({ message: 'Invalid client ID or integration data not found' });
+        }
+
         req.body.items?.map(async (item) => {
+            console.log(item)
             let logoBase64 = '';
 
             const templatePath = path.join(__dirname, '..', 'assets', `invoice.json`);
@@ -43,12 +53,28 @@ router.post('/invoice', async (req, res) => {
             });
 
             const filename = `invoice_${Date.now()}.pdf`;
-            const uploadDir = path.join(__dirname, '../', 'invoice');
+            const uploadDir = path.join(__dirname, '../../', 'invoice');
 
             await fs.mkdir(uploadDir, { recursive: true });
             const filePath = path.join(uploadDir, filename);
             await fs.writeFile(filePath, Buffer.from(pdfBytes));
             const pdfUrl = `http://localhost:3001/api/webhook/uploads/${filename}`;
+            const putdata = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${clientIntegration.workspaceID}/boards/${clientIntegration.boardID}/items/${item.id}`, {
+                "values": [
+                    {
+                        "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
+                        "data": `<p>Download <a href="${pdfUrl}">Here</a></p>`
+                    }
+                ],
+            }, {
+                headers: {
+                    "Authorization": `Bearer ${clientIntegration.personalAccessToken}`,
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "X-API-Version": "2024-12-17.morava",
+                }
+            });
+            
 
             setTimeout(async () => {
                 try {
@@ -61,12 +87,11 @@ router.post('/invoice', async (req, res) => {
 
             info('Webhook-Service', 'Successfully generating PDF invoice', { link: pdfUrl }, req);
 
-            console.log(pdfUrl);
             res.json({ pdfUrl });
         });
 
     } catch (err) {
-        error('Workspace-Service', 'Server error', { message: err.message }, req);
+        error('Webhook-Service', 'Server error', { message: err.message }, req);
         res.status(500).json({ message: 'Server error' });
     }
 });
@@ -74,7 +99,7 @@ router.post('/invoice', async (req, res) => {
 router.get('/uploads/:filename', async (req, res) => {
     try {
         const { filename } = req.params;
-        const filePath = path.join(__dirname, '../', 'invoice', filename);
+        const filePath = path.join(__dirname, '../../', 'invoice', filename);
         // Check if file exists using promise-based fs
         await access(filePath);
         console.log(filePath);

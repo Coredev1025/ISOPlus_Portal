@@ -11,7 +11,7 @@ import { useEffect } from "react";
 
 export function Header() {
   const router = useRouter();
-  const { user, setUser } = useAppContext();
+  const { user, setUser, setBoards, setWorkspaces } = useAppContext();
 
   useEffect(() => {
     const checkToken = async () => {
@@ -24,9 +24,15 @@ export function Header() {
           } else {
             document.cookie = `token=; path=/; max-age=0; secure; samesite=strict`;
             document.cookie = `Authorization=; path=/; max-age=0; secure; samesite=strict`;
-            localStorage.removeItem("user");
-            localStorage.removeItem("workspace");
-            localStorage.removeItem("board");
+            setUser({
+              id: "",
+              name: "",
+              email: "",
+              avatar: "",
+              role: "user"
+            });
+            setWorkspaces([]);
+            setBoards([]);
             router.push("/");
           }
         } catch (error) {
@@ -44,6 +50,15 @@ export function Header() {
     localStorage.removeItem("user");
     localStorage.removeItem("workspace");
     localStorage.removeItem("board");
+    setUser({
+      id: "",
+      name: "",
+      email: "",
+      avatar: "",
+      role: "user"
+    });
+    setWorkspaces([]);
+    setBoards([]);
     router.push("/");
   };
 
