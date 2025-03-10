@@ -144,9 +144,11 @@ export default function ConfigureBusinessPage() {
       console.log("Business profile saved:", response.data);
       setShowError(false);
       setShowSuccess(true);
+      {showSuccess && setTimeout(() => setShowSuccess(false), 2000)}
     } catch (error) {
       setShowSuccess(false);
       setShowError(true);
+      {showError && setTimeout(() => setShowError(false), 2000)}
       console.error("Failed to save business profile:", error);
     }
   };
@@ -427,8 +429,8 @@ export default function ConfigureBusinessPage() {
           )}
 
           {showError && (
-            <div className="mb-4 p-4 text-green-700 bg-green-100 rounded mt-4">
-              Business profile saved failed, please input information correctly!
+            <div className="mb-4 p-4 text-red-700 bg-red-100 rounded mt-4">
+              Business profile save failed, please input information correctly!
             </div>
           )}
         </Card>
