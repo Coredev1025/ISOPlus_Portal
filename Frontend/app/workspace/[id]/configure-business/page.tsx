@@ -80,10 +80,10 @@ export default function ConfigureBusinessPage() {
         if (data.defaultLogo) {
           setDefaultLogoPreview(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business${data.defaultLogo}`);
         }
-        if (data.defaultLogo) {
+        if (data.squareLogo) {
           setSquareLogoPreview(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business${data.squareLogo}`);
         }
-        if (data.defaultLogo) {
+        if (data.wideLogo) {
           setWideLogoPreview(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business${data.wideLogo}`);
         }
       } catch (error) {
