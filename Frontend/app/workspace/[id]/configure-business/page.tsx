@@ -155,7 +155,7 @@ export default function ConfigureBusinessPage() {
     <div className="min-h-screen bg-background">
       <Header />
       <div className="container mx-auto py-8">
-        <Button variant="ghost" className="mb-6" onClick={() => router.back()}>
+        <Button variant="ghost" className="mb-6" onClick={() => router.replace(`/workspace/${id}`)}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back to Workspace
         </Button>
@@ -421,13 +421,13 @@ export default function ConfigureBusinessPage() {
             </Button>
           </div>
           {showSuccess && (
-            <div className="mb-4 p-4 text-green-700 bg-green-100 rounded">
+            <div className="mb-4 p-4 text-green-700 bg-green-100 rounded mt-4">
               Business profile saved successfully!
             </div>
           )}
 
           {showError && (
-            <div className="mb-4 p-4 text-green-700 bg-green-100 rounded">
+            <div className="mb-4 p-4 text-green-700 bg-green-100 rounded mt-4">
               Business profile saved failed, please input information correctly!
             </div>
           )}

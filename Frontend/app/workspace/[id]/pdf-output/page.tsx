@@ -260,7 +260,7 @@ export default function PDFOutputPage() {
                 <Button
                     variant="ghost"
                     className="mb-6"
-                    onClick={() => router.back}
+                    onClick={() => router.replace(`/workspace/${id}`)}
                 >
                     <ArrowLeft className="h-4 w-4 mr-2" />
                     Back to Workspace
