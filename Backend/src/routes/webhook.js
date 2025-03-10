@@ -1,8 +1,5 @@
 import express from 'express';
-import { authenticateToken } from '../middleware/auth.js';
-import Business from '../models/Business.js';
-import axios from 'axios';
-import { info, error, debug } from '../utils/logger.js';
+import { info, error } from '../utils/logger.js';
 import fs from 'fs/promises';
 import { generate } from '@pdfme/generator';
 import { text, table, line, image, multiVariableText } from '@pdfme/schemas';
@@ -18,23 +15,9 @@ const __dirname = path.dirname(__filename);
 const router = express.Router();
 
 router.post('/invoice', async (req, res) => {
-    debug('Webhook-Service', 'Received invoice request', req.body);
-    
     try {
         req.body.items?.map(async (item) => {
             let logoBase64 = '';
-
-            // const business = await Business.findOne({ workspaceId });
-
-            // if (business?.defaultLogo) {
-            //     const response = await axios(`http://localhost:3001/api/business/uploads/${business.defaultLogo.replace('/uploads/', '')}`);
-            //     const blob = await response.blob();
-            //     logoBase64 = await new Promise((resolve) => {
-            //         const reader = new FileReader();
-            //         reader.onloadend = () => resolve(reader.result);
-            //         reader.readAsDataURL(blob);
-            //     });
-            // }
 
             const templatePath = path.join(__dirname, '..', 'assets', `invoice.json`);
             const templateData = await fs.readFile(templatePath, 'utf8');
@@ -67,18 +50,17 @@ router.post('/invoice', async (req, res) => {
             await fs.writeFile(filePath, Buffer.from(pdfBytes));
             const pdfUrl = `http://localhost:3001/api/webhook/uploads/${filename}`;
 
+            setTimeout(async () => {
+                try {
+                    await fs.unlink(filePath);
+                    console.log(`File ${filename} has been removed after 5 minutes.`);
+                } catch (err) {
+                    console.error(`Error removing file ${filename}:`, err);
+                }
+            }, 5 * 60 * 1000);
+
             info('Webhook-Service', 'Successfully generating PDF invoice', { link: pdfUrl }, req);
 
-            // await axios.put(`https://app.isoplus.online/api/v2/workspaces/${req.body.workspaceID}/boards/${req.body.boardId}/items/${item.id}`, {
-            //     "fields": {
-            //         "Invoice": pdfUrl
-            //     }
-            // }, {
-            //     headers: {
-            //         'Authorization': `Bearer ${req.body.token}`,
-            //         "Content-Type": "application/json",
-            //     }
-            // });
             console.log(pdfUrl);
             res.json({ pdfUrl });
         });
@@ -88,6 +70,7 @@ router.post('/invoice', async (req, res) => {
         res.status(500).json({ message: 'Server error' });
     }
 });
+
 router.get('/uploads/:filename', async (req, res) => {
     try {
         const { filename } = req.params;
@@ -107,11 +90,6 @@ router.get('/uploads/:filename', async (req, res) => {
         error('Workspace-Service', 'Error downloading file', { message: err.message }, req);
         res.status(404).json({ message: 'File not found' });
     }
-});
-
-router.get('/echo', async (req, res) => {
-    console.log(req.body);
-    res.json({ message: 'echo!!!' });
 });
 
 export default router;

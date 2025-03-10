@@ -224,60 +224,32 @@ export default function PDFOutputPage() {
 
     const handleGeneratePDF = async (output: PDFOutput) => {
         try {
-            let data;
-            let logoBase64 = '';
-            if (businessData?.defaultLogo) {
-                const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business${businessData.defaultLogo}`);
-                console.log(response)
-                const blob = await response.blob();
-                logoBase64 = await new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result as string);
-                    reader.readAsDataURL(blob);
-                });
-            } else {
-                // Load default logo and convert to base64
-                const defaultLogoResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/uploads/default-logo.png`);
-                const defaultLogoBlob = await defaultLogoResponse.blob();
-                logoBase64 = await new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result as string);
-                    reader.readAsDataURL(defaultLogoBlob);
-                });
-            }
-
-            data = [
-                {
-                    orders: "[[\"Eggshell Camisole Top\",\"1\",\"123\",\"123\"],[\"Cuban Collar Shirt\",\"2\",\"127\",\"254\"],[\"Cuban Collar Shirt\",\"2\",\"127\",\"254\"],[\"Cuban Collar Shirt\",\"2\",\"127\",\"254\"],[\"Cuban Collar Shirt\",\"2\",\"127\",\"254\"]]",
-                    taxInput: "{\"rate\":\"10\"}",
-                    logo: logoBase64,
-                    invoiceInfo: "{\"InvoiceNo\":\"123456\",\"Date\":\"05 March 2025\"}",
-                    billedToInput: "Imani Olowe \n+123-456-7890 \n63 Ivy Road, Hawkville, GA, USA 31036"
-                },
-            ];
-
-            const pdfBytes = await generate({
-                template: template,
-                inputs: data,
-                plugins: {
-                    text,
-                    image,
-                    line,
-                    table,
-                    multiVariableText,
-                    qrcode: barcodes.qrcode,
-                }
+            const response = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/generatePDF`, {
+                output,
+                workspaceId: id
+            }, {
+                headers: { token: getCookie("token") },
+                responseType: 'arraybuffer'
             });
-
-            const blob = new Blob([pdfBytes], { type: "application/pdf" });
-            const url = URL.createObjectURL(blob);
-            const anchor = document.createElement("a");
-            anchor.href = url;
-            anchor.download = `${output.documentName}.pdf`;
-            anchor.click();
-            URL.revokeObjectURL(url);
-        } catch (error) {
-            console.error("Error generating PDF:", error);
+            
+            // Create blob from array buffer
+            const blob = new Blob([response.data], { type: 'application/pdf' });
+            
+            // Create download link
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${output.documentName}.pdf`;
+            
+            // Trigger download
+            document.body.appendChild(link);
+            link.click();
+            
+            // Cleanup
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('Error generating PDF:', err);
         }
     };
 
