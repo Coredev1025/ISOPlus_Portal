@@ -59,7 +59,7 @@ router.post('/:clientID/invoice', async (req, res) => {
             const filePath = path.join(uploadDir, filename);
             await fs.writeFile(filePath, Buffer.from(pdfBytes));
             const pdfUrl = `http://localhost:3001/api/webhook/uploads/${filename}`;
-            const putdata = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${clientIntegration.workspaceID}/boards/${clientIntegration.boardID}/items/${item.id}`, {
+            axios.put(`https://app.isoplus.online/api/v2/workspaces/${clientIntegration.workspaceID}/boards/${clientIntegration.boardID}/items/${item.id}`, {
                 "values": [
                     {
                         "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
@@ -73,13 +73,27 @@ router.post('/:clientID/invoice', async (req, res) => {
                     "Accept": "application/json",
                     "X-API-Version": "2024-12-17.morava",
                 }
-            });
-            
+            });           
 
             setTimeout(async () => {
                 try {
                     await fs.unlink(filePath);
                     console.log(`File ${filename} has been removed after 5 minutes.`);
+                    const putdata = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${clientIntegration.workspaceID}/boards/${clientIntegration.boardID}/items/${item.id}`, {
+                        "values": [
+                            {
+                                "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
+                                "data": `<p>Download <a href="${pdfUrl}">Here</a></p><p>Link is expired, please generate again.</p>`
+                            }
+                        ],
+                    }, {
+                        headers: {
+                            "Authorization": `Bearer ${clientIntegration.personalAccessToken}`,
+                            "Content-Type": "application/json",
+                            "Accept": "application/json",
+                            "X-API-Version": "2024-12-17.morava",
+                        }
+                    });
                 } catch (err) {
                     console.error(`Error removing file ${filename}:`, err);
                 }
