@@ -63,7 +63,7 @@ router.post('/:clientID/invoice', async (req, res) => {
                 "values": [
                     {
                         "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
-                        "data": `<p>Download <a href="${pdfUrl}">Here</a></p>`
+                        "data": `<p>Your invoice is successfully created. <br> Download <a href="${pdfUrl}">Here</a></p>`
                     }
                 ],
             }, {
@@ -73,13 +73,13 @@ router.post('/:clientID/invoice', async (req, res) => {
                     "Accept": "application/json",
                     "X-API-Version": "2024-12-17.morava",
                 }
-            });           
+            });       
 
             setTimeout(async () => {
                 try {
                     await fs.unlink(filePath);
                     console.log(`File ${filename} has been removed after 5 minutes.`);
-                    const putdata = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${clientIntegration.workspaceID}/boards/${clientIntegration.boardID}/items/${item.id}`, {
+                    axios.put(`https://app.isoplus.online/api/v2/workspaces/${clientIntegration.workspaceID}/boards/${clientIntegration.boardID}/items/${item.id}`, {
                         "values": [
                             {
                                 "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
@@ -105,6 +105,21 @@ router.post('/:clientID/invoice', async (req, res) => {
         });
 
     } catch (err) {
+        axios.put(`https://app.isoplus.online/api/v2/workspaces/${clientIntegration.workspaceID}/boards/${clientIntegration.boardID}/items/${item.id}`, {
+            "values": [
+                {
+                    "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
+                    "data": `<p>An error occurred while creating the invoice. <br> Mpre information: ${err.message}</p>`
+                }
+            ],
+        }, {
+            headers: {
+                "Authorization": `Bearer ${clientIntegration.personalAccessToken}`,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-API-Version": "2024-12-17.morava",
+            }
+        });  
         error('Webhook-Service', 'Server error', { message: err.message }, req);
         res.status(500).json({ message: 'Server error' });
     }
