@@ -67,7 +67,7 @@ export default function LoginPage() {
 
   const handleISOPlusLogin = async () => {
     try {
-      const redirectUrl = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/isoplus/redirect`, { headers: { 'X-API-Version': '2024-12-17.morava' } });
+      const redirectUrl = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/isoplus/redirect`, { headers: { 'X-API-Version': '2025-02-26.morava' } });
 
       if (redirectUrl.status == 200) {
         const width = 600;

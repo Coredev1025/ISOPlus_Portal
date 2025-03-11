@@ -16,16 +16,10 @@ const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
-router.post('/:clientID/invoice', async (req, res) => {
-    const { clientID } = req.params;
+router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
+    const { workspaceId, boardId } = req.params;
 
     try {
-        const integrationData = process.env.INTEGRATION ? JSON.parse(process.env.INTEGRATION) : {};
-        const clientIntegration = integrationData[clientID];
-        if (!clientIntegration) {
-            return res.status(400).json({ message: 'Invalid client ID or integration data not found' });
-        }
-
         req.body.items?.map(async (item) => {
             let logoBase64 = '';
 
@@ -59,10 +53,10 @@ router.post('/:clientID/invoice', async (req, res) => {
             const filePath = path.join(uploadDir, filename);
             await fs.writeFile(filePath, Buffer.from(pdfBytes));
 
-            AuditTrail.insertOne({ workspaceId: clientIntegration.workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: item.values["Reporter's Email Address"] || "", userIp: req.ip?.split(':').pop() });
+            AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: item.values["Reporter's Email Address"] || "", userIp: req.ip?.split(':').pop() });
 
             const pdfUrl = `http://localhost:3001/api/webhook/uploads/${filename}`;
-            axios.put(`https://app.isoplus.online/api/v2/workspaces/${clientIntegration.workspaceId}/boards/${clientIntegration.boardId}/items/${item.id}`, {
+            axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
                 "values": [
                     {
                         "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
@@ -71,20 +65,20 @@ router.post('/:clientID/invoice', async (req, res) => {
                 ],
             }, {
                 headers: {
-                    "Authorization": `Bearer ${clientIntegration.personalAccessToken}`,
+                    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
                     "Content-Type": "application/json",
                     "Accept": "application/json",
-                    "X-API-Version": "2024-12-17.morava",
+                    "X-API-Version": "2025-02-26.morava",
                 }
             });
 
-            axios.post(`http://localhost:3001/api/pdf`, { workspaceId: clientIntegration.workspaceId, itemId: item.id, type: 'Invoice', pdfLink: pdfUrl, createdBy: item.values["Reporter's Email Address"] || "", isDeleted: false, SignatureStatus: "Unsigned" })
+            axios.post(`http://localhost:3001/api/pdf`, { workspaceId: workspaceId, itemId: item.id, type: 'Invoice', pdfLink: pdfUrl, createdBy: item.values["Reporter's Email Address"] || "", isDeleted: false, SignatureStatus: "Unsigned" })
 
             setTimeout(async () => {
                 try {
                     await fs.unlink(filePath);
                     console.log(`File ${filename} has been removed after 5 minutes.`);
-                    axios.put(`https://app.isoplus.online/api/v2/workspaces/${clientIntegration.workspaceId}/boards/${clientIntegration.boardId}/items/${item.id}`, {
+                    axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
                         "values": [
                             {
                                 "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
@@ -93,14 +87,14 @@ router.post('/:clientID/invoice', async (req, res) => {
                         ],
                     }, {
                         headers: {
-                            "Authorization": `Bearer ${clientIntegration.personalAccessToken}`,
+                            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
                             "Content-Type": "application/json",
                             "Accept": "application/json",
-                            "X-API-Version": "2024-12-17.morava",
+                            "X-API-Version": "2025-02-26.morava",
                         }
                     });
-                    axios.put(`http://localhost:3001/api/pdf`, { workspaceId: clientIntegration.workspaceId, itemId: item.id, pdfLink: pdfUrl })
-                    AuditTrail.insertOne({ workspaceId: clientIntegration.workspaceId, action: 'Remove PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
+                    axios.put(`http://localhost:3001/api/pdf`, { workspaceId: workspaceId, itemId: item.id, pdfLink: pdfUrl })
+                    AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Remove PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
                 } catch (err) {
                     console.error(`Error removing file ${filename}:`, err);
                 }
@@ -112,7 +106,7 @@ router.post('/:clientID/invoice', async (req, res) => {
         });
 
     } catch (err) {
-        axios.put(`https://app.isoplus.online/api/v2/workspaces/${clientIntegration.workspaceId}/boards/${clientIntegration.boardId}/items/${item.id}`, {
+        axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
             "values": [
                 {
                     "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
@@ -121,10 +115,10 @@ router.post('/:clientID/invoice', async (req, res) => {
             ],
         }, {
             headers: {
-                "Authorization": `Bearer ${clientIntegration.personalAccessToken}`,
+                "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-                "X-API-Version": "2024-12-17.morava",
+                "X-API-Version": "2025-02-26.morava",
             }
         });
         error('Webhook-Service', 'Server error', { message: err.message }, req);

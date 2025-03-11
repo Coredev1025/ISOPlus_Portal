@@ -16,7 +16,7 @@ export const authenticateToken = (req, res, next) => {
     const user = jwt.verify(token, process.env.JWT_SECRET);
 
     req.user = user;
-    req.headers['X-API-Version'] = '2024-12-17.morava';
+    req.headers['X-API-Version'] = '2025-02-26.morava';
     next();
   } catch (err) {
     warn('Authentication-Service', 'Invalid or expired token', {
