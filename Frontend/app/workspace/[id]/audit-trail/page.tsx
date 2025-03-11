@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft, Search, Filter, Download } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import {
   Select,
@@ -30,66 +30,63 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { useState } from "react";
-
-// Mock data for audit trail
-const mockAuditTrail = Array.from({ length: 50 }, (_, i) => {
-  const date = new Date();
-  date.setHours(date.getHours() - i);
-  
-  const actions = [
-    "Created new board",
-    "Updated board settings",
-    "Deleted board",
-    "Added user to workspace",
-    "Removed user from workspace",
-    "Updated workspace settings",
-    "Generated PDF document",
-    "Updated business configuration",
-    "Connected to Xero",
-    "Updated integration settings"
-  ];
-  
-  const users = [
-    "john.doe@example.com",
-    "jane.smith@example.com",
-    "mike.wilson@example.com",
-    "sarah.johnson@example.com"
-  ];
-
-  return {
-    id: `audit-${i + 1}`,
-    timestamp: date.toISOString(),
-    action: actions[Math.floor(Math.random() * actions.length)],
-    user: users[Math.floor(Math.random() * users.length)],
-    ipAddress: `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
-    details: {
-      resourceId: `resource-${Math.floor(Math.random() * 1000)}`,
-      changes: Math.random() > 0.5 ? { before: "old value", after: "new value" } : null
-    }
-  };
-});
+import { useEffect, useState } from "react";
+import axios from "axios";
+import { getCookie } from "@/app/utils/cookies";
 
 const ITEMS_PER_PAGE = 10;
+interface AuditTrailItem {
+  timestamp: string;
+  action: string;
+  user: string;
+  ipAddress: string;
+  detail: string;
+}
 
 export default function AuditTrailPage() {
   const router = useRouter();
-  const [searchQuery, setSearchQuery] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
+  const id = usePathname().split('/')[2];
+  const [searchQuery, setSearchQuery] = useState("");  const [currentPage, setCurrentPage] = useState(1);
   const [actionFilter, setActionFilter] = useState<string>("all");
   const [userFilter, setUserFilter] = useState<string>("all");
+  const [auditTrail, setAuditTrail] = useState<AuditTrailItem[]>([]);
+
+  useEffect(() => {
+    const fetchAuditTrailData = async () => {
+      const data = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/audit/`, { headers: { token: getCookie("token") }, params: { workspaceId: id } });
+      const auditData = data.data.map((item: any) => {
+        return { 
+          action: item.action, 
+          user: item.userEmail, 
+          ipAddress: item.userIp, 
+          detail: item.detail, 
+          timestamp: new Date(item.createdAt).toLocaleString('en-US', { 
+            month: 'numeric', 
+            day: 'numeric', 
+            year: 'numeric', 
+            hour: 'numeric', 
+            minute: 'numeric', 
+            second: 'numeric', 
+            hour12: true 
+          }) 
+        }
+      })
+      setAuditTrail(auditData);
+    }
+    fetchAuditTrailData();
+  }, []);
 
   // Get unique actions and users for filters
-  const uniqueActions = Array.from(new Set(mockAuditTrail.map(item => item.action)));
-  const uniqueUsers = Array.from(new Set(mockAuditTrail.map(item => item.user)));
+  const uniqueActions = Array.from(new Set(auditTrail.map(item => item.action)));
+  const uniqueUsers = Array.from(new Set(auditTrail.map(item => item.user)));
 
   // Filter audit trail based on search and filters
-  const filteredAuditTrail = mockAuditTrail.filter(item => {
-    const matchesSearch = 
+  const filteredAuditTrail = auditTrail.filter(item => {
+    const matchesSearch =
       item.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.user.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.ipAddress.includes(searchQuery);
-    
+
     const matchesAction = actionFilter === "all" || item.action === actionFilter;
     const matchesUser = userFilter === "all" || item.user === userFilter;
 
@@ -143,7 +140,7 @@ export default function AuditTrailPage() {
                   />
                 </div>
               </div>
-              
+
               <div className="flex gap-4">
                 <Select value={actionFilter} onValueChange={setActionFilter}>
                   <SelectTrigger className="w-[200px]">
@@ -152,8 +149,8 @@ export default function AuditTrailPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Actions</SelectItem>
-                    {uniqueActions.map(action => (
-                      <SelectItem key={action} value={action}>{action}</SelectItem>
+                    {uniqueActions.map((action, index) => (
+                      <SelectItem key={index} value={action || "unknown"}>{action || "Unknown Action"}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -165,8 +162,8 @@ export default function AuditTrailPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Users</SelectItem>
-                    {uniqueUsers.map(user => (
-                      <SelectItem key={user} value={user}>{user}</SelectItem>
+                    {uniqueUsers.map((user, index) => (
+                      <SelectItem key={index} value={user || "unknown"}>{user || "Unknown User"}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -185,8 +182,8 @@ export default function AuditTrailPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {currentItems.map((item) => (
-                  <TableRow key={item.id}>
+                {currentItems.map((item, index) => (
+                  <TableRow key={index}>
                     <TableCell className="whitespace-nowrap">
                       {new Date(item.timestamp).toLocaleString()}
                     </TableCell>
@@ -194,15 +191,9 @@ export default function AuditTrailPage() {
                     <TableCell>{item.user}</TableCell>
                     <TableCell className="font-mono">{item.ipAddress}</TableCell>
                     <TableCell className="max-w-xs truncate">
-                      {item.details.changes ? (
-                        <span className="text-muted-foreground">
-                          Changed from "{item.details.changes.before}" to "{item.details.changes.after}"
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">
-                          Resource ID: {item.details.resourceId}
-                        </span>
-                      )}
+                      <span className="text-muted-foreground">
+                        {item.detail}
+                      </span>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -219,15 +210,15 @@ export default function AuditTrailPage() {
                       className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
                     />
                   </PaginationItem>
-                  
+
                   {Array.from({ length: totalPages }, (_, i) => i + 1)
-                    .filter(page => 
-                      page === 1 || 
-                      page === totalPages || 
+                    .filter(page =>
+                      page === 1 ||
+                      page === totalPages ||
                       (page >= currentPage - 1 && page <= currentPage + 1)
                     )
                     .map((page, i, arr) => (
-                      <div key={`pagination-${page}`}>
+                      <div key={`pagination-${page}`} style={{display: "flex"}}>
                         {i > 0 && arr[i - 1] !== page - 1 && (
                           <PaginationItem>
                             <PaginationEllipsis />
@@ -243,7 +234,7 @@ export default function AuditTrailPage() {
                         </PaginationItem>
                       </div>
                     ))}
-                  
+
                   <PaginationItem>
                     <PaginationNext
                       onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}

@@ -63,7 +63,6 @@ export default function ConfigureBusinessPage() {
       try {
         const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`, { headers: { token: getCookie("token") }, params: { workspaceId: id } });
         const data = response.data;
-        console.log(data);
         setFormData({
           name: data.name || "",
           phone: data.phone || "",
@@ -141,14 +140,13 @@ export default function ConfigureBusinessPage() {
         }
       });
 
-      console.log("Business profile saved:", response.data);
       setShowError(false);
       setShowSuccess(true);
-      {showSuccess && setTimeout(() => setShowSuccess(false), 2000)}
+      setTimeout(() => setShowSuccess(false), 2000)
     } catch (error) {
       setShowSuccess(false);
       setShowError(true);
-      {showError && setTimeout(() => setShowError(false), 2000)}
+      setTimeout(() => setShowError(false), 2000)
       console.error("Failed to save business profile:", error);
     }
   };

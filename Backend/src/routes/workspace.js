@@ -2,6 +2,7 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import Workspace from '../models/Workspace.js';
 import Business from '../models/Business.js';
+import AuditTrail from '../models/AuditTrail.js';
 import axios from 'axios';
 import { info, error } from '../utils/logger.js';
 import fs from 'fs/promises';
@@ -153,7 +154,8 @@ router.post('/', authenticateToken, async (req, res) => {
       userId: req.user.userId
     });
     await workspace.save();
-    info('Workspace-Service', 'New workspace created', { workspaceId: workspace._id }, req);
+    info('Workspace-Service', 'New Workspace created', { workspaceId: workspace._id }, req);
+    AuditTrail.insertOne({workspaceId: workspace._id, action: 'Created new Workspace', detail: `New Workspace created: ${workspace._id}`, userEmail: req.user.email, userIp: req.ip?.split(':').pop()});
     res.status(201).json(workspace);
   } catch (err) {
     error('Workspace-Service', 'Server error', { message: err.message }, req);
@@ -169,11 +171,11 @@ router.post('/generatePDF', authenticateToken, async (req, res) => {
     const business = await Business.findOne({ workspaceId });
 
     if (business?.defaultLogo) {
-      const response = await axios.get(`http://localhost:3001/api/business${business.defaultLogo}`, { responseType: 'arraybuffer' });
+      const response = await axios.get(`/api/business${business.defaultLogo}`, { responseType: 'arraybuffer' });
       const buffer = Buffer.from(response.data, 'binary');
       logoBase64 = `data:image/png;base64,${buffer.toString('base64')}`;
     } else {
-      const response = await axios.get(`http://localhost:3001/api/business/uploads/default-logo.png`, { responseType: 'arraybuffer' });
+      const response = await axios.get(`/api/business/uploads/default-logo.png`, { responseType: 'arraybuffer' });
       const buffer = Buffer.from(response.data, 'binary');
       logoBase64 = `data:image/png;base64,${buffer.toString('base64')}`;
     }
@@ -200,6 +202,9 @@ router.post('/generatePDF', authenticateToken, async (req, res) => {
         multiVariableText
       }
     });
+
+    AuditTrail.insertOne({workspaceId, action: 'Created new PDF', detail: `Type: ${output.type}`, userEmail: req.user.email, userIp: req.ip?.split(':').pop()});
+
     res.send(Buffer.from(pdfBytes));
   } catch (err) {
     error('Workspace-Service', 'Server error', { message: err.message }, req);

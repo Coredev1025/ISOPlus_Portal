@@ -119,7 +119,7 @@ export const allPdfOutputs: PDFOutput[] = [
         },
     },
     // Add more mock data for pagination
-    ...Array.from({ length: 20 }, (_, i): PDFOutput => {
+    ...Array.from({ length: 60 }, (_, i): PDFOutput => {
         const id = `pdf-${String(i + 5).padStart(3, '0')}`;
         const types = ["Purchase Order", "Invoice", "Quote", "Employee Agreement", "Contractor Agreement"];
         const type = types[Math.floor(Math.random() * types.length)];
@@ -231,20 +231,20 @@ export default function PDFOutputPage() {
                 headers: { token: getCookie("token") },
                 responseType: 'arraybuffer'
             });
-            
+
             // Create blob from array buffer
             const blob = new Blob([response.data], { type: 'application/pdf' });
-            
+
             // Create download link
             const url = window.URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
             link.download = `${output.documentName}.pdf`;
-            
+
             // Trigger download
             document.body.appendChild(link);
             link.click();
-            
+
             // Cleanup
             document.body.removeChild(link);
             window.URL.revokeObjectURL(url);
@@ -390,62 +390,52 @@ export default function PDFOutputPage() {
                                 </TableBody>
                             </Table>
 
-                            <div className="mt-4 flex justify-center">
-                                <Pagination>
-                                    <PaginationContent>
-                                        <PaginationItem>
-                                            <PaginationPrevious
-                                                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                                                className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                                            />
-                                        </PaginationItem>
-
-                                        {currentPage > 3 && (
-                                            <>
-                                                <PaginationItem>
-                                                    <PaginationLink onClick={() => setCurrentPage(1)}>
-                                                        1
-                                                    </PaginationLink>
-                                                </PaginationItem>
-                                                <PaginationItem>
-                                                    <PaginationEllipsis />
-                                                </PaginationItem>
-                                            </>
-                                        )}
-
-                                        {displayPageNumbers.map((pageNum) => (
-                                            <PaginationItem key={pageNum}>
-                                                <PaginationLink
-                                                    onClick={() => setCurrentPage(pageNum)}
-                                                    isActive={currentPage === pageNum}
-                                                >
-                                                    {pageNum}
-                                                </PaginationLink>
+                            {/* Pagination */}
+                            {totalPages > 1 && (
+                                <div className="mt-4 flex justify-center">
+                                    <Pagination>
+                                        <PaginationContent>
+                                            <PaginationItem>
+                                                <PaginationPrevious
+                                                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                                                    className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                                                />
                                             </PaginationItem>
-                                        ))}
 
-                                        {currentPage < totalPages - 2 && (
-                                            <>
-                                                <PaginationItem>
-                                                    <PaginationEllipsis />
-                                                </PaginationItem>
-                                                <PaginationItem>
-                                                    <PaginationLink onClick={() => setCurrentPage(totalPages)}>
-                                                        {totalPages}
-                                                    </PaginationLink>
-                                                </PaginationItem>
-                                            </>
-                                        )}
+                                            {Array.from({ length: totalPages }, (_, i) => i + 1)
+                                                .filter(page =>
+                                                    page === 1 ||
+                                                    page === totalPages ||
+                                                    (page >= currentPage - 1 && page <= currentPage + 1)
+                                                )
+                                                .map((page, i, arr) => (
+                                                    <div key={`pagination-${page}`} style={{display: "flex"}}>
+                                                        {i > 0 && arr[i - 1] !== page - 1 && (
+                                                            <PaginationItem>
+                                                                <PaginationEllipsis />
+                                                            </PaginationItem>
+                                                        )}
+                                                        <PaginationItem>
+                                                            <PaginationLink
+                                                                onClick={() => setCurrentPage(page)}
+                                                                isActive={currentPage === page}
+                                                            >
+                                                                {page}
+                                                            </PaginationLink>
+                                                        </PaginationItem>
+                                                    </div>
+                                                ))}
 
-                                        <PaginationItem>
-                                            <PaginationNext
-                                                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                                                className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                                            />
-                                        </PaginationItem>
-                                    </PaginationContent>
-                                </Pagination>
-                            </div>
+                                            <PaginationItem>
+                                                <PaginationNext
+                                                    onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                                                    className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                                                />
+                                            </PaginationItem>
+                                        </PaginationContent>
+                                    </Pagination>
+                                </div>
+                            )}
                         </div>
                     </Card>
                 </div>

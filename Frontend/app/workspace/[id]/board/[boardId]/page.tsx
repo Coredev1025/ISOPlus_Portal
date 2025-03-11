@@ -225,7 +225,7 @@ export default function BoardDetail() {
                             (page >= currentPage - 1 && page <= currentPage + 1)
                           )
                           .map((page, i, arr) => (
-                            <div key={`pagination-${page}`}>
+                            <div key={`pagination-${page}`} style={{display: "flex"}}>
                               {i > 0 && arr[i - 1] !== page - 1 && (
                                 <PaginationItem>
                                   <PaginationEllipsis />

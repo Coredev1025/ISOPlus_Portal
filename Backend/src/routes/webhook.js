@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import { createReadStream } from 'fs';
 import { access } from 'fs/promises';
 import axios from "axios";
+import AuditTrail from '../models/AuditTrail.js';
 
 // Get the directory name
 const __filename = fileURLToPath(import.meta.url);
@@ -26,7 +27,6 @@ router.post('/:clientID/invoice', async (req, res) => {
         }
 
         req.body.items?.map(async (item) => {
-            console.log(item)
             let logoBase64 = '';
 
             const templatePath = path.join(__dirname, '..', 'assets', `invoice.json`);
@@ -58,8 +58,11 @@ router.post('/:clientID/invoice', async (req, res) => {
             await fs.mkdir(uploadDir, { recursive: true });
             const filePath = path.join(uploadDir, filename);
             await fs.writeFile(filePath, Buffer.from(pdfBytes));
+
+            AuditTrail.insertOne({ workspaceId: clientIntegration.workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: item.values["Reporter's Email Address"] || "", userIp: req.ip?.split(':').pop() });
+
             const pdfUrl = `http://localhost:3001/api/webhook/uploads/${filename}`;
-            axios.put(`https://app.isoplus.online/api/v2/workspaces/${clientIntegration.workspaceID}/boards/${clientIntegration.boardID}/items/${item.id}`, {
+            axios.put(`https://app.isoplus.online/api/v2/workspaces/${clientIntegration.workspaceId}/boards/${clientIntegration.boardId}/items/${item.id}`, {
                 "values": [
                     {
                         "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
@@ -73,13 +76,15 @@ router.post('/:clientID/invoice', async (req, res) => {
                     "Accept": "application/json",
                     "X-API-Version": "2024-12-17.morava",
                 }
-            });       
+            });
+
+            axios.post(`http://localhost:3001/api/pdf`, { workspaceId: clientIntegration.workspaceId, itemId: item.id, type: 'Invoice', pdfLink: pdfUrl, createdBy: item.values["Reporter's Email Address"] || "", isDeleted: false, SignatureStatus: "Unsigned" })
 
             setTimeout(async () => {
                 try {
                     await fs.unlink(filePath);
                     console.log(`File ${filename} has been removed after 5 minutes.`);
-                    axios.put(`https://app.isoplus.online/api/v2/workspaces/${clientIntegration.workspaceID}/boards/${clientIntegration.boardID}/items/${item.id}`, {
+                    axios.put(`https://app.isoplus.online/api/v2/workspaces/${clientIntegration.workspaceId}/boards/${clientIntegration.boardId}/items/${item.id}`, {
                         "values": [
                             {
                                 "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
@@ -94,10 +99,12 @@ router.post('/:clientID/invoice', async (req, res) => {
                             "X-API-Version": "2024-12-17.morava",
                         }
                     });
+                    axios.put(`http://localhost:3001/api/pdf`, { workspaceId: clientIntegration.workspaceId, itemId: item.id, pdfLink: pdfUrl })
+                    AuditTrail.insertOne({ workspaceId: clientIntegration.workspaceId, action: 'Remove PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
                 } catch (err) {
                     console.error(`Error removing file ${filename}:`, err);
                 }
-            }, 5 * 60 * 1000);
+            }, 60 * 1000); // For testing purpose, let's change time to 1 min.
 
             info('Webhook-Service', 'Successfully generating PDF invoice', { link: pdfUrl }, req);
 
@@ -105,7 +112,7 @@ router.post('/:clientID/invoice', async (req, res) => {
         });
 
     } catch (err) {
-        axios.put(`https://app.isoplus.online/api/v2/workspaces/${clientIntegration.workspaceID}/boards/${clientIntegration.boardID}/items/${item.id}`, {
+        axios.put(`https://app.isoplus.online/api/v2/workspaces/${clientIntegration.workspaceId}/boards/${clientIntegration.boardId}/items/${item.id}`, {
             "values": [
                 {
                     "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
@@ -119,7 +126,7 @@ router.post('/:clientID/invoice', async (req, res) => {
                 "Accept": "application/json",
                 "X-API-Version": "2024-12-17.morava",
             }
-        });  
+        });
         error('Webhook-Service', 'Server error', { message: err.message }, req);
         res.status(500).json({ message: 'Server error' });
     }
@@ -131,7 +138,6 @@ router.get('/uploads/:filename', async (req, res) => {
         const filePath = path.join(__dirname, '../../', 'invoice', filename);
         // Check if file exists using promise-based fs
         await access(filePath);
-        console.log(filePath);
 
         // Set headers for file download
         res.setHeader('Content-Disposition', `attachment; filename=${filename}`);

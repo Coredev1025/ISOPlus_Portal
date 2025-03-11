@@ -5,6 +5,7 @@ import Business from '../models/Business.js';
 import { info, error, warn } from '../utils/logger.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import AuditTrail from '../models/AuditTrail.js';
 
 // Get the directory name
 const __filename = fileURLToPath(import.meta.url);
@@ -78,12 +79,14 @@ router.put('/profile', authenticateToken, multiupload, async (req, res) => {
         { new: true }
       );
       info('Business-Service', 'Business profile updated', { businessName: business.name }, req);
+      AuditTrail.insertOne({ workspaceId, action: 'Updated Business profile', detail: `Changed Business profile from "${JSON.stringify(business)}" to "${JSON.stringify(updateData)}"`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
     } else {
       business = new Business({
         ...updateData
       });
       await business.save();
-      info('Business-Service', 'New business profile created', { businessName: business.name }, req);
+      info('Business-Service', 'New Business profile created', { businessName: business.name }, req);
+      AuditTrail.insertOne({ workspaceId, action: 'Created new Business profile', detail: `Resourse ID: ${business._id}`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
     }
 
     res.json(business);

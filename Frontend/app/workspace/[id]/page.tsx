@@ -146,7 +146,7 @@ export default function WorkspaceDetail() {
         if (board.id === boardId) {
           await axios.put(
             `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards`,
-            { ...board, label: newLabel, boardId },
+            { ...board, label: newLabel, boardId, workspaceId: id },
             { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } }
           );
         }
