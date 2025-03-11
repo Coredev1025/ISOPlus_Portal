@@ -87,7 +87,7 @@ export default function LoginPage() {
               document.cookie = `Authorization=${event.data.accessToken}; path=/; max-age=86400; secure; samesite=strict`;
               const response = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/oauth-login`, {
                 oauthData: event.data.data
-              });
+              }, { headers: { Authorization: event.data.accessToken } });
 
               if (response.status === 200) {
                 document.cookie = `token=${response.data.token}; path=/; max-age=86400; secure; samesite=strict`;
