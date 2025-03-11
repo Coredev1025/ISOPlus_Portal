@@ -33,151 +33,8 @@ import {
 } from "@/components/ui/pagination";
 import { useState, useEffect } from "react";
 import { PDFOutput } from "./types";
-import { Template } from '@pdfme/common';
-import { generate } from '@pdfme/generator';
-import { text, image, barcodes, line, table, multiVariableText } from '@pdfme/schemas';
-import pdfTemplate from "./template.json";
 import axios from "axios";
 import { getCookie } from "@/app/utils/cookies";
-
-interface BusinessData {
-    name: string;
-    defaultLogo?: string;
-    squareLogo?: string;
-    wideLogo?: string;
-    // Add other business fields as needed
-}
-
-// Mock data for PDF outputs
-export const allPdfOutputs: PDFOutput[] = [
-    {
-        id: "pdf-001",
-        type: "Purchase Order",
-        createdAt: "2024-03-28T14:30:00Z",
-        createdBy: "John Smith",
-        signatureProvider: "DocuSign",
-        signed: true,
-        documentName: "PO-2024-001",
-        size: "1.2 MB",
-        signedAt: "2024-03-28T15:30:00Z",
-        signedBy: "Jane Doe",
-        metadata: {
-            orderNumber: "PO-2024-001",
-            vendor: "Acme Corp",
-            amount: "$5,000.00",
-        },
-    },
-    {
-        id: "pdf-002",
-        type: "Invoice",
-        createdAt: "2024-03-28T13:15:00Z",
-        createdBy: "Sarah Johnson",
-        signatureProvider: null,
-        signed: false,
-        documentName: "INV-2024-002",
-        size: "856 KB",
-        signedAt: null,
-        signedBy: null,
-        metadata: {
-            invoiceNumber: "INV-2024-002",
-            client: "Tech Solutions Inc",
-            amount: "$3,500.00",
-        },
-    },
-    {
-        id: "pdf-003",
-        type: "Quote",
-        createdAt: "2024-03-28T12:00:00Z",
-        createdBy: "Mike Brown",
-        signatureProvider: null,
-        signed: false,
-        documentName: "QT-2024-003",
-        size: "645 KB",
-        signedAt: null,
-        signedBy: null,
-        metadata: {
-            quoteNumber: "QT-2024-003",
-            client: "Global Corp",
-            amount: "$2,800.00",
-        },
-    },
-    {
-        id: "pdf-004",
-        type: "Employee Agreement",
-        createdAt: "2024-03-28T11:45:00Z",
-        createdBy: "Emma Davis",
-        signatureProvider: "PandaDoc",
-        signed: true,
-        documentName: "EA-2024-004",
-        size: "925 KB",
-        signedAt: "2024-03-28T12:30:00Z",
-        signedBy: "Robert Wilson",
-        metadata: {
-            agreementNumber: "EA-2024-004",
-            employee: "Robert Wilson",
-            position: "Senior Developer",
-        },
-    },
-    // Add more mock data for pagination
-    ...Array.from({ length: 60 }, (_, i): PDFOutput => {
-        const id = `pdf-${String(i + 5).padStart(3, '0')}`;
-        const types = ["Purchase Order", "Invoice", "Quote", "Employee Agreement", "Contractor Agreement"];
-        const type = types[Math.floor(Math.random() * types.length)];
-        const date = new Date();
-        date.setHours(date.getHours() - i);
-        const isSigned = Math.random() > 0.3;
-        const signatureProvider = isSigned ? ["DocuSign", "Adobe Sign", "PandaDoc"][Math.floor(Math.random() * 3)] : null;
-
-        return {
-            id,
-            type,
-            createdAt: date.toISOString(),
-            createdBy: ["John Smith", "Sarah Johnson", "Mike Brown", "Emma Davis"][Math.floor(Math.random() * 4)],
-            signatureProvider,
-            signed: isSigned,
-            documentName: `${type.split(' ')[0].toUpperCase()}-2024-${String(i + 5).padStart(3, '0')}`,
-            size: `${Math.floor(Math.random() * 900 + 100)} KB`,
-            signedAt: isSigned ? new Date(date.getTime() + 3600000).toISOString() : null,
-            signedBy: isSigned ? ["Jane Doe", "Mike Wilson", "Alice Brown", "Bob Smith"][Math.floor(Math.random() * 4)] : null,
-            metadata: {
-                [`${type.toLowerCase().replace(' ', '')}Number`]: `${type.split(' ')[0].toUpperCase()}-2024-${String(i + 5).padStart(3, '0')}`,
-                [Math.random() > 0.5 ? 'client' : 'vendor']: ["Acme Corp", "Tech Solutions Inc", "Global Services Ltd", "Innovation Corp"][Math.floor(Math.random() * 4)],
-                amount: `$${Math.floor(Math.random() * 9000 + 1000)}.00`,
-            },
-        };
-    }),
-];
-
-// Mock usage data
-const usageData = [
-    {
-        type: "Purchase Order",
-        totalUsage: 523,
-        currentCycle: 45,
-    },
-    {
-        type: "Invoice",
-        totalUsage: 892,
-        currentCycle: 76,
-    },
-    {
-        type: "Quote",
-        totalUsage: 234,
-        currentCycle: 21,
-    },
-    {
-        type: "Employee Agreement",
-        totalUsage: 156,
-        currentCycle: 12,
-    },
-    {
-        type: "Contractor Agreement",
-        totalUsage: 37,
-        currentCycle: 4,
-    },
-];
-
-const template: Template = { ...pdfTemplate, basePdf: { ...pdfTemplate.basePdf, padding: pdfTemplate.basePdf.padding as [number, number, number, number] } };
 
 const ITEMS_PER_PAGE = 10;
 
@@ -188,38 +45,68 @@ export default function PDFOutputPage() {
     const [basicPdfEnabled, setBasicPdfEnabled] = useState(true);
     const [selectedSignatureProvider, setSelectedSignatureProvider] = useState<string | null>("docusign");
     const [currentPage, setCurrentPage] = useState(1);
-    const [businessData, setBusinessData] = useState<BusinessData | null>(null);
+    const [allPdfOutputs, setAllPdfOutputs] = useState<PDFOutput[]>([]);
+    const usageData = [
+        {
+            type: "Purchase Order",
+            totalUsage: 523,
+            currentCycle: 45,
+        },
+        {
+            type: "Invoice",
+            totalUsage: 892,
+            currentCycle: 76,
+        },
+        {
+            type: "Quote",
+            totalUsage: 234,
+            currentCycle: 21,
+        },
+        {
+            type: "Employee Agreement",
+            totalUsage: 156,
+            currentCycle: 12,
+        },
+        {
+            type: "Contractor Agreement",
+            totalUsage: 37,
+            currentCycle: 4,
+        },
+    ];
 
-    // Add useEffect to fetch business data
     useEffect(() => {
-        const fetchBusinessData = async () => {
-            try {
-                const response = await axios.get(
-                    `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`,
-                    {
-                        headers: { token: getCookie("token") },
-                        params: { workspaceId: id }
+        const fetchingPDFOutputHistory = async () => {
+            const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf`, { headers: { token: getCookie("token") }, params: { workspaceId: id } });
+            if (response.status === 200) {
+                const result = response.data.map((item: any) => {
+                    return {
+                        id: item.itemId,
+                        type: item.type,
+                        createdAt: new Date(item.createdAt).toLocaleString('en-US', {
+                            month: 'numeric',
+                            day: 'numeric',
+                            year: 'numeric',
+                            hour: 'numeric',
+                            minute: 'numeric',
+                            second: 'numeric',
+                            hour12: true
+                        }),
+                        createdBy: item.createdBy,
+                        signatureProvider: "ISOPlus",
+                        signed: item.SignatureStatus,
+                        documentName: item.pdfLink.split('/').pop().split('.pdf')[0]
                     }
-                );
-                setBusinessData(response.data);
-            } catch (error) {
-                console.error("Failed to fetch business data:", error);
+                });
+                setAllPdfOutputs(result);
             }
-        };
-
-        fetchBusinessData();
-    }, [id]);
+        }
+        fetchingPDFOutputHistory();
+    }, []);
 
     const totalPages = Math.ceil(allPdfOutputs.length / ITEMS_PER_PAGE);
     const pdfOutputs = allPdfOutputs.slice(
         (currentPage - 1) * ITEMS_PER_PAGE,
         currentPage * ITEMS_PER_PAGE
-    );
-
-    const pageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1);
-    const displayPageNumbers = pageNumbers.slice(
-        Math.max(0, currentPage - 2),
-        Math.min(totalPages, currentPage + 1)
     );
 
     const handleGeneratePDF = async (output: PDFOutput) => {
@@ -354,9 +241,9 @@ export default function PDFOutputPage() {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {pdfOutputs.map((output) => (
+                                    {pdfOutputs.map((output, index) => (
                                         <TableRow
-                                            key={output.id}
+                                            key={index}
                                             className="cursor-pointer hover:bg-muted/50"
                                             onClick={() => router.push(`/workspace/${id}/pdf-output/${output.id}`)}
                                         >
@@ -409,7 +296,7 @@ export default function PDFOutputPage() {
                                                     (page >= currentPage - 1 && page <= currentPage + 1)
                                                 )
                                                 .map((page, i, arr) => (
-                                                    <div key={`pagination-${page}`} style={{display: "flex"}}>
+                                                    <div key={`pagination-${page}`} style={{ display: "flex" }}>
                                                         {i > 0 && arr[i - 1] !== page - 1 && (
                                                             <PaginationItem>
                                                                 <PaginationEllipsis />

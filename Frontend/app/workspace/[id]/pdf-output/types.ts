@@ -6,8 +6,8 @@ export interface PDFOutput {
   signatureProvider: string | null;
   signed: boolean;
   documentName: string;
-  size: string;
-  signedAt: string | null;
-  signedBy: string | null;
-  metadata: Record<string, string>;
+  size?: string;
+  signedAt?: string | null;
+  signedBy?: string | null;
+  metadata?: Record<string, string>;
 }

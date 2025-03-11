@@ -171,13 +171,17 @@ router.post('/generatePDF', authenticateToken, async (req, res) => {
     const business = await Business.findOne({ workspaceId });
 
     if (business?.defaultLogo) {
-      const response = await axios.get(`/api/business${business.defaultLogo}`, { responseType: 'arraybuffer' });
-      const buffer = Buffer.from(response.data, 'binary');
-      logoBase64 = `data:image/png;base64,${buffer.toString('base64')}`;
+      const response = await axios({
+        url: `http://localhost:3001/api/business${business.defaultLogo}`,
+        responseType: 'arraybuffer'
+      });
+      logoBase64 = `data:${response.headers['content-type']};base64,${Buffer.from(response.data).toString('base64')}`;
     } else {
-      const response = await axios.get(`/api/business/uploads/default-logo.png`, { responseType: 'arraybuffer' });
-      const buffer = Buffer.from(response.data, 'binary');
-      logoBase64 = `data:image/png;base64,${buffer.toString('base64')}`;
+      const response = await axios({
+        url: `http://localhost:3001/api/business/uploads/default-logo.png`,
+        responseType: 'arraybuffer'
+      });
+      logoBase64 = `data:${response.headers['content-type']};base64,${Buffer.from(response.data).toString('base64')}`;
     }
 
     const templatePath = path.join(__dirname, '..', 'assets', `invoice.json`);
