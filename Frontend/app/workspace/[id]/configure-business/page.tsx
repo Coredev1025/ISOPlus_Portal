@@ -323,15 +323,18 @@ export default function ConfigureBusinessPage() {
       });
       if (logoFile) {
         formDataToSend.append("defaultLogo", logoFile);
+        setLogoFile(null);
       }
       if (squareLogoFile) {
         formDataToSend.append("squareLogo", squareLogoFile);
+        setSquareLogoFile(null);
       }
       if (wideLogoFile) {
         formDataToSend.append("wideLogo", wideLogoFile);
+        setWideLogoFile(null);
       }
 
-      const response = await axios.put(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`, formDataToSend, {
+      await axios.put(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`, formDataToSend, {
         headers: {
           "Content-Type": "multipart/form-data",
           "token": getCookie("token")
