@@ -19,17 +19,6 @@ import axios from "axios";
 import { getCookie } from "@/app/utils/cookies";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-const AUSTRALIAN_STATES = [
-  { value: "act", label: "Australian Capital Territory" },
-  { value: "nsw", label: "New South Wales" },
-  { value: "nt", label: "Northern Territory" },
-  { value: "qld", label: "Queensland" },
-  { value: "sa", label: "South Australia" },
-  { value: "tas", label: "Tasmania" },
-  { value: "vic", label: "Victoria" },
-  { value: "wa", label: "Western Australia" },
-];
-
 export default function ConfigureBusinessPage() {
   const router = useRouter();
   const pathname = usePathname();
@@ -43,18 +32,222 @@ export default function ConfigureBusinessPage() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [showError, setShowError] = useState(false);
 
+  const countryStates: { [key: string]: string[] } = {
+    "Afghanistan": [],
+    "Albania": [],
+    "Algeria": [],
+    "Andorra": [],
+    "Angola": [],
+    "Antigua and Barbuda": [],
+    "Argentina": [],
+    "Armenia": [],
+    "Australia": ["New South Wales", "Victoria", "Queensland", "Western Australia", "South Australia", "Tasmania", "Northern Territory", "Australian Capital Territory"],
+    "Austria": [],
+    "Azerbaijan": [],
+    "Bahamas": [],
+    "Bahrain": [],
+    "Bangladesh": [],
+    "Barbados": [],
+    "Belarus": [],
+    "Belgium": [],
+    "Belize": [],
+    "Benin": [],
+    "Bhutan": [],
+    "Bolivia": [],
+    "Bosnia and Herzegovina": [],
+    "Botswana": [],
+    "Brazil": [],
+    "Brunei": [],
+    "Bulgaria": [],
+    "Burkina Faso": [],
+    "Burundi": [],
+    "Cabo Verde": [],
+    "Cambodia": [],
+    "Cameroon": [],
+    "Canada": ["Alberta", "British Columbia", "Manitoba", "New Brunswick", "Newfoundland and Labrador", "Nova Scotia", "Ontario", "Prince Edward Island", "Quebec", "Saskatchewan", "Northwest Territories", "Nunavut", "Yukon"],
+    "Central African Republic": [],
+    "Chad": [],
+    "Chile": [],
+    "China": [],
+    "Colombia": [],
+    "Comoros": [],
+    "Congo, Democratic Republic of the": [],
+    "Congo, Republic of the": [],
+    "Costa Rica": [],
+    "Croatia": [],
+    "Cuba": [],
+    "Cyprus": [],
+    "Czech Republic": [],
+    "Denmark": [],
+    "Djibouti": [],
+    "Dominica": [],
+    "Dominican Republic": [],
+    "Ecuador": [],
+    "Egypt": [],
+    "El Salvador": [],
+    "Equatorial Guinea": [],
+    "Eritrea": [],
+    "Estonia": [],
+    "Eswatini": [],
+    "Ethiopia": [],
+    "Fiji": [],
+    "Finland": [],
+    "France": [],
+    "Gabon": [],
+    "Gambia": [],
+    "Georgia": [],
+    "Germany": [],
+    "Ghana": [],
+    "Greece": [],
+    "Grenada": [],
+    "Guatemala": [],
+    "Guinea": [],
+    "Guinea-Bissau": [],
+    "Guyana": [],
+    "Haiti": [],
+    "Honduras": [],
+    "Hungary": [],
+    "Iceland": [],
+    "India": ["Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu", "Lakshadweep", "Delhi", "Puducherry", "Ladakh", "Jammu and Kashmir"],
+    "Indonesia": [],
+    "Iran": [],
+    "Iraq": [],
+    "Ireland": [],
+    "Israel": [],
+    "Italy": [],
+    "Jamaica": [],
+    "Japan": [],
+    "Jordan": [],
+    "Kazakhstan": [],
+    "Kenya": [],
+    "Kiribati": [],
+    "Korea, North": [],
+    "Korea, South": [],
+    "Kosovo": [],
+    "Kuwait": [],
+    "Kyrgyzstan": [],
+    "Laos": [],
+    "Latvia": [],
+    "Lebanon": [],
+    "Lesotho": [],
+    "Liberia": [],
+    "Libya": [],
+    "Liechtenstein": [],
+    "Lithuania": [],
+    "Luxembourg": [],
+    "Madagascar": [],
+    "Malawi": [],
+    "Malaysia": [],
+    "Maldives": [],
+    "Mali": [],
+    "Malta": [],
+    "Marshall Islands": [],
+    "Mauritania": [],
+    "Mauritius": [],
+    "Mexico": [],
+    "Micronesia": [],
+    "Moldova": [],
+    "Monaco": [],
+    "Mongolia": [],
+    "Montenegro": [],
+    "Morocco": [],
+    "Mozambique": [],
+    "Myanmar": [],
+    "Namibia": [],
+    "Nauru": [],
+    "Nepal": [],
+    "Netherlands": [],
+    "New Zealand": [],
+    "Nicaragua": [],
+    "Niger": [],
+    "Nigeria": [],
+    "North Macedonia": [],
+    "Norway": [],
+    "Oman": [],
+    "Pakistan": ["Balochistan", "Khyber Pakhtunkhwa", "Punjab", "Sindh", "Islamabad Capital Territory", "Gilgit-Baltistan", "Azad Jammu and Kashmir"],
+    "Palau": [],
+    "Palestine": [],
+    "Panama": [],
+    "Papua New Guinea": [],
+    "Paraguay": [],
+    "Peru": [],
+    "Philippines": [],
+    "Poland": [],
+    "Portugal": [],
+    "Qatar": [],
+    "Romania": [],
+    "Russia": [],
+    "Rwanda": [],
+    "Saint Kitts and Nevis": [],
+    "Saint Lucia": [],
+    "Saint Vincent and the Grenadines": [],
+    "Samoa": [],
+    "San Marino": [],
+    "Sao Tome and Principe": [],
+    "Saudi Arabia": [],
+    "Senegal": [],
+    "Serbia": [],
+    "Seychelles": [],
+    "Sierra Leone": [],
+    "Singapore": [],
+    "Slovakia": [],
+    "Slovenia": [],
+    "Solomon Islands": [],
+    "Somalia": [],
+    "South Africa": [],
+    "South Sudan": [],
+    "Spain": [],
+    "Sri Lanka": [],
+    "Sudan": [],
+    "Suriname": [],
+    "Sweden": [],
+    "Switzerland": [],
+    "Syria": [],
+    "Taiwan": [],
+    "Tajikistan": [],
+    "Tanzania": [],
+    "Thailand": [],
+    "Timor-Leste": [],
+    "Togo": [],
+    "Tonga": [],
+    "Trinidad and Tobago": [],
+    "Tunisia": [],
+    "Turkey": [],
+    "Turkmenistan": [],
+    "Tuvalu": [],
+    "Uganda": [],
+    "Ukraine": [],
+    "United Arab Emirates": ["Abu Dhabi", "Dubai", "Sharjah", "Ajman", "Umm Al Quwain", "Ras Al Khaimah and Fujairah"],
+    "United Kingdom": ["England", "Scotland", "Wales", "Northern Ireland"],
+    "United States": ["Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware", "Florida", "Georgia", "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky", "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota", "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire", "New Jersey", "New Mexico", "New York", "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah", "Vermont", "Virginia", "Washington", "West Virginia", "Wisconsin", "Wyoming"],
+    "Uruguay": [],
+    "Uzbekistan": [],
+    "Vanuatu": [],
+    "Vatican City": [],
+    "Venezuela": [],
+    "Vietnam": [],
+    "Yemen": [],
+    "Zambia": [],
+    "Zimbabwe": []
+  };
+
   const [formData, setFormData] = useState({
     name: "",
     phone: "",
     email: "",
-    street1: "",
-    street2: "",
-    city: "",
+    street: "",
+    country: "",
+    suburb: "",
     state: "",
     postcode: "",
     abn: "",
     acn: "",
     workspaceId: id,
+    bankAccountName: "",
+    bankName: "",
+    bsb: "",
+    accountNumber: "",
+    paymentReference: "",
   });
 
   useEffect(() => {
@@ -67,14 +260,19 @@ export default function ConfigureBusinessPage() {
           name: data.name || "",
           phone: data.phone || "",
           email: data.email || "",
-          street1: data.address?.street1 || "",
-          street2: data.address?.street2 || "",
-          city: data.address?.city || "",
+          street: data.address?.street || "",
+          country: data.address?.country || "",
+          suburb: data.address?.suburb || "",
           state: data.address?.state || "",
           postcode: data.address?.postcode || "",
           abn: data.abn || "",
           acn: data.acn || "",
-          workspaceId: id
+          workspaceId: id,
+          bankAccountName: data.bankDetails.accountName || "",
+          bankName: data.bankDetails.bankName || "",
+          bsb: data.bankDetails.bsb || "",
+          accountNumber: data.bankDetails.accountNumber || "",
+          paymentReference: data.bankDetails.paymentReference || "",
         });
         if (data.defaultLogo) {
           setDefaultLogoPreview(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business${data.defaultLogo}`);
@@ -328,30 +526,44 @@ export default function ConfigureBusinessPage() {
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold">Business Address</h3>
                 <div className="space-y-2">
-                  <Label htmlFor="street1">Street Address 1</Label>
-                  <Input
-                    id="street1"
-                    placeholder="Enter street address"
-                    value={formData.street1}
-                    onChange={handleInputChange}
-                  />
+                  <Label htmlFor="country">Country</Label>
+                  <Select
+                    value={formData.country}
+                    onValueChange={(value) =>
+                      setFormData((prevData) => ({
+                        ...prevData,
+                        country: value,
+                      }))
+                    }
+                  >
+                    <SelectTrigger id="country">
+                      <SelectValue placeholder="Select country" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.keys(countryStates).map((country) => (
+                        <SelectItem key={country} value={country}>
+                          {country}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="street2">Street Address 2</Label>
+                  <Label htmlFor="street">Street Address</Label>
                   <Input
-                    id="street2"
-                    placeholder="Enter additional address details (optional)"
-                    value={formData.street2}
+                    id="street"
+                    placeholder="Enter street address"
+                    value={formData.street}
                     onChange={handleInputChange}
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="city">City</Label>
+                    <Label htmlFor="suburb">Suburb</Label>
                     <Input
-                      id="city"
+                      id="suburb"
                       placeholder="Enter city"
-                      value={formData.city}
+                      value={formData.suburb}
                       onChange={handleInputChange}
                     />
                   </div>
@@ -370,9 +582,9 @@ export default function ConfigureBusinessPage() {
                         <SelectValue placeholder="Select state" />
                       </SelectTrigger>
                       <SelectContent>
-                        {AUSTRALIAN_STATES.map((state) => (
-                          <SelectItem key={state.value} value={state.value}>
-                            {state.label}
+                        {countryStates[formData.country]?.map((state: string) => (
+                          <SelectItem key={state} value={state}>
+                            {state}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -380,11 +592,11 @@ export default function ConfigureBusinessPage() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="postcode">Post Code</Label>
+                  <Label htmlFor="postcode">Postcode</Label>
                   <Input
                     id="postcode"
-                    placeholder="Enter post code"
-                    maxLength={4}
+                    placeholder="Enter postcode"
+                    maxLength={8}
                     value={formData.postcode}
                     onChange={handleInputChange}
                   />
@@ -413,6 +625,56 @@ export default function ConfigureBusinessPage() {
                     onChange={handleInputChange}
                   />
                 </div>
+              </div>
+            </div>
+
+            {/* Bank Details */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold">Bank Details</h3>
+              <div className="space-y-2">
+                <Label htmlFor="bankAccountName">Account Name</Label>
+                <Input
+                  id="bankAccountName"
+                  placeholder="Enter account name"
+                  value={formData.bankAccountName}
+                  onChange={handleInputChange}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bankName">Bank Name</Label>
+                <Input
+                  id="bankName"
+                  placeholder="Enter bank name"
+                  value={formData.bankName}
+                  onChange={handleInputChange}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bsb">BSB</Label>
+                <Input
+                  id="bsb"
+                  placeholder="Enter BSB"
+                  value={formData.bsb}
+                  onChange={handleInputChange}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="accountNumber">Account Number</Label>
+                <Input
+                  id="accountNumber"
+                  placeholder="Enter account number"
+                  value={formData.accountNumber}
+                  onChange={handleInputChange}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="paymentReference">Payment Reference</Label>
+                <Input
+                  id="paymentReference"
+                  placeholder="Enter payment reference (optional)"
+                  value={formData.paymentReference}
+                  onChange={handleInputChange}
+                />
               </div>
             </div>
 

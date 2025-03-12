@@ -50,15 +50,15 @@ router.get('/profile', authenticateToken, async (req, res) => {
 
 router.put('/profile', authenticateToken, multiupload, async (req, res) => {
   try {
-    const { name, phone, email, abn, acn, state, city, postcode, street1, street2, workspaceId } = req.body;
+    const { name, phone, email, abn, acn, state, suburb, country, postcode, street, workspaceId, bankAccountName, bankName, bsb, accountNumber, paymentReference } = req.body;
     let business = await Business.findOne({ workspaceId });
 
     const updateData = {
       name,
       address: {
-        street1,
-        street2,
-        city,
+        street,
+        country,
+        suburb,
         state,
         postcode
       },
@@ -67,6 +67,13 @@ router.put('/profile', authenticateToken, multiupload, async (req, res) => {
       abn,
       acn,
       workspaceId,
+      bankDetails: {
+        accountName: bankAccountName,
+        bankName,
+        bsb,
+        accountNumber,
+        paymentReference
+      },
       ...(req.files['defaultLogo'] && { defaultLogo: `/uploads/${req.files['defaultLogo'][0].filename}` }),
       ...(req.files['squareLogo'] && { squareLogo: `/uploads/${req.files['squareLogo'][0].filename}` }),
       ...(req.files['wideLogo'] && { wideLogo: `/uploads/${req.files['wideLogo'][0].filename}` })

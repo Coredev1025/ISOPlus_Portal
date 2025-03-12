@@ -20,14 +20,15 @@ const businessSchema = new mongoose.Schema({
     type: String
   },
   address: {
-    street1: {
+    street: {
       type: String,
       required: true
     },
-    street2: {
-      type: String
+    country: {
+      type: String,
+      required: true
     },
-    city: {
+    suburb: {
       type: String,
       required: true
     },
@@ -62,6 +63,27 @@ const businessSchema = new mongoose.Schema({
     accessToken: String,
     refreshToken: String,
     expiresAt: Date
+  },
+  bankDetails: {
+    accountName: {
+      type: String,
+      required: true
+    },
+    bankName: {
+      type: String,
+      required: true
+    },
+    bsb: {
+      type: String,
+      required: true
+    },
+    accountNumber: {
+      type: String,
+      required: true
+    },
+    paymentReference: {
+      type: String
+    }
   }
 });
 

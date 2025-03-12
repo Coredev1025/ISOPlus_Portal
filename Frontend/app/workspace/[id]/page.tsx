@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/table";
 import { useEffect, useState } from "react";
 import { Header } from "@/components/ui/header";
-import { useAppContext, Board } from "@/app/context";
+import { useAppContext } from "@/app/context";
 import axios from "axios";
 import { getCookie } from "@/app/utils/cookies";
 import Spinner from "@/components/ui/spin";
@@ -43,7 +43,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-type BoardLabel = 'Job Management' | 'Care Management' | null;
+interface Board {
+  id: string;
+  name: string;
+  label: string
+}
+
+type BoardLabel = 'Job Management' | 'Care Management' | 'None';
 
 const BOARD_LABELS: NonNullable<BoardLabel>[] = [
   'Job Management',
@@ -52,7 +58,8 @@ const BOARD_LABELS: NonNullable<BoardLabel>[] = [
 
 const LABEL_COLORS: Record<NonNullable<BoardLabel>, string> = {
   'Job Management': 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300',
-  'Care Management': 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300'
+  'Care Management': 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300',
+  'None': 'bg-teal-100 text-teal-800 dark:bg-lightgray-900 dark:text-lightgray-300',
 };
 
 interface SuggestionDialogProps {
@@ -87,10 +94,11 @@ function SuggestionDialog({ isOpen, onClose, onConfirm, suggestion, reason }: Su
 export default function WorkspaceDetail() {
   const router = useRouter();
   const pathname = usePathname();
-  const { workspaces, boards, setBoards } = useAppContext();
+  const { workspaces } = useAppContext();
   
   const id = pathname.split('/').pop();
   const workspace = workspaces.find(workspace => workspace.id.toString() === id);
+  const [boards, setBoards] = useState<Board[]>([]);
   const [loadingBoards, setLoadingBoards] = useState<boolean>(false); // Loading state for boards
   const [suggestionDialog, setSuggestionDialog] = useState<{
     isOpen: boolean;
@@ -100,7 +108,7 @@ export default function WorkspaceDetail() {
   }>({
     isOpen: false,
     boardId: '',
-    suggestion: null,
+    suggestion: 'None',
     reason: ''
   });
 
@@ -161,7 +169,7 @@ export default function WorkspaceDetail() {
     if (!board) return;
 
     const name = board.name.toLowerCase();
-    let suggestion: BoardLabel = null;
+    let suggestion: BoardLabel = 'None';
     let reason = '';
 
     if (name.includes('job management')) {
@@ -342,7 +350,7 @@ export default function WorkspaceDetail() {
                           <TableCell>
                             <Select
                               value={board.label || ""}
-                              onValueChange={(value) => handleLabelChange(board.id.toString(), value === "" ? null : value as BoardLabel)}
+                              onValueChange={(value) => handleLabelChange(board.id.toString(), value === "" ? "None" : value as BoardLabel)}
                             >
                               <SelectTrigger className="w-[200px]">
                                 <SelectValue>

@@ -59,7 +59,7 @@ router.put('/', authenticateToken, async (req, res) => {
         } else {
             const updatedBoard = await Board.findOne({ boardId: req.body.boardId });
             info('Board-Service', 'Board updated', { boardId: req.body.boardId, label: req.body.label }, req);
-            AuditTrail.insertOne({ workspaceId: req.body.workspaceId, action: 'Updated Board', detail: `Changed Board Label from "${existingBoard.label}" to "${req.body.label}"`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
+            AuditTrail.insertOne({ workspaceId: req.body.workspaceId, action: 'Updated Board', detail: `Changed Board Label from "${existingBoard?.label || ''}" to "${req.body.label}"`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
             res.status(200).json({ board: updatedBoard });
         }
     } catch (err) {

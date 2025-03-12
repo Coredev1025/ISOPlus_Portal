@@ -254,7 +254,7 @@ const generateAutomationURL = async (token, authorization) => {
           //   "url": `${process.env.HTTPS_URL}/api/webhook/${workspaceData.id}/${boardData.id}/invoice`,
           //   "events": [
           //     {
-          //       "event": "comment.created"
+          //       "event": "item.created"
           //     }
           //   ]
           // }, {
@@ -265,7 +265,7 @@ const generateAutomationURL = async (token, authorization) => {
           //     "X-API-Version": "2025-02-26.morava",
           //   }
           // })
-          const result = await axios.post(`https://app.isoplus.online/api/v2/workspaces/${workspaceData.id}/boards/${boardData.id}/hooks`, {
+          const result = await axios.get(`https://app.isoplus.online/api/v2/workspaces/${workspaceData.id}/boards/${boardData.id}/hooks`, {
             headers: {
               "Authorization": authorization,
               "Content-Type": "application/json",
@@ -275,7 +275,7 @@ const generateAutomationURL = async (token, authorization) => {
               "expand[0]": "logs",
             }
           });
-          console.log(result);
+          console.log(result.data.data);
         })
       })
     }

@@ -11,7 +11,7 @@ import { useEffect } from "react";
 
 export function Header() {
   const router = useRouter();
-  const { user, setUser, setBoards, setWorkspaces } = useAppContext();
+  const { user, setUser, setWorkspaces } = useAppContext();
 
   useEffect(() => {
     const checkToken = async () => {
@@ -32,7 +32,6 @@ export function Header() {
               role: "user"
             });
             setWorkspaces([]);
-            setBoards([]);
             router.push("/");
           }
         } catch (error) {
@@ -58,7 +57,6 @@ export function Header() {
       role: "user"
     });
     setWorkspaces([]);
-    setBoards([]);
     router.push("/");
   };
 
