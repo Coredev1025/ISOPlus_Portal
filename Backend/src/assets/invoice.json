@@ -296,7 +296,7 @@
             },
             {
                 "type": "text",
-                "content": "{orders.reduce((sum, item) => sum + parseFloat(item[1] || 0) * parseFloat(item[2] || 0), 0)}",
+                "content": "{orders.reduce((sum, item) => sum + parseFloat(item[3] || 0) * parseFloat(item[2] || 0), 0)}",
                 "position": {
                     "x": 159.05,
                     "y": 194.8
@@ -358,7 +358,7 @@
             },
             {
                 "type": "text",
-                "content": "{Number(subtotal) * Number(taxInput.rate) / 100}",
+                "content": "{Number(subtotal) * Number(gstInput.rate) / 100}",
                 "position": {
                     "x": 159.05,
                     "y": 202.68
@@ -423,7 +423,7 @@
             },
             {
                 "type": "text",
-                "content": "${Number(subtotal) + Number(tax)}",
+                "content": "${Number(subtotal) + Number(gst)}",
                 "position": {
                     "x": 160.37,
                     "y": 214.19
@@ -450,9 +450,9 @@
                 }
             },
             {
-                "name": "Due date",
+                "name": "dueDate",
                 "type": "multiVariableText",
-                "content": "{\"Due Date\":\"DUE DATE\"}",
+                "content": "{\"Date\":\"23/02/2025\"}",
                 "position": {
                     "x": 126.36,
                     "y": 225.63
@@ -471,14 +471,14 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": false,
-                "text": "Due Date: {Due Date}",
+                "text": "Due Date: {Date}",
                 "variables": [
-                    "Due Date"
+                    "Date"
                 ],
                 "required": false
             },
             {
-                "name": "Bank Details",
+                "name": "bankDetails",
                 "type": "multiVariableText",
                 "content": "{\"Account Name\":\"ACCOUNT NAME\",\"Bank Name\":\"BANK NAME\",\"BSB\":\"BSB\",\"Account Number\":\"ACCOUNT NUMBER\",\"invoice Number\":\"INVOICE NUMBER\"}",
                 "position": {

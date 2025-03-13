@@ -45,8 +45,6 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 const dueDate = new Date();
                 dueDate.setDate(dueDate.getDate() + 7);
 
-                console.log(dueDate.toLocaleString())
-
                 const invoiceCnt = await AuditTrail.find({ workspaceId: workspaceId, action: 'Generate new PDF Link' }).countDocuments();
                 const invoiceNumber = "INV-" + invoiceCnt.toString();
                 //job planning: C77gZ1sVCC1 client: jayDw6aiceU
@@ -210,10 +208,10 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                             invoiceDetails: `{"Date":"${new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}","Invoice Number":"${invoiceNumber}"}`,
                             companyName: `{"Company Name":"${business.name}"}`,
                             companyDetails: `{"ABN":"${business.abn}","Street Address":"${business.address.street}","Suburb":"${business.address.suburb}","State":"${business.address.state}","Postcode":"${business.address.postcode}","Country":"${business.address.country}"}`,
-                            orders: `[["${index + 1}","${item.values["Undertaken Tasks Decription"]}","1","${item.values["Job Duration (Hrs.)"]}","${item.values["Total Invoiced Fee($) - GST Excl."]}",""],["","","","","",""],["","","","","",""],["","","","","",""],["","","","","",""]]`,
+                            orders: `[["${index + 1}","${item.values["Undertaken Tasks Decription"]}","1","${item.values["Job Duration (Hrs.)"]}","${item.values["Total Invoiced Fee($) - GST Excl."]}","${item.values["Job Duration (Hrs.)"]}"]]`,
                             gstInput: `{"rate":"${item.values["Total Invoiced Fee($) - GST Excl."]}"}`,
-                            DueDate: `{"Due Date":"${dueDate.toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
-                            BankDetails: `{"Account Name":"${business.bankDetails.accountName}","Bank Name":"${business.bankDetails.bankName}","BSB":"${business.bankDetails.bsb}","Account Number":"${business.bankDetails.accountNumber}","invoice Number":"${business.bankDetails.paymentReference}"}`
+                            dueDate: `{"Date":"${dueDate.toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
+                            bankDetails: `{"Account Name":"${business.bankDetails.accountName}","Bank Name":"${business.bankDetails.bankName}","BSB":"${business.bankDetails.bsb}","Account Number":"${business.bankDetails.accountNumber}","invoice Number":"${business.bankDetails.paymentReference}"}`
                         }
                     ],
                     plugins: {
