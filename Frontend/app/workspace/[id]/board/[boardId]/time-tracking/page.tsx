@@ -4,20 +4,58 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ArrowLeft, Clock } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Header } from "@/components/ui/header";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useAppContext } from "@/app/context";
+import axios from "axios";
+import { getCookie } from "@/app/utils/cookies";
+
+interface Board {
+  id: string;
+  name: string;
+  label: string
+}
 
 export default function TimeTrackingPage() {
   const router = useRouter();
   const pathname = usePathname();
+  const [boards, setBoards] = useState<Board[]>([]);
+  const [loadingBoards, setLoadingBoards] = useState(false);
   const [timeTrackingEnabled, setTimeTrackingEnabled] = useState(false);
-  const { workspaces, boards } = useAppContext();
+  const { workspaces } = useAppContext();
   const id = pathname.split("/")[2];
   const boardId = pathname.split("/")[4];
-  
+
+  useEffect(() => {
+    if (boards.length === 0)
+      getBoards();
+  }, []);
+
+  const getBoards = async () => {
+    setLoadingBoards(true);
+    try {
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
+      const data: Board[] = await Promise.all(
+        response.data.board.map(async (board: any) => {
+          try {
+            const boardResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
+            return { ...board, label: boardResponse.data.board.label };
+          } catch (error) {
+            console.error("Error fetching board:", error);
+            return { ...board, label: null };
+          }
+        })
+      );
+      setBoards(data);
+    } catch (error) {
+      console.error("Error fetching boards:", error);
+    } finally {
+      setLoadingBoards(false);
+    }
+  }
+
   const workspace = workspaces.find(workspace => workspace.id.toString() === id);
   const board = boards.find(b => b.id === boardId);
 

@@ -5,15 +5,46 @@ import { Card } from "@/components/ui/card";
 import { ArrowLeft, Download } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
-import { useEffect } from "react";
-import { allPdfOutputs } from "../page";
+import { useEffect, useState } from "react";
 import { PDFOutput } from "../types";
+import axios from "axios";
+import { getCookie } from "@/app/utils/cookies";
 
 export default function PDFOutputDetailPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const id =  pathname.split('/')[2];
+  const id = pathname.split('/')[2];
+  const [allPdfOutputs, setAllPdfOutputs] = useState<PDFOutput[]>([]);
   const output = allPdfOutputs.find(output => output.id === `pdf-${id}`);
+
+  useEffect(() => {
+    const fetchingPDFOutputHistory = async () => {
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf`, { headers: { token: getCookie("token") }, params: { workspaceId: id } });
+      if (response.status === 200) {
+        const result = response.data.map((item: any) => {
+          return {
+            id: item.itemId,
+            type: item.type,
+            createdAt: new Date(item.createdAt).toLocaleString('en-US', {
+              month: 'numeric',
+              day: 'numeric',
+              year: 'numeric',
+              hour: 'numeric',
+              minute: 'numeric',
+              second: 'numeric',
+              hour12: true
+            }),
+            createdBy: item.createdBy,
+            signatureProvider: "ISOPlus",
+            signed: item.SignatureStatus,
+            documentName: item.pdfLink.split('/').pop().split('.pdf')[0]
+          }
+        });
+        setAllPdfOutputs(result);
+      }
+    }
+    fetchingPDFOutputHistory();
+  }, []);
 
   useEffect(() => {
     if (!output) {
@@ -87,7 +118,7 @@ export default function PDFOutputDetailPage() {
                 </div>
               </div>
 
-              <div>
+              {/* <div>
                 <h3 className="text-sm font-medium text-muted-foreground mb-2">Document Details</h3>
                 <dl className="space-y-2">
                   {Object.entries(output.metadata).map(([key, value]) => (
@@ -99,7 +130,7 @@ export default function PDFOutputDetailPage() {
                     </div>
                   ))}
                 </dl>
-              </div>
+              </div> */}
             </div>
           </Card>
         </div>
