@@ -203,7 +203,7 @@
                     11.39471996803448,
                     30.98644514990506,
                     16.571040764413386,
-                    12.444852941176498,
+                    15.444852941176498,
                     11.838235294117641,
                     16.764705882352942
                 ],
@@ -358,7 +358,7 @@
             },
             {
                 "type": "text",
-                "content": "{Number(subtotal) * Number(gstInput.rate) / 100}",
+                "content": "{(Number(subtotal) * Number(gstInput.rate) / 100).toFixed(2)}",
                 "position": {
                     "x": 159.05,
                     "y": 202.68
@@ -423,7 +423,7 @@
             },
             {
                 "type": "text",
-                "content": "${Number(subtotal) + Number(gst)}",
+                "content": "{(Number(subtotal) + Number((Number(subtotal) * Number(gstInput.rate) / 100).toFixed(2))).toFixed(2)}",
                 "position": {
                     "x": 160.37,
                     "y": 214.19
