@@ -323,13 +323,12 @@
                 }
             },
             {
-                "type": "multiVariableText",
+                "type": "text",
                 "position": {
                     "x": 118.99,
                     "y": 202.68
                 },
-                "name": "gstInput",
-                "content": "{\"rate\":\"10\"}",
+                "content": "GST",
                 "width": 40.2,
                 "height": 9.18,
                 "rotate": 0,
@@ -343,22 +342,13 @@
                 "opacity": 1,
                 "strikethrough": false,
                 "underline": false,
-                "readOnly": false,
-                "text": "GST ({rate}%)",
-                "variables": [
-                    "rate"
-                ],
-                "required": false,
-                "dynamicFontSize": {
-                    "min": 4,
-                    "max": 13,
-                    "fit": "vertical"
-                },
-                "fontName": ""
+                "readOnly": true,
+                "fontName": "",
+                "name": "gstInput"
             },
             {
                 "type": "text",
-                "content": "{(Number(subtotal) * Number(gstInput.rate) / 100).toFixed(2)}",
+                "content": "{(orders.reduce((sum, item) => sum + parseFloat(item[2] || 0) * parseFloat(item[3] || 0) * parseFloat(item[4] || 0), 0) / 100).toFixed(2)}",
                 "position": {
                     "x": 159.05,
                     "y": 202.68
@@ -423,7 +413,7 @@
             },
             {
                 "type": "text",
-                "content": "{(Number(subtotal) + Number((Number(subtotal) * Number(gstInput.rate) / 100).toFixed(2))).toFixed(2)}",
+                "content": "{(Number(subtotal) + Number(gst)).toFixed(2)}",
                 "position": {
                     "x": 160.37,
                     "y": 214.19

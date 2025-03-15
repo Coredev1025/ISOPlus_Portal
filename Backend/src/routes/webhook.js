@@ -296,8 +296,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                             invoiceDetails: `{"Date":"${new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}","Invoice Number":"${invoiceNumber}"}`,
                             companyName: `{"Company Name":"${business.name}"}`,
                             companyDetails: `{"ABN":"${business.abn}","Street Address":"${business.address.street}","Suburb":"${business.address.suburb}","State":"${business.address.state}","Postcode":"${business.address.postcode}","Country":"${business.address.country}"}`,
-                            orders: invoiceDescription, //`[["${index + 1}","${invoiceDescription}","1","${item.values["Job Duration (Hrs.)"]}","${item.values["Total Invoiced Fee($) - GST Excl."]}","${item.values["Job Duration (Hrs.)"]}"]]`,
-                            gstInput: `{"rate":"${item.values["Total Invoiced Fee($) - GST Excl."]}"}`,
+                            orders: invoiceDescription, 
                             dueDate: `{"Date":"${dueDate.toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
                             bankDetails: `{"Account Name":"${business.bankDetails.accountName}","Bank Name":"${business.bankDetails.bankName}","BSB":"${business.bankDetails.bsb}","Account Number":"${business.bankDetails.accountNumber}","invoice Number":"${business.bankDetails.paymentReference}"}`
                         }
