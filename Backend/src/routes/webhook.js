@@ -317,7 +317,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 const filePath = path.join(uploadDir, filename);
                 await fs.writeFile(filePath, Buffer.from(pdfBytes));
 
-                AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: item.values["Reporter's Email Address"] || "", userIp: req.ip?.split(':').pop() });
+                AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
 
                 const pdfUrl = `http://localhost:3001/api/webhook/uploads/${filename}`;
                 axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
@@ -336,7 +336,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                     }
                 });
 
-                axios.post(`http://localhost:3001/api/pdf`, { workspaceId: workspaceId, itemId: item.id, type: 'Invoice', pdfLink: pdfUrl, createdBy: item.values["Reporter's Email Address"] || "", isDeleted: false, SignatureStatus: "Unsigned" })
+                axios.post(`http://localhost:3001/api/pdf`, { workspaceId: workspaceId, itemId: item.id, type: 'Invoice', pdfLink: pdfUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" })
 
                 setTimeout(async () => {
                     try {
@@ -400,7 +400,6 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     if (req.body.items.length) {
         try {
             req.body.items?.map(async (item, index) => {
-                console.log(item.values)
                 axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
                     "values": [
                         {
@@ -478,6 +477,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 }
 
                 let contractorReference = {
+                    Contractor: "",
                     ContactPersonsFirstName: "",
                     ContactPersonsLastName: "",
                     Address: "",
@@ -487,6 +487,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                     PhoneNumber: ""
                 };
                 for (const con of contractor) {
+
                     const attrContractor = con.values.find(item => item.attribute.name === "Contractor");
                     const attrContactPersonsFirstName = con.values.find(item => item.attribute.name === "Contact Person's First Name");
                     const attrContactPersonsLastName = con.values.find(item => item.attribute.name === "Contact Person's Last Name");
@@ -496,42 +497,58 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                     const attrPostcode = con.values.find(item => item.attribute.name === "Postcode");
                     const attrPhoneNumber = con.values.find(item => item.attribute.name === "Phone Number");
 
-                    if (attrContractor && attrContractor.data === item.values["Client's Order Number"][0]) {
+                    if (attrContractor && attrContractor.data === item.values["Contractor"][0]) {
+                        const stateLabel = attrState.attribute.settings.labels.find(item => item.id === attrState.data[0]);
+
                         contractorReference = {
-                            ContactPersonsFirstName: attrContactPersonsFirstName,
-                            ContactPersonsLastName: attrContactPersonsLastName,
-                            Address: attrAddress,
-                            Suburb: attrSuburb,
-                            State: attrState,
-                            Postcode: attrPostcode,
-                            PhoneNumber: attrPhoneNumber
+                            Contractor: attrContractor.data,
+                            ContactPersonsFirstName: attrContactPersonsFirstName.data,
+                            ContactPersonsLastName: attrContactPersonsLastName.data,
+                            Address: attrAddress.data,
+                            Suburb: attrSuburb.data,
+                            State: stateLabel.name,
+                            Postcode: attrPostcode.data,
+                            PhoneNumber: attrPhoneNumber.data
                         };
                         break;
                     }
                 }
 
-                if (!contractorReference) {
+                if (!contractorReference.Contractor) {
                     throw new Error('Contract not found for the given contract name');
+                }
+
+                const inputs = {
+                    issueDate: `{"IssueDate": "${purchaseOrderValues['Issue Date'] && new Date(purchaseOrderValues['Issue Date']).toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
+                    deliveryDate: `{"DeliveryDate": "${purchaseOrderValues['Delivery Date']?.toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
+                    purchaseOrderNumber: `{"PurchaseOrderNumber": "${purchaseOrderValues['PO Number']}"}`,
+                    LineItems: `[[
+                        "${purchaseOrderValues['Job Type'][0]}",
+                        "${purchaseOrderValues['Job Title']}${purchaseOrderValues['Job Description'].replace(/<.*?>/g, "") ? ` - ${purchaseOrderValues['Job Description'].replace(/<.*?>/g, "")}` : ''}",
+                        "${purchaseOrderValues.Quantity || 1}",
+                        "${purchaseOrderValues['Unit Price($) - GST Excl.'] || 1}",
+                        "${purchaseOrderValues['Total Price($) - GST Excl.'] || 1}"
+                    ]]`,
+                    attentionTo: `{"AttentionTo": "${contractorReference.ContactPersonsFirstName} ${contractorReference.ContactPersonsLastName}"}`,
+                    deliveryAddress: `{"DeliveryAddress": "${contractorReference.Address} ${contractorReference.Suburb} ${contractorReference.State} ${contractorReference.Postcode}"}`,
+                    telephone: `{"Telephone": "${contractorReference.PhoneNumber}"}`
+                };
+
+                if (!purchaseOrderValues['Issue Date']) {
+                    delete inputs.issueDate;
+                }
+
+                if (!purchaseOrderValues['Delivery Date']) {
+                    delete inputs.deliveryDate;
+                }
+
+                if (!purchaseOrderValues['Delivery Date']) {
+                    delete inputs.deliveryDate;
                 }
 
                 const pdfBytes = await generate({
                     template: template,
-                    inputs: [
-                        {
-                            Date: `{"IssueDate": "${purchaseOrderValues.IssueDate ? new Date(purchaseOrderValues.IssueDate).toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
-                            DeliveryDate: `{"DeliveryDate": "${purchaseOrderValues['Delivery Date'] ? new Date(purchaseOrderValues['Delivery Date']).toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
-                            PurchaseOrderNumber: `{"PurchaseOrderNumber": "${purchaseOrderValues['PO Number']}"}`,
-                            LineItems: `[{
-                                "ItemCode": "${purchaseOrderValues['Job Type'][0]}",
-                                "Description": "${purchaseOrderValues['Job Title']} - ${purchaseOrderValues['Job Description'].replace(/<.*?>/g, "")}",
-                                "Quantity": "${purchaseOrderValues.Quantity || 1}",
-                                "UnitAmount": "${purchaseOrderValues['Unit Price($) - GST Excl.'] || 1}"
-                            }]`,
-                            AttentionTo: `{"AttentionTo": "${contractorReference.ContactPersonsFirstName} ${contractorReference.ContactPersonsLastName}"}`,
-                            DeliveryAddress: `{"DeliveryAddress": "${contractorReference.Address} ${contractorReference.Suburb} ${contractorReference.State} ${contractorReference.Postcode}"}`,
-                            Telephone: `{"Telephone": "${contractorReference.PhoneNumber}"}`
-                        }
-                    ],
+                    inputs: [inputs],
                     plugins: {
                         text,
                         image,
@@ -541,21 +558,21 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                     }
                 });
 
-                const filename = `invoice_${Date.now()}.pdf`;
-                const uploadDir = path.join(__dirname, '../../', 'invoice');
+                const filename = `purchase_${Date.now()}.pdf`;
+                const uploadDir = path.join(__dirname, '../../', 'purchase');
 
                 await fs.mkdir(uploadDir, { recursive: true });
                 const filePath = path.join(uploadDir, filename);
                 await fs.writeFile(filePath, Buffer.from(pdfBytes));
 
-                AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: item.values["Reporter's Email Address"] || "", userIp: req.ip?.split(':').pop() });
+                AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
 
                 const pdfUrl = `http://localhost:3001/api/webhook/uploads/${filename}`;
                 axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
                     "values": [
                         {
                             "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
-                            "data": `<p>Your invoice successfully created. <br> Click <a href="${pdfUrl}">here</a></p>`
+                            "data": `<p>Your purchase order successfully created. <br> Click <a href="${pdfUrl}">here</a></p>`
                         }
                     ],
                 }, {
@@ -567,7 +584,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                     }
                 });
 
-                axios.post(`http://localhost:3001/api/pdf`, { workspaceId: workspaceId, itemId: item.id, type: 'Invoice', pdfLink: pdfUrl, createdBy: item.values["Reporter's Email Address"] || "", isDeleted: false, SignatureStatus: "Unsigned" })
+                axios.post(`http://localhost:3001/api/pdf`, { workspaceId: workspaceId, itemId: item.id, type: 'PurchaseOrder', pdfLink: pdfUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" })
 
                 setTimeout(async () => {
                     try {
@@ -577,7 +594,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                             "values": [
                                 {
                                     "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
-                                    "data": `<p>Your invoice successfully created.</p>`
+                                    "data": `<p>Your purchase order successfully created.</p>`
                                 }
                             ],
                         }, {
@@ -595,7 +612,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                     }
                 }, 60 * 1000); // For testing purpose, let's change time to 1 min.
 
-                info('Webhook-Service', 'Successfully generating PDF invoice', { link: pdfUrl }, req);
+                info('Webhook-Service', 'Successfully generating PDF for Purchase Order', { link: pdfUrl }, req);
 
                 res.json({ pdfUrl });
             });
@@ -604,7 +621,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 "values": [
                     {
                         "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
-                        "data": `<p>An error occurred while creating the invoice. <br> More information: ${err.message}</p>`
+                        "data": `<p>An error occurred while creating the purchase order. <br> More information: ${err.message}</p>`
                     }
                 ],
             }, {
@@ -624,10 +641,143 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     }
 });
 
+router.post('/:workspaceId/:boardId/quote', async (req, res) => {
+    const { workspaceId, boardId } = req.params;
+
+    if (req.body.items.length) {
+        try {
+            req.body.items?.map(async (item, index) => {
+                axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
+                    "values": [
+                        {
+                            "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
+                            "data": `<p>Running...</p>`
+                        }
+                    ],
+                }, {
+                    headers: {
+                        "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "X-API-Version": "2025-02-26.morava",
+                    }
+                });
+                const quoteValues = item.values;
+
+                const templatePath = path.join(__dirname, '..', 'assets', `quote.json`);
+                const templateData = await fs.readFile(templatePath, 'utf8');
+                const template = JSON.parse(templateData);
+
+                const pdfBytes = await generate({
+                    template: template,
+                    inputs: [
+                        {
+                            issueDate: `{"IssueDate": "${quoteValues['Issue Date'] ? new Date(quoteValues['Issue Date']).toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
+                            expiryDate: `{"ExpiryDate": "${quoteValues['Expiry Date'] ? new Date(quoteValues['Expiry Date']).toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
+                            quoteNumber: `{"QuoteNumber": "${quoteValues['Quote Number']}"}`,
+                            jobDescription: `{"JobDescription": "${quoteValues['Job Description'].replace(/<.*?>/g, "")}"}`,
+                            jobTitle: `{"Title": "${quoteValues['Job Title'].replace(/<.*?>/g, "")}"}`,
+                            LineItems: `[["${quoteValues['Job Type'][0]}","${quoteValues['Job Title']} - ${quoteValues['Job Description'].replace(/<.*?>/g, "")}","${quoteValues.Quantity || 1}","${quoteValues['Unit Price($) - GST Excl.'] || 1}", "${quoteValues['Total Price($) - GST Excl.'] || 1}"]]`,
+                        }
+                    ],
+                    plugins: {
+                        text,
+                        image,
+                        line,
+                        table,
+                        multiVariableText
+                    }
+                });
+
+                const filename = `quote_${Date.now()}.pdf`;
+                const uploadDir = path.join(__dirname, '../../', 'quote');
+
+                await fs.mkdir(uploadDir, { recursive: true });
+                const filePath = path.join(uploadDir, filename);
+                await fs.writeFile(filePath, Buffer.from(pdfBytes));
+
+                AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
+
+                const pdfUrl = `http://localhost:3001/api/webhook/uploads/${filename}`;
+                axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
+                    "values": [
+                        {
+                            "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
+                            "data": `<p>Your quote successfully created. <br> Click <a href="${pdfUrl}">here</a></p>`
+                        }
+                    ],
+                }, {
+                    headers: {
+                        "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "X-API-Version": "2025-02-26.morava",
+                    }
+                });
+
+                axios.post(`http://localhost:3001/api/pdf`, { workspaceId: workspaceId, itemId: item.id, type: 'Quote', pdfLink: pdfUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" })
+
+                setTimeout(async () => {
+                    try {
+                        await fs.unlink(filePath);
+                        console.log(`File ${filename} has been removed after 5 minutes.`);
+                        axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
+                            "values": [
+                                {
+                                    "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
+                                    "data": `<p>Your quote successfully created.</p>`
+                                }
+                            ],
+                        }, {
+                            headers: {
+                                "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+                                "Content-Type": "application/json",
+                                "Accept": "application/json",
+                                "X-API-Version": "2025-02-26.morava",
+                            }
+                        });
+                        axios.put(`http://localhost:3001/api/pdf`, { workspaceId: workspaceId, itemId: item.id, pdfLink: pdfUrl })
+                        AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Remove PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
+                    } catch (err) {
+                        console.error(`Error removing file ${filename}:`, err);
+                    }
+                }, 60 * 1000); // For testing purpose, let's change time to 1 min.
+
+                info('Webhook-Service', 'Successfully generating PDF quote', { link: pdfUrl }, req);
+
+                res.json({ pdfUrl });
+            });
+        } catch (err) {
+            axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
+                "values": [
+                    {
+                        "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
+                        "data": `<p>An error occurred while creating the quote. <br> More information: ${err.message}</p>`
+                    }
+                ],
+            }, {
+                headers: {
+                    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "X-API-Version": "2025-02-26.morava",
+                }
+            });
+            error('Webhook-Service', 'Server error', { message: err.message }, req);
+            res.status(500).json({ message: 'Server error' });
+        }
+    } else {
+        error('Webhook-Service', 'Server error', { message: "There are no item." }, req);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+
 router.get('/uploads/:filename', async (req, res) => {
     try {
         const { filename } = req.params;
-        const filePath = path.join(__dirname, '../../', 'invoice', filename);
+
+        const filePath = path.join(__dirname, '../../', filename.split('_')[0], filename);
         // Check if file exists using promise-based fs
         await access(filePath);
 
