@@ -293,11 +293,11 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                     inputs: [
                         {
                             clientDetails: `{"Address":"${clientDetails.Address}","Suburb":"${clientDetails.Suburb}","State":"${clientDetails.State}","Postcode":"${clientDetails.Postcode}","Client":"${clientDetails.Client}"}`,
-                            invoiceDetails: `{"Date":"${new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}","Invoice Number":"${invoiceNumber}"}`,
+                            invoiceDetails: `{"Date":"${new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}","Invoice Number":"${invoiceNumber}"}`,
                             companyName: `{"Company Name":"${business.name}"}`,
                             companyDetails: `{"ABN":"${business.abn}","Street Address":"${business.address.street}","Suburb":"${business.address.suburb}","State":"${business.address.state}","Postcode":"${business.address.postcode}","Country":"${business.address.country}"}`,
                             orders: invoiceDescription,
-                            dueDate: `{"Date":"${dueDate.toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
+                            dueDate: `{"Date":"${dueDate.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
                             bankDetails: `{"Account Name":"${business.bankDetails.accountName}","Bank Name":"${business.bankDetails.bankName}","BSB":"${business.bankDetails.bsb}","Account Number":"${business.bankDetails.accountNumber}","invoice Number":"${business.bankDetails.paymentReference}"}`
                         }
                     ],
@@ -519,8 +519,8 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 }
 
                 const inputs = {
-                    issueDate: `{"IssueDate": "${purchaseOrderValues['Issue Date'] && new Date(purchaseOrderValues['Issue Date']).toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
-                    deliveryDate: `{"DeliveryDate": "${purchaseOrderValues['Delivery Date']?.toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
+                    issueDate: `{"IssueDate": "${purchaseOrderValues['Issue Date'] && new Date(purchaseOrderValues['Issue Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
+                    deliveryDate: `{"DeliveryDate": "${purchaseOrderValues['Delivery Date'] && new Date(purchaseOrderValues['Delivery Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
                     purchaseOrderNumber: `{"PurchaseOrderNumber": "${purchaseOrderValues['PO Number']}"}`,
                     LineItems: `[[
                         "${purchaseOrderValues['Job Type'][0]}",
@@ -672,8 +672,8 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                     template: template,
                     inputs: [
                         {
-                            issueDate: `{"IssueDate": "${quoteValues['Issue Date'] ? new Date(quoteValues['Issue Date']).toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
-                            expiryDate: `{"ExpiryDate": "${quoteValues['Expiry Date'] ? new Date(quoteValues['Expiry Date']).toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
+                            issueDate: `{"IssueDate": "${quoteValues['Issue Date'] ? new Date(quoteValues['Issue Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
+                            expiryDate: `{"ExpiryDate": "${quoteValues['Expiry Date'] ? new Date(quoteValues['Expiry Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
                             quoteNumber: `{"QuoteNumber": "${quoteValues['Quote Number']}"}`,
                             jobDescription: `{"JobDescription": "${quoteValues['Job Description'].replace(/<.*?>/g, "")}"}`,
                             jobTitle: `{"Title": "${quoteValues['Job Title'].replace(/<.*?>/g, "")}"}`,
