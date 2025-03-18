@@ -483,7 +483,7 @@ export default function Dashboard() {
   const getWorkspaces = async () => {
     setLoading(true);
     try {
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/me`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
       setWorkspaces(response.data.workspace);
 
       if (response.data.workspace.length === 1)

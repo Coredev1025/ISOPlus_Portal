@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Backend for Business Dashboard",
   "main": "src/index.js",
+  "license": "ISOPlus-Portal",
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
@@ -12,6 +13,8 @@
     "build-linux": "mkdir -p dist && cp -r src/* dist/"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.758.0",
+    "@aws-sdk/s3-request-presigner": "^3.758.0",
     "@pdfme/common": "^5.3.11",
     "@pdfme/generator": "^5.3.11",
     "@pdfme/schemas": "^5.3.11",

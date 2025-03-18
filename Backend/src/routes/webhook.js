@@ -5,32 +5,15 @@ import { generate } from '@pdfme/generator';
 import { text, table, line, image, multiVariableText } from '@pdfme/schemas';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createReadStream } from 'fs';
-import { access } from 'fs/promises';
 import axios from "axios";
 import AuditTrail from '../models/AuditTrail.js';
 import Business from '../models/Business.js';
-import { uploadFileToS3, getS3FileUrl, deleteFileFromS3 } from '../utils/upload.js';
+import { getS3FileUrl, deleteFileFromS3, uploadFileToS3 } from '../utils/uploadS3.js';
+import { getFolder, getItem, putInternalMessage } from '../utils/isoplusservices.js';
 
-// Get the directory name
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 const router = express.Router();
-
-// Add S3 configuration
-const S3_BUCKET = process.env.AWS_S3_BUCKET;
-
-// Helper function to upload PDF to S3
-async function uploadPdfToS3(pdfBuffer, filename) {
-    try {
-        const key = `pdfs/${filename}`;
-        const fileUrl = await uploadFileToS3(pdfBuffer, S3_BUCKET, key);
-        return { key, fileUrl };
-    } catch (err) {
-        throw new Error(`Failed to upload to S3: ${err.message}`);
-    }
-}
 
 router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     const { workspaceId, boardId } = req.params;
@@ -39,21 +22,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
         try {
             const business = await Business.findOne({ workspaceId });
             req.body.items?.map(async (item, index) => {
-                axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
-                    "values": [
-                        {
-                            "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
-                            "data": `<p>Running...</p>`
-                        }
-                    ],
-                }, {
-                    headers: {
-                        "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                        "X-API-Version": "2025-02-26.morava",
-                    }
-                });
+                putInternalMessage(workspaceId, boardId, item.id, "Running...");
                 const templatePath = path.join(__dirname, '..', 'assets', `invoice.json`);
                 const templateData = await fs.readFile(templatePath, 'utf8');
                 const template = JSON.parse(templateData);
@@ -65,176 +34,21 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 let invoiceDescription = item.values["Undertaken Tasks Decription"].replace(/<.*?>/g, "");
 
                 let jobPlan = [], clients = [], serviceFee = [], materialFee = [];
-                const folderIds = await axios.get(`https://app.isoplus.online/api/${workspaceId}/folder/${boardId}`, {
-                    headers: {
-                        "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                        "X-API-Version": "2025-02-26.morava",
-                    }
-                });
+                const folderIds = await getFolder(workspaceId, boardId);
 
                 for (const folder of folderIds.data) {
                     if (folder.name.includes("Job Planning")) {
-                        const items = await axios.get(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/`, {
-                            headers: {
-                                "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                                "Content-Type": "application/json",
-                                "Accept": "application/json",
-                                "X-API-Version": "2025-02-26.morava",
-                            }, params: {
-                                "limit": "100",
-                                "sort_by": "created_at",
-                                "sort_direction": "desc",
-                                "expand[0]": "values.attribute",
-                                "folder_id": folder.id,
-                            }
-                        });
-                        jobPlan = jobPlan.concat(items.data.data);
-                        let has_more = items.data.has_more;
-                        while (has_more) {
-                            const response = await axios.get(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/`, {
-                                headers: {
-                                    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                                    "Content-Type": "application/json",
-                                    "Accept": "application/json",
-                                    "X-API-Version": "2025-02-26.morava",
-                                }, params: {
-                                    "limit": "100",
-                                    "sort_by": "created_at",
-                                    "sort_direction": "desc",
-                                    "expand[0]": "values.attribute",
-                                    "folder_id": folder.id,
-                                    "after": items.data.after
-                                }
-                            });
-                            if (response.status === 200) {
-                                jobPlan = jobPlan.concat(response.data.data);
-                                has_more = response.data.has_more;
-                            } else {
-                                has_more = false;
-                            }
-                        }
+                        const result = await getItem(workspaceId, boardId, folder.id);
+                        if (result.status === 200) jobPlan = result.item;
                     } else if (folder.name.includes("Clients")) {
-                        const items = await axios.get(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/`, {
-                            headers: {
-                                "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                                "Content-Type": "application/json",
-                                "Accept": "application/json",
-                                "X-API-Version": "2025-02-26.morava",
-                            }, params: {
-                                "limit": "100",
-                                "sort_by": "created_at",
-                                "sort_direction": "desc",
-                                "expand[0]": "values.attribute",
-                                "folder_id": folder.id,
-                            }
-                        });
-                        clients = clients.concat(items.data.data);
-                        let has_more = items.data.has_more;
-                        while (has_more) {
-                            const response = await axios.get(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/`, {
-                                headers: {
-                                    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                                    "Content-Type": "application/json",
-                                    "Accept": "application/json",
-                                    "X-API-Version": "2025-02-26.morava",
-                                }, params: {
-                                    "limit": "100",
-                                    "sort_by": "created_at",
-                                    "sort_direction": "desc",
-                                    "expand[0]": "values.attribute",
-                                    "folder_id": folder.id,
-                                    "after": items.data.after
-                                }
-                            });
-                            if (response.status === 200) {
-                                clients = clients.concat(response.data.data);
-                                has_more = response.data.has_more;
-                            } else {
-                                has_more = false;
-                            }
-                        }
+                        const result = await getItem(workspaceId, boardId, folder.id);
+                        if (result.status === 200) clients = result.item;
                     } else if (folder.name.includes("Service Fees")) {
-                        const items = await axios.get(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/`, {
-                            headers: {
-                                "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                                "Content-Type": "application/json",
-                                "Accept": "application/json",
-                                "X-API-Version": "2025-02-26.morava",
-                            }, params: {
-                                "limit": "2",
-                                "sort_by": "created_at",
-                                "sort_direction": "desc",
-                                "expand[0]": "values.attribute",
-                                "folder_id": folder.id,
-                            }
-                        });
-                        serviceFee = serviceFee.concat(items.data.data);
-                        let has_more = items.data.has_more;
-                        while (has_more) {
-                            const response = await axios.get(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/`, {
-                                headers: {
-                                    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                                    "Content-Type": "application/json",
-                                    "Accept": "application/json",
-                                    "X-API-Version": "2025-02-26.morava",
-                                }, params: {
-                                    "limit": "100",
-                                    "sort_by": "created_at",
-                                    "sort_direction": "desc",
-                                    "expand[0]": "values.attribute",
-                                    "folder_id": folder.id,
-                                    "after": items.data.after
-                                }
-                            });
-                            if (response.status === 200) {
-                                serviceFee = serviceFee.concat(response.data.data);
-                                has_more = response.data.has_more;
-                            } else {
-                                has_more = false;
-                            }
-                        }
+                        const result = await getItem(workspaceId, boardId, folder.id);
+                        if (result.status === 200) serviceFee = result.item;
                     } else if (item.values["Payable Material Fee($) - GST Excl."] > 0 && folder.name.includes("Material Fees")) {
-                        const items = await axios.get(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/`, {
-                            headers: {
-                                "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                                "Content-Type": "application/json",
-                                "Accept": "application/json",
-                                "X-API-Version": "2025-02-26.morava",
-                            }, params: {
-                                "limit": "2",
-                                "sort_by": "created_at",
-                                "sort_direction": "desc",
-                                "expand[0]": "values.attribute",
-                                "folder_id": folder.id,
-                            }
-                        });
-                        materialFee = materialFee.concat(items.data.data);
-                        let has_more = items.data.has_more;
-                        while (has_more) {
-                            const response = await axios.get(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/`, {
-                                headers: {
-                                    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                                    "Content-Type": "application/json",
-                                    "Accept": "application/json",
-                                    "X-API-Version": "2025-02-26.morava",
-                                }, params: {
-                                    "limit": "100",
-                                    "sort_by": "created_at",
-                                    "sort_direction": "desc",
-                                    "expand[0]": "values.attribute",
-                                    "folder_id": folder.id,
-                                    "after": items.data.after
-                                }
-                            });
-                            if (response.status === 200) {
-                                materialFee = materialFee.concat(response.data.data);
-                                has_more = response.data.has_more;
-                            } else {
-                                has_more = false;
-                            }
-                        }
+                        const result = await getItem(workspaceId, boardId, folder.id);
+                        if (result.status === 200) materialFee = result.item;
                     }
                 }
 
@@ -325,50 +139,21 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                     }
                 });
 
-                const filename = `invoice_${Date.now()}.pdf`;
-                const { fileUrl, key } = await uploadPdfToS3(Buffer.from(pdfBytes), filename);
+                const filename = `invoice/${Date.now()}.pdf`;
+                const location = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+                console.log(location);
+                const { fileUrl, key } = ["", ""];
 
+                putInternalMessage(workspaceId, boardId, item.id, `Your invoice successfully created. \n Click <a href="${fileUrl}">here</a>`);
                 AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
-
-                axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
-                    "values": [
-                        {
-                            "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
-                            "data": `<p>Your invoice successfully created. <br> Click <a href="${fileUrl}">here</a></p>`
-                        }
-                    ],
-                }, {
-                    headers: {
-                        "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                        "X-API-Version": "2025-02-26.morava",
-                    }
-                });
-
                 axios.post(`http://localhost:3001/api/pdf`, { workspaceId: workspaceId, itemId: item.id, type: 'Invoice', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" })
 
                 setTimeout(async () => {
                     try {
-                        await deleteFileFromS3(S3_BUCKET, key);
+                        await deleteFileFromS3(key);
                         console.log(`File ${filename} has been removed from S3 after 1 hour.`);
-                        
-                        // Update Monday.com after deletion
-                        await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
-                            "values": [{
-                                "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
-                                "data": `<p>Your invoice successfully created.</p>`
-                            }]
-                        }, {
-                            headers: {
-                                "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                                "Content-Type": "application/json",
-                                "Accept": "application/json",
-                                "X-API-Version": "2025-02-26.morava",
-                            }
-                        });
+                        putInternalMessage(workspaceId, boardId, item.id, "Your invoice successfully created.");
 
-                        // Update PDF status in database
                         await axios.put(`http://localhost:3001/api/pdf`, {
                             workspaceId,
                             itemId: item.id,
@@ -393,21 +178,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 res.json({ pdfUrl: fileUrl });
             });
         } catch (err) {
-            axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
-                "values": [
-                    {
-                        "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
-                        "data": `<p>An error occurred while creating the invoice. <br> More information: ${err.message}</p>`
-                    }
-                ],
-            }, {
-                headers: {
-                    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "X-API-Version": "2025-02-26.morava",
-                }
-            });
+            putInternalMessage(workspaceId, boardId, item.id, `An error occurred while creating the invoice. \n More information: ${err.message}`);
             error('Webhook-Service', 'Server error', { message: err.message }, req);
             res.status(500).json({ message: 'Server error' });
         }
@@ -424,79 +195,21 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     if (req.body.items.length) {
         try {
             req.body.items?.map(async (item, index) => {
-                axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
-                    "values": [
-                        {
-                            "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
-                            "data": `<p>Running...</p>`
-                        }
-                    ],
-                }, {
-                    headers: {
-                        "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                        "X-API-Version": "2025-02-26.morava",
-                    }
-                });
+                putInternalMessage(workspaceId, boardId, item.id, "Running...");
+
                 const purchaseOrderValues = item.values;
                 const templatePath = path.join(__dirname, '..', 'assets', `purchaseOrder.json`);
                 const templateData = await fs.readFile(templatePath, 'utf8');
                 const template = JSON.parse(templateData);
                 const dueDate = new Date();
                 dueDate.setDate(dueDate.getDate() + 7);
-
-                const folderIds = await axios.get(`https://app.isoplus.online/api/${workspaceId}/folder/${boardId}`, {
-                    headers: {
-                        "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                        "X-API-Version": "2025-02-26.morava",
-                    }
-                });
+                const folderIds = await getFolder(workspaceId, boardId);
 
                 let contractor = [];
                 for (const folder of folderIds.data) {
                     if (folder.name.includes("Contractor")) {
-                        const items = await axios.get(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/`, {
-                            headers: {
-                                "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                                "Content-Type": "application/json",
-                                "Accept": "application/json",
-                                "X-API-Version": "2025-02-26.morava",
-                            }, params: {
-                                "limit": "100",
-                                "sort_by": "created_at",
-                                "sort_direction": "desc",
-                                "expand[0]": "values.attribute",
-                                "folder_id": folder.id,
-                            }
-                        });
-                        contractor = contractor.concat(items.data.data);
-                        let has_more = items.data.has_more;
-                        while (has_more) {
-                            const response = await axios.get(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/`, {
-                                headers: {
-                                    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                                    "Content-Type": "application/json",
-                                    "Accept": "application/json",
-                                    "X-API-Version": "2025-02-26.morava",
-                                }, params: {
-                                    "limit": "100",
-                                    "sort_by": "created_at",
-                                    "sort_direction": "desc",
-                                    "expand[0]": "values.attribute",
-                                    "folder_id": folder.id,
-                                    "after": items.data.after
-                                }
-                            });
-                            if (response.status === 200) {
-                                contractor = contractor.concat(response.data.data);
-                                has_more = response.data.has_more;
-                            } else {
-                                has_more = false;
-                            }
-                        }
+                        const result = await getItem(workspaceId, boardId, folder.id);
+                        if (result.status === 200) contractor = result.item;
                     }
                 }
 
@@ -589,46 +302,17 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 const filePath = path.join(uploadDir, filename);
                 await fs.writeFile(filePath, Buffer.from(pdfBytes));
 
-                AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
-
                 const pdfUrl = `http://localhost:3001/api/webhook/uploads/${filename}`;
-                axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
-                    "values": [
-                        {
-                            "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
-                            "data": `<p>Your purchase order successfully created. <br> Click <a href="${pdfUrl}">here</a></p>`
-                        }
-                    ],
-                }, {
-                    headers: {
-                        "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                        "X-API-Version": "2025-02-26.morava",
-                    }
-                });
 
+                putInternalMessage(workspaceId, boardId, item.id, `Your purchase order successfully created. \n Click <a href="${pdfUrl}">here</a>`);
+                AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
                 axios.post(`http://localhost:3001/api/pdf`, { workspaceId: workspaceId, itemId: item.id, type: 'PurchaseOrder', pdfLink: pdfUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" })
 
                 setTimeout(async () => {
                     try {
                         await fs.unlink(filePath);
                         console.log(`File ${filename} has been removed after 5 minutes.`);
-                        axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
-                            "values": [
-                                {
-                                    "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
-                                    "data": `<p>Your purchase order successfully created.</p>`
-                                }
-                            ],
-                        }, {
-                            headers: {
-                                "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                                "Content-Type": "application/json",
-                                "Accept": "application/json",
-                                "X-API-Version": "2025-02-26.morava",
-                            }
-                        });
+                        putInternalMessage(workspaceId, boardId, item.id, `Your purchase order successfully created.`);
                         axios.put(`http://localhost:3001/api/pdf`, { workspaceId: workspaceId, itemId: item.id, pdfLink: pdfUrl })
                         AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Remove PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
                     } catch (err) {
@@ -641,21 +325,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 res.json({ pdfUrl });
             });
         } catch (err) {
-            axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
-                "values": [
-                    {
-                        "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
-                        "data": `<p>An error occurred while creating the purchase order. <br> More information: ${err.message}</p>`
-                    }
-                ],
-            }, {
-                headers: {
-                    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "X-API-Version": "2025-02-26.morava",
-                }
-            });
+            putInternalMessage(workspaceId, boardId, item.id, `An error occurred while creating the purchase order. <br> More information: ${err.message}`);
             error('Webhook-Service', 'Server error', { message: err.message }, req);
             res.status(500).json({ message: 'Server error' });
         }
@@ -671,23 +341,9 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     if (req.body.items.length) {
         try {
             req.body.items?.map(async (item, index) => {
-                axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
-                    "values": [
-                        {
-                            "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
-                            "data": `<p>Running...</p>`
-                        }
-                    ],
-                }, {
-                    headers: {
-                        "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                        "X-API-Version": "2025-02-26.morava",
-                    }
-                });
-                const quoteValues = item.values;
+                putInternalMessage(workspaceId, boardId, item.id, "Running...");
 
+                const quoteValues = item.values;
                 const templatePath = path.join(__dirname, '..', 'assets', `quote.json`);
                 const templateData = await fs.readFile(templatePath, 'utf8');
                 const template = JSON.parse(templateData);
@@ -720,25 +376,10 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                 const filePath = path.join(uploadDir, filename);
                 await fs.writeFile(filePath, Buffer.from(pdfBytes));
 
-                AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
-
                 const pdfUrl = `http://localhost:3001/api/webhook/uploads/${filename}`;
-                axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
-                    "values": [
-                        {
-                            "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
-                            "data": `<p>Your quote successfully created. <br> Click <a href="${pdfUrl}">here</a></p>`
-                        }
-                    ],
-                }, {
-                    headers: {
-                        "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                        "X-API-Version": "2025-02-26.morava",
-                    }
-                });
 
+                putInternalMessage(workspaceId, boardId, item.id, `Your quote successfully created. \n Click <a href="${pdfUrl}">here</a>`);
+                AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
                 axios.post(`http://localhost:3001/api/pdf`, { workspaceId: workspaceId, itemId: item.id, type: 'Quote', pdfLink: pdfUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" })
 
                 setTimeout(async () => {
@@ -772,21 +413,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                 res.json({ pdfUrl });
             });
         } catch (err) {
-            axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
-                "values": [
-                    {
-                        "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
-                        "data": `<p>An error occurred while creating the quote. <br> More information: ${err.message}</p>`
-                    }
-                ],
-            }, {
-                headers: {
-                    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "X-API-Version": "2025-02-26.morava",
-                }
-            });
+            putInternalMessage(workspaceId, boardId, item.id, `An error occurred while creating the quote. \n More information: ${err.message}`);
             error('Webhook-Service', 'Server error', { message: err.message }, req);
             res.status(500).json({ message: 'Server error' });
         }
@@ -796,15 +423,14 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     }
 });
 
-
 router.get('/uploads/:filename', async (req, res) => {
     try {
         const { filename } = req.params;
         const key = `pdfs/${filename}`;
-        
+
         // Get a signed URL for temporary access
         const fileUrl = await getS3FileUrl(S3_BUCKET, key);
-        
+
         // Redirect to the signed URL
         res.redirect(fileUrl);
     } catch (err) {

@@ -6,7 +6,7 @@ import { info, error, warn } from '../utils/logger.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import AuditTrail from '../models/AuditTrail.js';
-import { uploadFileToS3, getS3FileUrl, deleteFileFromS3 } from '../utils/upload.js'; // Import S3 utility functions
+import { uploadFileToS3, getS3FileUrl, deleteFileFromS3 } from '../utils/uploadS3.js'; // Import S3 utility functions
 
 // Get the directory name
 const __filename = fileURLToPath(import.meta.url);

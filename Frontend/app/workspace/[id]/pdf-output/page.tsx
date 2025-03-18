@@ -109,10 +109,9 @@ export default function PDFOutputPage() {
         currentPage * ITEMS_PER_PAGE
     );
 
-    const handleGeneratePDF = async (output: PDFOutput) => {
+    const handleDownloadPDF = async (output: PDFOutput) => {
         try {
-            const response = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/generatePDF`, {
-                output,
+            const response = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/`, {
                 workspaceId: id
             }, {
                 headers: { token: getCookie("token") },
@@ -266,7 +265,7 @@ export default function PDFOutputPage() {
                                                     onClick={(e) => {
                                                         e.preventDefault();
                                                         e.stopPropagation();
-                                                        handleGeneratePDF(output);
+                                                        handleDownloadPDF(output);
                                                     }}
                                                 >
                                                     <Download className="h-4 w-4" />

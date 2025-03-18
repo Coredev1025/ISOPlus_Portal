@@ -13,7 +13,7 @@ export const getCookie = (name: string): string | null => {
 
 export const isTokenValid = async (token: string): Promise<any> => {
     try {
-        const response = await axios.get('http://localhost:3001/api/auth/verify', { headers: { token } });
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/verify`, { headers: { token } });
         return response;
     } catch (error) {
         return false;
