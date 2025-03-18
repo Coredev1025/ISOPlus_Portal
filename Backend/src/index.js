@@ -17,7 +17,11 @@ dotenv.config();
 
 const app = express();
 
-app.use(cors());
+// Allow all origins temporarily until we have a proper CORS policy based on configurations
+app.use(cors({
+  origin: '*',
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
