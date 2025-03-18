@@ -6,20 +6,14 @@ import { info, error, warn } from '../utils/logger.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import AuditTrail from '../models/AuditTrail.js';
+import { uploadFileToS3, getS3FileUrl, deleteFileFromS3 } from '../utils/upload.js'; // Import S3 utility functions
 
 // Get the directory name
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = express.Router();
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, '../../uploads'));
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${Date.now()}.${file.originalname.split('.').pop()}`);
-  }
-});
+const storage = multer.memoryStorage(); // Use memory storage for multer
 const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB limit
@@ -29,9 +23,6 @@ const multiupload = upload.fields([
   { name: 'squareLogo', maxCount: 1 },
   { name: 'wideLogo', maxCount: 1 },
 ]);
-
-// Serve static files from the uploads directory
-router.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
 
 router.get('/profile', authenticateToken, async (req, res) => {
   try {
@@ -73,11 +64,31 @@ router.put('/profile', authenticateToken, multiupload, async (req, res) => {
         bsb,
         accountNumber,
         paymentReference
-      },
-      ...(req.files['defaultLogo'] && { defaultLogo: `/uploads/${req.files['defaultLogo'][0].filename}` }),
-      ...(req.files['squareLogo'] && { squareLogo: `/uploads/${req.files['squareLogo'][0].filename}` }),
-      ...(req.files['wideLogo'] && { wideLogo: `/uploads/${req.files['wideLogo'][0].filename}` })
+      }
     };
+
+    // Upload files to S3 and update the URLs in updateData
+    if (req.files['defaultLogo']) {
+      if (business && business.defaultLogo) {
+        await deleteFileFromS3(business.defaultLogo);
+      }
+      const defaultLogoUrl = await uploadFileToS3(req.files['defaultLogo'][0].buffer, 'logo', `${name}/default-logo${path.extname(req.files['defaultLogo'][0].originalname)}`);
+      updateData.defaultLogo = defaultLogoUrl;
+    }
+    if (req.files['squareLogo']) {
+      if (business && business.squareLogo) {
+        await deleteFileFromS3(business.squareLogo);
+      }
+      const squareLogoUrl = await uploadFileToS3(req.files['squareLogo'][0].buffer, 'logo', `${name}/square-logo${path.extname(req.files['squareLogo'][0].originalname)}`);
+      updateData.squareLogo = squareLogoUrl;
+    }
+    if (req.files['wideLogo']) {
+      if (business && business.wideLogo) {
+        await deleteFileFromS3(business.wideLogo);
+      }
+      const wideLogoUrl = await uploadFileToS3(req.files['wideLogo'][0].buffer, 'logo', `${name}/wide-logo${path.extname(req.files['wideLogo'][0].originalname)}`);
+      updateData.wideLogo = wideLogoUrl;
+    }
 
     if (business) {
       business = await Business.findByIdAndUpdate(

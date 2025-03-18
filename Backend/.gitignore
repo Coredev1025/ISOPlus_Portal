@@ -8,6 +8,8 @@ dist/
 logs/
 uploads/
 invoice/
+purchase/
+quote/
 
 # Logs
 npm-debug.log*

@@ -1,0 +1,270 @@
+{
+    "schemas": [
+        [
+            {
+                "name": "title",
+                "type": "text",
+                "content": "QUOTE",
+                "position": {
+                    "x": 20,
+                    "y": 54.8
+                },
+                "width": 103.98,
+                "height": 22.75,
+                "rotate": 0,
+                "alignment": "left",
+                "verticalAlignment": "top",
+                "fontSize": 40,
+                "lineHeight": 1,
+                "characterSpacing": 0,
+                "fontColor": "#000000",
+                "backgroundColor": "",
+                "opacity": 1,
+                "strikethrough": false,
+                "underline": false,
+                "required": false,
+                "readOnly": true
+            },
+            {
+                "name": "issueDate",
+                "type": "multiVariableText",
+                "content": "{\"issueDate\":\"ISSUEDATE\"}",
+                "position": {
+                    "x": 20,
+                    "y": 90
+                },
+                "width": 80,
+                "height": 15,
+                "rotate": 0,
+                "alignment": "left",
+                "verticalAlignment": "top",
+                "fontSize": 13,
+                "lineHeight": 1,
+                "characterSpacing": 0,
+                "fontColor": "#000000",
+                "backgroundColor": "",
+                "opacity": 1,
+                "strikethrough": false,
+                "underline": false,
+                "readOnly": false,
+                "text": "Issue Date: {IssueDate}",
+                "variables": [
+                    "IssueDate"
+                ],
+                "required": false
+            },
+            {
+                "name": "expiryDate",
+                "type": "multiVariableText",
+                "content": "{\"expiryDate\":\"EXPIRYDATE\"}",
+                "position": {
+                    "x": 20,
+                    "y": 108
+                },
+                "width": 80,
+                "height": 15,
+                "rotate": 0,
+                "alignment": "left",
+                "verticalAlignment": "top",
+                "fontSize": 13,
+                "lineHeight": 1,
+                "characterSpacing": 0,
+                "fontColor": "#000000",
+                "backgroundColor": "",
+                "opacity": 1,
+                "strikethrough": false,
+                "underline": false,
+                "readOnly": false,
+                "text": "ExpiryDate: {ExpiryDate}",
+                "variables": [
+                    "ExpiryDate"
+                ],
+                "required": false
+            },
+            {
+                "name": "quoteNumber",
+                "type": "multiVariableText",
+                "content": "{\"quoteNumber\":\"QUOTENUMBER\"}",
+                "position": {
+                    "x": 20,
+                    "y": 126
+                },
+                "width": 80,
+                "height": 15,
+                "rotate": 0,
+                "alignment": "left",
+                "verticalAlignment": "top",
+                "fontSize": 13,
+                "lineHeight": 1,
+                "characterSpacing": 0,
+                "fontColor": "#000000",
+                "backgroundColor": "",
+                "opacity": 1,
+                "strikethrough": false,
+                "underline": false,
+                "readOnly": false,
+                "text": "Quote Number: {QuoteNumber}",
+                "variables": [
+                    "QuoteNumber"
+                ],
+                "required": false
+            },
+            {
+                "name": "jobTitle",
+                "type": "multiVariableText",
+                "content": "{\"jobTitle\":\"TITLE\"}",
+                "position": {
+                    "x": 110,
+                    "y": 90
+                },
+                "width": 79.9,
+                "height": 22.75,
+                "rotate": 0,
+                "alignment": "left",
+                "verticalAlignment": "top",
+                "fontSize": 13,
+                "lineHeight": 1,
+                "characterSpacing": 0,
+                "fontColor": "#000000",
+                "backgroundColor": "",
+                "opacity": 1,
+                "strikethrough": false,
+                "underline": false,
+                "readOnly": false,
+                "text": "Title: {Title}",
+                "variables": [
+                    "Title"
+                ],
+                "required": false
+            },
+            {
+                "name": "jobDescription",
+                "type": "multiVariableText",
+                "content": "{\"jobDescription\":\"JobDescription\"}",
+                "position": {
+                    "x": 110,
+                    "y": 117.52
+                },
+                "width": 79.9,
+                "height": 22.75,
+                "rotate": 0,
+                "alignment": "left",
+                "verticalAlignment": "top",
+                "fontSize": 13,
+                "lineHeight": 1,
+                "characterSpacing": 0,
+                "fontColor": "#000000",
+                "backgroundColor": "",
+                "opacity": 1,
+                "strikethrough": false,
+                "underline": false,
+                "readOnly": false,
+                "text": "Summary: {JobDescription}",
+                "variables": [
+                    "JobDescription"
+                ],
+                "required": false
+            },
+            {
+                "name": "LineItems",
+                "type": "table",
+                "position": {
+                    "x": 20,
+                    "y": 147.45
+                },
+                "width": 170,
+                "height": 29.172800000000002,
+                "content": "[[\"\",\"\",\"\",\"\",\"\"]]",
+                "showHead": true,
+                "head": [
+                    "Item Code",
+                    "Description",
+                    "Quantity",
+                    "Unit Amount",
+                    "Amount"
+                ],
+                "headWidthPercentages": [
+                    13.348285134896845,
+                    37.456493045110854,
+                    17.20992770234524,
+                    16.316779959500487,
+                    15.668514158146571
+                ],
+                "tableStyles": {
+                    "borderWidth": 0,
+                    "borderColor": "#000000"
+                },
+                "headStyles": {
+                    "fontName": "Roboto",
+                    "fontSize": 13,
+                    "characterSpacing": 0,
+                    "alignment": "left",
+                    "verticalAlignment": "middle",
+                    "lineHeight": 1,
+                    "fontColor": "#000000",
+                    "borderColor": "",
+                    "backgroundColor": "#FFFFFF",
+                    "borderWidth": {
+                        "top": 0,
+                        "right": 0,
+                        "bottom": 0,
+                        "left": 0
+                    },
+                    "padding": {
+                        "top": 5,
+                        "right": 5,
+                        "bottom": 5,
+                        "left": 5
+                    }
+                },
+                "bodyStyles": {
+                    "fontName": "Roboto",
+                    "fontSize": 13,
+                    "characterSpacing": 0,
+                    "alignment": "center",
+                    "verticalAlignment": "middle",
+                    "lineHeight": 1,
+                    "fontColor": "#000000",
+                    "borderColor": "#888888",
+                    "backgroundColor": "",
+                    "alternateBackgroundColor": "#f5f5f5",
+                    "borderWidth": {
+                        "top": 0.1,
+                        "right": 0,
+                        "bottom": 0,
+                        "left": 0
+                    },
+                    "padding": {
+                        "top": 5,
+                        "right": 0,
+                        "bottom": 5,
+                        "left": 0
+                    }
+                },
+                "columnStyles": {
+                    "alignment": {
+                        "0": "center",
+                        "1": "left",
+                        "2": "center",
+                        "3": "center",
+                        "4": "center"
+                    }
+                },
+                "required": false,
+                "readOnly": false
+            }
+        ]
+    ],
+    "basePdf": {
+        "width": 210,
+        "height": 297,
+        "padding": [
+            20,
+            20,
+            20,
+            20
+        ],
+        "staticSchema": []
+    },
+    "pdfmeVersion": "5.3.11"
+}

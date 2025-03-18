@@ -7,12 +7,15 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "debug": "node --inspect-brk src/index.js"
+    "debug": "node --inspect-brk src/index.js",
+    "build-windows": "(if exist dist (rmdir /S /Q dist)) && mkdir dist && xcopy src\\* dist\\ /E /I /Y",
+    "build-linux": "mkdir -p dist && cp -r src/* dist/"
   },
   "dependencies": {
     "@pdfme/common": "^5.3.11",
     "@pdfme/generator": "^5.3.11",
     "@pdfme/schemas": "^5.3.11",
+    "aws-sdk": "^2.1692.0",
     "axios": "^1.7.9",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
