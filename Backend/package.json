@@ -13,6 +13,7 @@
     "@pdfme/common": "^5.3.11",
     "@pdfme/generator": "^5.3.11",
     "@pdfme/schemas": "^5.3.11",
+    "aws-sdk": "^2.1692.0",
     "axios": "^1.7.9",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",

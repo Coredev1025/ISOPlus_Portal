@@ -10,12 +10,27 @@ import { access } from 'fs/promises';
 import axios from "axios";
 import AuditTrail from '../models/AuditTrail.js';
 import Business from '../models/Business.js';
+import { uploadFileToS3, getS3FileUrl, deleteFileFromS3 } from '../utils/upload.js';
 
 // Get the directory name
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = express.Router();
+
+// Add S3 configuration
+const S3_BUCKET = process.env.AWS_S3_BUCKET;
+
+// Helper function to upload PDF to S3
+async function uploadPdfToS3(pdfBuffer, filename) {
+    try {
+        const key = `pdfs/${filename}`;
+        const fileUrl = await uploadFileToS3(pdfBuffer, S3_BUCKET, key);
+        return { key, fileUrl };
+    } catch (err) {
+        throw new Error(`Failed to upload to S3: ${err.message}`);
+    }
+}
 
 router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     const { workspaceId, boardId } = req.params;
@@ -311,20 +326,15 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 });
 
                 const filename = `invoice_${Date.now()}.pdf`;
-                const uploadDir = path.join(__dirname, '../../', 'invoice');
-
-                await fs.mkdir(uploadDir, { recursive: true });
-                const filePath = path.join(uploadDir, filename);
-                await fs.writeFile(filePath, Buffer.from(pdfBytes));
+                const { fileUrl, key } = await uploadPdfToS3(Buffer.from(pdfBytes), filename);
 
                 AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
 
-                const pdfUrl = `http://localhost:3001/api/webhook/uploads/${filename}`;
                 axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
                     "values": [
                         {
                             "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
-                            "data": `<p>Your invoice successfully created. <br> Click <a href="${pdfUrl}">here</a></p>`
+                            "data": `<p>Your invoice successfully created. <br> Click <a href="${fileUrl}">here</a></p>`
                         }
                     ],
                 }, {
@@ -336,19 +346,19 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                     }
                 });
 
-                axios.post(`http://localhost:3001/api/pdf`, { workspaceId: workspaceId, itemId: item.id, type: 'Invoice', pdfLink: pdfUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" })
+                axios.post(`http://localhost:3001/api/pdf`, { workspaceId: workspaceId, itemId: item.id, type: 'Invoice', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" })
 
                 setTimeout(async () => {
                     try {
-                        await fs.unlink(filePath);
-                        console.log(`File ${filename} has been removed after 5 minutes.`);
-                        axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
-                            "values": [
-                                {
-                                    "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
-                                    "data": `<p>Your invoice successfully created.</p>`
-                                }
-                            ],
+                        await deleteFileFromS3(S3_BUCKET, key);
+                        console.log(`File ${filename} has been removed from S3 after 1 hour.`);
+                        
+                        // Update Monday.com after deletion
+                        await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
+                            "values": [{
+                                "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
+                                "data": `<p>Your invoice successfully created.</p>`
+                            }]
                         }, {
                             headers: {
                                 "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
@@ -357,16 +367,30 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                                 "X-API-Version": "2025-02-26.morava",
                             }
                         });
-                        axios.put(`http://localhost:3001/api/pdf`, { workspaceId: workspaceId, itemId: item.id, pdfLink: pdfUrl })
-                        AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Remove PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
+
+                        // Update PDF status in database
+                        await axios.put(`http://localhost:3001/api/pdf`, {
+                            workspaceId,
+                            itemId: item.id,
+                            pdfLink: null,
+                            isDeleted: true
+                        });
+
+                        AuditTrail.insertOne({
+                            workspaceId,
+                            action: 'Remove PDF Link',
+                            detail: `Resource ID: ${item.id}`,
+                            userEmail: "",
+                            userIp: req.ip?.split(':').pop()
+                        });
                     } catch (err) {
-                        console.error(`Error removing file ${filename}:`, err);
+                        console.error(`Error removing file ${filename} from S3:`, err);
                     }
-                }, 60 * 1000); // For testing purpose, let's change time to 1 min.
+                }, 60 * 60 * 1000); // 1 hour
 
-                info('Webhook-Service', 'Successfully generating PDF invoice', { link: pdfUrl }, req);
+                info('Webhook-Service', 'Successfully generating PDF invoice', { link: fileUrl }, req);
 
-                res.json({ pdfUrl });
+                res.json({ pdfUrl: fileUrl });
             });
         } catch (err) {
             axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
@@ -776,18 +800,13 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
 router.get('/uploads/:filename', async (req, res) => {
     try {
         const { filename } = req.params;
-
-        const filePath = path.join(__dirname, '../../', filename.split('_')[0], filename);
-        // Check if file exists using promise-based fs
-        await access(filePath);
-
-        // Set headers for file download
-        res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
-        res.setHeader('Content-Type', 'application/pdf');
-
-        // Stream the file using standard fs
-        const fileStream = createReadStream(filePath);
-        fileStream.pipe(res);
+        const key = `pdfs/${filename}`;
+        
+        // Get a signed URL for temporary access
+        const fileUrl = await getS3FileUrl(S3_BUCKET, key);
+        
+        // Redirect to the signed URL
+        res.redirect(fileUrl);
     } catch (err) {
         error('Workspace-Service', 'Error downloading file', { message: err.message }, req);
         res.status(404).json({ message: 'File not found' });
