@@ -5,7 +5,6 @@ import { generate } from '@pdfme/generator';
 import { text, table, line, image, multiVariableText } from '@pdfme/schemas';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import axios from "axios";
 import AuditTrail from '../models/AuditTrail.js';
 import Business from '../models/Business.js';
 import { getS3FileUrl, deleteFileFromS3, uploadFileToS3 } from '../utils/uploadS3.js';
@@ -141,25 +140,17 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
 
                 const filename = `invoice/${Date.now()}.pdf`;
                 const location = await uploadFileToS3(Buffer.from(pdfBytes), filename);
-                console.log(location);
+                console.log("location", location);
                 const { fileUrl, key } = ["", ""];
 
                 putInternalMessage(workspaceId, boardId, item.id, `Your invoice successfully created. \n Click <a href="${fileUrl}">here</a>`);
                 AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
-                axios.post(`http://localhost:3001/api/pdf`, { workspaceId: workspaceId, itemId: item.id, type: 'Invoice', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" })
 
                 setTimeout(async () => {
                     try {
                         await deleteFileFromS3(key);
                         console.log(`File ${filename} has been removed from S3 after 1 hour.`);
                         putInternalMessage(workspaceId, boardId, item.id, "Your invoice successfully created.");
-
-                        await axios.put(`http://localhost:3001/api/pdf`, {
-                            workspaceId,
-                            itemId: item.id,
-                            pdfLink: null,
-                            isDeleted: true
-                        });
 
                         AuditTrail.insertOne({
                             workspaceId,
@@ -306,14 +297,12 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
 
                 putInternalMessage(workspaceId, boardId, item.id, `Your purchase order successfully created. \n Click <a href="${pdfUrl}">here</a>`);
                 AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
-                axios.post(`http://localhost:3001/api/pdf`, { workspaceId: workspaceId, itemId: item.id, type: 'PurchaseOrder', pdfLink: pdfUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" })
 
                 setTimeout(async () => {
                     try {
                         await fs.unlink(filePath);
                         console.log(`File ${filename} has been removed after 5 minutes.`);
                         putInternalMessage(workspaceId, boardId, item.id, `Your purchase order successfully created.`);
-                        axios.put(`http://localhost:3001/api/pdf`, { workspaceId: workspaceId, itemId: item.id, pdfLink: pdfUrl })
                         AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Remove PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
                     } catch (err) {
                         console.error(`Error removing file ${filename}:`, err);
@@ -380,28 +369,12 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
 
                 putInternalMessage(workspaceId, boardId, item.id, `Your quote successfully created. \n Click <a href="${pdfUrl}">here</a>`);
                 AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
-                axios.post(`http://localhost:3001/api/pdf`, { workspaceId: workspaceId, itemId: item.id, type: 'Quote', pdfLink: pdfUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" })
 
                 setTimeout(async () => {
                     try {
                         await fs.unlink(filePath);
                         console.log(`File ${filename} has been removed after 5 minutes.`);
-                        axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${item.id}`, {
-                            "values": [
-                                {
-                                    "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
-                                    "data": `<p>Your quote successfully created.</p>`
-                                }
-                            ],
-                        }, {
-                            headers: {
-                                "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                                "Content-Type": "application/json",
-                                "Accept": "application/json",
-                                "X-API-Version": "2025-02-26.morava",
-                            }
-                        });
-                        axios.put(`http://localhost:3001/api/pdf`, { workspaceId: workspaceId, itemId: item.id, pdfLink: pdfUrl })
+                        putInternalMessage(workspaceId, boardId, item.id, "Your quote successfully created.");
                         AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Remove PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
                     } catch (err) {
                         console.error(`Error removing file ${filename}:`, err);
