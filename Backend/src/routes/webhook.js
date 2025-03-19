@@ -7,7 +7,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import AuditTrail from '../models/AuditTrail.js';
 import Business from '../models/Business.js';
-import { getS3FileUrl, deleteFileFromS3, uploadFileToS3 } from '../utils/uploadS3.js';
+import PDFLink from '../models/PDFLink.js';
+import { getS3FileUrl, uploadFileToS3 } from '../utils/uploadS3.js';
 import { getFolder, getItem, putInternalMessage } from '../utils/isoplusservices.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -20,7 +21,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     if (req.body.items.length) {
         try {
             const business = await Business.findOne({ workspaceId });
-            req.body.items?.map(async (item, index) => {
+            req.body.items?.map(async (item) => {
                 putInternalMessage(workspaceId, boardId, item.id, "Running...");
                 const templatePath = path.join(__dirname, '..', 'assets', `invoice.json`);
                 const templateData = await fs.readFile(templatePath, 'utf8');
@@ -32,10 +33,11 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 const invoiceNumber = "INV-" + invoiceCnt.toString();
                 let invoiceDescription = item.values["Undertaken Tasks Decription"].replace(/<.*?>/g, "");
 
-                let jobPlan = [], clients = [], serviceFee = [], materialFee = [];
-                const folderIds = await getFolder(workspaceId, boardId);
+                let jobPlan = [], clients = [], serviceFee = [], materialFee = [], folderIds = [];
+                const result = await getFolder(workspaceId, boardId);
+                if (result.status === 200) folderIds = result.folder;
 
-                for (const folder of folderIds.data) {
+                for (const folder of folderIds) {
                     if (folder.name.includes("Job Planning")) {
                         const result = await getItem(workspaceId, boardId, folder.id);
                         if (result.status === 200) jobPlan = result.item;
@@ -138,35 +140,18 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                     }
                 });
 
-                const filename = `invoice/${Date.now()}.pdf`;
-                const location = await uploadFileToS3(Buffer.from(pdfBytes), filename);
-                console.log("location", location);
-                const { fileUrl, key } = ["", ""];
+                const filename = `output/${business.id}/${boardId}/invoices/${item.id}.pdf`;
+                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+                if (uploadResult['$metadata'].httpStatusCode === 200) {
+                    const fileUrl = await getS3FileUrl(filename);
+                    putInternalMessage(workspaceId, boardId, item.id, `Your invoice successfully created. \n Click <a href="${fileUrl}">here</a>`);
+                    AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
+                    info('Webhook-Service', 'Successfully generating PDF invoice', { link: fileUrl }, req);
 
-                putInternalMessage(workspaceId, boardId, item.id, `Your invoice successfully created. \n Click <a href="${fileUrl}">here</a>`);
-                AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
-
-                setTimeout(async () => {
-                    try {
-                        await deleteFileFromS3(key);
-                        console.log(`File ${filename} has been removed from S3 after 1 hour.`);
-                        putInternalMessage(workspaceId, boardId, item.id, "Your invoice successfully created.");
-
-                        AuditTrail.insertOne({
-                            workspaceId,
-                            action: 'Remove PDF Link',
-                            detail: `Resource ID: ${item.id}`,
-                            userEmail: "",
-                            userIp: req.ip?.split(':').pop()
-                        });
-                    } catch (err) {
-                        console.error(`Error removing file ${filename} from S3:`, err);
-                    }
-                }, 60 * 60 * 1000); // 1 hour
-
-                info('Webhook-Service', 'Successfully generating PDF invoice', { link: fileUrl }, req);
-
-                res.json({ pdfUrl: fileUrl });
+                    res.json({ pdfUrl: fileUrl });
+                } else {
+                    throw new Error('Upload PDF failed, please provide correct information');
+                }
             });
         } catch (err) {
             putInternalMessage(workspaceId, boardId, item.id, `An error occurred while creating the invoice. \n More information: ${err.message}`);
@@ -185,6 +170,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
 
     if (req.body.items.length) {
         try {
+            const business = await Business.findOne({ workspaceId });
             req.body.items?.map(async (item, index) => {
                 putInternalMessage(workspaceId, boardId, item.id, "Running...");
 
@@ -194,10 +180,11 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 const template = JSON.parse(templateData);
                 const dueDate = new Date();
                 dueDate.setDate(dueDate.getDate() + 7);
-                const folderIds = await getFolder(workspaceId, boardId);
+                let folderIds = [], contractor = [];
+                const result = await getFolder(workspaceId, boardId);
+                if (result.status === 200) folderIds = result.folder;
 
-                let contractor = [];
-                for (const folder of folderIds.data) {
+                for (const folder of folderIds) {
                     if (folder.name.includes("Contractor")) {
                         const result = await getItem(workspaceId, boardId, folder.id);
                         if (result.status === 200) contractor = result.item;
@@ -286,32 +273,18 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                     }
                 });
 
-                const filename = `purchase_${Date.now()}.pdf`;
-                const uploadDir = path.join(__dirname, '../../', 'purchase');
+                const filename = `output/${business.id}/${boardId}/purchaseorder/${item.id}.pdf`;
+                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+                if (uploadResult['$metadata'].httpStatusCode === 200) {
+                    const fileUrl = await getS3FileUrl(filename);
+                    putInternalMessage(workspaceId, boardId, item.id, `Your purchase order successfully created. \n Click <a href="${fileUrl}">here</a>`);
+                    AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
+                    info('Webhook-Service', 'Successfully generating PDF for Purchase Order', { link: fileUrl }, req);
 
-                await fs.mkdir(uploadDir, { recursive: true });
-                const filePath = path.join(uploadDir, filename);
-                await fs.writeFile(filePath, Buffer.from(pdfBytes));
-
-                const pdfUrl = `http://localhost:3001/api/webhook/uploads/${filename}`;
-
-                putInternalMessage(workspaceId, boardId, item.id, `Your purchase order successfully created. \n Click <a href="${pdfUrl}">here</a>`);
-                AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
-
-                setTimeout(async () => {
-                    try {
-                        await fs.unlink(filePath);
-                        console.log(`File ${filename} has been removed after 5 minutes.`);
-                        putInternalMessage(workspaceId, boardId, item.id, `Your purchase order successfully created.`);
-                        AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Remove PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
-                    } catch (err) {
-                        console.error(`Error removing file ${filename}:`, err);
-                    }
-                }, 60 * 1000); // For testing purpose, let's change time to 1 min.
-
-                info('Webhook-Service', 'Successfully generating PDF for Purchase Order', { link: pdfUrl }, req);
-
-                res.json({ pdfUrl });
+                    res.json({ pdfUrl: fileUrl });
+                } else {
+                    throw new Error('Upload PDF failed, please provide correct information');
+                }
             });
         } catch (err) {
             putInternalMessage(workspaceId, boardId, item.id, `An error occurred while creating the purchase order. <br> More information: ${err.message}`);
@@ -329,6 +302,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
 
     if (req.body.items.length) {
         try {
+            const business = await Business.findOne({ workspaceId });
             req.body.items?.map(async (item, index) => {
                 putInternalMessage(workspaceId, boardId, item.id, "Running...");
 
@@ -358,32 +332,18 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                     }
                 });
 
-                const filename = `quote_${Date.now()}.pdf`;
-                const uploadDir = path.join(__dirname, '../../', 'quote');
+                const filename = `output/${business.id}/${boardId}/quote/${item.id}.pdf`;
+                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+                if (uploadResult['$metadata'].httpStatusCode === 200) {
+                    const fileUrl = await getS3FileUrl(filename);
+                    putInternalMessage(workspaceId, boardId, item.id, `Your quote successfully created. \n Click <a href="${fileUrl}">here</a>`);
+                    AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
+                    info('Webhook-Service', 'Successfully generating PDF for Purchase Order', { link: fileUrl }, req);
 
-                await fs.mkdir(uploadDir, { recursive: true });
-                const filePath = path.join(uploadDir, filename);
-                await fs.writeFile(filePath, Buffer.from(pdfBytes));
-
-                const pdfUrl = `http://localhost:3001/api/webhook/uploads/${filename}`;
-
-                putInternalMessage(workspaceId, boardId, item.id, `Your quote successfully created. \n Click <a href="${pdfUrl}">here</a>`);
-                AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
-
-                setTimeout(async () => {
-                    try {
-                        await fs.unlink(filePath);
-                        console.log(`File ${filename} has been removed after 5 minutes.`);
-                        putInternalMessage(workspaceId, boardId, item.id, "Your quote successfully created.");
-                        AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Remove PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
-                    } catch (err) {
-                        console.error(`Error removing file ${filename}:`, err);
-                    }
-                }, 60 * 1000); // For testing purpose, let's change time to 1 min.
-
-                info('Webhook-Service', 'Successfully generating PDF quote', { link: pdfUrl }, req);
-
-                res.json({ pdfUrl });
+                    res.json({ pdfUrl: fileUrl });
+                } else {
+                    throw new Error('Upload PDF failed, please provide correct information');
+                }
             });
         } catch (err) {
             putInternalMessage(workspaceId, boardId, item.id, `An error occurred while creating the quote. \n More information: ${err.message}`);

@@ -72,7 +72,7 @@ export const getS3FileUrl = async (key) => {
     };
 
     try {
-        const url = await getSignedUrl(s3Client, new GetObjectCommand(params), { expiresIn: 3600 });
+        const url = await getSignedUrl(s3Client, new GetObjectCommand(params), { expiresIn: 3600, requestPayer: 'requester' });
         return url;
     } catch (err) {
         console.error('Error generating signed URL:', err);

@@ -77,16 +77,41 @@ export async function getBoard(authorization, workspaceId) {
 };
 
 export async function getFolder(workspaceId, boardId) {
-    const folder = await axios.get(`https://app.isoplus.online/api/${workspaceId}/folder/${boardId}`, {
-        headers: {
+    try {
+        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/folders/`;
+        const headers = {
             "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
             "Content-Type": "application/json",
             "Accept": "application/json",
             "X-API-Version": "2025-02-26.morava",
-        }
-    });
+        }, params = {
+            "limit": "100",
+            "sort_by": "created_at",
+            "sort_direction": "desc",
+        };
 
-    return folder;
+        let folder = [];
+
+        const result = await axios.get(url, { headers, params });
+        if (result.status === 200) {
+            folder = folder.concat(result.data.data);
+            let has_more = result.data.has_more, after = result.data.after;
+
+            while (has_more) {
+                const response = await axios.get(url, { headers, params: { ...params, after } });
+                if (response.status === 200) {
+                    folder = folder.concat(response.data.data);
+                    has_more = response.data.has_more;
+                    after = response.data.after;
+                } else {
+                    has_more = false;
+                }
+            }
+        }
+        return { folder: folder, status: 200 };
+    } catch (err) {
+        return { message: err.message, status: 500 };
+    }
 };
 
 export async function getItem(workspaceId, boardId, folderId) {
