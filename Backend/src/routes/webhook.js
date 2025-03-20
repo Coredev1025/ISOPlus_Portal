@@ -140,14 +140,15 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                     }
                 });
 
-                const filename = `output/${business.id}/${boardId}/invoices/${item.id}.pdf`;
+                const filename = `output/${workspaceId}/${boardId}/invoices/${item.id}.pdf`;
                 const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
                     const fileUrl = await getS3FileUrl(filename);
                     putInternalMessage(workspaceId, boardId, item.id, `Your invoice successfully created. \n Click <a href="${fileUrl}">here</a>`);
                     AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
+                    PDFLink.insertOne({ workspaceId: workspaceId, itemId: item.id, type: 'Invoice', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" });
                     info('Webhook-Service', 'Successfully generating PDF invoice', { link: fileUrl }, req);
-
+                    
                     res.json({ pdfUrl: fileUrl });
                 } else {
                     throw new Error('Upload PDF failed, please provide correct information');
@@ -273,12 +274,13 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                     }
                 });
 
-                const filename = `output/${business.id}/${boardId}/purchaseorder/${item.id}.pdf`;
+                const filename = `output/${workspaceId}/${boardId}/purchaseorder/${item.id}.pdf`;
                 const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
                     const fileUrl = await getS3FileUrl(filename);
                     putInternalMessage(workspaceId, boardId, item.id, `Your purchase order successfully created. \n Click <a href="${fileUrl}">here</a>`);
                     AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
+                    PDFLink.insertOne({ workspaceId: workspaceId, itemId: item.id, type: 'Purchase Order', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" });
                     info('Webhook-Service', 'Successfully generating PDF for Purchase Order', { link: fileUrl }, req);
 
                     res.json({ pdfUrl: fileUrl });
@@ -332,12 +334,13 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                     }
                 });
 
-                const filename = `output/${business.id}/${boardId}/quote/${item.id}.pdf`;
+                const filename = `output/${workspaceId}/${boardId}/quote/${item.id}.pdf`;
                 const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
                     const fileUrl = await getS3FileUrl(filename);
                     putInternalMessage(workspaceId, boardId, item.id, `Your quote successfully created. \n Click <a href="${fileUrl}">here</a>`);
                     AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
+                    PDFLink.insertOne({ workspaceId: workspaceId, itemId: item.id, type: 'Quote', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" });
                     info('Webhook-Service', 'Successfully generating PDF for Purchase Order', { link: fileUrl }, req);
 
                     res.json({ pdfUrl: fileUrl });

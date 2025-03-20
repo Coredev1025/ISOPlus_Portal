@@ -41,7 +41,17 @@ router.get('/profile', authenticateToken, async (req, res) => {
 
 router.put('/profile', authenticateToken, multiupload, async (req, res) => {
   try {
-    const { name, phone, email, abn, acn, state, suburb, country, postcode, street, workspaceId, bankAccountName, bankName, bsb, accountNumber, paymentReference } = req.body;
+    const {
+      name, phone, email, abn, acn, state, suburb, country,
+      postcode, street, workspaceId, bankAccountName, bankName,
+      bsb, accountNumber, paymentReference
+    } = req.body;
+
+    let documentNumbering = {};
+    if (req.body.documentNumbering) {
+      documentNumbering = JSON.parse(req.body.documentNumbering);
+    }
+
     let business = await Business.findOne({ workspaceId });
 
     const updateData = {
@@ -64,30 +74,42 @@ router.put('/profile', authenticateToken, multiupload, async (req, res) => {
         bsb,
         accountNumber,
         paymentReference
-      }
+      },
+      documentNumbering
     };
 
-    // Upload files to S3 and update the URLs in updateData
+    // Handle file uploads to S3
     if (req.files['defaultLogo']) {
-      if (business && business.defaultLogo) {
+      if (business?.defaultLogo) {
         await deleteFileFromS3(business.defaultLogo);
       }
-      const defaultLogoUrl = await uploadFileToS3(req.files['defaultLogo'][0].buffer, 'logo', `${name}/default-logo${path.extname(req.files['defaultLogo'][0].originalname)}`);
-      updateData.defaultLogo = defaultLogoUrl;
+      await uploadFileToS3(
+        req.files['defaultLogo'][0].buffer,
+        `logos/${workspaceId}/default-logo${path.extname(req.files['defaultLogo'][0].originalname)}`
+      );
+      updateData.defaultLogo = await getS3FileUrl(`logos/${workspaceId}/default-logo${path.extname(req.files['defaultLogo'][0].originalname)}`);
     }
+
     if (req.files['squareLogo']) {
-      if (business && business.squareLogo) {
+      if (business?.squareLogo) {
         await deleteFileFromS3(business.squareLogo);
       }
-      const squareLogoUrl = await uploadFileToS3(req.files['squareLogo'][0].buffer, 'logo', `${name}/square-logo${path.extname(req.files['squareLogo'][0].originalname)}`);
-      updateData.squareLogo = squareLogoUrl;
+      await uploadFileToS3(
+        req.files['squareLogo'][0].buffer,
+        `logos/${workspaceId}/square-logo${path.extname(req.files['squareLogo'][0].originalname)}`
+      );
+      updateData.squareLogo = await getS3FileUrl(`logos/${workspaceId}/square-logo${path.extname(req.files['defaultLogo'][0].originalname)}`);
     }
+
     if (req.files['wideLogo']) {
-      if (business && business.wideLogo) {
+      if (business?.wideLogo) {
         await deleteFileFromS3(business.wideLogo);
       }
-      const wideLogoUrl = await uploadFileToS3(req.files['wideLogo'][0].buffer, 'logo', `${name}/wide-logo${path.extname(req.files['wideLogo'][0].originalname)}`);
-      updateData.wideLogo = wideLogoUrl;
+      await uploadFileToS3(
+        req.files['wideLogo'][0].buffer,
+        `logos/${workspaceId}/wide-logo${path.extname(req.files['wideLogo'][0].originalname)}`
+      );
+      updateData.wideLogo = await getS3FileUrl(`logos/${workspaceId}/wide-logo${path.extname(req.files['defaultLogo'][0].originalname)}`);
     }
 
     if (business) {
@@ -99,9 +121,7 @@ router.put('/profile', authenticateToken, multiupload, async (req, res) => {
       info('Business-Service', 'Business profile updated', { businessName: business.name }, req);
       AuditTrail.insertOne({ workspaceId, action: 'Updated Business profile', detail: `Changed Business profile from "${JSON.stringify(business)}" to "${JSON.stringify(updateData)}"`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
     } else {
-      business = new Business({
-        ...updateData
-      });
+      business = new Business(updateData);
       await business.save();
       info('Business-Service', 'New Business profile created', { businessName: business.name }, req);
       AuditTrail.insertOne({ workspaceId, action: 'Created new Business profile', detail: `Resourse ID: ${business._id}`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });

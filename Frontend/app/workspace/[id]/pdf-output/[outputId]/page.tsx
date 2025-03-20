@@ -25,7 +25,7 @@ export default function PDFOutputDetailPage() {
           return {
             id: item.itemId,
             type: item.type,
-            createdAt: new Date(item.createdAt).toLocaleString('en-US', {
+            createdAt: new Date(item.createdAt).toLocaleString('en-AU', {
               month: 'numeric',
               day: 'numeric',
               year: 'numeric',

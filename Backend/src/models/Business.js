@@ -84,6 +84,38 @@ const businessSchema = new mongoose.Schema({
     paymentReference: {
       type: String
     }
+  },
+  documentNumbering: {
+    invoice: {
+      prefix: {
+        type: String,
+        default: 'INV-'
+      },
+      nextNumber: {
+        type: Number,
+        default: 1000
+      }
+    },
+    purchaseOrder: {
+      prefix: {
+        type: String,
+        default: 'PO-'
+      },
+      nextNumber: {
+        type: Number,
+        default: 1000
+      }
+    },
+    quote: {
+      prefix: {
+        type: String,
+        default: 'QT-'
+      },
+      nextNumber: {
+        type: Number,
+        default: 1000
+      }
+    }
   }
 });
 
