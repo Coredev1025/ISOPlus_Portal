@@ -128,8 +128,8 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                             companyName: `{"Company Name":"${business.name}"}`,
                             companyDetails: `{"ABN":"${business.abn}","Street Address":"${business.address.street}","Suburb":"${business.address.suburb}","State":"${business.address.state}","Postcode":"${business.address.postcode}","Country":"${business.address.country}"}`,
                             orders: invoiceDescription,
-                            dueDate: `{"Date":"${dueDate.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
-                            bankDetails: `{"Account Name":"${business.bankDetails.accountName}","Bank Name":"${business.bankDetails.bankName}","BSB":"${business.bankDetails.bsb}","Account Number":"${business.bankDetails.accountNumber}","invoice Number":"${business.bankDetails.paymentReference}"}`
+                            "Due date": `{"Due Date":"${dueDate.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
+                            "Bank Details": `{"Account Name":"${business.bankDetails.accountName}","Bank Name":"${business.bankDetails.bankName}","BSB":"${business.bankDetails.bsb}","Account Number":"${business.bankDetails.accountNumber}","invoice Number":"${business.bankDetails.paymentReference}"}`
                         }
                     ],
                     plugins: {
