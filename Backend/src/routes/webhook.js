@@ -29,8 +29,9 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 const dueDate = new Date();
                 dueDate.setDate(dueDate.getDate() + 7);
 
-                const invoiceCnt = await AuditTrail.find({ workspaceId: workspaceId, action: 'Generate new PDF Link' }).countDocuments();
-                const invoiceNumber = "INV-" + invoiceCnt.toString();
+                const invoiceNumber = business.documentNumbering.invoice.prefix + business.documentNumbering.invoice.nextNumber;
+                business.documentNumbering.invoice.nextNumber += 1;
+                business.save();
                 let invoiceDescription = item.values["Undertaken Tasks Decription"].replace(/<.*?>/g, "");
 
                 let jobPlan = [], clients = [], serviceFee = [], materialFee = [], folderIds = [];
@@ -148,7 +149,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                     AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
                     PDFLink.insertOne({ workspaceId: workspaceId, itemId: item.id, type: 'Invoice', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" });
                     info('Webhook-Service', 'Successfully generating PDF invoice', { link: fileUrl }, req);
-                    
+
                     res.json({ pdfUrl: fileUrl });
                 } else {
                     throw new Error('Upload PDF failed, please provide correct information');
@@ -181,6 +182,10 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 const template = JSON.parse(templateData);
                 const dueDate = new Date();
                 dueDate.setDate(dueDate.getDate() + 7);
+                const purchaseOrderNumber = business.documentNumbering.purchaseOrder.prefix + business.documentNumbering.purchaseOrder.nextNumber;
+                business.documentNumbering.purchaseOrder.nextNumber += 1;
+                business.save();
+
                 let folderIds = [], contractor = [];
                 const result = await getFolder(workspaceId, boardId);
                 if (result.status === 200) folderIds = result.folder;
@@ -237,7 +242,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 const inputs = {
                     issueDate: `{"IssueDate": "${purchaseOrderValues['Issue Date'] && new Date(purchaseOrderValues['Issue Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
                     deliveryDate: `{"DeliveryDate": "${purchaseOrderValues['Delivery Date'] && new Date(purchaseOrderValues['Delivery Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
-                    purchaseOrderNumber: `{"PurchaseOrderNumber": "${purchaseOrderValues['PO Number']}"}`,
+                    purchaseOrderNumber: `{"PurchaseOrderNumber": "${purchaseOrderNumber || purchaseOrderValues['PO Number']}"}`,
                     LineItems: `[[
                         "${purchaseOrderValues['Job Type'][0]}",
                         "${purchaseOrderValues['Job Title']}${purchaseOrderValues['Job Description'].replace(/<.*?>/g, "") ? ` - ${purchaseOrderValues['Job Description'].replace(/<.*?>/g, "")}` : ''}",
@@ -312,6 +317,9 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                 const templatePath = path.join(__dirname, '..', 'assets', `quote.json`);
                 const templateData = await fs.readFile(templatePath, 'utf8');
                 const template = JSON.parse(templateData);
+                const quoteNumber = business.documentNumbering.quote.prefix + business.documentNumbering.quote.nextNumber;
+                business.documentNumbering.quote.nextNumber += 1;
+                business.save();
 
                 const pdfBytes = await generate({
                     template: template,
@@ -319,7 +327,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                         {
                             issueDate: `{"IssueDate": "${quoteValues['Issue Date'] ? new Date(quoteValues['Issue Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
                             expiryDate: `{"ExpiryDate": "${quoteValues['Expiry Date'] ? new Date(quoteValues['Expiry Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
-                            quoteNumber: `{"QuoteNumber": "${quoteValues['Quote Number']}"}`,
+                            quoteNumber: `{"QuoteNumber": "${quoteNumber || quoteValues['Quote Number']}"}`,
                             jobDescription: `{"JobDescription": "${quoteValues['Job Description'].replace(/<.*?>/g, "")}"}`,
                             jobTitle: `{"Title": "${quoteValues['Job Title'].replace(/<.*?>/g, "")}"}`,
                             LineItems: `[["${quoteValues['Job Type'][0]}","${quoteValues['Job Title']} - ${quoteValues['Job Description'].replace(/<.*?>/g, "")}","${quoteValues.Quantity || 1}","${quoteValues['Unit Price($) - GST Excl.'] || 1}", "${quoteValues['Total Price($) - GST Excl.'] || 1}"]]`,
