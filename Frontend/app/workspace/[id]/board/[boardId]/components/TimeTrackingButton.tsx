@@ -60,9 +60,10 @@ const PROXIMITY_THRESHOLD = 50; // 50 meters radius
 interface TimeTrackingButtonProps {
   workspaceId: string;
   boardId: string;
+  setTimeTrackingEnabled: any
 }
 
-export function TimeTrackingButton({ workspaceId, boardId }: TimeTrackingButtonProps) {
+export function TimeTrackingButton({ workspaceId, boardId, setTimeTrackingEnabled }: TimeTrackingButtonProps) {
   const [isTracking, setIsTracking] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showTaskDialog, setShowTaskDialog] = useState(false);
@@ -133,6 +134,7 @@ export function TimeTrackingButton({ workspaceId, boardId }: TimeTrackingButtonP
     setStartLocation(position);
     setStartTime(new Date());
     setIsTracking(true);
+    setTimeTrackingEnabled(true);
     setShowTaskDialog(false);
   };
 
@@ -142,6 +144,7 @@ export function TimeTrackingButton({ workspaceId, boardId }: TimeTrackingButtonP
       setEndLocation(position);
     }
     setIsTracking(false);
+    setTimeTrackingEnabled(false);
     setShowSummary(true);
   };
 
@@ -153,7 +156,7 @@ export function TimeTrackingButton({ workspaceId, boardId }: TimeTrackingButtonP
   return (
     <>
       {!isTracking && !showSummary && (
-        <Button 
+        <Button
           size="lg"
           className="gap-2"
           onClick={handleClockInClick}
@@ -171,7 +174,7 @@ export function TimeTrackingButton({ workspaceId, boardId }: TimeTrackingButtonP
             <p className="text-2xl font-mono font-bold">
               {startTime && formatDuration(startTime, currentTime)}
             </p>
-            <Button 
+            <Button
               variant="destructive"
               onClick={handleStopTracking}
             >
@@ -234,7 +237,7 @@ export function TimeTrackingButton({ workspaceId, boardId }: TimeTrackingButtonP
               Location Access Required
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This application requires access to your location for time tracking purposes. 
+              This application requires access to your location for time tracking purposes.
               Please enable location access in your browser settings to continue.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -256,7 +259,7 @@ export function TimeTrackingButton({ workspaceId, boardId }: TimeTrackingButtonP
               Not at Task Location
             </AlertDialogTitle>
             <AlertDialogDescription>
-              You appear to be more than 50 meters away from the task location. 
+              You appear to be more than 50 meters away from the task location.
               Are you sure you want to start tracking time?
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -266,6 +269,7 @@ export function TimeTrackingButton({ workspaceId, boardId }: TimeTrackingButtonP
               setShowProximityWarning(false);
               setStartTime(new Date());
               setIsTracking(true);
+              setTimeTrackingEnabled(true);
             }}>
               Continue Anyway
             </AlertDialogAction>
@@ -282,7 +286,7 @@ export function TimeTrackingButton({ workspaceId, boardId }: TimeTrackingButtonP
               Location Services Required
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Your browser does not support or has disabled location services. 
+              Your browser does not support or has disabled location services.
               Location tracking is required by company policy for time tracking.
               Please enable location services to continue.
             </AlertDialogDescription>
@@ -306,7 +310,7 @@ export function TimeTrackingButton({ workspaceId, boardId }: TimeTrackingButtonP
               <h4 className="text-sm font-medium mb-2">Task</h4>
               <p>{selectedTask?.name}</p>
             </div>
-            
+
             <div>
               <h4 className="text-sm font-medium mb-2">Duration</h4>
               <p className="text-xl font-mono">

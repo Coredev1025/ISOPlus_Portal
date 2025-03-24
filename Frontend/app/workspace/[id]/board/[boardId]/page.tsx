@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Clock, Terminal, Download, Filter, AlertTriangle, AlertCircle, Info, Bug, XCircle, MapPin, Search, List, Map } from "lucide-react";
+import { ArrowLeft, Clock, Terminal, Download, Filter, MapPin, Search, List, Map } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useState, useEffect } from "react";
@@ -41,90 +41,17 @@ import { getCookie } from "@/app/utils/cookies";
 interface Board {
   id: string;
   name: string;
-  label: string
 }
-
-// Generate mock time entries
-const generateMockTimeEntries = (): TimeEntry[] => {
-  const tasks = [
-    "Client consultation",
-    "Site inspection",
-    "Documentation review",
-    "Equipment installation",
-    "Follow-up call",
-    "Maintenance check",
-    "Training session",
-    "Report preparation",
-    "Client meeting",
-    "Emergency repair"
-  ];
-  
-  const locations = [
-    { lat: -33.865143, lng: 151.209900, address: "Sydney CBD, NSW" },
-    { lat: -33.891844, lng: 151.199593, address: "Newtown, NSW" },
-    { lat: -33.918861, lng: 151.226263, address: "Randwick, NSW" },
-    { lat: -33.856680, lng: 151.215256, address: "North Sydney, NSW" },
-    { lat: -33.733810, lng: 150.982318, address: "Castle Hill, NSW" },
-    null, // Some entries won't have location
-    { lat: -33.803482, lng: 151.088196, address: "Parramatta, NSW" },
-    null,
-    { lat: -33.924374, lng: 151.259052, address: "Maroubra, NSW" },
-    { lat: -33.870666, lng: 151.093674, address: "Strathfield, NSW" }
-  ];
-
-  // Add a currently active time entry
-  const activeEntry: TimeEntry = {
-    id: 'active-entry',
-    taskName: "Ongoing Site Inspection",
-    startTime: new Date().toISOString(),
-    endTime: null, // No end time for active entry
-    duration: 0, // Will be calculated in real-time
-    location: locations[0],
-    notes: "Currently in progress",
-    userId: "user-1",
-    userName: "John Smith"
-  };
-  
-  const historicalEntries = Array.from({ length: 50 }, (_, i) => {
-    const now = new Date();
-    const startDate = new Date(now);
-    startDate.setDate(now.getDate() - Math.floor(Math.random() * 14)); // Random day in the last 2 weeks
-    startDate.setHours(9 + Math.floor(Math.random() * 8)); // Between 9am and 5pm
-    startDate.setMinutes(Math.floor(Math.random() * 60));
-    
-    const durationMinutes = 15 + Math.floor(Math.random() * 240); // 15 min to 4 hours
-    const endDate = new Date(startDate);
-    endDate.setMinutes(startDate.getMinutes() + durationMinutes);
-    
-    const taskIndex = Math.floor(Math.random() * tasks.length);
-    const locationIndex = Math.floor(Math.random() * locations.length);
-    
-    return {
-      id: `time-${i + 1}`,
-      taskName: tasks[taskIndex],
-      startTime: startDate.toISOString(),
-      endTime: endDate.toISOString(),
-      duration: durationMinutes,
-      location: locations[locationIndex],
-      notes: Math.random() > 0.7 ? "Additional notes for this time entry" : "",
-      userId: `user-${Math.floor(Math.random() * 5) + 1}`,
-      userName: ["John Smith", "Jane Doe", "Mike Johnson", "Sarah Williams", "Alex Brown"][Math.floor(Math.random() * 5)]
-    };
-  }).sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()); // Sort by most recent
-
-  return [activeEntry, ...historicalEntries];
-};
 
 export default function BoardDetail() {
   const router = useRouter();
   const pathname = usePathname();
   const id = pathname.split('/')[2];
   const boardId = pathname.split('/').pop();
-  const [boards, setBoards] = useState<Board[]>([]);
+  const [board, setBoard] = useState<Board>();
   const { workspaces } = useAppContext();
   const workspace = workspaces.filter(w => w.id.toString() === id);
-  const board = boards.find(b => b.id === boardId);
-  const [timeTrackingEnabled, setTimeTrackingEnabled] = useState(true);
+  const [timeTrackingEnabled, setTimeTrackingEnabled] = useState(false);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
@@ -136,26 +63,37 @@ export default function BoardDetail() {
   const ITEMS_PER_PAGE = 10;
 
   useEffect(() => {
-    if (boards.length === 0)
-      getBoards();
+    const fetchTimeTracking = async () => {
+      const timetracking = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks?workspaceId=${id}&boardId=${boardId}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
+      const data: TimeEntry[] = [];
+      for (const entry of timetracking.data.tasks) {
+        data.push({
+          id: entry.id,
+          taskName: entry.taskName,
+          startTime: entry.startTime ? entry.startTime: "",
+          endTime: entry.endTime ? entry.endTime : "",
+          duration: entry.endTime && entry.startTime ? calcDuration(entry.startTime, entry.endTime) : 0, // in minutes
+          location: {
+            lat: 0,
+            lng: 0,
+            address: entry.location ? entry.location : "",
+          },
+          notes: entry.notes
+        })
+      }
+      console.log(data)
+      setTimeEntries(data);
+    };
+    getBoards();
+    fetchTimeTracking();
   }, []);
 
   const getBoards = async () => {
     setLoadingBoards(true);
     try {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
-      const data: Board[] = await Promise.all(
-        response.data.board.map(async (board: any) => {
-          try {
-            const boardResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
-            return { ...board, label: boardResponse.data.board.label };
-          } catch (error) {
-            console.error("Error fetching board:", error);
-            return { ...board, label: null };
-          }
-        })
-      );
-      setBoards(data);
+      const data: Board = response.data.board.find((board: any) => board.id == boardId);
+      setBoard(data);
     } catch (error) {
       console.error("Error fetching boards:", error);
     } finally {
@@ -163,27 +101,43 @@ export default function BoardDetail() {
     }
   }
 
-  useEffect(() => {
-    // Load mock time entries
-    setTimeEntries(generateMockTimeEntries());
+  const calcDuration = (startTime: any, endTime: any) => {
+    console.log(new Date(endTime).getTime(), new Date(startTime).getTime())
+    return Math.floor((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000)
+  }
 
-    // Update active entry duration
-    const intervalId = setInterval(() => {
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+    if (timeTrackingEnabled) {
       setTimeEntries(prev => {
         const activeEntry = prev.find(entry => !entry.endTime);
         if (!activeEntry) return prev;
 
         const updatedEntry = {
           ...activeEntry,
+          startTime: new Date().toISOString(),
           duration: Math.floor((new Date().getTime() - new Date(activeEntry.startTime).getTime()) / 60000)
         };
 
         return [updatedEntry, ...prev.filter(entry => entry.endTime)];
       });
-    }, 1000);
+      // Update active entry duration
+      intervalId = setInterval(() => {
+        setTimeEntries(prev => {
+          const activeEntry = prev.find(entry => !entry.endTime);
+          if (!activeEntry) return prev;
 
+          const updatedEntry = {
+            ...activeEntry,
+            duration: Math.floor((new Date().getTime() - new Date(activeEntry.startTime).getTime()) / 60000)
+          };
+
+          return [updatedEntry, ...prev.filter(entry => entry.endTime)];
+        });
+      }, 1000);
+    } 
     return () => clearInterval(intervalId);
-  }, []);
+  }, [timeTrackingEnabled]);
 
   if (!workspace || !board) {
     return null;
@@ -191,16 +145,15 @@ export default function BoardDetail() {
 
   // Filter time entries
   const filteredEntries = timeEntries.filter(entry => {
-    const matchesSearch = entry.taskName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         entry.userName.toLowerCase().includes(searchQuery.toLowerCase());
-    
+    const matchesSearch = entry.taskName.toLowerCase().includes(searchQuery.toLowerCase());
+
     const matchesStatus = statusFilter === "all" ||
-                         (statusFilter === "active" && !entry.endTime) ||
-                         (statusFilter === "completed" && entry.endTime);
-    
+      (statusFilter === "active" && !entry.endTime) ||
+      (statusFilter === "completed" && entry.endTime);
+
     const matchesLocation = locationFilter === "all" ||
-                          (locationFilter === "with-location" && entry.location) ||
-                          (locationFilter === "without-location" && !entry.location);
+      (locationFilter === "with-location" && entry.location) ||
+      (locationFilter === "without-location" && !entry.location);
 
     return matchesSearch && matchesStatus && matchesLocation;
   });
@@ -215,7 +168,7 @@ export default function BoardDetail() {
   // Format duration
   const formatDuration = (entry: TimeEntry) => {
     let durationInMinutes: number;
-    
+
     if (!entry.endTime) {
       // For active entries, calculate duration from start time to now
       durationInMinutes = Math.floor(
@@ -233,7 +186,7 @@ export default function BoardDetail() {
   // Format date for display
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleString();
+    return date.toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
   };
 
   // Get entries with location for map view
@@ -262,9 +215,10 @@ export default function BoardDetail() {
                 </h1>
                 <p className="text-muted-foreground font-mono text-sm">ID: {board.id}</p>
               </div>
-              <TimeTrackingButton 
+              <TimeTrackingButton
                 workspaceId={id}
                 boardId={boardId?.toString() || ""}
+                setTimeTrackingEnabled={setTimeTrackingEnabled}
               />
             </div>
           </Card>
@@ -281,7 +235,7 @@ export default function BoardDetail() {
                 <p className="text-muted-foreground mb-4 text-sm">
                   Configure board settings and options
                 </p>
-                <Button 
+                <Button
                   onClick={() => router.push(`/workspace/${id}/board/${board.id}/configuration`)}
                   className="w-full"
                 >
@@ -300,7 +254,7 @@ export default function BoardDetail() {
                 <p className="text-muted-foreground mb-4 text-sm">
                   Configure time tracking settings
                 </p>
-                <Button 
+                <Button
                   onClick={() => router.push(`/workspace/${id}/board/${board.id}/time-tracking`)}
                   className="w-full"
                 >
@@ -319,7 +273,7 @@ export default function BoardDetail() {
                 <p className="text-muted-foreground mb-4 text-sm">
                   Export board data and reports
                 </p>
-                <Button 
+                <Button
                   onClick={() => router.push(`/workspace/${id}/board/${board.id}/export`)}
                   className="w-full"
                 >
@@ -364,7 +318,7 @@ export default function BoardDetail() {
                   />
                 </div>
               </div>
-              
+
               <div className="flex gap-4">
                 <Select value={statusFilter} onValueChange={(value: typeof statusFilter) => setStatusFilter(value)}>
                   <SelectTrigger className="w-[160px]">
@@ -402,7 +356,6 @@ export default function BoardDetail() {
                       <TableHead>Task</TableHead>
                       <TableHead>Start Time</TableHead>
                       <TableHead>Duration</TableHead>
-                      <TableHead>User</TableHead>
                       <TableHead>Location</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
@@ -424,7 +377,6 @@ export default function BoardDetail() {
                         <TableCell className="font-medium">{entry.taskName}</TableCell>
                         <TableCell>{formatDate(entry.startTime)}</TableCell>
                         <TableCell>{formatDuration(entry)}</TableCell>
-                        <TableCell>{entry.userName}</TableCell>
                         <TableCell>
                           {entry.location ? (
                             <Button
@@ -465,11 +417,11 @@ export default function BoardDetail() {
                             className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
                           />
                         </PaginationItem>
-                        
+
                         {Array.from({ length: totalPages }, (_, i) => i + 1)
-                          .filter(page => 
-                            page === 1 || 
-                            page === totalPages || 
+                          .filter(page =>
+                            page === 1 ||
+                            page === totalPages ||
                             (page >= currentPage - 1 && page <= currentPage + 1)
                           )
                           .map((page, i, arr) => (
@@ -489,7 +441,7 @@ export default function BoardDetail() {
                               </PaginationItem>
                             </div>
                           ))}
-                        
+
                         <PaginationItem>
                           <PaginationNext
                             onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
@@ -509,52 +461,52 @@ export default function BoardDetail() {
                     Showing {entriesWithLocation.length} time entries with location data
                   </p>
                 </div>
-                
+
                 <div className="relative h-[500px] bg-muted rounded-lg overflow-hidden">
                   {/* This would be replaced with an actual map component */}
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="text-center">
                       <p className="text-muted-foreground mb-2">Map View</p>
-                      <Button 
-                        variant="outline" 
+                      <Button
+                        variant="outline"
                         onClick={() => router.push(`/workspace/${id}/board/${board.id}/map-view`)}
                       >
                         View Full Map
                       </Button>
                     </div>
                   </div>
-                  
+
                   {/* Sample map markers */}
                   {entriesWithLocation.slice(0, 5).map((entry, index) => (
-                    <div 
+                    <div
                       key={entry.id}
                       className="absolute w-6 h-6 bg-primary rounded-full flex items-center justify-center cursor-pointer"
-                      style={{ 
-                        left: `${20 + (index * 15)}%`, 
-                        top: `${30 + (index * 10)}%` 
+                      style={{
+                        left: `${20 + (index * 15)}%`,
+                        top: `${30 + (index * 10)}%`
                       }}
                       onClick={() => setSelectedEntry(entry)}
                     >
                       <MapPin className="h-4 w-4 text-white" />
                     </div>
                   ))}
-                  
+
                   {/* Selected entry popup */}
                   {selectedEntry && (
-                    <div 
+                    <div
                       className="absolute bg-card p-4 rounded-lg shadow-lg w-64"
-                      style={{ 
-                        left: '50%', 
+                      style={{
+                        left: '50%',
                         top: '50%',
-                        transform: 'translate(-50%, -50%)' 
+                        transform: 'translate(-50%, -50%)'
                       }}
                     >
                       <div className="flex justify-between items-start mb-2">
                         <h3 className="font-medium">{selectedEntry.taskName}</h3>
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          className="h-6 w-6 p-0" 
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0"
                           onClick={() => setSelectedEntry(null)}
                         >
                           ×
@@ -570,15 +522,15 @@ export default function BoardDetail() {
                         <p className="text-sm mb-3">{selectedEntry.location.address}</p>
                       )}
                       <div className="flex justify-between">
-                        <Button 
-                          variant="outline" 
+                        <Button
+                          variant="outline"
                           size="sm"
                           onClick={() => router.push(`/workspace/${id}/board/${boardId}/location/${selectedEntry.id}`)}
                         >
                           View Details
                         </Button>
-                        <Button 
-                          variant="outline" 
+                        <Button
+                          variant="outline"
                           size="sm"
                           onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${selectedEntry.location?.lat},${selectedEntry.location?.lng}`, '_blank')}
                         >
@@ -588,7 +540,7 @@ export default function BoardDetail() {
                     </div>
                   )}
                 </div>
-                
+
                 {/* List of locations */}
                 <div className="mt-4">
                   <h3 className="text-lg font-medium mb-3">All Locations</h3>
@@ -599,8 +551,8 @@ export default function BoardDetail() {
                           <p className="font-medium">{entry.taskName}</p>
                           <p className="text-sm text-muted-foreground">{entry.location?.address}</p>
                         </div>
-                        <Button 
-                          variant="outline" 
+                        <Button
+                          variant="outline"
                           size="sm"
                           onClick={() => router.push(`/workspace/${id}/board/${boardId}/location/${entry.id}`)}
                         >
@@ -609,8 +561,8 @@ export default function BoardDetail() {
                       </div>
                     ))}
                     {entriesWithLocation.length > 5 && (
-                      <Button 
-                        variant="outline" 
+                      <Button
+                        variant="outline"
                         className="w-full"
                         onClick={() => router.push(`/workspace/${id}/board/${boardId}/map-view`)}
                       >

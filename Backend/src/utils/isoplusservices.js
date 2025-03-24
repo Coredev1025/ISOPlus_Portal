@@ -172,4 +172,26 @@ export function putInternalMessage(workspaceId, boardId, itemId, message) {
         }
     });
     return true;
-}
+};
+
+export function putTimeTracking(workspaceId, boardId, itemId, startTime, endTime) {
+    axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`, {
+        "values": [
+            {
+                "attribute_id": "b16e64b3-2e79-46af-ae87-3135005d362b",
+                "data": `${new Date(startTime).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+            }, {
+                "attribute_id": "00ece0a4-b3bc-43e1-8580-23854b062439",
+                "data": `${new Date(endTime).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+            }
+        ],
+    }, {
+        headers: {
+            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-API-Version": "2025-02-26.morava",
+        }
+    });
+    return true;
+};

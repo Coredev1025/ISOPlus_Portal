@@ -10,6 +10,4 @@ export interface TimeEntry {
     address: string;
   } | null;
   notes: string;
-  userId: string;
-  userName: string;
 }
