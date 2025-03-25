@@ -70,7 +70,7 @@ export default function BoardDetail() {
         data.push({
           id: entry.id,
           taskName: entry.taskName,
-          startTime: entry.startTime ? entry.startTime: "",
+          startTime: entry.startTime ? entry.startTime : "",
           endTime: entry.endTime ? entry.endTime : "",
           duration: entry.endTime && entry.startTime ? calcDuration(entry.startTime, entry.endTime) : 0, // in minutes
           location: {
@@ -81,7 +81,6 @@ export default function BoardDetail() {
           notes: entry.notes
         })
       }
-      console.log(data)
       setTimeEntries(data);
     };
     getBoards();
@@ -102,26 +101,36 @@ export default function BoardDetail() {
   }
 
   const calcDuration = (startTime: any, endTime: any) => {
-    console.log(new Date(endTime).getTime(), new Date(startTime).getTime())
-    return Math.floor((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000)
+    return Math.floor((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000);
   }
+
+  const getTimeTrackingStatus = async () => {
+    try {
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks/status?workspaceId=${id}&boardId=${boardId}`,
+        { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } }
+      );
+      if (response.data.active) {
+        setTimeTrackingEnabled(true);
+        setTimeEntries(prev => {
+          const matchedEntry = prev.find(entry => entry.id === response.data.taskId);
+          if (!matchedEntry) return prev;
+          return [
+            { ...matchedEntry, endTime: "" },
+            ...prev.filter(entry => entry.id !== response.data.taskId)
+          ];
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching time tracking status:", error);
+    }
+  };
 
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
     if (timeTrackingEnabled) {
-      setTimeEntries(prev => {
-        const activeEntry = prev.find(entry => !entry.endTime);
-        if (!activeEntry) return prev;
-
-        const updatedEntry = {
-          ...activeEntry,
-          startTime: new Date().toISOString(),
-          duration: Math.floor((new Date().getTime() - new Date(activeEntry.startTime).getTime()) / 60000)
-        };
-
-        return [updatedEntry, ...prev.filter(entry => entry.endTime)];
-      });
-      // Update active entry duration
+      getTimeTrackingStatus();
+      
       intervalId = setInterval(() => {
         setTimeEntries(prev => {
           const activeEntry = prev.find(entry => !entry.endTime);
@@ -135,7 +144,7 @@ export default function BoardDetail() {
           return [updatedEntry, ...prev.filter(entry => entry.endTime)];
         });
       }, 1000);
-    } 
+    }
     return () => clearInterval(intervalId);
   }, [timeTrackingEnabled]);
 
@@ -170,6 +179,9 @@ export default function BoardDetail() {
     let durationInMinutes: number;
 
     if (!entry.endTime) {
+      if (!entry.startTime) {
+        return `${entry.duration}m`;
+      }
       // For active entries, calculate duration from start time to now
       durationInMinutes = Math.floor(
         (new Date().getTime() - new Date(entry.startTime).getTime()) / 60000
@@ -375,7 +387,7 @@ export default function BoardDetail() {
                           )}
                         </TableCell>
                         <TableCell className="font-medium">{entry.taskName}</TableCell>
-                        <TableCell>{formatDate(entry.startTime)}</TableCell>
+                        <TableCell>{entry.startTime ? formatDate(entry.startTime) : ""}</TableCell>
                         <TableCell>{formatDuration(entry)}</TableCell>
                         <TableCell>
                           {entry.location ? (

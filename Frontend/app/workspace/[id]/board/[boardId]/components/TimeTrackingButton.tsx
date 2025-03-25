@@ -86,6 +86,18 @@ export function TimeTrackingButton({ workspaceId, boardId, setTimeTrackingEnable
     return () => clearInterval(timer);
   }, [isTracking]);
 
+  useEffect(() => {
+    // Load tracking status from localStorage on component mount
+    const storedTracking = localStorage.getItem(`timeTracking_${workspaceId}_${boardId}`);
+    if (storedTracking) {
+      const trackingData = JSON.parse(storedTracking);
+      setIsTracking(true);
+      setSelectedTask(trackingData.task);
+      setStartTime(new Date(trackingData.startTime));
+      setTimeTrackingEnabled(true);
+    }
+  }, [workspaceId, boardId]);
+
   const formatDuration = (start: Date, end: Date) => {
     const diff = Math.floor((end.getTime() - start.getTime()) / 1000);
     const hours = Math.floor(diff / 3600);
@@ -131,11 +143,19 @@ export function TimeTrackingButton({ workspaceId, boardId, setTimeTrackingEnable
       return;
     }
 
+    const startTimeStamp = new Date();
     setStartLocation(position);
-    setStartTime(new Date());
+    setStartTime(startTimeStamp);
     setIsTracking(true);
     setTimeTrackingEnabled(true);
     setShowTaskDialog(false);
+
+    // Store tracking data in localStorage
+    localStorage.setItem(`timeTracking_${workspaceId}_${boardId}`, JSON.stringify({
+      isTracking: true,
+      task: selectedTask,
+      startTime: startTimeStamp.toISOString(),
+    }));
   };
 
   const handleStopTracking = async () => {
@@ -143,9 +163,20 @@ export function TimeTrackingButton({ workspaceId, boardId, setTimeTrackingEnable
     if (position) {
       setEndLocation(position);
     }
+
+    const endTimeStamp = new Date();
     setIsTracking(false);
     setTimeTrackingEnabled(false);
     setShowSummary(true);
+
+    // Store end time and clear tracking status
+    const trackingKey = `timeTracking_${workspaceId}_${boardId}`;
+    const trackingData = JSON.parse(localStorage.getItem(trackingKey) || '{}');
+    localStorage.setItem(`timeTracking_${workspaceId}_${boardId}_history`, JSON.stringify({
+      ...trackingData,
+      endTime: endTimeStamp.toISOString(),
+    }));
+    localStorage.removeItem(trackingKey);
   };
 
   const handleClockInClick = () => {

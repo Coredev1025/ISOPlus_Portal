@@ -45,7 +45,6 @@ router.get('/', authenticateToken, async (req, res) => {
             res.status(500).json({ message: err.message });
         }
     } else {
-        console.log(result.message);
         res.status(200).json({ message: result.message });
     }
 
