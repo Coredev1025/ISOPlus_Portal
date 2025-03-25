@@ -103,17 +103,18 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 const service = serviceFee.find(service => service.values[0].data === item.values["Service Fee Type"][0]);
                 const material = materialFee.find(material => material.values[1].data === item.values["Used Materials/Parts"][0]);
 
-                invoiceDescription = `[["1", "${jobTitle}-${item.values["Service Fee Type"]}-${item.values["Job Duration (Hrs.)"]}Hrs.", "${item.values["Job Duration (Hrs.)"]}", "${service.values[1].data}", "${item.values["Payable Service Fee($) - GST Excl."]}", "${(parseFloat(item.values["Job Duration (Hrs.)"])) * (parseFloat(service.values[1].data))}"]`;
+                invoiceDescription = `[["1", "${jobTitle}-${item.values["Service Fee Type"]}-${item.values["Job Duration (Hrs.)"]}Hrs.", "${item.values["Job Duration (Hrs.)"]}", "${service.values[1].data}", "${parseFloat(item.values["Payable Service Fee($) - GST Excl."]) * parseFloat(item.values["Job Duration (Hrs.)"]) * parseFloat(service.values[1].data) / 100}", "${parseFloat(item.values["Job Duration (Hrs.)"]) * parseFloat(service.values[1].data)}"]`;
 
                 if (item.values["Payable Material Fee($) - GST Excl."] > 0) {
-                    invoiceDescription += `,["2", "Used Material/Part", "1", "${material.values[2].data}", "${item.values["Payable Material Fee($) - GST Excl."]}", "${material.values[2].data}"]`;
+                    const materialFee = (parseFloat(item.values["Payable Material Fee($) - GST Excl."]) * parseFloat(material.values[2].data) / 100).toFixed(2);
+                    invoiceDescription += `,["2", "Used Material/Part", "1", "${material.values[2].data}", "${materialFee}", "${parseFloat(material.values[2].data)}"]`;
                 }
 
                 if (item.values["Other Payable Fee($) - GST Excl."] > 0) {
                     if (item.values["Payable Material Fee($) - GST Excl."] > 0) {
-                        invoiceDescription += `,["3", "Other Payable Fee", "1", "${item.values["Other Payable Fee($) - GST Excl."]}", "${item.values["Other Payable Fee($) - GST Excl."]}", "${item.values["Other Payable Fee($) - GST Excl."]}"]`;
+                        invoiceDescription += `,["3", "Other Payable Fee", "1", "${item.values["Other Payable Fee($) - GST Excl."]}", "${parseFloat(item.values["Other Payable Fee($) - GST Excl."]) * parseFloat(item.values["Other Payable Fee($) - GST Excl."]) / 100}", "${parseFloat(item.values["Other Payable Fee($) - GST Excl."])}"]`;
                     } else {
-                        invoiceDescription += `,["2", "Other Payable Fee", "1", "${item.values["Other Payable Fee($) - GST Excl."]}", "${item.values["Other Payable Fee($) - GST Excl."]}", "${item.values["Other Payable Fee($) - GST Excl."]}"]`;
+                        invoiceDescription += `,["2", "Other Payable Fee", "1", "${item.values["Other Payable Fee($) - GST Excl."]}", "${parseFloat(item.values["Other Payable Fee($) - GST Excl."]) * parseFloat(item.values["Other Payable Fee($) - GST Excl."]) / 100}", "${parseFloat(item.values["Other Payable Fee($) - GST Excl."])}"]`;
                     }
                 }
 
@@ -186,7 +187,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 business.documentNumbering.purchaseOrder.nextNumber += 1;
                 business.save();
 
-                let folderIds = [], contractor = [];
+                let folderIds = [], contractor = [], clients = [];
                 const result = await getFolder(workspaceId, boardId);
                 if (result.status === 200) folderIds = result.folder;
 
@@ -194,6 +195,9 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                     if (folder.name.includes("Contractor")) {
                         const result = await getItem(workspaceId, boardId, folder.id);
                         if (result.status === 200) contractor = result.item;
+                    } else if (folder.name.includes("Clients")) {
+                        const result = await getItem(workspaceId, boardId, folder.id);
+                        if (result.status === 200) clients = result.item;
                     }
                 }
 
@@ -206,7 +210,14 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                     State: "",
                     Postcode: "",
                     PhoneNumber: ""
-                };
+                }, clientDetails = {
+                    Address: "",
+                    Suburb: "",
+                    State: "",
+                    Postcode: "",
+                    Client: ""
+                }, clientDetailInfo;
+
                 for (const con of contractor) {
 
                     const attrContractor = con.values.find(item => item.attribute.name === "Contractor");
@@ -239,20 +250,43 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                     throw new Error('Contract not found for the given contract name');
                 }
 
+                for (const client of clients) {
+                    const attrContactPersonsFirstName = client.values.find(item => item.attribute.name === "Contact Person's First Name");
+                    const attrContactPersonsLastName = client.values.find(item => item.attribute.name === "Contact Person's Last Name");
+
+                    if (attrContactPersonsFirstName.data == contractorReference.ContactPersonsFirstName && attrContactPersonsLastName.data == contractorReference.ContactPersonsLastName) {
+                        clientDetailInfo = client;
+                    }
+                }
+
+                if (!clientDetailInfo) {
+                    throw new Error('Client not found for the given client name');
+                }
+
+                for (const key of Object.keys(clientDetails)) {
+                    const attr = clientDetailInfo.values.find(item => item.attribute.name === key);
+                    if (attr) {
+                        if (attr.attribute.type == 'label') {
+                            const label = attr.attribute.settings.labels.find(item => item.id === attr.data[0]);
+                            clientDetails[key] = label.name;
+                        } else
+                            clientDetails[key] = attr.data;
+                    }
+                }
+
                 const inputs = {
-                    issueDate: `{"IssueDate": "${purchaseOrderValues['Issue Date'] && new Date(purchaseOrderValues['Issue Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
-                    deliveryDate: `{"DeliveryDate": "${purchaseOrderValues['Delivery Date'] && new Date(purchaseOrderValues['Delivery Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
-                    purchaseOrderNumber: `{"PurchaseOrderNumber": "${purchaseOrderNumber || purchaseOrderValues['PO Number']}"}`,
-                    LineItems: `[[
-                        "${purchaseOrderValues['Job Type'][0]}",
+                    clientDetails: `{"Address":"${clientDetails.Address}","Suburb":"${clientDetails.Suburb}","State":"${clientDetails.State}","Postcode":"${clientDetails.Postcode}","Supplier":"${clientDetails.Client}"}`,
+                    companyDetails: `{"ABN":"${business.abn}","Street Address":"${business.address.street}","Suburb":"${business.address.suburb}","State":"${business.address.state}","Postcode":"${business.address.postcode}","Country":"${business.address.country}"}`,
+                    quoteDetails: `{"Issue Date":"${purchaseOrderValues['Issue Date'] && new Date(purchaseOrderValues['Issue Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}","expiry Date":"${new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}","PO Number":"${purchaseOrderNumber || purchaseOrderValues['PO Number']}"}`,
+                    companyName: `{"Company Name":"${business.name}"}`,
+                    termsInput: `{"Delivery Date":"${purchaseOrderValues['Delivery Date'] && new Date(purchaseOrderValues['Delivery Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}","Delivery Address":"${contractorReference.Address} ${contractorReference.Suburb} ${contractorReference.State} ${contractorReference.Postcode}"}`,
+                    orders: `[[
                         "${purchaseOrderValues['Job Title']}${purchaseOrderValues['Job Description'].replace(/<.*?>/g, "") ? ` - ${purchaseOrderValues['Job Description'].replace(/<.*?>/g, "")}` : ''}",
                         "${purchaseOrderValues.Quantity || 1}",
                         "${purchaseOrderValues['Unit Price($) - GST Excl.'] || 1}",
-                        "${purchaseOrderValues['Total Price($) - GST Excl.'] || 1}"
+                        "${purchaseOrderValues['Total Price($) - GST Excl.'] || 1}", 
+                        "${(purchaseOrderValues.Quantity || 1) * (purchaseOrderValues['Unit Price($) - GST Excl.'] || 1)}"
                     ]]`,
-                    attentionTo: `{"AttentionTo": "${contractorReference.ContactPersonsFirstName} ${contractorReference.ContactPersonsLastName}"}`,
-                    deliveryAddress: `{"DeliveryAddress": "${contractorReference.Address} ${contractorReference.Suburb} ${contractorReference.State} ${contractorReference.Postcode}"}`,
-                    telephone: `{"Telephone": "${contractorReference.PhoneNumber}"}`
                 };
 
                 if (!purchaseOrderValues['Issue Date']) {
@@ -321,16 +355,63 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                 business.documentNumbering.quote.nextNumber += 1;
                 business.save();
 
+                let clients = [], folderIds = [], clientDetailInfo;
+                const result = await getFolder(workspaceId, boardId);
+                if (result.status === 200) folderIds = result.folder;
+
+                for (const folder of folderIds) {
+                    if (folder.name.includes("Clients")) {
+                        const result = await getItem(workspaceId, boardId, folder.id);
+                        if (result.status === 200) clients = result.item;
+                    }
+                }
+
+                for (const client of clients) {
+                    const attrClient = client.values.find(attr => attr.attribute.name == "Client");
+
+                    if (attrClient && attrClient.data == item.values.Client[0]) {
+                        clientDetailInfo = client;
+                        break;
+                    }
+                }
+
+                if (!clientDetailInfo) {
+                    throw new Error('Client not found for the given client name');
+                }
+
+                const clientDetails = {
+                    Address: "",
+                    Suburb: "",
+                    State: "",
+                    Postcode: "",
+                    Client: ""
+                };
+
+                for (const key of Object.keys(clientDetails)) {
+                    const attr = clientDetailInfo.values.find(item => item.attribute.name === key);
+                    if (attr) {
+                        if (attr.attribute.type == 'label') {
+                            const label = attr.attribute.settings.labels.find(item => item.id === attr.data[0]);
+                            clientDetails[key] = label.name;
+                        } else
+                            clientDetails[key] = attr.data;
+                    }
+                }
+
                 const pdfBytes = await generate({
                     template: template,
                     inputs: [
                         {
+                            clientDetails: `{"Address":"${clientDetails.Address}","Suburb":"${clientDetails.Suburb}","State":"${clientDetails.State}","Postcode":"${clientDetails.Postcode}","Client":"${clientDetails.Client}"}`,
+                            quoteDetails: `{"Issue Date":"${quoteValues['Issue Date'] ? new Date(quoteValues['Issue Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}","expiry Date":"${new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}","Quote Number":"${quoteNumber || quoteValues['Quote Number']}"}`,
+                            companyName: `{"Company Name":"${business.name}"}`,
+                            companyDetails: `{"ABN":"${business.abn}","Street Address":"${business.address.street}","Suburb":"${business.address.suburb}","State":"${business.address.state}","Postcode":"${business.address.postcode}","Country":"${business.address.country}"}`,
                             issueDate: `{"IssueDate": "${quoteValues['Issue Date'] ? new Date(quoteValues['Issue Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
                             expiryDate: `{"ExpiryDate": "${quoteValues['Expiry Date'] ? new Date(quoteValues['Expiry Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
                             quoteNumber: `{"QuoteNumber": "${quoteNumber || quoteValues['Quote Number']}"}`,
                             jobDescription: `{"JobDescription": "${quoteValues['Job Description'].replace(/<.*?>/g, "")}"}`,
                             jobTitle: `{"Title": "${quoteValues['Job Title'].replace(/<.*?>/g, "")}"}`,
-                            LineItems: `[["${quoteValues['Job Type'][0]}","${quoteValues['Job Title']} - ${quoteValues['Job Description'].replace(/<.*?>/g, "")}","${quoteValues.Quantity || 1}","${quoteValues['Unit Price($) - GST Excl.'] || 1}", "${quoteValues['Total Price($) - GST Excl.'] || 1}"]]`,
+                            orders: `[["${quoteValues['Job Title']} - ${quoteValues['Job Description'].replace(/<.*?>/g, "")}","${quoteValues.Quantity || 1}","${quoteValues['Unit Price($) - GST Excl.'] || 1}", "${quoteValues['Total Price($) - GST Excl.'] || 1}", "${(quoteValues.Quantity || 1) * (quoteValues['Unit Price($) - GST Excl.'] || 1)}"]]`,
                         }
                     ],
                     plugins: {

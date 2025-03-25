@@ -185,14 +185,14 @@
                 "type": "table",
                 "position": {
                     "x": 20,
-                    "y": 110.81
+                    "y": 110.28
                 },
                 "width": 170,
                 "height": 74.48432,
-                "content": "[[\"\",\"\",\"\",\"\",\"2\",\"10\"],[\"\",\"\",\"\",\"\",\"3\",\"20\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"]]",
+                "content": "[[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"]]",
                 "showHead": true,
                 "head": [
-                    "Item",
+                    "",
                     "Description",
                     "Quantity",
                     "Unit Price",
@@ -347,7 +347,7 @@
             },
             {
                 "type": "text",
-                "content": "${orders.reduce((sum, item) => sum + parseFloat(item[4] || 0),0)}",
+                "content": "${orders.reduce((sum, item) => sum + parseFloat(item[4] || 0),0).toFixed(2)}",
                 "position": {
                     "x": 159.05,
                     "y": 202.68
@@ -442,7 +442,11 @@
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "top",
-                "fontSize": 13,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 13,
+                    "fit": "vertical"
+                },
                 "lineHeight": 1,
                 "characterSpacing": 0,
                 "fontColor": "#000000",
@@ -451,7 +455,7 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": false,
-                "text": "{Due Date}",
+                "text": "Due Date: {Due Date}",
                 "variables": [
                     "Due Date"
                 ],
@@ -466,7 +470,7 @@
                     "x": 21.29,
                     "y": 237.47
                 },
-                "width": 74.35,
+                "width": 121.44,
                 "height": 33.07,
                 "rotate": 0,
                 "alignment": "left",
