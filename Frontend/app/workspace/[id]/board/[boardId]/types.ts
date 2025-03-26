@@ -2,7 +2,7 @@ export interface TimeEntry {
   id: string;
   taskName: string;
   startTime: string;
-  endTime: string;
+  endTime: string | null;
   duration: number; // in minutes
   location: {
     lat: number;
@@ -10,6 +10,4 @@ export interface TimeEntry {
     address: string;
   } | null;
   notes: string;
-  userId: string;
-  userName: string;
 }

@@ -47,7 +47,7 @@
                     "x": 20.26,
                     "y": 56.78
                 },
-                "width": 54.5,
+                "width": 45.77,
                 "height": 28.84,
                 "rotate": 0,
                 "alignment": "left",
@@ -185,14 +185,14 @@
                 "type": "table",
                 "position": {
                     "x": 20,
-                    "y": 110.81
+                    "y": 110.28
                 },
                 "width": 170,
-                "height": 78.43568,
+                "height": 74.48432,
                 "content": "[[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"]]",
                 "showHead": true,
                 "head": [
-                    "Item",
+                    "",
                     "Description",
                     "Quantity",
                     "Unit Price",
@@ -203,7 +203,7 @@
                     11.39471996803448,
                     30.98644514990506,
                     16.571040764413386,
-                    15.444852941176498,
+                    12.444852941176498,
                     11.838235294117641,
                     16.764705882352942
                 ],
@@ -214,7 +214,7 @@
                 },
                 "headStyles": {
                     "fontName": "Roboto",
-                    "fontSize": 13,
+                    "fontSize": 12,
                     "characterSpacing": 0,
                     "alignment": "center",
                     "verticalAlignment": "middle",
@@ -237,7 +237,7 @@
                 },
                 "bodyStyles": {
                     "fontName": "",
-                    "fontSize": 13,
+                    "fontSize": 11,
                     "characterSpacing": 0,
                     "alignment": "center",
                     "verticalAlignment": "middle",
@@ -284,7 +284,7 @@
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
-                "fontSize": 13,
+                "fontSize": 12,
                 "lineHeight": 1,
                 "characterSpacing": 0,
                 "fontColor": "#000000",
@@ -292,11 +292,12 @@
                 "opacity": 1,
                 "readOnly": true,
                 "fontName": "",
-                "name": "subtotalLabel"
+                "name": "subtotalLabel",
+                "required": false
             },
             {
                 "type": "text",
-                "content": "{orders.reduce((sum, item) => sum + parseFloat(item[3] || 0) * parseFloat(item[2] || 0), 0)}",
+                "content": "${orders.reduce((sum, item) => sum + parseFloat(item[5] || 0),0)}",
                 "position": {
                     "x": 159.05,
                     "y": 194.8
@@ -306,7 +307,7 @@
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
-                "fontSize": 13,
+                "fontSize": 12,
                 "lineHeight": 1,
                 "characterSpacing": 0,
                 "fontColor": "#000000",
@@ -315,26 +316,22 @@
                 "fontName": "",
                 "name": "subtotal",
                 "readOnly": true,
-                "required": false,
-                "dynamicFontSize": {
-                    "min": 4,
-                    "max": 13,
-                    "fit": "horizontal"
-                }
+                "required": false
             },
             {
-                "type": "text",
+                "type": "multiVariableText",
                 "position": {
                     "x": 118.99,
                     "y": 202.68
                 },
-                "content": "GST",
+                "name": "gstLabel",
+                "content": "{}",
                 "width": 40.2,
                 "height": 9.18,
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
-                "fontSize": 13,
+                "fontSize": 12,
                 "lineHeight": 1,
                 "characterSpacing": 0,
                 "fontColor": "#000000",
@@ -343,12 +340,14 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": true,
-                "fontName": "",
-                "name": "gstInput"
+                "text": "GST ",
+                "variables": [],
+                "required": false,
+                "fontName": ""
             },
             {
                 "type": "text",
-                "content": "{(orders.reduce((sum, item) => sum + parseFloat(item[2] || 0) * parseFloat(item[3] || 0) * parseFloat(item[4] || 0), 0) / 100).toFixed(2)}",
+                "content": "${orders.reduce((sum, item) => sum + parseFloat(item[4] || 0),0).toFixed(2)}",
                 "position": {
                     "x": 159.05,
                     "y": 202.68
@@ -358,21 +357,16 @@
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
-                "fontSize": 13,
+                "fontSize": 12,
                 "lineHeight": 1,
                 "characterSpacing": 0,
                 "fontColor": "#000000",
                 "backgroundColor": "",
                 "opacity": 1,
                 "fontName": "",
-                "name": "gst",
+                "name": "totalGST",
                 "readOnly": true,
-                "required": false,
-                "dynamicFontSize": {
-                    "min": 4,
-                    "max": 13,
-                    "fit": "horizontal"
-                }
+                "required": false
             },
             {
                 "type": "line",
@@ -401,7 +395,7 @@
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
-                "fontSize": 20,
+                "fontSize": 13,
                 "lineHeight": 1,
                 "characterSpacing": 0,
                 "fontColor": "#000000",
@@ -409,11 +403,12 @@
                 "backgroundColor": "",
                 "opacity": 1,
                 "readOnly": true,
-                "name": "totalLabel"
+                "name": "totalLabel",
+                "required": false
             },
             {
                 "type": "text",
-                "content": "{(Number(subtotal) + Number(gst)).toFixed(2)}",
+                "content": "${orders.reduce((sum, item) => sum + parseFloat(item[5] || 0), 0) + orders.reduce((sum, item) => sum + parseFloat(item[4] || 0), 0)}",
                 "position": {
                     "x": 160.37,
                     "y": 214.19
@@ -423,7 +418,7 @@
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
-                "fontSize": 20,
+                "fontSize": 13,
                 "lineHeight": 1,
                 "characterSpacing": 0,
                 "fontColor": "#000000",
@@ -432,27 +427,26 @@
                 "fontName": "",
                 "name": "total",
                 "readOnly": true,
-                "required": false,
-                "dynamicFontSize": {
-                    "min": 4,
-                    "max": 20,
-                    "fit": "horizontal"
-                }
+                "required": false
             },
             {
-                "name": "dueDate",
+                "name": "Due date",
                 "type": "multiVariableText",
-                "content": "{\"Date\":\"23/02/2025\"}",
+                "content": "{\"Due Date\":\"DUE DATE\"}",
                 "position": {
-                    "x": 126.36,
-                    "y": 225.63
+                    "x": 161.95,
+                    "y": 224.3
                 },
-                "width": 62.44,
-                "height": 15.08,
+                "width": 24.34,
+                "height": 10.32,
                 "rotate": 0,
-                "alignment": "left",
+                "alignment": "right",
                 "verticalAlignment": "top",
-                "fontSize": 19,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 13,
+                    "fit": "vertical"
+                },
                 "lineHeight": 1,
                 "characterSpacing": 0,
                 "fontColor": "#000000",
@@ -461,21 +455,22 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": false,
-                "text": "Due Date: {Date}",
+                "text": "Due Date: {Due Date}",
                 "variables": [
-                    "Date"
+                    "Due Date"
                 ],
-                "required": false
+                "required": false,
+                "fontName": "Roboto"
             },
             {
-                "name": "bankDetails",
+                "name": "Bank Details",
                 "type": "multiVariableText",
                 "content": "{\"Account Name\":\"ACCOUNT NAME\",\"Bank Name\":\"BANK NAME\",\"BSB\":\"BSB\",\"Account Number\":\"ACCOUNT NUMBER\",\"invoice Number\":\"INVOICE NUMBER\"}",
                 "position": {
                     "x": 21.29,
                     "y": 237.47
                 },
-                "width": 74.35,
+                "width": 121.44,
                 "height": 33.07,
                 "rotate": 0,
                 "alignment": "left",
@@ -503,6 +498,30 @@
                     "invoice Number"
                 ],
                 "required": false
+            },
+            {
+                "name": "field17",
+                "type": "text",
+                "content": "Due Date",
+                "position": {
+                    "x": 134.05,
+                    "y": 223.94
+                },
+                "width": 25.93,
+                "height": 10.05,
+                "rotate": 0,
+                "alignment": "right",
+                "verticalAlignment": "top",
+                "fontSize": 13,
+                "lineHeight": 1,
+                "characterSpacing": 0,
+                "fontColor": "#000000",
+                "backgroundColor": "",
+                "opacity": 1,
+                "strikethrough": false,
+                "underline": false,
+                "required": false,
+                "readOnly": false
             }
         ]
     ],
@@ -517,5 +536,5 @@
         ],
         "staticSchema": []
     },
-    "pdfmeVersion": "5.3.11"
+    "pdfmeVersion": "5.3.13"
 }

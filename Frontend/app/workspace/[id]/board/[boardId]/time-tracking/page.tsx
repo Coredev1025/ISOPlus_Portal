@@ -4,10 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ArrowLeft, Clock } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Header } from "@/components/ui/header";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 import { useAppContext } from "@/app/context";
 import axios from "axios";
 import { getCookie } from "@/app/utils/cookies";
@@ -22,7 +23,6 @@ export default function TimeTrackingPage() {
   const router = useRouter();
   const pathname = usePathname();
   const [boards, setBoards] = useState<Board[]>([]);
-  const [loadingBoards, setLoadingBoards] = useState(false);
   const [timeTrackingEnabled, setTimeTrackingEnabled] = useState(false);
   const { workspaces } = useAppContext();
   const id = pathname.split("/")[2];
@@ -34,7 +34,6 @@ export default function TimeTrackingPage() {
   }, []);
 
   const getBoards = async () => {
-    setLoadingBoards(true);
     try {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
       const data: Board[] = await Promise.all(
@@ -51,8 +50,6 @@ export default function TimeTrackingPage() {
       setBoards(data);
     } catch (error) {
       console.error("Error fetching boards:", error);
-    } finally {
-      setLoadingBoards(false);
     }
   }
 
@@ -62,6 +59,12 @@ export default function TimeTrackingPage() {
   if (!workspace || !board) {
     return null;
   }
+
+  const handleSaveSettings = () => {
+    // Save settings
+    toast.success("Time tracking settings saved successfully");
+    router.push(`/workspace/${id}/board/${boardId}`);
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -76,62 +79,42 @@ export default function TimeTrackingPage() {
           Back to Board
         </Button>
 
-        <div className="space-y-6 max-w-2xl mx-auto">
+        <div className="max-w-2xl mx-auto space-y-6">
           <Card className="p-6">
-            <div className="text-center space-y-4 mb-6">
-              <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto">
-                <Clock className="h-8 w-8 text-primary" />
-              </div>
-              <h1 className="text-2xl font-bold">Time Tracking Configuration</h1>
-              <p className="text-muted-foreground max-w-md mx-auto">
-                Configure time tracking settings for tasks in this board
-              </p>
-            </div>
-
             <div className="space-y-6">
-              <div className="flex items-center justify-between p-4 border rounded-lg">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                  <Clock className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold">Time Tracking</h1>
+                  <p className="text-muted-foreground">
+                    Configure time tracking settings for this board
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
                 <div className="space-y-0.5">
-                  <Label className="text-base">Enable Time Tracking</Label>
+                  <Label htmlFor="time-tracking">Enable Time Tracking</Label>
                   <p className="text-sm text-muted-foreground">
-                    Allow users to track time on tasks within this board
+                    Track time spent on tasks in this board
                   </p>
                 </div>
                 <Switch
+                  id="time-tracking"
                   checked={timeTrackingEnabled}
                   onCheckedChange={setTimeTrackingEnabled}
                 />
               </div>
 
-              {timeTrackingEnabled && (
-                <div className="bg-muted/30 p-4 rounded-lg">
-                  <div className="flex items-start gap-3">
-                    <Clock className="h-5 w-5 text-primary mt-0.5" />
-                    <div>
-                      <h3 className="text-sm font-medium">Time Tracking is Enabled</h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Users can now track time on tasks within this board. Time entries will be available for reporting and can be exported to integrated systems.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {!timeTrackingEnabled && (
-                <div className="bg-muted/30 p-4 rounded-lg">
-                  <div className="flex items-start gap-3">
-                    <Clock className="h-5 w-5 text-muted-foreground mt-0.5" />
-                    <div>
-                      <h3 className="text-sm font-medium">Time Tracking is Disabled</h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Enable time tracking to allow users to log time against tasks in this board. This is useful for billing, reporting, and productivity analysis.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-end pt-4">
-                <Button size="lg">Save Configuration</Button>
+              <div className="border-t pt-6">
+                <Button 
+                  className="w-full"
+                  onClick={handleSaveSettings}
+                >
+                  Save Settings
+                </Button>
               </div>
             </div>
           </Card>

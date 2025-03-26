@@ -8,7 +8,6 @@ import axios from 'axios';
 import { error, info, warn } from '../utils/logger.js';
 
 const router = express.Router();
-let is_working = false;
 
 router.post('/register',
   [
@@ -120,7 +119,7 @@ router.get("/isoplus/redirect", (req, res) => {
 
   const query = querystring.stringify({
     client_id: process.env.CLIENT_ID,
-    redirect_uri: `http://localhost:3001${process.env.CALLBACK_URL}`,
+    redirect_uri: `${process.env.CALLBACK_URL}`,
     response_type: "code",
     scope: "public-api internal-api",
     state: state,
@@ -142,7 +141,7 @@ router.get("/isoplus/callback", async (req, res) => {
       grant_type: "authorization_code",
       client_id: process.env.CLIENT_ID,
       client_secret: process.env.CLIENT_SECRET,
-      redirect_uri: `http://localhost:3001${process.env.CALLBACK_URL}`,
+      redirect_uri: `${process.env.CALLBACK_URL}`,
       code: code
     }, {
       headers: {
@@ -221,9 +220,6 @@ router.post('/oauth-login', async (req, res) => {
       { expiresIn: '24h' }
     );
 
-    if (!is_working)
-      generateAutomationURL(token, req.headers['authorization']);
-
     info('User-Service', 'OAuth login successful', { email: user.email }, req);
     res.json({
       token,
@@ -240,49 +236,5 @@ router.post('/oauth-login', async (req, res) => {
     res.status(500).json({ message: 'Server error during OAuth login' });
   }
 });
-
-const generateAutomationURL = async (token, authorization) => {
-  try{
-    is_working = true;
-    const workspaces = await axios.get(`http://localhost:3001/api/workspaces`, { headers: { token, authorization: authorization } })
-  
-    if (workspaces.status === 200) {
-      workspaces.data.workspace.map(async (workspaceData) => {
-        const response = await axios.get(`http://localhost:3001/api/workspaces/boards?workspaceId=${workspaceData.id}`, { headers: { token, authorization: authorization } });
-        response.data.board.map(async (boardData) => {
-          // const result = await axios.post(`https://app.isoplus.online/api/v2/workspaces/${workspaceData.id}/boards/${boardData.id}/hooks`, {
-          //   "url": `${process.env.HTTPS_URL}/api/webhook/${workspaceData.id}/${boardData.id}/invoice`,
-          //   "events": [
-          //     {
-          //       "event": "item.created"
-          //     }
-          //   ]
-          // }, {
-          //   headers: {
-          //     "Authorization": authorization,
-          //     "Content-Type": "application/json",
-          //     "Accept": "application/json",
-          //     "X-API-Version": "2025-02-26.morava",
-          //   }
-          // })
-          const result = await axios.get(`https://app.isoplus.online/api/v2/workspaces/${workspaceData.id}/boards/${boardData.id}/hooks`, {
-            headers: {
-              "Authorization": authorization,
-              "Content-Type": "application/json",
-              "Accept": "application/json",
-              "X-API-Version": "2025-02-26.morava",
-            }, params: {
-              "expand[0]": "logs",
-            }
-          });
-          console.log(result.data.data);
-        })
-      })
-    }
-    is_working = false;
-  } catch (err) {
-    console.log(err);
-  }  
-}
 
 export default router;

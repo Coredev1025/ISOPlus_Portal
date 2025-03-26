@@ -11,13 +11,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Upload } from "lucide-react";
+import { ArrowLeft, Upload, AlertCircle } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Header } from "@/components/ui/header";
 import axios from "axios";
 import { getCookie } from "@/app/utils/cookies";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+interface NumberSequence {
+  prefix: string;
+  nextNumber: number;
+}
 
 export default function ConfigureBusinessPage() {
   const router = useRouter();
@@ -31,6 +46,26 @@ export default function ConfigureBusinessPage() {
   const [wideLogoPreview, setWideLogoPreview] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
   const [showError, setShowError] = useState(false);
+  // Document number sequences
+  const [invoiceSequence, setInvoiceSequence] = useState<NumberSequence>({ prefix: "INV-", nextNumber: 1000 });
+  const [purchaseOrderSequence, setPurchaseOrderSequence] = useState<NumberSequence>({ prefix: "PO-", nextNumber: 1000 });
+  const [quoteSequence, setQuoteSequence] = useState<NumberSequence>({ prefix: "QT-", nextNumber: 1000 });
+  const [loading, setLoading] = useState(false);
+
+  // Alert dialog state
+  const [alertDialog, setAlertDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    type: 'invoice' | 'purchaseOrder' | 'quote';
+    newValue: number;
+  }>({
+    isOpen: false,
+    title: '',
+    description: '',
+    type: 'invoice',
+    newValue: 0
+  });
 
   const countryStates: { [key: string]: string[] } = {
     "Afghanistan": [],
@@ -251,7 +286,6 @@ export default function ConfigureBusinessPage() {
   });
 
   useEffect(() => {
-    // Fetch the saved business profile data when the page loads
     const fetchBusinessProfile = async () => {
       try {
         const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`, { headers: { token: getCookie("token") }, params: { workspaceId: id } });
@@ -268,20 +302,35 @@ export default function ConfigureBusinessPage() {
           abn: data.abn || "",
           acn: data.acn || "",
           workspaceId: id,
-          bankAccountName: data.bankDetails.accountName || "",
-          bankName: data.bankDetails.bankName || "",
-          bsb: data.bankDetails.bsb || "",
-          accountNumber: data.bankDetails.accountNumber || "",
-          paymentReference: data.bankDetails.paymentReference || "",
+          bankAccountName: data.bankDetails?.accountName || "",
+          bankName: data.bankDetails?.bankName || "",
+          bsb: data.bankDetails?.bsb || "",
+          accountNumber: data.bankDetails?.accountNumber || "",
+          paymentReference: data.bankDetails?.paymentReference || "",
         });
+
+        // Set document numbering sequences
+        if (data.documentNumbering) {
+          if (data.documentNumbering.invoice) {
+            setInvoiceSequence(data.documentNumbering.invoice);
+          }
+          if (data.documentNumbering.purchaseOrder) {
+            setPurchaseOrderSequence(data.documentNumbering.purchaseOrder);
+          }
+          if (data.documentNumbering.quote) {
+            setQuoteSequence(data.documentNumbering.quote);
+          }
+        }
+
+        // Set logo previews
         if (data.defaultLogo) {
-          setDefaultLogoPreview(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business${data.defaultLogo}`);
+          setDefaultLogoPreview(data.defaultLogo);
         }
         if (data.squareLogo) {
-          setSquareLogoPreview(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business${data.squareLogo}`);
+          setSquareLogoPreview(data.squareLogo);
         }
         if (data.wideLogo) {
-          setWideLogoPreview(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business${data.wideLogo}`);
+          setWideLogoPreview(data.wideLogo);
         }
       } catch (error) {
         console.error("Failed to fetch business profile:", error);
@@ -289,7 +338,7 @@ export default function ConfigureBusinessPage() {
     };
 
     fetchBusinessProfile();
-  }, []);
+  }, [id]);
 
   const handleLogoChange = (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -317,10 +366,16 @@ export default function ConfigureBusinessPage() {
 
   const handleSave = async () => {
     try {
+      setLoading(true);
       const formDataToSend = new FormData();
       Object.keys(formData).forEach((key) => {
         formDataToSend.append(key, formData[key as keyof typeof formData]);
       });
+      formDataToSend.append('documentNumbering', JSON.stringify({
+        invoice: invoiceSequence,
+        purchaseOrder: purchaseOrderSequence,
+        quote: quoteSequence
+      }));
       if (logoFile) {
         formDataToSend.append("defaultLogo", logoFile);
         setLogoFile(null);
@@ -334,21 +389,62 @@ export default function ConfigureBusinessPage() {
         setWideLogoFile(null);
       }
 
-      await axios.put(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`, formDataToSend, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-          "token": getCookie("token")
+      await axios.put(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`,
+        formDataToSend,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+            token: getCookie("token")
+          }
         }
-      });
+      );
 
       setShowError(false);
       setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 2000)
+      setTimeout(() => setShowSuccess(false), 2000);
     } catch (error) {
       setShowSuccess(false);
       setShowError(true);
-      setTimeout(() => setShowError(false), 2000)
+      setTimeout(() => setShowError(false), 2000);
       console.error("Failed to save business profile:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNumberChange = (type: 'invoice' | 'purchaseOrder' | 'quote', value: string) => {
+    const newValue = parseInt(value);
+    const currentValue = type === 'invoice'
+      ? invoiceSequence.nextNumber
+      : type === 'purchaseOrder'
+        ? purchaseOrderSequence.nextNumber
+        : quoteSequence.nextNumber;
+
+    if (newValue < currentValue) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Warning: Reducing Number Sequence',
+        description: 'Reducing the next number may result in duplicate document numbers if previous numbers have been used. Are you sure you want to continue?',
+        type,
+        newValue
+      });
+    } else {
+      updateNumberSequence(type, newValue);
+    }
+  };
+
+  const updateNumberSequence = (type: 'invoice' | 'purchaseOrder' | 'quote', value: number) => {
+    switch (type) {
+      case 'invoice':
+        setInvoiceSequence(prev => ({ ...prev, nextNumber: value }));
+        break;
+      case 'purchaseOrder':
+        setPurchaseOrderSequence(prev => ({ ...prev, nextNumber: value }));
+        break;
+      case 'quote':
+        setQuoteSequence(prev => ({ ...prev, nextNumber: value }));
+        break;
     }
   };
 
@@ -364,323 +460,447 @@ export default function ConfigureBusinessPage() {
         <Card className="max-w-2xl mx-auto p-6">
           <h1 className="text-2xl font-bold mb-6">Configure Your Business</h1>
 
-          <div className="space-y-6">
-            <div className="space-y-4 border rounded-lg p-5">
-              <h3 className="text-lg font-semibold">Company Logos</h3>
-              <p className="text-sm text-muted-foreground">
-                Upload different logo formats for various uses throughout the application
-              </p>
+          <Tabs defaultValue="basic" className="space-y-6">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="basic">Basic Information</TabsTrigger>
+              <TabsTrigger value="additional">Additional Settings</TabsTrigger>
+            </TabsList>
 
-              <div className="bg-muted/30 p-4 rounded-lg mb-4">
-                <div className="flex items-center gap-3">
-                  <Upload className="h-5 w-5 text-primary" />
-                  <div>
-                    <h4 className="text-sm font-medium">Logo Types</h4>
-                    <p className="text-xs text-muted-foreground">
-                      Select a logo type below to upload the appropriate format
-                    </p>
+            <TabsContent value="basic">
+              <div className="space-y-6">
+                <div className="space-y-4 border rounded-lg p-5">
+                  <h3 className="text-lg font-semibold">Company Logos</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Upload different logo formats for various uses throughout the application
+                  </p>
+
+                  <div className="bg-muted/30 p-4 rounded-lg mb-4">
+                    <div className="flex items-center gap-3">
+                      <Upload className="h-5 w-5 text-primary" />
+                      <div>
+                        <h4 className="text-sm font-medium">Logo Types</h4>
+                        <p className="text-xs text-muted-foreground">
+                          Select a logo type below to upload the appropriate format
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border rounded-lg p-4">
+                    <Tabs defaultValue="default" className="space-y-4">
+                      <TabsList className="grid grid-cols-3 w-full">
+                        <TabsTrigger value="default">Default Logo</TabsTrigger>
+                        <TabsTrigger value="square">Square Logo</TabsTrigger>
+                        <TabsTrigger value="wide">Wide Logo</TabsTrigger>
+                      </TabsList>
+
+                      <TabsContent value="default" className="pt-4">
+                        <div className="flex items-center gap-4">
+                          <div
+                            className="w-32 h-32 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted"
+                          >
+                            {defaultLogoPreview ? (
+                              <img
+                                src={defaultLogoPreview}
+                                alt="Default Logo Preview"
+                                className="w-full h-full object-contain"
+                              />
+                            ) : (
+                              <Upload className="h-8 w-8 text-muted-foreground" />
+                            )}
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-medium mb-2">Default Logo</h4>
+                            <Input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => handleLogoChange(e, setDefaultLogoPreview, setLogoFile)}
+                              className="max-w-xs"
+                            />
+                            <p className="text-sm text-muted-foreground mt-2">
+                              Recommended size: 512x512px
+                            </p>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Used for general application areas and profile displays
+                            </p>
+                          </div>
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="square" className="pt-4">
+                        <div className="flex items-center gap-4">
+                          <div
+                            className="w-32 h-32 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted"
+                          >
+                            {squareLogoPreview ? (
+                              <img
+                                src={squareLogoPreview}
+                                alt="Square Logo Preview"
+                                className="w-full h-full object-contain"
+                              />
+                            ) : (
+                              <Upload className="h-8 w-8 text-muted-foreground" />
+                            )}
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-medium mb-2">Square Logo</h4>
+                            <Input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => handleLogoChange(e, setSquareLogoPreview, setSquareLogoFile)}
+                              className="max-w-xs"
+                            />
+                            <p className="text-sm text-muted-foreground mt-2">
+                              Recommended size: 256x256px
+                            </p>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Used for app icons, avatars, and compact displays
+                            </p>
+                          </div>
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="wide" className="pt-4">
+                        <div className="flex items-center gap-4">
+                          <div
+                            className="w-48 h-24 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted"
+                          >
+                            {wideLogoPreview ? (
+                              <img
+                                src={wideLogoPreview}
+                                alt="Wide Logo Preview"
+                                className="w-full h-full object-contain"
+                              />
+                            ) : (
+                              <Upload className="h-8 w-8 text-muted-foreground" />
+                            )}
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-medium mb-2">Wide Logo</h4>
+                            <Input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => handleLogoChange(e, setWideLogoPreview, setWideLogoFile)}
+                              className="max-w-xs"
+                            />
+                            <p className="text-sm text-muted-foreground mt-2">
+                              Recommended size: 512x128px
+                            </p>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Used for headers, footers, and document letterheads
+                            </p>
+                          </div>
+                        </div>
+                      </TabsContent>
+                    </Tabs>
                   </div>
                 </div>
-              </div>
 
-              <div className="border rounded-lg p-4">
-                <Tabs defaultValue="default" className="space-y-4">
-                  <TabsList className="grid grid-cols-3 w-full">
-                    <TabsTrigger value="default">Default Logo</TabsTrigger>
-                    <TabsTrigger value="square">Square Logo</TabsTrigger>
-                    <TabsTrigger value="wide">Wide Logo</TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="default" className="pt-4">
-                    <div className="flex items-center gap-4">
-                      <div
-                        className="w-32 h-32 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted"
-                      >
-                        {defaultLogoPreview ? (
-                          <img
-                            src={defaultLogoPreview}
-                            alt="Default Logo Preview"
-                            className="w-full h-full object-contain"
-                          />
-                        ) : (
-                          <Upload className="h-8 w-8 text-muted-foreground" />
-                        )}
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-medium mb-2">Default Logo</h4>
-                        <Input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => handleLogoChange(e, setDefaultLogoPreview, setLogoFile)}
-                          className="max-w-xs"
-                        />
-                        <p className="text-sm text-muted-foreground mt-2">
-                          Recommended size: 512x512px
-                        </p>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          Used for general application areas and profile displays
-                        </p>
-                      </div>
+                <div className="space-y-4 border rounded-lg p-5">
+                  <h3 className="text-lg font-semibold">Business Details</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="name">Company Name</Label>
+                      <Input
+                        id="name"
+                        placeholder="Enter company name"
+                        value={formData.name}
+                        onChange={handleInputChange}
+                      />
                     </div>
-                  </TabsContent>
-
-                  <TabsContent value="square" className="pt-4">
-                    <div className="flex items-center gap-4">
-                      <div
-                        className="w-32 h-32 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted"
-                      >
-                        {squareLogoPreview ? (
-                          <img
-                            src={squareLogoPreview}
-                            alt="Square Logo Preview"
-                            className="w-full h-full object-contain"
-                          />
-                        ) : (
-                          <Upload className="h-8 w-8 text-muted-foreground" />
-                        )}
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-medium mb-2">Square Logo</h4>
-                        <Input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => handleLogoChange(e, setSquareLogoPreview, setSquareLogoFile)}
-                          className="max-w-xs"
-                        />
-                        <p className="text-sm text-muted-foreground mt-2">
-                          Recommended size: 256x256px
-                        </p>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          Used for app icons, avatars, and compact displays
-                        </p>
-                      </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="phone">Phone Number</Label>
+                      <Input
+                        id="phone"
+                        placeholder="Enter phone number"
+                        value={formData.phone}
+                        onChange={handleInputChange}
+                      />
                     </div>
-                  </TabsContent>
+                  </div>
 
-                  <TabsContent value="wide" className="pt-4">
-                    <div className="flex items-center gap-4">
-                      <div
-                        className="w-48 h-24 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted"
-                      >
-                        {wideLogoPreview ? (
-                          <img
-                            src={wideLogoPreview}
-                            alt="Wide Logo Preview"
-                            className="w-full h-full object-contain"
-                          />
-                        ) : (
-                          <Upload className="h-8 w-8 text-muted-foreground" />
-                        )}
-                      </div>
-                      <div>
-                        <h4 className="text-sm font-medium mb-2">Wide Logo</h4>
-                        <Input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) => handleLogoChange(e, setWideLogoPreview, setWideLogoFile)}
-                          className="max-w-xs"
-                        />
-                        <p className="text-sm text-muted-foreground mt-2">
-                          Recommended size: 512x128px
-                        </p>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          Used for headers, footers, and document letterheads
-                        </p>
-                      </div>
-                    </div>
-                  </TabsContent>
-                </Tabs>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Company Name</Label>
-                  <Input
-                    id="name"
-                    placeholder="Enter company name"
-                    value={formData.name}
-                    onChange={handleInputChange}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Phone Number</Label>
-                  <Input
-                    id="phone"
-                    placeholder="Enter phone number"
-                    value={formData.phone}
-                    onChange={handleInputChange}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="email">Business Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="Enter business email"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                />
-              </div>
-
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Business Address</h3>
-                <div className="space-y-2">
-                  <Label htmlFor="country">Country</Label>
-                  <Select
-                    value={formData.country}
-                    onValueChange={(value) =>
-                      setFormData((prevData) => ({
-                        ...prevData,
-                        country: value,
-                      }))
-                    }
-                  >
-                    <SelectTrigger id="country">
-                      <SelectValue placeholder="Select country" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.keys(countryStates).map((country) => (
-                        <SelectItem key={country} value={country}>
-                          {country}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="street">Street Address</Label>
-                  <Input
-                    id="street"
-                    placeholder="Enter street address"
-                    value={formData.street}
-                    onChange={handleInputChange}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="suburb">Suburb</Label>
+                    <Label htmlFor="email">Business Email</Label>
                     <Input
-                      id="suburb"
-                      placeholder="Enter city"
-                      value={formData.suburb}
+                      id="email"
+                      type="email"
+                      placeholder="Enter business email"
+                      value={formData.email}
                       onChange={handleInputChange}
                     />
                   </div>
+                </div>
+
+                <div className="space-y-4  border rounded-lg p-5">
+                  <h3 className="text-lg font-semibold">Business Address</h3>
                   <div className="space-y-2">
-                    <Label htmlFor="state">State</Label>
+                    <Label htmlFor="country">Country</Label>
                     <Select
-                      value={formData.state}
+                      value={formData.country}
                       onValueChange={(value) =>
                         setFormData((prevData) => ({
                           ...prevData,
-                          state: value,
+                          country: value,
                         }))
                       }
                     >
-                      <SelectTrigger id="state">
-                        <SelectValue placeholder="Select state" />
+                      <SelectTrigger id="country">
+                        <SelectValue placeholder="Select country" />
                       </SelectTrigger>
                       <SelectContent>
-                        {countryStates[formData.country]?.map((state: string) => (
-                          <SelectItem key={state} value={state}>
-                            {state}
+                        {Object.keys(countryStates).map((country) => (
+                          <SelectItem key={country} value={country}>
+                            {country}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="street">Street Address</Label>
+                    <Input
+                      id="street"
+                      placeholder="Enter street address"
+                      value={formData.street}
+                      onChange={handleInputChange}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="suburb">Suburb</Label>
+                      <Input
+                        id="suburb"
+                        placeholder="Enter city"
+                        value={formData.suburb}
+                        onChange={handleInputChange}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="state">State</Label>
+                      <Select
+                        value={formData.state}
+                        onValueChange={(value) =>
+                          setFormData((prevData) => ({
+                            ...prevData,
+                            state: value,
+                          }))
+                        }
+                      >
+                        <SelectTrigger id="state">
+                          <SelectValue placeholder="Select state" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {countryStates[formData.country]?.map((state: string) => (
+                            <SelectItem key={state} value={state}>
+                              {state}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="postcode">Postcode</Label>
+                    <Input
+                      id="postcode"
+                      placeholder="Enter postcode"
+                      maxLength={8}
+                      value={formData.postcode}
+                      onChange={handleInputChange}
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="postcode">Postcode</Label>
-                  <Input
-                    id="postcode"
-                    placeholder="Enter postcode"
-                    maxLength={8}
-                    value={formData.postcode}
-                    onChange={handleInputChange}
-                  />
-                </div>
-              </div>
 
-              {/* Business Numbers */}
-              <div className="grid grid-cols-1 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="abn">Australian Business Number (ABN)</Label>
-                  <Input
-                    id="abn"
-                    placeholder="Enter ABN"
-                    maxLength={11}
-                    value={formData.abn}
-                    onChange={handleInputChange}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="acn">Australian Company Number (ACN)</Label>
-                  <Input
-                    id="acn"
-                    placeholder="Enter ACN"
-                    maxLength={9}
-                    value={formData.acn}
-                    onChange={handleInputChange}
-                  />
+                <div className="space-y-4  border rounded-lg p-5">
+                  <h3 className="text-lg font-semibold">Business Numbers</h3>
+                  <div className="grid grid-cols-1 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="abn">Australian Business Number (ABN)</Label>
+                      <Input
+                        id="abn"
+                        placeholder="Enter ABN"
+                        maxLength={11}
+                        value={formData.abn}
+                        onChange={handleInputChange}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="acn">Australian Company Number (ACN)</Label>
+                      <Input
+                        id="acn"
+                        placeholder="Enter ACN"
+                        maxLength={9}
+                        value={formData.acn}
+                        onChange={handleInputChange}
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            </TabsContent>
 
-            {/* Bank Details */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Bank Details</h3>
-              <div className="space-y-2">
-                <Label htmlFor="bankAccountName">Account Name</Label>
-                <Input
-                  id="bankAccountName"
-                  placeholder="Enter account name"
-                  value={formData.bankAccountName}
-                  onChange={handleInputChange}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="bankName">Bank Name</Label>
-                <Input
-                  id="bankName"
-                  placeholder="Enter bank name"
-                  value={formData.bankName}
-                  onChange={handleInputChange}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="bsb">BSB</Label>
-                <Input
-                  id="bsb"
-                  placeholder="Enter BSB"
-                  value={formData.bsb}
-                  onChange={handleInputChange}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="accountNumber">Account Number</Label>
-                <Input
-                  id="accountNumber"
-                  placeholder="Enter account number"
-                  value={formData.accountNumber}
-                  onChange={handleInputChange}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="paymentReference">Payment Reference</Label>
-                <Input
-                  id="paymentReference"
+            <TabsContent value="additional">
+              <div className="space-y-6">
+                {/* Bank Details */}
+                <div className="space-y-4 border rounded-lg p-5">
+                  <h3 className="text-lg font-semibold">Bank Details</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    These details will appear on your invoices for receiving payments
+                  </p>
+
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="bankName">Bank Name</Label>
+                      <Input
+                        id="bankName"
+                        placeholder="Enter bank name"
+                        value={formData.bankName}
+                        onChange={handleInputChange}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="bankAccountName">Account Name</Label>
+                      <Input
+                        id="bankAccountName"
+                        value={formData.bankAccountName}
+                        onChange={handleInputChange}
+                        placeholder="Enter account name"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="bsb">BSB Number</Label>
+                        <Input
+                          id="bsb"
+                          placeholder="Enter BSB"
+                          value={formData.bsb}
+                          onChange={handleInputChange}
+                          maxLength={6}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="accountNumber">Account Number</Label>
+                        <Input
+                          id="accountNumber"
+                          placeholder="Enter account number"
+                          value={formData.accountNumber}
+                          onChange={handleInputChange}
+                          type="password"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="paymentReference">Payment Reference</Label>
+                      <Input
+                        id="paymentReference"
                   placeholder="Enter payment reference (optional)"
-                  value={formData.paymentReference}
-                  onChange={handleInputChange}
-                />
-              </div>
-            </div>
+                        value={formData.paymentReference}
+                        onChange={handleInputChange}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-4 border rounded-lg p-5">
+                  <h3 className="text-lg font-semibold">Document Number Configuration</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Configure prefixes and next numbers for various document types
+                  </p>
 
+                  {/* Invoice Numbers */}
+                  <div className="space-y-4">
+                    <div className="p-4 bg-muted/30 rounded-lg space-y-3">
+                      <h4 className="font-medium">Invoice Numbers</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="invoice-prefix">Prefix</Label>
+                          <Input
+                            id="invoice-prefix"
+                            value={invoiceSequence.prefix}
+                            onChange={(e) => setInvoiceSequence(prev => ({ ...prev, prefix: e.target.value }))}
+                            placeholder="e.g. INV-"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="invoice-next">Next Number</Label>
+                          <Input
+                            id="invoice-next"
+                            type="number"
+                            value={invoiceSequence.nextNumber}
+                            onChange={(e) => handleNumberChange('invoice', e.target.value)}
+                            min={1}
+                          />
+                        </div>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Next invoice will be: {invoiceSequence.prefix}{invoiceSequence.nextNumber}
+                      </p>
+                    </div>
+
+                    {/* Purchase Order Numbers */}
+                    <div className="p-4 bg-muted/30 rounded-lg space-y-3">
+                      <h4 className="font-medium">Purchase Order Numbers</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="po-prefix">Prefix</Label>
+                          <Input
+                            id="po-prefix"
+                            value={purchaseOrderSequence.prefix}
+                            onChange={(e) => setPurchaseOrderSequence(prev => ({ ...prev, prefix: e.target.value }))}
+                            placeholder="e.g. PO-"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="po-next">Next Number</Label>
+                          <Input
+                            id="po-next"
+                            type="number"
+                            value={purchaseOrderSequence.nextNumber}
+                            onChange={(e) => handleNumberChange('purchaseOrder', e.target.value)}
+                            min={1}
+                          />
+                        </div>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Next purchase order will be: {purchaseOrderSequence.prefix}{purchaseOrderSequence.nextNumber}
+                      </p>
+                    </div>
+
+                    {/* Quote Numbers */}
+                    <div className="p-4 bg-muted/30 rounded-lg space-y-3">
+                      <h4 className="font-medium">Quote Numbers</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="quote-prefix">Prefix</Label>
+                          <Input
+                            id="quote-prefix"
+                            value={quoteSequence.prefix}
+                            onChange={(e) => setQuoteSequence(prev => ({ ...prev, prefix: e.target.value }))}
+                            placeholder="e.g. QT-"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="quote-next">Next Number</Label>
+                          <Input
+                            id="quote-next"
+                            type="number"
+                            value={quoteSequence.nextNumber}
+                            onChange={(e) => handleNumberChange('quote', e.target.value)}
+                            min={1}
+                          />
+                        </div>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Next quote will be: {quoteSequence.prefix}{quoteSequence.nextNumber}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
+
+          <div className="mt-6 pt-6 border-t">
             <Button className="w-full" size="lg" onClick={handleSave}>
               Save Business Configuration
             </Button>
@@ -698,6 +918,35 @@ export default function ConfigureBusinessPage() {
           )}
         </Card>
       </div>
-    </div>
+
+      {/* Warning Dialog for Number Sequence Reduction */}
+      <AlertDialog
+        open={alertDialog.isOpen}
+        onOpenChange={(open) => setAlertDialog(prev => ({ ...prev, isOpen: open }))}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              {alertDialog.title}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {alertDialog.description}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                updateNumberSequence(alertDialog.type, alertDialog.newValue);
+                setAlertDialog(prev => ({ ...prev, isOpen: false }));
+              }}
+            >
+              Continue
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div >
   );
 }

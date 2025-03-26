@@ -60,7 +60,7 @@ export default function AuditTrailPage() {
           user: item.userEmail, 
           ipAddress: item.userIp, 
           detail: item.detail, 
-          timestamp: new Date(item.createdAt).toLocaleString('en-US', { 
+          timestamp: new Date(item.createdAt).toLocaleString('en-AU', { 
             month: 'numeric', 
             day: 'numeric', 
             year: 'numeric', 
