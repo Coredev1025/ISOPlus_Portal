@@ -3,7 +3,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import Workspace from '../models/Workspace.js';
 import AuditTrail from '../models/AuditTrail.js';
 import { info, error } from '../utils/logger.js';
-import { getWorkspace, getBoard } from '../utils/isoplusservices.js';
+import { getWorkspace, getBoard } from '../services/isoplusServices.js';
 
 const router = express.Router();
 

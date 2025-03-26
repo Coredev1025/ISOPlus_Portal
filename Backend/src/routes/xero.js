@@ -1,28 +1,224 @@
 import express from 'express';
-import { authenticateToken } from '../middleware/auth.js';
-import { info, error } from '../utils/logger.js';
+import dotenv from 'dotenv';
+import { info, warn, error }from '../utils/logger.js'; 
+import { validateItemBelongsToTenant, getJobReferencedItems } from '../services/isoplusServices.js'; 
+import { configureXero, createInvoice, createOrUpdateContact, createQuote, createPurchaseOrder } from '../services/xeroServices.js'; 
 
+dotenv.config();
 const router = express.Router();
 
-router.get('/connect', authenticateToken, (req, res) => {
-  const authUrl = `https://login.xero.com/identity/connect/authorize?
-    response_type=code&
-    client_id=${process.env.XERO_CLIENT_ID}&
-    redirect_uri=${encodeURIComponent(process.env.XERO_REDIRECT_URI)}&
-    scope=offline_access accounting.transactions`;
-
-  info('Xero-Service', 'Successufully connect', { userId: req.user.userId }, req);
-  res.json({ authUrl });
+router.get('/:clientId/services', (req, res) => {
+  const services = [
+    { Name: 'Create invoice', Status: 'Ready' },
+    { Name: 'Update invoice', Status: 'In progress' },
+    { Name: 'Get invoice', Status: 'In progress' },
+    { Name: 'Retrieving the online invoice URL', Status: 'In progress', Use: 'To get an online invoice URL.' },
+    { Name: 'Emailing an invoice', Status: 'In progress', Use: 'To trigger the email of a sales invoice out of Xero.' },
+    { Name: 'Webhooks', Status: 'In progress', Use: 'Create a subscription to get invoice events.' },
+  ];
+  res.json(services);
 });
 
-router.get('/callback', authenticateToken, async (req, res) => {
+router.post('/:clientId/test', async (req, res) => {
+  const { clientId } = req.params;
+  const payload = req.body;
+
+  await configureXero(clientId);
+  info(`/test client id: ${clientId}, body: ${JSON.stringify(payload)}`);
+  res.json({ message: 'Test endpoint executed successfully' });
+});
+
+router.get('/:clientId/hello', (req, res) => {
+  res.send('Hello, World!');
+});
+
+router.post('/:clientId/invoice', async (req, res) => {
+  const { clientId } = req.params;
+  const payload = req.body;
+
   try {
-    info('Xero-Service', 'GET /callback request received', { userId: req.user.userId, query: req.query }, req);
-    const { code } = req.query;
-    res.redirect('/dashboard');
+    await configureXero(clientId);
+
+    if (!payload.items || payload.items.length === 0) {
+      warn('Received payload with empty items.');
+      return res.json('No items found in the payload.');
+    }
+
+    const item = payload.items[0];
+    const invoiceValues = item.values;
+
+    await validateItemBelongsToTenant(item.id);
+
+    const { contact, jobType } = await getJobReferencedItems(item.id);
+
+    const invoice = {
+      type: 'ACCREC',
+      contact: { contactID: contact.contactID },
+      reference: invoiceValues.reference,
+      lineItems: invoiceValues.lineItems.map((lineItem) => ({
+        description: lineItem.description,
+        quantity: lineItem.quantity,
+        unitAmount: lineItem.unitAmount,
+        accountCode: lineItem.accountCode,
+        taxType: lineItem.taxType,
+      })),
+      dueDate: invoiceValues.dueDate,
+    };
+
+    const createdInvoice = await createInvoice(clientId, invoice);
+    res.json(createdInvoice);
   } catch (err) {
-    error('Xero-Service', 'Failed to connect with Xero', { message: err.message }, req);
-    res.status(500).json({ message: 'Failed to connect with Xero' });
+    error('Error creating invoice', err);
+    res.status(500).json({ message: 'Error creating invoice', error: err.message });
+  }
+});
+
+router.post('/:clientId/contact', async (req, res) => {
+  const { clientId } = req.params;
+  const payload = req.body;
+
+  try {
+    await configureXero(clientId);
+
+    if (!payload.items || payload.items.length === 0) {
+      warn('Received payload with empty items.');
+      return res.json('No items found in the payload.');
+    }
+
+    const item = payload.items[0];
+    const contactValues = item.values;
+
+    await validateItemBelongsToTenant(item.id);
+
+    const contact = {
+      name: contactValues.client,
+      emailAddress: contactValues.emailAddress,
+      phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
+      firstName: contactValues.contactPersonsFirstName,
+      lastName: contactValues.contactPersonsLastName,
+      addresses: [
+        {
+          addressType: 'POBOX',
+          addressLine1: contactValues.address,
+          city: contactValues.suburb,
+          region: contactValues.state,
+          postalCode: contactValues.postcode.toString(),
+        },
+        {
+          addressType: 'STREET',
+          addressLine1: contactValues.address,
+          city: contactValues.suburb,
+          region: contactValues.state,
+          postalCode: contactValues.postcode.toString(),
+        },
+      ],
+    };
+
+    const updatedContact = await createOrUpdateContact(clientId, contact);
+    res.json(updatedContact);
+  } catch (err) {
+    error('Error creating/updating contact', err);
+    res.status(500).json({ message: 'Error creating/updating contact', error: err.message });
+  }
+});
+
+router.post('/:clientId/contractor', async (req, res) => {
+  const { clientId } = req.params;
+  const payload = req.body;
+
+  try {
+    await configureXero(clientId);
+
+    if (!payload.items || payload.items.length === 0) {
+      warn('Received payload with empty items.');
+      return res.json('No items found in the payload.');
+    }
+
+    const item = payload.items[0];
+    const contractorValues = item.values;
+
+    await validateItemBelongsToTenant(item.id);
+
+        res.json({ message: 'Contractor created/updated successfully' });
+  } catch (err) {
+    error('Error creating/updating contractor', err);
+    res.status(500).json({ message: 'Error creating/updating contractor', error: err.message });
+  }
+});
+
+router.post('/:clientId/quote', async (req, res) => {
+  const { clientId } = req.params;
+  const payload = req.body;
+
+  try {
+    await configureXero(clientId);
+
+    if (!payload.items || payload.items.length === 0) {
+      warn('Received payload with empty items.');
+      return res.json('No items found in the payload.');
+    }
+
+    const item = payload.items[0];
+    const quoteValues = item.values;
+
+    await validateItemBelongsToTenant(item.id);
+
+    const quote = {
+      contact: { contactID: quoteValues.contactID },
+      lineItems: quoteValues.lineItems.map((lineItem) => ({
+        description: lineItem.description,
+        quantity: lineItem.quantity,
+        unitAmount: lineItem.unitAmount,
+        accountCode: lineItem.accountCode,
+        taxType: lineItem.taxType,
+      })),
+      date: quoteValues.date,
+      expiryDate: quoteValues.expiryDate,
+    };
+
+    const createdQuote = await createQuote(clientId, quote);
+    res.json(createdQuote);
+  } catch (err) {
+    error('Error creating quote', err);
+    res.status(500).json({ message: 'Error creating quote', error: err.message });
+  }
+});
+
+router.post('/:clientId/purchaseorder', async (req, res) => {
+  const { clientId } = req.params;
+  const payload = req.body;
+
+  try {
+    await configureXero(clientId);
+
+    if (!payload.items || payload.items.length === 0) {
+      warn('Received payload with empty items.');
+      return res.json('No items found in the payload.');
+    }
+
+    const item = payload.items[0];
+    const purchaseOrderValues = item.values;
+
+    await validateItemBelongsToTenant(item.id);
+
+    const purchaseOrder = {
+      contact: { contactID: purchaseOrderValues.contactID },
+      lineItems: purchaseOrderValues.lineItems.map((lineItem) => ({
+        description: lineItem.description,
+        quantity: lineItem.quantity,
+        unitAmount: lineItem.unitAmount,
+        accountCode: lineItem.accountCode,
+        taxType: lineItem.taxType,
+      })),
+      date: purchaseOrderValues.date,
+      deliveryDate: purchaseOrderValues.deliveryDate,
+    };
+
+    const createdPurchaseOrder = await createPurchaseOrder(clientId, purchaseOrder);
+    res.json(createdPurchaseOrder);
+  } catch (err) {
+    error('Error creating purchase order', err);
+    res.status(500).json({ message: 'Error creating purchase order', error: err.message });
   }
 });
 

@@ -9,7 +9,7 @@ import AuditTrail from '../models/AuditTrail.js';
 import Business from '../models/Business.js';
 import PDFLink from '../models/PDFLink.js';
 import { getS3FileUrl, uploadFileToS3 } from '../utils/uploadS3.js';
-import { getFolder, getItem, putInternalMessage } from '../utils/isoplusservices.js';
+import { getFolder, getItem, putInternalMessage } from '../services/isoplusServices.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

@@ -195,3 +195,119 @@ export function putTimeTracking(workspaceId, boardId, itemId, startTime, endTime
     });
     return true;
 };
+
+export async function getItemValues(itemId) {
+    try {
+        const url = `https://app.isoplus.online/api/v2/items/${itemId}`;
+        const headers = {
+            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-API-Version": "2025-02-26.morava",
+        };
+
+        const result = await axios.get(url, { headers });
+        return result.status === 200 ? result.data : null;
+    } catch (err) {
+        return null;
+    }
+}
+
+export async function validateItemBelongsToTenant(itemId) {
+    const validatedItemOwnership = await getItemValues(itemId);
+    if (!validatedItemOwnership) {
+        const errorMessage = "CRITICAL: Item does not exist. This may be a result of and intrusion attempt or misconfiguratoin of the tenant!";
+        console.warn(errorMessage); // equivalent to Log.Warning
+        throw new Error(errorMessage); // JavaScript doesn't have AccessViolationException
+    }
+}
+
+export async function getReferences(itemId) {
+    try {
+        const url = `https://app.isoplus.online/api/v2/items/${itemId}/references`;
+        const headers = {
+            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-API-Version": "2025-02-26.morava",
+        };
+
+        const result = await axios.get(url, { headers });
+        return result.status === 200 ? result.data : null;
+    } catch (err) {
+        return null;
+    }
+}
+
+export async function getAttribute(attributeId) {
+    try {
+        const url = `https://app.isoplus.online/api/v2/attributes/${attributeId}`;
+        const headers = {
+            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-API-Version": "2025-02-26.morava",
+        };
+
+        const result = await axios.get(url, { headers });
+        return result.status === 200 ? result.data : null;
+    } catch (err) {
+        return null;
+    }
+}
+
+export async function getJobReportingReferencedItems(itemId) {
+    let serviceFeeTypeValues = null;
+    let jobPlanningValues = null;
+
+    const referenceResponse = await getReferences(itemId);
+    if (!referenceResponse) return [null, null];
+
+    for (const reference of referenceResponse.data) {
+        const attribute = await getAttribute(reference.attribute_id);
+        if (!attribute) continue;
+
+        switch (attribute.name) {
+            case "Job Number": {
+                const jobPlanningItemValues = await getItemValues(reference.to_item_id);
+                if (jobPlanningItemValues) {
+                    const values = jobPlanningItemValues.values;
+                    if (!values.some(v => v.attribute.name === "Job Number")) {
+                        throw new Error("Job Number is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "Client's Order Number")) {
+                        throw new Error("Client's Order Number is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "Job Title")) {
+                        throw new Error("Job Title is required");
+                    }
+
+                    jobPlanningValues = {
+                        id: jobPlanningItemValues.id,
+                        jobNumber: values.find(v => v.attribute.name === "Job Number").data.toString(),
+                        clientOrderNumber: values.find(v => v.attribute.name === "Client's Order Number").data.toString(),
+                        jobTitle: values.find(v => v.attribute.name === "Job Title").data.toString()
+                    };
+                }
+                break;
+            }
+            case "Service Fee Type": {
+                const serviceFeeTypeItemValues = await getItemValues(reference.to_item_id);
+                if (serviceFeeTypeItemValues) {
+                    const values = serviceFeeTypeItemValues.values;
+                    if (!values.some(v => v.attribute.name === "Fee Type")) {
+                        throw new Error("Fee Type is required");
+                    }
+
+                    serviceFeeTypeValues = {
+                        feeType: values.find(v => v.attribute.name === "Fee Type").data.toString(),
+                        rate: parseFloat(values.find(v => v.attribute.name === "Rate($) - GST Excl.").data.toString())
+                    };
+                }
+                break;
+            }
+        }
+    }
+
+    return [jobPlanningValues, serviceFeeTypeValues];
+}
