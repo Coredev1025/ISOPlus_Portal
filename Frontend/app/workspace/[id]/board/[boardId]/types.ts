@@ -9,5 +9,7 @@ export interface TimeEntry {
     lng: number;
     address: string;
   } | null;
+  userId: string;
+  userName: string;
   notes: string;
 }

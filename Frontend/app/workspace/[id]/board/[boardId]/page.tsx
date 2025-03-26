@@ -49,7 +49,7 @@ export default function BoardDetail() {
   const id = pathname.split('/')[2];
   const boardId = pathname.split('/').pop();
   const [board, setBoard] = useState<Board>();
-  const { workspaces } = useAppContext();
+  const { workspaces, user } = useAppContext();
   const workspace = workspaces.filter(w => w.id.toString() === id);
   const [timeTrackingEnabled, setTimeTrackingEnabled] = useState(false);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
@@ -78,6 +78,8 @@ export default function BoardDetail() {
             lng: 0,
             address: entry.location ? entry.location : "",
           },
+          userId: user.id,
+          userName: user.name,
           notes: entry.notes
         })
       }
