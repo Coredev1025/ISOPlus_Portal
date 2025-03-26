@@ -17,10 +17,13 @@ dotenv.config();
 
 const app = express();
 
-// Allow all origins temporarily until we have a proper CORS policy based on configurations
 app.use(cors({
-  origin: '*'
+  origin: '*', // Wildcard works, but consider limiting in production
+  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'], // Array is more explicit
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 200 // Some legacy browsers choke on 204
 }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
