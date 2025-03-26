@@ -453,10 +453,13 @@ router.get('/uploads/:filename', async (req, res) => {
         // Get a signed URL for temporary access
         const fileUrl = await getS3FileUrl(S3_BUCKET, key);
 
-        // Redirect to the signed URL
-        res.redirect(fileUrl);
+        if (!fileUrl) { 
+            res.redirect(fileUrl);
+        } else {
+            throw new Error('Invalid file URL');
+        }
     } catch (err) {
-        error('Workspace-Service', 'Error downloading file', { message: err.message }, req);
+        error('Webook-Service', 'Error downloading file', { message: err.message }, req);
         res.status(404).json({ message: 'File not found' });
     }
 });

@@ -1,9 +1,7 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import Workspace from '../models/Workspace.js';
-import Business from '../models/Business.js';
 import AuditTrail from '../models/AuditTrail.js';
-import axios from 'axios';
 import { info, error } from '../utils/logger.js';
 import { getWorkspace, getBoard } from '../utils/isoplusservices.js';
 
@@ -11,7 +9,7 @@ const router = express.Router();
 
 router.get('/', authenticateToken, async (req, res) => {
   const response = await getWorkspace(req.headers['authorization']);
-  console.log(response)
+
   if (response.status === 200) {
     res.status(200).json({ workspace: response.workspace });
   } else {
