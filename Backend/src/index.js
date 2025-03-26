@@ -12,7 +12,7 @@ import timeTrackRoutes from './routes/timetrack.js';
 import webhookRoutes from './routes/webhook.js';
 import auditTrailRouters from './routes/audittrail.js';
 import PdfRouters from './routes/pdfLink.js';
-
+import HealthCheckRouters from './routes/heathcheck.js';
 dotenv.config();
 
 const app = express();
@@ -24,6 +24,8 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+
+app.use('/api/healthcheck', HealthCheckRouters);
 app.use('/api/auth', authRoutes);
 app.use('/api/business', businessRoutes);
 app.use('/api/workspaces', workspaceRoutes);
