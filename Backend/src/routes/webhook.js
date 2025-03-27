@@ -22,7 +22,6 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
         try {
             const business = await Business.findOne({ workspaceId });
             req.body.items?.map(async (item) => {
-                console.log(item);
                 putInternalMessage(workspaceId, boardId, item.id, "Running...");
                 const templatePath = path.join(__dirname, '..', 'assets', `invoice.json`);
                 const templateData = await fs.readFile(templatePath, 'utf8');
