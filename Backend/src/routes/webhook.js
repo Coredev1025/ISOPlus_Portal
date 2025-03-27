@@ -9,7 +9,7 @@ import AuditTrail from '../models/AuditTrail.js';
 import Business from '../models/Business.js';
 import PDFLink from '../models/PDFLink.js';
 import { getS3FileUrl, uploadFileToS3 } from '../utils/uploadS3.js';
-import { getFolder, getItem, putInternalMessage } from '../services/isoplusServices.js';
+import { getFolder, getItem, putInternalMessage } from '../services/isoplus.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,6 +22,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
         try {
             const business = await Business.findOne({ workspaceId });
             req.body.items?.map(async (item) => {
+                console.log(item);
                 putInternalMessage(workspaceId, boardId, item.id, "Running...");
                 const templatePath = path.join(__dirname, '..', 'assets', `invoice.json`);
                 const templateData = await fs.readFile(templatePath, 'utf8');
@@ -34,7 +35,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 business.save();
                 let invoiceDescription = item.values["Undertaken Tasks Decription"].replace(/<.*?>/g, "");
 
-                let jobPlan = [], clients = [], serviceFee = [], materialFee = [], folderIds = [];
+                let jobPlan = [], clients = [], serviceFee = [], materialFee = [], folderIds = [], subTotal = 0, gstTotal = 0, total = 0;
                 const result = await getFolder(workspaceId, boardId);
                 if (result.status === 200) folderIds = result.folder;
 
@@ -103,33 +104,39 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 const service = serviceFee.find(service => service.values[0].data === item.values["Service Fee Type"][0]);
                 const material = materialFee.find(material => material.values[1].data === item.values["Used Materials/Parts"][0]);
 
-                invoiceDescription = `[["1", "${jobTitle}-${item.values["Service Fee Type"]}-${item.values["Job Duration (Hrs.)"]}Hrs.", "${item.values["Job Duration (Hrs.)"]}", "${service.values[1].data}", "${parseFloat(item.values["Payable Service Fee($) - GST Excl."]) * parseFloat(item.values["Job Duration (Hrs.)"]) * parseFloat(service.values[1].data) / 100}", "${parseFloat(item.values["Job Duration (Hrs.)"]) * parseFloat(service.values[1].data)}"]`;
-
+                invoiceDescription = `[["1", "${jobTitle}-${item.values["Service Fee Type"]}-${item.values["Job Duration (Hrs.)"]}Hrs.", "${item.values["Job Duration (Hrs.)"]}", "${service.values[1].data}", "${item.values["GST"]}", "${parseFloat(item.values["Job Duration (Hrs.)"]) * parseFloat(service.values[1].data)}"]`;
+                subTotal += parseFloat(item.values["Job Duration (Hrs.)"]) * parseFloat(service.values[1].data);
                 if (item.values["Payable Material Fee($) - GST Excl."] > 0) {
-                    const materialFee = (parseFloat(item.values["Payable Material Fee($) - GST Excl."]) * parseFloat(material.values[2].data) / 100).toFixed(2);
-                    invoiceDescription += `,["2", "Used Material/Part", "1", "${material.values[2].data}", "${materialFee}", "${parseFloat(material.values[2].data)}"]`;
+                    invoiceDescription += `,["2", "Used Material/Part", "1", "${material.values[2].data}", "${item.values["GST"]}", "${parseFloat(material.values[2].data)}"]`;
+                    subTotal += parseFloat(material.values[2].data);
                 }
 
                 if (item.values["Other Payable Fee($) - GST Excl."] > 0) {
                     if (item.values["Payable Material Fee($) - GST Excl."] > 0) {
-                        invoiceDescription += `,["3", "Other Payable Fee", "1", "${item.values["Other Payable Fee($) - GST Excl."]}", "${parseFloat(item.values["Other Payable Fee($) - GST Excl."]) * parseFloat(item.values["Other Payable Fee($) - GST Excl."]) / 100}", "${parseFloat(item.values["Other Payable Fee($) - GST Excl."])}"]`;
+                        invoiceDescription += `,["3", "Other Payable Fee", "1", "${item.values["Other Payable Fee($) - GST Excl."]}", "${item.values["GST"]}", "${parseFloat(item.values["Other Payable Fee($) - GST Excl."])}"]`;
                     } else {
-                        invoiceDescription += `,["2", "Other Payable Fee", "1", "${item.values["Other Payable Fee($) - GST Excl."]}", "${parseFloat(item.values["Other Payable Fee($) - GST Excl."]) * parseFloat(item.values["Other Payable Fee($) - GST Excl."]) / 100}", "${parseFloat(item.values["Other Payable Fee($) - GST Excl."])}"]`;
+                        invoiceDescription += `,["2", "Other Payable Fee", "1", "${item.values["Other Payable Fee($) - GST Excl."]}", "${item.values["GST"]}", "${parseFloat(item.values["Other Payable Fee($) - GST Excl."])}"]`;
                     }
+                    subTotal += parseFloat(item.values["Other Payable Fee($) - GST Excl."]);
                 }
 
                 invoiceDescription += "]";
+                gstTotal = subTotal * parseFloat(item.values["GST"]) / 100;
+                total = subTotal + gstTotal;
 
                 const pdfBytes = await generate({
                     template: template,
                     inputs: [
                         {
+                            subtotal: `${subTotal}`,
+                            totalGST: `${gstTotal}`,
+                            total: `${total}`,
                             clientDetails: `{"Address":"${clientDetails.Address}","Suburb":"${clientDetails.Suburb}","State":"${clientDetails.State}","Postcode":"${clientDetails.Postcode}","Client":"${clientDetails.Client}"}`,
                             invoiceDetails: `{"Date":"${new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}","Invoice Number":"${invoiceNumber}"}`,
                             companyName: `{"Company Name":"${business.name}"}`,
                             companyDetails: `{"ABN":"${business.abn}","Street Address":"${business.address.street}","Suburb":"${business.address.suburb}","State":"${business.address.state}","Postcode":"${business.address.postcode}","Country":"${business.address.country}"}`,
                             orders: invoiceDescription,
-                            "Due date": `{"Due Date":"${dueDate.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}"}`,
+                            "Due date": `${dueDate.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}`,
                             "Bank Details": `{"Account Name":"${business.bankDetails.accountName}","Bank Name":"${business.bankDetails.bankName}","BSB":"${business.bankDetails.bsb}","Account Number":"${business.bankDetails.accountNumber}","invoice Number":"${business.bankDetails.paymentReference}"}`
                         }
                     ],
@@ -453,7 +460,7 @@ router.get('/uploads/:filename', async (req, res) => {
         // Get a signed URL for temporary access
         const fileUrl = await getS3FileUrl(S3_BUCKET, key);
 
-        if (!fileUrl) { 
+        if (!fileUrl) {
             res.redirect(fileUrl);
         } else {
             throw new Error('Invalid file URL');

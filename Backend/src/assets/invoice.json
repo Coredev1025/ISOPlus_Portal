@@ -51,7 +51,7 @@
                 "height": 28.84,
                 "rotate": 0,
                 "alignment": "left",
-                "verticalAlignment": "top",
+                "verticalAlignment": "middle",
                 "fontSize": 13,
                 "lineHeight": 1,
                 "characterSpacing": 0,
@@ -122,7 +122,7 @@
                 "height": 15,
                 "rotate": 0,
                 "alignment": "left",
-                "verticalAlignment": "top",
+                "verticalAlignment": "middle",
                 "fontSize": 13,
                 "lineHeight": 1,
                 "characterSpacing": 0,
@@ -155,7 +155,7 @@
                 "height": 15.08,
                 "rotate": 0,
                 "alignment": "left",
-                "verticalAlignment": "top",
+                "verticalAlignment": "middle",
                 "fontSize": 13,
                 "lineHeight": 1,
                 "characterSpacing": 0,
@@ -192,7 +192,6 @@
                 "content": "[[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"]]",
                 "showHead": true,
                 "head": [
-                    "",
                     "Description",
                     "Quantity",
                     "Unit Price",
@@ -200,8 +199,7 @@
                     "Amount"
                 ],
                 "headWidthPercentages": [
-                    11.39471996803448,
-                    30.98644514990506,
+                    42.38116511793954,
                     16.571040764413386,
                     12.444852941176498,
                     11.838235294117641,
@@ -261,12 +259,11 @@
                 },
                 "columnStyles": {
                     "alignment": {
-                        "0": "center",
-                        "1": "left",
+                        "0": "left",
+                        "1": "center",
                         "2": "center",
                         "3": "center",
-                        "4": "center",
-                        "5": "center"
+                        "4": "center"
                     }
                 },
                 "name": "orders",
@@ -275,12 +272,12 @@
             {
                 "type": "text",
                 "position": {
-                    "x": 133.27,
-                    "y": 194.59
+                    "x": 133,
+                    "y": 195
                 },
                 "content": "Subtotal",
-                "width": 25.42,
-                "height": 8.09,
+                "width": 25,
+                "height": 8,
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
@@ -297,13 +294,13 @@
             },
             {
                 "type": "text",
-                "content": "${orders.reduce((sum, item) => sum + parseFloat(item[5] || 0),0)}",
+                "content": "",
                 "position": {
-                    "x": 159.05,
-                    "y": 194.8
+                    "x": 160,
+                    "y": 195
                 },
-                "width": 26.21,
-                "height": 7.56,
+                "width": 25,
+                "height": 8,
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
@@ -315,19 +312,19 @@
                 "opacity": 1,
                 "fontName": "",
                 "name": "subtotal",
-                "readOnly": true,
+                "readOnly": false,
                 "required": false
             },
             {
-                "type": "multiVariableText",
+                "type": "text",
                 "position": {
-                    "x": 118.99,
-                    "y": 202.68
+                    "x": 133,
+                    "y": 202
                 },
                 "name": "gstLabel",
-                "content": "{}",
-                "width": 40.2,
-                "height": 9.18,
+                "content": "GST",
+                "width": 25,
+                "height": 8,
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
@@ -340,20 +337,18 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": true,
-                "text": "GST ",
-                "variables": [],
                 "required": false,
-                "fontName": ""
+                "fontName": "Roboto"
             },
             {
                 "type": "text",
-                "content": "${orders.reduce((sum, item) => sum + parseFloat(item[4] || 0),0).toFixed(2)}",
+                "content": "",
                 "position": {
-                    "x": 159.05,
-                    "y": 202.68
+                    "x": 160,
+                    "y": 202
                 },
-                "width": 26.21,
-                "height": 8.89,
+                "width": 25,
+                "height": 8,
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
@@ -365,7 +360,7 @@
                 "opacity": 1,
                 "fontName": "",
                 "name": "totalGST",
-                "readOnly": true,
+                "readOnly": false,
                 "required": false
             },
             {
@@ -386,12 +381,12 @@
             {
                 "type": "text",
                 "position": {
-                    "x": 133.26,
-                    "y": 214.19
+                    "x": 133,
+                    "y": 216
                 },
                 "content": "Total",
-                "width": 27.01,
-                "height": 11,
+                "width": 25,
+                "height": 8,
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
@@ -408,13 +403,13 @@
             },
             {
                 "type": "text",
-                "content": "${orders.reduce((sum, item) => sum + parseFloat(item[5] || 0), 0) + orders.reduce((sum, item) => sum + parseFloat(item[4] || 0), 0)}",
+                "content": "",
                 "position": {
-                    "x": 160.37,
-                    "y": 214.19
+                    "x": 160,
+                    "y": 216
                 },
-                "width": 25.95,
-                "height": 11,
+                "width": 25,
+                "height": 8,
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
@@ -426,27 +421,23 @@
                 "opacity": 1,
                 "fontName": "",
                 "name": "total",
-                "readOnly": true,
+                "readOnly": false,
                 "required": false
             },
             {
                 "name": "Due date",
-                "type": "multiVariableText",
-                "content": "{\"Due Date\":\"DUE DATE\"}",
+                "type": "text",
+                "content": "",
                 "position": {
-                    "x": 161.95,
-                    "y": 224.3
+                    "x": 160,
+                    "y": 224
                 },
-                "width": 24.34,
-                "height": 10.32,
+                "width": 25,
+                "height": 8,
                 "rotate": 0,
-                "alignment": "right",
-                "verticalAlignment": "top",
-                "dynamicFontSize": {
-                    "min": 4,
-                    "max": 13,
-                    "fit": "vertical"
-                },
+                "alignment": "left",
+                "verticalAlignment": "middle",
+                "fontSize": 13,
                 "lineHeight": 1,
                 "characterSpacing": 0,
                 "fontColor": "#000000",
@@ -454,13 +445,8 @@
                 "opacity": 1,
                 "strikethrough": false,
                 "underline": false,
-                "readOnly": false,
-                "text": "Due Date: {Due Date}",
-                "variables": [
-                    "Due Date"
-                ],
                 "required": false,
-                "fontName": "Roboto"
+                "readOnly": false
             },
             {
                 "name": "Bank Details",
@@ -474,7 +460,7 @@
                 "height": 33.07,
                 "rotate": 0,
                 "alignment": "left",
-                "verticalAlignment": "top",
+                "verticalAlignment": "middle",
                 "fontSize": 13,
                 "lineHeight": 1,
                 "characterSpacing": 0,
@@ -500,18 +486,18 @@
                 "required": false
             },
             {
-                "name": "field17",
+                "name": "duedateLabel",
                 "type": "text",
                 "content": "Due Date",
                 "position": {
-                    "x": 134.05,
-                    "y": 223.94
+                    "x": 133,
+                    "y": 224
                 },
-                "width": 25.93,
-                "height": 10.05,
+                "width": 25,
+                "height": 8,
                 "rotate": 0,
                 "alignment": "right",
-                "verticalAlignment": "top",
+                "verticalAlignment": "middle",
                 "fontSize": 13,
                 "lineHeight": 1,
                 "characterSpacing": 0,
@@ -521,7 +507,8 @@
                 "strikethrough": false,
                 "underline": false,
                 "required": false,
-                "readOnly": false
+                "readOnly": true,
+                "fontName": "Roboto"
             }
         ]
     ],
