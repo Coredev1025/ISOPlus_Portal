@@ -411,6 +411,10 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                     }
                 }
 
+                subTotal += (quoteValues.Quantity || 1) * (quoteValues['Unit Price($) - GST Excl.'] || 1);
+                gstTotal += quoteValues['Total Price($) - GST Excl.'] || 1;
+                total = subTotal + gstTotal;
+
                 const pdfBytes = await generate({
                     template: template,
                     inputs: [
@@ -433,7 +437,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                         multiVariableText
                     }
                 });
-                
+
                 const filename = `output/${workspaceId}/${boardId}/quote/${item.id}.pdf`;
                 const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
