@@ -364,7 +364,7 @@ export default function WorkspaceDetail() {
                                 </SelectValue>
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="none">No Label</SelectItem>
+                                <SelectItem value="None">No Label</SelectItem>
                                 {BOARD_LABELS.map((label) => (
                                   <SelectItem key={label} value={label}>
                                     <Badge variant="outline" className={LABEL_COLORS[label]}>

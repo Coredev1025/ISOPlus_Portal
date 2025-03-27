@@ -14,6 +14,8 @@ export async function configure(clientId, clientSecret) {
     clientSecret: clientSecret,
     grantType: 'client_credentials',
   });
+
+  return xeroClient;
 }
 
 // Create an authorization token

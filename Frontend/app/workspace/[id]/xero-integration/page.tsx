@@ -7,11 +7,29 @@ import { Label } from "@/components/ui/label";
 import { ArrowLeft, ExternalLink, FileSpreadsheet, KeyRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import axios from "axios";
 
 export default function XeroIntegrationPage() {
   const router = useRouter();
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
+
+  const handleConnectXero = async () => {
+    try {
+      const response = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/test`, { clientId, clientSecret });
+
+      if (response.status !== 200) {
+        throw new Error('Failed to connect to Xero');
+      }
+
+      const data = await response.data;
+      console.log(data);
+      alert('Successfully connected to Xero!');
+    } catch (error) {
+      console.error(error);
+      alert('Error connecting to Xero. Please try again.');
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background py-8">
@@ -46,7 +64,7 @@ export default function XeroIntegrationPage() {
                   <p className="text-sm text-muted-foreground">
                     Follow Xero's guide to create your application and obtain the required credentials.
                   </p>
-                  <a 
+                  <a
                     href="https://developer.xero.com/documentation/guides/oauth2/custom-connections/"
                     target="_blank"
                     rel="noopener noreferrer"
@@ -82,7 +100,7 @@ export default function XeroIntegrationPage() {
               </div>
             </div>
 
-            <Button size="lg" className="w-full gap-2">
+            <Button size="lg" className="w-full gap-2" onClick={handleConnectXero}>
               <FileSpreadsheet className="h-5 w-5" />
               Connect to Xero
             </Button>

@@ -23,9 +23,9 @@ router.post('/test', async (req, res) => {
   const { clientId, clientSecret } = req.body;
   const payload = req.body;
 
-  await configure(clientId, clientSecret);
-  info(`/test client id: ${clientId}, body: ${JSON.stringify(payload)}`);
-  res.json({ message: 'Test endpoint executed successfully' });
+  const result = await configure(clientId, clientSecret);
+  info(`/test client id: ${clientId}, body: ${JSON.stringify(payload)}, return: ${JSON.stringify(result)}`);
+  res.json({ message: 'Test endpoint executed successfully', result });
 });
 
 router.get('/hello', (req, res) => {
