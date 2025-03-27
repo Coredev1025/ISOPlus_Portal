@@ -369,7 +369,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                 business.documentNumbering.quote.nextNumber += 1;
                 business.save();
 
-                let clients = [], folderIds = [], clientDetailInfo;
+                let clients = [], folderIds = [], clientDetailInfo, subTotal = 0, gstTotal = 0, total = 0;
                 const result = await getFolder(workspaceId, boardId);
                 if (result.status === 200) folderIds = result.folder;
 
@@ -416,12 +416,13 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                     template: template,
                     inputs: [
                         {
+                            subtotal: `${subTotal}`,
+                            totalGST: `${gstTotal}`,
+                            total: `${total}`,
                             clientDetails: `{"Address":"${clientDetails.Address}","Suburb":"${clientDetails.Suburb}","State":"${clientDetails.State}","Postcode":"${clientDetails.Postcode}","Client":"${clientDetails.Client}"}`,
                             quoteDetails: `{"Issue Date":"${quoteValues['Issue Date'] ? new Date(quoteValues['Issue Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}","expiry Date":"${new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}","Quote Number":"${quoteNumber || quoteValues['Quote Number']}"}`,
                             companyName: `{"Company Name":"${business.name}"}`,
                             companyDetails: `{"ABN":"${business.abn}","Street Address":"${business.address.street}","Suburb":"${business.address.suburb}","State":"${business.address.state}","Postcode":"${business.address.postcode}","Country":"${business.address.country}"}`,
-                            jobDescription: `{"JobDescription": "${quoteValues['Job Description'].replace(/<.*?>/g, "")}"}`,
-                            jobTitle: `{"Title": "${quoteValues['Job Title'].replace(/<.*?>/g, "")}"}`,
                             orders: `[["${quoteValues['Job Title']} - ${quoteValues['Job Description'].replace(/<.*?>/g, "")}","${quoteValues.Quantity || 1}","${quoteValues['Unit Price($) - GST Excl.'] || 1}", "${quoteValues['Total Price($) - GST Excl.'] || 1}", "${(quoteValues.Quantity || 1) * (quoteValues['Unit Price($) - GST Excl.'] || 1)}"]]`,
                         }
                     ],
@@ -433,7 +434,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                         multiVariableText
                     }
                 });
-
+                
                 const filename = `output/${workspaceId}/${boardId}/quote/${item.id}.pdf`;
                 const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
