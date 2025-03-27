@@ -35,7 +35,7 @@
                 "height": 15.08,
                 "rotate": 0,
                 "alignment": "left",
-                "verticalAlignment": "top",
+                "verticalAlignment": "middle",
                 "fontSize": 13,
                 "lineHeight": 1,
                 "characterSpacing": 0,
@@ -70,7 +70,7 @@
                 },
                 "width": 170,
                 "height": 74.48432,
-                "content": "[[\"\",\"\",\"\",\"\",\"\"]]",
+                "content": "[[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"]]",
                 "showHead": true,
                 "head": [
                     "Description",
@@ -140,8 +140,8 @@
                 },
                 "columnStyles": {
                     "alignment": {
-                        "0": "center",
-                        "1": "left",
+                        "0": "left",
+                        "1": "center",
                         "2": "center",
                         "3": "center",
                         "4": "center"
@@ -153,12 +153,12 @@
             {
                 "type": "text",
                 "position": {
-                    "x": 133.27,
-                    "y": 194.59
+                    "x": 133,
+                    "y": 195
                 },
                 "content": "Subtotal",
-                "width": 25.42,
-                "height": 8.09,
+                "width": 25,
+                "height": 8,
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
@@ -175,13 +175,13 @@
             },
             {
                 "type": "text",
-                "content": "${orders.reduce((sum, item) => sum + parseFloat(item[4] || 0),0)}",
+                "content": "",
                 "position": {
-                    "x": 159.05,
-                    "y": 194.8
+                    "x": 160,
+                    "y": 195
                 },
-                "width": 26.21,
-                "height": 7.56,
+                "width": 25,
+                "height": 8,
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
@@ -193,19 +193,19 @@
                 "opacity": 1,
                 "fontName": "",
                 "name": "subtotal",
-                "readOnly": true,
+                "readOnly": false,
                 "required": false
             },
             {
-                "type": "multiVariableText",
+                "type": "text",
                 "position": {
-                    "x": 118.99,
-                    "y": 202.68
+                    "x": 133,
+                    "y": 202
                 },
                 "name": "gstLabel",
-                "content": "{}",
-                "width": 40.2,
-                "height": 9.18,
+                "content": "GST",
+                "width": 25,
+                "height": 8,
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
@@ -218,20 +218,17 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": true,
-                "text": "GST ",
-                "variables": [],
-                "required": false,
-                "fontName": ""
-            },
+                "required": false
+        },
             {
                 "type": "text",
-                "content": "${orders.reduce((sum, item) => sum + parseFloat(item[3] || 0),0)}",
+                "content": "",
                 "position": {
-                    "x": 159.05,
-                    "y": 202.68
+                    "x": 160,
+                    "y": 202
                 },
-                "width": 26.21,
-                "height": 8.89,
+                "width": 25,
+                "height": 8,
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
@@ -243,14 +240,14 @@
                 "opacity": 1,
                 "fontName": "",
                 "name": "totalGST",
-                "readOnly": true,
+                "readOnly": false,
                 "required": false
             },
             {
                 "type": "line",
                 "position": {
                     "x": 137.09,
-                    "y": 213.05
+                    "y": 212.5
                 },
                 "width": 52.91,
                 "height": 0.1,
@@ -264,12 +261,12 @@
             {
                 "type": "text",
                 "position": {
-                    "x": 133.26,
-                    "y": 214.19
+                    "x": 133,
+                    "y": 215
                 },
                 "content": "Total",
-                "width": 27.01,
-                "height": 11,
+                "width": 25,
+                "height": 8,
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
@@ -286,13 +283,13 @@
             },
             {
                 "type": "text",
-                "content": "${orders.reduce((sum, item) => sum + parseFloat(item[4] || 0), 0) + orders.reduce((sum, item) => sum + parseFloat(item[3] || 0), 0)}",
+                "content": "",
                 "position": {
-                    "x": 160.37,
-                    "y": 214.19
+                    "x": 160,
+                    "y": 215
                 },
-                "width": 25.95,
-                "height": 11,
+                "width": 25,
+                "height": 8,
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
@@ -304,7 +301,7 @@
                 "opacity": 1,
                 "fontName": "",
                 "name": "total",
-                "readOnly": true,
+                "readOnly": false,
                 "required": false
             },
             {
@@ -356,7 +353,7 @@
                 "height": 28.84,
                 "rotate": 0,
                 "alignment": "left",
-                "verticalAlignment": "top",
+                "verticalAlignment": "middle",
                 "fontSize": 13,
                 "lineHeight": 1,
                 "characterSpacing": 0,
@@ -393,7 +390,7 @@
                 "height": 30.16,
                 "rotate": 0,
                 "alignment": "left",
-                "verticalAlignment": "top",
+                "verticalAlignment": "middle",
                 "fontSize": 13,
                 "lineHeight": 1,
                 "characterSpacing": 0,
@@ -428,7 +425,7 @@
                 "height": 15,
                 "rotate": 0,
                 "alignment": "left",
-                "verticalAlignment": "top",
+                "verticalAlignment": "middle",
                 "fontSize": 13,
                 "lineHeight": 1,
                 "characterSpacing": 0,
@@ -461,7 +458,7 @@
                 "height": 52.65,
                 "rotate": 0,
                 "alignment": "left",
-                "verticalAlignment": "top",
+                "verticalAlignment": "middle",
                 "fontSize": 13,
                 "lineHeight": 1,
                 "characterSpacing": 0,

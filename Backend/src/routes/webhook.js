@@ -194,7 +194,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 business.documentNumbering.purchaseOrder.nextNumber += 1;
                 business.save();
 
-                let folderIds = [], contractor = [], clients = [];
+                let folderIds = [], contractor = [], clients = [], subTotal = 0, gstTotal = 0, total = 0;;
                 const result = await getFolder(workspaceId, boardId);
                 if (result.status === 200) folderIds = result.folder;
 
@@ -281,7 +281,14 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                     }
                 }
 
+                subTotal += (purchaseOrderValues.Quantity || 1) * (purchaseOrderValues['Unit Price($) - GST Excl.'] || 1)
+                gstTotal += purchaseOrderValues['Total Price($) - GST Excl.'] || 1
+                total += subTotal + gstTotal;
+
                 const inputs = {
+                    subtotal: `${subTotal}`,
+                    totalGST: `${gstTotal}`,
+                    total: `${total}`,
                     clientDetails: `{"Address":"${clientDetails.Address}","Suburb":"${clientDetails.Suburb}","State":"${clientDetails.State}","Postcode":"${clientDetails.Postcode}","Supplier":"${clientDetails.Client}"}`,
                     companyDetails: `{"ABN":"${business.abn}","Street Address":"${business.address.street}","Suburb":"${business.address.suburb}","State":"${business.address.state}","Postcode":"${business.address.postcode}","Country":"${business.address.country}"}`,
                     quoteDetails: `{"Issue Date":"${purchaseOrderValues['Issue Date'] && new Date(purchaseOrderValues['Issue Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}","expiry Date":"${new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}","PO Number":"${purchaseOrderNumber || purchaseOrderValues['PO Number']}"}`,
