@@ -3,21 +3,21 @@ import { XeroClient } from 'xero-node';
 let xeroClient = null;
 
 // Configure the Xero client
-async function configure(clientId, configuration) {
-  const clientConfig = configuration[`Integrations:${clientId}`];
+export async function configure(clientId, clientSecret) {
+  const clientConfig = process.env.XERO_CLIENT_ID == clientId;
   if (!clientConfig) {
     throw new Error('Client configuration not found.');
   }
 
   xeroClient = new XeroClient({
-    clientId: clientConfig['Xero:ClientId'],
-    clientSecret: clientConfig['Xero:ClientSecret'],
+    clientId: clientId,
+    clientSecret: clientSecret,
     grantType: 'client_credentials',
   });
 }
 
 // Create an authorization token
-async function createToken() {
+export async function createToken() {
   if (!xeroClient) {
     throw new Error('Xero client is not configured.');
   }
@@ -30,7 +30,7 @@ async function createToken() {
 }
 
 // Create an invoice in Xero
-async function createInvoice(invoice) {
+export async function createInvoice(invoice) {
   const { token, xeroTenantId } = await createToken();
 
   const invoices = {
@@ -62,7 +62,7 @@ async function createInvoice(invoice) {
 }
 
 // Get a contact by email
-async function getContactByEmail(email) {
+export async function getContactByEmail(email) {
   try {
     const { token, xeroTenantId } = await createToken();
 
@@ -81,7 +81,7 @@ async function getContactByEmail(email) {
 }
 
 // Create or update a contact in Xero
-async function createOrUpdateContact(contact) {
+export async function createOrUpdateContact(contact) {
   try {
     const { token, xeroTenantId } = await createToken();
 
@@ -113,7 +113,7 @@ async function createOrUpdateContact(contact) {
 }
 
 // Find or create an item in Xero
-async function findOrCreateItem(itemCode, itemName) {
+export async function findOrCreateItem(itemCode, itemName) {
   try {
     const { token, xeroTenantId } = await createToken();
 
@@ -148,7 +148,7 @@ async function findOrCreateItem(itemCode, itemName) {
 }
 
 // Create a quote in Xero
-async function createQuote(quote) {
+export async function createQuote(quote) {
   const { token, xeroTenantId } = await createToken();
 
   const quotes = {
@@ -165,7 +165,7 @@ async function createQuote(quote) {
 }
 
 // Check if a quote exists in Xero
-async function quoteExists(quoteNumber) {
+export async function quoteExists(quoteNumber) {
   const { token, xeroTenantId } = await createToken();
 
   const response = await xeroClient.accountingApi.getQuotes(
@@ -184,7 +184,7 @@ async function quoteExists(quoteNumber) {
 }
 
 // Check if a purchase order exists in Xero
-async function purchaseOrderExists(purchaseOrderNumber) {
+export async function purchaseOrderExists(purchaseOrderNumber) {
   const { token, xeroTenantId } = await createToken();
 
   try {
@@ -210,7 +210,7 @@ async function purchaseOrderExists(purchaseOrderNumber) {
 }
 
 // Create a purchase order in Xero
-async function createPurchaseOrder(purchaseOrder) {
+export async function createPurchaseOrder(purchaseOrder) {
   const { token, xeroTenantId } = await createToken();
 
   const purchaseOrders = {
@@ -225,15 +225,3 @@ async function createPurchaseOrder(purchaseOrder) {
 
   return createdPurchaseOrders.body.purchaseOrders[0];
 }
-
-module.exports = {
-  configure,
-  createInvoice,
-  getContactByEmail,
-  createOrUpdateContact,
-  findOrCreateItem,
-  createQuote,
-  quoteExists,
-  purchaseOrderExists,
-  createPurchaseOrder,
-};

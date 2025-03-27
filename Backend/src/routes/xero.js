@@ -1,13 +1,13 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import { info, warn, error }from '../utils/logger.js'; 
-import { validateItemBelongsToTenant, getJobReferencedItems } from '../services/isoplusServices.js'; 
-import { configureXero, createInvoice, createOrUpdateContact, createQuote, createPurchaseOrder } from '../services/xeroServices.js'; 
+import { validateItemBelongsToTenant, getJobReportingReferencedItems } from '../services/isoplus.js'; 
+import { configure, createInvoice, createOrUpdateContact, createQuote, createPurchaseOrder } from '../services/xero.js'; 
 
 dotenv.config();
 const router = express.Router();
 
-router.get('/:clientId/services', (req, res) => {
+router.get('/services', (req, res) => {
   const services = [
     { Name: 'Create invoice', Status: 'Ready' },
     { Name: 'Update invoice', Status: 'In progress' },
@@ -19,25 +19,25 @@ router.get('/:clientId/services', (req, res) => {
   res.json(services);
 });
 
-router.post('/:clientId/test', async (req, res) => {
-  const { clientId } = req.params;
+router.post('/test', async (req, res) => {
+  const { clientId, clientSecret } = req.body;
   const payload = req.body;
 
-  await configureXero(clientId);
+  await configure(clientId, clientSecret);
   info(`/test client id: ${clientId}, body: ${JSON.stringify(payload)}`);
   res.json({ message: 'Test endpoint executed successfully' });
 });
 
-router.get('/:clientId/hello', (req, res) => {
+router.get('/hello', (req, res) => {
   res.send('Hello, World!');
 });
 
-router.post('/:clientId/invoice', async (req, res) => {
-  const { clientId } = req.params;
+router.post('/invoice', async (req, res) => {
+  const { clientId, clientSecret } = req.body;
   const payload = req.body;
 
   try {
-    await configureXero(clientId);
+    await configure(clientId, clientSecret);
 
     if (!payload.items || payload.items.length === 0) {
       warn('Received payload with empty items.');
@@ -49,7 +49,7 @@ router.post('/:clientId/invoice', async (req, res) => {
 
     await validateItemBelongsToTenant(item.id);
 
-    const { contact, jobType } = await getJobReferencedItems(item.id);
+    const { contact, jobType } = await getJobReportingReferencedItems(item.id);
 
     const invoice = {
       type: 'ACCREC',
@@ -73,12 +73,12 @@ router.post('/:clientId/invoice', async (req, res) => {
   }
 });
 
-router.post('/:clientId/contact', async (req, res) => {
-  const { clientId } = req.params;
+router.post('/contact', async (req, res) => {
+  const { clientId, clientSecret } = req.body;
   const payload = req.body;
 
   try {
-    await configureXero(clientId);
+    await configure(clientId, clientSecret);
 
     if (!payload.items || payload.items.length === 0) {
       warn('Received payload with empty items.');
@@ -122,12 +122,12 @@ router.post('/:clientId/contact', async (req, res) => {
   }
 });
 
-router.post('/:clientId/contractor', async (req, res) => {
-  const { clientId } = req.params;
+router.post('/contractor', async (req, res) => {
+  const { clientId, clientSecret } = req.body;
   const payload = req.body;
 
   try {
-    await configureXero(clientId);
+    await configure(clientId, clientSecret);
 
     if (!payload.items || payload.items.length === 0) {
       warn('Received payload with empty items.');
@@ -146,12 +146,12 @@ router.post('/:clientId/contractor', async (req, res) => {
   }
 });
 
-router.post('/:clientId/quote', async (req, res) => {
-  const { clientId } = req.params;
+router.post('/quote', async (req, res) => {
+  const { clientId, clientSecret } = req.body;
   const payload = req.body;
 
   try {
-    await configureXero(clientId);
+    await configure(clientId, clientSecret);
 
     if (!payload.items || payload.items.length === 0) {
       warn('Received payload with empty items.');
@@ -184,12 +184,12 @@ router.post('/:clientId/quote', async (req, res) => {
   }
 });
 
-router.post('/:clientId/purchaseorder', async (req, res) => {
-  const { clientId } = req.params;
+router.post('/purchaseorder', async (req, res) => {
+  const { clientId, clientSecret } = req.body;
   const payload = req.body;
 
   try {
-    await configureXero(clientId);
+    await configure(clientId, clientSecret);
 
     if (!payload.items || payload.items.length === 0) {
       warn('Received payload with empty items.');
