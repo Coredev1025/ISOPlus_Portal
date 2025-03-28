@@ -6,30 +6,54 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ArrowLeft, ExternalLink, FileSpreadsheet, KeyRound } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 
 export default function XeroIntegrationPage() {
   const router = useRouter();
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
 
   const handleConnectXero = async () => {
     try {
-      const response = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/test`, { clientId, clientSecret });
-
-      if (response.status !== 200) {
-        throw new Error('Failed to connect to Xero');
+      setIsConnecting(true);
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/redirect`, {
+        params: { clientId, clientSecret }
+      });
+      console.log(response)
+      if (response.data.url) {
+        window.location.href = response.data.url;
       }
-
-      const data = await response.data;
-      console.log(data);
-      alert('Successfully connected to Xero!');
     } catch (error) {
       console.error(error);
-      alert('Error connecting to Xero. Please try again.');
+      alert('Error initiating Xero connection. Please try again.');
+    } finally {
+      setIsConnecting(false);
     }
-  }
+  };
+
+  // Handle OAuth callback
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('code');
+    if (code && clientId && clientSecret) {
+      (async () => {
+        try {
+          const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/callback`, {
+            params: { code, clientId, clientSecret }
+          });
+          if (response.data.tokenSet) {
+            setAccessToken(response.data.tokenSet.access_token);
+            alert('Successfully connected to Xero!');
+          }
+        } catch (error) {
+          console.error(error);
+          alert('Error completing Xero connection. Please try again.');
+        }
+      })();
+    }
+  }, [clientId, clientSecret]);
 
   return (
     <div className="min-h-screen bg-background py-8">
@@ -100,9 +124,14 @@ export default function XeroIntegrationPage() {
               </div>
             </div>
 
-            <Button size="lg" className="w-full gap-2" onClick={handleConnectXero}>
+            <Button 
+              size="lg" 
+              className="w-full gap-2" 
+              onClick={handleConnectXero}
+              disabled={isConnecting || !clientId || !clientSecret}
+            >
               <FileSpreadsheet className="h-5 w-5" />
-              Connect to Xero
+              {isConnecting ? "Connecting..." : "Connect to Xero"}
             </Button>
 
             <div className="pt-4 border-t text-sm text-muted-foreground">

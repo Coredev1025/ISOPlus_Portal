@@ -1,8 +1,10 @@
 import express from 'express';
 import dotenv from 'dotenv';
-import { info, warn, error }from '../utils/logger.js'; 
-import { validateItemBelongsToTenant, getJobReportingReferencedItems } from '../services/isoplus.js'; 
-import { configure, createInvoice, createOrUpdateContact, createQuote, createPurchaseOrder } from '../services/xero.js'; 
+import { info, warn, error } from '../utils/logger.js';
+import { validateItemBelongsToTenant, getJobReportingReferencedItems } from '../services/isoplus.js';
+import { configure, createInvoice, createOrUpdateContact, createQuote, createPurchaseOrder, getAuthUrl, exchangeCode, refreshToken, callback } from '../services/xero.js';
+import querystring from 'querystring';
+import axios from 'axios';
 
 dotenv.config();
 const router = express.Router();
@@ -139,7 +141,7 @@ router.post('/contractor', async (req, res) => {
 
     await validateItemBelongsToTenant(item.id);
 
-        res.json({ message: 'Contractor created/updated successfully' });
+    res.json({ message: 'Contractor created/updated successfully' });
   } catch (err) {
     error('Error creating/updating contractor', err);
     res.status(500).json({ message: 'Error creating/updating contractor', error: err.message });
@@ -219,6 +221,37 @@ router.post('/purchaseorder', async (req, res) => {
   } catch (err) {
     error('Error creating purchase order', err);
     res.status(500).json({ message: 'Error creating purchase order', error: err.message });
+  }
+});
+
+router.get("/redirect", async (req, res) => {
+  await configure(req.query.clientId, req.query.clientSecret, process.env.XERO_REDIRECT_URL);
+  const url = await getAuthUrl();
+
+  res.json({ url });
+});
+
+router.get('/callback', async (req, res) => {
+  const { code } = req.query;
+  const result = await callback(code, req.url);
+  res.json({ result })
+});
+
+router.get('/oauth', async (req, res) => {
+  console.log('/oauth')
+});
+
+router.post('/refresh', async (req, res) => {
+  const { clientId, clientSecret, tokenSet } = req.body;
+  const redirectUri = `${process.env.APP_URL}/api/xero/callback`;
+
+  try {
+    await configure(clientId, clientSecret, redirectUri);
+    const newTokenSet = await refreshToken(tokenSet);
+    res.json({ tokenSet: newTokenSet });
+  } catch (err) {
+    error('Error refreshing token', err);
+    res.status(500).json({ message: 'Error refreshing token', error: err.message });
   }
 });
 
