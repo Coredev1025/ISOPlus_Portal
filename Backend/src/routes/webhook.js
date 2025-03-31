@@ -281,7 +281,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 }
 
                 subTotal += (purchaseOrderValues.Quantity || 1) * (purchaseOrderValues['Unit Price($) - GST Excl.'] || 1)
-                gstTotal += purchaseOrderValues['Total Price($) - GST Excl.'] || 1
+                gstTotal = subTotal * parseFloat(item.values["GST"]) / 100;
                 total += subTotal + gstTotal;
 
                 const inputs = {
@@ -412,7 +412,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                 }
 
                 subTotal += (quoteValues.Quantity || 1) * (quoteValues['Unit Price($) - GST Excl.'] || 1);
-                gstTotal += quoteValues['Total Price($) - GST Excl.'] || 1;
+                gstTotal = subTotal * parseFloat(item.values["GST"]) / 100;
                 total = subTotal + gstTotal;
 
                 const pdfBytes = await generate({
