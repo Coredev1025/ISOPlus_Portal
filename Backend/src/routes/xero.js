@@ -234,7 +234,16 @@ router.get("/redirect", async (req, res) => {
 router.get('/callback', async (req, res) => {
   const { code } = req.query;
   const result = await callback(code, req.url);
-  res.json({ result })
+  res.send(`
+      <html>
+        <body>
+          <script>
+            window.opener.postMessage(${JSON.stringify({ ...result })}, '*');
+            window.close();
+          </script>
+        </body>
+      </html>
+    `);
 });
 
 router.get('/oauth', async (req, res) => {

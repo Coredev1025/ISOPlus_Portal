@@ -5,26 +5,61 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ArrowLeft, ExternalLink, FileSpreadsheet, KeyRound } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import axios from "axios";
+import { getCookie } from "@/app/utils/cookies";
 
 export default function XeroIntegrationPage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const id = pathname.split("/")[2];
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
 
   const handleConnectXero = async () => {
     try {
       setIsConnecting(true);
       const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/redirect`, {
-        params: { clientId, clientSecret }
+        headers: { token: getCookie("token") },
+        params: { clientId, clientSecret, workspaceId: id }
       });
-      console.log(response)
+
       if (response.data.url) {
-        window.location.href = response.data.url;
+        const width = 600;
+        const height = 600;
+        const left = window.screenX + (window.outerWidth - width) / 2;
+        const top = window.screenY + (window.outerHeight - height) / 2;
+
+        window.open(
+          response.data.url,
+          'Xero Integration',
+          `width=${width},height=${height},left=${left},top=${top},status=yes,scrollbars=yes`
+        );
+
+        const handleMessage = async (event: MessageEvent) => {
+          if (event.data.success) {
+            await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/xero/connect`, {
+              workspaceId: id,
+              clientId,
+              clientSecret,
+              tokens: event.data.tokenSet
+            }, { headers: { token: getCookie("token") } });
+            setIsConnected(true);
+            setAccessToken(event.data.tokenSet.access_token);
+            alert('Successfully connected to Xero!');
+          } else {
+            alert('Error completing Xero connection. Please try again.');
+          }
+        };
+
+        window.addEventListener('message', handleMessage);
+        return () => {
+          window.removeEventListener('message', handleMessage);
+        };
       }
     } catch (error) {
       console.error(error);
@@ -34,26 +69,39 @@ export default function XeroIntegrationPage() {
     }
   };
 
-  // Handle OAuth callback
-  useEffect(() => {
-    const code = new URLSearchParams(window.location.search).get('code');
-    if (code && clientId && clientSecret) {
-      (async () => {
-        try {
-          const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/callback`, {
-            params: { code, clientId, clientSecret }
-          });
-          if (response.data.tokenSet) {
-            setAccessToken(response.data.tokenSet.access_token);
-            alert('Successfully connected to Xero!');
-          }
-        } catch (error) {
-          console.error(error);
-          alert('Error completing Xero connection. Please try again.');
-        }
-      })();
+  const handleDisconnectXero = async () => {
+    try {
+      await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/xero/disconnect`, {
+        workspaceId: id
+
+      }, { headers: { token: getCookie("token") } });
+      setIsConnected(false);
+      setClientId('');
+      setClientSecret('');
+      alert('Successfully disconnected from Xero!');
+    } catch (error) {
+      console.error('Error disconnecting from Xero:', error);
+      alert('Error disconnecting from Xero. Please try again.');
     }
-  }, [clientId, clientSecret]);
+  };
+
+  useEffect(() => {
+    const checkConnection = async () => {
+      try {
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`, {
+          headers: { token: getCookie("token") }, params: { workspaceId: id }
+        });
+        if (response.data.xeroIntegrated) {
+          setIsConnected(true);
+          setClientId(response.data.xeroInfo.clientId || '');
+          setClientSecret(response.data.xeroInfo.clientSecret || '');
+        }
+      } catch (error) {
+        console.error('Error checking Xero connection:', error);
+      }
+    };
+    checkConnection();
+  }, [id]);
 
   return (
     <div className="min-h-screen bg-background py-8">
@@ -124,16 +172,37 @@ export default function XeroIntegrationPage() {
               </div>
             </div>
 
-            <Button 
-              size="lg" 
-              className="w-full gap-2" 
-              onClick={handleConnectXero}
-              disabled={isConnecting || !clientId || !clientSecret}
-            >
-              <FileSpreadsheet className="h-5 w-5" />
-              {isConnecting ? "Connecting..." : "Connect to Xero"}
-            </Button>
-
+            {isConnected ? (
+              <Button
+                size="lg"
+                variant="destructive"
+                className="w-full gap-2"
+                onClick={handleDisconnectXero}
+              >
+                <FileSpreadsheet className="h-5 w-5" />
+                Disconnect from Xero
+              </Button>
+            ) : (
+              <Button
+                size="lg"
+                className="w-full gap-2"
+                onClick={handleConnectXero}
+                disabled={isConnecting || !clientId || !clientSecret}
+              >
+                <FileSpreadsheet className="h-5 w-5" />
+                {isConnecting ? "Connecting..." : "Connect to Xero"}
+              </Button>
+            )}
+            {accessToken && isConnected && (
+              <div className="mt-4 text-center text-green-600">
+                Successfully connected to Xero!
+              </div>
+            )}
+            {!accessToken && !isConnected && (
+              <div className="mt-4 text-center text-red-600">
+                Failed to connect to Xero. Please try again.
+              </div>
+            )}
             <div className="pt-4 border-t text-sm text-muted-foreground">
               <p>
                 By connecting your Xero account, you agree to share your accounting

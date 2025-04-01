@@ -51,13 +51,10 @@ export async function callback(code, url) {
     const tokenSet = xeroClient.readTokenSet();
     const tenants = await xeroClient.updateTenants(false);
 
-    console.log('🔑 TokenSet:', tokenSet);
-    console.log('🏢 Tenants:', tenants);
-
-    return { message: '✅ Successfully connected to Xero!' };
+    return { success: true, message: 'Successfully connected to Xero!', tokenSet, tenants };
   } catch (error) {
     console.error('❌ Error:', error);
-    return { message: 'Failed to authenticate.' };
+    return { success: false, message: 'Failed to authenticate.' };
   }
 }
 

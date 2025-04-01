@@ -3,12 +3,10 @@ import mongoose from 'mongoose';
 const businessSchema = new mongoose.Schema({
   workspaceId: {
     type: String,
-    ref: 'WorkSpace',
-    required: true
+    ref: 'WorkSpace'
   },
   name: {
-    type: String,
-    required: true
+    type: String
   },
   defaultLogo: {
     type: String
@@ -21,33 +19,26 @@ const businessSchema = new mongoose.Schema({
   },
   address: {
     street: {
-      type: String,
-      required: true
+      type: String
     },
     country: {
-      type: String,
-      required: true
+      type: String
     },
     suburb: {
-      type: String,
-      required: true
+      type: String
     },
     state: {
-      type: String,
-      required: true
+      type: String
     },
     postcode: {
-      type: String,
-      required: true
+      type: String
     }
   },
   phone: {
-    type: String,
-    required: true
+    type: String
   },
   email: {
-    type: String,
-    required: true
+    type: String
   },
   abn: {
     type: String
@@ -59,6 +50,10 @@ const businessSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  xeroInfo:{
+    clientId: String,
+    clientSecret: String
+  },
   xeroTokens: {
     accessToken: String,
     refreshToken: String,
@@ -66,20 +61,16 @@ const businessSchema = new mongoose.Schema({
   },
   bankDetails: {
     accountName: {
-      type: String,
-      required: true
+      type: String
     },
     bankName: {
-      type: String,
-      required: true
+      type: String
     },
     bsb: {
-      type: String,
-      required: true
+      type: String
     },
     accountNumber: {
-      type: String,
-      required: true
+      type: String
     },
     paymentReference: {
       type: String

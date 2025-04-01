@@ -134,4 +134,67 @@ router.put('/profile', authenticateToken, multiupload, async (req, res) => {
   }
 });
 
+router.post('/xero/connect', authenticateToken, async (req, res) => {
+  try {
+    const { workspaceId, clientId, clientSecret, tokens } = req.body;
+
+    const business = await Business.find({ workspaceId });
+    if (!business) {
+      const newBusiness = new Business({
+        workspaceId,
+        xeroIntegrated: true,
+        xeroInfo: { clientId, clientSecret },
+        xeroTokens: {
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          expiresAt: tokens.expires_at ? new Date(Date.now() + tokens.expires_at * 1000) : null
+        }
+      });
+      await Business.insertOne(newBusiness);
+    } else {
+      business.xeroIntegrated = true;
+      business.xeroInfo = { clientId, clientSecret };
+      business.xeroTokens = {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresAt: tokens.expires_at? new Date(Date.now() + tokens.expires_at * 1000) : null
+      };
+
+      await Business.findByIdAndUpdate(business._id, business);
+    }
+
+    info('Business-Service', 'Xero integration connected', { businessId: business._id }, req);
+    res.json({ success: true });
+  } catch (err) {
+    error('Business-Service', 'Server error during Xero connection', { message: err.message }, req);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.post('/xero/disconnect', authenticateToken, async (req, res) => {
+  try {
+    const { workspaceId } = req.body;
+
+    const business = await Business.findOne({ workspaceId });
+    if (!business) {
+      return res.status(404).json({ message: 'Business not found' });
+    }
+
+    business.xeroIntegrated = false;
+    business.xeroInfo = { clientId: null, clientSecret: null };
+    business.xeroTokens = {
+      accessToken: null,
+      refreshToken: null,
+      expiresAt: null
+    };
+
+    await business.save();
+    info('Business-Service', 'Xero integration disconnected', { businessId: business._id }, req);
+    res.json({ success: true });
+  } catch (err) {
+    error('Business-Service', 'Server error during Xero disconnection', { message: err.message }, req);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 export default router;
