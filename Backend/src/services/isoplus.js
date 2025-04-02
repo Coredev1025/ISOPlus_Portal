@@ -3,20 +3,20 @@ import axios from "axios";
 export async function getWorkspace(authorization) {
     try {
         const url = "https://app.isoplus.online/api/v2/workspaces";
-
         const headers = {
             "Authorization": authorization,
             "Content-Type": "application/json",
             "Accept": "application/json",
-        }, params = {
+        };
+        const params = {
             "limit": "100",
             "sort_by": "created_at",
             "sort_direction": "desc",
         };
 
         let workspace = [];
-
         const result = await axios.get(url, { headers, params });
+
         if (result.status === 200) {
             workspace = workspace.concat(result.data.data);
             let has_more = result.data.has_more, after = result.data.after;
@@ -36,25 +36,25 @@ export async function getWorkspace(authorization) {
     } catch (err) {
         return { message: err.message, status: 500 };
     }
-};
+}
 
 export async function getBoard(authorization, workspaceId) {
     try {
         const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards`;
-
         const headers = {
             "Authorization": authorization,
             "Content-Type": "application/json",
             "Accept": "application/json",
-        }, params = {
+        };
+        const params = {
             "limit": "100",
             "sort_by": "created_at",
             "sort_direction": "desc",
         };
 
         let board = [];
-
         const result = await axios.get(url, { headers, params });
+
         if (result.status === 200) {
             board = board.concat(result.data.data);
             let has_more = result.data.has_more, after = result.data.after;
@@ -74,7 +74,7 @@ export async function getBoard(authorization, workspaceId) {
     } catch (err) {
         return { message: err.message, status: 500 };
     }
-};
+}
 
 export async function getFolder(workspaceId, boardId) {
     try {
@@ -84,15 +84,16 @@ export async function getFolder(workspaceId, boardId) {
             "Content-Type": "application/json",
             "Accept": "application/json",
             "X-API-Version": "2025-02-26.morava",
-        }, params = {
+        };
+        const params = {
             "limit": "100",
             "sort_by": "created_at",
             "sort_direction": "desc",
         };
 
         let folder = [];
-
         const result = await axios.get(url, { headers, params });
+
         if (result.status === 200) {
             folder = folder.concat(result.data.data);
             let has_more = result.data.has_more, after = result.data.after;
@@ -112,18 +113,18 @@ export async function getFolder(workspaceId, boardId) {
     } catch (err) {
         return { message: err.message, status: 500 };
     }
-};
+}
 
 export async function getItem(workspaceId, boardId, folderId) {
     try {
         const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/`;
-
         const headers = {
             "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
             "Content-Type": "application/json",
             "Accept": "application/json",
             "X-API-Version": "2025-02-26.morava",
-        }, params = {
+        };
+        const params = {
             "limit": "100",
             "sort_by": "created_at",
             "sort_direction": "desc",
@@ -132,8 +133,8 @@ export async function getItem(workspaceId, boardId, folderId) {
         };
 
         let item = [];
-
         const result = await axios.get(url, { headers, params });
+
         if (result.status === 200) {
             item = item.concat(result.data.data);
             let has_more = result.data.has_more, after = result.data.after;
@@ -153,26 +154,35 @@ export async function getItem(workspaceId, boardId, folderId) {
     } catch (err) {
         return { message: err.message, status: 500 };
     }
-};
+}
 
-export function putInternalMessage(workspaceId, boardId, itemId, message) {
-    axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`, {
-        "values": [
+export async function putInternalMessage(workspaceId, boardId, itemId, message) {
+    try {
+        await axios.put(
+            `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
             {
-                "attribute_id": "b84bf475-b4f7-4e35-891a-72c24631468f",
-                "data": `<p>${message}</p>`
+                "values": [
+                    {
+                        "attribute_id": process.env.INTEGRATION_MESSAGE_ATTRIBUTE_ID || "b84bf475-b4f7-4e35-891a-72c24631468f",
+                        "data": `<p>${message}</p>`
+                    }
+                ]
+            },
+            {
+                headers: {
+                    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "X-API-Version": "2025-02-26.morava",
+                }
             }
-        ],
-    }, {
-        headers: {
-            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-API-Version": "2025-02-26.morava",
-        }
-    });
-    return true;
-};
+        );
+        return true;
+    } catch (err) {
+        console.error("Error putting internal message:", err);
+        return false;
+    }
+}
 
 export function putTimeTracking(workspaceId, boardId, itemId, startTime, endTime) {
     axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`, {
@@ -196,9 +206,9 @@ export function putTimeTracking(workspaceId, boardId, itemId, startTime, endTime
     return true;
 };
 
-export async function getItemValues(itemId) {
+export async function getItemValues(workspaceId, boardId, itemId) {
     try {
-        const url = `https://app.isoplus.online/api/v2/items/${itemId}`;
+        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}?expand[]=values.attribute`;
         const headers = {
             "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
             "Content-Type": "application/json",
@@ -209,22 +219,40 @@ export async function getItemValues(itemId) {
         const result = await axios.get(url, { headers });
         return result.status === 200 ? result.data : null;
     } catch (err) {
+        console.error("Error getting item values:", err);
         return null;
     }
 }
 
-export async function validateItemBelongsToTenant(itemId) {
-    const validatedItemOwnership = await getItemValues(itemId);
+export async function validateItemBelongsToTenant(workspaceId, boardId, itemId) {
+    const validatedItemOwnership = await getItemValues(workspaceId, boardId, itemId);
     if (!validatedItemOwnership) {
-        const errorMessage = "CRITICAL: Item does not exist. This may be a result of and intrusion attempt or misconfiguratoin of the tenant!";
-        console.warn(errorMessage); // equivalent to Log.Warning
-        throw new Error(errorMessage); // JavaScript doesn't have AccessViolationException
+        const errorMessage = "CRITICAL: Item does not exist. This may be a result of an intrusion attempt or misconfiguration of the tenant!";
+        console.warn(errorMessage);
+        throw new Error(errorMessage);
     }
 }
 
-export async function getReferences(itemId) {
+export async function getReferences(workspaceId, boardId, itemId) {
     try {
-        const url = `https://app.isoplus.online/api/v2/items/${itemId}/references`;
+        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/references?from_item_id=${itemId}`;
+        const headers = {
+            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        };
+
+        const result = await axios.get(url, { headers });
+        return result.status === 200 ? result.data: null;
+    } catch (err) {
+        console.error("Error getting references:", err);
+        return null;
+    }
+}
+
+export async function getAttribute(workspaceId, boardId, attributeId) {
+    try {
+        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/attributes/${attributeId}`;
         const headers = {
             "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
             "Content-Type": "application/json",
@@ -235,41 +263,25 @@ export async function getReferences(itemId) {
         const result = await axios.get(url, { headers });
         return result.status === 200 ? result.data : null;
     } catch (err) {
+        console.error("Error getting attribute:", err);
         return null;
     }
 }
 
-export async function getAttribute(attributeId) {
-    try {
-        const url = `https://app.isoplus.online/api/v2/attributes/${attributeId}`;
-        const headers = {
-            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-API-Version": "2025-02-26.morava",
-        };
-
-        const result = await axios.get(url, { headers });
-        return result.status === 200 ? result.data : null;
-    } catch (err) {
-        return null;
-    }
-}
-
-export async function getJobReportingReferencedItems(itemId) {
+export async function getJobReportingReferencedItems(workspaceId, boardId, itemId) {
     let serviceFeeTypeValues = null;
     let jobPlanningValues = null;
 
-    const referenceResponse = await getReferences(itemId);
+    const referenceResponse = await getReferences(workspaceId, boardId, itemId);
     if (!referenceResponse) return [null, null];
 
     for (const reference of referenceResponse.data) {
-        const attribute = await getAttribute(reference.attribute_id);
+        const attribute = await getAttribute(workspaceId, boardId, reference.attribute_id);
         if (!attribute) continue;
 
         switch (attribute.name) {
             case "Job Number": {
-                const jobPlanningItemValues = await getItemValues(reference.to_item_id);
+                const jobPlanningItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
                 if (jobPlanningItemValues) {
                     const values = jobPlanningItemValues.values;
                     if (!values.some(v => v.attribute.name === "Job Number")) {
@@ -292,7 +304,7 @@ export async function getJobReportingReferencedItems(itemId) {
                 break;
             }
             case "Service Fee Type": {
-                const serviceFeeTypeItemValues = await getItemValues(reference.to_item_id);
+                const serviceFeeTypeItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
                 if (serviceFeeTypeItemValues) {
                     const values = serviceFeeTypeItemValues.values;
                     if (!values.some(v => v.attribute.name === "Fee Type")) {
@@ -310,4 +322,280 @@ export async function getJobReportingReferencedItems(itemId) {
     }
 
     return [jobPlanningValues, serviceFeeTypeValues];
+}
+
+export async function getJobPlanningReferencedItems(workspaceId, boardId, itemId) {
+    let contactValues = null;
+    let jobTypeValues = null;
+
+    const referenceResponse = await getReferences(workspaceId, boardId, itemId);
+    if (!referenceResponse) return [null, null];
+
+    for (const reference of referenceResponse.data) {
+        const attribute = await getAttribute(workspaceId, boardId, reference.attribute_id);
+        if (!attribute) continue;
+
+        switch (attribute.name) {
+            case "Client": {
+                const clientItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                if (clientItemValues) {
+                    const values = clientItemValues.values;
+                    if (!values.some(v => v.attribute.name === "Client")) {
+                        throw new Error("Client is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "Email Address")) {
+                        throw new Error("Client email address is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "Phone Number")) {
+                        throw new Error("Client phone number is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "Address")) {
+                        throw new Error("Client address is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "Suburb")) {
+                        throw new Error("Client suburb is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "State")) {
+                        throw new Error("Client state is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "Postcode")) {
+                        throw new Error("Client postcode is required");
+                    }
+
+                    const stateElement = values.find(v => v.attribute.name === "State").data;
+                    let stateId = "";
+                    if (stateElement && stateElement[0]) {
+                        stateId = stateElement[0].toString();
+                    }
+
+                    const stateLabel = stateId && values.find(v => v.attribute.name === "State").attribute.settings.labels.find(l => l.id === stateId);
+
+                    contactValues = {
+                        client: values.find(v => v.attribute.name === "Client").data.toString(),
+                        emailAddress: values.find(v => v.attribute.name === "Email Address").data.toString(),
+                        phoneNumber: values.find(v => v.attribute.name === "Phone Number").data.toString(),
+                        address: values.find(v => v.attribute.name === "Address").data.toString(),
+                        suburb: values.find(v => v.attribute.name === "Suburb").data.toString(),
+                        state: stateLabel ? stateLabel.name : "",
+                        postcode: parseInt(values.find(v => v.attribute.name === "Postcode").data.toString()),
+                        contactPersonsFirstName: values.some(v => v.attribute.name === "Contact Person's First Name")
+                            ? values.find(v => v.attribute.name === "Contact Person's First Name").data.toString()
+                            : "",
+                        contactPersonsLastName: values.some(v => v.attribute.name === "Contact Person's Last Name")
+                            ? values.find(v => v.attribute.name === "Contact Person's Last Name").data.toString()
+                            : "",
+                    };
+                }
+                break;
+            }
+            case "Job Type": {
+                const jobTypeItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                if (jobTypeItemValues) {
+                    const values = jobTypeItemValues.values;
+                    if (!values.some(v => v.attribute.name === "Job Type")) {
+                        throw new Error("Job Type is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "Job Code")) {
+                        throw new Error("Job Code is required");
+                    }
+
+                    jobTypeValues = {
+                        jobType: values.find(v => v.attribute.name === "Job Type").data.toString(),
+                        jobCode: values.find(v => v.attribute.name === "Job Code").data.toString(),
+                    };
+                }
+                break;
+            }
+        }
+    }
+
+    return [contactValues, jobTypeValues];
+}
+
+export async function getQuoteReferencedItems(workspaceId, boardId, itemId) {
+    let contactValues = null;
+    let jobTypeValues = null;
+
+    const referenceResponse = await getReferences(workspaceId, boardId, itemId);
+    if (!referenceResponse) return [null, null];
+
+    for (const reference of referenceResponse.data) {
+        const attribute = await getAttribute(workspaceId, boardId, reference.attribute_id);
+        if (!attribute) continue;
+
+        switch (attribute.name) {
+            case "Client": {
+                const clientItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                if (clientItemValues) {
+                    const values = clientItemValues.values;
+                    if (!values.some(v => v.attribute.name === "Client")) {
+                        throw new Error("Client is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "Email Address")) {
+                        throw new Error("Client email Address is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "Phone Number")) {
+                        throw new Error("Client phone number is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "Address")) {
+                        throw new Error("Client address is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "Suburb")) {
+                        throw new Error("Client suburb is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "State")) {
+                        throw new Error("Client state is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "Postcode")) {
+                        throw new Error("Client postcode is required");
+                    }
+
+                    const stateElement = values.find(v => v.attribute.name === "State").data;
+                    let stateId = "";
+                    if (stateElement && stateElement[0]) {
+                        stateId = stateElement[0].toString();
+                    }
+
+                    const stateLabel = stateId && values.find(v => v.attribute.name === "State").attribute.settings.labels.find(l => l.id === stateId);
+
+                    contactValues = {
+                        client: values.find(v => v.attribute.name === "Client").data.toString(),
+                        emailAddress: values.find(v => v.attribute.name === "Email Address").data.toString(),
+                        phoneNumber: values.find(v => v.attribute.name === "Phone Number").data.toString(),
+                        address: values.find(v => v.attribute.name === "Address").data.toString(),
+                        suburb: values.find(v => v.attribute.name === "Suburb").data.toString(),
+                        state: stateLabel ? stateLabel.name : "",
+                        postcode: parseInt(values.find(v => v.attribute.name === "Postcode").data.toString()),
+                        contactPersonsFirstName: values.some(v => v.attribute.name === "Contact Person's First Name")
+                            ? values.find(v => v.attribute.name === "Contact Person's First Name").data.toString()
+                            : "",
+                        contactPersonsLastName: values.some(v => v.attribute.name === "Contact Person's Last Name")
+                            ? values.find(v => v.attribute.name === "Contact Person's Last Name").data.toString()
+                            : "",
+                    };
+                }
+                break;
+            }
+            case "Job Type": {
+                const jobTypeItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                if (jobTypeItemValues) {
+                    const values = jobTypeItemValues.values;
+                    if (!values.some(v => v.attribute.name === "Job Type")) {
+                        throw new Error("Job Type is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "Job Code")) {
+                        throw new Error("Job Code is required");
+                    }
+
+                    jobTypeValues = {
+                        jobType: values.find(v => v.attribute.name === "Job Type").data.toString(),
+                        jobCode: values.find(v => v.attribute.name === "Job Code").data.toString(),
+                    };
+                }
+                break;
+            }
+        }
+    }
+
+    return [contactValues, jobTypeValues];
+}
+
+export async function getPurchaseOrderReferencedItems(workspaceId, boardId, itemId) {
+    let contractorValues = null;
+    let jobTypeValues = null;
+
+    const referenceResponse = await getReferences(workspaceId, boardId, itemId);
+    if (!referenceResponse) return [null, null];
+
+    for (const reference of referenceResponse.data) {
+        const attribute = await getAttribute(workspaceId, boardId, reference.attribute_id);
+        if (!attribute) continue;
+
+        switch (attribute.name) {
+            case "Contractor": {
+                const supplierItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                if (supplierItemValues) {
+                    const values = supplierItemValues.values;
+                    if (!values.some(v => v.attribute.name === "Contractor")) {
+                        throw new Error("Contractor is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "Email Address")) {
+                        throw new Error("Contractor email Address is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "Phone Number")) {
+                        throw new Error("Contractor phone number is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "Address")) {
+                        throw new Error("Contractor address is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "Suburb")) {
+                        throw new Error("Contractor suburb is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "State")) {
+                        throw new Error("Contractor state is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "Postcode")) {
+                        throw new Error("Contractor postcode is required");
+                    }
+
+                    const stateElement = values.find(v => v.attribute.name === "State").data;
+                    let stateId = "";
+                    if (stateElement && stateElement[0]) {
+                        stateId = stateElement[0].toString();
+                    }
+
+                    const stateLabel = stateId && values.find(v => v.attribute.name === "State").attribute.settings.labels.find(l => l.id === stateId);
+
+                    contractorValues = {
+                        contractor: values.find(v => v.attribute.name === "Contractor").data.toString(),
+                        emailAddress: values.find(v => v.attribute.name === "Email Address").data.toString(),
+                        phoneNumber: values.find(v => v.attribute.name === "Phone Number").data.toString(),
+                        address: values.find(v => v.attribute.name === "Address").data.toString(),
+                        suburb: values.find(v => v.attribute.name === "Suburb").data.toString(),
+                        state: stateLabel ? stateLabel.name : "",
+                        postcode: parseInt(values.find(v => v.attribute.name === "Postcode").data.toString()),
+                        contactPersonsFirstName: values.some(v => v.attribute.name === "Contact Person's First Name")
+                            ? values.find(v => v.attribute.name === "Contact Person's First Name").data.toString()
+                            : "",
+                        contactPersonsLastName: values.some(v => v.attribute.name === "Contact Person's Last Name")
+                            ? values.find(v => v.attribute.name === "Contact Person's Last Name").data.toString()
+                            : "",
+                    };
+                }
+                break;
+            }
+            case "Job Type": {
+                const jobTypeItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                if (jobTypeItemValues) {
+                    const values = jobTypeItemValues.values;
+                    if (!values.some(v => v.attribute.name === "Job Type")) {
+                        throw new Error("Job Type is required");
+                    }
+                    if (!values.some(v => v.attribute.name === "Job Code")) {
+                        throw new Error("Job Code is required");
+                    }
+
+                    jobTypeValues = {
+                        jobType: values.find(v => v.attribute.name === "Job Type").data.toString(),
+                        jobCode: values.find(v => v.attribute.name === "Job Code").data.toString(),
+                    };
+                }
+                break;
+            }
+        }
+    }
+
+    return [contractorValues, jobTypeValues];
+}
+
+export async function setIntegrationMessage(workspaceId, boardId, itemId, message) {
+    try {
+        const response = await putInternalMessage(workspaceId, boardId, itemId, message);
+        if (!response) {
+            throw new Error("Failed to update item with integration message");
+        }
+    } catch (err) {
+        console.error("Error setting integration message:", err);
+        throw err;
+    }
 }

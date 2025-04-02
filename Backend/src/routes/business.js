@@ -138,9 +138,9 @@ router.post('/xero/connect', authenticateToken, async (req, res) => {
   try {
     const { workspaceId, clientId, clientSecret, tokens } = req.body;
 
-    const business = await Business.find({ workspaceId });
+    let business = await Business.findOne({ workspaceId });
     if (!business) {
-      const newBusiness = new Business({
+      business = new Business({
         workspaceId,
         xeroIntegrated: true,
         xeroInfo: { clientId, clientSecret },
@@ -150,17 +150,17 @@ router.post('/xero/connect', authenticateToken, async (req, res) => {
           expiresAt: tokens.expires_at ? new Date(Date.now() + tokens.expires_at * 1000) : null
         }
       });
-      await Business.insertOne(newBusiness);
+      await business.save();
     } else {
       business.xeroIntegrated = true;
       business.xeroInfo = { clientId, clientSecret };
       business.xeroTokens = {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
-        expiresAt: tokens.expires_at? new Date(Date.now() + tokens.expires_at * 1000) : null
+        expiresAt: tokens.expires_at ? new Date(Date.now() + tokens.expires_at * 1000) : null
       };
 
-      await Business.findByIdAndUpdate(business._id, business);
+      await business.save();
     }
 
     info('Business-Service', 'Xero integration connected', { businessId: business._id }, req);
