@@ -147,7 +147,7 @@ router.post('/xero/connect', authenticateToken, async (req, res) => {
         xeroTokens: {
           accessToken: tokens.access_token,
           refreshToken: tokens.refresh_token,
-          expiresAt: tokens.expires_at ? new Date(Date.now() + tokens.expires_at * 1000) : null
+          expiresAt: tokens.expires_at
         }
       });
       await business.save();
@@ -157,7 +157,7 @@ router.post('/xero/connect', authenticateToken, async (req, res) => {
       business.xeroTokens = {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
-        expiresAt: tokens.expires_at ? new Date(Date.now() + tokens.expires_at * 1000) : null
+        expiresAt: tokens.expires_at
       };
 
       await business.save();

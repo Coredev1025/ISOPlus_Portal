@@ -1,5 +1,6 @@
 import express from 'express';
 import dotenv from 'dotenv';
+import Business from '../models/Business.js';
 import { info, warn, error } from '../utils/logger.js';
 import {
   validateItemBelongsToTenant,
@@ -11,13 +12,14 @@ import {
 } from '../services/isoplus.js';
 import {
   configure,
+  ensureAuthenticated,
   createInvoice,
   createOrUpdateContact,
   createQuote,
   createPurchaseOrder,
   getAuthUrl,
   exchangeCode,
-  refreshToken,
+  refreshTokenSet,
   callback,
   getContactByEmail,
   findOrCreateItem
@@ -38,38 +40,24 @@ router.get('/services', (req, res) => {
   res.json(services);
 });
 
-router.post('/test', async (req, res) => {
-  const { clientId, clientSecret } = req.body;
-  const payload = req.body;
-
-  try {
-    const result = await configure(clientId, clientSecret);
-    info(`/test client id: ${clientId}, body: ${JSON.stringify(payload)}, return: ${JSON.stringify(result)}`);
-    res.json({ message: 'Test endpoint executed successfully', result });
-  } catch (err) {
-    error('Error in test endpoint', err);
-    res.status(500).json({ message: 'Error in test endpoint', error: err.message });
-  }
-});
-
 router.get('/hello', (req, res) => {
   res.send('Hello, World!');
 });
 
 router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
   const { workspaceId, boardId } = req.params;
-  const { clientId, clientSecret } = req.body;
   const payload = req.body;
+  if (!payload.items || payload.items.length === 0) {
+    warn('Received payload with empty items.');
+    return res.json('No items found in the payload.');
+  }
+
+  const item = payload.items[0];
 
   try {
-    await configure(clientId, clientSecret);
-
-    if (!payload.items || payload.items.length === 0) {
-      warn('Received payload with empty items.');
-      return res.json('No items found in the payload.');
-    }
-
-    const item = payload.items[0];
+    const business = await Business.findOne({ workspaceId });
+    await configure(business.xeroInfo.clientId, business.xeroInfo.clientSecret, process.env.XERO_REDIRECT_URL);
+    await ensureAuthenticated(business.xeroTokens.accessToken, business.xeroTokens.refreshToken, business.xeroTokens.expiresAt);
     const invoiceValues = item.values;
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
@@ -132,9 +120,10 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     const serviceFeeType = serviceFeeTypeValues.feeType;
     invoice.lineItems.push({
       itemCode: jobType.code,
-      description: `${jobPlanningValues.jobTitle} - ${serviceFeeType} - ${invoiceValues.jobDurationHrs} Hrs.`,
+      description: `${jobPlanningValues.jobTitle} - ${serviceFeeType} - ${invoiceValues['Job Duration (Hrs.)']} Hrs.`,
       quantity: 1,
-      unitAmount: invoiceValues.payableServiceFee,
+      accountCode: 4715,
+      unitAmount: invoiceValues['Payable Service Fee($) - GST Excl.'],
       taxType: "OUTPUT",
     });
 
@@ -142,7 +131,8 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       invoice.lineItems.push({
         description: "Used Material/Part",
         quantity: 1,
-        unitAmount: invoiceValues.payableMaterialFee,
+        accountCode: 4715,
+        unitAmount: invoiceValues['Payable Material Fee($) - GST Excl.'],
         taxType: "EXEMPTOUTPUT",
       });
     }
@@ -151,7 +141,8 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       invoice.lineItems.push({
         description: "Other Payable Fee",
         quantity: 1,
-        unitAmount: invoiceValues.otherPayableFee,
+        accountCode: 4715,
+        unitAmount: invoiceValues['Other Payable Fee($) - GST Excl.'],
         taxType: "OUTPUT",
       });
     }
@@ -169,23 +160,24 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
   }
 });
 
-router.post('/contact', async (req, res) => {
-  const { clientId, clientSecret } = req.body;
+router.post('/:workspaceId/:boardId/contact', async (req, res) => {
+  const { workspaceId, boardId } = req.params;
   const payload = req.body;
+  if (!payload.items || payload.items.length === 0) {
+    warn('Received payload with empty items.');
+    return res.json('No items found in the payload.');
+  }
+
+  const item = payload.items[0];
 
   try {
-    await configure(clientId, clientSecret);
+    const business = await Business.findOne({ workspaceId });
+    await configure(business.xeroInfo.clientId, business.xeroInfo.clientSecret);
 
-    if (!payload.items || payload.items.length === 0) {
-      warn('Received payload with empty items.');
-      return res.json('No items found in the payload.');
-    }
-
-    const item = payload.items[0];
     const contactValues = item.values;
 
-    await validateItemBelongsToTenant(item.id);
-    await setIntegrationMessage(item.id, "Running...");
+    await validateItemBelongsToTenant(workspaceId, boardId, item.id);
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
     const existingContact = await getContactByEmail(contactValues.emailAddress);
     let contact;
@@ -214,7 +206,7 @@ router.post('/contact', async (req, res) => {
       existingContact.emailAddress = contactValues.emailAddress;
 
       contact = await createOrUpdateContact(existingContact);
-      await setIntegrationMessage(item.id, "Your contact is successfully updated.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Your contact is successfully updated.");
     } else {
       contact = await createOrUpdateContact({
         name: contactValues.client,
@@ -239,38 +231,39 @@ router.post('/contact', async (req, res) => {
         ],
         emailAddress: contactValues.emailAddress
       });
-      await setIntegrationMessage(item.id, "Your contact is successfully created.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Your contact is successfully created.");
     }
 
     res.json(contact);
   } catch (err) {
     error('Error creating/updating contact', err);
     if (item) {
-      await setIntegrationMessage(item.id, "An error occurred while creating/updating the contact. Please contact support.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating/updating the contact. Please contact support.");
     }
     res.status(500).json({ message: 'Error creating/updating contact', error: err.message });
   }
 });
 
-router.post('/contractor', async (req, res) => {
-  const { clientId, clientSecret } = req.body;
+router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
+  const { workspaceId, boardId } = req.params;
   const payload = req.body;
+  if (!payload.items || payload.items.length === 0) {
+    warn('Received payload with empty items.');
+    return res.json('No items found in the payload.');
+  }
+
+  const item = payload.items[0];
 
   try {
-    await configure(clientId, clientSecret);
+    const business = await Business.findOne({ workspaceId });
+    await configure(business.xeroInfo.clientId, business.xeroInfo.clientSecret);
 
-    if (!payload.items || payload.items.length === 0) {
-      warn('Received payload with empty items.');
-      return res.json('No items found in the payload.');
-    }
-
-    const item = payload.items[0];
     const contractorValues = item.values;
 
-    await validateItemBelongsToTenant(item.id);
-    await setIntegrationMessage(item.id, "Running...");
+    await validateItemBelongsToTenant(workspaceId, boardId, item.id);
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
-    const [contractorValuesFromRef, jobTypeValues] = await getPurchaseOrderReferencedItems(item.id);
+    const [contractorValuesFromRef, jobTypeValues] = await getPurchaseOrderReferencedItems(workspaceId, boardId, item.id);
     if (!contractorValuesFromRef) {
       throw new Error("Contractor information is required.");
     }
@@ -327,38 +320,39 @@ router.post('/contractor', async (req, res) => {
         ],
         emailAddress: contractorValuesFromRef.emailAddress
       });
-      await setIntegrationMessage(item.id, "Your contractor is successfully created.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Your contractor is successfully created.");
     }
 
     res.json(contact);
   } catch (err) {
     error('Error creating/updating contractor', err);
     if (item) {
-      await setIntegrationMessage(item.id, "An error occurred while creating/updating the contractor. Please contact support.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating/updating the contractor. Please contact support.");
     }
     res.status(500).json({ message: 'Error creating/updating contractor', error: err.message });
   }
 });
 
-router.post('/quote', async (req, res) => {
-  const { clientId, clientSecret } = req.body;
+router.post('/:workspaceId/:boardId/quote', async (req, res) => {
+  const { workspaceId, boardId } = req.params;
   const payload = req.body;
+  if (!payload.items || payload.items.length === 0) {
+    warn('Received payload with empty items.');
+    return res.json('No items found in the payload.');
+  }
+
+  const item = payload.items[0];
 
   try {
-    await configure(clientId, clientSecret);
+    const business = await Business.findOne({ workspaceId });
+    await configure(business.xeroInfo.clientId, business.xeroInfo.clientSecret);
 
-    if (!payload.items || payload.items.length === 0) {
-      warn('Received payload with empty items.');
-      return res.json('No items found in the payload.');
-    }
-
-    const item = payload.items[0];
     const quoteValues = item.values;
 
-    await validateItemBelongsToTenant(item.id);
-    await setIntegrationMessage(item.id, "Running...");
+    await validateItemBelongsToTenant(workspaceId, boardId, item.id);
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
-    const [contactValues, jobTypeValues] = await getQuoteReferencedItems(item.id);
+    const [contactValues, jobTypeValues] = await getQuoteReferencedItems(workspaceId, boardId, item.id);
     if (!contactValues) {
       throw new Error("Client information is required.");
     }
@@ -414,42 +408,43 @@ router.post('/quote', async (req, res) => {
     };
 
     if (await quoteExists(quote.quoteNumber)) {
-      await setIntegrationMessage(item.id, "WARN: A quote with the same number already exists.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "WARN: A quote with the same number already exists.");
       return res.status(400).json({ message: "A quote with the same number already exists." });
     }
 
     const createdQuote = await createQuote(quote);
-    await setIntegrationMessage(item.id, "Your quote is successfully created.");
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Your quote is successfully created.");
 
     res.json(createdQuote);
   } catch (err) {
     error('Error creating quote', err);
     if (item) {
-      await setIntegrationMessage(item.id, "An error occurred while creating the quote. Please contact support.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating the quote. Please contact support.");
     }
     res.status(500).json({ message: 'Error creating quote', error: err.message });
   }
 });
 
-router.post('/purchaseorder', async (req, res) => {
-  const { clientId, clientSecret } = req.body;
+router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
+  const { workspaceId, boardId } = req.params;
   const payload = req.body;
+  if (!payload.items || payload.items.length === 0) {
+    warn('Received payload with empty items.');
+    return res.json('No items found in the payload.');
+  }
+
+  const item = payload.items[0];
 
   try {
-    await configure(clientId, clientSecret);
+    const business = await Business.findOne({ workspaceId });
+    await configure(business.xeroInfo.clientId, business.xeroInfo.clientSecret);
 
-    if (!payload.items || payload.items.length === 0) {
-      warn('Received payload with empty items.');
-      return res.json('No items found in the payload.');
-    }
-
-    const item = payload.items[0];
     const purchaseOrderValues = item.values;
 
-    await validateItemBelongsToTenant(item.id);
-    await setIntegrationMessage(item.id, "Running...");
+    await validateItemBelongsToTenant(workspaceId, boardId, item.id);
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
-    const [contractorValues, jobTypeValues] = await getPurchaseOrderReferencedItems(item.id);
+    const [contractorValues, jobTypeValues] = await getPurchaseOrderReferencedItems(workspaceId, boardId, item.id);
     if (!contractorValues) {
       throw new Error("Contractor information is required. Purchase order is missing Contractor.");
     }
@@ -506,18 +501,18 @@ router.post('/purchaseorder', async (req, res) => {
     };
 
     if (await purchaseOrderExists(purchaseOrder.purchaseOrderNumber)) {
-      await setIntegrationMessage(item.id, "WARN: A purchase order with the same number already exists.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "WARN: A purchase order with the same number already exists.");
       return res.status(400).json({ message: "A purchase order with the same number already exists." });
     }
 
     const createdPurchaseOrder = await createPurchaseOrder(purchaseOrder);
-    await setIntegrationMessage(item.id, "Your purchase order is successfully created.");
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Your purchase order is successfully created.");
 
     res.json(createdPurchaseOrder);
   } catch (err) {
     error('Error creating purchase order', err);
     if (item) {
-      await setIntegrationMessage(item.id, "An error occurred while creating the purchase order. Please contact support.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating the purchase order. Please contact support.");
     }
     res.status(500).json({ message: 'Error creating purchase order', error: err.message });
   }
@@ -543,7 +538,7 @@ router.get('/callback', async (req, res) => {
             <html>
                 <body>
                     <script>
-                        window.opener.postMessage(${JSON.stringify({ ...result })}, '*');
+                        window.opener.postMessage(${JSON.stringify({ ...result, type: 'XERO_AUTH' })}, '*');
                         window.close();
                     </script>
                 </body>
@@ -555,7 +550,7 @@ router.get('/callback', async (req, res) => {
             <html>
                 <body>
                     <script>
-                        window.opener.postMessage(${JSON.stringify({ success: false, message: 'Authentication failed' })}, '*');
+                        window.opener.postMessage(${JSON.stringify({ success: false, message: 'Authentication failed', type: 'XERO_AUTH' })}, '*');
                         window.close();
                     </script>
                 </body>
@@ -569,7 +564,7 @@ router.post('/refresh', async (req, res) => {
     const { clientId, clientSecret, tokenSet } = req.body;
     const redirectUri = `${process.env.APP_URL}/api/xero/callback`;
     await configure(clientId, clientSecret, redirectUri);
-    const newTokenSet = await refreshToken(tokenSet);
+    const newTokenSet = await refreshTokenSet(tokenSet);
     res.json({ tokenSet: newTokenSet });
   } catch (err) {
     error('Error refreshing token', err);

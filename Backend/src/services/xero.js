@@ -8,7 +8,7 @@ export async function configure(clientId, clientSecret, redirectUri = null) {
         const config = {
             clientId: clientId,
             clientSecret: clientSecret,
-            scopes: 'openid profile email accounting.transactions offline_access'.split(" "),
+            scopes: 'openid profile email accounting.settings accounting.contacts accounting.transactions accounting.reports.read accounting.attachments offline_access'.split(" "),
         };
 
         if (redirectUri) {
@@ -31,7 +31,7 @@ export async function getAuthUrl() {
         throw new Error('Xero client is not configured.');
     }
 
-    const scopes = 'openid profile email accounting.transactions offline_access'.split(" ");
+    const scopes = 'openid profile email accounting.settings accounting.contacts accounting.transactions accounting.reports.read accounting.attachments offline_access'.split(" ");
     const state = Math.random().toString(36).substring(7);
     const url = await xeroClient.buildConsentUrl(scopes, state);
     return url;
@@ -42,10 +42,18 @@ export async function callback(code, url) {
         await xeroClient.apiCallback(url);
         const tokenSet = xeroClient.readTokenSet();
         const tenants = await xeroClient.updateTenants(false);
-        return { success: true, message: 'Successfully connected to Xero!', tokenSet, tenants };
+        return {
+            success: true,
+            message: 'Successfully connected to Xero!',
+            tokenSet,
+            tenants
+        };
     } catch (err) {
         error('Error in Xero callback', err);
-        return { success: false, message: 'Failed to authenticate.' };
+        return {
+            success: false,
+            message: 'Failed to authenticate: ' + err.message
+        };
     }
 }
 
@@ -67,7 +75,7 @@ export async function exchangeCode(code) {
     }
 }
 
-export async function refreshToken(tokenSet) {
+export async function refreshTokenSet(tokenSet) {
     try {
         if (!xeroClient) {
             throw new Error('Xero client is not configured.');
@@ -87,10 +95,10 @@ export async function createToken() {
             throw new Error('Xero client is not configured.');
         }
 
-        const token = await xeroClient.getClientCredentialsToken();
-        const connections = await xeroClient.connections?.getConnections() || [];
-        const xeroTenantId = connections[0]?.tenantId;
-        console.log(token, xeroTenantId)
+        const token = await xeroClient.readTokenSet();
+        const connections = await xeroClient.updateTenants(false) || [];
+        const xeroTenantId = connections[0]?.tenantId || null;
+
         return { token, xeroTenantId };
     } catch (err) {
         error('Error creating token', err);
@@ -100,46 +108,57 @@ export async function createToken() {
 
 export async function createInvoice(invoice) {
     try {
-        const { token, xeroTenantId } = await createToken();
+        if (!xeroClient) {
+            throw new Error('Xero client not configured');
+        }
 
-        const invoices = {
-            invoices: [
-                {
-                    type: invoice.type,
-                    contact: { contactID: invoice.contactID },
-                    dueDate: invoice.dueDate,
-                    lineItems: invoice.lineItems.map((lineItem) => ({
-                        description: lineItem.description,
-                        quantity: lineItem.quantity,
-                        unitAmount: lineItem.unitAmount,
-                        accountCode: lineItem.accountCode,
-                        taxType: lineItem.taxType,
-                        taxAmount: lineItem.taxAmount,
-                    })),
-                    status: 'AUTHORISED',
-                },
-            ],
+        await xeroClient.updateTenants(false);
+        if (!xeroClient.tenants?.length) {
+            throw new Error('No organizations connected');
+        }
+        const tenantId = xeroClient.tenants[0].tenantId;
+
+        const invoiceData = {
+            invoices: [{
+                type: invoice.type || 'ACCREC',
+                contact: { contactID: invoice.contact.contactID },
+                dueDate: new Date(invoice.dueDate).toISOString().split('T')[0], // YYYY-MM-DD format
+                lineItems: invoice.lineItems.map(item => ({
+                    description: item.description,
+                    quantity: item.quantity,
+                    unitAmount: item.unitAmount,
+                    accountCode: item.accountCode,
+                    taxType: item.taxType,
+                    taxAmount: item.taxAmount
+                })),
+                status: 'AUTHORISED'
+            }]
         };
 
-        const createdInvoices = await xeroClient.accountingApi.createInvoices(
-            token.access_token,
-            xeroTenantId,
-            invoices
+        const response = await xeroClient.accountingApi.createInvoices(
+            tenantId,
+            invoiceData
         );
 
-        return createdInvoices.body.invoices[0];
+        return response.body.invoices[0];
     } catch (err) {
-        error('Error creating invoice in Xero', err);
-        throw new Error('Error creating invoice in Xero');
+        error('Invoice creation failed:', err);
+        
+        if (err.response?.statusCode === 403) {
+            throw new Error('Authentication failed. Please re-authenticate.');
+        }
+        if (err.response?.body) {
+            throw new Error(`Xero API Error: ${JSON.stringify(err.response.body)}`);
+        }
+        throw new Error(`Invoice creation failed: ${err.message}`);
     }
 }
 
 export async function getContactByEmail(email) {
     try {
-        const { token, xeroTenantId } = await createToken();
+        const { tokenSet, xeroTenantId } = await createToken();
 
         const response = await xeroClient.accountingApi.getContacts(
-            token.access_token,
             xeroTenantId,
             null,
             `EmailAddress=="${email}"`
@@ -148,7 +167,15 @@ export async function getContactByEmail(email) {
         return response.body.contacts[0];
     } catch (err) {
         error('Error retrieving contact from Xero', err);
-        throw new Error('Error retrieving contact from Xero');
+
+        if (err.response?.statusCode === 403) {
+            throw new Error('Permission denied. Ensure your app has accounting.contacts scope.');
+        }
+        if (err.response?.statusCode === 401) {
+            throw new Error('Authentication expired. Please re-authenticate.');
+        }
+
+        throw new Error('Error retrieving contact from Xero: ' + err.message);
     }
 }
 
@@ -185,35 +212,50 @@ export async function createOrUpdateContact(contact) {
 
 export async function findOrCreateItem(itemCode, itemName) {
     try {
-        const { token, xeroTenantId } = await createToken();
+        if (!xeroClient) {
+            throw new Error('Xero client not configured');
+        }
 
-        const response = await xeroClient.accountingApi.getItems(
-            token.access_token,
-            xeroTenantId,
+        await xeroClient.updateTenants(false);
+        const tenantId = xeroClient.tenants[0].tenantId;
+
+        const searchResponse = await xeroClient.accountingApi.getItems(
+            tenantId,
             null,
             `Code=="${itemCode}"`
         );
 
-        const item = response.body.items[0];
-        if (item) {
-            return item;
+        if (searchResponse.body.items?.length > 0) {
+            return searchResponse.body.items[0];
         }
 
         const newItem = {
             code: itemCode,
             name: itemName,
+            isTrackedAsInventory: false,
+            purchaseDescription: itemName,
+            salesDescription: itemName,
+            inventoryAssetAccountCode: null
         };
 
-        const createdItems = await xeroClient.accountingApi.createItems(
-            token.access_token,
-            xeroTenantId,
+        const createResponse = await xeroClient.accountingApi.createItems(
+            tenantId,
             { items: [newItem] }
         );
 
-        return createdItems.body.items[0];
+        return createResponse.body.items[0];
+
     } catch (err) {
-        error('Error retrieving or creating item in Xero', err);
-        throw new Error('Error retrieving or creating item in Xero');
+        error('Item operation failed:', err);
+        
+        if (err.response?.statusCode === 403) {
+            throw new Error('Missing accounting.settings scope');
+        }
+        if (err.message.includes('toISOString')) {
+            throw new Error('Invalid date parameter in API request');
+        }
+        
+        throw new Error(`Item operation failed: ${err.message}`);
     }
 }
 
@@ -263,23 +305,22 @@ export async function quoteExists(quoteNumber) {
 
 export async function purchaseOrderExists(purchaseOrderNumber) {
     try {
+        if (!purchaseOrderNumber) {
+            return false;
+        }
+
         const { token, xeroTenantId } = await createToken();
 
         const response = await xeroClient.accountingApi.getPurchaseOrders(
             token.access_token,
             xeroTenantId,
             null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            purchaseOrderNumber
+            `PurchaseOrderNumber=="${purchaseOrderNumber}"`
         );
 
         return response.body.purchaseOrders.length > 0;
     } catch (err) {
-        if (err.response && err.response.status === 404) {
+        if (err.response?.status === 404) {
             return false;
         }
         error('Error checking if purchase order exists in Xero', err);
@@ -305,5 +346,48 @@ export async function createPurchaseOrder(purchaseOrder) {
     } catch (err) {
         error('Error creating purchase order in Xero', err);
         throw new Error('Error creating purchase order in Xero');
+    }
+}
+
+export async function ensureAuthenticated(accessToken, refreshToken, expiresAt) {
+    if (!xeroClient) {
+        throw new Error('Xero client not configured');
+    }
+
+    await xeroClient.setTokenSet({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        expires_at: expiresAt,
+        token_type: 'Bearer'
+    });
+
+    const currentTokenSet = xeroClient.readTokenSet();
+    // Check if token is expired or about to expire
+    if (currentTokenSet && currentTokenSet.expires_at) {
+        const expiresAt = new Date(currentTokenSet.expires_at * 1000);
+        const now = new Date();
+        const buffer = 5 * 60 * 1000; // 5 minute buffer
+
+        if (now > new Date(expiresAt.getTime() - buffer)) {
+            try {
+                await refreshTokenSet({
+                    access_token: accessToken,
+                    refresh_token: refreshToken,
+                    expires_at: Date.now() / 1000 + 300, // Set a new expiration time
+                    token_type: 'Bearer'
+                });
+            } catch (refreshError) {
+                error('Error refreshing token', refreshError);
+                throw new Error('Session expired. Please re-authenticate.');
+            }
+        }
+    } else {
+        throw new Error('Not authenticated with Xero');
+    }
+
+    const tenants = await xeroClient.updateTenants(false);
+
+    if (!tenants || !tenants.length) {
+        throw new Error('No Xero organizations connected');
     }
 }
