@@ -3,17 +3,17 @@ import { info, error } from '../utils/logger.js';
 
 let xeroClient = null;
 
-export async function configure(clientId, clientSecret, redirectUri = null) {
+export async function configure() {
     try {
         const config = {
-            clientId: clientId,
-            clientSecret: clientSecret,
+            clientId: process.env.XERO_CLIENT_ID,
+            clientSecret: process.env.XERO_CLIENT_SECRET,
             scopes: 'openid profile email accounting.settings accounting.contacts accounting.transactions accounting.reports.read accounting.attachments offline_access'.split(" "),
         };
 
-        if (redirectUri) {
+        if (process.env.XERO_REDIRECT_URL) {
             config.grantType = 'authorization_code';
-            config.redirectUris = [redirectUri];
+            config.redirectUris = [process.env.XERO_REDIRECT_URL];
         } else {
             config.grantType = 'client_credentials';
         }

@@ -50,10 +50,6 @@ const businessSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  xeroInfo:{
-    clientId: String,
-    clientSecret: String
-  },
   xeroTokens: {
     accessToken: String,
     refreshToken: String,

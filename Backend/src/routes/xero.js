@@ -56,7 +56,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
 
   try {
     const business = await Business.findOne({ workspaceId });
-    await configure(business.xeroInfo.clientId, business.xeroInfo.clientSecret, process.env.XERO_REDIRECT_URL);
+    await configure();
     await ensureAuthenticated(business.xeroTokens.accessToken, business.xeroTokens.refreshToken, business.xeroTokens.expiresAt);
     const invoiceValues = item.values;
 
@@ -172,7 +172,7 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
 
   try {
     const business = await Business.findOne({ workspaceId });
-    await configure(business.xeroInfo.clientId, business.xeroInfo.clientSecret);
+    await configure();
 
     const contactValues = item.values;
 
@@ -256,7 +256,7 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
 
   try {
     const business = await Business.findOne({ workspaceId });
-    await configure(business.xeroInfo.clientId, business.xeroInfo.clientSecret);
+    await configure();
 
     const contractorValues = item.values;
 
@@ -345,7 +345,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
 
   try {
     const business = await Business.findOne({ workspaceId });
-    await configure(business.xeroInfo.clientId, business.xeroInfo.clientSecret);
+    await configure();
 
     const quoteValues = item.values;
 
@@ -437,7 +437,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
 
   try {
     const business = await Business.findOne({ workspaceId });
-    await configure(business.xeroInfo.clientId, business.xeroInfo.clientSecret);
+    await configure();
 
     const purchaseOrderValues = item.values;
 
@@ -521,7 +521,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
 router.get("/redirect", async (req, res) => {
   try {
     const { clientId, clientSecret } = req.query;
-    await configure(clientId, clientSecret, process.env.XERO_REDIRECT_URL);
+    await configure();
     const url = await getAuthUrl();
     res.json({ url });
   } catch (err) {
@@ -563,7 +563,7 @@ router.post('/refresh', async (req, res) => {
   try {
     const { clientId, clientSecret, tokenSet } = req.body;
     const redirectUri = `${process.env.APP_URL}/api/xero/callback`;
-    await configure(clientId, clientSecret, redirectUri);
+    await configure();
     const newTokenSet = await refreshTokenSet(tokenSet);
     res.json({ tokenSet: newTokenSet });
   } catch (err) {

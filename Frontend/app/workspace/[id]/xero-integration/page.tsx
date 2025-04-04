@@ -2,9 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { ArrowLeft, ExternalLink, FileSpreadsheet, KeyRound } from "lucide-react";
+import { ArrowLeft, FileSpreadsheet, KeyRound } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import axios from "axios";
@@ -14,8 +12,6 @@ export default function XeroIntegrationPage() {
   const router = useRouter();
   const pathname = usePathname();
   const id = pathname.split("/")[2];
-  const [clientId, setClientId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
   const [resultContent, setResultContent] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
   const [accessToken, setAccessToken] = useState<string | null>(null);
@@ -26,7 +22,7 @@ export default function XeroIntegrationPage() {
       setIsConnecting(true);
       const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/redirect`, {
         headers: { token: getCookie("token") },
-        params: { clientId, clientSecret, workspaceId: id }
+        params: { workspaceId: id }
       });
 
       if (response.data.url) {
@@ -46,8 +42,6 @@ export default function XeroIntegrationPage() {
             if (event.data.success) {
               await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/xero/connect`, {
                 workspaceId: id,
-                clientId,
-                clientSecret,
                 tokens: event.data.tokenSet
               }, { headers: { token: getCookie("token") } });
               setIsConnected(true);
@@ -78,11 +72,8 @@ export default function XeroIntegrationPage() {
     try {
       await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/xero/disconnect`, {
         workspaceId: id
-
       }, { headers: { token: getCookie("token") } });
       setIsConnected(false);
-      setClientId('');
-      setClientSecret('');
       setResultContent('Successfully disconnected from Xero!');
     } catch (error) {
       console.error('Error disconnecting from Xero:', error);
@@ -98,8 +89,6 @@ export default function XeroIntegrationPage() {
         });
         if (response.data.xeroIntegrated) {
           setIsConnected(true);
-          setClientId(response.data.xeroInfo.clientId || '');
-          setClientSecret(response.data.xeroInfo.clientSecret || '');
         }
       } catch (error) {
         console.error('Error checking Xero connection:', error);
@@ -137,43 +126,11 @@ export default function XeroIntegrationPage() {
               <div className="flex items-start gap-3">
                 <KeyRound className="h-5 w-5 text-muted-foreground mt-0.5" />
                 <div className="space-y-1 flex-1">
-                  <p className="text-sm font-medium">Need Xero API Credentials?</p>
+                  <p className="text-sm font-medium">Connect to Xero</p>
                   <p className="text-sm text-muted-foreground">
-                    Follow Xero's guide to create your application and obtain the required credentials.
+                    Click the button below to connect your Xero account.
                   </p>
-                  <a
-                    href="https://developer.xero.com/documentation/guides/oauth2/custom-connections/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-primary hover:underline inline-flex items-center gap-1"
-                  >
-                    View Documentation
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
                 </div>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="client-id">Client ID</Label>
-                <Input
-                  id="client-id"
-                  value={clientId}
-                  onChange={(e) => setClientId(e.target.value)}
-                  placeholder="Enter your Xero Client ID"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="client-secret">Client Secret</Label>
-                <Input
-                  id="client-secret"
-                  type="password"
-                  value={clientSecret}
-                  onChange={(e) => setClientSecret(e.target.value)}
-                  placeholder="Enter your Xero Client Secret"
-                />
               </div>
             </div>
 
@@ -192,7 +149,7 @@ export default function XeroIntegrationPage() {
                 size="lg"
                 className="w-full gap-2"
                 onClick={handleConnectXero}
-                disabled={isConnecting || !clientId || !clientSecret}
+                disabled={isConnecting}
               >
                 <FileSpreadsheet className="h-5 w-5" />
                 {isConnecting ? "Connecting..." : "Connect to Xero"}

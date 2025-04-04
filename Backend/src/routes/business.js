@@ -143,7 +143,6 @@ router.post('/xero/connect', authenticateToken, async (req, res) => {
       business = new Business({
         workspaceId,
         xeroIntegrated: true,
-        xeroInfo: { clientId, clientSecret },
         xeroTokens: {
           accessToken: tokens.access_token,
           refreshToken: tokens.refresh_token,
@@ -153,7 +152,6 @@ router.post('/xero/connect', authenticateToken, async (req, res) => {
       await business.save();
     } else {
       business.xeroIntegrated = true;
-      business.xeroInfo = { clientId, clientSecret };
       business.xeroTokens = {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
@@ -181,7 +179,6 @@ router.post('/xero/disconnect', authenticateToken, async (req, res) => {
     }
 
     business.xeroIntegrated = false;
-    business.xeroInfo = { clientId: null, clientSecret: null };
     business.xeroTokens = {
       accessToken: null,
       refreshToken: null,
