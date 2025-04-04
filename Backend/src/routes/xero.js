@@ -173,64 +173,66 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
   try {
     const business = await Business.findOne({ workspaceId });
     await configure();
-
+    await ensureAuthenticated(business.xeroTokens.accessToken, business.xeroTokens.refreshToken, business.xeroTokens.expiresAt);
     const contactValues = item.values;
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
     await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
-    const existingContact = await getContactByEmail(contactValues.emailAddress);
+    const existingContact = await getContactByEmail(contactValues['Email Address']);
     let contact;
 
     if (existingContact) {
-      existingContact.name = contactValues.client;
-      existingContact.phones = [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }];
-      existingContact.firstName = contactValues.contactPersonsFirstName;
-      existingContact.lastName = contactValues.contactPersonsLastName;
+      existingContact.name = contactValues.Client;
+      existingContact.phones = [{ phoneType: 'DEFAULT', phoneNumber: contactValues['Phone Number'] }];
+      existingContact.firstName = contactValues["Contact Person's First Name"];
+      existingContact.lastName = contactValues["Contact Person's Last Name"];
       existingContact.addresses = [
         {
           addressType: 'POBOX',
-          addressLine1: contactValues.address,
-          city: contactValues.suburb,
-          region: contactValues.state,
-          postalCode: contactValues.postcode.toString()
+          addressLine1: contactValues.Address,
+          city: contactValues.Suburb,
+          region: contactValues.State,
+          postalCode: contactValues.Postcode.toString()
         },
         {
           addressType: 'STREET',
-          addressLine1: contactValues.address,
-          city: contactValues.suburb,
-          region: contactValues.state,
-          postalCode: contactValues.postcode.toString()
+          addressLine1: contactValues.Address,
+          city: contactValues.Suburb,
+          region: contactValues.State,
+          postalCode: contactValues.Postcode.toString()
         }
       ];
-      existingContact.emailAddress = contactValues.emailAddress;
+      existingContact.emailAddress = contactValues['Email Address'];
 
       contact = await createOrUpdateContact(existingContact);
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your contact is successfully updated.");
     } else {
       contact = await createOrUpdateContact({
-        name: contactValues.client,
-        phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
-        firstName: contactValues.contactPersonsFirstName,
-        lastName: contactValues.contactPersonsLastName,
+        name: contactValues.Client,
+        phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues['Phone Number'] }],
+        firstName: contactValues["Contact Person's First Name"],
+        lastName: contactValues["Contact Person's Last Name"],
         addresses: [
           {
             addressType: 'POBOX',
-            addressLine1: contactValues.address,
-            city: contactValues.suburb,
-            region: contactValues.state,
-            postalCode: contactValues.postcode.toString()
+            addressLine1: contactValues.Address,
+            city: contactValues.Suburb,
+            region: contactValues.State,
+            postalCode: contactValues.Postcode.toString()
           },
           {
             addressType: 'STREET',
-            addressLine1: contactValues.address,
-            city: contactValues.suburb,
-            region: contactValues.state,
-            postalCode: contactValues.postcode.toString()
+            addressLine1: contactValues.Address,
+            city: contactValues.Suburb,
+            region: contactValues.State,
+            postalCode: contactValues.Postcode.toString()
           }
         ],
-        emailAddress: contactValues.emailAddress
+        emailAddress: contactValues['Email Address']
       });
+
+      console.log(contact);
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your contact is successfully created.");
     }
 

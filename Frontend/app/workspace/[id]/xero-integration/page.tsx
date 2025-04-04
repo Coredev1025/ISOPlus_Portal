@@ -155,7 +155,7 @@ export default function XeroIntegrationPage() {
                 {isConnecting ? "Connecting..." : "Connect to Xero"}
               </Button>
             )}
-            <div className="mt-4 text-center text-green-600">
+            <div className={`mt-4 text-center ${resultContent.toLowerCase().includes('error')? "text-red-600" : "text-green-600"}`}>
               {resultContent}
             </div>
 

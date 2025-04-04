@@ -181,8 +181,7 @@ export async function getContactByEmail(email) {
 
 export async function createOrUpdateContact(contact) {
     try {
-        const { token, xeroTenantId } = await createToken();
-
+        const { xeroTenantId } = await createToken();
         const contacts = {
             contacts: [contact],
         };
@@ -190,13 +189,11 @@ export async function createOrUpdateContact(contact) {
         let response;
         if (!contact.contactID) {
             response = await xeroClient.accountingApi.createContacts(
-                token.access_token,
                 xeroTenantId,
                 contacts
             );
         } else {
             response = await xeroClient.accountingApi.updateContact(
-                token.access_token,
                 xeroTenantId,
                 contact.contactID,
                 contacts
@@ -364,11 +361,8 @@ export async function ensureAuthenticated(accessToken, refreshToken, expiresAt) 
     const currentTokenSet = xeroClient.readTokenSet();
     // Check if token is expired or about to expire
     if (currentTokenSet && currentTokenSet.expires_at) {
-        const expiresAt = new Date(currentTokenSet.expires_at * 1000);
-        const now = new Date();
-        const buffer = 5 * 60 * 1000; // 5 minute buffer
-
-        if (now > new Date(expiresAt.getTime() - buffer)) {
+        const now = Math.floor(Date.now() / 1000);
+        if (currentTokenSet.expires_at < now - 300) { // Changed tokenSet to currentTokenSet
             try {
                 await refreshTokenSet({
                     access_token: accessToken,
