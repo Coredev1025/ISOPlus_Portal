@@ -16,7 +16,9 @@ import {
   createInvoice,
   createOrUpdateContact,
   createQuote,
+  quoteExists,
   createPurchaseOrder,
+  purchaseOrderExists,
   getAuthUrl,
   exchangeCode,
   refreshTokenSet,
@@ -259,68 +261,64 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
   try {
     const business = await Business.findOne({ workspaceId });
     await configure();
+    await ensureAuthenticated(business.xeroTokens.accessToken, business.xeroTokens.refreshToken, business.xeroTokens.expiresAt);
 
     const contractorValues = item.values;
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
     await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
-    const [contractorValuesFromRef, jobTypeValues] = await getPurchaseOrderReferencedItems(workspaceId, boardId, item.id);
-    if (!contractorValuesFromRef) {
-      throw new Error("Contractor information is required.");
-    }
-
-    const existingContact = await getContactByEmail(contractorValuesFromRef.emailAddress);
+    const existingContact = await getContactByEmail(contractorValues['Email Address']);
     let contact;
 
     if (existingContact) {
-      existingContact.name = contractorValuesFromRef.contractor;
-      existingContact.phones = [{ phoneType: 'DEFAULT', phoneNumber: contractorValuesFromRef.phoneNumber }];
-      existingContact.firstName = contractorValuesFromRef.contactPersonsFirstName;
-      existingContact.lastName = contractorValuesFromRef.contactPersonsLastName;
+      existingContact.name = contractorValues.Contractor;
+      existingContact.phones = [{ phoneType: 'DEFAULT', phoneNumber: contractorValues['Phone Number'] }];
+      existingContact.firstName = contractorValues["Contact Person's First Name"];
+      existingContact.lastName = contractorValues["Contact Person's Last Name"];
       existingContact.addresses = [
         {
           addressType: 'POBOX',
-          addressLine1: contractorValuesFromRef.address,
-          city: contractorValuesFromRef.suburb,
-          region: contractorValuesFromRef.state,
-          postalCode: contractorValuesFromRef.postcode.toString()
+          addressLine1: contractorValues.Address,
+          city: contractorValues.Suburb,
+          region: contractorValues.State,
+          postalCode: contractorValues.Postcode.toString()
         },
         {
           addressType: 'STREET',
-          addressLine1: contractorValuesFromRef.address,
-          city: contractorValuesFromRef.suburb,
-          region: contractorValuesFromRef.state,
-          postalCode: contractorValuesFromRef.postcode.toString()
+          addressLine1: contractorValues.Address,
+          city: contractorValues.Suburb,
+          region: contractorValues.State,
+          postalCode: contractorValues.Postcode.toString()
         }
       ];
-      existingContact.emailAddress = contractorValuesFromRef.emailAddress;
+      existingContact.emailAddress = contractorValues['Email Address'];
 
       contact = await createOrUpdateContact(existingContact);
-      await setIntegrationMessage(item.id, "Your contractor is successfully updated.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Your contractor is successfully updated.");
     } else {
       contact = await createOrUpdateContact({
-        name: contractorValuesFromRef.contractor,
-        phones: [{ phoneType: 'DEFAULT', phoneNumber: contractorValuesFromRef.phoneNumber }],
-        firstName: contractorValuesFromRef.contactPersonsFirstName,
-        lastName: contractorValuesFromRef.contactPersonsLastName,
+        name: contractorValues.Contractor,
+        phones: [{ phoneType: 'DEFAULT', phoneNumber: contractorValues['Phone Number'] }],
+        firstName: contractorValues["Contact Person's First Name"],
+        lastName: contractorValues["Contact Person's Last Name"],
         addresses: [
           {
             addressType: 'POBOX',
-            addressLine1: contractorValuesFromRef.address,
-            city: contractorValuesFromRef.suburb,
-            region: contractorValuesFromRef.state,
-            postalCode: contractorValuesFromRef.postcode.toString()
+            addressLine1: contractorValues.Address,
+            city: contractorValues.Suburb,
+            region: contractorValues.State,
+            postalCode: contractorValues.Postcode.toString()
           },
           {
             addressType: 'STREET',
-            addressLine1: contractorValuesFromRef.address,
-            city: contractorValuesFromRef.suburb,
-            region: contractorValuesFromRef.state,
-            postalCode: contractorValuesFromRef.postcode.toString()
+            addressLine1: contractorValues.Address,
+            city: contractorValues.Suburb,
+            region: contractorValues.State,
+            postalCode: contractorValues.Postcode.toString()
           }
         ],
-        emailAddress: contractorValuesFromRef.emailAddress
+        emailAddress: contractorValues['Email Address']
       });
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your contractor is successfully created.");
     }
@@ -348,7 +346,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
   try {
     const business = await Business.findOne({ workspaceId });
     await configure();
-
+    await ensureAuthenticated(business.xeroTokens.accessToken, business.xeroTokens.refreshToken, business.xeroTokens.expiresAt);
     const quoteValues = item.values;
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
@@ -364,6 +362,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
 
     let contact = await getContactByEmail(contactValues.emailAddress);
     if (!contact) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Creating a new contact...");
       contact = await createOrUpdateContact({
         name: contactValues.client,
         phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
@@ -393,23 +392,23 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
 
     const quote = {
       contact: { contactID: contact.contactID },
-      date: quoteValues.issueDate,
-      expiryDate: quoteValues.expiryDate,
-      quoteNumber: quoteValues.quoteNumber,
-      title: quoteValues.jobTitle,
-      summary: quoteValues.jobDescription.replace(/<[^>]*>/g, ''),
+      date: quoteValues['Issue Date'],
+      expiryDate: quoteValues['Expiry Date'],
+      quoteNumber: quoteValues['Quote Number'],
+      title: quoteValues['Job Title'],
+      summary: quoteValues['Job Description'].toString().replace(/<[^>]*>/g, ''),
       lineItems: [
         {
           itemCode: jobType.code,
-          description: `${quoteValues.jobTitle} - ${quoteValues.jobDescription.replace(/<[^>]*>/g, '')}`,
-          quantity: quoteValues.quantity,
-          unitAmount: quoteValues.unitPrice,
+          description: `${quoteValues['Job Title']} - ${quoteValues['Job Description'].toString().replace(/<[^>]*>/g, '')}`,
+          quantity: quoteValues.Quantity,
+          unitAmount: quoteValues['Unit Price($) - GST Excl.'],
           taxType: "OUTPUT",
         }
       ]
     };
 
-    if (await quoteExists(quote.quoteNumber)) {
+    if (await quoteExists(quoteValues['Quote Number'])) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "WARN: A quote with the same number already exists.");
       return res.status(400).json({ message: "A quote with the same number already exists." });
     }
@@ -440,6 +439,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
   try {
     const business = await Business.findOne({ workspaceId });
     await configure();
+    await ensureAuthenticated(business.xeroTokens.accessToken, business.xeroTokens.refreshToken, business.xeroTokens.expiresAt);
 
     const purchaseOrderValues = item.values;
 
@@ -456,6 +456,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
 
     let contact = await getContactByEmail(contractorValues.emailAddress);
     if (!contact) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Creating a new contact...");
       contact = await createOrUpdateContact({
         name: contractorValues.contractor,
         phones: [{ phoneType: 'DEFAULT', phoneNumber: contractorValues.phoneNumber }],
@@ -480,23 +481,23 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
         emailAddress: contractorValues.emailAddress
       });
     }
-
+ 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
 
     const purchaseOrder = {
       contact: { contactID: contact.contactID },
-      date: purchaseOrderValues.issueDate,
-      deliveryDate: purchaseOrderValues.deliveryDate,
-      purchaseOrderNumber: purchaseOrderValues.purchaseOrderNumber,
+      date: purchaseOrderValues['Issue Date'],
+      deliveryDate: purchaseOrderValues['Delivery Date'],
+      purchaseOrderNumber: purchaseOrderValues['PO Number'],
       attentionTo: `${contractorValues.contactPersonsFirstName} ${contractorValues.contactPersonsLastName}`,
       deliveryAddress: `${contractorValues.address} ${contractorValues.suburb} ${contractorValues.state} ${contractorValues.postcode}`,
       telephone: contractorValues.phoneNumber,
       lineItems: [
         {
           itemCode: jobType.code,
-          description: `${purchaseOrderValues.jobTitle} - ${purchaseOrderValues.jobDescription.replace(/<[^>]*>/g, '')}`,
-          quantity: purchaseOrderValues.quantity,
-          unitAmount: purchaseOrderValues.unitPrice,
+          description: `${purchaseOrderValues['Job Title']} - ${purchaseOrderValues['Job Description'].replace(/<[^>]*>/g, '')}`,
+          quantity: purchaseOrderValues.Quantity,
+          unitAmount: purchaseOrderValues['Unit Price($) - GST Excl.'],
           taxType: "INPUT",
         }
       ]

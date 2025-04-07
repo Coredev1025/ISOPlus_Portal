@@ -265,7 +265,6 @@ export async function createQuote(quote) {
         };
 
         const createdQuotes = await xeroClient.accountingApi.createQuotes(
-            token.access_token,
             xeroTenantId,
             quotes
         );
@@ -309,7 +308,6 @@ export async function purchaseOrderExists(purchaseOrderNumber) {
         const { token, xeroTenantId } = await createToken();
 
         const response = await xeroClient.accountingApi.getPurchaseOrders(
-            token.access_token,
             xeroTenantId,
             null,
             `PurchaseOrderNumber=="${purchaseOrderNumber}"`
@@ -334,7 +332,6 @@ export async function createPurchaseOrder(purchaseOrder) {
         };
 
         const createdPurchaseOrders = await xeroClient.accountingApi.createPurchaseOrders(
-            token.access_token,
             xeroTenantId,
             purchaseOrders
         );
