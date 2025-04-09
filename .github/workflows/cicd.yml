@@ -46,5 +46,5 @@ jobs:
       
       - name: Update environment with the new vesion
         run: |
-          aws elasticbeanstalk update-environment --environment-name ISOPlusPortal-Backend-Dev --version-label ${{ github.sha }}
+          aws elasticbeanstalk update-environment --environment-name ISOPortal-Backend-Dev-env-GREEN --version-label ${{ github.sha }}
       
