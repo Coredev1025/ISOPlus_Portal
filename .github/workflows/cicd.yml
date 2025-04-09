@@ -3,8 +3,15 @@ name: CICD
 on:
   push:
     branches:
-      - cicd
       - main
+    paths:
+      - 'Backend/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'Backend/**'
+      
 jobs:
   build-and-deploy:
     runs-on: [ ubuntu-latest ]
