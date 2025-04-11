@@ -281,7 +281,6 @@ export async function quoteExists(quoteNumber) {
         const { token, xeroTenantId } = await createToken();
 
         const response = await xeroClient.accountingApi.getQuotes(
-            token.access_token,
             xeroTenantId,
             null,
             null,
