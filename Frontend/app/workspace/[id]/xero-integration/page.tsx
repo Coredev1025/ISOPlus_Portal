@@ -16,6 +16,7 @@ export default function XeroIntegrationPage() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [isExpired, setIsExpired] = useState(false);
 
   const handleConnectXero = async () => {
     try {
@@ -81,6 +82,58 @@ export default function XeroIntegrationPage() {
     }
   };
 
+  const handleReconnectXero = async () => {
+    try {
+      setIsConnecting(true);
+      handleDisconnectXero();
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/redirect`, {
+        headers: { token: getCookie("token") },
+        params: { workspaceId: id }
+      });
+
+      if (response.data.url) {
+        const width = 600;
+        const height = 600;
+        const left = window.screenX + (window.outerWidth - width) / 2;
+        const top = window.screenY + (window.outerHeight - height) / 2;
+
+        const popup = window.open(
+          response.data.url,
+          'Xero Integration',
+          `width=${width},height=${height},left=${left},top=${top},status=yes,scrollbars=yes`
+        );
+
+        const handleMessage = async (event: MessageEvent) => {
+          if (event.data.type === 'XERO_AUTH') {
+            if (event.data.success) {
+              await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/xero/connect`, {
+                workspaceId: id,
+                tokens: event.data.tokenSet
+              }, { headers: { token: getCookie("token") } });
+              setIsConnected(true);
+              setAccessToken(event.data.tokenSet.access_token);
+              setResultContent('Successfully connected to Xero!');
+            } else {
+              setResultContent('Error completing Xero connection. Please try again.');
+            }
+            window.removeEventListener('message', handleMessage);
+            if (popup) popup.close();
+          }
+        };
+
+        window.addEventListener('message', handleMessage);
+        return () => {
+          window.removeEventListener('message', handleMessage);
+        };
+      }
+    } catch (error) {
+      console.error(error);
+      setResultContent('Error initiating Xero connection. Please try again.');
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
   useEffect(() => {
     const checkConnection = async () => {
       try {
@@ -88,6 +141,9 @@ export default function XeroIntegrationPage() {
           headers: { token: getCookie("token") }, params: { workspaceId: id }
         });
         if (response.data.xeroIntegrated) {
+          if (response.data.xeroTokens.expiresAt * 1000 < Date.now()) {
+            setIsExpired(true);
+          }
           setIsConnected(true);
         }
       } catch (error) {
@@ -135,15 +191,27 @@ export default function XeroIntegrationPage() {
             </div>
 
             {isConnected ? (
-              <Button
-                size="lg"
-                variant="destructive"
-                className="w-full gap-2"
-                onClick={handleDisconnectXero}
-              >
-                <FileSpreadsheet className="h-5 w-5" />
-                Disconnect from Xero
-              </Button>
+              isExpired ? (
+                <Button
+                  size="lg"
+                  variant="destructive"
+                  className="w-full gap-2"
+                  onClick={handleDisconnectXero}
+                >
+                  <FileSpreadsheet className="h-5 w-5" />
+                  Disconnect from Xero
+                </Button>
+              ) : (
+                <Button
+                  size="lg"
+                  variant="destructive"
+                  className="w-full gap-2"
+                  onClick={handleReconnectXero}
+                >
+                  <FileSpreadsheet className="h-5 w-5" />
+                  Reconnect from Xero
+                </Button>
+              )
             ) : (
               <Button
                 size="lg"
@@ -155,7 +223,7 @@ export default function XeroIntegrationPage() {
                 {isConnecting ? "Connecting..." : "Connect to Xero"}
               </Button>
             )}
-            <div className={`mt-4 text-center ${resultContent.toLowerCase().includes('error')? "text-red-600" : "text-green-600"}`}>
+            <div className={`mt-4 text-center ${resultContent.toLowerCase().includes('error') ? "text-red-600" : "text-green-600"}`}>
               {resultContent}
             </div>
 

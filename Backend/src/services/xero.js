@@ -369,7 +369,7 @@ export async function ensureAuthenticated(accessToken, refreshToken, expiresAt) 
                 });
             } catch (refreshError) {
                 error('Error refreshing token', refreshError);
-                throw new Error('Session expired. Please re-authenticate.');
+                throw new Error('Your Xero authorization token is expired. Please go to ISOPlus Portal and authorize again.');
             }
         }
     } else {

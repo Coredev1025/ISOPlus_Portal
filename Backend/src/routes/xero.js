@@ -234,7 +234,6 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
         emailAddress: contactValues['Email Address']
       });
 
-      console.log(contact);
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your contact is successfully created.");
     }
 
@@ -523,7 +522,6 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
 
 router.get("/redirect", async (req, res) => {
   try {
-    const { clientId, clientSecret } = req.query;
     await configure();
     const url = await getAuthUrl();
     res.json({ url });
@@ -564,8 +562,7 @@ router.get('/callback', async (req, res) => {
 
 router.post('/refresh', async (req, res) => {
   try {
-    const { clientId, clientSecret, tokenSet } = req.body;
-    const redirectUri = `${process.env.APP_URL}/api/xero/callback`;
+    const { tokenSet } = req.body;
     await configure();
     const newTokenSet = await refreshTokenSet(tokenSet);
     res.json({ tokenSet: newTokenSet });
