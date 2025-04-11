@@ -485,7 +485,6 @@ export default function Dashboard() {
     try {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
       setWorkspaces(response.data.workspace);
-      console.log(response.data.workspace);
 
       if (user.role === 'user' && response.data.workspace.length === 1)
         router.push(`/workspace/${response.data.workspace[0].id}`);
