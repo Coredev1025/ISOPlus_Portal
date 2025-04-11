@@ -191,7 +191,7 @@ export default function XeroIntegrationPage() {
             </div>
 
             {isConnected ? (
-              isExpired ? (
+              !isExpired ? (
                 <Button
                   size="lg"
                   variant="destructive"

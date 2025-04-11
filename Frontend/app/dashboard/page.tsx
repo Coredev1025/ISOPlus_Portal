@@ -14,7 +14,7 @@ import {
 import Spinner from "@/components/ui/spin";
 import React, { useEffect, useState } from "react";
 import axios from "axios";
-import { Search, History, Terminal, Download, Filter, AlertTriangle, AlertCircle, Info, Bug, XCircle } from "lucide-react";
+import { Search, History, Terminal, Download, Filter, AlertTriangle, AlertCircle, Info, Bug, XCircle, RollerCoaster } from "lucide-react";
 import { Header } from "@/components/ui/header";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -478,16 +478,17 @@ export default function Dashboard() {
   useEffect(() => {
     if (workspaces.length === 0)
       getWorkspaces();
-    }, []);
+  }, []);
 
   const getWorkspaces = async () => {
     setLoading(true);
     try {
       const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
       setWorkspaces(response.data.workspace);
+      console.log(response.data.workspace);
 
-      if (response.data.workspace.length === 1)
-        router.push(`/workspace/${workspaces[0].id}`);
+      if (user.role === 'user' && response.data.workspace.length === 1)
+        router.push(`/workspace/${response.data.workspace[0].id}`);
     } catch (error) {
       console.error("Error fetching workspaces:", error);
     } finally {
