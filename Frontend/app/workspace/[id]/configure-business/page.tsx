@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Upload, AlertCircle } from "lucide-react";
+import { ArrowLeft, Upload, AlertCircle, Loader2 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Header } from "@/components/ui/header";
@@ -51,6 +51,8 @@ export default function ConfigureBusinessPage() {
   const [purchaseOrderSequence, setPurchaseOrderSequence] = useState<NumberSequence>({ prefix: "PO-", nextNumber: 1000 });
   const [quoteSequence, setQuoteSequence] = useState<NumberSequence>({ prefix: "QT-", nextNumber: 1000 });
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<string[]>([]);
+  const [apiError, setApiError] = useState<string>('');
 
   // Alert dialog state
   const [alertDialog, setAlertDialog] = useState<{
@@ -286,58 +288,82 @@ export default function ConfigureBusinessPage() {
   });
 
   useEffect(() => {
+    const abortController = new AbortController();
+
     const fetchBusinessProfile = async () => {
       try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`, { headers: { token: getCookie("token") }, params: { workspaceId: id } });
-        const data = response.data;
-        setFormData({
-          name: data.name || "",
-          phone: data.phone || "",
-          email: data.email || "",
-          street: data.address?.street || "",
-          country: data.address?.country || "",
-          suburb: data.address?.suburb || "",
-          state: data.address?.state || "",
-          postcode: data.address?.postcode || "",
-          abn: data.abn || "",
-          acn: data.acn || "",
-          workspaceId: id,
-          bankAccountName: data.bankDetails?.accountName || "",
-          bankName: data.bankDetails?.bankName || "",
-          bsb: data.bankDetails?.bsb || "",
-          accountNumber: data.bankDetails?.accountNumber || "",
-          paymentReference: data.bankDetails?.paymentReference || "",
-        });
+        const response = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`,
+          {
+            headers: { token: getCookie("token") },
+            params: { workspaceId: id },
+            signal: abortController.signal,
+          }
+        );
 
-        // Set document numbering sequences
-        if (data.documentNumbering) {
-          if (data.documentNumbering.invoice) {
-            setInvoiceSequence(data.documentNumbering.invoice);
-          }
-          if (data.documentNumbering.purchaseOrder) {
-            setPurchaseOrderSequence(data.documentNumbering.purchaseOrder);
-          }
-          if (data.documentNumbering.quote) {
-            setQuoteSequence(data.documentNumbering.quote);
-          }
-        }
+        if (!abortController.signal.aborted) {
+          const data = response.data;
+          setFormData({
+            name: data.name || "",
+            phone: data.phone || "",
+            email: data.email || "",
+            street: data.address?.street || "",
+            country: data.address?.country || "",
+            suburb: data.address?.suburb || "",
+            state: data.address?.state || "",
+            postcode: data.address?.postcode || "",
+            abn: data.abn || "",
+            acn: data.acn || "",
+            workspaceId: id,
+            bankAccountName: data.bankDetails?.accountName || "",
+            bankName: data.bankDetails?.bankName || "",
+            bsb: data.bankDetails?.bsb || "",
+            accountNumber: data.bankDetails?.accountNumber || "",
+            paymentReference: data.bankDetails?.paymentReference || "",
+          });
 
-        // Set logo previews
-        if (data.defaultLogo) {
-          setDefaultLogoPreview(data.defaultLogo);
-        }
-        if (data.squareLogo) {
-          setSquareLogoPreview(data.squareLogo);
-        }
-        if (data.wideLogo) {
-          setWideLogoPreview(data.wideLogo);
+          // Set document numbering sequences
+          if (data.documentNumbering) {
+            if (data.documentNumbering.invoice) {
+              setInvoiceSequence(data.documentNumbering.invoice);
+            }
+            if (data.documentNumbering.purchaseOrder) {
+              setPurchaseOrderSequence(data.documentNumbering.purchaseOrder);
+            }
+            if (data.documentNumbering.quote) {
+              setQuoteSequence(data.documentNumbering.quote);
+            }
+          }
+
+          // Set logo previews
+          if (data.defaultLogo) {
+            setDefaultLogoPreview(data.defaultLogo);
+          } else {
+            setDefaultLogoPreview(null);
+          }
+          if (data.squareLogo) {
+            setSquareLogoPreview(data.squareLogo);
+          } else {
+            setSquareLogoPreview(null);
+          }
+          if (data.wideLogo) {
+            setWideLogoPreview(data.wideLogo);
+          } else {
+            setWideLogoPreview(null);
+          }
         }
       } catch (error) {
-        console.error("Failed to fetch business profile:", error);
+        if (!axios.isCancel(error)) {
+          console.error("Failed to fetch business profile:", error);
+        }
       }
     };
 
     fetchBusinessProfile();
+
+    return () => {
+      abortController.abort();
+    };
   }, [id]);
 
   const handleLogoChange = (
@@ -365,6 +391,8 @@ export default function ConfigureBusinessPage() {
   };
 
   const handleSave = async () => {
+    const abortController = new AbortController();
+
     try {
       setLoading(true);
       const formDataToSend = new FormData();
@@ -376,6 +404,7 @@ export default function ConfigureBusinessPage() {
         purchaseOrder: purchaseOrderSequence,
         quote: quoteSequence
       }));
+
       if (logoFile) {
         formDataToSend.append("defaultLogo", logoFile);
         setLogoFile(null);
@@ -389,28 +418,45 @@ export default function ConfigureBusinessPage() {
         setWideLogoFile(null);
       }
 
-      await axios.put(
+      const response = await axios.put(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`,
         formDataToSend,
         {
           headers: {
             "Content-Type": "multipart/form-data",
             token: getCookie("token")
-          }
+          },
+          signal: abortController.signal
         }
       );
 
-      setShowError(false);
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 2000);
-    } catch (error) {
+      if (!abortController.signal.aborted) {
+        if (response.data.status === 'success') {
+          setShowError(false);
+          setShowSuccess(true);
+          setTimeout(() => setShowSuccess(false), 2000);
+        }
+      }
+    } catch (error: any) {
       setShowSuccess(false);
-      setShowError(true);
-      setTimeout(() => setShowError(false), 2000);
-      console.error("Failed to save business profile:", error);
+      if (error.response?.data?.errors) {
+        setErrors(error.response.data.errors);
+      } else if (error.response?.data?.message) {
+        setApiError(error.response.data.message);
+      } else {
+        setApiError('An unexpected error occurred');
+      }
+      setTimeout(() => {
+        setErrors([]);
+        setApiError('');
+      }, 5000);
     } finally {
       setLoading(false);
     }
+
+    return () => {
+      abortController.abort();
+    };
   };
 
   const handleNumberChange = (type: 'invoice' | 'purchaseOrder' | 'quote', value: string) => {
@@ -794,7 +840,7 @@ export default function ConfigureBusinessPage() {
                       <Label htmlFor="paymentReference">Payment Reference</Label>
                       <Input
                         id="paymentReference"
-                  placeholder="Enter payment reference (optional)"
+                        placeholder="Enter payment reference (optional)"
                         value={formData.paymentReference}
                         onChange={handleInputChange}
                       />
@@ -900,24 +946,50 @@ export default function ConfigureBusinessPage() {
             </TabsContent>
           </Tabs>
 
-          <div className="mt-6 pt-6 border-t">
-            <Button className="w-full" size="lg" onClick={handleSave}>
-              Save Business Configuration
+          <div className="mt-6">
+            {errors.length > 0 && (
+              <div className="mb-4 p-4 bg-destructive/10 border border-destructive rounded-md">
+                <h4 className="text-sm font-medium text-destructive mb-2">Please correct the following errors:</h4>
+                <ul className="list-disc list-inside space-y-1">
+                  {errors.map((error, index) => (
+                    <li key={index} className="text-sm text-destructive">
+                      {error}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {apiError && (
+              <div className="mb-4 p-4 bg-destructive/10 border border-destructive rounded-md">
+                <p className="text-sm text-destructive">{apiError}</p>
+              </div>
+            )}
+
+            {showSuccess && (
+              <div className="mb-4 p-4 bg-green-100 border border-green-500 rounded-md">
+                <p className="text-sm text-green-700">Business profile saved successfully!</p>
+              </div>
+            )}
+
+            <Button
+              className="w-full"
+              size="lg"
+              onClick={handleSave}
+              disabled={loading}
+            >
+              {loading ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Saving...
+                </span>
+              ) : (
+                'Save Business Configuration'
+              )}
             </Button>
           </div>
-          {showSuccess && (
-            <div className="mb-4 p-4 text-green-700 bg-green-100 rounded mt-4">
-              Business profile saved successfully!
-            </div>
-          )}
-
-          {showError && (
-            <div className="mb-4 p-4 text-red-700 bg-red-100 rounded mt-4">
-              Business profile save failed, please input information correctly!
-            </div>
-          )}
         </Card>
-      </div>
+      </div >
 
       {/* Warning Dialog for Number Sequence Reduction */}
       <AlertDialog
