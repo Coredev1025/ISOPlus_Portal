@@ -30,7 +30,7 @@ import { getCookie } from "@/app/utils/cookies";
 interface Board {
   id: string;
   name: string;
-  label: string
+  label: string;
 }
 
 export default function MapViewPage() {
@@ -46,33 +46,66 @@ export default function MapViewPage() {
   const boardId = pathname.split("/")[4];
 
   useEffect(() => {
-    if (boards.length === 0)
-      getBoards();
-  }, []);
+    const abortController = new AbortController();
 
-  const getBoards = async () => {
-    try {
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
-      const data: Board[] = await Promise.all(
-        response.data.board.map(async (board: any) => {
-          try {
-            const boardResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
-            return { ...board, label: boardResponse.data.board.label };
-          } catch (error) {
-            console.error("Error fetching board:", error);
-            return { ...board, label: null };
+    const fetchBoards = async () => {
+      if (boards.length === 0) {
+        try {
+          const response = await axios.get(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`,
+            {
+              headers: {
+                token: getCookie("token"),
+                Authorization: getCookie("Authorization"),
+              },
+              signal: abortController.signal,
+            }
+          );
+
+          const data: Board[] = await Promise.all(
+            response.data.board.map(async (board: any) => {
+              try {
+                const boardResponse = await axios.get(
+                  `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`,
+                  {
+                    headers: {
+                      token: getCookie("token"),
+                      Authorization: getCookie("Authorization"),
+                    },
+                    signal: abortController.signal,
+                  }
+                );
+                return { ...board, label: boardResponse.data.board.label };
+              } catch (error) {
+                if (!axios.isCancel(error)) {
+                  console.error("Error fetching board:", error);
+                }
+                return { ...board, label: null };
+              }
+            })
+          );
+
+          if (!abortController.signal.aborted) {
+            setBoards(data);
+            setTimeEntries(generateMockTimeEntries());
           }
-        })
-      );
-      setBoards(data);
-      setTimeEntries(generateMockTimeEntries());
-    } catch (error) {
-      console.error("Error fetching boards:", error);
-    }
-  }
+        } catch (error) {
+          if (!axios.isCancel(error)) {
+            console.error("Error fetching boards:", error);
+          }
+        }
+      }
+    };
 
-  const workspace = workspaces.find(workspace => workspace.id.toString() === id);
-  const board = boards.find(b => b.id === boardId);
+    fetchBoards();
+
+    return () => {
+      abortController.abort();
+    };
+  }, [id, boards.length]);
+
+  const workspace = workspaces.find((workspace) => workspace.id.toString() === id);
+  const board = boards.find((b) => b.id === boardId);
 
   // Generate mock time entries with locations
   const generateMockTimeEntries = (): TimeEntry[] => {
@@ -86,22 +119,22 @@ export default function MapViewPage() {
       "Training session",
       "Report preparation",
       "Client meeting",
-      "Emergency repair"
+      "Emergency repair",
     ];
 
     const locations = [
-      { lat: -33.865143, lng: 151.209900, address: "Sydney CBD, NSW" },
+      { lat: -33.865143, lng: 151.2099, address: "Sydney CBD, NSW" },
       { lat: -33.891844, lng: 151.199593, address: "Newtown, NSW" },
       { lat: -33.918861, lng: 151.226263, address: "Randwick, NSW" },
-      { lat: -33.856680, lng: 151.215256, address: "North Sydney, NSW" },
-      { lat: -33.733810, lng: 150.982318, address: "Castle Hill, NSW" },
+      { lat: -33.85668, lng: 151.215256, address: "North Sydney, NSW" },
+      { lat: -33.73381, lng: 150.982318, address: "Castle Hill, NSW" },
       { lat: -33.803482, lng: 151.088196, address: "Parramatta, NSW" },
       { lat: -33.924374, lng: 151.259052, address: "Maroubra, NSW" },
       { lat: -33.870666, lng: 151.093674, address: "Strathfield, NSW" },
       { lat: -33.843082, lng: 151.251343, address: "Bondi, NSW" },
       { lat: -33.917967, lng: 151.025508, address: "Bankstown, NSW" },
       { lat: -33.766382, lng: 151.287888, address: "Manly, NSW" },
-      { lat: -33.753746, lng: 150.687042, address: "Penrith, NSW" }
+      { lat: -33.753746, lng: 150.687042, address: "Penrith, NSW" },
     ];
 
     return Array.from({ length: 30 }, (_, i) => {
@@ -127,7 +160,9 @@ export default function MapViewPage() {
         location: locations[locationIndex],
         notes: Math.random() > 0.7 ? "Additional notes for this time entry" : "",
         userId: `user-${Math.floor(Math.random() * 5) + 1}`,
-        userName: ["John Smith", "Jane Doe", "Mike Johnson", "Sarah Williams", "Alex Brown"][Math.floor(Math.random() * 5)]
+        userName: ["John Smith", "Jane Doe", "Mike Johnson", "Sarah Williams", "Alex Brown"][
+          Math.floor(Math.random() * 5)
+        ],
       };
     }).sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()); // Sort by most recent
   };
@@ -137,7 +172,7 @@ export default function MapViewPage() {
   }
 
   // Filter time entries based on search query and date filter
-  const filteredEntries = timeEntries.filter(entry => {
+  const filteredEntries = timeEntries.filter((entry) => {
     const matchesSearch = entry.taskName.toLowerCase().includes(searchQuery.toLowerCase());
 
     let matchesDate = true;
@@ -170,7 +205,7 @@ export default function MapViewPage() {
   // Open Google Maps with the location
   const openGoogleMaps = (location: TimeEntry["location"]) => {
     if (location) {
-      window.open(`https://www.google.com/maps/search/?api=1&query=${location.lat},${location.lng}`, '_blank');
+      window.open(`https://www.google.com/maps/search/?api=1&query=${location.lat},${location.lng}`, "_blank");
     }
   };
 
@@ -246,7 +281,7 @@ export default function MapViewPage() {
                 className="absolute w-6 h-6 bg-primary rounded-full flex items-center justify-center cursor-pointer"
                 style={{
                   left: `${10 + (index % 6) * 15}%`,
-                  top: `${20 + Math.floor(index / 6) * 15}%`
+                  top: `${20 + Math.floor(index / 6) * 15}%`,
                 }}
                 onClick={() => setSelectedEntry(entry)}
               >
@@ -259,9 +294,9 @@ export default function MapViewPage() {
               <div
                 className="absolute bg-card p-4 rounded-lg shadow-lg w-64"
                 style={{
-                  left: '50%',
-                  top: '50%',
-                  transform: 'translate(-50%, -50%)'
+                  left: "50%",
+                  top: "50%",
+                  transform: "translate(-50%, -50%)",
                 }}
               >
                 <div className="flex justify-between items-start mb-2">

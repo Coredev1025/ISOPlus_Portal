@@ -16,7 +16,7 @@ import { getCookie } from "@/app/utils/cookies";
 interface Board {
   id: string;
   name: string;
-  label: string
+  label: string;
 }
 
 export default function TimeTrackingPage() {
@@ -29,29 +29,62 @@ export default function TimeTrackingPage() {
   const boardId = pathname.split("/")[4];
 
   useEffect(() => {
-    if (boards.length === 0)
-      getBoards();
-  }, []);
+    const abortController = new AbortController();
 
-  const getBoards = async () => {
-    try {
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
-      const data: Board[] = await Promise.all(
-        response.data.board.map(async (board: any) => {
-          try {
-            const boardResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
-            return { ...board, label: boardResponse.data.board.label };
-          } catch (error) {
-            console.error("Error fetching board:", error);
-            return { ...board, label: null };
+    const fetchBoards = async () => {
+      if (boards.length === 0) {
+        try {
+          const response = await axios.get(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`,
+            {
+              headers: {
+                token: getCookie("token"),
+                Authorization: getCookie("Authorization")
+              },
+              signal: abortController.signal
+            }
+          );
+
+          const data: Board[] = await Promise.all(
+            response.data.board.map(async (board: any) => {
+              try {
+                const boardResponse = await axios.get(
+                  `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`,
+                  {
+                    headers: {
+                      token: getCookie("token"),
+                      Authorization: getCookie("Authorization")
+                    },
+                    signal: abortController.signal
+                  }
+                );
+                return { ...board, label: boardResponse.data.board.label };
+              } catch (error) {
+                if (!axios.isCancel(error)) {
+                  console.error("Error fetching board:", error);
+                }
+                return { ...board, label: null };
+              }
+            })
+          );
+
+          if (!abortController.signal.aborted) {
+            setBoards(data);
           }
-        })
-      );
-      setBoards(data);
-    } catch (error) {
-      console.error("Error fetching boards:", error);
-    }
-  }
+        } catch (error) {
+          if (!axios.isCancel(error)) {
+            console.error("Error fetching boards:", error);
+          }
+        }
+      }
+    };
+
+    fetchBoards();
+
+    return () => {
+      abortController.abort();
+    };
+  }, [id, boards.length]);
 
   const workspace = workspaces.find(workspace => workspace.id.toString() === id);
   const board = boards.find(b => b.id === boardId);

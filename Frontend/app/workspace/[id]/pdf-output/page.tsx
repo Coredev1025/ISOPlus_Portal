@@ -75,11 +75,21 @@ export default function PDFOutputPage() {
     ];
 
     useEffect(() => {
-        const fetchingPDFOutputHistory = async () => {
-            const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf`, { headers: { token: getCookie("token") }, params: { workspaceId: id } });
-            if (response.status === 200) {
-                const result = response.data.map((item: any) => {
-                    return {
+        const abortController = new AbortController();
+
+        const fetchPDFOutputHistory = async () => {
+            try {
+                const response = await axios.get(
+                    `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf`,
+                    {
+                        headers: { token: getCookie("token") },
+                        params: { workspaceId: id },
+                        signal: abortController.signal
+                    }
+                );
+
+                if (!abortController.signal.aborted && response.status === 200) {
+                    const result = response.data.map((item: any) => ({
                         id: item.itemId,
                         type: item.type,
                         createdAt: new Date(item.createdAt).toLocaleString('en-AU', {
@@ -95,13 +105,22 @@ export default function PDFOutputPage() {
                         signatureProvider: "ISOPlus",
                         signed: item.SignatureStatus,
                         documentName: item.pdfLink.split('/').pop().split('.pdf')[0]
-                    }
-                });
-                setAllPdfOutputs(result);
+                    }));
+                    setAllPdfOutputs(result);
+                }
+            } catch (error) {
+                if (!axios.isCancel(error)) {
+                    console.error("Error fetching PDF outputs:", error);
+                }
             }
-        }
-        fetchingPDFOutputHistory();
-    }, []);
+        };
+
+        fetchPDFOutputHistory();
+
+        return () => {
+            abortController.abort();
+        };
+    }, [id]);
 
     const totalPages = Math.ceil(allPdfOutputs.length / ITEMS_PER_PAGE);
     const pdfOutputs = allPdfOutputs.slice(
@@ -110,33 +129,39 @@ export default function PDFOutputPage() {
     );
 
     const handleDownloadPDF = async (output: PDFOutput) => {
+        const abortController = new AbortController();
+
         try {
-            const response = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/`, {
-                workspaceId: id
-            }, {
-                headers: { token: getCookie("token") },
-                responseType: 'arraybuffer'
-            });
+            const response = await axios.post(
+                `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/`,
+                { workspaceId: id },
+                {
+                    headers: { token: getCookie("token") },
+                    responseType: 'arraybuffer',
+                    signal: abortController.signal
+                }
+            );
 
-            // Create blob from array buffer
-            const blob = new Blob([response.data], { type: 'application/pdf' });
-
-            // Create download link
-            const url = window.URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `${output.documentName}.pdf`;
-
-            // Trigger download
-            document.body.appendChild(link);
-            link.click();
-
-            // Cleanup
-            document.body.removeChild(link);
-            window.URL.revokeObjectURL(url);
-        } catch (err) {
-            console.error('Error generating PDF:', err);
+            if (!abortController.signal.aborted) {
+                const blob = new Blob([response.data], { type: 'application/pdf' });
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `${output.documentName}.pdf`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+            }
+        } catch (error) {
+            if (!axios.isCancel(error)) {
+                console.error('Error generating PDF:', error);
+            }
         }
+
+        return () => {
+            abortController.abort();
+        };
     };
 
     return (

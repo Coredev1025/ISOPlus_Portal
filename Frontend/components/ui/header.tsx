@@ -8,20 +8,24 @@ import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import axios from "axios";
 
 export function Header() {
   const router = useRouter();
   const { user, setUser, setWorkspaces } = useAppContext();
 
   useEffect(() => {
+    const abortController = new AbortController();
+
     const checkToken = async () => {
       const token = getCookie('token');
       if (token) {
         try {
-          const valid = await isTokenValid(token);
-          if (valid.status === 200) {
+          const valid = await isTokenValid(token, abortController.signal);
+          
+          if (!abortController.signal.aborted && valid.status === 200) {
             setUser(valid.data.user);
-          } else {
+          } else if (!abortController.signal.aborted) {
             document.cookie = `token=; path=/; max-age=0; secure; samesite=strict`;
             document.cookie = `Authorization=; path=/; max-age=0; secure; samesite=strict`;
             setUser({
@@ -35,12 +39,18 @@ export function Header() {
             router.push("/");
           }
         } catch (error) {
-          console.error('Token verification failed:', error);
+          if (!axios.isCancel(error)) {
+            console.error('Token verification failed:', error);
+          }
         }
       }
     };
 
     checkToken();
+
+    return () => {
+      abortController.abort();
+    };
   }, [router]);
 
   const handleLogout = () => {

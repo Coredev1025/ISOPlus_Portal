@@ -451,7 +451,9 @@ export default function ConfigureBusinessPage() {
         setApiError('');
       }, 5000);
     } finally {
-      setLoading(false);
+      if (!abortController.signal.aborted) {
+        setLoading(false);
+      }
     }
 
     return () => {

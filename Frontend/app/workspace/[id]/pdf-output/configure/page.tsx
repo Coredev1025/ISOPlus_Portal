@@ -16,6 +16,32 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import axios from "axios";
+import { getCookie } from "@/app/utils/cookies";
+
+interface PDFConfig {
+  basicPDF: {
+    enabled: boolean;
+    templates: Record<string, string>;
+  };
+  adobeSign: {
+    enabled: boolean;
+    clientId: string;
+    clientSecret: string;
+  };
+  docuSign: {
+    enabled: boolean;
+    integrationKey: string;
+    accountId: string;
+  };
+  pandaDoc: {
+    enabled: boolean;
+    apiKey: string;
+    workspaceId: string;
+  };
+}
 
 const DOCUMENT_TYPES = [
   "Quote",
@@ -27,6 +53,88 @@ const DOCUMENT_TYPES = [
 
 export default function ConfigurePDFPage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const id = pathname.split('/')[2];
+  const [config, setConfig] = useState<PDFConfig>({
+    basicPDF: { enabled: false, templates: {} },
+    adobeSign: { enabled: false, clientId: '', clientSecret: '' },
+    docuSign: { enabled: false, integrationKey: '', accountId: '' },
+    pandaDoc: { enabled: false, apiKey: '', workspaceId: '' }
+  });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    const fetchConfig = async () => {
+      try {
+        const response = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/config`,
+          {
+            headers: { token: getCookie("token") },
+            params: { workspaceId: id },
+            signal: abortController.signal
+          }
+        );
+
+        if (!abortController.signal.aborted && response.status === 200) {
+          setConfig(response.data);
+        }
+      } catch (error) {
+        if (!axios.isCancel(error)) {
+          console.error("Error fetching PDF configuration:", error);
+        }
+      }
+    };
+
+    fetchConfig();
+
+    return () => {
+      abortController.abort();
+    };
+  }, [id]);
+
+  const handleSave = async () => {
+    const abortController = new AbortController();
+    
+    try {
+      setLoading(true);
+      await axios.put(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/config`,
+        { ...config, workspaceId: id },
+        {
+          headers: { token: getCookie("token") },
+          signal: abortController.signal
+        }
+      );
+
+      if (!abortController.signal.aborted) {
+        router.push(`/workspace/${id}/pdf-output`);
+      }
+    } catch (error) {
+      if (!axios.isCancel(error)) {
+        console.error("Error saving PDF configuration:", error);
+      }
+    } finally {
+      if (!abortController.signal.aborted) {
+        setLoading(false);
+      }
+    }
+
+    return () => {
+      abortController.abort();
+    };
+  };
+
+  const handleConfigChange = (section: keyof PDFConfig, field: string, value: any) => {
+    setConfig(prev => ({
+      ...prev,
+      [section]: {
+        ...prev[section],
+        [field]: value
+      }
+    }));
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -62,14 +170,19 @@ export default function ConfigurePDFPage() {
                         Generate PDFs without digital signatures
                       </p>
                     </div>
-                    <Switch defaultChecked />
+                    <Switch
+                      checked={config.basicPDF.enabled}
+                      onCheckedChange={(checked) => handleConfigChange('basicPDF', 'enabled', checked)}
+                    />
                   </div>
                   
-                  {/* Template Selection for each document type */}
                   {DOCUMENT_TYPES.map((docType) => (
                     <div key={docType} className="space-y-2">
                       <Label>{docType} Template</Label>
-                      <Select>
+                      <Select
+                        value={config.basicPDF.templates[docType] || ""}
+                        onValueChange={(value) => handleConfigChange('basicPDF', 'templates', { ...config.basicPDF.templates, [docType]: value })}
+                      >
                         <SelectTrigger>
                           <SelectValue placeholder={`Select ${docType} template`} />
                         </SelectTrigger>
@@ -93,17 +206,30 @@ export default function ConfigurePDFPage() {
                         Use Adobe Sign for digital signatures
                       </p>
                     </div>
-                    <Switch />
+                    <Switch
+                      checked={config.adobeSign.enabled}
+                      onCheckedChange={(checked) => handleConfigChange('adobeSign', 'enabled', checked)}
+                    />
                   </div>
 
                   <div className="space-y-2">
                     <Label>Client ID</Label>
-                    <Input type="password" placeholder="Enter your Adobe Sign Client ID" />
+                    <Input
+                      type="password"
+                      placeholder="Enter your Adobe Sign Client ID"
+                      value={config.adobeSign.clientId}
+                      onChange={(e) => handleConfigChange('adobeSign', 'clientId', e.target.value)}
+                    />
                   </div>
 
                   <div className="space-y-2">
                     <Label>Client Secret</Label>
-                    <Input type="password" placeholder="Enter your Adobe Sign Client Secret" />
+                    <Input
+                      type="password"
+                      placeholder="Enter your Adobe Sign Client Secret"
+                      value={config.adobeSign.clientSecret}
+                      onChange={(e) => handleConfigChange('adobeSign', 'clientSecret', e.target.value)}
+                    />
                   </div>
                 </div>
               </TabsContent>
@@ -117,17 +243,29 @@ export default function ConfigurePDFPage() {
                         Use DocuSign for digital signatures
                       </p>
                     </div>
-                    <Switch />
+                    <Switch
+                      checked={config.docuSign.enabled}
+                      onCheckedChange={(checked) => handleConfigChange('docuSign', 'enabled', checked)}
+                    />
                   </div>
 
                   <div className="space-y-2">
                     <Label>Integration Key</Label>
-                    <Input type="password" placeholder="Enter your DocuSign Integration Key" />
+                    <Input
+                      type="password"
+                      placeholder="Enter your DocuSign Integration Key"
+                      value={config.docuSign.integrationKey}
+                      onChange={(e) => handleConfigChange('docuSign', 'integrationKey', e.target.value)}
+                    />
                   </div>
 
                   <div className="space-y-2">
                     <Label>Account ID</Label>
-                    <Input placeholder="Enter your DocuSign Account ID" />
+                    <Input
+                      placeholder="Enter your DocuSign Account ID"
+                      value={config.docuSign.accountId}
+                      onChange={(e) => handleConfigChange('docuSign', 'accountId', e.target.value)}
+                    />
                   </div>
                 </div>
               </TabsContent>
@@ -141,24 +279,42 @@ export default function ConfigurePDFPage() {
                         Use PandaDoc for digital signatures
                       </p>
                     </div>
-                    <Switch />
+                    <Switch
+                      checked={config.pandaDoc.enabled}
+                      onCheckedChange={(checked) => handleConfigChange('pandaDoc', 'enabled', checked)}
+                    />
                   </div>
 
                   <div className="space-y-2">
                     <Label>API Key</Label>
-                    <Input type="password" placeholder="Enter your PandaDoc API Key" />
+                    <Input
+                      type="password"
+                      placeholder="Enter your PandaDoc API Key"
+                      value={config.pandaDoc.apiKey}
+                      onChange={(e) => handleConfigChange('pandaDoc', 'apiKey', e.target.value)}
+                    />
                   </div>
 
                   <div className="space-y-2">
                     <Label>Workspace ID</Label>
-                    <Input placeholder="Enter your PandaDoc Workspace ID" />
+                    <Input
+                      placeholder="Enter your PandaDoc Workspace ID"
+                      value={config.pandaDoc.workspaceId}
+                      onChange={(e) => handleConfigChange('pandaDoc', 'workspaceId', e.target.value)}
+                    />
                   </div>
                 </div>
               </TabsContent>
             </Tabs>
 
             <div className="mt-6 flex justify-end">
-              <Button size="lg">Save Configuration</Button>
+              <Button 
+                size="lg" 
+                onClick={handleSave} 
+                disabled={loading}
+              >
+                {loading ? "Saving..." : "Save Configuration"}
+              </Button>
             </div>
           </Card>
         </div>

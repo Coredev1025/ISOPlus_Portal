@@ -295,37 +295,48 @@ function GlobalApplicationLogs() {
   const [logs, setLogs] = useState<Log[]>([]);
 
   useEffect(() => {
-    getLogs();
-  }, []);
+    const abortController = new AbortController();
 
-  const getLogs = async () => {
-    setLoading(true);
-    try {
-      axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/log`, { headers: { token: getCookie("token") } })
-        .then(res => {
-          return res.data.map((item: any, i: number) => {
-            return {
-              id: `log - ${i + 1} `,
-              timestamp: item.timestamp,
-              level: item.level.toUpperCase(),
-              message: item.message,
-              source: item.metadata.source,
-              details: {
-                metadata: {
-                  ...item.metadata
-                }
-              }
+    const fetchLogs = async () => {
+      setLoading(true);
+      try {
+        const response = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/log`, 
+          { 
+            headers: { token: getCookie("token") },
+            signal: abortController.signal
+          }
+        );
+        
+        const formattedLogs = response.data.map((item: any, i: number) => ({
+          id: `log-${i + 1}`,
+          timestamp: item.timestamp,
+          level: item.level.toUpperCase(),
+          message: item.message,
+          source: item.metadata.source,
+          details: {
+            metadata: {
+              ...item.metadata
             }
-          });
-        }).then(data => {
-          setLogs(data);
-        });
-    } catch (error) {
-      console.error("Error fetching logs:", error);
-    } finally {
-      setLoading(false);
-    }
-  }
+          }
+        }));
+        
+        setLogs(formattedLogs);
+      } catch (error) {
+        if (!axios.isCancel(error)) {
+          console.error("Error fetching logs:", error);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLogs();
+
+    return () => {
+      abortController.abort();
+    };
+  }, []);
 
   const uniqueSources = (logs || []).map(log => log.source).filter((value, index, self) => self.indexOf(value) === index);
 
@@ -476,24 +487,43 @@ export default function Dashboard() {
   );
 
   useEffect(() => {
-    if (workspaces.length === 0)
-      getWorkspaces();
-  }, []);
+    const abortController = new AbortController();
 
-  const getWorkspaces = async () => {
-    setLoading(true);
-    try {
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
-      setWorkspaces(response.data.workspace);
+    const fetchWorkspaces = async () => {
+      if (workspaces.length === 0) {
+        setLoading(true);
+        try {
+          const response = await axios.get(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces`, 
+            { 
+              headers: { 
+                token: getCookie("token"), 
+                Authorization: getCookie("Authorization") 
+              },
+              signal: abortController.signal
+            }
+          );
+          setWorkspaces(response.data.workspace);
 
-      if (user.role === 'user' && response.data.workspace.length === 1)
-        router.push(`/workspace/${response.data.workspace[0].id}`);
-    } catch (error) {
-      console.error("Error fetching workspaces:", error);
-    } finally {
-      setLoading(false);
-    }
-  }
+          if (user.role !== 'admin' && response.data.workspace.length === 1) {
+            router.push(`/workspace/${response.data.workspace[0].id}`);
+          }
+        } catch (error) {
+          if (!axios.isCancel(error)) {
+            console.error("Error fetching workspaces:", error);
+          }
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchWorkspaces();
+
+    return () => {
+      abortController.abort();
+    };
+  }, [workspaces.length, user.role, router]);
 
   return (
     <div className="min-h-screen bg-background">

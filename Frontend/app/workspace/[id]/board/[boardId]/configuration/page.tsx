@@ -145,33 +145,63 @@ export default function ConfigurationPage() {
   });
 
   useEffect(() => {
-    if (boards.length === 0)
-      getBoards();
-  }, []);
+    const abortController = new AbortController();
 
-  const getBoards = async () => {
-    try {
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
-      const data: Board[] = await Promise.all(
-        response.data.board.map(async (board: any) => {
-          try {
-            const boardResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
-            const boardData = { ...board, label: boardResponse.data.board.label || 'None' };
-            if (board.id === boardId) {
-              setBoardLabel(boardData.label as BoardLabel);
+    const fetchBoards = async () => {
+      if (boards.length === 0) {
+        try {
+          const response = await axios.get(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`,
+            {
+              headers: {
+                token: getCookie("token"),
+                Authorization: getCookie("Authorization")
+              },
+              signal: abortController.signal
             }
-            return boardData;
-          } catch (error) {
-            console.error("Error fetching board:", error);
-            return { ...board, label: 'None' };
+          );
+
+          const data: Board[] = await Promise.all(
+            response.data.board.map(async (board: any) => {
+              try {
+                const boardResponse = await axios.get(
+                  `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`,
+                  {
+                    headers: {
+                      token: getCookie("token"),
+                      Authorization: getCookie("Authorization")
+                    },
+                    signal: abortController.signal
+                  }
+                );
+                const boardData = { ...board, label: boardResponse.data.board.label || 'None' };
+                if (board.id === boardId) {
+                  setBoardLabel(boardData.label as BoardLabel);
+                }
+                return boardData;
+              } catch (error) {
+                if (!axios.isCancel(error)) {
+                  console.error("Error fetching board:", error);
+                }
+                return { ...board, label: 'None' };
+              }
+            })
+          );
+          setBoards(data);
+        } catch (error) {
+          if (!axios.isCancel(error)) {
+            console.error("Error fetching boards:", error);
           }
-        })
-      );
-      setBoards(data);
-    } catch (error) {
-      console.error("Error fetching boards:", error);
-    }
-  }
+        }
+      }
+    };
+
+    fetchBoards();
+
+    return () => {
+      abortController.abort();
+    };
+  }, [id, boardId, boards.length]);
 
   const workspace = workspaces.find(workspace => workspace.id.toString() === id);
   const board = boards.find(b => b.id === boardId);

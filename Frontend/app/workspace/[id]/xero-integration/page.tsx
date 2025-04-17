@@ -18,15 +18,57 @@ export default function XeroIntegrationPage() {
   const [isConnected, setIsConnected] = useState(false);
   const [isExpired, setIsExpired] = useState(false);
 
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    const checkConnection = async () => {
+      try {
+        const response = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`,
+          {
+            headers: { token: getCookie("token") },
+            params: { workspaceId: id },
+            signal: abortController.signal
+          }
+        );
+
+        if (!abortController.signal.aborted) {
+          if (response.data.xeroIntegrated) {
+            if (response.data.xeroTokens.expiresAt * 1000 < Date.now()) {
+              setIsExpired(true);
+            }
+            setIsConnected(true);
+          }
+        }
+      } catch (error) {
+        if (!axios.isCancel(error)) {
+          console.error('Error checking Xero connection:', error);
+        }
+      }
+    };
+
+    checkConnection();
+
+    return () => {
+      abortController.abort();
+    };
+  }, [id]);
+
   const handleConnectXero = async () => {
+    const abortController = new AbortController();
+
     try {
       setIsConnecting(true);
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/redirect`, {
-        headers: { token: getCookie("token") },
-        params: { workspaceId: id }
-      });
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/redirect`,
+        {
+          headers: { token: getCookie("token") },
+          params: { workspaceId: id },
+          signal: abortController.signal
+        }
+      );
 
-      if (response.data.url) {
+      if (!abortController.signal.aborted && response.data.url) {
         const width = 600;
         const height = 600;
         const left = window.screenX + (window.outerWidth - width) / 2;
@@ -40,11 +82,18 @@ export default function XeroIntegrationPage() {
 
         const handleMessage = async (event: MessageEvent) => {
           if (event.data.type === 'XERO_AUTH') {
-            if (event.data.success) {
-              await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/xero/connect`, {
-                workspaceId: id,
-                tokens: event.data.tokenSet
-              }, { headers: { token: getCookie("token") } });
+            if (event.data.success && !abortController.signal.aborted) {
+              await axios.post(
+                `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/xero/connect`,
+                {
+                  workspaceId: id,
+                  tokens: event.data.tokenSet
+                },
+                { 
+                  headers: { token: getCookie("token") },
+                  signal: abortController.signal
+                }
+              );
               setIsConnected(true);
               setAccessToken(event.data.tokenSet.access_token);
               setResultContent('Successfully connected to Xero!');
@@ -59,39 +108,63 @@ export default function XeroIntegrationPage() {
         window.addEventListener('message', handleMessage);
         return () => {
           window.removeEventListener('message', handleMessage);
+          abortController.abort();
         };
       }
     } catch (error) {
-      console.error(error);
-      setResultContent('Error initiating Xero connection. Please try again.');
+      if (!axios.isCancel(error)) {
+        console.error(error);
+        setResultContent('Error initiating Xero connection. Please try again.');
+      }
     } finally {
-      setIsConnecting(false);
+      if (!abortController.signal.aborted) {
+        setIsConnecting(false);
+      }
     }
   };
 
   const handleDisconnectXero = async () => {
+    const abortController = new AbortController();
+
     try {
-      await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/xero/disconnect`, {
-        workspaceId: id
-      }, { headers: { token: getCookie("token") } });
+      await axios.post(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/xero/disconnect`,
+        {
+          workspaceId: id
+        },
+        { 
+          headers: { token: getCookie("token") },
+          signal: abortController.signal
+        }
+      );
       setIsConnected(false);
       setResultContent('Successfully disconnected from Xero!');
     } catch (error) {
-      console.error('Error disconnecting from Xero:', error);
-      setResultContent('Error disconnecting from Xero. Please try again.');
+      if (!axios.isCancel(error)) {
+        console.error('Error disconnecting from Xero:', error);
+        setResultContent('Error disconnecting from Xero. Please try again.');
+      }
+    } finally {
+      abortController.abort();
     }
   };
 
   const handleReconnectXero = async () => {
+    const abortController = new AbortController();
+
     try {
       setIsConnecting(true);
-      handleDisconnectXero();
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/redirect`, {
-        headers: { token: getCookie("token") },
-        params: { workspaceId: id }
-      });
+      await handleDisconnectXero();
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/redirect`,
+        {
+          headers: { token: getCookie("token") },
+          params: { workspaceId: id },
+          signal: abortController.signal
+        }
+      );
 
-      if (response.data.url) {
+      if (!abortController.signal.aborted && response.data.url) {
         const width = 600;
         const height = 600;
         const left = window.screenX + (window.outerWidth - width) / 2;
@@ -105,11 +178,18 @@ export default function XeroIntegrationPage() {
 
         const handleMessage = async (event: MessageEvent) => {
           if (event.data.type === 'XERO_AUTH') {
-            if (event.data.success) {
-              await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/xero/connect`, {
-                workspaceId: id,
-                tokens: event.data.tokenSet
-              }, { headers: { token: getCookie("token") } });
+            if (event.data.success && !abortController.signal.aborted) {
+              await axios.post(
+                `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/xero/connect`,
+                {
+                  workspaceId: id,
+                  tokens: event.data.tokenSet
+                },
+                { 
+                  headers: { token: getCookie("token") },
+                  signal: abortController.signal
+                }
+              );
               setIsConnected(true);
               setAccessToken(event.data.tokenSet.access_token);
               setResultContent('Successfully connected to Xero!');
@@ -124,34 +204,20 @@ export default function XeroIntegrationPage() {
         window.addEventListener('message', handleMessage);
         return () => {
           window.removeEventListener('message', handleMessage);
+          abortController.abort();
         };
       }
     } catch (error) {
-      console.error(error);
-      setResultContent('Error initiating Xero connection. Please try again.');
+      if (!axios.isCancel(error)) {
+        console.error(error);
+        setResultContent('Error initiating Xero connection. Please try again.');
+      }
     } finally {
-      setIsConnecting(false);
+      if (!abortController.signal.aborted) {
+        setIsConnecting(false);
+      }
     }
   };
-
-  useEffect(() => {
-    const checkConnection = async () => {
-      try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`, {
-          headers: { token: getCookie("token") }, params: { workspaceId: id }
-        });
-        if (response.data.xeroIntegrated) {
-          if (response.data.xeroTokens.expiresAt * 1000 < Date.now()) {
-            setIsExpired(true);
-          }
-          setIsConnected(true);
-        }
-      } catch (error) {
-        console.error('Error checking Xero connection:', error);
-      }
-    };
-    checkConnection();
-  }, []);
 
   return (
     <div className="min-h-screen bg-background py-8">
