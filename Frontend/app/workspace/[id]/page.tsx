@@ -113,55 +113,104 @@ export default function WorkspaceDetail() {
   });
 
   useEffect(() => {
-    if (boards.length === 0)
-      getBoards();
-  }, []);
+    const abortController = new AbortController();
 
-  const getBoards = async () => {
-    setLoadingBoards(true);
-    try {
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
-      const data: Board[] = await Promise.all(
-        response.data.board.map(async (board: any) => {
-          try {
-            const boardResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
-            return { ...board, label: boardResponse.data.board.label };
-          } catch (error) {
-            console.error("Error fetching board:", error);
-            return { ...board, label: null };
+    const fetchBoards = async () => {
+      if (boards.length === 0) {
+        setLoadingBoards(true);
+        try {
+          const response = await axios.get(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`,
+            {
+              headers: {
+                token: getCookie("token"),
+                Authorization: getCookie("Authorization")
+              },
+              signal: abortController.signal
+            }
+          );
+
+          const data: Board[] = await Promise.all(
+            response.data.board.map(async (board: any) => {
+              try {
+                const boardResponse = await axios.get(
+                  `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`,
+                  {
+                    headers: {
+                      token: getCookie("token"),
+                      Authorization: getCookie("Authorization")
+                    },
+                    signal: abortController.signal
+                  }
+                );
+                return { ...board, label: boardResponse.data.board.label };
+              } catch (error) {
+                if (!axios.isCancel(error)) {
+                  console.error("Error fetching board:", error);
+                }
+                return { ...board, label: null };
+              }
+            })
+          );
+
+          if (!abortController.signal.aborted) {
+            setBoards(data);
           }
-        })
-      );
-      setBoards(data);
-    } catch (error) {
-      console.error("Error fetching boards:", error);
-    } finally {
-      setLoadingBoards(false);
-    }
-  }
+        } catch (error) {
+          if (!axios.isCancel(error)) {
+            console.error("Error fetching boards:", error);
+          }
+        } finally {
+          if (!abortController.signal.aborted) {
+            setLoadingBoards(false);
+          }
+        }
+      }
+    };
+
+    fetchBoards();
+
+    return () => {
+      abortController.abort();
+    };
+  }, [id, boards.length]);
 
   const handleLabelChange = async (boardId: string, newLabel: BoardLabel) => {
+    const abortController = new AbortController();
+
     try {
-      // Update the label locally
       setBoards(
         boards?.map(board =>
           board.id === boardId ? { ...board, label: newLabel } : board
         ) as Board[]
       );
 
-      // Make an API call to update the label on the server
-      boards?.map(async (board) => {
-        if (board.id === boardId) {
-          await axios.put(
-            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards`,
-            { ...board, label: newLabel, boardId, workspaceId: id },
-            { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } }
-          );
-        }
-      })
+      await Promise.all(
+        boards?.map(async (board) => {
+          if (board.id === boardId) {
+            await axios.put(
+              `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards`,
+              { ...board, label: newLabel, boardId, workspaceId: id },
+              {
+                headers: {
+                  token: getCookie("token"),
+                  Authorization: getCookie("Authorization")
+                },
+                signal: abortController.signal
+              }
+            );
+          }
+        }) || []
+      );
     } catch (error) {
-      console.error("Error updating board label:", error);
+      if (!axios.isCancel(error)) {
+        console.error("Error updating board label:", error);
+      }
     }
+
+    return () => {
+      abortController.abort();
+    };
   };
 
   const suggestLabel = (boardId: string) => {

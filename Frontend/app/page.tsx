@@ -19,12 +19,14 @@ export default function LoginPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    const abortController = new AbortController();
+
     const checkToken = async () => {
       const token = getCookie('token');
       if (token) {
         try {
-          const valid = await isTokenValid(token);
-          if (valid.status === 200) {
+          const valid = await isTokenValid(token, abortController.signal);
+          if (!abortController.signal.aborted && valid.status === 200) {
             setUser(valid.data.user);
             router.push('/dashboard');
           } else {
@@ -35,24 +37,33 @@ export default function LoginPage() {
             localStorage.removeItem("board");
           }
         } catch (error) {
-          console.error('Token verification failed:', error);
+          if (!axios.isCancel(error)) {
+            console.error('Token verification failed:', error);
+          }
         }
       }
     };
 
     checkToken();
-  }, []);
+
+    return () => {
+      abortController.abort();
+    };
+  }, [router, setUser]);
 
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    const abortController = new AbortController();
+
     setError("");
     try {
-      const response = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/login`, {
-        email,
-        password
-      });
+      const response = await axios.post(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/login`,
+        { email, password },
+        { signal: abortController.signal }
+      );
 
-      if (response.status == 200) {
+      if (!abortController.signal.aborted && response.status === 200) {
         document.cookie = `token=${response.data.token}; path=/; max-age=86400; secure; samesite=strict`;
         setUser(response.data.user);
         router.push('/dashboard');
@@ -60,22 +71,36 @@ export default function LoginPage() {
         setError("Credential is not correct!");
       }
     } catch (error) {
-      console.error('Login failed:', error);
-      setError("Login Failed");
+      if (!axios.isCancel(error)) {
+        console.error('Login failed:', error);
+        setError("Login Failed");
+      }
     }
+
+    return () => {
+      abortController.abort();
+    };
   };
 
   const handleISOPlusLogin = async () => {
-    try {
-      const redirectUrl = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/isoplus/redirect`, { headers: { 'X-API-Version': '2025-02-26.morava' } });
+    const abortController = new AbortController();
 
-      if (redirectUrl.status == 200) {
+    try {
+      const redirectUrl = await axios.get(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/isoplus/redirect`,
+        {
+          headers: { 'X-API-Version': '2025-02-26.morava' },
+          signal: abortController.signal
+        }
+      );
+
+      if (!abortController.signal.aborted && redirectUrl.status === 200) {
         const width = 600;
         const height = 600;
         const left = window.screenX + (window.outerWidth - width) / 2;
         const top = window.screenY + (window.outerHeight - height) / 2;
 
-        window.open(
+        const popup = window.open(
           redirectUrl.data.redirect_uri,
           'OAuth2 Login',
           `width=${width},height=${height},left=${left},top=${top},status=yes,scrollbars=yes`
@@ -85,36 +110,46 @@ export default function LoginPage() {
           if (event.data.type === 'AUTH_SUCCESS') {
             try {
               document.cookie = `Authorization=${event.data.accessToken}; path=/; max-age=86400; secure; samesite=strict`;
-              const response = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/oauth-login`, {
-                oauthData: event.data.data
-              }, { headers: { Authorization: event.data.accessToken } });
+              const response = await axios.post(
+                `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/oauth-login`,
+                { oauthData: event.data.data },
+                {
+                  headers: { Authorization: event.data.accessToken },
+                  signal: abortController.signal
+                }
+              );
 
-              if (response.status === 200) {
+              if (!abortController.signal.aborted && response.status === 200) {
                 document.cookie = `token=${response.data.token}; path=/; max-age=86400; secure; samesite=strict`;
                 setUser(response.data.user);
                 router.push('/dashboard');
-              } else {
-                throw new Error('Login failed');
               }
             } catch (error) {
-              console.error('Login error:', error);
-              setError("Login Failed");
+              if (!axios.isCancel(error)) {
+                console.error('Login error:', error);
+                setError("Login Failed");
+              }
             }
           } else if (event.data.type === 'AUTH_ERROR') {
             console.error('Authentication failed:', event.data.error);
             setError(event.data.error);
           }
+
+          window.removeEventListener('message', handleMessage);
+          if (popup) popup.close();
         };
 
         window.addEventListener('message', handleMessage);
-
         return () => {
           window.removeEventListener('message', handleMessage);
+          abortController.abort();
         };
       }
     } catch (error) {
-      console.error('Redirect URL fetch failed:', error);
-      setError("Login Failed");
+      if (!axios.isCancel(error)) {
+        console.error('Redirect URL fetch failed:', error);
+        setError("Login Failed");
+      }
     }
   };
 

@@ -11,11 +11,21 @@ export const getCookie = (name: string): string | null => {
     return null;
 };
 
-export const isTokenValid = async (token: string): Promise<any> => {
+export const isTokenValid = async (token: string, signal: AbortSignal): Promise<any> => {
     try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/verify`, { headers: { token } });
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/verify`, { 
+            headers: { token },
+            signal 
+        });
+
+        console.log(response)
         return response;
     } catch (error) {
+        if (axios.isCancel(error)) {
+            console.error("Request canceled", error.message);
+        } else {
+            console.error("Error verifying token", error);
+        }
         return false;
     }
-}; 
+};

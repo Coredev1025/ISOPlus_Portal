@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ArrowLeft } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import {
   Table,
@@ -20,7 +20,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import axios from "axios";
+import { getCookie } from "@/app/utils/cookies";
 import {
   LineChart,
   Line,
@@ -131,12 +133,72 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
 
 export default function UsageReportPage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const id = pathname.split('/')[2];
   const [dateRange, setDateRange] = useState("30");
   const [dailyData, setDailyData] = useState(() => generateDailyData(30));
+  const [usageSummary, setUsageSummary] = useState(usageData);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    const fetchUsageData = async () => {
+      try {
+        const [usageResponse, dailyResponse] = await Promise.all([
+          axios.get(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/usage/summary`,
+            {
+              headers: { token: getCookie("token") },
+              params: { 
+                workspaceId: id,
+                dateRange: dateRange 
+              },
+              signal: abortController.signal
+            }
+          ),
+          axios.get(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/usage/daily`,
+            {
+              headers: { token: getCookie("token") },
+              params: { 
+                workspaceId: id,
+                dateRange: dateRange 
+              },
+              signal: abortController.signal
+            }
+          )
+        ]);
+
+        if (!abortController.signal.aborted) {
+          setUsageSummary(usageResponse.data || usageData);
+          setDailyData(dailyResponse.data || generateDailyData(parseInt(dateRange)));
+          setLoading(false);
+        }
+      } catch (error) {
+        if (!axios.isCancel(error)) {
+          console.error("Error fetching usage data:", error);
+          // Fallback to mock data if API fails
+          setUsageSummary(usageData);
+          setDailyData(generateDailyData(parseInt(dateRange)));
+        }
+      } finally {
+        if (!abortController.signal.aborted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchUsageData();
+
+    return () => {
+      abortController.abort();
+    };
+  }, [id, dateRange]);
 
   const handleDateRangeChange = (value: string) => {
     setDateRange(value);
-    setDailyData(generateDailyData(parseInt(value)));
+    setLoading(true);
   };
 
   return (
@@ -175,88 +237,96 @@ export default function UsageReportPage() {
               </Select>
             </div>
 
-            {/* Usage Chart */}
-            <div className="h-[500px] mb-8">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart 
-                  data={dailyData}
-                  margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                >
-                  <CartesianGrid 
-                    strokeDasharray="3 3" 
-                    stroke="hsl(var(--border))" 
-                    vertical={false}
-                  />
-                  <XAxis 
-                    dataKey="date"
-                    tickFormatter={(value) => new Date(value).toLocaleDateString()}
-                    stroke="hsl(var(--border))"
-                    fontSize={12}
-                    tickMargin={8}
-                    minTickGap={30}
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                  />
-                  <YAxis 
-                    stroke="hsl(var(--border))"
-                    fontSize={12}
-                    tickMargin={8}
-                    width={40}
-                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                  />
-                  <Tooltip 
-                    content={<CustomTooltip />}
-                    cursor={{ stroke: 'hsl(var(--border))', strokeWidth: 1 }}
-                  />
-                  <Legend 
-                    verticalAlign="bottom"
-                    height={36}
-                    iconSize={10}
-                    iconType="circle"
-                    wrapperStyle={{ 
-                      paddingTop: '20px',
-                      fontSize: '14px'
-                    }}
-                  />
-                  {Object.entries(colors).map(([key, color]) => (
-                    <Line
-                      key={key}
-                      type="monotone"
-                      dataKey={key}
-                      name={key}
-                      stroke={color}
-                      strokeWidth={2}
-                      dot={false}
-                      activeDot={{ r: 4, strokeWidth: 2 }}
-                    />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+            {loading ? (
+              <div className="h-[500px] flex items-center justify-center">
+                <p>Loading usage data...</p>
+              </div>
+            ) : (
+              <>
+                {/* Usage Chart */}
+                <div className="h-[500px] mb-8">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart 
+                      data={dailyData}
+                      margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                    >
+                      <CartesianGrid 
+                        strokeDasharray="3 3" 
+                        stroke="hsl(var(--border))" 
+                        vertical={false}
+                      />
+                      <XAxis 
+                        dataKey="date"
+                        tickFormatter={(value) => new Date(value).toLocaleDateString()}
+                        stroke="hsl(var(--border))"
+                        fontSize={12}
+                        tickMargin={8}
+                        minTickGap={30}
+                        tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                      />
+                      <YAxis 
+                        stroke="hsl(var(--border))"
+                        fontSize={12}
+                        tickMargin={8}
+                        width={40}
+                        tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                      />
+                      <Tooltip 
+                        content={<CustomTooltip />}
+                        cursor={{ stroke: 'hsl(var(--border))', strokeWidth: 1 }}
+                      />
+                      <Legend 
+                        verticalAlign="bottom"
+                        height={36}
+                        iconSize={10}
+                        iconType="circle"
+                        wrapperStyle={{ 
+                          paddingTop: '20px',
+                          fontSize: '14px'
+                        }}
+                      />
+                      {Object.entries(colors).map(([key, color]) => (
+                        <Line
+                          key={key}
+                          type="monotone"
+                          dataKey={key}
+                          name={key}
+                          stroke={color}
+                          strokeWidth={2}
+                          dot={false}
+                          activeDot={{ r: 4, strokeWidth: 2 }}
+                        />
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
 
-            {/* Usage Summary Table */}
-            <div>
-              <h2 className="text-xl font-semibold mb-4">Usage Summary</h2>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Service</TableHead>
-                    <TableHead className="text-right">Current Cycle</TableHead>
-                    <TableHead className="text-right">Total Usage</TableHead>
-                    <TableHead className="text-right">Avg. Daily Usage</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {usageData.map((item) => (
-                    <TableRow key={item.service}>
-                      <TableCell>{item.service}</TableCell>
-                      <TableCell className="text-right">{item.currentCycle}</TableCell>
-                      <TableCell className="text-right">{item.total}</TableCell>
-                      <TableCell className="text-right">{item.avgDaily}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                {/* Usage Summary Table */}
+                <div>
+                  <h2 className="text-xl font-semibold mb-4">Usage Summary</h2>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Service</TableHead>
+                        <TableHead className="text-right">Current Cycle</TableHead>
+                        <TableHead className="text-right">Total Usage</TableHead>
+                        <TableHead className="text-right">Avg. Daily Usage</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {usageSummary.map((item) => (
+                        <TableRow key={item.service}>
+                          <TableCell>{item.service}</TableCell>
+                          <TableCell className="text-right">{item.currentCycle}</TableCell>
+                          <TableCell className="text-right">{item.total}</TableCell>
+                          <TableCell className="text-right">{item.avgDaily}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
+            )}
           </Card>
         </div>
       </div>

@@ -18,11 +18,21 @@ export default function PDFOutputDetailPage() {
   const output = allPdfOutputs.find(output => output.id === `pdf-${id}`);
 
   useEffect(() => {
-    const fetchingPDFOutputHistory = async () => {
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf`, { headers: { token: getCookie("token") }, params: { workspaceId: id } });
-      if (response.status === 200) {
-        const result = response.data.map((item: any) => {
-          return {
+    const abortController = new AbortController();
+
+    const fetchPDFOutputHistory = async () => {
+      try {
+        const response = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf`,
+          {
+            headers: { token: getCookie("token") },
+            params: { workspaceId: id },
+            signal: abortController.signal
+          }
+        );
+
+        if (!abortController.signal.aborted && response.status === 200) {
+          const result = response.data.map((item: any) => ({
             id: item.itemId,
             type: item.type,
             createdAt: new Date(item.createdAt).toLocaleString('en-AU', {
@@ -38,13 +48,22 @@ export default function PDFOutputDetailPage() {
             signatureProvider: "ISOPlus",
             signed: item.SignatureStatus,
             documentName: item.pdfLink.split('/').pop().split('.pdf')[0]
-          }
-        });
-        setAllPdfOutputs(result);
+          }));
+          setAllPdfOutputs(result);
+        }
+      } catch (error) {
+        if (!axios.isCancel(error)) {
+          console.error("Error fetching PDF outputs:", error);
+        }
       }
-    }
-    fetchingPDFOutputHistory();
-  }, []);
+    };
+
+    fetchPDFOutputHistory();
+
+    return () => {
+      abortController.abort();
+    };
+  }, [id]);
 
   useEffect(() => {
     if (!output) {

@@ -286,58 +286,76 @@ export default function ConfigureBusinessPage() {
   });
 
   useEffect(() => {
+    const abortController = new AbortController();
+
     const fetchBusinessProfile = async () => {
       try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`, { headers: { token: getCookie("token") }, params: { workspaceId: id } });
-        const data = response.data;
-        setFormData({
-          name: data.name || "",
-          phone: data.phone || "",
-          email: data.email || "",
-          street: data.address?.street || "",
-          country: data.address?.country || "",
-          suburb: data.address?.suburb || "",
-          state: data.address?.state || "",
-          postcode: data.address?.postcode || "",
-          abn: data.abn || "",
-          acn: data.acn || "",
-          workspaceId: id,
-          bankAccountName: data.bankDetails?.accountName || "",
-          bankName: data.bankDetails?.bankName || "",
-          bsb: data.bankDetails?.bsb || "",
-          accountNumber: data.bankDetails?.accountNumber || "",
-          paymentReference: data.bankDetails?.paymentReference || "",
-        });
+        const response = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`,
+          {
+            headers: { token: getCookie("token") },
+            params: { workspaceId: id },
+            signal: abortController.signal,
+          }
+        );
 
-        // Set document numbering sequences
-        if (data.documentNumbering) {
-          if (data.documentNumbering.invoice) {
-            setInvoiceSequence(data.documentNumbering.invoice);
-          }
-          if (data.documentNumbering.purchaseOrder) {
-            setPurchaseOrderSequence(data.documentNumbering.purchaseOrder);
-          }
-          if (data.documentNumbering.quote) {
-            setQuoteSequence(data.documentNumbering.quote);
-          }
-        }
+        if (!abortController.signal.aborted) {
+          const data = response.data;
+          setFormData({
+            name: data.name || "",
+            phone: data.phone || "",
+            email: data.email || "",
+            street: data.address?.street || "",
+            country: data.address?.country || "",
+            suburb: data.address?.suburb || "",
+            state: data.address?.state || "",
+            postcode: data.address?.postcode || "",
+            abn: data.abn || "",
+            acn: data.acn || "",
+            workspaceId: id,
+            bankAccountName: data.bankDetails?.accountName || "",
+            bankName: data.bankDetails?.bankName || "",
+            bsb: data.bankDetails?.bsb || "",
+            accountNumber: data.bankDetails?.accountNumber || "",
+            paymentReference: data.bankDetails?.paymentReference || "",
+          });
 
-        // Set logo previews
-        if (data.defaultLogo) {
-          setDefaultLogoPreview(data.defaultLogo);
-        }
-        if (data.squareLogo) {
-          setSquareLogoPreview(data.squareLogo);
-        }
-        if (data.wideLogo) {
-          setWideLogoPreview(data.wideLogo);
+          // Set document numbering sequences
+          if (data.documentNumbering) {
+            if (data.documentNumbering.invoice) {
+              setInvoiceSequence(data.documentNumbering.invoice);
+            }
+            if (data.documentNumbering.purchaseOrder) {
+              setPurchaseOrderSequence(data.documentNumbering.purchaseOrder);
+            }
+            if (data.documentNumbering.quote) {
+              setQuoteSequence(data.documentNumbering.quote);
+            }
+          }
+
+          // Set logo previews
+          if (data.defaultLogo) {
+            setDefaultLogoPreview(data.defaultLogo);
+          }
+          if (data.squareLogo) {
+            setSquareLogoPreview(data.squareLogo);
+          }
+          if (data.wideLogo) {
+            setWideLogoPreview(data.wideLogo);
+          }
         }
       } catch (error) {
-        console.error("Failed to fetch business profile:", error);
+        if (!axios.isCancel(error)) {
+          console.error("Failed to fetch business profile:", error);
+        }
       }
     };
 
     fetchBusinessProfile();
+
+    return () => {
+      abortController.abort();
+    };
   }, [id]);
 
   const handleLogoChange = (
@@ -365,6 +383,8 @@ export default function ConfigureBusinessPage() {
   };
 
   const handleSave = async () => {
+    const abortController = new AbortController();
+
     try {
       setLoading(true);
       const formDataToSend = new FormData();
@@ -376,6 +396,7 @@ export default function ConfigureBusinessPage() {
         purchaseOrder: purchaseOrderSequence,
         quote: quoteSequence
       }));
+
       if (logoFile) {
         formDataToSend.append("defaultLogo", logoFile);
         setLogoFile(null);
@@ -396,21 +417,32 @@ export default function ConfigureBusinessPage() {
           headers: {
             "Content-Type": "multipart/form-data",
             token: getCookie("token")
-          }
+          },
+          signal: abortController.signal
         }
       );
 
-      setShowError(false);
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 2000);
+      if (!abortController.signal.aborted) {
+        setShowError(false);
+        setShowSuccess(true);
+        setTimeout(() => setShowSuccess(false), 2000);
+      }
     } catch (error) {
-      setShowSuccess(false);
-      setShowError(true);
-      setTimeout(() => setShowError(false), 2000);
-      console.error("Failed to save business profile:", error);
+      if (!axios.isCancel(error)) {
+        setShowSuccess(false);
+        setShowError(true);
+        setTimeout(() => setShowError(false), 2000);
+        console.error("Failed to save business profile:", error);
+      }
     } finally {
-      setLoading(false);
+      if (!abortController.signal.aborted) {
+        setLoading(false);
+      }
     }
+
+    return () => {
+      abortController.abort();
+    };
   };
 
   const handleNumberChange = (type: 'invoice' | 'purchaseOrder' | 'quote', value: string) => {
@@ -794,7 +826,7 @@ export default function ConfigureBusinessPage() {
                       <Label htmlFor="paymentReference">Payment Reference</Label>
                       <Input
                         id="paymentReference"
-                  placeholder="Enter payment reference (optional)"
+                        placeholder="Enter payment reference (optional)"
                         value={formData.paymentReference}
                         onChange={handleInputChange}
                       />

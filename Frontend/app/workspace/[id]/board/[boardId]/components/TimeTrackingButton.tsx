@@ -77,26 +77,45 @@ export function TimeTrackingButton({ workspaceId, boardId, setTimeTrackingEnable
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
 
   useEffect(() => {
+    let isSubscribed = true;
     let timer: NodeJS.Timeout;
+
     if (isTracking) {
       timer = setInterval(() => {
-        setCurrentTime(new Date());
+        if (isSubscribed) {
+          setCurrentTime(new Date());
+        }
       }, 1000);
     }
-    return () => clearInterval(timer);
+
+    return () => {
+      isSubscribed = false;
+      if (timer) {
+        clearInterval(timer);
+      }
+    };
   }, [isTracking]);
 
   useEffect(() => {
-    // Load tracking status from localStorage on component mount
-    const storedTracking = localStorage.getItem(`timeTracking_${workspaceId}_${boardId}`);
-    if (storedTracking) {
-      const trackingData = JSON.parse(storedTracking);
-      setIsTracking(true);
-      setSelectedTask(trackingData.task);
-      setStartTime(new Date(trackingData.startTime));
-      setTimeTrackingEnabled(true);
-    }
-  }, [workspaceId, boardId]);
+    let isSubscribed = true;
+
+    const loadTrackingData = () => {
+      const storedTracking = localStorage.getItem(`timeTracking_${workspaceId}_${boardId}`);
+      if (storedTracking && isSubscribed) {
+        const trackingData = JSON.parse(storedTracking);
+        setIsTracking(true);
+        setSelectedTask(trackingData.task);
+        setStartTime(new Date(trackingData.startTime));
+        setTimeTrackingEnabled(true);
+      }
+    };
+
+    loadTrackingData();
+
+    return () => {
+      isSubscribed = false;
+    };
+  }, [workspaceId, boardId, setTimeTrackingEnabled]);
 
   const formatDuration = (start: Date, end: Date) => {
     const diff = Math.floor((end.getTime() - start.getTime()) / 1000);

@@ -46,35 +46,60 @@ interface AuditTrailItem {
 export default function AuditTrailPage() {
   const router = useRouter();
   const id = usePathname().split('/')[2];
-  const [searchQuery, setSearchQuery] = useState("");  const [currentPage, setCurrentPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
   const [actionFilter, setActionFilter] = useState<string>("all");
   const [userFilter, setUserFilter] = useState<string>("all");
   const [auditTrail, setAuditTrail] = useState<AuditTrailItem[]>([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    const abortController = new AbortController();
+
     const fetchAuditTrailData = async () => {
-      const data = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/audit/`, { headers: { token: getCookie("token") }, params: { workspaceId: id } });
-      const auditData = data.data.map((item: any) => {
-        return { 
-          action: item.action, 
-          user: item.userEmail, 
-          ipAddress: item.userIp, 
-          detail: item.detail, 
-          timestamp: new Date(item.createdAt).toLocaleString('en-AU', { 
-            month: 'numeric', 
-            day: 'numeric', 
-            year: 'numeric', 
-            hour: 'numeric', 
-            minute: 'numeric', 
-            second: 'numeric', 
-            hour12: true 
-          }) 
+      setLoading(true);
+      try {
+        const response = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/audit/`,
+          {
+            headers: { token: getCookie("token") },
+            params: { workspaceId: id },
+            signal: abortController.signal
+          }
+        );
+
+        const auditData = response.data.map((item: any) => ({
+          action: item.action,
+          user: item.userEmail,
+          ipAddress: item.userIp,
+          detail: item.detail,
+          timestamp: new Date(item.createdAt).toLocaleString('en-AU', {
+            month: 'numeric',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: 'numeric',
+            second: 'numeric',
+            hour12: true
+          })
+        }));
+
+        setAuditTrail(auditData);
+      } catch (error) {
+        if (!axios.isCancel(error)) {
+          console.error("Error fetching audit trail:", error);
         }
-      })
-      setAuditTrail(auditData);
-    }
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchAuditTrailData();
-  }, []);
+
+    return () => {
+      abortController.abort();
+    };
+  }, [id]);
 
   // Get unique actions and users for filters
   const uniqueActions = Array.from(new Set(auditTrail.map(item => item.action)));

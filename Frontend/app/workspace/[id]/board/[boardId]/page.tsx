@@ -62,93 +62,146 @@ export default function BoardDetail() {
   const [loadingBoards, setLoadingBoards] = useState(false);
   const ITEMS_PER_PAGE = 10;
 
-  useEffect(() => {
-    const fetchTimeTracking = async () => {
-      const timetracking = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks?workspaceId=${id}&boardId=${boardId}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
-      const data: TimeEntry[] = [];
-      for (const entry of timetracking.data.tasks) {
-        data.push({
-          id: entry.id,
-          taskName: entry.taskName,
-          startTime: entry.startTime ? entry.startTime : "",
-          endTime: entry.endTime ? entry.endTime : "",
-          duration: entry.endTime && entry.startTime ? calcDuration(entry.startTime, entry.endTime) : 0, // in minutes
-          location: {
-            lat: 0,
-            lng: 0,
-            address: entry.location ? entry.location : "",
-          },
-          userId: user.id,
-          userName: user.name,
-          notes: entry.notes
-        })
-      }
-      setTimeEntries(data);
-    };
-    getBoards();
-    fetchTimeTracking();
-  }, []);
-
-  const getBoards = async () => {
-    setLoadingBoards(true);
-    try {
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`, { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } });
-      const data: Board = response.data.board.find((board: any) => board.id == boardId);
-      setBoard(data);
-    } catch (error) {
-      console.error("Error fetching boards:", error);
-    } finally {
-      setLoadingBoards(false);
-    }
-  }
-
   const calcDuration = (startTime: any, endTime: any) => {
     return Math.floor((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000);
-  }
-
-  const getTimeTrackingStatus = async () => {
-    try {
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks/status?workspaceId=${id}&boardId=${boardId}`,
-        { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } }
-      );
-      if (response.data.active) {
-        setTimeTrackingEnabled(true);
-        setTimeEntries(prev => {
-          const matchedEntry = prev.find(entry => entry.id === response.data.taskId);
-          if (!matchedEntry) return prev;
-          return [
-            { ...matchedEntry, endTime: "" },
-            ...prev.filter(entry => entry.id !== response.data.taskId)
-          ];
-        });
-      }
-    } catch (error) {
-      console.error("Error fetching time tracking status:", error);
-    }
   };
 
+  // First useEffect for initial data fetching
   useEffect(() => {
+    const abortController = new AbortController();
+
+    const fetchData = async () => {
+      try {
+        // Fetch time tracking data
+        const timetracking = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks?workspaceId=${id}&boardId=${boardId}`, 
+          { 
+            headers: { 
+              token: getCookie("token"), 
+              Authorization: getCookie("Authorization") 
+            },
+            signal: abortController.signal
+          }
+        );
+
+        if (!abortController.signal.aborted) {
+          const data: TimeEntry[] = timetracking.data.tasks.map((entry: any) => ({
+            id: entry.id,
+            taskName: entry.taskName,
+            startTime: entry.startTime ?? "",
+            endTime: entry.endTime ?? "",
+            duration: entry.endTime && entry.startTime ? calcDuration(entry.startTime, entry.endTime) : 0,
+            location: {
+              lat: 0,
+              lng: 0,
+              address: entry.location ?? "",
+            },
+            userId: user.id,
+            userName: user.name,
+            notes: entry.notes
+          }));
+          setTimeEntries(data);
+        }
+
+        // Fetch boards data
+        setLoadingBoards(true);
+        const boardsResponse = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`, 
+          {
+            headers: { 
+              token: getCookie("token"), 
+              Authorization: getCookie("Authorization") 
+            },
+            signal: abortController.signal
+          }
+        );
+
+        if (!abortController.signal.aborted) {
+          const boardData: Board = boardsResponse.data.board.find((b: any) => b.id == boardId);
+          setBoard(boardData);
+        }
+      } catch (error) {
+        if (!axios.isCancel(error)) {
+          console.error("Error fetching data:", error);
+        }
+      } finally {
+        if (!abortController.signal.aborted) {
+          setLoadingBoards(false);
+        }
+      }
+    };
+
+    fetchData();
+
+    return () => {
+      abortController.abort();
+    };
+  }, [id, boardId, user.id, user.name]);
+
+  // Second useEffect for time tracking status updates
+  useEffect(() => {
+    const abortController = new AbortController();
     let intervalId: NodeJS.Timeout;
+
+    const updateTimeTracking = async () => {
+      try {
+        const response = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks/status?workspaceId=${id}&boardId=${boardId}`,
+          {
+            headers: { 
+              token: getCookie("token"), 
+              Authorization: getCookie("Authorization") 
+            },
+            signal: abortController.signal
+          }
+        );
+
+        if (!abortController.signal.aborted && response.data.active) {
+          setTimeTrackingEnabled(true);
+          setTimeEntries(prev => {
+            const matchedEntry = prev.find(entry => entry.id === response.data.taskId);
+            if (!matchedEntry) return prev;
+            return [
+              { ...matchedEntry, endTime: "" },
+              ...prev.filter(entry => entry.id !== response.data.taskId)
+            ];
+          });
+        }
+      } catch (error) {
+        if (!axios.isCancel(error)) {
+          console.error("Error fetching time tracking status:", error);
+        }
+      }
+    };
+
     if (timeTrackingEnabled) {
-      getTimeTrackingStatus();
+      updateTimeTracking();
       
       intervalId = setInterval(() => {
-        setTimeEntries(prev => {
-          const activeEntry = prev.find(entry => !entry.endTime);
-          if (!activeEntry) return prev;
+        if (!abortController.signal.aborted) {
+          setTimeEntries(prev => {
+            const activeEntry = prev.find(entry => !entry.endTime);
+            if (!activeEntry) return prev;
 
-          const updatedEntry = {
-            ...activeEntry,
-            duration: Math.floor((new Date().getTime() - new Date(activeEntry.startTime).getTime()) / 60000)
-          };
-
-          return [updatedEntry, ...prev.filter(entry => entry.endTime)];
-        });
+            return [
+              {
+                ...activeEntry,
+                duration: Math.floor((new Date().getTime() - new Date(activeEntry.startTime).getTime()) / 60000)
+              },
+              ...prev.filter(entry => entry.endTime)
+            ];
+          });
+        }
       }, 1000);
     }
-    return () => clearInterval(intervalId);
-  }, [timeTrackingEnabled]);
+
+    return () => {
+      abortController.abort();
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [timeTrackingEnabled, id, boardId]);
 
   if (!workspace || !board) {
     return null;
