@@ -18,7 +18,6 @@ export const isTokenValid = async (token: string, signal: AbortSignal): Promise<
             signal 
         });
 
-        console.log(response)
         return response;
     } catch (error) {
         if (axios.isCancel(error)) {
