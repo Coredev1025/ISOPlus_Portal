@@ -13,6 +13,7 @@ import webhookRoutes from './routes/webhook.js';
 import auditTrailRouters from './routes/audittrail.js';
 import PdfRouters from './routes/pdfLink.js';
 import HealthCheckRouters from './routes/heathcheck.js';
+import { startXeroWorker } from './services/serviceWorker.js';
 dotenv.config();
 
 const app = express();
@@ -46,4 +47,5 @@ mongoose.connect(process.env.MONGODB_URI)
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+  startXeroWorker();
 });

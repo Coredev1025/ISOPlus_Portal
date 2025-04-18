@@ -204,7 +204,7 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
 
 router.post('/xero/connect', authenticateToken, async (req, res) => {
   try {
-    const { workspaceId, clientId, clientSecret, tokens } = req.body;
+    const { workspaceId, tokens } = req.body;
 
     let business = await Business.findOne({ workspaceId });
     if (!business) {
