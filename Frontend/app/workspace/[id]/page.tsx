@@ -94,8 +94,7 @@ function SuggestionDialog({ isOpen, onClose, onConfirm, suggestion, reason }: Su
 export default function WorkspaceDetail() {
   const router = useRouter();
   const pathname = usePathname();
-  const { workspaces } = useAppContext();
-  
+  const { workspaces, user } = useAppContext();
   const id = pathname.split('/').pop();
   const workspace = workspaces.find(workspace => workspace.id.toString() === id);
   const [boards, setBoards] = useState<Board[]>([]);
@@ -230,79 +229,83 @@ export default function WorkspaceDetail() {
           </Card>
 
           {/* Workspace Actions */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <Card className="p-6 space-y-4 card-hover">
-              <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
-                <Building2 className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <h2 className="text-xl font-semibold">Business Configuration</h2>
-                <p className="text-muted-foreground mb-4 text-sm">
-                  Manage your business details, address, and tax information
-                </p>
-                <Button
-                  onClick={() => router.push(`/workspace/${workspace?.id}/configure-business`)}
-                  className="w-full button-hover"
-                >
-                  Configure Business
-                </Button>
-              </div>
-            </Card>
+          {
+            (user.role == "admin" || workspace?.user_role == "owner" || workspace?.user_role == "admin") && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <Card className="p-6 space-y-4 card-hover">
+                  <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                    <Building2 className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold">Business Configuration</h2>
+                    <p className="text-muted-foreground mb-4 text-sm">
+                      Manage your business details, address, and tax information
+                    </p>
+                    <Button
+                      onClick={() => router.push(`/workspace/${workspace?.id}/configure-business`)}
+                      className="w-full button-hover"
+                    >
+                      Configure Business
+                    </Button>
+                  </div>
+                </Card>
 
-            <Card className="p-6 space-y-4 card-hover">
-              <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
-                <FileSpreadsheet className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <h2 className="text-xl font-semibold">Xero Integration</h2>
-                <p className="text-muted-foreground mb-4 text-sm">
-                  Connect and manage your Xero accounting integration
-                </p>
-                <Button
-                  onClick={() => router.push(`/workspace/${workspace?.id}/xero-integration`)}
-                  className="w-full button-hover"
-                >
-                  Setup Xero
-                </Button>
-              </div>
-            </Card>
+                <Card className="p-6 space-y-4 card-hover">
+                  <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                    <FileSpreadsheet className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold">Xero Integration</h2>
+                    <p className="text-muted-foreground mb-4 text-sm">
+                      Connect and manage your Xero accounting integration
+                    </p>
+                    <Button
+                      onClick={() => router.push(`/workspace/${workspace?.id}/xero-integration`)}
+                      className="w-full button-hover"
+                    >
+                      Setup Xero
+                    </Button>
+                  </div>
+                </Card>
 
-            <Card className="p-6 space-y-4 card-hover">
-              <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
-                <FileText className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <h2 className="text-xl font-semibold">PDF Output</h2>
-                <p className="text-muted-foreground mb-4 text-sm">
-                  Configure PDF generation and digital signature options
-                </p>
-                <Button
-                  onClick={() => router.push(`/workspace/${workspace?.id}/pdf-output`)}
-                  className="w-full button-hover"
-                >
-                  Setup PDF Output
-                </Button>
-              </div>
-            </Card>
+                <Card className="p-6 space-y-4 card-hover">
+                  <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold">PDF Output</h2>
+                    <p className="text-muted-foreground mb-4 text-sm">
+                      Configure PDF generation and digital signature options
+                    </p>
+                    <Button
+                      onClick={() => router.push(`/workspace/${workspace?.id}/pdf-output`)}
+                      className="w-full button-hover"
+                    >
+                      Setup PDF Output
+                    </Button>
+                  </div>
+                </Card>
 
-            <Card className="p-6 space-y-4 card-hover">
-              <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
-                <History className="h-6 w-6 text-primary" />
+                <Card className="p-6 space-y-4 card-hover">
+                  <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                    <History className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold">Audit Trail</h2>
+                    <p className="text-muted-foreground mb-4 text-sm">
+                      Track all activities and changes in your workspace
+                    </p>
+                    <Button
+                      onClick={() => router.push(`/workspace/${workspace?.id}/audit-trail`)}
+                      className="w-full button-hover"
+                    >
+                      View Audit Trail
+                    </Button>
+                  </div>
+                </Card>
               </div>
-              <div>
-                <h2 className="text-xl font-semibold">Audit Trail</h2>
-                <p className="text-muted-foreground mb-4 text-sm">
-                  Track all activities and changes in your workspace
-                </p>
-                <Button
-                  onClick={() => router.push(`/workspace/${workspace?.id}/audit-trail`)}
-                  className="w-full button-hover"
-                >
-                  View Audit Trail
-                </Button>
-              </div>
-            </Card>
-          </div>
+            )
+          }
 
           {/* Boards List */}
           <Card className="p-6 shadow-lg">

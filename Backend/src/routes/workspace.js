@@ -3,12 +3,12 @@ import { authenticateToken } from '../middleware/auth.js';
 import Workspace from '../models/Workspace.js';
 import AuditTrail from '../models/AuditTrail.js';
 import { info, error } from '../utils/logger.js';
-import { getWorkspace, getBoard } from '../services/isoplus.js';
+import { getMyWorkspace, getBoard } from '../services/isoplus.js';
 
 const router = express.Router();
 
 router.get('/', authenticateToken, async (req, res) => {
-  const response = await getWorkspace(req.headers['authorization']);
+  const response = await getMyWorkspace(req.headers['authorization']);
 
   if (response.status === 200) {
     res.status(200).json({ workspace: response.workspace });

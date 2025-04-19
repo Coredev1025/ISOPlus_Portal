@@ -38,6 +38,30 @@ export async function getWorkspace(authorization) {
     }
 }
 
+export async function getMyWorkspace(authorization) {
+    try {
+        const url = "https://app.isoplus.online/api/me/workspaces";
+
+        const headers = {
+            Authorization: authorization,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+        };
+
+        let workspace = [];
+
+        const response = await axios.get(url, { headers })
+        if (response.status === 200) {
+            workspace = workspace.concat(response.data);
+        } else {
+            return { message: 'Error fetching workspaces', status: 500 };
+        }
+        return { workspace: workspace, status: 200 };
+    } catch (err) {
+        return { message: 'Server error', status: 500 };
+    }
+}
+
 export async function getBoard(authorization, workspaceId) {
     try {
         const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards`;
@@ -243,7 +267,7 @@ export async function getReferences(workspaceId, boardId, itemId) {
         };
 
         const result = await axios.get(url, { headers });
-        return result.status === 200 ? result.data: null;
+        return result.status === 200 ? result.data : null;
     } catch (err) {
         console.error("Error getting references:", err);
         return null;
