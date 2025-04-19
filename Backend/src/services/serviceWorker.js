@@ -1,16 +1,16 @@
 import schedule from 'node-schedule';
 import Business from '../models/Business.js';
 import { info, error } from '../utils/logger.js';
+import { configure, refreshTokenSet } from '../services/xero.js';
 
 export const getXeroIntegratedBusinesses = async (current) => {
     try {
         const businesses = await Business.find({
             xeroIntegrated: true,
             'xeroTokens.accessToken': { $exists: true },
-            'xeroTokens.expiresAt': { $lt: Date.now() - 4320000}
+            'xeroTokens.expiresAt': { $lt: Date.now() - 4320000 }
         });
 
-        console.log(businesses);
         info(`Found ${businesses.length} Xero integrated businesses`);
         return businesses;
     } catch (err) {
@@ -33,8 +33,30 @@ export function startXeroWorker() {
 
             // Perform operations for each business
             for (const business of businesses) {
-                info(`Processing business: ${business.name}`);
-                // Add your business-specific logic here
+                await configure();
+                const newTokenSet = await refreshTokenSet({
+                    access_token: business.xeroTokens.accessToken,
+                    refresh_token: business.xeroTokens.refreshToken,
+                    expires_at: Date.now() / 1000 + 300, // Set a new expiration time
+                    token_type: 'Bearer'
+                });
+
+                const updateData = {
+                    access_token: newTokenSet.access_token,
+                    refresh_token: newTokenSet.refresh_token,
+                    expires_at: newTokenSet.expires_at,
+                };
+
+                Business.updateOne(
+                    { _id: business._id },
+                    {
+                        $set: {
+                            xeroTokens: {
+                                ...updateData
+                            }
+                        }
+                    }
+                );
             }
 
             info('Successfully completed Xero daily sync');
