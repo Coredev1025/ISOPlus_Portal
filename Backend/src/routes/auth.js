@@ -210,12 +210,13 @@ router.post('/oauth-login', async (req, res) => {
         password: "",
         oauthId: oauthData.id,
         avatar: oauthData.photo_url,
+        role: oauthData.data?.object || 'user'
       });
       await user.save();
     }
 
     const token = jwt.sign(
-      { userId: user._id, email: user.email, role: 'user' },
+      { userId: user._id, email: user.email, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -228,7 +229,7 @@ router.post('/oauth-login', async (req, res) => {
         email: user.email,
         name: user.name,
         avatar: user.avatar,
-        role: 'user'
+        role: user.role
       }
     });
   } catch (err) {

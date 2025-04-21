@@ -505,7 +505,7 @@ export default function Dashboard() {
           );
           setWorkspaces(response.data.workspace);
 
-          if (user.role !== 'admin' && response.data.workspace.length === 1) {
+          if (response.data.workspace.length === 1) {
             router.push(`/workspace/${response.data.workspace[0].id}`);
           }
         } catch (error) {
@@ -532,13 +532,13 @@ export default function Dashboard() {
         <Tabs defaultValue="workspaces" className="space-y-6">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
-            {user.role === "admin" && (
+            {(user.role === "admin" || user.role === "owner") && (
               <TabsTrigger value="audit" className="gap-2">
                 <History className="h-4 w-4" />
                 Global Audit Trail
               </TabsTrigger>
             )}
-            {user.role === "admin" && (
+            {(user.role === "admin" || user.role === "owner") && (
               <TabsTrigger value="logs" className="gap-2">
                 <Terminal className="h-4 w-4" />
                 Application Logs
@@ -556,13 +556,13 @@ export default function Dashboard() {
             />
           </TabsContent>
 
-          {user.role === "admin" && (
+          {(user.role === "admin" || user.role === "owner") && (
             <TabsContent value="audit">
               <GlobalAuditTrail />
             </TabsContent>
           )}
 
-          {user.role === "admin" && (
+          {(user.role === "admin" || user.role === "owner") && (
             <TabsContent value="logs">
               <GlobalApplicationLogs />
             </TabsContent>
