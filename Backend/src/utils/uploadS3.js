@@ -65,10 +65,11 @@ export const downloadFileFromS3Stream = async (key, downloadPath) => {
     }
 };
 
-export const getS3FileUrl = async (key) => {
+export const getS3FileUrl = async (key, expiration) => {
     const params = {
         Bucket: process.env.AWS_BUCKET,
         Key: key,
+        expiration: expiration || 3600
     };
 
     try {
