@@ -407,17 +407,14 @@ export default function ConfigureBusinessPage() {
 
       if (logoFile) {
         formDataToSend.append("defaultLogo", logoFile);
-        setLogoFile(null);
       }
       if (squareLogoFile) {
         formDataToSend.append("squareLogo", squareLogoFile);
-        setSquareLogoFile(null);
       }
       if (wideLogoFile) {
         formDataToSend.append("wideLogo", wideLogoFile);
-        setWideLogoFile(null);
       }
-
+      
       const response = await axios.put(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`,
         formDataToSend,
@@ -429,11 +426,14 @@ export default function ConfigureBusinessPage() {
           signal: abortController.signal
         }
       );
-
+      
       if (!abortController.signal.aborted) {
         if (response.data.status === 'success') {
           setShowError(false);
           setShowSuccess(true);
+          setLogoFile(null);
+          setSquareLogoFile(null);
+          setWideLogoFile(null);
           setTimeout(() => setShowSuccess(false), 2000);
         }
       }
