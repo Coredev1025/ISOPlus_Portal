@@ -210,7 +210,7 @@ export default function AuditTrailPage() {
                 {currentItems.map((item, index) => (
                   <TableRow key={index}>
                     <TableCell className="whitespace-nowrap">
-                      {new Date(item.timestamp).toLocaleString()}
+                      {item.timestamp}
                     </TableCell>
                     <TableCell>{item.action}</TableCell>
                     <TableCell>{item.user}</TableCell>
