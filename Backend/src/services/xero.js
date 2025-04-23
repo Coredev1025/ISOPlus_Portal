@@ -1,4 +1,5 @@
 import { XeroClient } from 'xero-node';
+import Business from '../models/Business.js';
 import { info, error } from '../utils/logger.js';
 
 let xeroClient = null;
@@ -143,7 +144,7 @@ export async function createInvoice(invoice) {
         return response.body.invoices[0];
     } catch (err) {
         error('Invoice creation failed:', err);
-        
+
         if (err.response?.statusCode === 403) {
             throw new Error('Authentication failed. Please re-authenticate.');
         }
@@ -244,14 +245,14 @@ export async function findOrCreateItem(itemCode, itemName) {
 
     } catch (err) {
         error('Item operation failed:', err);
-        
+
         if (err.response?.statusCode === 403) {
             throw new Error('Missing accounting.settings scope');
         }
         if (err.message.includes('toISOString')) {
             throw new Error('Invalid date parameter in API request');
         }
-        
+
         throw new Error(`Item operation failed: ${err.message}`);
     }
 }
@@ -351,21 +352,16 @@ export async function ensureAuthenticated(accessToken, refreshToken, expiresAt) 
         access_token: accessToken,
         refresh_token: refreshToken,
         expires_at: expiresAt,
-        token_type: 'Bearer'
+        token_type: 'Bearer',
+        scopes: 'openid profile email accounting.settings accounting.contacts accounting.transactions accounting.reports.read accounting.attachments offline_access'.split(" "),
     });
 
     const currentTokenSet = xeroClient.readTokenSet();
-    // Check if token is expired or about to expire
-    if (currentTokenSet && currentTokenSet.expires_at) {
-        const now = Math.floor(Date.now() / 1000);
-        if (currentTokenSet.expires_at < now - 300) { // Changed tokenSet to currentTokenSet
+    if (currentTokenSet) {
+        if (currentTokenSet.expired() && currentTokenSet.refresh_token) {
             try {
-                await refreshTokenSet({
-                    access_token: accessToken,
-                    refresh_token: refreshToken,
-                    expires_at: Date.now() / 1000 + 300, // Set a new expiration time
-                    token_type: 'Bearer'
-                });
+                const newTokenSet = await xeroClient.refreshWithRefreshToken(process.env.XERO_CLIENT_ID, process.env.XERO_CLIENT_SECRET, currentTokenSet.refresh_token);
+                await Business.updateOne({ 'xeroTokens.accessToken': accessToken, 'xeroTokens.refreshToken': refreshToken }, { $set: { 'xeroTokens.accessToken': newTokenSet.access_token, 'xeroTokens.refreshToken': newTokenSet.refresh_token, 'xeroTokens.expiresAt': newTokenSet.expires_at } })
             } catch (refreshError) {
                 error('Error refreshing token', refreshError);
                 throw new Error('Your Xero authorization token is expired. Please go to ISOPlus Portal and authorize again.');
