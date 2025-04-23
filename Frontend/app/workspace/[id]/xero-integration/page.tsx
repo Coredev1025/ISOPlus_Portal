@@ -34,11 +34,13 @@ export default function XeroIntegrationPage() {
 
         if (!abortController.signal.aborted) {
           if (response.data.xeroIntegrated) {
-            if (response.data.xeroTokens.expiresAt * 1000 < Date.now()) {
+            if ((response.data.xeroTokens.expiresAt + 60 * 60 * 24 * 60 - 30 * 60) * 1000 > Date.now()) {
               setIsExpired(true);
+            } else {
+              setIsExpired(false);
             }
-            setIsConnected(true);
           }
+          setIsConnected(response.data.xeroIntegrated);
         }
       } catch (error) {
         if (!axios.isCancel(error)) {
@@ -275,7 +277,7 @@ export default function XeroIntegrationPage() {
                   onClick={handleReconnectXero}
                 >
                   <FileSpreadsheet className="h-5 w-5" />
-                  Reconnect from Xero
+                  Reconnect to Xero
                 </Button>
               )
             ) : (
