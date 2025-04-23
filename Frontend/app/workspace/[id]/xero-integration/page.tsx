@@ -14,7 +14,6 @@ export default function XeroIntegrationPage() {
   const id = pathname.split("/")[2];
   const [resultContent, setResultContent] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isExpired, setIsExpired] = useState(false);
 
@@ -34,7 +33,7 @@ export default function XeroIntegrationPage() {
 
         if (!abortController.signal.aborted) {
           if (response.data.xeroIntegrated) {
-            if ((response.data.xeroTokens.expiresAt + 60 * 60 * 24 * 60 - 30 * 60) * 1000 > Date.now()) {
+            if ((response.data.xeroTokens.expiresAt + 60 * 60 * 24 * 60 - 30 * 60) * 1000 < Date.now()) {
               setIsExpired(true);
             } else {
               setIsExpired(false);
@@ -97,7 +96,6 @@ export default function XeroIntegrationPage() {
                 }
               );
               setIsConnected(true);
-              setAccessToken(event.data.tokenSet.access_token);
               setResultContent('Successfully connected to Xero!');
             } else {
               setResultContent('Error completing Xero connection. Please try again.');
@@ -193,7 +191,6 @@ export default function XeroIntegrationPage() {
                 }
               );
               setIsConnected(true);
-              setAccessToken(event.data.tokenSet.access_token);
               setResultContent('Successfully connected to Xero!');
             } else {
               setResultContent('Error completing Xero connection. Please try again.');

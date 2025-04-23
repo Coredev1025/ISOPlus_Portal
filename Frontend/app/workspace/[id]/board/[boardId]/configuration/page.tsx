@@ -93,7 +93,7 @@ export default function ConfigurationPage() {
   const id = pathname.split("/")[2];
   const boardId = pathname.split("/")[4];
   const { workspaces } = useAppContext();
-  const [boards, setBoards] = useState<Board[]>([]);
+  const [board, setBoard] = useState<Board>();
   const [selectedAttribute, setSelectedAttribute] = useState<string>("");
   const [boardLabel, setBoardLabel] = useState<BoardLabel>('None');
   const [isoAttributes, setIsoAttributes] = useState<ISOAttribute[]>([]);
@@ -107,12 +107,11 @@ export default function ConfigurationPage() {
     reason: ''
   });
 
-
   useEffect(() => {
     const abortController = new AbortController();
 
     const fetchAttributes = async () => {
-      if (boards.length > 0) {
+      if (!board) {
         try {
           const response = await axios.get(
             `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards/attribute?workspaceId=${id}&boardId=${boardId}`,
@@ -133,7 +132,6 @@ export default function ConfigurationPage() {
           });
           console.log("Formatted Attributes:", formattedAttributes);
           setIsoAttributes([...formattedAttributes]);
-          setSelectedAttribute(board?.attributeId || '');
         } catch (error) {
           if (!axios.isCancel(error)) {
             console.error("Error fetching attributes:", error);
@@ -147,16 +145,16 @@ export default function ConfigurationPage() {
     return () => {
       abortController.abort();
     };
-  }, [boards, boardId]);
+  }, [boardId]);
 
   useEffect(() => {
     const abortController = new AbortController();
 
     const fetchBoards = async () => {
-      if (boards.length === 0) {
+      if (!board) {
         try {
-          const response = await axios.get(
-            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`,
+          const boardResponse = await axios.get(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${boardId}`,
             {
               headers: {
                 token: getCookie("token"),
@@ -165,38 +163,17 @@ export default function ConfigurationPage() {
               signal: abortController.signal
             }
           );
-
-          const data: Board[] = await Promise.all(
-            response.data.board.map(async (board: any) => {
-              try {
-                const boardResponse = await axios.get(
-                  `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`,
-                  {
-                    headers: {
-                      token: getCookie("token"),
-                      Authorization: getCookie("Authorization")
-                    },
-                    signal: abortController.signal
-                  }
-                );
-                const boardData = { ...board, label: boardResponse.data.board.label || 'None', attributeId: boardResponse.data.board.attribute.id };
-                if (board.id === boardId) {
-                  setBoardLabel(boardData.label as BoardLabel);
-                }
-                return boardData;
-              } catch (error) {
-                if (!axios.isCancel(error)) {
-                  console.error("Error fetching board:", error);
-                }
-                return { ...board, label: 'None', attributeId: '' };
-              }
-            })
-          );
-          setBoards(data);
+          const boardData = { id: boardId, name: boardResponse.data.board.name, label: boardResponse.data.board.label || 'None', attributeId: boardResponse.data.board.attribute.id || '' };
+          setBoard(boardData);
+          setSelectedAttribute(boardResponse.data.board.attribute.id || '');
+          setBoardLabel(boardResponse.data.board.label || 'None');
         } catch (error) {
           if (!axios.isCancel(error)) {
-            console.error("Error fetching boards:", error);
+            console.error("Error fetching board:", error);
           }
+          setBoard({ id: boardId, name: '', label: 'None', attributeId: '' });
+          setSelectedAttribute('');
+          return;
         }
       }
     };
@@ -206,10 +183,9 @@ export default function ConfigurationPage() {
     return () => {
       abortController.abort();
     };
-  }, [id, boardId, boards.length]);
+  }, [id, boardId]);
 
   const workspace = workspaces.find(workspace => workspace.id.toString() === id);
-  const board = boards.find(b => b.id === boardId);
 
   if (!workspace || !board) {
     return null;
