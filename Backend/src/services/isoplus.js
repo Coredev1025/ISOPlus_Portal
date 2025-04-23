@@ -101,11 +101,11 @@ export async function getBoard(authorization, workspaceId) {
     }
 }
 
-export async function getFolder(authorization, workspaceId, boardId) {
+export async function getFolder(workspaceId, boardId) {
     try {
         const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/folders/`;
         const headers = {
-            "Authorization": authorization || `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
             "Content-Type": "application/json",
             "Accept": "application/json",
             "X-API-Version": "2025-02-26.morava",
@@ -140,11 +140,11 @@ export async function getFolder(authorization, workspaceId, boardId) {
     }
 }
 
-export async function getItem(authorization, workspaceId, boardId, folderId) {
+export async function getItem(workspaceId, boardId, folderId) {
     try {
         const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/`;
         const headers = {
-            "Authorization": authorization || `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
             "Content-Type": "application/json",
             "Accept": "application/json",
             "X-API-Version": "2025-02-26.morava",
@@ -181,9 +181,9 @@ export async function getItem(authorization, workspaceId, boardId, folderId) {
     }
 }
 
-export async function putInternalMessage(authorization, workspaceId, boardId, itemId, message) {
+export async function putInternalMessage(workspaceId, boardId, itemId, message) {
     try {
-        const board = Board.find({boardId});
+        const board = await Board.findOne({ boardId });
         await axios.put(
             `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
             {
@@ -196,7 +196,7 @@ export async function putInternalMessage(authorization, workspaceId, boardId, it
             },
             {
                 headers: {
-                    "Authorization": authorization || `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+                    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
                     "Content-Type": "application/json",
                     "Accept": "application/json",
                     "X-API-Version": "2025-02-26.morava",
@@ -210,7 +210,7 @@ export async function putInternalMessage(authorization, workspaceId, boardId, it
     }
 }
 
-export function putTimeTracking(authorization, workspaceId, boardId, itemId, startTime, endTime) {
+export function putTimeTracking(workspaceId, boardId, itemId, startTime, endTime) {
     axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`, {
         "values": [
             {
@@ -223,7 +223,7 @@ export function putTimeTracking(authorization, workspaceId, boardId, itemId, sta
         ],
     }, {
         headers: {
-            "Authorization": authorization || `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
             "Content-Type": "application/json",
             "Accept": "application/json",
             "X-API-Version": "2025-02-26.morava",
@@ -232,11 +232,11 @@ export function putTimeTracking(authorization, workspaceId, boardId, itemId, sta
     return true;
 };
 
-export async function getItemValues(authorization, workspaceId, boardId, itemId) {
+export async function getItemValues(workspaceId, boardId, itemId) {
     try {
         const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}?expand[]=values.attribute`;
         const headers = {
-            "Authorization": authorization || `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
             "Content-Type": "application/json",
             "Accept": "application/json",
             "X-API-Version": "2025-02-26.morava",
@@ -250,8 +250,8 @@ export async function getItemValues(authorization, workspaceId, boardId, itemId)
     }
 }
 
-export async function validateItemBelongsToTenant(authorization, workspaceId, boardId, itemId) {
-    const validatedItemOwnership = await getItemValues(authorization, workspaceId, boardId, itemId);
+export async function validateItemBelongsToTenant(workspaceId, boardId, itemId) {
+    const validatedItemOwnership = await getItemValues(workspaceId, boardId, itemId);
     if (!validatedItemOwnership) {
         const errorMessage = "CRITICAL: Item does not exist. This may be a result of an intrusion attempt or misconfiguration of the tenant!";
         console.warn(errorMessage);
@@ -259,11 +259,11 @@ export async function validateItemBelongsToTenant(authorization, workspaceId, bo
     }
 }
 
-export async function getReferences(authorization, workspaceId, boardId, itemId) {
+export async function getReferences(workspaceId, boardId, itemId) {
     try {
         const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/references?from_item_id=${itemId}`;
         const headers = {
-            "Authorization": authorization || `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
             "Content-Type": "application/json",
             "Accept": "application/json"
         };
@@ -276,11 +276,11 @@ export async function getReferences(authorization, workspaceId, boardId, itemId)
     }
 }
 
-export async function getAttribute(authorization, workspaceId, boardId, attributeId) {
+export async function getAttribute(workspaceId, boardId, attributeId) {
     try {
         const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/attributes/${attributeId}`;
         const headers = {
-            "Authorization": authorization || `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
             "Content-Type": "application/json",
             "Accept": "application/json",
             "X-API-Version": "2025-02-26.morava",
@@ -294,20 +294,20 @@ export async function getAttribute(authorization, workspaceId, boardId, attribut
     }
 }
 
-export async function getJobReportingReferencedItems(authorization, workspaceId, boardId, itemId) {
+export async function getJobReportingReferencedItems(workspaceId, boardId, itemId) {
     let serviceFeeTypeValues = null;
     let jobPlanningValues = null;
 
-    const referenceResponse = await getReferences(authorization, workspaceId, boardId, itemId);
+    const referenceResponse = await getReferences(workspaceId, boardId, itemId);
     if (!referenceResponse) return [null, null];
 
     for (const reference of referenceResponse.data) {
-        const attribute = await getAttribute(authorization, workspaceId, boardId, reference.attribute_id);
+        const attribute = await getAttribute(workspaceId, boardId, reference.attribute_id);
         if (!attribute) continue;
 
         switch (attribute.name) {
             case "Job Number": {
-                const jobPlanningItemValues = await getItemValues(authorization, workspaceId, boardId, reference.to_item_id);
+                const jobPlanningItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
                 if (jobPlanningItemValues) {
                     const values = jobPlanningItemValues.values;
                     if (!values.some(v => v.attribute.name === "Job Number")) {
@@ -330,7 +330,7 @@ export async function getJobReportingReferencedItems(authorization, workspaceId,
                 break;
             }
             case "Service Fee Type": {
-                const serviceFeeTypeItemValues = await getItemValues(authorization, workspaceId, boardId, reference.to_item_id);
+                const serviceFeeTypeItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
                 if (serviceFeeTypeItemValues) {
                     const values = serviceFeeTypeItemValues.values;
                     if (!values.some(v => v.attribute.name === "Fee Type")) {
@@ -350,20 +350,20 @@ export async function getJobReportingReferencedItems(authorization, workspaceId,
     return [jobPlanningValues, serviceFeeTypeValues];
 }
 
-export async function getJobPlanningReferencedItems(authorization, workspaceId, boardId, itemId) {
+export async function getJobPlanningReferencedItems(workspaceId, boardId, itemId) {
     let contactValues = null;
     let jobTypeValues = null;
 
-    const referenceResponse = await getReferences(authorization, workspaceId, boardId, itemId);
+    const referenceResponse = await getReferences(workspaceId, boardId, itemId);
     if (!referenceResponse) return [null, null];
 
     for (const reference of referenceResponse.data) {
-        const attribute = await getAttribute(authorization, workspaceId, boardId, reference.attribute_id);
+        const attribute = await getAttribute(workspaceId, boardId, reference.attribute_id);
         if (!attribute) continue;
 
         switch (attribute.name) {
             case "Client": {
-                const clientItemValues = await getItemValues(authorization, workspaceId, boardId, reference.to_item_id);
+                const clientItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
                 if (clientItemValues) {
                     const values = clientItemValues.values;
                     if (!values.some(v => v.attribute.name === "Client")) {
@@ -415,7 +415,7 @@ export async function getJobPlanningReferencedItems(authorization, workspaceId, 
                 break;
             }
             case "Job Type": {
-                const jobTypeItemValues = await getItemValues(authorization, workspaceId, boardId, reference.to_item_id);
+                const jobTypeItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
                 if (jobTypeItemValues) {
                     const values = jobTypeItemValues.values;
                     if (!values.some(v => v.attribute.name === "Job Type")) {
@@ -438,20 +438,20 @@ export async function getJobPlanningReferencedItems(authorization, workspaceId, 
     return [contactValues, jobTypeValues];
 }
 
-export async function getQuoteReferencedItems(authorization, workspaceId, boardId, itemId) {
+export async function getQuoteReferencedItems(workspaceId, boardId, itemId) {
     let contactValues = null;
     let jobTypeValues = null;
 
-    const referenceResponse = await getReferences(authorization, workspaceId, boardId, itemId);
+    const referenceResponse = await getReferences(workspaceId, boardId, itemId);
     if (!referenceResponse) return [null, null];
 
     for (const reference of referenceResponse.data) {
-        const attribute = await getAttribute(authorization, workspaceId, boardId, reference.attribute_id);
+        const attribute = await getAttribute(workspaceId, boardId, reference.attribute_id);
         if (!attribute) continue;
 
         switch (attribute.name) {
             case "Client": {
-                const clientItemValues = await getItemValues(authorization, workspaceId, boardId, reference.to_item_id);
+                const clientItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
                 if (clientItemValues) {
                     const values = clientItemValues.values;
                     if (!values.some(v => v.attribute.name === "Client")) {
@@ -503,7 +503,7 @@ export async function getQuoteReferencedItems(authorization, workspaceId, boardI
                 break;
             }
             case "Job Type": {
-                const jobTypeItemValues = await getItemValues(authorization, workspaceId, boardId, reference.to_item_id);
+                const jobTypeItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
                 if (jobTypeItemValues) {
                     const values = jobTypeItemValues.values;
                     if (!values.some(v => v.attribute.name === "Job Type")) {
@@ -526,20 +526,20 @@ export async function getQuoteReferencedItems(authorization, workspaceId, boardI
     return [contactValues, jobTypeValues];
 }
 
-export async function getPurchaseOrderReferencedItems(authorization, workspaceId, boardId, itemId) {
+export async function getPurchaseOrderReferencedItems(workspaceId, boardId, itemId) {
     let contractorValues = null;
     let jobTypeValues = null;
 
-    const referenceResponse = await getReferences(authorization, workspaceId, boardId, itemId);
+    const referenceResponse = await getReferences(workspaceId, boardId, itemId);
     if (!referenceResponse) return [null, null];
 
     for (const reference of referenceResponse.data) {
-        const attribute = await getAttribute(authorization, workspaceId, boardId, reference.attribute_id);
+        const attribute = await getAttribute(workspaceId, boardId, reference.attribute_id);
         if (!attribute) continue;
 
         switch (attribute.name) {
             case "Contractor": {
-                const supplierItemValues = await getItemValues(authorization, workspaceId, boardId, reference.to_item_id);
+                const supplierItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
                 if (supplierItemValues) {
                     const values = supplierItemValues.values;
                     if (!values.some(v => v.attribute.name === "Contractor")) {
@@ -591,7 +591,7 @@ export async function getPurchaseOrderReferencedItems(authorization, workspaceId
                 break;
             }
             case "Job Type": {
-                const jobTypeItemValues = await getItemValues(authorization, workspaceId, boardId, reference.to_item_id);
+                const jobTypeItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
                 if (jobTypeItemValues) {
                     const values = jobTypeItemValues.values;
                     if (!values.some(v => v.attribute.name === "Job Type")) {
@@ -614,11 +614,11 @@ export async function getPurchaseOrderReferencedItems(authorization, workspaceId
     return [contractorValues, jobTypeValues];
 }
 
-export async function getBoardAttributes(authorization, workspaceId, boardId) {
+export async function getBoardAttributes(workspaceId, boardId) {
     try {
         const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/attributes`;
         const headers = {
-            "Authorization": authorization || `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
             "Content-Type": "application/json",
             "Accept": "application/json",
         };
@@ -652,9 +652,9 @@ export async function getBoardAttributes(authorization, workspaceId, boardId) {
     }
 }
 
-export async function setIntegrationMessage(authorization, workspaceId, boardId, itemId, message) {
+export async function setIntegrationMessage(workspaceId, boardId, itemId, message) {
     try {
-        const response = await putInternalMessage(authorization, workspaceId, boardId, itemId, message);
+        const response = await putInternalMessage(workspaceId, boardId, itemId, message);
         if (!response) {
             throw new Error("Failed to update item with integration message");
         }

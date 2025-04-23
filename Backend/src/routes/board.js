@@ -70,7 +70,7 @@ router.put('/', authenticateToken, async (req, res) => {
 
 router.get('/attribute', authenticateToken, async (req, res) => {
     try {
-        const attributes = await getBoardAttributes(req.headers.authorization, req.query.workspaceId, req.query.boardId);
+        const attributes = await getBoardAttributes(req.query.workspaceId, req.query.boardId);
         const data = attributes.attribute.filter(item => item.type == "text" || item.type == "longtext");
         if (!data) {
             warn('Board-Service', 'Failed fetching board attribute data', { boardId: req.query.boardId }, req);
