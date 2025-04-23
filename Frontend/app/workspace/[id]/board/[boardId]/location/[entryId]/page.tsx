@@ -146,7 +146,8 @@ export default function LocationDetailPage() {
   };
 
   // Format date for display
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return "Ongoing";
     const date = new Date(dateString);
     return date.toLocaleString();
   };
@@ -227,7 +228,7 @@ export default function LocationDetailPage() {
                         <span className="font-medium">Start:</span> {formatDate(timeEntry.startTime)}
                       </div>
                       <div>
-                        <span className="font-medium">End:</span> {timeEntry.endTime ? formatDate(timeEntry.endTime) : "Ongoing"}
+                      <span className="font-medium">End:</span> {formatDate(timeEntry.endTime)}
                       </div>
                     </div>
                   </div>
