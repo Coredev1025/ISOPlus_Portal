@@ -33,49 +33,10 @@ import { getCookie } from "@/app/utils/cookies";
 type AttributeType = "Text" | "Long Text";
 
 interface ISOAttribute {
+  id: string;
   name: string;
-  type: AttributeType; // Using the literal union type
-  description: string;
+  type: AttributeType;
 }
-
-// Define the attributes array with explicit typing
-const isoAttributes: readonly ISOAttribute[] = [
-  {
-    name: "Integration Message",
-    type: "Long Text" as const,
-    description: "Used for integration status updates and error messages"
-  },
-  {
-    name: "Intended Use",
-    type: "Text" as const,
-    description: "Specifies the intended use of the item or service"
-  },
-  {
-    name: "Job Type",
-    type: "Text" as const,
-    description: "Categorizes the type of job or service"
-  },
-  {
-    name: "Processing Status",
-    type: "Text" as const,
-    description: "Current status of automated processing"
-  },
-  {
-    name: "Service Category",
-    type: "Text" as const,
-    description: "Category of service being provided"
-  },
-  {
-    name: "System Notes",
-    type: "Long Text" as const,
-    description: "System-generated notes and processing details"
-  },
-  {
-    name: "Workflow Stage",
-    type: "Text" as const,
-    description: "Current stage in the workflow process"
-  }
-].sort((a, b) => a.name.localeCompare(b.name));
 
 type BoardLabel = 'Job Management' | 'Care Management' | 'None';
 
@@ -101,7 +62,8 @@ interface SuggestionDialogProps {
 interface Board {
   id: string;
   name: string;
-  label: string
+  label: string;
+  attributeId: string;
 }
 
 function SuggestionDialog({ isOpen, onClose, onConfirm, suggestion, reason }: SuggestionDialogProps) {
@@ -134,6 +96,7 @@ export default function ConfigurationPage() {
   const [boards, setBoards] = useState<Board[]>([]);
   const [selectedAttribute, setSelectedAttribute] = useState<string>("");
   const [boardLabel, setBoardLabel] = useState<BoardLabel>('None');
+  const [isoAttributes, setIsoAttributes] = useState<ISOAttribute[]>([]);
   const [suggestionDialog, setSuggestionDialog] = useState<{
     isOpen: boolean;
     suggestion: BoardLabel;
@@ -143,6 +106,48 @@ export default function ConfigurationPage() {
     suggestion: 'None',
     reason: ''
   });
+
+
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    const fetchAttributes = async () => {
+      if (boards.length > 0) {
+        try {
+          const response = await axios.get(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards/attribute?workspaceId=${id}&boardId=${boardId}`,
+            {
+              headers: {
+                token: getCookie("token"),
+                Authorization: getCookie("Authorization")
+              },
+              signal: abortController.signal
+            }
+          );
+
+          const attributes = response.data.attributes;
+          const formattedAttributes = attributes.map((attr: any) => {
+            return {
+              id: attr.id, name: attr.name, type: attr.type == "text" ? "Text" : "Long Text"
+            }
+          });
+          console.log("Formatted Attributes:", formattedAttributes);
+          setIsoAttributes([...formattedAttributes]);
+          setSelectedAttribute(board?.attributeId || '');
+        } catch (error) {
+          if (!axios.isCancel(error)) {
+            console.error("Error fetching attributes:", error);
+          }
+        }
+      }
+    };
+
+    fetchAttributes();
+
+    return () => {
+      abortController.abort();
+    };
+  }, [boards, boardId]);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -174,7 +179,7 @@ export default function ConfigurationPage() {
                     signal: abortController.signal
                   }
                 );
-                const boardData = { ...board, label: boardResponse.data.board.label || 'None' };
+                const boardData = { ...board, label: boardResponse.data.board.label || 'None', attributeId: boardResponse.data.board.attribute.id };
                 if (board.id === boardId) {
                   setBoardLabel(boardData.label as BoardLabel);
                 }
@@ -183,7 +188,7 @@ export default function ConfigurationPage() {
                 if (!axios.isCancel(error)) {
                   console.error("Error fetching board:", error);
                 }
-                return { ...board, label: 'None' };
+                return { ...board, label: 'None', attributeId: '' };
               }
             })
           );
@@ -237,10 +242,19 @@ export default function ConfigurationPage() {
     setSuggestionDialog(prev => ({ ...prev, isOpen: false }));
   };
 
-  const handleSaveConfiguration = () => {
-    // Here you would typically save both configurations to your backend
-    console.log('Selected attribute:', selectedAttribute);
-    console.log('Board label:', boardLabel);
+  const handleSaveConfiguration = async () => {
+    const attr = isoAttributes.find(item => item.id == selectedAttribute);
+    console.log(attr?.name)
+    await axios.put(
+      `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards`,
+      { ...board, label: boardLabel, attribute: { id: selectedAttribute, name: attr?.name }, boardId, workspaceId: id },
+      {
+        headers: {
+          token: getCookie("token"),
+          Authorization: getCookie("Authorization")
+        }
+      }
+    );
   };
 
   return (
@@ -341,7 +355,7 @@ export default function ConfigurationPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {isoAttributes.map((attr) => (
-                        <SelectItem key={attr.name} value={attr.name}>
+                        <SelectItem key={attr.id} value={attr.id} defaultValue={selectedAttribute}>
                           <div className="flex items-center justify-between w-full">
                             <span>{attr.name}</span>
                             <Badge variant="outline" className="ml-2">
@@ -352,11 +366,6 @@ export default function ConfigurationPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  {selectedAttribute && (
-                    <p className="text-sm text-muted-foreground mt-2">
-                      {isoAttributes.find(attr => attr.name === selectedAttribute)?.description}
-                    </p>
-                  )}
                 </div>
               </div>
 

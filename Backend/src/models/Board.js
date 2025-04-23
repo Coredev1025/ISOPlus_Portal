@@ -24,6 +24,18 @@ const boardSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  attribute: {
+    id: {
+      type: String,
+      ref: 'Attribute Id',
+      required: false
+    },
+    name: {
+      type: String,
+      ref: 'Attribute Name',
+      required: false
+    }
+  },
   createdAt: {
     type: Date,
     default: Date.now
