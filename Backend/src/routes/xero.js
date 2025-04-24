@@ -158,7 +158,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     if (payload.items[0]) {
       await setIntegrationMessage(workspaceId, boardId, payload.items[0].id, `ERROR: ${err.message}`);
     }
-    res.status(500).json({ message: 'Error creating invoice', error: err.message });
+    res.status(200).json({ message: 'Error creating invoice', error: err.message });
   }
 });
 
@@ -243,7 +243,7 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
     if (item) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating/updating the contact. Please contact support.");
     }
-    res.status(500).json({ message: 'Error creating/updating contact', error: err.message });
+    res.status(200).json({ message: 'Error creating/updating contact', error: err.message });
   }
 });
 
@@ -328,7 +328,7 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
     if (item) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating/updating the contractor. Please contact support.");
     }
-    res.status(500).json({ message: 'Error creating/updating contractor', error: err.message });
+    res.status(200).json({ message: 'Error creating/updating contractor', error: err.message });
   }
 });
 
@@ -409,7 +409,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
 
     if (await quoteExists(quoteValues['Quote Number'])) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "WARN: A quote with the same number already exists.");
-      return res.status(400).json({ message: "A quote with the same number already exists." });
+      return res.status(200).json({ message: "A quote with the same number already exists." });
     }
 
     const createdQuote = await createQuote(quote);
@@ -421,7 +421,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     if (item) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating the quote. Please contact support.");
     }
-    res.status(500).json({ message: 'Error creating quote', error: err.message });
+    res.status(200).json({ message: 'Error creating quote', error: err.message });
   }
 });
 
@@ -504,7 +504,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
 
     if (await purchaseOrderExists(purchaseOrder.purchaseOrderNumber)) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "WARN: A purchase order with the same number already exists.");
-      return res.status(400).json({ message: "A purchase order with the same number already exists." });
+      return res.status(200).json({ message: "A purchase order with the same number already exists." });
     }
 
     const createdPurchaseOrder = await createPurchaseOrder(purchaseOrder);
@@ -516,7 +516,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     if (item) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating the purchase order. Please contact support.");
     }
-    res.status(500).json({ message: 'Error creating purchase order', error: err.message });
+    res.status(200).json({ message: 'Error creating purchase order', error: err.message });
   }
 });
 
@@ -527,7 +527,7 @@ router.get("/redirect", async (req, res) => {
     res.json({ url });
   } catch (err) {
     error('Error generating redirect URL', err);
-    res.status(500).json({ message: 'Error generating redirect URL', error: err.message });
+    res.status(200).json({ message: 'Error generating redirect URL', error: err.message });
   }
 });
 
@@ -547,7 +547,7 @@ router.get('/callback', async (req, res) => {
         `);
   } catch (err) {
     error('Error in Xero callback', err);
-    res.status(500).send(`
+    res.status(200).send(`
             <html>
                 <body>
                     <script>
@@ -568,7 +568,7 @@ router.post('/refresh', async (req, res) => {
     res.json({ tokenSet: newTokenSet });
   } catch (err) {
     error('Error refreshing token', err);
-    res.status(500).json({ message: 'Error refreshing token', error: err.message });
+    res.status(200).json({ message: 'Error refreshing token', error: err.message });
   }
 });
 
