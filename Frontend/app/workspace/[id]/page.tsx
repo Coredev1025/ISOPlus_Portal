@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Building2, FileSpreadsheet, FileText, BarChart, Wand2, Info, History } from "lucide-react";
+import { ArrowLeft, Building2, FileSpreadsheet, FileText, BarChart, Info, History } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import {
   Table,
@@ -18,24 +18,7 @@ import { useAppContext } from "@/app/context";
 import axios from "axios";
 import { getCookie } from "@/app/utils/cookies";
 import Spinner from "@/components/ui/spin";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import {
   Tooltip,
   TooltipContent,
@@ -51,45 +34,11 @@ interface Board {
 
 type BoardLabel = 'Job Management' | 'Care Management' | 'None';
 
-const BOARD_LABELS: NonNullable<BoardLabel>[] = [
-  'Job Management',
-  'Care Management'
-];
-
 const LABEL_COLORS: Record<NonNullable<BoardLabel>, string> = {
   'Job Management': 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300',
   'Care Management': 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300',
   'None': 'bg-teal-100 text-teal-800 dark:bg-lightgray-900 dark:text-lightgray-300',
 };
-
-interface SuggestionDialogProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  suggestion: string | null;
-  reason: string;
-}
-
-function SuggestionDialog({ isOpen, onClose, onConfirm, suggestion, reason }: SuggestionDialogProps) {
-  return (
-    <AlertDialog open={isOpen} onOpenChange={onClose}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Label Suggestion</AlertDialogTitle>
-          <AlertDialogDescription>
-            {reason}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel onClick={onClose}>No, keep current</AlertDialogCancel>
-          {suggestion && (
-            <AlertDialogAction onClick={onConfirm}>Yes, update label</AlertDialogAction>
-          )}
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}
 
 export default function WorkspaceDetail() {
   const router = useRouter();
@@ -99,17 +48,6 @@ export default function WorkspaceDetail() {
   const workspace = workspaces.find(workspace => workspace.id.toString() === id);
   const [boards, setBoards] = useState<Board[]>([]);
   const [loadingBoards, setLoadingBoards] = useState<boolean>(false); // Loading state for boards
-  const [suggestionDialog, setSuggestionDialog] = useState<{
-    isOpen: boolean;
-    boardId: string;
-    suggestion: BoardLabel;
-    reason: string;
-  }>({
-    isOpen: false,
-    boardId: '',
-    suggestion: 'None',
-    reason: ''
-  });
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -173,75 +111,6 @@ export default function WorkspaceDetail() {
       abortController.abort();
     };
   }, [id, boards.length]);
-
-  const handleLabelChange = async (boardId: string, newLabel: BoardLabel) => {
-    const abortController = new AbortController();
-
-    try {
-      setBoards(
-        boards?.map(board =>
-          board.id === boardId ? { ...board, label: newLabel } : board
-        ) as Board[]
-      );
-
-      await Promise.all(
-        boards?.map(async (board) => {
-          if (board.id === boardId) {
-            await axios.put(
-              `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards`,
-              { ...board, label: newLabel, boardId, workspaceId: id },
-              {
-                headers: {
-                  token: getCookie("token"),
-                  Authorization: getCookie("Authorization")
-                },
-                signal: abortController.signal
-              }
-            );
-          }
-        }) || []
-      );
-    } catch (error) {
-      if (!axios.isCancel(error)) {
-        console.error("Error updating board label:", error);
-      }
-    }
-
-    return () => {
-      abortController.abort();
-    };
-  };
-
-  const suggestLabel = (boardId: string) => {
-    const board = boards?.find(b => b.id.toString() === boardId);
-    if (!board) return;
-
-    const name = board.name.toLowerCase();
-    let suggestion: BoardLabel = 'None';
-    let reason = '';
-
-    if (name.includes('job management')) {
-      suggestion = 'Job Management';
-      reason = "Based on the board name containing 'Job Management', we suggest labeling this as a Job Management board.";
-    } else if (name.includes('care management')) {
-      suggestion = 'Care Management';
-      reason = "Based on the board name containing 'Care Management', we suggest labeling this as an Care Management board.";
-    } else {
-      reason = "We couldn't automatically determine the board type based on its name. Please select a label manually if needed.";
-    }
-
-    setSuggestionDialog({
-      isOpen: true,
-      boardId,
-      suggestion,
-      reason
-    });
-  };
-
-  const handleSuggestionConfirm = () => {
-    handleLabelChange(suggestionDialog.boardId, suggestionDialog.suggestion);
-    setSuggestionDialog(prev => ({ ...prev, isOpen: false }));
-  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -400,45 +269,16 @@ export default function WorkspaceDetail() {
                           <TableCell className="font-mono">{board.id}</TableCell>
                           <TableCell>{board.name}</TableCell>
                           <TableCell>
-                            <Select
-                              value={board.label || ""}
-                              onValueChange={(value) => handleLabelChange(board.id.toString(), value === "" ? "None" : value as BoardLabel)}
-                            >
-                              <SelectTrigger className="w-[200px]">
-                                <SelectValue>
-                                  {board.label ? (
-                                    <Badge variant="outline" className={board.label ? LABEL_COLORS[board.label as NonNullable<BoardLabel>] : ''}>
-                                      {board.label}
-                                    </Badge>
-                                  ) : (
-                                    "No Label"
-                                  )}
-                                </SelectValue>
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="None">No Label</SelectItem>
-                                {BOARD_LABELS.map((label) => (
-                                  <SelectItem key={label} value={label}>
-                                    <Badge variant="outline" className={LABEL_COLORS[label]}>
-                                      {label}
-                                    </Badge>
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            {board.label ? (
+                              <Badge variant="outline" className={board.label ? LABEL_COLORS[board.label as NonNullable<BoardLabel>] : ''}>
+                                {board.label}
+                              </Badge>
+                            ) : (
+                              "No Label"
+                            )}
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  suggestLabel(board.id.toString());
-                                }}
-                              >
-                                <Wand2 className="h-4 w-4" />
-                              </Button>
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -462,14 +302,6 @@ export default function WorkspaceDetail() {
           </Card>
         </div>
       </div>
-
-      <SuggestionDialog
-        isOpen={suggestionDialog.isOpen}
-        onClose={() => setSuggestionDialog(prev => ({ ...prev, isOpen: false }))}
-        onConfirm={handleSuggestionConfirm}
-        suggestion={suggestionDialog.suggestion}
-        reason={suggestionDialog.reason}
-      />
     </div>
   );
 }
