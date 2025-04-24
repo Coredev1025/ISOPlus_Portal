@@ -317,11 +317,8 @@ export async function purchaseOrderExists(purchaseOrderNumber) {
 
         return response.body.purchaseOrders.length > 0;
     } catch (err) {
-        if (err.response?.status === 404) {
-            return false;
-        }
         error('Error checking if purchase order exists in Xero', err);
-        throw new Error('Error checking if purchase order exists in Xero');
+        return false;
     }
 }
 
