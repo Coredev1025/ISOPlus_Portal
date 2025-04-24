@@ -203,7 +203,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 putInternalMessage(workspaceId, boardId, item.id, "Running...");
 
                 const purchaseOrderValues = item.values;
-                const templatePath = path.join(__dirname, '..', 'assets', `purchaseOrder.json`);
+                const templatePath = path.join(__dirname, '..', 'assets', `purchaseorder.json`);
                 const templateData = await fs.readFile(templatePath, 'utf8');
                 const template = JSON.parse(templateData);
                 const dueDate = new Date();
