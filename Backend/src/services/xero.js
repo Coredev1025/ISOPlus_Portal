@@ -144,12 +144,13 @@ export async function createInvoice(invoice) {
         return response.body.invoices[0];
     } catch (err) {
         error('Invoice creation failed:', err);
-
-        if (err.response?.statusCode === 403) {
+        let jsonString = Object.values(err).join('');
+        let errorMessage = JSON.parse(jsonString);
+        if (errorMessage.response?.statusCode === 403) {
             throw new Error('Authentication failed. Please re-authenticate.');
         }
-        if (err.response?.body) {
-            throw new Error(`Xero API Error: ${JSON.stringify(err.response.body)}`);
+        if (errorMessage.response?.body) {
+            throw new Error(`Xero API Error: ${JSON.stringify(errorMessage.response.body)}`);
         }
         throw new Error(`Invoice creation failed: ${err.message}`);
     }
