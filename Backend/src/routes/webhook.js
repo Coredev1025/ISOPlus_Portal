@@ -45,7 +45,8 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                         throw new Error('Failed to fetch logo from URL');
                     }
                     const buffer = await response.arrayBuffer();
-                    logoBase64 = `data:${response.headers['content-type']};base64,${Buffer.from(buffer).toString('base64')}`;
+                    const type = business.defaultLogo.split('.').pop();
+                    logoBase64 = `data:image/${type};base64,${Buffer.from(buffer).toString('base64')}`;
                 }
 
                 const invoiceNumber = business.documentNumbering.invoice.prefix + business.documentNumbering.invoice.nextNumber;
