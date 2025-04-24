@@ -155,10 +155,16 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     res.json(createdInvoice);
   } catch (err) {
     error('Error creating invoice', err);
-    if (payload.items[0]) {
-      await setIntegrationMessage(workspaceId, boardId, payload.items[0].id, `ERROR: ${err.message}`);
+    let errorMessage = '';
+    if (!err.message) {
+      errorMessage = err.body.Message;
+    } else {
+      errorMessage = err.message
     }
-    res.status(200).json({ message: 'Error creating invoice', error: err.message });
+    if (payload.items[0]) {
+      await setIntegrationMessage(workspaceId, boardId, payload.items[0].id, `ERROR: ${errorMessage}`);
+    }
+    res.status(200).json({ message: 'Error creating invoice', error: errorMessage });
   }
 });
 
