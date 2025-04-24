@@ -365,8 +365,7 @@
                 "height": 26.72,
                 "rotate": 0,
                 "opacity": 1,
-                "required": false,
-                "readOnly": true
+                "required": false
             },
             {
                 "name": "clientDetails",

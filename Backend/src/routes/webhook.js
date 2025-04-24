@@ -19,9 +19,9 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     const { workspaceId, boardId } = req.params;
 
     if (req.body.items.length) {
-        try {
-            const business = await Business.findOne({ workspaceId });
-            req.body.items?.map(async (item) => {
+        const business = await Business.findOne({ workspaceId });
+        req.body.items?.map(async (item) => {
+            try {
                 putInternalMessage(workspaceId, boardId, item.id, "Running...");
                 const templatePath = path.join(__dirname, '..', 'assets', `invoice.json`);
                 const templateData = await fs.readFile(templatePath, 'utf8');
@@ -29,9 +29,28 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 const dueDate = new Date();
                 dueDate.setDate(dueDate.getDate() + 7);
 
+                const logoKey = business.defaultLogo;
+                let logoUrl = '';
+                if (logoKey) {
+                    logoUrl = await getS3FileUrl(logoKey);
+                    if (!logoUrl) {
+                        throw new Error('Failed to retrieve logo from S3');
+                    }
+                }
+
+                let logoBase64 = '';
+                if (logoUrl) {
+                    const response = await fetch(logoUrl);
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch logo from URL');
+                    }
+                    const buffer = await response.arrayBuffer();
+                    logoBase64 = `data:${response.headers['content-type']};base64,${Buffer.from(buffer).toString('base64')}`;
+                }
+
                 const invoiceNumber = business.documentNumbering.invoice.prefix + business.documentNumbering.invoice.nextNumber;
                 business.documentNumbering.invoice.nextNumber += 1;
-                business.save();
+                await business.save();
                 let invoiceDescription = item.values["Undertaken Tasks Decription"].replace(/<.*?>/g, "");
 
                 let jobPlan = [], clients = [], serviceFee = [], materialFee = [], folderIds = [], subTotal = 0, gstTotal = 0, total = 0;
@@ -103,19 +122,15 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 const service = serviceFee.find(service => service.values[0].data === item.values["Service Fee Type"][0]);
                 const material = materialFee.find(material => material.values[1].data === item.values["Used Materials/Parts"][0]);
 
-                invoiceDescription = `[["1", "${jobTitle}-${item.values["Service Fee Type"]}-${item.values["Job Duration (Hrs.)"]}Hrs.", "${item.values["Job Duration (Hrs.)"]}", "${service.values[1].data}", "${item.values["GST"]}", "${parseFloat(item.values["Job Duration (Hrs.)"]) * parseFloat(service.values[1].data)}"]`;
+                invoiceDescription = `[["${jobTitle}-${item.values["Service Fee Type"]}-${item.values["Job Duration (Hrs.)"]}Hrs.", "${item.values["Job Duration (Hrs.)"]}", "${service.values[1].data}", "${item.values["GST"]}", "${parseFloat(item.values["Job Duration (Hrs.)"]) * parseFloat(service.values[1].data)}"]`;
                 subTotal += parseFloat(item.values["Job Duration (Hrs.)"]) * parseFloat(service.values[1].data);
                 if (item.values["Payable Material Fee($) - GST Excl."] > 0) {
-                    invoiceDescription += `,["2", "Used Material/Part", "1", "${material.values[2].data}", "${item.values["GST"]}", "${parseFloat(material.values[2].data)}"]`;
+                    invoiceDescription += `,["Used Material/Part", "1", "${material.values[2].data}", "${item.values["GST"]}", "${parseFloat(material.values[2].data)}"]`;
                     subTotal += parseFloat(material.values[2].data);
                 }
 
                 if (item.values["Other Payable Fee($) - GST Excl."] > 0) {
-                    if (item.values["Payable Material Fee($) - GST Excl."] > 0) {
-                        invoiceDescription += `,["3", "Other Payable Fee", "1", "${item.values["Other Payable Fee($) - GST Excl."]}", "${item.values["GST"]}", "${parseFloat(item.values["Other Payable Fee($) - GST Excl."])}"]`;
-                    } else {
-                        invoiceDescription += `,["2", "Other Payable Fee", "1", "${item.values["Other Payable Fee($) - GST Excl."]}", "${item.values["GST"]}", "${parseFloat(item.values["Other Payable Fee($) - GST Excl."])}"]`;
-                    }
+                    invoiceDescription += `,["Other Payable Fee", "1", "${item.values["Other Payable Fee($) - GST Excl."]}", "${item.values["GST"]}", "${parseFloat(item.values["Other Payable Fee($) - GST Excl."])}"]`;
                     subTotal += parseFloat(item.values["Other Payable Fee($) - GST Excl."]);
                 }
 
@@ -127,6 +142,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                     template: template,
                     inputs: [
                         {
+                            logo: logoBase64,
                             subtotal: `${subTotal}`,
                             totalGST: `${gstTotal}`,
                             total: `${total}`,
@@ -151,8 +167,9 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 const filename = `output/${workspaceId}/${boardId}/invoices/${item.id}.pdf`;
                 const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
-                    const fileUrl = await getS3FileUrl(filename);
-                    putInternalMessage(workspaceId, boardId, item.id, `Your invoice successfully created. \n Click <a href="${fileUrl}">here</a>`);
+                    const fileUrl = await getS3FileUrl(filename, 7 * 24 * 60 * 60); // 7 days expiration
+                    const expiryDate = new Date(Date.now() + 604800000); // 7 days in milliseconds
+                    putInternalMessage(workspaceId, boardId, item.id, `Your invoice successfully created. \n Click <a href="${fileUrl}">here</a> \n This is a temporary link and will expire on ${expiryDate.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}. Make sure to download the file before expiry.`);
                     AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
                     PDFLink.insertOne({ workspaceId: workspaceId, itemId: item.id, type: 'Invoice', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" });
                     info('Webhook-Service', 'Successfully generating PDF invoice', { link: fileUrl }, req);
@@ -161,15 +178,16 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 } else {
                     throw new Error('Upload PDF failed, please provide correct information');
                 }
-            });
-        } catch (err) {
-            putInternalMessage(workspaceId, boardId, item.id, `An error occurred while creating the invoice. \n More information: ${err.message}`);
-            error('Webhook-Service', 'Server error', { message: err.message }, req);
-            res.status(500).json({ message: 'Server error' });
-        }
+            } catch (err) {
+                const errorMessage = (err && err.message) ? err.message : 'An unknown error occurred. Please contact admin';
+                putInternalMessage(workspaceId, boardId, item.id, 'Server error: ' + errorMessage);
+                error('Webhook-Service', 'Server error', { message: errorMessage }, req);
+                res.status(200).json({ message: 'Server error: ' + errorMessage });
+            }
+        });
     } else {
-        error('Webhook-Service', 'Server error', { message: "There are no item." }, req);
-        res.status(500).json({ message: 'Server error' });
+        error('Webhook-Service', 'Server error', { message: "There are no items." }, req);
+        res.status(200).json({ message: 'Server error' });
     }
 
 });
@@ -178,9 +196,9 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     const { workspaceId, boardId } = req.params;
 
     if (req.body.items.length) {
-        try {
-            const business = await Business.findOne({ workspaceId });
-            req.body.items?.map(async (item, index) => {
+        const business = await Business.findOne({ workspaceId });
+        req.body.items?.map(async (item, index) => {
+            try {
                 putInternalMessage(workspaceId, boardId, item.id, "Running...");
 
                 const purchaseOrderValues = item.values;
@@ -189,6 +207,26 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 const template = JSON.parse(templateData);
                 const dueDate = new Date();
                 dueDate.setDate(dueDate.getDate() + 7);
+
+                const logoKey = business.defaultLogo;
+                let logoUrl = '';
+                if (logoKey) {
+                    logoUrl = await getS3FileUrl(logoKey);
+                    if (!logoUrl) {
+                        throw new Error('Failed to retrieve logo from S3');
+                    }
+                }
+
+                let logoBase64 = '';
+                if (logoUrl) {
+                    const response = await fetch(logoUrl);
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch logo from URL');
+                    }
+                    const buffer = await response.arrayBuffer();
+                    logoBase64 = `data:${response.headers['content-type']};base64,${Buffer.from(buffer).toString('base64')}`;
+                }
+
                 const purchaseOrderNumber = business.documentNumbering.purchaseOrder.prefix + business.documentNumbering.purchaseOrder.nextNumber;
                 business.documentNumbering.purchaseOrder.nextNumber += 1;
                 business.save();
@@ -285,6 +323,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 total += subTotal + gstTotal;
 
                 const inputs = {
+                    logo: logoBase64,
                     subtotal: `${subTotal}`,
                     totalGST: `${gstTotal}`,
                     total: `${total}`,
@@ -329,8 +368,9 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 const filename = `output/${workspaceId}/${boardId}/purchaseorder/${item.id}.pdf`;
                 const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
-                    const fileUrl = await getS3FileUrl(filename);
-                    putInternalMessage(workspaceId, boardId, item.id, `Your purchase order successfully created. \n Click <a href="${fileUrl}">here</a>`);
+                    const fileUrl = await getS3FileUrl(filename, 7 * 24 * 60 * 60); // 7 days expiration
+                    const expiryDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+                    putInternalMessage(workspaceId, boardId, item.id, `Your purchase order successfully created. \n Click <a href="${fileUrl}">here</a> \n This is a temporary link and will expire on ${expiryDate.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}. Make sure to download the file before expiry.`);
                     AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
                     PDFLink.insertOne({ workspaceId: workspaceId, itemId: item.id, type: 'Purchase Order', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" });
                     info('Webhook-Service', 'Successfully generating PDF for Purchase Order', { link: fileUrl }, req);
@@ -339,15 +379,16 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 } else {
                     throw new Error('Upload PDF failed, please provide correct information');
                 }
-            });
-        } catch (err) {
-            putInternalMessage(workspaceId, boardId, item.id, `An error occurred while creating the purchase order. <br> More information: ${err.message}`);
-            error('Webhook-Service', 'Server error', { message: err.message }, req);
-            res.status(500).json({ message: 'Server error' });
-        }
+            } catch (err) {
+                const errorMessage = (err && err.message) ? err.message : 'An unknown error occurred. Please contact admin';
+                putInternalMessage(workspaceId, boardId, item.id, 'Server error: ' + errorMessage);
+                error('Webhook-Service', 'Server error', { message: errorMessage }, req);
+                res.status(200).json({ message: 'Server error: ' + errorMessage });
+            }
+        });
     } else {
-        error('Webhook-Service', 'Server error', { message: "There are no item." }, req);
-        res.status(500).json({ message: 'Server error' });
+        error('Webhook-Service', 'Server error', { message: "There are no items." }, req);
+        res.status(200).json({ message: 'Server error' });
     }
 });
 
@@ -355,15 +396,35 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     const { workspaceId, boardId } = req.params;
 
     if (req.body.items.length) {
-        try {
-            const business = await Business.findOne({ workspaceId });
-            req.body.items?.map(async (item, index) => {
+        const business = await Business.findOne({ workspaceId });
+        req.body.items?.map(async (item, index) => {
+            try {
                 putInternalMessage(workspaceId, boardId, item.id, "Running...");
 
                 const quoteValues = item.values;
                 const templatePath = path.join(__dirname, '..', 'assets', `quote.json`);
                 const templateData = await fs.readFile(templatePath, 'utf8');
                 const template = JSON.parse(templateData);
+
+                const logoKey = business.defaultLogo;
+                let logoUrl = '';
+                if (logoKey) {
+                    logoUrl = await getS3FileUrl(logoKey);
+                    if (!logoUrl) {
+                        throw new Error('Failed to retrieve logo from S3');
+                    }
+                }
+
+                let logoBase64 = '';
+                if (logoUrl) {
+                    const response = await fetch(logoUrl);
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch logo from URL');
+                    }
+                    const buffer = await response.arrayBuffer();
+                    logoBase64 = `data:${response.headers['content-type']};base64,${Buffer.from(buffer).toString('base64')}`;
+                }
+
                 const quoteNumber = business.documentNumbering.quote.prefix + business.documentNumbering.quote.nextNumber;
                 business.documentNumbering.quote.nextNumber += 1;
                 business.save();
@@ -419,6 +480,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                     template: template,
                     inputs: [
                         {
+                            logo: logoBase64,
                             subtotal: `${subTotal}`,
                             totalGST: `${gstTotal}`,
                             total: `${total}`,
@@ -441,25 +503,27 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                 const filename = `output/${workspaceId}/${boardId}/quote/${item.id}.pdf`;
                 const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
-                    const fileUrl = await getS3FileUrl(filename);
-                    putInternalMessage(workspaceId, boardId, item.id, `Your quote successfully created. \n Click <a href="${fileUrl}">here</a>`);
+                    const fileUrl = await getS3FileUrl(filename, 7 * 24 * 60 * 60); // 7 days expiration
+                    const expiryDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+                    putInternalMessage(workspaceId, boardId, item.id, `Your quote successfully created. \n Click <a href="${fileUrl}">here</a> \n This is a temporary link and will expire on ${expiryDate.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}. Make sure to download the file before expiry.`);
                     AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
                     PDFLink.insertOne({ workspaceId: workspaceId, itemId: item.id, type: 'Quote', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" });
-                    info('Webhook-Service', 'Successfully generating PDF for Purchase Order', { link: fileUrl }, req);
+                    info('Webhook-Service', 'Successfully generating PDF for Quote', { link: fileUrl }, req);
 
                     res.json({ pdfUrl: fileUrl });
                 } else {
                     throw new Error('Upload PDF failed, please provide correct information');
                 }
-            });
-        } catch (err) {
-            putInternalMessage(workspaceId, boardId, item.id, `An error occurred while creating the quote. \n More information: ${err.message}`);
-            error('Webhook-Service', 'Server error', { message: err.message }, req);
-            res.status(500).json({ message: 'Server error' });
-        }
+            } catch (err) {
+                const errorMessage = (err && err.message) ? err.message : 'An unknown error occurred. Please contact admin';
+                putInternalMessage(workspaceId, boardId, item.id, 'Server error: ' + errorMessage);
+                error('Webhook-Service', 'Server error', { message: errorMessage }, req);
+                res.status(200).json({ message: 'Server error: ' + errorMessage });
+            }
+        });
     } else {
-        error('Webhook-Service', 'Server error', { message: "There are no item." }, req);
-        res.status(500).json({ message: 'Server error' });
+        error('Webhook-Service', 'Server error', { message: "There are no items." }, req);
+        res.status(200).json({ message: 'Server error' });
     }
 });
 
