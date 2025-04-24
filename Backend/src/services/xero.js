@@ -289,6 +289,9 @@ export async function quoteExists(quoteNumber) {
             null,
             null,
             null,
+            null,
+            null,
+            null,
             quoteNumber
         );
 
@@ -307,10 +310,9 @@ export async function purchaseOrderExists(purchaseOrderNumber) {
 
         const { token, xeroTenantId } = await createToken();
 
-        const response = await xeroClient.accountingApi.getPurchaseOrders(
+        const response = await xeroClient.accountingApi.getPurchaseOrderByNumber(
             xeroTenantId,
-            null,
-            `PurchaseOrderNumber=="${purchaseOrderNumber}"`
+            purchaseOrderNumber
         );
 
         return response.body.purchaseOrders.length > 0;
