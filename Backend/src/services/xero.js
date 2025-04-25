@@ -132,7 +132,7 @@ export async function createInvoice(invoice) {
                     taxType: item.taxType,
                     taxAmount: item.taxAmount
                 })),
-                status: 'AUTHORISED'
+                status: invoice.status || 'AUTHORISED'
             }]
         };
 

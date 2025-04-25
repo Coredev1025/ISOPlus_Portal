@@ -116,7 +116,8 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       contact: { contactID: contact.contactID },
       reference: jobPlanningValues.jobNumber,
       lineItems: [],
-      dueDate: new Date(new Date().setDate(new Date().getDate() + 30)).toISOString().split('T')[0]
+      dueDate: new Date(new Date().setDate(new Date().getDate() + 30)).toISOString().split('T')[0],
+      status: "DRAFT"
     };
 
     const serviceFeeType = serviceFeeTypeValues.feeType;
@@ -124,7 +125,6 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       itemCode: jobType.code,
       description: `${jobPlanningValues.jobTitle} - ${serviceFeeType} - ${invoiceValues['Job Duration (Hrs.)']} Hrs.`,
       quantity: 1,
-      accountCode: 4715,
       unitAmount: invoiceValues['Payable Service Fee($) - GST Excl.'],
       taxType: "OUTPUT",
     });
@@ -133,7 +133,6 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       invoice.lineItems.push({
         description: "Used Material/Part",
         quantity: 1,
-        accountCode: 4715,
         unitAmount: invoiceValues['Payable Material Fee($) - GST Excl.'],
         taxType: "EXEMPTOUTPUT",
       });
@@ -143,7 +142,6 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       invoice.lineItems.push({
         description: "Other Payable Fee",
         quantity: 1,
-        accountCode: 4715,
         unitAmount: invoiceValues['Other Payable Fee($) - GST Excl.'],
         taxType: "OUTPUT",
       });
