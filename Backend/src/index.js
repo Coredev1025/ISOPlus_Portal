@@ -35,7 +35,7 @@ app.use('/api/boards', boardRoutes);
 app.use('/api/timetracks', timeTrackRoutes);
 app.use('/api/xero', xeroRoutes);
 app.use('/api/log', logRoutes);
-app.use('/api/webhook', webhookRoutes);
+app.use('/api/pdf', webhookRoutes);
 app.use('/api/audit', auditTrailRouters);
 app.use('/api/pdf', PdfRouters);
 
