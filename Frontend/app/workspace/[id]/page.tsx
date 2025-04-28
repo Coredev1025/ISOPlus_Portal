@@ -148,7 +148,7 @@ export default function WorkspaceDetail() {
 
           {/* Workspace Actions */}
           {
-            (user.role == "admin" || workspace?.user_role == "owner" || workspace?.user_role == "admin") && (
+            (user.role == "admin" || user.role == "owner" || workspace?.user_role == "owner" || workspace?.user_role == "admin") && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <Card className="p-6 space-y-4 card-hover">
                   <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
