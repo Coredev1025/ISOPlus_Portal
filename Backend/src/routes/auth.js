@@ -202,7 +202,10 @@ router.post('/oauth-login', async (req, res) => {
     const { oauthData } = req.body;
 
     let user = await User.findOne({ email: oauthData.email, oauthId: oauthData.id });
-
+    let role = 'user';
+    if(oauthData.data?.job) {
+      role = oauthData.data.job.toLowerCase();
+    }
     if (!user) {
       user = new User({
         email: oauthData.email,
@@ -210,7 +213,7 @@ router.post('/oauth-login', async (req, res) => {
         password: "",
         oauthId: oauthData.id,
         avatar: oauthData.photo_url,
-        role: oauthData.data?.object || 'user'
+        role: role
       });
       await user.save();
     }
