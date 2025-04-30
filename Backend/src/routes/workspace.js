@@ -2,6 +2,8 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import Workspace from '../models/Workspace.js';
 import AuditTrail from '../models/AuditTrail.js';
+import User from '../models/User.js';
+import jwt from 'jsonwebtoken';
 import { info, error } from '../utils/logger.js';
 import { getMyWorkspace, getBoard } from '../services/isoplus.js';
 
@@ -11,7 +13,18 @@ router.get('/', authenticateToken, async (req, res) => {
   const response = await getMyWorkspace(req.headers['authorization']);
 
   if (response.status === 200) {
-    res.status(200).json({ workspace: response.workspace });
+    const userRole = response.workspace[0].user_role;
+    if (userRole == "owner" && req.user.role != "owner") {
+      const user = await User.findByIdAndUpdate({ _id: req.user.userId }, { $set: { role: "owner" } });
+      const token = jwt.sign(
+        { userId: user._id, email: user.email, role: user.role },
+        process.env.JWT_SECRET,
+        { expiresIn: '24h' }
+      );
+      res.status(200).json({ workspace: response.workspace, user, token });
+    } else {
+      res.status(200).json({ workspace: response.workspace });
+    }
   } else {
     res.status(500).json({ message: response.message });
   }

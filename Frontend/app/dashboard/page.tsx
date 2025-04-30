@@ -478,7 +478,7 @@ function GlobalApplicationLogs() {
 export default function Dashboard() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
-  const { workspaces, setWorkspaces, user } = useAppContext();
+  const { workspaces, setWorkspaces, user, setUser } = useAppContext();
   const [loading, setLoading] = useState(false);
 
   const filteredWorkspaces = workspaces.filter(item =>
@@ -504,6 +504,10 @@ export default function Dashboard() {
             }
           );
           setWorkspaces(response.data.workspace);
+          if(response.data.token) {
+            setUser(response.data.user);
+            document.cookie = `token=${response.data.token}; path=/; max-age=86400; secure; samesite=strict`;
+          }
 
           if (response.data.workspace.length === 1) {
             router.push(`/workspace/${response.data.workspace[0].id}`);
