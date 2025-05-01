@@ -360,7 +360,7 @@ function GlobalApplicationLogs() {
             Monitor system logs and debug application issues across all workspaces
           </p>
         </div>
-        <Button variant="outline" className="gap-2">
+        <Button variant="outline" className="gap-2 visible md:invisible">
           <Download className="h-4 w-4" />
           Export Logs
         </Button>
@@ -432,7 +432,7 @@ function GlobalApplicationLogs() {
                     onClick={() => setExpandedLog(expandedLog === log.id ? null : log.id as string)}
                   >
                     <TableCell className="whitespace-nowrap">
-                      {new Date(log.timestamp as string).toLocaleString()}
+                      {new Date(log.timestamp as string).toLocaleString("en-AU")}
                     </TableCell>
                     <TableCell>
                       <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${LOG_LEVEL_COLORS[log.level as LogLevel]}`}>
@@ -534,14 +534,8 @@ export default function Dashboard() {
       <Header />
       <div className="container mx-auto py-8 space-y-8">
         <Tabs defaultValue="workspaces" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
-            {(user.role === "admin" || user.role === "owner") && (
-              <TabsTrigger value="audit" className="gap-2">
-                <History className="h-4 w-4" />
-                Global Audit Trail
-              </TabsTrigger>
-            )}
             {(user.role === "admin" || user.role === "owner") && (
               <TabsTrigger value="logs" className="gap-2">
                 <Terminal className="h-4 w-4" />
@@ -559,12 +553,6 @@ export default function Dashboard() {
               router={router}
             />
           </TabsContent>
-
-          {(user.role === "admin" || user.role === "owner") && (
-            <TabsContent value="audit">
-              <GlobalAuditTrail />
-            </TabsContent>
-          )}
 
           {(user.role === "admin" || user.role === "owner") && (
             <TabsContent value="logs">

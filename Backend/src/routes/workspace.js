@@ -13,8 +13,8 @@ router.get('/', authenticateToken, async (req, res) => {
   const response = await getMyWorkspace(req.headers['authorization']);
 
   if (response.status === 200) {
-    const userRole = response.workspace[0].user_role;
-    if (userRole == "owner" && req.user.role != "owner") {
+    const userRole = response.workspace[0]?.user_role || "user";
+    if (userRole === "owner" && req.user.role !== "owner") {
       const user = await User.findByIdAndUpdate({ _id: req.user.userId }, { $set: { role: "owner" } });
       const token = jwt.sign(
         { userId: user._id, email: user.email, role: user.role },
