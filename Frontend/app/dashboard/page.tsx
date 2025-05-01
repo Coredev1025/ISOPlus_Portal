@@ -415,54 +415,56 @@ function GlobalApplicationLogs() {
         </div>
         :
         <>
-          <Table>
+            <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Timestamp</TableHead>
-                <TableHead>Level</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Message</TableHead>
+              <TableHead>Timestamp</TableHead>
+              <TableHead>Level</TableHead>
+              <TableHead>Source</TableHead>
+              <TableHead>Message</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredLogs.map((log) => (
+              {filteredLogs
+              .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+              .map((log) => (
                 <React.Fragment key={log.id as string}>
-                  <TableRow
-                    className="cursor-pointer hover:bg-muted/50"
-                    onClick={() => setExpandedLog(expandedLog === log.id ? null : log.id as string)}
-                  >
-                    <TableCell className="whitespace-nowrap">
-                      {new Date(log.timestamp as string).toLocaleString("en-AU")}
-                    </TableCell>
-                    <TableCell>
-                      <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${LOG_LEVEL_COLORS[log.level as LogLevel]}`}>
-                        {LOG_LEVEL_ICONS[log.level as LogLevel]}
-                        {log.level}
-                      </span>
-                    </TableCell>
-                    <TableCell>{log.source}</TableCell>
-                    <TableCell className="max-w-xl truncate">
-                      {log.message}
-                    </TableCell>
+                <TableRow
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => setExpandedLog(expandedLog === log.id ? null : log.id as string)}
+                >
+                  <TableCell className="whitespace-nowrap">
+                  {new Date(log.timestamp as string).toLocaleString("en-AU")}
+                  </TableCell>
+                  <TableCell>
+                  <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${LOG_LEVEL_COLORS[log.level as LogLevel]}`}>
+                    {LOG_LEVEL_ICONS[log.level as LogLevel]}
+                    {log.level}
+                  </span>
+                  </TableCell>
+                  <TableCell>{log.source}</TableCell>
+                  <TableCell className="max-w-xl truncate">
+                  {log.message}
+                  </TableCell>
+                </TableRow>
+                {expandedLog === log.id && (
+                  <TableRow>
+                  <TableCell colSpan={4} className="bg-muted/30">
+                    <div className="p-4 space-y-4">
+                    <div>
+                      <h4 className="text-sm font-medium mb-2">Metadata</h4>
+                      <pre className="text-sm bg-muted p-2 rounded-md overflow-x-auto">
+                      {JSON.stringify(log.details, null, 2)}
+                      </pre>
+                    </div>
+                    </div>
+                  </TableCell>
                   </TableRow>
-                  {expandedLog === log.id && (
-                    <TableRow>
-                      <TableCell colSpan={4} className="bg-muted/30">
-                        <div className="p-4 space-y-4">
-                          <div>
-                            <h4 className="text-sm font-medium mb-2">Metadata</h4>
-                            <pre className="text-sm bg-muted p-2 rounded-md overflow-x-auto">
-                              {JSON.stringify(log.details, null, 2)}
-                            </pre>
-                          </div>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
+                )}
                 </React.Fragment>
               ))}
             </TableBody>
-          </Table>
+            </Table>
 
           {filteredLogs.length === 0 && (
             <div className="text-center py-8 text-muted-foreground">
