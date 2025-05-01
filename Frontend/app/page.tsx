@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import Link from "next/link";
+import Image from "next/image";
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { getCookie, isTokenValid } from "./utils/cookies";
@@ -157,70 +159,91 @@ export default function LoginPage() {
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-md p-8">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-primary mb-2">Welcome Back</h1>
-          <p className="text-muted-foreground">Sign in to continue to your workspace</p>
+          <h1 className="text-3xl font-bold text-primary mb-4">ISO+ Portal</h1>
+          <Image
+            src="/assets/logo_rgb.png"
+            alt="ISO+ Logo"
+            width={150}
+            height={150}
+            className="mx-auto mb-6"
+          />
         </div>
 
-        <Tabs defaultValue="isoplus" className="space-y-6">
-          <TabsList className="grid grid-cols-2 w-full">
-            <TabsTrigger value="isoplus">ISO+ Login</TabsTrigger>
-            <TabsTrigger value="admin">Admin Login</TabsTrigger>
-          </TabsList>
+        <div className="space-y-6">
           {error && (
             <div className="mb-4 p-3 text-sm text-red-500 bg-red-50 rounded-md">
               {error}
             </div>
           )}
-          <TabsContent value="isoplus">
-            <div className="space-y-4 text-center">
-              <p className="text-muted-foreground">
-                Click below to authenticate with ISO+
-              </p>
-              <Button
-                onClick={handleISOPlusLogin}
-                className="w-full gap-2 bg-primary hover:bg-primary/90"
-                size="lg"
+          
+          <Button
+            onClick={handleISOPlusLogin}
+            className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3"
+            size="lg"
+          >
+            Login
+          </Button>
+
+          <div className="text-center text-sm text-muted-foreground">
+            By continuing, you agree to our{" "}
+            <Link 
+              href="https://www.isoconsultingservices.com.au/iso-terms-of-service/"
+              className="text-primary hover:underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Terms of Service
+            </Link>
+            {" "}and{" "}
+            <Link
+              href="https://www.isoconsultingservices.com.au/iso-privacy-policy/"
+              className="text-primary hover:underline"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Privacy Policy
+            </Link>
+          </div>
+
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button 
+                variant="ghost" 
+                className="text-sm text-muted-foreground hover:text-primary"
               >
-                Continue with ISO+
+                Support Login
               </Button>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="admin">
-            <form onSubmit={handleAdminLogin} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="Enter your email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-              </div>
-              <Button type="submit" className="w-full" size="lg">
-                Login as Admin
-              </Button>
-            </form>
-          </TabsContent>
-        </Tabs>
-
-        <div className="mt-6 pt-6 border-t text-center">
-          <p className="text-sm text-muted-foreground">
-            By continuing, you agree to our Terms of Service and Privacy Policy.
-          </p>
+            </PopoverTrigger>
+            <PopoverContent className="w-80">
+              <form onSubmit={handleAdminLogin} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="Enter your email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
+                <Button type="submit" className="w-full">
+                  Login as Support
+                </Button>
+              </form>
+            </PopoverContent>
+          </Popover>
         </div>
       </Card>
     </div>
