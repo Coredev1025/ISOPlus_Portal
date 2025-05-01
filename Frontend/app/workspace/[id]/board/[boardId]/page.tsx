@@ -6,7 +6,6 @@ import { ArrowLeft, Clock, Terminal, Download, Filter, MapPin, Search, List, Map
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useState, useEffect } from "react";
-import { TimeTrackingButton } from "./components/TimeTrackingButton";
 import {
   Table,
   TableBody,
@@ -280,11 +279,6 @@ export default function BoardDetail() {
                 </h1>
                 <p className="text-muted-foreground font-mono text-sm">ID: {board.id}</p>
               </div>
-              <TimeTrackingButton
-                workspaceId={id}
-                boardId={boardId?.toString() || ""}
-                setTimeTrackingEnabled={setTimeTrackingEnabled}
-              />
             </div>
           </Card>
 
