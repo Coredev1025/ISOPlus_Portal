@@ -74,12 +74,12 @@ export default function AuditTrailPage() {
           ipAddress: item.userIp,
           detail: item.detail,
           timestamp: new Date(item.createdAt).toLocaleString('en-AU', {
-            month: 'numeric',
-            day: 'numeric',
+            day: '2-digit',
+            month: '2-digit',
             year: 'numeric',
-            hour: 'numeric',
-            minute: 'numeric',
-            second: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
             hour12: true
           })
         }));
@@ -146,7 +146,7 @@ export default function AuditTrailPage() {
                   Track all activities and changes in your workspace
                 </p>
               </div>
-              <Button variant="outline" className="gap-2">
+              <Button variant="outline" className="gap-2 hidden">
                 <Download className="h-4 w-4" />
                 Export Audit Log
               </Button>
