@@ -290,64 +290,64 @@ export default function BoardDetail() {
 
           {/* Board Actions */}
           {(user.role == "admin" || user.role == "owner" || workspace?.user_role == "owner" || workspace?.user_role == "admin") && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {/* Configuration Card */}
-            <Card className="p-6 space-y-4 card-hover">
-              <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
-                <Terminal className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <h2 className="text-xl font-semibold">Configuration</h2>
-                <p className="text-muted-foreground mb-4 text-sm">
-                  Configure board settings and options
-                </p>
-                <Button
-                  onClick={() => router.push(`/workspace/${id}/board/${board.id}/configuration`)}
-                  className="w-full"
-                >
-                  Configure Board
-                </Button>
-              </div>
-            </Card>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {/* Configuration Card */}
+              <Card className="p-6 space-y-4 card-hover">
+                <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                  <Terminal className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold">Configuration</h2>
+                  <p className="text-muted-foreground mb-4 text-sm">
+                    Configure board settings and options
+                  </p>
+                  <Button
+                    onClick={() => router.push(`/workspace/${id}/board/${board.id}/configuration`)}
+                    className="w-full"
+                  >
+                    Configure Board
+                  </Button>
+                </div>
+              </Card>
 
-            {/* Time Tracking Card */}
-            <Card className="p-6 space-y-4 card-hover">
-              <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
-                <Clock className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <h2 className="text-xl font-semibold">Time Tracking</h2>
-                <p className="text-muted-foreground mb-4 text-sm">
-                  Configure time tracking settings
-                </p>
-                <Button
-                  onClick={() => router.push(`/workspace/${id}/board/${board.id}/time-tracking`)}
-                  className="w-full"
-                >
-                  Configure Time Tracking
-                </Button>
-              </div>
-            </Card>
+              {/* Time Tracking Card */}
+              {false && (<Card className="p-6 space-y-4 card-hover">
+                <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                  <Clock className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold">Time Tracking</h2>
+                  <p className="text-muted-foreground mb-4 text-sm">
+                    Configure time tracking settings
+                  </p>
+                  <Button
+                    onClick={() => router.push(`/workspace/${id}/board/${board?.id}/time-tracking`)}
+                    className="w-full"
+                  >
+                    Configure Time Tracking
+                  </Button>
+                </div>
+              </Card>)}
 
-            {/* Export Card */}
-            <Card className="p-6 space-y-4 card-hover">
-              <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
-                <Download className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <h2 className="text-xl font-semibold">Export Data</h2>
-                <p className="text-muted-foreground mb-4 text-sm">
-                  Export board data and reports
-                </p>
-                <Button
-                  onClick={() => router.push(`/workspace/${id}/board/${board.id}/export`)}
-                  className="w-full"
-                >
-                  Export Data
-                </Button>
-              </div>
-            </Card>
-          </div>)}
+              {/* Export Card */}
+              {false && (<Card className="p-6 space-y-4 card-hover">
+                <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                  <Download className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold">Export Data</h2>
+                  <p className="text-muted-foreground mb-4 text-sm">
+                    Export board data and reports
+                  </p>
+                  <Button
+                    onClick={() => router.push(`/workspace/${id}/board/${board?.id}/export`)}
+                    className="w-full"
+                  >
+                    Export Data
+                  </Button>
+                </div>
+              </Card>)}
+            </div>)}
 
           {/* Time Tracking Entries */}
           <Card className="p-6 shadow-lg">
