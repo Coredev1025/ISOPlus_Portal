@@ -244,7 +244,7 @@ export default function WorkspaceDetail() {
                       <TableRow>
                         <TableHead className="font-semibold">Board ID</TableHead>
                         <TableHead className="font-semibold">Board Name</TableHead>
-                        <TableHead className="font-semibold">
+                        <TableHead className={`font-semibold ${user.role == "admin" || user.role == "owner" ? '' : 'hidden'}`}>
                           <div className="flex items-center gap-2">
                             Label
                             <TooltipProvider>
@@ -268,7 +268,7 @@ export default function WorkspaceDetail() {
                         <TableRow key={board.id}>
                           <TableCell className="font-mono">{board.id}</TableCell>
                           <TableCell>{board.name}</TableCell>
-                          <TableCell>
+                          <TableCell className={`font-semibold ${user.role == "admin" || user.role == "owner" ? '' : 'hidden'}`}>
                             {board.label ? (
                               <Badge variant="outline" className={board.label ? LABEL_COLORS[board.label as NonNullable<BoardLabel>] : ''}>
                                 {board.label}
