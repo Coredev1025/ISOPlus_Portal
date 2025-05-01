@@ -522,18 +522,6 @@ export default function ConfigureBusinessPage() {
                     Upload different logo formats for various uses throughout the application
                   </p>
 
-                  <div className="bg-muted/30 p-4 rounded-lg mb-4">
-                    <div className="flex items-center gap-3">
-                      <Upload className="h-5 w-5 text-primary" />
-                      <div>
-                        <h4 className="text-sm font-medium">Logo Types</h4>
-                        <p className="text-xs text-muted-foreground">
-                          Select a logo type below to upload the appropriate format
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
                   <div className="border rounded-lg p-4">
                     <Tabs defaultValue="default" className="space-y-4">
                       <TabsList className="grid grid-cols-3 w-full">
@@ -566,10 +554,10 @@ export default function ConfigureBusinessPage() {
                               className="max-w-xs"
                             />
                             <p className="text-sm text-muted-foreground mt-2">
-                              Recommended size: 512x512px
+                              Maximum file size: 5MB
                             </p>
                             <p className="text-sm text-muted-foreground mt-1">
-                              Used for general application areas and profile displays
+                              Used for general application areas, profile displays, and generated PDF documents
                             </p>
                           </div>
                         </div>
@@ -598,11 +586,8 @@ export default function ConfigureBusinessPage() {
                               onChange={(e) => handleLogoChange(e, setSquareLogoPreview, setSquareLogoFile)}
                               className="max-w-xs"
                             />
-                            <p className="text-sm text-muted-foreground mt-2">
-                              Recommended size: 256x256px
-                            </p>
                             <p className="text-sm text-muted-foreground mt-1">
-                              Used for app icons, avatars, and compact displays
+                              Used for online forms
                             </p>
                           </div>
                         </div>
@@ -632,10 +617,10 @@ export default function ConfigureBusinessPage() {
                               className="max-w-xs"
                             />
                             <p className="text-sm text-muted-foreground mt-2">
-                              Recommended size: 512x128px
+                              Recommended size: 820 x 312 pixels, with your logo centred within the middle third of the document area
                             </p>
                             <p className="text-sm text-muted-foreground mt-1">
-                              Used for headers, footers, and document letterheads
+                              Used for online documents
                             </p>
                           </div>
                         </div>
@@ -818,7 +803,7 @@ export default function ConfigureBusinessPage() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="bsb">BSB Number</Label>
+                        <Label htmlFor="bsb">BSB</Label>
                         <Input
                           id="bsb"
                           placeholder="Enter BSB"
@@ -834,7 +819,6 @@ export default function ConfigureBusinessPage() {
                           placeholder="Enter account number"
                           value={formData.accountNumber}
                           onChange={handleInputChange}
-                          type="password"
                         />
                       </div>
                     </div>
