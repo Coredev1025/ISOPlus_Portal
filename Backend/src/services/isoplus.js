@@ -663,3 +663,21 @@ export async function setIntegrationMessage(workspaceId, boardId, itemId, messag
         throw err;
     }
 }
+
+export async function setFormLogo(workspaceId, boardId, viewId, logo) {
+    try {
+        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/views/${viewId}`;
+        const headers = {
+            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-API-Version": "2025-02-26.morava",
+        };
+
+        const response = await axios.put(url, { logo }, { headers });
+        return response.status === 200 ? response.data : null;
+    } catch (err) {
+        console.error("Error setting form logo:", err);
+        return null;
+    }
+}

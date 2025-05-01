@@ -19,6 +19,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [isSupportLogin, setIsSupportLogin] = useState(false); // Toggle between ISO+ and Support Agent login
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -158,93 +159,115 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="w-full max-w-md p-8">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-primary mb-4">ISO+ Portal</h1>
-          <Image
-            src="/assets/logo_rgb.png"
-            alt="ISO+ Logo"
-            width={150}
-            height={150}
-            className="mx-auto mb-6"
-          />
-        </div>
-
-        <div className="space-y-6">
-          {error && (
-            <div className="mb-4 p-3 text-sm text-red-500 bg-red-50 rounded-md">
-              {error}
-            </div>
-          )}
-          
-          <Button
-            onClick={handleISOPlusLogin}
-            className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3"
-            size="lg"
-          >
-            Login
-          </Button>
-
-          <div className="text-center text-sm text-muted-foreground">
-            By continuing, you agree to our{" "}
-            <Link 
-              href="https://www.isoconsultingservices.com.au/iso-terms-of-service/"
-              className="text-primary hover:underline"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Terms of Service
-            </Link>
-            {" "}and{" "}
-            <Link
-              href="https://www.isoconsultingservices.com.au/iso-privacy-policy/"
-              className="text-primary hover:underline"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Privacy Policy
-            </Link>
-          </div>
-
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button 
-                variant="ghost" 
-                className="text-sm text-muted-foreground hover:text-primary"
-              >
-                Support Login
+        {isSupportLogin ? (
+          // Support Agent Login
+          <div className="space-y-6">
+            <h1 className="text-2xl font-bold text-primary mb-4 text-center">
+              Support Agent Login
+            </h1>
+            {error && (
+              <div className="mb-4 p-3 text-sm text-red-500 bg-red-50 rounded-md">
+                {error}
+              </div>
+            )}
+            <form onSubmit={handleAdminLogin} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="Enter your email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
+              <Button type="submit" className="w-full">
+                Login as Support Agent
               </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-80">
-              <form onSubmit={handleAdminLogin} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="Enter your email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                </div>
-                <Button type="submit" className="w-full">
-                  Login as Support
-                </Button>
-              </form>
-            </PopoverContent>
-          </Popover>
-        </div>
+            </form>
+            <Button
+              variant="ghost"
+              className="w-full text-sm text-muted-foreground hover:text-primary"
+              onClick={() => setIsSupportLogin(false)}
+            >
+              Return to ISO+ Login
+            </Button>
+          </div>
+        ) : (
+          // ISO+ Login
+          <div className="space-y-6">
+            <div className="text-center mb-8">
+              <h1 className="text-3xl font-bold text-primary mb-4">ISO+ Portal</h1>
+              <div className="flex items-center justify-center">
+                <Image
+                  src="/assets/logo_rgb_black.png"
+                  alt="ISO+ Logo"
+                  width={150}
+                  height={150}
+                  className="mx-auto mb-6 dark:hidden"
+                />
+                <Image
+                  src="/assets/logo_rgb_white.png"
+                  alt="ISO+ Logo"
+                  width={150}
+                  height={150}
+                  className="mx-auto mb-6 hidden dark:block"
+                />
+              </div>
+            </div>
+            {error && (
+              <div className="mb-4 p-3 text-sm text-red-500 bg-red-50 rounded-md">
+                {error}
+              </div>
+            )}
+            <Button
+              onClick={handleISOPlusLogin}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3"
+              size="lg"
+            >
+              Login
+            </Button>
+            <div className="text-center text-sm text-muted-foreground">
+              By continuing, you agree to our{" "}
+              <Link
+                href="https://www.isoconsultingservices.com.au/iso-terms-of-service/"
+                className="text-primary hover:underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Terms of Service
+              </Link>
+              {" "}and{" "}
+              <Link
+                href="https://www.isoconsultingservices.com.au/iso-privacy-policy/"
+                className="text-primary hover:underline"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Privacy Policy
+              </Link>
+            </div>
+            <Button
+              variant="ghost"
+              className="w-full text-sm text-muted-foreground hover:text-primary"
+              onClick={() => setIsSupportLogin(true)}
+            >
+              Support Agent Login
+            </Button>
+          </div>
+        )}
       </Card>
     </div>
   );
