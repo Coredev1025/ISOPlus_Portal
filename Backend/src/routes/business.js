@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import AuditTrail from '../models/AuditTrail.js';
 import { uploadFileToS3, getS3FileUrl, deleteFileFromS3 } from '../utils/uploadS3.js'; // Import S3 utility functions
+import { setLogo } from '../services/isoplus.js';
 
 const validateBusinessProfile = (req, res, next) => {
   const errors = [];
@@ -168,6 +169,7 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
       }
       const squareLogoPath = `logos/${workspaceId}/square-logo${path.extname(req.files['squareLogo'][0].originalname)}`;
       await uploadFileToS3(req.files['squareLogo'][0].buffer, squareLogoPath);
+      setLogo(req.headers["authorization"], workspaceId, req.files['squareLogo'][0], "form");
       updateData.squareLogo = squareLogoPath;
     }
 
@@ -177,6 +179,7 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
       }
       const wideLogoPath = `logos/${workspaceId}/wide-logo${path.extname(req.files['wideLogo'][0].originalname)}`;
       await uploadFileToS3(req.files['wideLogo'][0].buffer, wideLogoPath);
+      setLogo(req.headers["authorization"], workspaceId, req.files['wideLogo'][0], "document");
       updateData.wideLogo = wideLogoPath;
     }
 

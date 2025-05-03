@@ -1,5 +1,6 @@
 import axios from "axios";
 import Board from '../models/Board.js';
+import FormData from 'form-data'; 
 
 export async function getWorkspace(authorization) {
     try {
@@ -10,7 +11,7 @@ export async function getWorkspace(authorization) {
             "Accept": "application/json",
         };
         const params = {
-            "limit": "100",
+            "limit": "10",
             "sort_by": "created_at",
             "sort_direction": "desc",
         };
@@ -72,7 +73,7 @@ export async function getBoard(authorization, workspaceId) {
             "Accept": "application/json",
         };
         const params = {
-            "limit": "100",
+            "limit": "10",
             "sort_by": "created_at",
             "sort_direction": "desc",
         };
@@ -176,6 +177,61 @@ export async function getItem(workspaceId, boardId, folderId) {
             }
         }
         return { item: item, status: 200 };
+    } catch (err) {
+        return { message: err.message, status: 500 };
+    }
+}
+
+export async function getViews(authorization, workspaceId, boardId) {
+    try {
+        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/views`;
+        const headers = {
+            "Authorization": authorization,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        };
+        const params = {
+            "limit": "10",
+            "sort_by": "created_at",
+            "sort_direction": "desc",
+        };
+
+        let views = [];
+        const result = await axios.get(url, { headers, params });
+
+        if (result.status === 200) {
+            views = views.concat(result.data.data);
+            let has_more = result.data.has_more, after = result.data.after;
+
+            while (has_more) {
+                const response = await axios.get(url, { headers, params: { ...params, after } });
+                if (response.status === 200) {
+                    views = views.concat(response.data.data);
+                    has_more = response.data.has_more;
+                    after = response.data.after;
+                } else {
+                    has_more = false;
+                }
+            }
+        }
+        return { views: views, status: 200 };
+    } catch (err) {
+        return { message: err.message, status: 500 };
+    }
+}
+
+export async function getViewsById(authorization, workspaceId, boardId, viewId) {
+    try {
+        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/views/${viewId}`;
+        const headers = {
+            "Authorization": authorization,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        };
+
+        const result = await axios.get(url, { headers, params });
+
+        return result.status === 200 ? result.data : null;
     } catch (err) {
         return { message: err.message, status: 500 };
     }
@@ -664,18 +720,44 @@ export async function setIntegrationMessage(workspaceId, boardId, itemId, messag
     }
 }
 
-export async function setFormLogo(workspaceId, boardId, viewId, logo) {
+export async function setLogo(authorization, workspaceId, logo, type) {
     try {
-        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/views/${viewId}`;
-        const headers = {
-            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-API-Version": "2025-02-26.morava",
-        };
+        const boards = await getBoard(authorization, workspaceId);
+        const body = new FormData();
+        body.append('file', logo.buffer, logo.originalname); 
 
-        const response = await axios.put(url, { logo }, { headers });
-        return response.status === 200 ? response.data : null;
+        if (boards.status === 200 && boards.board?.length > 0) {
+            boards.board.forEach(async (boardItem) => {
+                const response = await getViews(authorization, workspaceId, boardItem.id);
+                if (response.status !== 200) {
+                    return;
+                }
+                const views = response.views.filter(item => item.type === type);
+                if (!views || views.length === 0) {
+                    return;
+                }
+                views.map((viewItem) => {
+                    axios.post(
+                        `https://app.isoplus.online/api/${workspaceId}/attachments/file?referenceable_type=view&referenceable_id=${viewItem.id}&board_id=${boardItem.id}`,
+                        body,
+                        {
+                            headers: {
+                                "Authorization": authorization,
+                                ...body.getHeaders(), 
+                                "Accept": "application/json",
+                            },
+                        }
+                    )
+                        .then(response => console.log("Logo uploaded successfully:", response.data.link))
+                        .catch(err => { 
+                            console.error("Error uploading logo:", err.response?.data || err.message);
+                        });
+                });
+            });
+            return true;
+        } else {
+            throw new Error("Failed to fetch boards");
+        }
     } catch (err) {
         console.error("Error setting form logo:", err);
         return null;

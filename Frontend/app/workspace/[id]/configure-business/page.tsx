@@ -414,19 +414,20 @@ export default function ConfigureBusinessPage() {
       if (wideLogoFile) {
         formDataToSend.append("wideLogo", wideLogoFile);
       }
-      
+
       const response = await axios.put(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`,
         formDataToSend,
         {
           headers: {
             "Content-Type": "multipart/form-data",
-            token: getCookie("token")
+            token: getCookie("token"),
+            Authorization: getCookie("Authorization")
           },
           signal: abortController.signal
         }
       );
-      
+
       if (!abortController.signal.aborted) {
         if (response.data.status === 'success') {
           setShowError(false);

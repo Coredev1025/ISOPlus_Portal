@@ -199,7 +199,7 @@ export default function LoginPage() {
             </form>
             <Button
               variant="ghost"
-              className="w-full text-sm text-muted-foreground hover:text-primary"
+              className="w-full text-sm text-muted-foreground hover:text-white"
               onClick={() => setIsSupportLogin(false)}
             >
               Return to ISO+ Login
@@ -261,7 +261,7 @@ export default function LoginPage() {
             </div>
             <Button
               variant="ghost"
-              className="w-full text-sm text-muted-foreground hover:text-primary"
+              className="w-full text-sm text-muted-foreground hover:text-white"
               onClick={() => setIsSupportLogin(true)}
             >
               Support Agent Login
