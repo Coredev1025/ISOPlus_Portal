@@ -1,6 +1,6 @@
 import axios from "axios";
 import Board from '../models/Board.js';
-import FormData from 'form-data'; 
+import FormData from 'form-data';
 
 export async function getWorkspace(authorization) {
     try {
@@ -11,7 +11,7 @@ export async function getWorkspace(authorization) {
             "Accept": "application/json",
         };
         const params = {
-            "limit": "10",
+            "limit": "100",
             "sort_by": "created_at",
             "sort_direction": "desc",
         };
@@ -73,7 +73,7 @@ export async function getBoard(authorization, workspaceId) {
             "Accept": "application/json",
         };
         const params = {
-            "limit": "10",
+            "limit": "100",
             "sort_by": "created_at",
             "sort_direction": "desc",
         };
@@ -182,7 +182,7 @@ export async function getItem(workspaceId, boardId, folderId) {
     }
 }
 
-export async function getViews(authorization, workspaceId, boardId) {
+export async function getAllViews(authorization, workspaceId, boardId) {
     try {
         const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/views`;
         const headers = {
@@ -191,7 +191,7 @@ export async function getViews(authorization, workspaceId, boardId) {
             "Accept": "application/json",
         };
         const params = {
-            "limit": "10",
+            "limit": "100",
             "sort_by": "created_at",
             "sort_direction": "desc",
         };
@@ -724,37 +724,55 @@ export async function setLogo(authorization, workspaceId, logo, type) {
     try {
         const boards = await getBoard(authorization, workspaceId);
         const body = new FormData();
-        body.append('file', logo.buffer, logo.originalname); 
+        body.append('file', logo.buffer, logo.originalname);
 
-        if (boards.status === 200 && boards.board?.length > 0) {
-            boards.board.forEach(async (boardItem) => {
-                const response = await getViews(authorization, workspaceId, boardItem.id);
+        const uploadImageURL = await axios.post(
+            `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/attachments/file`,
+            body,
+            {
+                headers: {
+                    "Authorization": authorization,
+                    ...body.getHeaders(),
+                    "Accept": "application/json",
+                },
+            }
+        );
+
+        if (uploadImageURL.status == 201 && boards.status === 200 && boards.board?.length > 0) {
+            for (const boardItem of boards.board) {
+                const response = await getAllViews(authorization, workspaceId, boardItem.id);
                 if (response.status !== 200) {
-                    return;
+                    continue;
                 }
-                const views = response.views.filter(item => item.type === type);
+                const views = response.views.filter(item => item.type.toLocaleString() === type);
                 if (!views || views.length === 0) {
-                    return;
+                    continue;
                 }
-                views.map((viewItem) => {
-                    axios.post(
-                        `https://app.isoplus.online/api/${workspaceId}/attachments/file?referenceable_type=view&referenceable_id=${viewItem.id}&board_id=${boardItem.id}`,
-                        body,
-                        {
-                            headers: {
-                                "Authorization": authorization,
-                                ...body.getHeaders(), 
-                                "Accept": "application/json",
-                            },
+                for (const viewItem of views) {
+                    const updateView = {
+                        ...viewItem,
+                        settings: {
+                            ...viewItem.settings,
+                            formSettings: {
+                                ...viewItem.settings.formSettings,
+                                logoImageUrl: uploadImageURL.data.link
+                            }
+                        },
+                    }
+
+                    axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardItem.id}/views/${viewItem.id}`, updateView, {
+                        headers: {
+                            "Authorization": authorization,
+                            "Content-Type": "application/json",
+                            "Accept": "application/json"
                         }
-                    )
-                        .then(response => console.log("Logo uploaded successfully:", response.data.link))
-                        .catch(err => { 
-                            console.error("Error uploading logo:", err.response?.data || err.message);
-                        });
-                });
-            });
-            return true;
+                    }).then(() => {
+                        console.log("Logo set successfully for view:", viewItem.id);
+                    }).catch(err => {
+                        console.error("Error setting logo for view:", err.response?.data || err.message);
+                    });
+                };
+            };
         } else {
             throw new Error("Failed to fetch boards");
         }
