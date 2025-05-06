@@ -35,13 +35,13 @@ router.post('/register',
       await user.save();
 
       const token = jwt.sign(
-        { userId: user._id, email: user.email, role: 'admin' },
+        { userId: user._id, email: user.email, role: 'admin', avatar: '' },
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
       );
 
       info('User-Service', 'User registered successfully', { email }, req);
-      res.status(201).json({ token, user: { id: user._id, email, name } });
+      res.status(201).json({ token, user: { id: user._id, email, name, role: 'admin', avatar: '' } });
     } catch (err) {
       error('User-Service', 'Server error during registration', { error: err.message }, req);
       res.status(500).json({ message: 'Server error' });
@@ -71,13 +71,13 @@ router.post('/login',
       }
 
       const token = jwt.sign(
-        { userId: user._id, email: user.email, role: 'admin' },
+        { userId: user._id, email: user.email, role: 'admin', avatar: '' },
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
       );
 
       info('User-Service', 'User logged in successfully', { email }, req);
-      res.json({ token, user: { id: user._id, email, name: user.name, role: 'admin' } });
+      res.json({ token, user: { id: user._id, email, name: user.name, role: 'admin', avatar: '' } });
     } catch (err) {
       error('User-Service', 'Server error during login', { error: err.message }, req);
       res.status(500).json({ message: 'Server error' });
@@ -94,7 +94,7 @@ router.get('/verify', authenticateToken, async (req, res) => {
     }
 
     const token = jwt.sign(
-      { userId: user._id, email: user.email, role: user.role },
+      { userId: user._id, email: user.email, role: user.role, avatar: user.avatar },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -105,7 +105,8 @@ router.get('/verify', authenticateToken, async (req, res) => {
         id: user._id,
         email: user.email,
         name: user.name,
-        role: user.role
+        role: user.role,
+        avatar: user.avatar
       }
     });
   } catch (err) {
@@ -216,7 +217,7 @@ router.post('/oauth-login', async (req, res) => {
     }
 
     const token = jwt.sign(
-      { userId: user._id, email: user.email, role: user.role },
+      { userId: user._id, email: user.email, role: user.role, avatar: user.avatar },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );

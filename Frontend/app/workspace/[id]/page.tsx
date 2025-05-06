@@ -228,10 +228,6 @@ export default function WorkspaceDetail() {
           {/* Boards List */}
           <Card className="p-6 shadow-lg">
             <h2 className="text-xl font-semibold mb-2">Workspace Boards</h2>
-            <p className="text-sm text-muted-foreground mb-6">
-              Boards that require integration with external systems or automation features should be labeled as either 'Job Management' or 'Care Management'.
-              Unlabeled boards will function normally but won't be included in automated processes.
-            </p>
             {
               loadingBoards ?
                 <div className="text-center py-8 text-muted-foreground">

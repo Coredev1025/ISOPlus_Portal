@@ -504,7 +504,7 @@ export default function Dashboard() {
             }
           );
 
-          const sortedWorkspace = [...response.data.workspace].sort((a, b) => 
+          const sortedWorkspace = [...response.data.workspace].sort((a, b) =>
             a.name.localeCompare(b.name)
           );
 
@@ -540,9 +540,17 @@ export default function Dashboard() {
       <div className="container mx-auto py-8 space-y-8">
         <Tabs defaultValue="workspaces" className="space-y-6">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
+            <TabsTrigger
+              value="workspaces"
+              className="bg-secondary text-secondary-foreground"
+            >
+              Workspaces
+            </TabsTrigger>
             {(user.role === "admin" || user.role === "owner") && (
-              <TabsTrigger value="logs" className="gap-2">
+              <TabsTrigger
+                value="logs"
+                className="bg-primary hover:bg-secondary hover:text-secondary-foreground"
+              >
                 <Terminal className="h-4 w-4" />
                 Application Logs
               </TabsTrigger>

@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { getCookie } from "@/app/utils/cookies";
+import { Header } from "@/components/ui/header";
 
 export default function XeroIntegrationPage() {
   const router = useRouter();
@@ -219,8 +220,9 @@ export default function XeroIntegrationPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background py-8">
-      <div className="container mx-auto">
+    <div className="min-h-screen bg-background">
+      <Header />
+      <div className="container mx-auto py-8">
         <Button
           variant="ghost"
           className="mb-6"
