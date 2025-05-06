@@ -68,21 +68,24 @@ export default function AuditTrailPage() {
           }
         );
 
-        const auditData = response.data.map((item: any) => ({
-          action: item.action,
-          user: item.userEmail,
-          ipAddress: item.userIp,
-          detail: item.detail,
-          timestamp: new Date(item.createdAt).toLocaleString('en-AU', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: true
-          })
-        }));
+        let auditData = response.data
+          .map((item: any) => ({
+            action: item.action,
+            user: item.userEmail,
+            ipAddress: item.userIp,
+            detail: item.detail,
+            timestamp: new Date(item.createdAt).toLocaleString('en-AU', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: true
+            }),
+            rawTimestamp: new Date(item.createdAt) // Add raw timestamp for sorting
+          }))
+        auditData = auditData.sort((a: any, b: any) => b.rawTimestamp.getTime() - a.rawTimestamp.getTime()); // Sort by raw timestamp in descending order
 
         setAuditTrail(auditData);
       } catch (error) {
@@ -243,7 +246,7 @@ export default function AuditTrailPage() {
                       (page >= currentPage - 1 && page <= currentPage + 1)
                     )
                     .map((page, i, arr) => (
-                      <div key={`pagination-${page}`} style={{display: "flex"}}>
+                      <div key={`pagination-${page}`} style={{ display: "flex" }}>
                         {i > 0 && arr[i - 1] !== page - 1 && (
                           <PaginationItem>
                             <PaginationEllipsis />

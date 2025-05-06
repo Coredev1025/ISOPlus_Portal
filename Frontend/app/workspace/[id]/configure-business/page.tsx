@@ -587,6 +587,9 @@ export default function ConfigureBusinessPage() {
                               onChange={(e) => handleLogoChange(e, setSquareLogoPreview, setSquareLogoFile)}
                               className="max-w-xs"
                             />
+                            <p className="text-sm text-muted-foreground mt-2">
+                              Recommended size: 512x512px
+                            </p>
                             <p className="text-sm text-muted-foreground mt-1">
                               Used for online forms
                             </p>

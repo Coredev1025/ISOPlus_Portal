@@ -186,7 +186,7 @@ export default function WorkspaceDetail() {
                   </div>
                 </Card>
 
-                <Card className="p-6 space-y-4 card-hover">
+                {false && (<Card className="p-6 space-y-4 card-hover">
                   <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
                     <FileText className="h-6 w-6 text-primary" />
                   </div>
@@ -202,7 +202,7 @@ export default function WorkspaceDetail() {
                       Setup PDF Output
                     </Button>
                   </div>
-                </Card>
+                </Card>)}
 
                 <Card className="p-6 space-y-4 card-hover">
                   <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">

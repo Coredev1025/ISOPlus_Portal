@@ -77,12 +77,12 @@ export function Header() {
 
         <div className="flex items-center justify-center">
           <img
-            src="/assets/logo_black.png"
+            src="/assets/logo_rgb_black.png"
             alt="ISO+ Logo"
             className="h-8 dark:hidden"
           />
           <img
-            src="/assets/logo_white.png"
+            src="/assets/logo_rgb_white.png"
             alt="ISO+ Logo"
             className="h-8 hidden dark:block"
           />
