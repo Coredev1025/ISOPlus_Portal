@@ -495,8 +495,6 @@ export default function Dashboard() {
           const response = await axios.get(
             `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces`,
             {
-              headers: {
-              },
               withCredentials: true,
               signal: abortController.signal
             }
@@ -507,9 +505,8 @@ export default function Dashboard() {
           );
 
           setWorkspaces(sortedWorkspace);
-          if (response.data.token) {
+          if (response.data.user.id) {
             setUser(response.data.user);
-            document.cookie = `token=${response.data.token}; path=/; max-age=86400; secure; samesite=strict`;
           }
 
           if (response.data.workspace.length === 1) {

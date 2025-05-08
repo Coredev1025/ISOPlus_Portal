@@ -4,6 +4,7 @@ import { warn } from '../utils/logger.js';
 export const authenticateToken = (req, res, next) => {
   const token = req.session.token;
   const workspaceId = req.body.workspaceId || req.params.workspaceId || req.query.workspaceId || undefined;
+  const boardId = req.body.boardId || req.params.boardId || req.query.boardId || undefined;
 
   if (!token) {
     warn('Authentication-Service', 'No token provided', {
@@ -16,9 +17,18 @@ export const authenticateToken = (req, res, next) => {
     const user = jwt.verify(token, process.env.JWT_SECRET);
 
     if (workspaceId) {
-      if (!user.workspace || !user.workspace.find(id => id === workspaceId)) {
+      if (!user.workspace || !user.workspace.find(id => id == workspaceId)) {
         warn('Authentication-Service', 'Workspace access denied', {
           error: 'Workspace access denied',
+        }, req);
+        return res.status(403).json({ message: 'Workspace access denied' });
+      }
+    }
+
+    if (boardId) {
+      if (!user.board || !user.board.find(id => id == boardId)) {
+        warn('Authentication-Service', 'Board access denied', {
+          error: 'Board access denied',
         }, req);
         return res.status(403).json({ message: 'Workspace access denied' });
       }

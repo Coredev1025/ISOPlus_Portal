@@ -13,25 +13,7 @@ router.get('/', authenticateToken, async (req, res) => {
   const response = await getMyWorkspace(req.session.Authorization);
 
   if (response.status === 200) {
-    const userRole = response.workspace[0]?.user_role || "user";
-    if (userRole === "owner" && req.user.role !== "owner") {
-      const user = await User.findByIdAndUpdate({ _id: req.user.userId }, { $set: { role: "owner" } });
-      const token = jwt.sign(
-        { userId: user._id, email: user.email, role: user.role, avatar: user.avatar, workspace: response.workspace },
-        process.env.JWT_SECRET,
-        { expiresIn: '24h' }
-      );
-      req.session.token = token;
-      res.status(200).json({ workspace: response.workspace, user, token });
-    } else {
-      const token = jwt.sign(
-        { userId: req.user.userId, email: req.user.email, role: req.user.role, avatar: req.user.avatar,  workspace: response.workspace },
-        process.env.JWT_SECRET,
-        { expiresIn: '24h' }
-      );
-      req.session.token = token;
-      res.status(200).json({ workspace: response.workspace });
-    }
+    res.status(200).json({ workspace: response.workspace });
   } else {
     res.status(500).json({ message: response.message });
   }
