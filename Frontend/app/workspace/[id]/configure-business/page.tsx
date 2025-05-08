@@ -15,8 +15,7 @@ import { ArrowLeft, Upload, AlertCircle, Loader2 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Header } from "@/components/ui/header";
-import axios from "axios";
-import { getCookie } from "@/app/utils/cookies";
+import axios from "@/app/utils/axiosConfig";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
@@ -295,7 +294,6 @@ export default function ConfigureBusinessPage() {
         const response = await axios.get(
           `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`,
           {
-            headers: { token: getCookie("token") },
             params: { workspaceId: id },
             signal: abortController.signal,
           }
@@ -421,8 +419,6 @@ export default function ConfigureBusinessPage() {
         {
           headers: {
             "Content-Type": "multipart/form-data",
-            token: getCookie("token"),
-            Authorization: getCookie("Authorization")
           },
           signal: abortController.signal
         }

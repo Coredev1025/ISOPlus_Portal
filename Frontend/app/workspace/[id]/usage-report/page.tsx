@@ -21,8 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useState, useEffect } from "react";
-import axios from "axios";
-import { getCookie } from "@/app/utils/cookies";
+import axios from "@/app/utils/axiosConfig";
 import {
   LineChart,
   Line,
@@ -149,7 +148,6 @@ export default function UsageReportPage() {
           axios.get(
             `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/usage/summary`,
             {
-              headers: { token: getCookie("token") },
               params: { 
                 workspaceId: id,
                 dateRange: dateRange 
@@ -160,7 +158,6 @@ export default function UsageReportPage() {
           axios.get(
             `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/usage/daily`,
             {
-              headers: { token: getCookie("token") },
               params: { 
                 workspaceId: id,
                 dateRange: dateRange 

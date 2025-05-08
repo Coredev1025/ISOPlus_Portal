@@ -1,14 +1,14 @@
 "use client";
 
 import { useAppContext } from "@/app/context";
-import { getCookie, isTokenValid } from "@/app/utils/cookies";
+import { isTokenValid } from "@/app/utils/cookies";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import axios from "axios";
+import axios from "@/app/utils/axiosConfig";
 
 export function Header() {
   const router = useRouter();
@@ -18,30 +18,25 @@ export function Header() {
     const abortController = new AbortController();
 
     const checkToken = async () => {
-      const token = getCookie('token');
-      if (token) {
-        try {
-          const valid = await isTokenValid(token, abortController.signal);
-          
-          if (!abortController.signal.aborted && valid.status === 200) {
-            setUser(valid.data.user);
-          } else if (!abortController.signal.aborted) {
-            document.cookie = `token=; path=/; max-age=0; secure; samesite=strict`;
-            document.cookie = `Authorization=; path=/; max-age=0; secure; samesite=strict`;
-            setUser({
-              id: "",
-              name: "",
-              email: "",
-              avatar: "",
-              role: "user"
-            });
-            setWorkspaces([]);
-            router.push("/");
-          }
-        } catch (error) {
-          if (!axios.isCancel(error)) {
-            console.error('Token verification failed:', error);
-          }
+      try {
+        const valid = await isTokenValid(abortController.signal);
+
+        if (!abortController.signal.aborted && valid.status === 200) {
+          setUser(valid.data.user);
+        } else if (!abortController.signal.aborted) {
+          setUser({
+            id: "",
+            name: "",
+            email: "",
+            avatar: "",
+            role: "user"
+          });
+          setWorkspaces([]);
+          router.push("/");
+        }
+      } catch (error) {
+        if (!axios.isCancel(error)) {
+          console.error('Token verification failed:', error);
         }
       }
     };
@@ -54,20 +49,21 @@ export function Header() {
   }, [router]);
 
   const handleLogout = () => {
-    document.cookie = `token=; path=/; max-age=0; secure; samesite=strict`;
-    document.cookie = `Authorization=; path=/; max-age=0; secure; samesite=strict`;
-    localStorage.removeItem("user");
-    localStorage.removeItem("workspace");
-    localStorage.removeItem("board");
-    setUser({
-      id: "",
-      name: "",
-      email: "",
-      avatar: "",
-      role: "user"
-    });
-    setWorkspaces([]);
-    router.push("/");
+    axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/logout`, {})
+      .then(() => {
+        localStorage.removeItem("user");
+        localStorage.removeItem("workspace");
+        localStorage.removeItem("board");
+        setUser({
+          id: "",
+          name: "",
+          email: "",
+          avatar: "",
+          role: "user"
+        });
+        setWorkspaces([]);
+        router.push("/");
+      })
   };
 
   return (

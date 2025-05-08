@@ -10,7 +10,7 @@ import { getMyWorkspace, getBoard } from '../services/isoplus.js';
 const router = express.Router();
 
 router.get('/', authenticateToken, async (req, res) => {
-  const response = await getMyWorkspace(req.headers['authorization']);
+  const response = await getMyWorkspace(req.session.Authorization);
 
   if (response.status === 200) {
     const userRole = response.workspace[0]?.user_role || "user";
@@ -31,7 +31,7 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 router.get('/boards', authenticateToken, async (req, res) => {
-  const response = await getBoard(req.headers['authorization'], req.query.workspaceId);
+  const response = await getBoard(req.session.Authorization, req.query.workspaceId);
   if (response.status === 200) {
     res.status(200).json({ board: response.board });
   } else {

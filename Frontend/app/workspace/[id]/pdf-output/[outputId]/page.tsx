@@ -7,8 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useEffect, useState } from "react";
 import { PDFOutput } from "../types";
-import axios from "axios";
-import { getCookie } from "@/app/utils/cookies";
+import axios from "@/app/utils/axiosConfig";
 
 export default function PDFOutputDetailPage() {
   const router = useRouter();
@@ -25,7 +24,6 @@ export default function PDFOutputDetailPage() {
         const response = await axios.get(
           `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf`,
           {
-            headers: { token: getCookie("token") },
             params: { workspaceId: id },
             signal: abortController.signal
           }

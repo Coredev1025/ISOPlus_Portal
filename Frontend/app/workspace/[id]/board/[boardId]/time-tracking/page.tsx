@@ -10,8 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useAppContext } from "@/app/context";
-import axios from "axios";
-import { getCookie } from "@/app/utils/cookies";
+import axios from "@/app/utils/axiosConfig";
 
 interface Board {
   id: string;
@@ -37,10 +36,6 @@ export default function TimeTrackingPage() {
           const response = await axios.get(
             `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`,
             {
-              headers: {
-                token: getCookie("token"),
-                Authorization: getCookie("Authorization")
-              },
               signal: abortController.signal
             }
           );
@@ -51,10 +46,6 @@ export default function TimeTrackingPage() {
                 const boardResponse = await axios.get(
                   `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`,
                   {
-                    headers: {
-                      token: getCookie("token"),
-                      Authorization: getCookie("Authorization")
-                    },
                     signal: abortController.signal
                   }
                 );

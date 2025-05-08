@@ -31,8 +31,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { useEffect, useState } from "react";
-import axios from "axios";
-import { getCookie } from "@/app/utils/cookies";
+import axios from "@/app/utils/axiosConfig";
 
 const ITEMS_PER_PAGE = 10;
 interface AuditTrailItem {
@@ -62,7 +61,6 @@ export default function AuditTrailPage() {
         const response = await axios.get(
           `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/audit/`,
           {
-            headers: { token: getCookie("token") },
             params: { workspaceId: id },
             signal: abortController.signal
           }

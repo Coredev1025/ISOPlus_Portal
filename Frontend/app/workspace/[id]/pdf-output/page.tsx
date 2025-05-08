@@ -33,8 +33,7 @@ import {
 } from "@/components/ui/pagination";
 import { useState, useEffect } from "react";
 import { PDFOutput } from "./types";
-import axios from "axios";
-import { getCookie } from "@/app/utils/cookies";
+import axios from "@/app/utils/axiosConfig";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -82,7 +81,6 @@ export default function PDFOutputPage() {
                 const response = await axios.get(
                     `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf`,
                     {
-                        headers: { token: getCookie("token") },
                         params: { workspaceId: id },
                         signal: abortController.signal
                     }
@@ -136,7 +134,6 @@ export default function PDFOutputPage() {
                 `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/`,
                 { workspaceId: id },
                 {
-                    headers: { token: getCookie("token") },
                     responseType: 'arraybuffer',
                     signal: abortController.signal
                 }

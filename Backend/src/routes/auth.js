@@ -40,6 +40,8 @@ router.post('/register',
         { expiresIn: '24h' }
       );
 
+      req.session.token = token;
+
       info('User-Service', 'User registered successfully', { email }, req);
       res.status(201).json({ token, user: { id: user._id, email, name, role: 'admin', avatar: '' } });
     } catch (err) {
@@ -76,6 +78,8 @@ router.post('/login',
         { expiresIn: '24h' }
       );
 
+      req.session.token = token;
+
       info('User-Service', 'User logged in successfully', { email }, req);
       res.json({ token, user: { id: user._id, email, name: user.name, role: 'admin', avatar: '' } });
     } catch (err) {
@@ -84,6 +88,17 @@ router.post('/login',
     }
   }
 );
+
+router.post('/logout', (req, res) => {
+  req.session.destroy((err) => {
+    if (err) {
+      error('Auth-Service', 'Error during logout', { error: err.message }, req);
+      return res.status(500).json({ message: 'Logout failed' });
+    }
+    res.clearCookie('connect.sid'); 
+    res.json({ message: 'Logout successful' });
+  });
+});
 
 router.get('/verify', authenticateToken, async (req, res) => {
   try {
@@ -98,6 +113,8 @@ router.get('/verify', authenticateToken, async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
+
+    req.session.token = token;
 
     res.json({
       token,
@@ -221,6 +238,9 @@ router.post('/oauth-login', async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
+
+    req.session.token = token;
+    req.session.Authorization = req.headers['authorization'];
 
     info('User-Service', 'OAuth login successful', { email: user.email }, req);
     res.json({

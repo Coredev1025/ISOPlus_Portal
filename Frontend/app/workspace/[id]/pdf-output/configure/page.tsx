@@ -18,8 +18,7 @@ import {
 } from "@/components/ui/select";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import axios from "axios";
-import { getCookie } from "@/app/utils/cookies";
+import axios from "@/app/utils/axiosConfig";
 
 interface PDFConfig {
   basicPDF: {
@@ -71,7 +70,6 @@ export default function ConfigurePDFPage() {
         const response = await axios.get(
           `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/config`,
           {
-            headers: { token: getCookie("token") },
             params: { workspaceId: id },
             signal: abortController.signal
           }
@@ -103,7 +101,6 @@ export default function ConfigurePDFPage() {
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/config`,
         { ...config, workspaceId: id },
         {
-          headers: { token: getCookie("token") },
           signal: abortController.signal
         }
       );

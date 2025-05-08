@@ -9,8 +9,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import Link from "next/link";
 import Image from "next/image";
 import { useState, useEffect } from "react";
-import axios from "axios";
-import { getCookie, isTokenValid } from "./utils/cookies";
+import axios from "@/app/utils/axiosConfig";
+import { isTokenValid } from "./utils/cookies";
 import { useAppContext } from "@/app/context/index";
 
 export default function LoginPage() {
@@ -19,30 +19,25 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [isSupportLogin, setIsSupportLogin] = useState(false); // Toggle between ISO+ and Support Agent login
+  const [isSupportLogin, setIsSupportLogin] = useState(false); 
 
   useEffect(() => {
     const abortController = new AbortController();
 
     const checkToken = async () => {
-      const token = getCookie('token');
-      if (token) {
-        try {
-          const valid = await isTokenValid(token, abortController.signal);
-          if (!abortController.signal.aborted && valid.status === 200) {
-            setUser(valid.data.user);
-            router.push('/dashboard');
-          } else {
-            document.cookie = `token=; path=/; max-age=0; secure; samesite=strict`;
-            document.cookie = `Authorization=; path=/; max-age=0; secure; samesite=strict`;
-            localStorage.removeItem("user");
-            localStorage.removeItem("workspace");
-            localStorage.removeItem("board");
-          }
-        } catch (error) {
-          if (!axios.isCancel(error)) {
-            console.error('Token verification failed:', error);
-          }
+      try {
+        const valid = await isTokenValid(abortController.signal);
+        if (!abortController.signal.aborted && valid.status === 200) {
+          setUser(valid.data.user);
+          router.push('/dashboard');
+        } else {
+          localStorage.removeItem("user");
+          localStorage.removeItem("workspace");
+          localStorage.removeItem("board");
+        }
+      } catch (error) {
+        if (!axios.isCancel(error)) {
+          console.error('Token verification failed:', error);
         }
       }
     };
@@ -67,7 +62,6 @@ export default function LoginPage() {
       );
 
       if (!abortController.signal.aborted && response.status === 200) {
-        document.cookie = `token=${response.data.token}; path=/; max-age=86400; secure; samesite=strict`;
         setUser(response.data.user);
         router.push('/dashboard');
       } else {
@@ -112,7 +106,6 @@ export default function LoginPage() {
         const handleMessage = async (event: MessageEvent) => {
           if (event.data.type === 'AUTH_SUCCESS') {
             try {
-              document.cookie = `Authorization=${event.data.accessToken}; path=/; max-age=86400; secure; samesite=strict`;
               const response = await axios.post(
                 `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/oauth-login`,
                 { oauthData: event.data.data },
@@ -123,7 +116,6 @@ export default function LoginPage() {
               );
 
               if (!abortController.signal.aborted && response.status === 200) {
-                document.cookie = `token=${response.data.token}; path=/; max-age=86400; secure; samesite=strict`;
                 setUser(response.data.user);
                 router.push('/dashboard');
               }

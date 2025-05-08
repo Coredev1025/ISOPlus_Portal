@@ -8,8 +8,7 @@ import { Header } from "@/components/ui/header";
 import { useEffect, useState } from "react";
 import { useAppContext } from "@/app/context";
 import { TimeEntry } from "../../types";
-import axios from "axios";
-import { getCookie } from "@/app/utils/cookies";
+import axios from "@/app/utils/axiosConfig";
 
 interface Board {
   id: string;
@@ -64,10 +63,6 @@ export default function LocationDetailPage() {
           const response = await axios.get(
             `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`,
             {
-              headers: {
-                token: getCookie("token"),
-                Authorization: getCookie("Authorization")
-              },
               signal: abortController.signal
             }
           );
@@ -78,10 +73,6 @@ export default function LocationDetailPage() {
                 const boardResponse = await axios.get(
                   `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`,
                   {
-                    headers: {
-                      token: getCookie("token"),
-                      Authorization: getCookie("Authorization")
-                    },
                     signal: abortController.signal
                   }
                 );

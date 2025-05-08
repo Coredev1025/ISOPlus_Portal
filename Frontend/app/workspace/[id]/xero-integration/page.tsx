@@ -5,8 +5,7 @@ import { Card } from "@/components/ui/card";
 import { ArrowLeft, FileSpreadsheet, KeyRound } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
-import axios from "axios";
-import { getCookie } from "@/app/utils/cookies";
+import axios from "@/app/utils/axiosConfig";
 import { Header } from "@/components/ui/header";
 
 export default function XeroIntegrationPage() {
@@ -26,7 +25,6 @@ export default function XeroIntegrationPage() {
         const response = await axios.get(
           `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`,
           {
-            headers: { token: getCookie("token") },
             params: { workspaceId: id },
             signal: abortController.signal
           }
@@ -64,7 +62,6 @@ export default function XeroIntegrationPage() {
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/redirect`,
         {
-          headers: { token: getCookie("token") },
           params: { workspaceId: id },
           signal: abortController.signal
         }
@@ -92,7 +89,6 @@ export default function XeroIntegrationPage() {
                   tokens: event.data.tokenSet
                 },
                 { 
-                  headers: { token: getCookie("token") },
                   signal: abortController.signal
                 }
               );
@@ -134,7 +130,6 @@ export default function XeroIntegrationPage() {
           workspaceId: id
         },
         { 
-          headers: { token: getCookie("token") },
           signal: abortController.signal
         }
       );
@@ -159,7 +154,6 @@ export default function XeroIntegrationPage() {
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/redirect`,
         {
-          headers: { token: getCookie("token") },
           params: { workspaceId: id },
           signal: abortController.signal
         }
@@ -187,7 +181,6 @@ export default function XeroIntegrationPage() {
                   tokens: event.data.tokenSet
                 },
                 { 
-                  headers: { token: getCookie("token") },
                   signal: abortController.signal
                 }
               );

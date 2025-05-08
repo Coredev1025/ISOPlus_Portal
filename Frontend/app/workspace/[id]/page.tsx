@@ -15,8 +15,7 @@ import {
 import { useEffect, useState } from "react";
 import { Header } from "@/components/ui/header";
 import { useAppContext } from "@/app/context";
-import axios from "axios";
-import { getCookie } from "@/app/utils/cookies";
+import axios from "@/app/utils/axiosConfig";
 import Spinner from "@/components/ui/spin";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -59,10 +58,6 @@ export default function WorkspaceDetail() {
           const response = await axios.get(
             `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`,
             {
-              headers: {
-                token: getCookie("token"),
-                Authorization: getCookie("Authorization")
-              },
               signal: abortController.signal
             }
           );
@@ -73,10 +68,6 @@ export default function WorkspaceDetail() {
                 const boardResponse = await axios.get(
                   `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`,
                   {
-                    headers: {
-                      token: getCookie("token"),
-                      Authorization: getCookie("Authorization")
-                    },
                     signal: abortController.signal
                   }
                 );

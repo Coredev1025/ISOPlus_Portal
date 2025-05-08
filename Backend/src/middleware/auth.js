@@ -2,8 +2,7 @@ import jwt from 'jsonwebtoken';
 import { warn } from '../utils/logger.js';
 
 export const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['token'];
-  const token = authHeader ? authHeader : null;
+  const token = req.session.token;
 
   if (!token) {
     warn('Authentication-Service', 'No token provided', {

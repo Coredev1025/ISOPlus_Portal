@@ -24,8 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAppContext } from "@/app/context";
-import axios from "axios";
-import { getCookie } from "@/app/utils/cookies";
+import axios from "@/app/utils/axiosConfig";
 
 interface Board {
   id: string;
@@ -54,10 +53,6 @@ export default function MapViewPage() {
           const response = await axios.get(
             `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`,
             {
-              headers: {
-                token: getCookie("token"),
-                Authorization: getCookie("Authorization"),
-              },
               signal: abortController.signal,
             }
           );
@@ -68,10 +63,6 @@ export default function MapViewPage() {
                 const boardResponse = await axios.get(
                   `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`,
                   {
-                    headers: {
-                      token: getCookie("token"),
-                      Authorization: getCookie("Authorization"),
-                    },
                     signal: abortController.signal,
                   }
                 );

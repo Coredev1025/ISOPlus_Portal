@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/table";
 import Spinner from "@/components/ui/spin";
 import React, { useEffect, useState } from "react";
-import axios from "axios";
+import axios from "@/app/utils/axiosConfig";
 import { Search, History, Terminal, Download, Filter, AlertTriangle, AlertCircle, Info, Bug, XCircle, RollerCoaster } from "lucide-react";
 import { Header } from "@/components/ui/header";
 import { Card } from "@/components/ui/card";
@@ -25,7 +25,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getCookie } from "../utils/cookies";
 import { useAppContext, Workspace } from "../context";
 
 interface Log {
@@ -303,8 +302,8 @@ function GlobalApplicationLogs() {
         const response = await axios.get(
           `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/log`,
           {
-            headers: { token: getCookie("token") },
-            signal: abortController.signal
+            signal: abortController.signal,
+            withCredentials: true,
           }
         );
         const formattedLogs = response.data.map((item: any, i: number) => ({
@@ -497,9 +496,8 @@ export default function Dashboard() {
             `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces`,
             {
               headers: {
-                token: getCookie("token"),
-                Authorization: getCookie("Authorization")
               },
+              withCredentials: true,
               signal: abortController.signal
             }
           );

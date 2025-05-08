@@ -34,8 +34,7 @@ import {
 import { useAppContext } from "@/app/context/index";
 import { Badge } from "@/components/ui/badge";
 import { TimeEntry } from "./types";
-import axios from "axios";
-import { getCookie } from "@/app/utils/cookies";
+import axios from "@/app/utils/axiosConfig";
 
 interface Board {
   id: string;
@@ -75,10 +74,6 @@ export default function BoardDetail() {
         const boardsResponse = await axios.get(
           `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`,
           {
-            headers: {
-              token: getCookie("token"),
-              Authorization: getCookie("Authorization")
-            },
             signal: abortController.signal
           }
         );
@@ -115,10 +110,6 @@ export default function BoardDetail() {
         const timetracking = await axios.get(
           `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks?workspaceId=${id}&boardId=${boardId}`,
           {
-            headers: {
-              token: getCookie("token"),
-              Authorization: getCookie("Authorization")
-            },
             signal: abortController.signal
           }
         );
@@ -159,8 +150,7 @@ export default function BoardDetail() {
   const getTimeTrackingStatus = async () => {
     try {
       const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks/status?workspaceId=${id}&boardId=${boardId}`,
-        { headers: { token: getCookie("token"), Authorization: getCookie("Authorization") } }
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks/status?workspaceId=${id}&boardId=${boardId}`, {}
       );
       if (response.data.active) {
         setTimeTrackingEnabled(true);

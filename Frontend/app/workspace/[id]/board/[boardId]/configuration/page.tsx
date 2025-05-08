@@ -26,8 +26,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useAppContext } from "@/app/context";
-import axios from "axios";
-import { getCookie } from "@/app/utils/cookies";
+import axios from "@/app/utils/axiosConfig";
 
 // Define the attribute type as a literal union type
 type AttributeType = "Text" | "Long Text";
@@ -116,10 +115,6 @@ export default function ConfigurationPage() {
           const response = await axios.get(
             `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards/attribute?workspaceId=${id}&boardId=${boardId}`,
             {
-              headers: {
-                token: getCookie("token"),
-                Authorization: getCookie("Authorization")
-              },
               signal: abortController.signal
             }
           );
@@ -156,10 +151,6 @@ export default function ConfigurationPage() {
           const boardResponse = await axios.get(
             `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${boardId}`,
             {
-              headers: {
-                token: getCookie("token"),
-                Authorization: getCookie("Authorization")
-              },
               signal: abortController.signal
             }
           );
@@ -224,12 +215,7 @@ export default function ConfigurationPage() {
     await axios.put(
       `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards`,
       { ...board, label: boardLabel, attribute: { id: selectedAttribute, name: attr?.name }, boardId, workspaceId: id },
-      {
-        headers: {
-          token: getCookie("token"),
-          Authorization: getCookie("Authorization")
-        }
-      }
+      {}
     );
   };
 
