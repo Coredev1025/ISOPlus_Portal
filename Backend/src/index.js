@@ -23,7 +23,7 @@ const app = express();
 app.use(cors({
   origin: ['http://localhost:3000', 'https://portal.isoplus.online'], 
   methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookies', 'x-api-version', 'Accept', 'token'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookies', 'X-API-Version', 'Accept'],
   credentials: true,
   optionsSuccessStatus: 200 
 }));

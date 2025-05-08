@@ -6,6 +6,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import querystring from 'querystring';
 import axios from 'axios';
 import { error, info, warn } from '../utils/logger.js';
+import { getBoard, getMyWorkspace } from '../services/isoplus.js';
 
 const router = express.Router();
 
@@ -35,7 +36,7 @@ router.post('/register',
       await user.save();
 
       const token = jwt.sign(
-        { userId: user._id, email: user.email, role: 'admin', avatar: '' },
+        { userId: user._id, email: user.email, name: user.name, role: 'admin', avatar: '' },
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
       );
@@ -43,7 +44,7 @@ router.post('/register',
       req.session.token = token;
 
       info('User-Service', 'User registered successfully', { email }, req);
-      res.status(201).json({ token, user: { id: user._id, email, name, role: 'admin', avatar: '' } });
+      res.status(201).json({ user: { id: user._id, email, name, role: 'admin', avatar: '' } });
     } catch (err) {
       error('User-Service', 'Server error during registration', { error: err.message }, req);
       res.status(500).json({ message: 'Server error' });
@@ -73,7 +74,7 @@ router.post('/login',
       }
 
       const token = jwt.sign(
-        { userId: user._id, email: user.email, role: 'admin', avatar: '' },
+        { userId: user._id, email: user.email, name: user.name, role: 'admin', avatar: '' },
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
       );
@@ -81,7 +82,7 @@ router.post('/login',
       req.session.token = token;
 
       info('User-Service', 'User logged in successfully', { email }, req);
-      res.json({ token, user: { id: user._id, email, name: user.name, role: 'admin', avatar: '' } });
+      res.json({ user: { id: user._id, email, name: user.name, role: 'admin', avatar: '' } });
     } catch (err) {
       error('User-Service', 'Server error during login', { error: err.message }, req);
       res.status(500).json({ message: 'Server error' });
@@ -109,7 +110,7 @@ router.get('/verify', authenticateToken, async (req, res) => {
     }
 
     const token = jwt.sign(
-      { userId: user._id, email: user.email, role: user.role, avatar: user.avatar },
+      { userId: user._id, email: user.email, name: user.name, role: user.role, avatar: user.avatar, workspace: req.user.workspace, board: req.user.board },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -117,7 +118,6 @@ router.get('/verify', authenticateToken, async (req, res) => {
     req.session.token = token;
 
     res.json({
-      token,
       user: {
         id: user._id,
         email: user.email,
@@ -235,26 +235,54 @@ router.post('/oauth-login', async (req, res) => {
       await User.findOneAndUpdate({ email: oauthData.email, oauthId: oauthData.id }, { $set: { avatar: oauthData.photo_url, name: oauthData.name } });
     }
 
-    const token = jwt.sign(
-      { userId: user._id, email: user.email, role: user.role, avatar: user.avatar },
-      process.env.JWT_SECRET,
-      { expiresIn: '24h' }
-    );
-
-    req.session.token = token;
     req.session.Authorization = req.headers['authorization'];
+    const workspaceResponse = await getMyWorkspace(req.session.Authorization);
 
-    info('User-Service', 'OAuth login successful', { email: user.email }, req);
-    res.json({
-      token,
-      user: {
-        id: user._id,
-        email: user.email,
-        name: user.name,
-        avatar: user.avatar,
-        role: user.role
+    if (workspaceResponse.status === 200) {
+      role = workspaceResponse.workspace[0]?.user_role || "user";
+      if (role === "owner" && user.role !== "owner") {
+        await User.findByIdAndUpdate({ _id: req.user.userId }, { $set: { role: "owner" } });
       }
-    });
+
+      const workspace = workspaceResponse.workspace.map(item => { return item.id; });
+
+      let boards = [];
+      for (const item of workspace) {
+        const boardResponse = await getBoard(req.session.Authorization, item);
+        boards = boards.concat(boardResponse.board);
+      }
+      const board = boards.map(item => { return item.id });
+
+      if (!user) {
+        user = new User({
+          email: oauthData.email,
+          name: oauthData.name,
+          password: "",
+          oauthId: oauthData.id,
+          avatar: oauthData.photo_url,
+          role: role
+        });
+        await user.save();
+      }
+
+      const token = jwt.sign(
+        { userId: user._id, email: user.email, name: user.name, role: user.role, avatar: user.avatar, workspace: workspace, board: board },
+        process.env.JWT_SECRET,
+        { expiresIn: '24h' }
+      );
+
+      req.session.token = token;
+      info('User-Service', 'OAuth login successful', { email: user.email }, req);
+      res.json({
+        user: {
+          id: user._id,
+          email: user.email,
+          name: user.name,
+          avatar: user.avatar,
+          role: user.role
+        }
+      });
+    }
   } catch (err) {
     error('User-Service', 'Server error during OAuth login', { error: err.message }, req);
     res.status(500).json({ message: 'Server error during OAuth login' });
