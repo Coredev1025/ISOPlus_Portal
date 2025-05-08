@@ -17,12 +17,19 @@ router.get('/', authenticateToken, async (req, res) => {
     if (userRole === "owner" && req.user.role !== "owner") {
       const user = await User.findByIdAndUpdate({ _id: req.user.userId }, { $set: { role: "owner" } });
       const token = jwt.sign(
-        { userId: user._id, email: user.email, role: user.role },
+        { userId: user._id, email: user.email, role: user.role, avatar: user.avatar, workspace: response.workspace },
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
       );
+      req.session.token = token;
       res.status(200).json({ workspace: response.workspace, user, token });
     } else {
+      const token = jwt.sign(
+        { userId: req.user.userId, email: req.user.email, role: req.user.role, avatar: req.user.avatar,  workspace: response.workspace },
+        process.env.JWT_SECRET,
+        { expiresIn: '24h' }
+      );
+      req.session.token = token;
       res.status(200).json({ workspace: response.workspace });
     }
   } else {
