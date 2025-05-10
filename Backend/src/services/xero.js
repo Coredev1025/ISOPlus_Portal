@@ -1,6 +1,9 @@
 import { XeroClient } from 'xero-node';
 import Business from '../models/Business.js';
 import { info, error } from '../utils/logger.js';
+import {
+    IsoPlusInvoiceValues
+} from '../dto/itemsPayload.js';
 
 let xeroClient = null;
 
@@ -108,6 +111,38 @@ export async function createToken() {
 }
 
 export async function createInvoice(invoice) {
+    const {
+        type,
+        lineItems,
+        currencyCode,
+        lineAmountTypes,
+        date,
+        dueDate,
+        status,
+        reference,
+        invoiceNumber,
+        customerName,
+        amount
+    } = invoice;
+    const contactID = invoice.contact?.contactID || invoice.contactID;
+    const validationObj = {
+        type,
+        contactID,
+        lineItems,
+        currencyCode,
+        lineAmountTypes,
+        date,
+        dueDate,
+        status,
+        reference,
+        invoiceNumber,
+        customerName,
+        amount
+    };
+    const { error: validationError } = IsoPlusInvoiceValues.validationSchema().validate(validationObj, { abortEarly: false });
+    if (validationError) {
+        throw new Error('Invoice validation failed: ' + validationError.details.map(d => d.message).join('; '));
+    }
     try {
         if (!xeroClient) {
             throw new Error('Xero client not configured');
@@ -210,6 +245,9 @@ export async function createOrUpdateContact(contact) {
 }
 
 export async function findOrCreateItem(itemCode, itemName) {
+    if (!itemCode || typeof itemCode !== 'string' || !itemName || typeof itemName !== 'string') {
+        throw new Error('Item validation failed: itemCode and itemName are required and must be strings.');
+    }
     try {
         if (!xeroClient) {
             throw new Error('Xero client not configured');

@@ -26,9 +26,21 @@ import {
   getContactByEmail,
   findOrCreateItem
 } from '../services/xero.js';
+import { Item } from '../dto/itemsPayload.js';
 
 dotenv.config();
 const router = express.Router();
+
+function mapInvoiceValuesToJobDTO(values) {
+  return {
+    jobNumber: values['Job Number'],
+    jobDurationHrs: values['Job Duration (Hrs.)'],
+    serviceFeeType: values['Service Fee Type'],
+    payableServiceFee: values['Payable Service Fee($) - GST Excl.'],
+    payableMaterialFee: values['Payable Material Fee($) - GST Excl.'],
+    otherPayableFee: values['Other Payable Fee($) - GST Excl.'],
+  };
+}
 
 router.get('/services', (req, res) => {
   const services = [
@@ -55,6 +67,12 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
   }
 
   const item = payload.items[0];
+  const mappedValues = mapInvoiceValuesToJobDTO(item.values);
+  const { error: validationError } = Item.validate('Job', mappedValues);
+  if (validationError) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Validation failed`);
+    return res.status(400).json({ message: 'Invoice validation failed', details: validationError.details });
+  }
 
   try {
     const business = await Business.findOne({ workspaceId });
@@ -116,6 +134,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       contact: { contactID: contact.contactID },
       reference: jobPlanningValues.jobNumber,
       lineItems: [],
+      date: new Date().toISOString().split('T')[0],
       dueDate: new Date(new Date().setDate(new Date().getDate() + 30)).toISOString().split('T')[0],
       status: "DRAFT"
     };
@@ -169,12 +188,37 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
   }
 
   const item = payload.items[0];
+  const contactValues = item.values;
+  const mappedContact = {
+    client: contactValues['Client'],
+    typeOfClient: contactValues['Type Of Client'],
+    contactPersonsFirstName: contactValues["Contact Person's First Name"],
+    contactPersonsLastName: contactValues["Contact Person's Last Name"],
+    emailAddress: contactValues['Email Address'],
+    phoneNumber: contactValues['Phone Number'],
+    paymentTerm: contactValues['Payment Term'],
+    additionalNotes: contactValues['Additional Notes'],
+    address: contactValues['Address'],
+    suburb: contactValues['Suburb'],
+    state: contactValues['State'],
+    postcode: contactValues['Postcode'],
+    xeroQuote: contactValues['Xero Quote'],
+    xeroAccount: contactValues['Xero Account'],
+    jobTitle: contactValues['Job Title'],
+    issueDate: contactValues['Issue Date'],
+    integrationValidation: contactValues['Integration Validation'],
+    integrationMessage: contactValues['Integration Message'],
+  };
+  const { error: validationError } = Item.validate('Contact', mappedContact);
+  if (validationError) {
+    await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Validation failed`);
+    return res.status(400).json({ message: 'Contact validation failed', details: validationError.details });
+  }
 
   try {
     const business = await Business.findOne({ workspaceId });
     await configure();
     await ensureAuthenticated(business.xeroTokens.accessToken, business.xeroTokens.refreshToken, business.xeroTokens.expiresAt);
-    const contactValues = item.values;
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
     await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
@@ -254,13 +298,33 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
   }
 
   const item = payload.items[0];
+  const contractorValues = item.values;
+  const mappedContractor = {
+    Contractor: contractorValues['Contractor'],
+    TypeOfContractor: contractorValues['Type Of Contractor'],
+    ContactPersonsFirstName: contractorValues["Contact Person's First Name"],
+    ContactPersonsLastName: contractorValues["Contact Person's Last Name"],
+    EmailAddress: contractorValues['Email Address'],
+    PhoneNumber: contractorValues['Phone Number'],
+    PaymentTerm: contractorValues['Payment Term'],
+    AdditionalNotes: contractorValues['Additional Notes'],
+    Address: contractorValues['Address'],
+    Suburb: contractorValues['Suburb'],
+    State: contractorValues['State'],
+    Postcode: contractorValues['Postcode'],
+    IntegrationValidation: contractorValues['Integration Validation'],
+    IntegrationMessage: contractorValues['Integration Message'],
+  };
+  const { error: validationError } = Item.validate('Contractor', mappedContractor);
+  if (validationError) {
+    await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Validation failed`);
+    return res.status(400).json({ message: 'Contractor validation failed', details: validationError.details });
+  }
 
   try {
     const business = await Business.findOne({ workspaceId });
     await configure();
     await ensureAuthenticated(business.xeroTokens.accessToken, business.xeroTokens.refreshToken, business.xeroTokens.expiresAt);
-
-    const contractorValues = item.values;
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
     await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
@@ -386,8 +450,17 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
-
-    const quote = {
+    const mappedQuote = {
+      quoteNumber: quoteValues['Quote Number'],
+      issueDate: quoteValues['Issue Date'],
+      expiryDate: quoteValues['Expiry Date'],
+      jobTitle: quoteValues['Job Title'],
+      unitPrice: quoteValues['Unit Price($) - GST Excl.'],
+      quantity: quoteValues.Quantity,
+      jobDescription: quoteValues['Job Description'].toString().replace(/<[^>]*>/g, ''),
+      quoteChecklist: quoteValues['Quote Checklist'] || [],
+    };
+    const xeroQuote = {
       contact: { contactID: contact.contactID },
       date: quoteValues['Issue Date'],
       expiryDate: quoteValues['Expiry Date'],
@@ -410,7 +483,13 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
       return res.status(200).json({ message: "A quote with the same number already exists." });
     }
 
-    const createdQuote = await createQuote(quote);
+    const { error: validationError } = Item.validate('Quote', mappedQuote);
+    if (validationError) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Validation failed`);
+      return res.status(400).json({ message: 'Quote validation failed', details: validationError.details });
+    }
+
+    const createdQuote = await createQuote(xeroQuote);
     await setIntegrationMessage(workspaceId, boardId, item.id, "Your quote is successfully created.");
 
     res.json(createdQuote);
@@ -445,9 +524,11 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
 
     const [contractorValues, jobTypeValues] = await getPurchaseOrderReferencedItems(workspaceId, boardId, item.id);
     if (!contractorValues) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, "ERROR: Contractor information is required. Purchase order is missing Contractor.");
       throw new Error("Contractor information is required. Purchase order is missing Contractor.");
     }
     if (!jobTypeValues) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, "ERROR: Job type information is required. Purchase order is missing Job Type.");
       throw new Error("Job type information is required. Purchase order is missing Job Type.");
     }
 
@@ -478,9 +559,19 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
         emailAddress: contractorValues.emailAddress
       });
     }
- 
+
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
 
+    const mappedPO = {
+      clientsOrderNumber: purchaseOrderValues['Client Order Number'],
+      purchaseOrderNumber: purchaseOrderValues['PO Number'],
+      issueDate: purchaseOrderValues['Issue Date'],
+      deliveryDate: purchaseOrderValues['Delivery Date'],
+      jobTitle: purchaseOrderValues['Job Title'],
+      unitPrice: purchaseOrderValues['Unit Price($) - GST Excl.'],
+      quantity: purchaseOrderValues.Quantity,
+      jobDescription: purchaseOrderValues['Job Description'],
+    };
     const purchaseOrder = {
       contact: { contactID: contact.contactID },
       date: purchaseOrderValues['Issue Date'],
@@ -503,6 +594,12 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     if (await purchaseOrderExists(purchaseOrder.purchaseOrderNumber)) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "WARN: A purchase order with the same number already exists.");
       return res.status(200).json({ message: "A purchase order with the same number already exists." });
+    }
+
+    const { error: validationError } = Item.validate('PurchaseOrder', mappedPO);
+    if (validationError) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Validation failed`);
+      return res.status(400).json({ message: 'Purchase order validation failed', details: validationError.details });
     }
 
     const createdPurchaseOrder = await createPurchaseOrder(purchaseOrder);
