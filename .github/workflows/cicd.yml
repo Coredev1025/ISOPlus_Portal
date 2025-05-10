@@ -45,13 +45,13 @@ jobs:
 
       - name: Upload to S3
         working-directory: Backend 
-        run: aws s3 cp $PACKAGE_FILE_NAME s3://isoplus-deployment/$PACKAGE_FILE_NAME
+        run: aws s3 cp $PACKAGE_FILE_NAME s3://isoplus-backend-deploy-bucket-isoplus-v1/$PACKAGE_FILE_NAME
         
       - name: Create a new version on EBS from package on S3
         run: | 
-          aws elasticbeanstalk create-application-version --application-name "ISO+ Portal - Backend - Dev" --version-label ${{ github.sha }} --source-bundle S3Bucket="isoplus-deployment",S3Key="$PACKAGE_FILE_NAME"
+          aws elasticbeanstalk create-application-version --application-name "isoplus-backend" --version-label ${{ github.sha }} --source-bundle S3Bucket="isoplus-backend-deploy-bucket-isoplus-v1",S3Key="$PACKAGE_FILE_NAME"
       
       - name: Update environment with the new vesion
         run: |
-          aws elasticbeanstalk update-environment --environment-name ISOPortal-Backend-Dev-env-GREEN --version-label ${{ github.sha }}
+          aws elasticbeanstalk update-environment --environment-name isoplus-backend-blue --version-label ${{ github.sha }}
       
