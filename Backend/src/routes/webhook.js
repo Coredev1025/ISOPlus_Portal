@@ -33,6 +33,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
 
     await Promise.all(req.body.items.map(async (item) => {
         try {
+            await validateItemBelongsToTenant(workspaceId, boardId, item.id);
             await putInternalMessage(workspaceId, boardId, item.id, "Running...");
 
             const [jobPlanningValues, serviceFeeTypeValues] = await getJobReportingReferencedItems(workspaceId, boardId, item.id);
@@ -176,6 +177,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
 
     await Promise.all(req.body.items.map(async (item) => {
         try {
+            await validateItemBelongsToTenant(workspaceId, boardId, item.id);
             await putInternalMessage(workspaceId, boardId, item.id, "Running...");
 
             const [contractorValues, jobTypeValues] = await getPurchaseOrderReferencedItems(workspaceId, boardId, item.id);
@@ -303,6 +305,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
 
     await Promise.all(req.body.items.map(async (item) => {
         try {
+            await validateItemBelongsToTenant(workspaceId, boardId, item.id);
             await putInternalMessage(workspaceId, boardId, item.id, "Running...");
 
             const [contactValues, jobTypeValues] = await getQuoteReferencedItems(workspaceId, boardId, item.id);
