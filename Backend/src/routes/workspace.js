@@ -5,12 +5,16 @@ import AuditTrail from '../models/AuditTrail.js';
 import User from '../models/User.js';
 import jwt from 'jsonwebtoken';
 import { info, error } from '../utils/logger.js';
-import { getMyWorkspace, getBoard } from '../services/isoplus.js';
+import { getWorkspace, getBoard } from '../services/isoplus.js';
 
 const router = express.Router();
 
 router.get('/', authenticateToken, async (req, res) => {
-  const response = await getMyWorkspace(req.session.Authorization);
+  const response = await getWorkspace(req.session.Authorization);
+
+  const sortedWorkspace = [...response.workspace].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
 
   if (response.status === 200) {
     const userRole = response.workspace[0]?.user_role || "user";
@@ -21,9 +25,10 @@ router.get('/', authenticateToken, async (req, res) => {
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
       );
-      res.status(200).json({ workspace: response.workspace, user, token });
+
+      res.status(200).json({ workspace: sortedWorkspace, user, token });
     } else {
-      res.status(200).json({ workspace: response.workspace });
+      res.status(200).json({ workspace: sortedWorkspace });
     }
   } else {
     res.status(500).json({ message: response.message });
@@ -32,8 +37,12 @@ router.get('/', authenticateToken, async (req, res) => {
 
 router.get('/boards', authenticateToken, async (req, res) => {
   const response = await getBoard(req.session.Authorization, req.query.workspaceId);
+  const sortedBoard = [...response.board].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
+
   if (response.status === 200) {
-    res.status(200).json({ board: response.board });
+    res.status(200).json({ board: sortedBoard });
   } else {
     res.status(500).json({ message: response.message });
   }
