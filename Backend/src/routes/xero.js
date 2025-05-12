@@ -8,7 +8,8 @@ import {
   getJobPlanningReferencedItems,
   getQuoteReferencedItems,
   getPurchaseOrderReferencedItems,
-  setIntegrationMessage
+  setIntegrationMessage,
+  putInternalMessage
 } from '../services/isoplus.js';
 import {
   configure,
@@ -70,7 +71,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
   const mappedValues = mapInvoiceValuesToJobDTO(item.values);
   const { error: validationError } = Item.validate('Job', mappedValues);
   if (validationError) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Validation failed`);
+    await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Invoice validation failed: ${JSON.stringify(validationError.details)}`);
     return res.status(400).json({ message: 'Invoice validation failed', details: validationError.details });
   }
 
@@ -85,14 +86,17 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
 
     const [jobPlanningValues, serviceFeeTypeValues] = await getJobReportingReferencedItems(workspaceId, boardId, item.id);
     if (!jobPlanningValues) {
+      putInternalMessage(workspaceId, boardId, item.id, "Job planning information is required. Job reporting is missing a job planning reference.");
       throw new Error("Job planning information is required. Job reporting is missing a job planning reference.");
     }
     if (!serviceFeeTypeValues) {
+      putInternalMessage(workspaceId, boardId, item.id, "Service fee type information is required. Job reporting is missing a service fee type reference.");
       throw new Error("Service fee type information is required. Job reporting is missing a service fee type reference.");
     }
 
     const [contactValues, jobTypeValues] = await getJobPlanningReferencedItems(workspaceId, boardId, jobPlanningValues.id);
     if (!contactValues) {
+      putInternalMessage(workspaceId, boardId, item.id, "Client information is required. Job planning is missing a client reference.");
       throw new Error("Client information is required. Job planning is missing a client reference.");
     }
 
@@ -124,6 +128,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     }
 
     if (!jobTypeValues) {
+      putInternalMessage(workspaceId, boardId, item.id, "Job type information is required. Job planning is missing a job type reference.");
       throw new Error("Job type information is required. Job planning is missing a job type reference.");
     }
 
@@ -173,7 +178,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
   } catch (err) {
     error('Error creating invoice', err);
     if (payload.items[0]) {
-      await setIntegrationMessage(workspaceId, boardId, payload.items[0].id, `ERROR: ${err.message}`);
+      await setIntegrationMessage(workspaceId, boardId, payload.items[0].id, "An error occurred while creating the invoice. Please contact support. More information: " + err.message);
     }
     res.status(200).json({ message: 'Error creating invoice', error: err.message });
   }
@@ -211,7 +216,7 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
   };
   const { error: validationError } = Item.validate('Contact', mappedContact);
   if (validationError) {
-    await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Validation failed`);
+    await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Contact validation failed: ${JSON.stringify(validationError.details)}`);
     return res.status(400).json({ message: 'Contact validation failed', details: validationError.details });
   }
 
@@ -283,7 +288,7 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
   } catch (err) {
     error('Error creating/updating contact', err);
     if (item) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating/updating the contact. Please contact support.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating/updating the contact. Please contact support. More information: " + err.message);
     }
     res.status(200).json({ message: 'Error creating/updating contact', error: err.message });
   }
@@ -317,7 +322,7 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
   };
   const { error: validationError } = Item.validate('Contractor', mappedContractor);
   if (validationError) {
-    await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Validation failed`);
+    await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Contractor validation failed: ${JSON.stringify(validationError.details)}`);
     return res.status(400).json({ message: 'Contractor validation failed', details: validationError.details });
   }
 
@@ -388,7 +393,7 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
   } catch (err) {
     error('Error creating/updating contractor', err);
     if (item) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating/updating the contractor. Please contact support.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating/updating the contractor. Please contact support. More information: " + err.message);
     }
     res.status(200).json({ message: 'Error creating/updating contractor', error: err.message });
   }
@@ -415,9 +420,11 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
 
     const [contactValues, jobTypeValues] = await getQuoteReferencedItems(workspaceId, boardId, item.id);
     if (!contactValues) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, "ERROR: Client information is required.");
       throw new Error("Client information is required.");
     }
     if (!jobTypeValues) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, "ERROR: Job Type is required.");
       throw new Error("Job Type is required.");
     }
 
@@ -450,6 +457,13 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
+    let rawChecklist = quoteValues['Quote Checklist'];
+    let quoteChecklist = [];
+    if (Array.isArray(rawChecklist)) {
+      quoteChecklist = rawChecklist.map(String);
+    } else if (typeof rawChecklist === 'string' && rawChecklist.trim() !== '') {
+      quoteChecklist = [rawChecklist];
+    }
     const mappedQuote = {
       quoteNumber: quoteValues['Quote Number'],
       issueDate: quoteValues['Issue Date'],
@@ -457,8 +471,8 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
       jobTitle: quoteValues['Job Title'],
       unitPrice: quoteValues['Unit Price($) - GST Excl.'],
       quantity: quoteValues.Quantity,
-      jobDescription: quoteValues['Job Description'].toString().replace(/<[^>]*>/g, ''),
-      quoteChecklist: quoteValues['Quote Checklist'] || [],
+      jobDescription: quoteValues['Job Description'] ? quoteValues['Job Description'].toString().replace(/<[^>]*>/g, '') : '',
+      quoteChecklist,
     };
     const xeroQuote = {
       contact: { contactID: contact.contactID },
@@ -485,7 +499,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
 
     const { error: validationError } = Item.validate('Quote', mappedQuote);
     if (validationError) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Validation failed`);
+      await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Quote validation failed: ${JSON.stringify(validationError.details)}`);
       return res.status(400).json({ message: 'Quote validation failed', details: validationError.details });
     }
 
@@ -496,7 +510,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
   } catch (err) {
     error('Error creating quote', err);
     if (item) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating the quote. Please contact support.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating the quote. Please contact support. More information: " + err.message);
     }
     res.status(200).json({ message: 'Error creating quote', error: err.message });
   }
@@ -563,7 +577,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
 
     const mappedPO = {
-      clientsOrderNumber: purchaseOrderValues['Client Order Number'],
+      clientsOrderNumber: purchaseOrderValues["Client's Order Number"],
       purchaseOrderNumber: purchaseOrderValues['PO Number'],
       issueDate: purchaseOrderValues['Issue Date'],
       deliveryDate: purchaseOrderValues['Delivery Date'],
@@ -598,7 +612,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
 
     const { error: validationError } = Item.validate('PurchaseOrder', mappedPO);
     if (validationError) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Validation failed`);
+      await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Purchase order validation failed: ${JSON.stringify(validationError.details)}`);
       return res.status(400).json({ message: 'Purchase order validation failed', details: validationError.details });
     }
 
@@ -609,7 +623,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
   } catch (err) {
     error('Error creating purchase order', err);
     if (item) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating the purchase order. Please contact support.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating the purchase order. Please contact support. More information: " + err.message);
     }
     res.status(200).json({ message: 'Error creating purchase order', error: err.message });
   }
