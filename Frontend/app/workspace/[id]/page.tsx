@@ -247,7 +247,7 @@ export default function WorkspaceDetail() {
                             </TooltipProvider>
                           </div>
                         </TableHead>
-                        <TableHead className="font-semibold w-[100px]">Actions</TableHead>
+                        <TableHead className={`font-semibold w-[100px] ${user.role == "admin" || user.role == "owner" ? '' : 'hidden'}`}>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
