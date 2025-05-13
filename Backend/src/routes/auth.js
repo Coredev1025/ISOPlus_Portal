@@ -231,6 +231,8 @@ router.post('/oauth-login', async (req, res) => {
         role: role
       });
       await user.save();
+    } else {
+      await User.findOneAndUpdate({ email: oauthData.email, oauthId: oauthData.id }, { $set: { avatar: oauthData.photo_url, name: oauthData.name } });
     }
 
     const token = jwt.sign(
