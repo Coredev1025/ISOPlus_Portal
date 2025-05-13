@@ -5,17 +5,18 @@ import { generate } from '@pdfme/generator';
 import { text, table, line, image, multiVariableText } from '@pdfme/schemas';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import AuditTrail from '../models/AuditTrail.js';
 import Business from '../models/Business.js';
 import PDFLink from '../models/PDFLink.js';
 import { getS3FileUrl, uploadFileToS3 } from '../utils/uploadS3.js';
 import {
+    validateItemBelongsToTenant,
     putInternalMessage,
     getJobReportingReferencedItems,
     getJobPlanningReferencedItems,
     getQuoteReferencedItems,
     getPurchaseOrderReferencedItems
 } from '../services/isoplus.js';
+import { logAuditTrail } from '../utils/auditLogger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -148,7 +149,12 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 const fileUrl = await getS3FileUrl(filename, 7 * 24 * 60 * 60); // 7 days expiration
                 const expiryDate = new Date(Date.now() + 604800000); // 7 days in milliseconds
                 await putInternalMessage(workspaceId, boardId, item.id, `Your invoice successfully created. \n Click <a href="${fileUrl}">here</a> \n This is a temporary link and will expire on ${expiryDate.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}. Make sure to download the file before expiry.`);
-                AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
+                logAuditTrail({
+                    workspaceId,
+                    action: 'Generate PDF Invoice',
+                    detail: `Resource ID: ${item.id}, Link: ${fileUrl}`,
+                    req
+                });
                 PDFLink.insertOne({ workspaceId: workspaceId, itemId: item.id, type: 'Invoice', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" });
                 info('Webhook-Service', 'Successfully generating PDF invoice', { link: fileUrl }, req);
 
@@ -160,6 +166,12 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
             const errorMessage = (err && err.message) ? err.message : 'An unknown error occurred. Please contact admin';
             await putInternalMessage(workspaceId, boardId, item.id, 'Server error: ' + errorMessage);
             error('Webhook-Service', 'Server error', { message: errorMessage }, req);
+            logAuditTrail({
+                workspaceId,
+                action: 'Generate PDF Invoice',
+                detail: `Resource ID: ${item.id}, Error: ${errorMessage}`,
+                req
+            });
             res.status(200).json({ message: 'Server error: ' + errorMessage });
         }
     }));
@@ -276,7 +288,12 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 const fileUrl = await getS3FileUrl(filename, 7 * 24 * 60 * 60); // 7 days expiration
                 const expiryDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
                 await putInternalMessage(workspaceId, boardId, item.id, `Your purchase order successfully created. \n Click <a href="${fileUrl}">here</a> \n This is a temporary link and will expire on ${expiryDate.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}. Make sure to download the file before expiry.`);
-                AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
+                logAuditTrail({
+                    workspaceId,
+                    action: 'Generate PDF Purchase Order',
+                    detail: `Resource ID: ${item.id}, Link: ${fileUrl}`,
+                    req
+                });
                 PDFLink.insertOne({ workspaceId: workspaceId, itemId: item.id, type: 'Purchase Order', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" });
                 info('Webhook-Service', 'Successfully generating PDF for Purchase Order', { link: fileUrl }, req);
 
@@ -288,6 +305,12 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
             const errorMessage = (err && err.message) ? err.message : 'An unknown error occurred. Please contact admin';
             await putInternalMessage(workspaceId, boardId, item.id, 'Server error: ' + errorMessage);
             error('Webhook-Service', 'Server error', { message: errorMessage }, req);
+            logAuditTrail({
+                workspaceId,
+                action: 'Generate PDF Purchase Order',
+                detail: `Resource ID: ${item.id}, Error: ${errorMessage}`,
+                req
+            });
             res.status(200).json({ message: 'Server error: ' + errorMessage });
         }
     }));
@@ -383,7 +406,12 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                 const fileUrl = await getS3FileUrl(filename, 7 * 24 * 60 * 60); // 7 days expiration
                 const expiryDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
                 await putInternalMessage(workspaceId, boardId, item.id, `Your quote successfully created. \n Click <a href="${fileUrl}">here</a> \n This is a temporary link and will expire on ${expiryDate.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}. Make sure to download the file before expiry.`);
-                AuditTrail.insertOne({ workspaceId: workspaceId, action: 'Generate new PDF Link', detail: `Resourse ID: ${item.id}`, userEmail: "", userIp: req.ip?.split(':').pop() });
+                logAuditTrail({
+                    workspaceId,
+                    action: 'Generate PDF Quote',
+                    detail: `Resource ID: ${item.id}, Link: ${fileUrl}`,
+                    req
+                });
                 PDFLink.insertOne({ workspaceId: workspaceId, itemId: item.id, type: 'Quote', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" });
                 info('Webhook-Service', 'Successfully generating PDF for Quote', { link: fileUrl }, req);
 
@@ -395,6 +423,12 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
             const errorMessage = (err && err.message) ? err.message : 'An unknown error occurred. Please contact admin';
             await putInternalMessage(workspaceId, boardId, item.id, 'Server error: ' + errorMessage);
             error('Webhook-Service', 'Server error', { message: errorMessage }, req);
+            logAuditTrail({
+                workspaceId,
+                action: 'Generate PDF Quote',
+                detail: `Resource ID: ${item.id}, Error: ${errorMessage}`,
+                req
+            });
             res.status(200).json({ message: 'Server error: ' + errorMessage });
         }
     }));

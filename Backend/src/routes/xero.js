@@ -28,6 +28,7 @@ import {
   findOrCreateItem
 } from '../services/xero.js';
 import { Item } from '../dto/itemsPayload.js';
+import { logAuditTrail } from '../utils/auditLogger.js';
 
 dotenv.config();
 const router = express.Router();
@@ -174,12 +175,25 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     const createdInvoice = await createInvoice(invoice);
     await setIntegrationMessage(workspaceId, boardId, item.id, "Your invoice is successfully created.");
 
+    logAuditTrail({
+      workspaceId,
+      action: "Create Xero Invoice",
+      detail: `Invoice created successfully, invoice number: ${createdInvoice.invoiceNumber}`,
+      req
+    });
+
     res.json(createdInvoice);
   } catch (err) {
     error('Error creating invoice', err);
     if (payload.items[0]) {
       await setIntegrationMessage(workspaceId, boardId, payload.items[0].id, "An error occurred while creating the invoice. Please contact support. More information: " + err.message);
     }
+    logAuditTrail({
+      workspaceId,
+      action: "Create Xero Invoice",
+      detail: `Error creating invoice: ${err.message}`,
+      req
+    });
     res.status(200).json({ message: 'Error creating invoice', error: err.message });
   }
 });
@@ -506,12 +520,25 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     const createdQuote = await createQuote(xeroQuote);
     await setIntegrationMessage(workspaceId, boardId, item.id, "Your quote is successfully created.");
 
+    logAuditTrail({
+      workspaceId,
+      action: "Create Xero Quote",
+      detail: `Quote created successfully, quote number: ${createdQuote.quoteNumber}`,
+      req
+    });
+
     res.json(createdQuote);
   } catch (err) {
     error('Error creating quote', err);
     if (item) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating the quote. Please contact support. More information: " + err.message);
     }
+    logAuditTrail({
+      workspaceId,
+      action: "Create Xero Quote",
+      detail: `Error creating quote: ${err.message}`,
+      req
+    });
     res.status(200).json({ message: 'Error creating quote', error: err.message });
   }
 });
@@ -619,12 +646,25 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     const createdPurchaseOrder = await createPurchaseOrder(purchaseOrder);
     await setIntegrationMessage(workspaceId, boardId, item.id, "Your purchase order is successfully created.");
 
+    logAuditTrail({
+      workspaceId,
+      action: "Create Xero Purchase Order",
+      detail: `Purchase order created successfully, PO number: ${createdPurchaseOrder.purchaseOrderNumber}`,
+      req
+    });
+
     res.json(createdPurchaseOrder);
   } catch (err) {
     error('Error creating purchase order', err);
     if (item) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating the purchase order. Please contact support. More information: " + err.message);
     }
+    logAuditTrail({
+      workspaceId,
+      action: "Create Xero Purchase Order",
+      detail: `Error creating purchase order: ${err.message}`,
+      req
+    });
     res.status(200).json({ message: 'Error creating purchase order', error: err.message });
   }
 });
