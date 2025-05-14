@@ -6,7 +6,7 @@
   "license": "ISOPlus-Portal",
   "type": "module",
   "scripts": {
-    "start": "set NODE_ENV=production node src/index.js",
+    "start": "set NODE_ENV=production && node src/index.js",
     "dev": "nodemon src/index.js",
     "debug": "node --inspect-brk src/index.js",
     "build-windows": "(if exist dist (rmdir /S /Q dist)) && mkdir dist && xcopy src\\* dist\\ /E /I /Y",
