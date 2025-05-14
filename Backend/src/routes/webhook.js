@@ -14,7 +14,8 @@ import {
     getJobReportingReferencedItems,
     getJobPlanningReferencedItems,
     getQuoteReferencedItems,
-    getPurchaseOrderReferencedItems
+    getPurchaseOrderReferencedItems,
+    setGeneratedField
 } from '../services/isoplus.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
 
@@ -157,7 +158,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 });
                 PDFLink.insertOne({ workspaceId: workspaceId, itemId: item.id, type: 'Invoice', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" });
                 info('Webhook-Service', 'Successfully generating PDF invoice', { link: fileUrl }, req);
-
+                await setGeneratedField(workspaceId, boardId, item.id, `ISO+ ${invoiceNumber}`);
                 res.json({ pdfUrl: fileUrl });
             } else {
                 throw new Error('Upload PDF failed, please provide correct information');
@@ -268,12 +269,12 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                     "Delivery Address": `${contractorValues.address} ${contractorValues.suburb} ${contractorValues.state} ${contractorValues.postcode}`
                 }),
                 orders: `[[
-          "${purchaseOrderValues['Job Title']}${purchaseOrderValues['Job Description'] ? ` - ${purchaseOrderValues['Job Description'].replace(/<.*?>/g, "")}` : ''}",
-          "${purchaseOrderValues.Quantity || 1}",
-          "${purchaseOrderValues['Unit Price($) - GST Excl.'] || 1}",
-          "${purchaseOrderValues['Total Price($) - GST Excl.'] || 1}", 
-          "${(purchaseOrderValues.Quantity || 1) * (purchaseOrderValues['Unit Price($) - GST Excl.'] || 1)}"
-        ]]`
+                    "${purchaseOrderValues['Job Title']}${purchaseOrderValues['Job Description'] ? ` - ${purchaseOrderValues['Job Description'].replace(/<.*?>/g, "")}` : ''}",
+                    "${purchaseOrderValues.Quantity || 1}",
+                    "${purchaseOrderValues['Unit Price($) - GST Excl.'] || 1}",
+                    "${purchaseOrderValues['Total Price($) - GST Excl.'] || 1}", 
+                    "${(purchaseOrderValues.Quantity || 1) * (purchaseOrderValues['Unit Price($) - GST Excl.'] || 1)}"
+                ]]`
             };
 
             const pdfBytes = await generate({
@@ -296,7 +297,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 });
                 PDFLink.insertOne({ workspaceId: workspaceId, itemId: item.id, type: 'Purchase Order', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" });
                 info('Webhook-Service', 'Successfully generating PDF for Purchase Order', { link: fileUrl }, req);
-
+                await setGeneratedField(workspaceId, boardId, item.id, `ISO+ ${purchaseOrderNumber}`);
                 res.json({ pdfUrl: fileUrl });
             } else {
                 throw new Error('Upload PDF failed, please provide correct information');
@@ -414,7 +415,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                 });
                 PDFLink.insertOne({ workspaceId: workspaceId, itemId: item.id, type: 'Quote', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" });
                 info('Webhook-Service', 'Successfully generating PDF for Quote', { link: fileUrl }, req);
-
+                await setGeneratedField(workspaceId, boardId, item.id, `ISO+ ${quoteNumber}`);
                 res.json({ pdfUrl: fileUrl });
             } else {
                 throw new Error('Upload PDF failed, please provide correct information');

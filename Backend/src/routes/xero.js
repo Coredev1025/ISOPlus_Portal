@@ -9,7 +9,8 @@ import {
   getQuoteReferencedItems,
   getPurchaseOrderReferencedItems,
   setIntegrationMessage,
-  putInternalMessage
+  putInternalMessage,
+  setGeneratedField
 } from '../services/isoplus.js';
 import {
   configure,
@@ -181,6 +182,8 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       detail: `Invoice created successfully, invoice number: ${createdInvoice.invoiceNumber}`,
       req
     });
+
+    await setGeneratedField(workspaceId, boardId, item.id, `Xero ${createdInvoice.invoiceNumber}`);
 
     res.json(createdInvoice);
   } catch (err) {
@@ -527,6 +530,8 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
       req
     });
 
+    await setGeneratedField(workspaceId, boardId, item.id, `Xero ${createdQuote.quoteNumber}`);
+    
     res.json(createdQuote);
   } catch (err) {
     error('Error creating quote', err);

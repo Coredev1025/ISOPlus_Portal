@@ -870,3 +870,33 @@ export async function setLogo(authorization, workspaceId, logo, type) {
         return null;
     }
 }
+
+export async function setGeneratedField(workspaceId, boardId, itemId, message) {
+    try {
+        const itemValues = await getItemValues(workspaceId, boardId, itemId);
+        if (!itemValues) {
+            throw new Error("Failed to update item with integration message");
+        }
+        const values = itemValues.values;
+        const generatedField = values.find(v => v.attribute.name.includes("Generated") && v.attribute.name.includes("Number") && v.attribute.type === "text");
+        if (generatedField) {
+            const response = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
+                { values: [{ data: message, attribute_id: generatedField.attribute.id }] },
+                {
+                    headers: {
+                        "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "X-API-Version": "2025-02-26.morava",
+                    }
+                });
+            if (response.status === 200) {
+                return true;
+            }
+        }
+        return false;
+    } catch (err) {
+        console.error("Error setting generated field:", err);
+        throw err;
+    }
+}
