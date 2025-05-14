@@ -17,20 +17,23 @@ export const authenticateToken = (req, res, next) => {
     const user = jwt.verify(token, process.env.JWT_SECRET);
 
     if (workspaceId) {
-      if (!user.workspace || !user.workspace.find(id => id == workspaceId)) {
+      const workspaceObj = user.workspace && Array.isArray(user.workspace)
+        ? user.workspace.find(w => (w.id || w) == workspaceId)
+        : undefined;
+      if (!workspaceObj) {
         warn('Authentication-Service', 'Workspace access denied', {
           error: 'Workspace access denied',
         }, req);
         return res.status(403).json({ message: 'Workspace access denied' });
       }
-    }
-
-    if (boardId) {
-      if (!user.board || !user.board.find(id => id == boardId)) {
-        warn('Authentication-Service', 'Board access denied', {
-          error: 'Board access denied',
-        }, req);
-        return res.status(403).json({ message: 'Workspace access denied' });
+      if (boardId) {
+        const boards = (typeof workspaceObj === 'object' && workspaceObj.board) ? workspaceObj.board : [];
+        if (!boards.find(b => (b.id || b) == boardId)) {
+          warn('Authentication-Service', 'Board access denied', {
+            error: 'Board access denied',
+          }, req);
+          return res.status(403).json({ message: 'Board access denied' });
+        }
       }
     }
 

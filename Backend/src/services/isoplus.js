@@ -2,7 +2,7 @@ import axios from "axios";
 import Board from '../models/Board.js';
 import FormData from 'form-data';
 
-export async function getWorkspace(authorization) {
+export async function getWorkspace(authorization, userEmail=null) {
     try {
         const url = "https://app.isoplus.online/api/v2/workspaces";
         const headers = {
@@ -34,6 +34,25 @@ export async function getWorkspace(authorization) {
                 }
             }
         }
+
+        workspace = await Promise.all(workspace.map(async (item) => {
+            const board = await getBoard(authorization, item.id);
+            const member = await getMember(authorization, item.id);
+            let userRole = null;
+            if (member.status === 200) {
+                userRole = member.members.find(m => m.email && m.email.toLowerCase() === userEmail.toLowerCase())?.role;
+            } else {
+                userRole = "restricted_member";
+            }
+            return {
+                id: item.id,
+                name: item.name,
+                label: item.label,
+                board: board.board,
+                user_role: userRole
+            }
+        }));
+
         return { workspace: workspace, status: 200 };
     } catch (err) {
         return { message: err.message, status: 500 };
@@ -177,6 +196,40 @@ export async function getItem(workspaceId, boardId, folderId) {
             }
         }
         return { item: item, status: 200 };
+    } catch (err) {
+        return { message: err.message, status: 500 };
+    }
+}
+
+export async function getMember(authorization, workspaceId) {
+    try {
+        const membersUrl = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/members`;
+        const membersHeaders = {
+            "Authorization": authorization,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-API-Version": "2025-02-26.morava",
+        };
+        const membersParams = {
+            "limit": "10",
+            "sort_by": "created_at",
+            "sort_direction": "desc",
+        };
+        let members = [];
+        let has_more = true;
+        let after = undefined;
+        while (has_more) {
+            const paramsWithAfter = after ? { ...membersParams, after } : membersParams;
+            const membersRes = await axios.get(membersUrl, { headers: membersHeaders, params: paramsWithAfter });
+            if (membersRes.status === 200 && Array.isArray(membersRes.data.data)) {
+                members = members.concat(membersRes.data.data);
+                has_more = membersRes.data.has_more;
+                after = membersRes.data.after;
+            } else {
+                has_more = false;
+            }
+        }
+        return { members: members, status: 200 };
     } catch (err) {
         return { message: err.message, status: 500 };
     }

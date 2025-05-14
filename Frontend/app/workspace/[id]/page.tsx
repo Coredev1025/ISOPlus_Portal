@@ -265,7 +265,7 @@ export default function WorkspaceDetail() {
                             )}
                           </TableCell>
                           <TableCell>
-                            <div className="flex items-center gap-2">
+                            <div className={`flex w-[100px] items-center gap-2 ${user.role == "admin" || user.role == "owner" ? '' : 'hidden'}`}>
                               <Button
                                 variant="outline"
                                 size="sm"

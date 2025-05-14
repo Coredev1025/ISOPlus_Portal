@@ -8,7 +8,7 @@ import { getWorkspace, getBoard } from '../services/isoplus.js';
 const router = express.Router();
 
 router.get('/', authenticateToken, async (req, res) => {
-  const response = await getWorkspace(req.session.Authorization);
+  const response = await getWorkspace(req.session.Authorization, req.user.email);
 
   const sortedWorkspace = [...response.workspace].sort((a, b) =>
     a.name.localeCompare(b.name)

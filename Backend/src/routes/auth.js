@@ -32,11 +32,11 @@ router.post('/register',
         return res.status(400).json({ message: 'User already exists' });
       }
 
-      const user = new User({ email, password, name, role: 'admin' });
+      const user = new User({ email, password, name, role: 'support_admin' });
       await user.save();
 
       const token = jwt.sign(
-        { userId: user._id, email: user.email, name: user.name, role: 'admin', avatar: '' },
+        { userId: user._id, email: user.email, name: user.name, role: 'support_admin', avatar: '' },
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
       );
@@ -44,7 +44,7 @@ router.post('/register',
       req.session.token = token;
 
       info('User-Service', 'User registered successfully', { email }, req);
-      res.status(201).json({ user: { id: user._id, email, name, role: 'admin', avatar: '' } });
+      res.status(201).json({ user: { id: user._id, email, name, role: 'support_admin', avatar: '' } });
     } catch (err) {
       error('User-Service', 'Server error during registration', { error: err.message }, req);
       res.status(500).json({ message: 'Server error' });
@@ -74,7 +74,7 @@ router.post('/login',
       }
 
       const token = jwt.sign(
-        { userId: user._id, email: user.email, name: user.name, role: 'admin', avatar: '' },
+        { userId: user._id, email: user.email, name: user.name, role: 'support_admin', avatar: '' },
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
       );
@@ -82,7 +82,7 @@ router.post('/login',
       req.session.token = token;
 
       info('User-Service', 'User logged in successfully', { email }, req);
-      res.json({ user: { id: user._id, email, name: user.name, role: 'admin', avatar: '' } });
+      res.json({ user: { id: user._id, email, name: user.name, role: 'support_admin', avatar: '' } });
     } catch (err) {
       error('User-Service', 'Server error during login', { error: err.message }, req);
       res.status(500).json({ message: 'Server error' });
@@ -96,7 +96,7 @@ router.post('/logout', (req, res) => {
       error('Auth-Service', 'Error during logout', { error: err.message }, req);
       return res.status(500).json({ message: 'Logout failed' });
     }
-    res.clearCookie('connect.sid'); 
+    res.clearCookie('connect.sid');
     res.json({ message: 'Logout successful' });
   });
 });
@@ -236,25 +236,16 @@ router.post('/oauth-login', async (req, res) => {
     }
 
     req.session.Authorization = req.headers['authorization'];
-    const workspaceResponse = await getWorkspace(req.session.Authorization);
+    const workspaceResponse = await getWorkspace(req.session.Authorization, user.email);
 
     if (workspaceResponse.status === 200) {
-      role = workspaceResponse.workspace[0]?.user_role || "user";
+      role = workspaceResponse.workspace[0]?.user_role || "isoplus_user";
       if (role === "owner" && user.role !== "owner") {
         await User.findByIdAndUpdate({ _id: req.user.userId }, { $set: { role: "owner" } });
       }
 
-      const workspace = workspaceResponse.workspace.map(item => { return item.id; });
-
-      let boards = [];
-      for (const item of workspace) {
-        const boardResponse = await getBoard(req.session.Authorization, item);
-        boards = boards.concat(boardResponse.board);
-      }
-      const board = boards.map(item => { return item.id });
-
       const token = jwt.sign(
-        { userId: user._id, email: user.email, name: user.name, role: user.role, avatar: user.avatar, workspace: workspace, board: board },
+        { userId: user._id, email: user.email, name: user.name, role: user.role, avatar: user.avatar, workspace: workspaceResponse.workspace },
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
       );
