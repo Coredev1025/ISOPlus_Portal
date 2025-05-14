@@ -6,7 +6,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import querystring from 'querystring';
 import axios from 'axios';
 import { error, info, warn } from '../utils/logger.js';
-import { getBoard, getMyWorkspace } from '../services/isoplus.js';
+import { getBoard, getWorkspace } from '../services/isoplus.js';
 
 const router = express.Router();
 
@@ -236,7 +236,7 @@ router.post('/oauth-login', async (req, res) => {
     }
 
     req.session.Authorization = req.headers['authorization'];
-    const workspaceResponse = await getMyWorkspace(req.session.Authorization);
+    const workspaceResponse = await getWorkspace(req.session.Authorization);
 
     if (workspaceResponse.status === 200) {
       role = workspaceResponse.workspace[0]?.user_role || "user";
@@ -252,18 +252,6 @@ router.post('/oauth-login', async (req, res) => {
         boards = boards.concat(boardResponse.board);
       }
       const board = boards.map(item => { return item.id });
-
-      if (!user) {
-        user = new User({
-          email: oauthData.email,
-          name: oauthData.name,
-          password: "",
-          oauthId: oauthData.id,
-          avatar: oauthData.photo_url,
-          role: role
-        });
-        await user.save();
-      }
 
       const token = jwt.sign(
         { userId: user._id, email: user.email, name: user.name, role: user.role, avatar: user.avatar, workspace: workspace, board: board },
