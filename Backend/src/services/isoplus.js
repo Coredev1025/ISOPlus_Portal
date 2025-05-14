@@ -2,7 +2,7 @@ import axios from "axios";
 import Board from '../models/Board.js';
 import FormData from 'form-data';
 
-export async function getWorkspace(authorization, userEmail=null) {
+export async function getWorkspace(authorization, userEmail = null) {
     try {
         const url = "https://app.isoplus.online/api/v2/workspaces";
         const headers = {
@@ -822,14 +822,32 @@ export async function setLogo(authorization, workspaceId, logo, type) {
                             console.error("Error setting logo for view:", err.response?.data || err.message);
                         });
                     };
-                } else {
+                } else if (type == "document") {
                     for (const viewItem of views) {
                         if (viewItem.settings.editorItems) {
-                            Object.keys(viewItem.settings.editorItems).forEach(key => {
-                                viewItem.settings.editorItems[key].cover = uploadImageURL.data.id;
-                            });
+                            for (const key of Object.keys(viewItem.settings.editorItems)) {
+                                const itemValues = await getItemValues(workspaceId, boardItem.id, key);
+                                if (itemValues) {
+                                    const values = itemValues.values;
+                                    const doc = values.find(v => v.attribute.name === "External Document");
+                                    if (doc) {
+                                        doc.data.push({ id: uploadImageURL.data.id });
+                                        const response = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardItem.id}/items/${key}`,
+                                            { values: [{ data: doc.data, attribute_id: doc.attribute.id }] },
+                                            {
+                                                headers: {
+                                                    "Authorization": authorization,
+                                                    "Content-Type": "application/json",
+                                                    "Accept": "application/json"
+                                                }
+                                            });
+                                        if (response.status === 200) {
+                                            viewItem.settings.editorItems[key].cover = uploadImageURL.data.id;
+                                        }
+                                    }
+                                }
+                            }
                         }
-
                         axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardItem.id}/views/${viewItem.id}`, viewItem, {
                             headers: {
                                 "Authorization": authorization,
