@@ -42,6 +42,7 @@ router.post('/register',
       );
 
       req.session.token = token;
+      await req.session.save();
 
       info('User-Service', 'User registered successfully', { email }, req);
       res.status(201).json({ user: { id: user._id, email, name, role: 'support_admin', avatar: '' } });
@@ -80,6 +81,7 @@ router.post('/login',
       );
 
       req.session.token = token;
+      await req.session.save();
 
       info('User-Service', 'User logged in successfully', { email }, req);
       res.json({ user: { id: user._id, email, name: user.name, role: 'support_admin', avatar: '' } });
@@ -116,6 +118,7 @@ router.get('/verify', authenticateToken, async (req, res) => {
     );
 
     req.session.token = token;
+    await req.session.save();
 
     res.json({
       user: {
@@ -251,6 +254,7 @@ router.post('/oauth-login', async (req, res) => {
       );
 
       req.session.token = token;
+      await req.session.save();      
       info('User-Service', 'OAuth login successful', { email: user.email }, req);
       res.json({
         user: {
@@ -261,7 +265,7 @@ router.post('/oauth-login', async (req, res) => {
           role: user.role
         }
       });
-    }
+    }    
   } catch (err) {
     error('User-Service', 'Server error during OAuth login', { error: err.message }, req);
     res.status(500).json({ message: 'Server error during OAuth login' });
