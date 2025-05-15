@@ -247,8 +247,19 @@ router.post('/oauth-login', async (req, res) => {
         await User.findByIdAndUpdate({ _id: user._id }, { $set: { role: "owner" } });
       }
 
+      const workspace = workspaceResponse.workspace.map(w => {
+        const board = w.board.map(b => {
+          return b.id
+        });
+        return {
+          id: w.id,
+          board: board,
+          user_role: w.user_role
+        }
+      });
+
       const token = jwt.sign(
-        { userId: user._id, email: user.email, name: user.name, role: user.role, avatar: user.avatar, workspace: workspaceResponse.workspace },
+        { userId: user._id, email: user.email, name: user.name, role: user.role, avatar: user.avatar, workspace: workspace },
         process.env.JWT_SECRET,
         { expiresIn: '24h' }
       );
