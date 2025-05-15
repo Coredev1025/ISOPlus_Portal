@@ -515,6 +515,9 @@ export async function getJobPlanningReferencedItems(workspaceId, boardId, itemId
                         contactPersonsLastName: values.some(v => v.attribute.name === "Contact Person's Last Name")
                             ? values.find(v => v.attribute.name === "Contact Person's Last Name").data.toString()
                             : "",
+                        updatedAt: values.some(v => v.attribute.name === "Updated At")
+                            ? values.find(v => v.attribute.name === "Updated At").data.toString()
+                            : "",
                     };
                 }
                 break;
@@ -602,6 +605,9 @@ export async function getQuoteReferencedItems(workspaceId, boardId, itemId) {
                             : "",
                         contactPersonsLastName: values.some(v => v.attribute.name === "Contact Person's Last Name")
                             ? values.find(v => v.attribute.name === "Contact Person's Last Name").data.toString()
+                            : "",
+                        updatedAt: values.some(v => v.attribute.name === "Updated At")
+                            ? values.find(v => v.attribute.name === "Updated At").data.toString()
                             : "",
                     };
                 }
@@ -691,6 +697,9 @@ export async function getPurchaseOrderReferencedItems(workspaceId, boardId, item
                         contactPersonsLastName: values.some(v => v.attribute.name === "Contact Person's Last Name")
                             ? values.find(v => v.attribute.name === "Contact Person's Last Name").data.toString()
                             : "",
+                        updatedAt:  values.some(v => v.attribute.name === "Updated At")
+                        ? values.find(v => v.attribute.name === "Updated At").data.toString()
+                        : "",
                     };
                 }
                 break;

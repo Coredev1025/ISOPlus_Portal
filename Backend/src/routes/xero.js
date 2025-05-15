@@ -129,9 +129,33 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       });
     } else {
       const xeroUpdatedDate = new Date(contact.updatedDateUTC);
-      const isoplusUpdatedDate = new Date(contactValues.updatedDate);
+      const isoplusUpdatedDate = new Date(contactValues.updatedAt);
+
       if (xeroUpdatedDate < isoplusUpdatedDate) {
-        contact = await createOrUpdateContact(contactValues);
+        contact = await createOrUpdateContact({
+          contactID: contact.contactID,
+          name: contactValues.client,
+          phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
+          firstName: contactValues.contactPersonsFirstName,
+          lastName: contactValues.contactPersonsLastName,
+          addresses: [
+            {
+              addressType: 'POBOX',
+              addressLine1: contactValues.address,
+              city: contactValues.suburb,
+              region: contactValues.state,
+              postalCode: contactValues.postcode.toString()
+            },
+            {
+              addressType: 'STREET',
+              addressLine1: contactValues.address,
+              city: contactValues.suburb,
+              region: contactValues.state,
+              postalCode: contactValues.postcode.toString()
+            }
+          ],
+          emailAddress: contactValues.emailAddress
+        });
       }
     }
 
@@ -477,6 +501,36 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
         ],
         emailAddress: contactValues.emailAddress
       });
+    } else {
+      const xeroUpdatedDate = new Date(contact.updatedDateUTC);
+      const isoplusUpdatedDate = new Date(contactValues.updatedAt);
+
+      if (xeroUpdatedDate < isoplusUpdatedDate) {
+        contact = await createOrUpdateContact({
+          contactID: contact.contactID,
+          name: contactValues.client,
+          phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
+          firstName: contactValues.contactPersonsFirstName,
+          lastName: contactValues.contactPersonsLastName,
+          addresses: [
+            {
+              addressType: 'POBOX',
+              addressLine1: contactValues.address,
+              city: contactValues.suburb,
+              region: contactValues.state,
+              postalCode: contactValues.postcode.toString()
+            },
+            {
+              addressType: 'STREET',
+              addressLine1: contactValues.address,
+              city: contactValues.suburb,
+              region: contactValues.state,
+              postalCode: contactValues.postcode.toString()
+            }
+          ],
+          emailAddress: contactValues.emailAddress
+        });
+      }
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
@@ -537,7 +591,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     });
 
     await setGeneratedField(workspaceId, boardId, item.id, `Xero ${createdQuote.quoteNumber}`);
-    
+
     res.json(createdQuote);
   } catch (err) {
     error('Error creating quote', err);
@@ -610,6 +664,36 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
         ],
         emailAddress: contractorValues.emailAddress
       });
+    } else {
+      const xeroUpdatedDate = new Date(contact.updatedDateUTC);
+      const isoplusUpdatedDate = new Date(contractorValues.updatedAt);
+
+      if (xeroUpdatedDate < isoplusUpdatedDate) {
+        contact = await createOrUpdateContact({
+          contactID: contact.contactID,
+          name: contractorValues.contractor,
+          phones: [{ phoneType: 'DEFAULT', phoneNumber: contractorValues.phoneNumber }],
+          firstName: contractorValues.contactPersonsFirstName,
+          lastName: contractorValues.contactPersonsLastName,
+          addresses: [
+            {
+              addressType: 'POBOX',
+              addressLine1: contractorValues.address,
+              city: contractorValues.suburb,
+              region: contractorValues.state,
+              postalCode: contractorValues.postcode.toString()
+            },
+            {
+              addressType: 'STREET',
+              addressLine1: contractorValues.address,
+              city: contractorValues.suburb,
+              region: contractorValues.state,
+              postalCode: contractorValues.postcode.toString()
+            }
+          ],
+          emailAddress: contractorValues.emailAddress
+        });
+      }
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
