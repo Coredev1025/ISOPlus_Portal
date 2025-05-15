@@ -2,6 +2,9 @@ import winston from "winston";
 const { combine, timestamp, printf, colorize, json } = winston.format;
 import "winston-daily-rotate-file";
 import "winston-mongodb";
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const levels = {
   error: 0,
