@@ -220,7 +220,7 @@ router.post('/oauth-login', async (req, res) => {
     const { oauthData } = req.body;
 
     let user = await User.findOne({ email: oauthData.email, oauthId: oauthData.id });
-    let role = 'user';
+    let role = 'isoplus_user';
     if (!user) {
       user = new User({
         email: oauthData.email,
@@ -241,7 +241,7 @@ router.post('/oauth-login', async (req, res) => {
     if (workspaceResponse.status === 200) {
       role = workspaceResponse.workspace[0]?.user_role || "isoplus_user";
       if (role === "owner" && user.role !== "owner") {
-        await User.findByIdAndUpdate({ _id: req.user.userId }, { $set: { role: "owner" } });
+        await User.findByIdAndUpdate({ _id: user._id }, { $set: { role: "owner" } });
       }
 
       const token = jwt.sign(

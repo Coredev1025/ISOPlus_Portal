@@ -127,6 +127,12 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
         ],
         emailAddress: contactValues.emailAddress
       });
+    } else {
+      const xeroUpdatedDate = new Date(contact.updatedDateUTC);
+      const isoplusUpdatedDate = new Date(contactValues.updatedDate);
+      if (xeroUpdatedDate < isoplusUpdatedDate) {
+        contact = await createOrUpdateContact(contactValues);
+      }
     }
 
     if (!jobTypeValues) {

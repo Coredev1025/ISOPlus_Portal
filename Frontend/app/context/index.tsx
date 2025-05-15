@@ -33,7 +33,7 @@ export function ContextProvider({ children }: { children: ReactNode }) {
         name: "",
         email: "",
         avatar: "",
-        role: "user"
+        role: "isoplus_user"
     });
     const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
 

@@ -273,7 +273,7 @@ export default function BoardDetail() {
           </Card>
 
           {/* Board Actions */}
-          {(user.role == "admin" || user.role == "owner") && (
+          {(user.role == "support_admin" || user.role == "owner") && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {/* Configuration Card */}
               <Card className="p-6 space-y-4 card-hover">

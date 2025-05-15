@@ -29,7 +29,7 @@ export function Header() {
             name: "",
             email: "",
             avatar: "",
-            role: "user"
+            role: "isoplus_user"
           });
           setWorkspaces([]);
           router.push("/");
@@ -59,7 +59,7 @@ export function Header() {
           name: "",
           email: "",
           avatar: "",
-          role: "user"
+          role: "isoplus_user"
         });
         setWorkspaces([]);
         router.push("/");

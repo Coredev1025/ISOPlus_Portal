@@ -24,8 +24,8 @@ const userSchema = new mongoose.Schema({
   avatar: String,
   role: {
     type: String,
-    default: 'user',
-    enum: ['user', 'admin']
+    default: 'isoplus_user',
+    enum: ['isoplus_user', 'support_admin', 'owner']
   }
 });
 

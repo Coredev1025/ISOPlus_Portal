@@ -536,7 +536,7 @@ export default function Dashboard() {
         <Tabs defaultValue="workspaces" className="space-y-6">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
-            {(user.role === "admin" || user.role === "owner") && (
+            {(user.role === "support_admin" || user.role === "owner") && (
               <TabsTrigger value="logs" className="gap-2">
                 <Terminal className="h-4 w-4" />
                 Application Logs
@@ -554,7 +554,7 @@ export default function Dashboard() {
             />
           </TabsContent>
 
-          {(user.role === "admin" || user.role === "owner") && (
+          {(user.role === "support_admin" || user.role === "owner") && (
             <TabsContent value="logs">
               <GlobalApplicationLogs />
             </TabsContent>

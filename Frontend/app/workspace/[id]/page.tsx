@@ -139,7 +139,7 @@ export default function WorkspaceDetail() {
 
           {/* Workspace Actions */}
           {
-            (user.role == "admin" || user.role == "owner" || workspace?.user_role == "owner" || workspace?.user_role == "admin") && (
+            (user.role == "support_admin" || user.role == "owner" || workspace?.user_role == "owner" || workspace?.user_role == "admin") && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <Card className="p-6 space-y-4 card-hover">
                   <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
@@ -231,7 +231,7 @@ export default function WorkspaceDetail() {
                       <TableRow>
                         <TableHead className="font-semibold">Board ID</TableHead>
                         <TableHead className="font-semibold">Board Name</TableHead>
-                        <TableHead className={`font-semibold ${user.role == "admin" || user.role == "owner" ? '' : 'hidden'}`}>
+                        <TableHead className={`font-semibold ${user.role == "support_admin" || user.role == "owner" ? '' : 'hidden'}`}>
                           <div className="flex items-center gap-2">
                             Label
                             <TooltipProvider>
@@ -247,7 +247,7 @@ export default function WorkspaceDetail() {
                             </TooltipProvider>
                           </div>
                         </TableHead>
-                        <TableHead className={`font-semibold w-[100px] ${user.role == "admin" || user.role == "owner" ? '' : 'hidden'}`}>Actions</TableHead>
+                        <TableHead className={`font-semibold w-[100px] ${user.role == "support_admin" || user.role == "owner" ? '' : 'hidden'}`}>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -255,7 +255,7 @@ export default function WorkspaceDetail() {
                         <TableRow key={board.id}>
                           <TableCell className="font-mono">{board.id}</TableCell>
                           <TableCell>{board.name}</TableCell>
-                          <TableCell className={`font-semibold ${user.role == "admin" || user.role == "owner" ? '' : 'hidden'}`}>
+                          <TableCell className={`font-semibold ${user.role == "support_admin" || user.role == "owner" ? '' : 'hidden'}`}>
                             {board.label ? (
                               <Badge variant="outline" className={board.label ? LABEL_COLORS[board.label as NonNullable<BoardLabel>] : ''}>
                                 {board.label}
@@ -265,7 +265,7 @@ export default function WorkspaceDetail() {
                             )}
                           </TableCell>
                           <TableCell>
-                            <div className={`flex w-[100px] items-center gap-2 ${user.role == "admin" || user.role == "owner" ? '' : 'hidden'}`}>
+                            <div className={`flex w-[100px] items-center gap-2 ${user.role == "support_admin" || user.role == "owner" ? '' : 'hidden'}`}>
                               <Button
                                 variant="outline"
                                 size="sm"
