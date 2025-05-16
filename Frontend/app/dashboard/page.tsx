@@ -25,7 +25,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useAppContext, Workspace } from "../context";
+import { useAppContext } from "../context";
+import { PaginationNext, PaginationPrevious, PaginationItem, PaginationLink } from "@/components/ui/pagination";
 
 interface Log {
   id: string;
@@ -328,6 +329,8 @@ function GlobalApplicationLogs() {
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
   const [isLoading, setLoading] = useState(false);
   const [logs, setLogs] = useState<Log[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [logsPerPage, setLogsPerPage] = useState(10);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -371,6 +374,10 @@ function GlobalApplicationLogs() {
     };
   }, []);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, levelFilter, sourceFilter, logsPerPage]);
+
   const uniqueSources = (logs || []).map(log => log.source).filter((value, index, self) => self.indexOf(value) === index);
 
   const filteredLogs = (logs || []).filter(log => {
@@ -383,6 +390,12 @@ function GlobalApplicationLogs() {
 
     return matchesSearch && matchesLevel && matchesSource;
   });
+
+  const totalLogs = filteredLogs.length;
+  const totalPages = Math.ceil(totalLogs / logsPerPage);
+  const paginatedLogs = filteredLogs
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice((currentPage - 1) * logsPerPage, currentPage * logsPerPage);
 
   return (
     <Card className="p-6">
@@ -399,7 +412,6 @@ function GlobalApplicationLogs() {
         </Button>
       </div>
 
-      {/* Search and Filters */}
       <div className="flex flex-wrap gap-4 mb-6">
         <div className="flex-1 min-w-[200px]">
           <div className="relative">
@@ -451,8 +463,7 @@ function GlobalApplicationLogs() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {filteredLogs
-            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+          {paginatedLogs
             .map((log) => (
               <React.Fragment key={log.id as string}>
                 <TableRow
@@ -498,11 +509,60 @@ function GlobalApplicationLogs() {
           <span className="ml-2"><Spinner /></span>
         </div>
         :
-        filteredLogs.length === 0 && (
+        paginatedLogs.length === 0 && (
           <div className="text-center py-8 text-muted-foreground">
             No logs found matching your search.
           </div>
         )}
+
+      <div className="flex flex-col md:flex-row items-center justify-between gap-4 mt-6">
+        <div className="flex items-center gap-2">
+          <span>Rows per page:</span>
+          <select
+            className="border rounded px-2 py-1 text-sm"
+            value={logsPerPage}
+            onChange={e => setLogsPerPage(Number(e.target.value))}
+          >
+            {[5, 10, 20, 50, 100].map(size => (
+              <option key={size} value={size}>{size}</option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2 justify-center w-full">
+          <PaginationPrevious
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+          />
+          {Array.from({ length: totalPages }, (_, i) => i + 1)
+            .filter(page =>
+              page === 1 ||
+              page === totalPages ||
+              (page >= currentPage - 1 && page <= currentPage + 1)
+            )
+            .map((page, i, arr) => (
+              <div key={`pagination-${page}`} style={{ display: "flex" }}>
+                {i > 0 && arr[i - 1] !== page - 1 && (
+                  <span className="px-2">...</span>
+                )}
+                <PaginationLink
+                  onClick={() => setCurrentPage(page)}
+                  isActive={currentPage === page}
+                >
+                  {page}
+                </PaginationLink>
+              </div>
+            ))}
+          <PaginationNext
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+          >
+            Next
+          </PaginationNext>
+        </div>
+        <div className="text-sm text-muted-foreground">
+          Page {currentPage} of {totalPages} ({totalLogs} logs)
+        </div>
+      </div>
     </Card>
   );
 }

@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/pagination";
 import { useEffect, useState } from "react";
 import axios from "@/app/utils/axiosConfig";
+import Spinner from "@/components/ui/spin";
 
 const ITEMS_PER_PAGE = 10;
 interface AuditTrailItem {
@@ -225,6 +226,13 @@ export default function AuditTrailPage() {
                 ))}
               </TableBody>
             </Table>
+
+            {loading &&
+              <div className="flex flex-col items-center justify-center py-16">
+                Loading audit trail...
+                <span className="ml-2"><Spinner /></span>
+              </div>
+            }
 
             {/* Pagination */}
             <div className="mt-4 flex justify-center">
