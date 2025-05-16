@@ -16,26 +16,30 @@ export const authenticateToken = (req, res, next) => {
   try {
     const user = jwt.verify(token, process.env.JWT_SECRET);
 
-    if (workspaceId) {
-      const workspaceObj = user.workspace && Array.isArray(user.workspace)
-        ? user.workspace.find(w => (w.id || w) == workspaceId)
-        : undefined;
-      if (!workspaceObj) {
-        warn('Authentication-Service', 'Workspace access denied', {
-          error: 'Workspace access denied',
-        }, req);
-        return res.status(403).json({ message: 'Workspace access denied' });
-      }
-      if (boardId) {
-        const boards = (typeof workspaceObj === 'object' && workspaceObj.board) ? workspaceObj.board : [];
-        if (!boards.find(b => (b.id || b) == boardId)) {
-          warn('Authentication-Service', 'Board access denied', {
-            error: 'Board access denied',
+    if(user.role === 'support_admin' || user.role === 'owner') {
+      req.session.Authorization = `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`;
+    } else {
+      if (workspaceId) {
+        const workspaceObj = user.workspace && Array.isArray(user.workspace)
+          ? user.workspace.find(w => (w.id || w) == workspaceId)
+          : undefined;
+        if (!workspaceObj) {
+          warn('Authentication-Service', 'Workspace access denied', {
+            error: 'Workspace access denied',
           }, req);
-          return res.status(403).json({ message: 'Board access denied' });
+          return res.status(403).json({ message: 'Workspace access denied' });
+        }
+        if (boardId) {
+          const boards = (typeof workspaceObj === 'object' && workspaceObj.board) ? workspaceObj.board : [];
+          if (!boards.find(b => (b.id || b) == boardId)) {
+            warn('Authentication-Service', 'Board access denied', {
+              error: 'Board access denied',
+            }, req);
+            return res.status(403).json({ message: 'Board access denied' });
+          }
         }
       }
-    }
+    }    
 
     req.user = user;
     req.headers['X-API-Version'] = '2025-02-26.morava';
