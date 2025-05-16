@@ -22,7 +22,7 @@ const boardSchema = new mongoose.Schema({
   },
   label: {
     type: String,
-    default: ''
+    default: 'No Label'
   },
   attribute: {
     id: {

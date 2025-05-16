@@ -31,12 +31,12 @@ interface Board {
   label: string
 }
 
-type BoardLabel = 'Job Management' | 'Care Management' | 'None';
+type BoardLabel = 'Job Management' | 'Care Management' | 'No Label';
 
 const LABEL_COLORS: Record<NonNullable<BoardLabel>, string> = {
   'Job Management': 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300',
   'Care Management': 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300',
-  'None': 'bg-teal-100 text-teal-800 dark:bg-lightgray-900 dark:text-lightgray-300',
+  'No Label': 'bg-teal-100 text-teal-800 dark:bg-lightgray-900 dark:text-lightgray-300',
 };
 
 export default function WorkspaceDetail() {
@@ -219,76 +219,74 @@ export default function WorkspaceDetail() {
           {/* Boards List */}
           <Card className="p-6 shadow-lg">
             <h2 className="text-xl font-semibold mb-2">Workspace Boards</h2>
-            {
-              loadingBoards ?
-                <div className="text-center py-8 text-muted-foreground">
-                  Loading boards...
-                  <Spinner />
-                </div>
-                : <>
-                  <Table className="enhanced-table">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="font-semibold">Board ID</TableHead>
-                        <TableHead className="font-semibold">Board Name</TableHead>
-                        <TableHead className={`font-semibold ${user.role == "support_admin" || user.role == "owner" ? '' : 'hidden'}`}>
-                          <div className="flex items-center gap-2">
-                            Label
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Info className="h-4 w-4 text-muted-foreground cursor-help" />
-                                </TooltipTrigger>
-                                <TooltipContent className="max-w-xs">
-                                  Label your boards as 'Job Management' or 'Care Management' to enable integration features.
-                                  Unlabeled boards will operate normally.
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </div>
-                        </TableHead>
-                        <TableHead className={`font-semibold w-[100px] ${user.role == "support_admin" || user.role == "owner" ? '' : 'hidden'}`}>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {boards?.map((board) => (
-                        <TableRow key={board.id}>
-                          <TableCell className="font-mono">{board.id}</TableCell>
-                          <TableCell>{board.name}</TableCell>
-                          <TableCell className={`font-semibold ${user.role == "support_admin" || user.role == "owner" ? '' : 'hidden'}`}>
-                            {board.label ? (
-                              <Badge variant="outline" className={board.label ? LABEL_COLORS[board.label as NonNullable<BoardLabel>] : ''}>
-                                {board.label}
-                              </Badge>
-                            ) : (
-                              "No Label"
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <div className={`flex w-[100px] items-center gap-2 ${user.role == "support_admin" || user.role == "owner" ? '' : 'hidden'}`}>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => router.push(`/workspace/${workspace?.id}/board/${board.id}`)}
-                              >
-                                Open Board
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                  {boards?.length === 0 && (
-                    <div className="text-center py-8 text-muted-foreground">
-                      No boards found matching your search.
+            <Table className="enhanced-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="font-semibold">Board ID</TableHead>
+                  <TableHead className="font-semibold">Board Name</TableHead>
+                  <TableHead className={`font-semibold ${user.role == "support_admin" || user.role == "owner" ? '' : 'hidden'}`}>
+                    <div className="flex items-center gap-2">
+                      Label
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Info className="h-4 w-4 text-muted-foreground cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-xs">
+                            Label your boards as 'Job Management' or 'Care Management' to enable integration features.
+                            Unlabeled boards will operate normally.
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </div>
-                  )}
-                </>
-            }
+                  </TableHead>
+                  <TableHead className={`font-semibold w-[100px] ${user.role == "support_admin" || user.role == "owner" ? '' : 'hidden'}`}>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {boards?.map((board) => (
+                  <TableRow key={board.id}>
+                    <TableCell className="font-mono">{board.id}</TableCell>
+                    <TableCell>{board.name}</TableCell>
+                    <TableCell className={`font-semibold ${user.role == "support_admin" || user.role == "owner" ? '' : 'hidden'}`}>
+                      {board.label ? (
+                        <Badge variant="outline" className={board.label ? LABEL_COLORS[board.label as NonNullable<BoardLabel>] : 'No Label'}>
+                          {board.label}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className={LABEL_COLORS['No Label']}>
+                          No Label
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className={`flex w-[100px] items-center gap-2 ${user.role == "support_admin" || user.role == "owner" ? '' : 'hidden'}`}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => router.push(`/workspace/${workspace?.id}/board/${board.id}`)}
+                        >
+                          Open Board
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            {loadingBoards ?
+              <div className="text-center py-8 text-muted-foreground">
+                Loading boards...
+                <span className="ml-2"><Spinner /></span>
+              </div>
+              : boards?.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  No boards found matching your search.
+                </div>
+              )}
           </Card>
         </div>
       </div>
-    </div>
+    </div >
   );
 }

@@ -37,17 +37,18 @@ interface ISOAttribute {
   type: AttributeType;
 }
 
-type BoardLabel = 'Job Management' | 'Care Management' | 'None';
+type BoardLabel = 'Job Management' | 'Care Management' | 'No Label';
 
 const BOARD_LABELS: NonNullable<BoardLabel>[] = [
   'Job Management',
-  'Care Management'
+  'Care Management',
+  'No Label'
 ];
 
 const LABEL_COLORS: Record<NonNullable<BoardLabel>, string> = {
   'Job Management': 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300',
   'Care Management': 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300',
-  'None': 'bg-teal-100 text-teal-800 dark:bg-lightgray-900 dark:text-lightgray-300'
+  'No Label': 'bg-teal-100 text-teal-800 dark:bg-lightgray-900 dark:text-lightgray-300'
 };
 
 interface SuggestionDialogProps {
@@ -94,7 +95,7 @@ export default function ConfigurationPage() {
   const { workspaces } = useAppContext();
   const [board, setBoard] = useState<Board>();
   const [selectedAttribute, setSelectedAttribute] = useState<string>("");
-  const [boardLabel, setBoardLabel] = useState<BoardLabel>('None');
+  const [boardLabel, setBoardLabel] = useState<BoardLabel>('No Label');
   const [isoAttributes, setIsoAttributes] = useState<ISOAttribute[]>([]);
   const [suggestionDialog, setSuggestionDialog] = useState<{
     isOpen: boolean;
@@ -102,7 +103,7 @@ export default function ConfigurationPage() {
     reason: string;
   }>({
     isOpen: false,
-    suggestion: 'None',
+    suggestion: 'No Label',
     reason: ''
   });
 
@@ -154,15 +155,15 @@ export default function ConfigurationPage() {
               signal: abortController.signal
             }
           );
-          const boardData = { id: boardId, name: boardResponse.data.board.name, label: boardResponse.data.board.label || 'None', attributeId: boardResponse.data.board.attribute.id || '' };
+          const boardData = { id: boardId, name: boardResponse.data.board.name, label: boardResponse.data.board.label || 'No Label', attributeId: boardResponse.data.board.attribute.id || '' };
           setBoard(boardData);
           setSelectedAttribute(boardResponse.data.board.attribute.id || '');
-          setBoardLabel(boardResponse.data.board.label || 'None');
+          setBoardLabel(boardResponse.data.board.label || 'No Label');
         } catch (error) {
           if (!axios.isCancel(error)) {
             console.error("Error fetching board:", error);
           }
-          setBoard({ id: boardId, name: '', label: 'None', attributeId: '' });
+          setBoard({ id: boardId, name: '', label: 'No Label', attributeId: '' });
           setSelectedAttribute('');
           return;
         }
@@ -184,7 +185,7 @@ export default function ConfigurationPage() {
 
   const suggestLabel = () => {
     const name = board.name.toLowerCase();
-    let suggestion: BoardLabel = 'None';
+    let suggestion: BoardLabel = 'No Label';
     let reason = '';
 
     if (name.includes('job management')) {
@@ -267,8 +268,8 @@ export default function ConfigurationPage() {
                 </p>
                 <div className="space-y-2">
                   <Select
-                    value={boardLabel || "none"}
-                    onValueChange={(value) => setBoardLabel(value === "none" ? 'None' : value as BoardLabel)}
+                    value={boardLabel || "No Label"}
+                    onValueChange={(value) => setBoardLabel(value as BoardLabel)}
                   >
                     <SelectTrigger className="w-[200px]">
                       <SelectValue>
@@ -277,12 +278,13 @@ export default function ConfigurationPage() {
                             {boardLabel}
                           </Badge>
                         ) : (
-                          "No Label"
+                          <Badge variant="outline" className={LABEL_COLORS['No Label']}>
+                            No Label
+                          </Badge>
                         )}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">No Label</SelectItem>
                       {BOARD_LABELS.map((label) => (
                         <SelectItem key={label} value={label}>
                           <Badge variant="outline" className={LABEL_COLORS[label]}>
