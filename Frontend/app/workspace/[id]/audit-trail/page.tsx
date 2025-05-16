@@ -227,12 +227,16 @@ export default function AuditTrailPage() {
               </TableBody>
             </Table>
 
-            {loading &&
+            {loading ?
               <div className="flex flex-col items-center justify-center py-16">
                 Loading audit trail...
                 <span className="ml-2"><Spinner /></span>
               </div>
-            }
+            : totalPages == 0 ?
+              <div className="flex flex-col items-center justify-center py-16">
+                No audit trail found
+              </div>
+            : <></>}
 
             {/* Pagination */}
             <div className="mt-4 flex justify-center">
