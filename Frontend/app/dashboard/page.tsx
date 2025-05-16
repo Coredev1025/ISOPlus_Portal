@@ -92,19 +92,58 @@ const LOG_LEVEL_ICONS: Record<LogLevel, React.ReactNode> = {
   FATAL: <XCircle className="h-4 w-4" />
 };
 
-function WorkspacesList({
-  isLoading,
-  filteredWorkspaces,
-  searchQuery,
-  setSearchQuery,
-  router
-}: {
-  isLoading: boolean,
-  filteredWorkspaces: Workspace[],
-  searchQuery: string,
-  setSearchQuery: (query: string) => void,
-  router: ReturnType<typeof useRouter>
-}) {
+function WorkspacesList() {
+  const router = useRouter();
+  const [searchQuery, setSearchQuery] = useState("");
+  const { workspaces, setWorkspaces } = useAppContext();
+  const [isLoading, setLoading] = useState(false);
+
+  const filteredWorkspaces = workspaces.filter(item =>
+    item.id.toString().includes(searchQuery.toLowerCase()) ||
+    item.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    const fetchWorkspaces = async () => {
+      if (workspaces.length === 0) {
+        setLoading(true);
+        try {
+          const response = await axios.get(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces`,
+            {
+              withCredentials: true,
+              signal: abortController.signal
+            }
+          );
+
+          const sortedWorkspace = [...response.data.workspace].sort((a, b) =>
+            a.name.localeCompare(b.name)
+          );
+
+          setWorkspaces(sortedWorkspace);
+
+          if (response.data.workspace.length === 1) {
+            router.push(`/workspace/${response.data.workspace[0].id}`);
+          }
+        } catch (error) {
+          if (!axios.isCancel(error)) {
+            console.error("Error fetching workspaces:", error);
+          }
+        }
+        setLoading(false);
+      }
+    };
+
+    fetchWorkspaces();
+
+    return () => {
+      abortController.abort();
+      setLoading(false);
+    };
+  }, [workspaces.length]);
+
   return (
     <Card className="p-6 shadow-sm">
       <div className="flex justify-between items-center mb-6">
@@ -120,46 +159,43 @@ function WorkspacesList({
         </div>
       </div>
 
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Workspace ID</TableHead>
+            <TableHead>Name</TableHead>
+            <TableHead>Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {filteredWorkspaces.map((workspace) => (
+            <TableRow key={workspace.id}>
+              <TableCell className="font-mono">{workspace.id}</TableCell>
+              <TableCell>{workspace.name}</TableCell>
+              <TableCell>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => router.push(`/workspace/${workspace.id} `)}
+                >
+                  Open Workspace
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
       {isLoading ?
         <div className="text-center py-8 text-muted-foreground">
           Loading workspaces...
-          <Spinner />
+          <span className="ml-2"><Spinner /></span>
         </div>
         :
-        <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Workspace ID</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredWorkspaces.map((workspace) => (
-                <TableRow key={workspace.id}>
-                  <TableCell className="font-mono">{workspace.id}</TableCell>
-                  <TableCell>{workspace.name}</TableCell>
-                  <TableCell>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => router.push(`/workspace/${workspace.id} `)}
-                    >
-                      Open Workspace
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-
-          {filteredWorkspaces.length === 0 && (
-            <div className="text-center py-8 text-muted-foreground">
-              No workspaces found matching your search.
-            </div>
-          )}
-        </>
+        filteredWorkspaces.length === 0 && (
+          <div className="text-center py-8 text-muted-foreground">
+            No workspaces found matching your search.
+          </div>
+        )
       }
     </Card >
   );
@@ -323,15 +359,15 @@ function GlobalApplicationLogs() {
         if (!axios.isCancel(error)) {
           console.error("Error fetching logs:", error);
         }
-      } finally {
-        setLoading(false);
       }
+      setLoading(false);
     };
 
     fetchLogs();
 
     return () => {
       abortController.abort();
+      setLoading(false);
     };
   }, []);
 
@@ -405,132 +441,77 @@ function GlobalApplicationLogs() {
           </Select>
         </div>
       </div>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Timestamp</TableHead>
+            <TableHead>Level</TableHead>
+            <TableHead>Source</TableHead>
+            <TableHead>Message</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {filteredLogs
+            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+            .map((log) => (
+              <React.Fragment key={log.id as string}>
+                <TableRow
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => setExpandedLog(expandedLog === log.id ? null : log.id as string)}
+                >
+                  <TableCell className="whitespace-nowrap">
+                    {new Date(log.timestamp as string).toLocaleString("en-AU")}
+                  </TableCell>
+                  <TableCell>
+                    <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${LOG_LEVEL_COLORS[log.level as LogLevel]}`}>
+                      {LOG_LEVEL_ICONS[log.level as LogLevel]}
+                      {log.level}
+                    </span>
+                  </TableCell>
+                  <TableCell>{log.source}</TableCell>
+                  <TableCell className="max-w-xl truncate">
+                    {log.message}
+                  </TableCell>
+                </TableRow>
+                {expandedLog === log.id && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="bg-muted/30">
+                      <div className="p-4 space-y-4">
+                        <div>
+                          <h4 className="text-sm font-medium mb-2">Metadata</h4>
+                          <pre className="text-sm bg-muted p-2 rounded-md overflow-x-auto">
+                            {JSON.stringify(log.details, null, 2)}
+                          </pre>
+                        </div>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </React.Fragment>
+            ))}
+        </TableBody>
+      </Table>
+
       {isLoading ?
         <div className="text-center py-8 text-muted-foreground">
-          Loading workspaces...
-          <Spinner />
+          Loading logs...
+          <span className="ml-2"><Spinner /></span>
         </div>
         :
-        <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Timestamp</TableHead>
-                <TableHead>Level</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Message</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredLogs
-                .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-                .map((log) => (
-                  <React.Fragment key={log.id as string}>
-                    <TableRow
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => setExpandedLog(expandedLog === log.id ? null : log.id as string)}
-                    >
-                      <TableCell className="whitespace-nowrap">
-                        {new Date(log.timestamp as string).toLocaleString("en-AU")}
-                      </TableCell>
-                      <TableCell>
-                        <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${LOG_LEVEL_COLORS[log.level as LogLevel]}`}>
-                          {LOG_LEVEL_ICONS[log.level as LogLevel]}
-                          {log.level}
-                        </span>
-                      </TableCell>
-                      <TableCell>{log.source}</TableCell>
-                      <TableCell className="max-w-xl truncate">
-                        {log.message}
-                      </TableCell>
-                    </TableRow>
-                    {expandedLog === log.id && (
-                      <TableRow>
-                        <TableCell colSpan={4} className="bg-muted/30">
-                          <div className="p-4 space-y-4">
-                            <div>
-                              <h4 className="text-sm font-medium mb-2">Metadata</h4>
-                              <pre className="text-sm bg-muted p-2 rounded-md overflow-x-auto">
-                                {JSON.stringify(log.details, null, 2)}
-                              </pre>
-                            </div>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </React.Fragment>
-                ))}
-            </TableBody>
-          </Table>
-
-          {filteredLogs.length === 0 && (
-            <div className="text-center py-8 text-muted-foreground">
-              No logs found matching your search.
-            </div>
-          )}
-        </>
-      }
+        filteredLogs.length === 0 && (
+          <div className="text-center py-8 text-muted-foreground">
+            No logs found matching your search.
+          </div>
+        )}
     </Card>
   );
 }
 
 export default function Dashboard() {
-  const router = useRouter();
-  const [searchQuery, setSearchQuery] = useState("");
-  const { workspaces, setWorkspaces, user, setUser } = useAppContext();
-  const [loading, setLoading] = useState(false);
-
-  const filteredWorkspaces = workspaces.filter(item =>
-    item.id.toString().includes(searchQuery.toLowerCase()) ||
-    item.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  useEffect(() => {
-    const abortController = new AbortController();
-
-    const fetchWorkspaces = async () => {
-      if (workspaces.length === 0) {
-        setLoading(true);
-        try {
-          const response = await axios.get(
-            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces`,
-            {
-              withCredentials: true,
-              signal: abortController.signal
-            }
-          );
-
-          const sortedWorkspace = [...response.data.workspace].sort((a, b) =>
-            a.name.localeCompare(b.name)
-          );
-
-          setWorkspaces(sortedWorkspace);
-          if (response.data.user.id) {
-            setUser(response.data.user);
-          }
-
-          if (response.data.workspace.length === 1) {
-            router.push(`/workspace/${response.data.workspace[0].id}`);
-          }
-        } catch (error) {
-          if (!axios.isCancel(error)) {
-            console.error("Error fetching workspaces:", error);
-          }
-        } finally {
-          setLoading(false);
-        }
-      }
-    };
-
-    fetchWorkspaces();
-
-    return () => {
-      abortController.abort();
-    };
-  }, [workspaces.length, user.role, router]);
+  const { user } = useAppContext();
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background relative">
       <Header />
       <div className="container mx-auto py-8 space-y-8">
         <Tabs defaultValue="workspaces" className="space-y-6">
@@ -545,13 +526,7 @@ export default function Dashboard() {
           </TabsList>
 
           <TabsContent value="workspaces">
-            <WorkspacesList
-              isLoading={loading}
-              filteredWorkspaces={filteredWorkspaces}
-              searchQuery={searchQuery}
-              setSearchQuery={setSearchQuery}
-              router={router}
-            />
+            <WorkspacesList />
           </TabsContent>
 
           {(user.role === "support_admin" || user.role === "owner") && (

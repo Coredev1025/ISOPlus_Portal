@@ -1,6 +1,6 @@
-const Spinner = () => {
+const Spinner = ({ className = "" }: { className?: string }) => {
     return (
-        <div className="loader"></div>
+        <div className={`loader ${className}`}></div>
     );
 };
 

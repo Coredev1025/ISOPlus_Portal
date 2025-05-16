@@ -12,6 +12,7 @@ import { useState, useEffect } from "react";
 import axios from "@/app/utils/axiosConfig";
 import { isTokenValid } from "./utils/cookies";
 import { useAppContext } from "@/app/context/index";
+import Spinner from "@/components/ui/spin";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -19,13 +20,15 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [isSupportLogin, setIsSupportLogin] = useState(false); 
+  const [isSupportLogin, setIsSupportLogin] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const abortController = new AbortController();
 
     const checkToken = async () => {
       try {
+        setIsLoading(true);
         const valid = await isTokenValid(abortController.signal);
         if (!abortController.signal.aborted && valid.status === 200) {
           setUser(valid.data.user);
@@ -40,6 +43,7 @@ export default function LoginPage() {
           console.error('Token verification failed:', error);
         }
       }
+      setIsLoading(false);
     };
 
     checkToken();
@@ -54,6 +58,7 @@ export default function LoginPage() {
     const abortController = new AbortController();
 
     setError("");
+    setIsLoading(true);
     try {
       const response = await axios.post(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/login`,
@@ -73,6 +78,7 @@ export default function LoginPage() {
         setError("Login Failed");
       }
     }
+    setIsLoading(false);
 
     return () => {
       abortController.abort();
@@ -81,7 +87,7 @@ export default function LoginPage() {
 
   const handleISOPlusLogin = async () => {
     const abortController = new AbortController();
-
+    setIsLoading(true);
     try {
       const redirectUrl = await axios.get(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/isoplus/redirect`,
@@ -132,6 +138,7 @@ export default function LoginPage() {
 
           window.removeEventListener('message', handleMessage);
           if (popup) popup.close();
+          setIsLoading(false);
         };
 
         window.addEventListener('message', handleMessage);
@@ -146,6 +153,7 @@ export default function LoginPage() {
         setError("Login Failed");
       }
     }
+    setIsLoading(false);
   };
 
   return (
@@ -185,14 +193,16 @@ export default function LoginPage() {
                   required
                 />
               </div>
-              <Button type="submit" className="w-full">
+              <Button type="submit" className="w-full" disabled={isLoading}>
                 Login as Support Agent
+                {isLoading && <span className="ml-2"><Spinner /></span>}
               </Button>
             </form>
             <Button
               variant="ghost"
               className="w-full text-sm text-muted-foreground hover:text-white"
               onClick={() => setIsSupportLogin(false)}
+              disabled={isLoading}
             >
               Return to ISO+ Login
             </Button>
@@ -228,8 +238,10 @@ export default function LoginPage() {
               onClick={handleISOPlusLogin}
               className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3"
               size="lg"
+              disabled={isLoading}
             >
               Login
+              {isLoading && <span className="ml-2"><Spinner /></span>}
             </Button>
             <div className="text-center text-sm text-muted-foreground">
               By continuing, you agree to our{" "}
@@ -255,6 +267,7 @@ export default function LoginPage() {
               variant="ghost"
               className="w-full text-sm text-muted-foreground hover:text-white"
               onClick={() => setIsSupportLogin(true)}
+              disabled={isLoading}
             >
               Support Agent Login
             </Button>
