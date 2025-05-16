@@ -40,9 +40,9 @@ app.use(session({
     autoRemove: 'native'
   }),
   cookie: {
-    secure: process.env.NODE_ENV === 'production' || false,
+    secure: false,
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: 'strict',
     maxAge: 1000 * 60 * 60 * 24
   }
 }));
