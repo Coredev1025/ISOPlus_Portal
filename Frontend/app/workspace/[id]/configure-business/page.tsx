@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Upload, AlertCircle, Loader2 } from "lucide-react";
+import { ArrowLeft, Upload, AlertCircle, Loader2, X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Header } from "@/components/ui/header";
@@ -52,6 +52,9 @@ export default function ConfigureBusinessPage() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [apiError, setApiError] = useState<string>('');
+  const [defaultLogoRemoved, setDefaultLogoRemoved] = useState(false);
+  const [squareLogoRemoved, setSquareLogoRemoved] = useState(false);
+  const [wideLogoRemoved, setWideLogoRemoved] = useState(false);
 
   // Alert dialog state
   const [alertDialog, setAlertDialog] = useState<{
@@ -389,8 +392,6 @@ export default function ConfigureBusinessPage() {
   };
 
   const handleSave = async () => {
-    const abortController = new AbortController();
-
     try {
       setLoading(true);
       const formDataToSend = new FormData();
@@ -412,6 +413,15 @@ export default function ConfigureBusinessPage() {
       if (wideLogoFile) {
         formDataToSend.append("wideLogo", wideLogoFile);
       }
+      if (defaultLogoRemoved) {
+        formDataToSend.append("defaultLogoRemoved", "true");
+      }
+      if (squareLogoRemoved) {
+        formDataToSend.append("squareLogoRemoved", "true");
+      }
+      if (wideLogoRemoved) {
+        formDataToSend.append("wideLogoRemoved", "true");
+      }
 
       const response = await axios.put(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`,
@@ -419,21 +429,22 @@ export default function ConfigureBusinessPage() {
         {
           headers: {
             "Content-Type": "multipart/form-data",
-          },
-          signal: abortController.signal
+          }
         }
       );
 
-      if (!abortController.signal.aborted) {
-        if (response.data.status === 'success') {
-          setShowError(false);
-          setShowSuccess(true);
-          setLogoFile(null);
-          setSquareLogoFile(null);
-          setWideLogoFile(null);
-          setTimeout(() => setShowSuccess(false), 2000);
-        }
+      if (response.data.status === 200) {
+        setShowError(false);
+        setShowSuccess(true);
+        setLogoFile(null);
+        setSquareLogoFile(null);
+        setWideLogoFile(null);
+        setDefaultLogoRemoved(false);
+        setSquareLogoRemoved(false);
+        setWideLogoRemoved(false);
+        setTimeout(() => setShowSuccess(false), 2000);
       }
+
     } catch (error: any) {
       setShowSuccess(false);
       if (error.response?.data?.errors) {
@@ -448,14 +459,8 @@ export default function ConfigureBusinessPage() {
         setApiError('');
       }, 5000);
     } finally {
-      if (!abortController.signal.aborted) {
-        setLoading(false);
-      }
+      setLoading(false);
     }
-
-    return () => {
-      abortController.abort();
-    };
   };
 
   const handleNumberChange = (type: 'invoice' | 'purchaseOrder' | 'quote', value: string) => {
@@ -489,6 +494,26 @@ export default function ConfigureBusinessPage() {
         break;
       case 'quote':
         setQuoteSequence(prev => ({ ...prev, nextNumber: value }));
+        break;
+    }
+  };
+
+  const handleRemoveLogo = (type: 'default' | 'square' | 'wide') => {
+    switch (type) {
+      case 'default':
+        setDefaultLogoPreview(null);
+        setDefaultLogoRemoved(true);
+        setLogoFile(null);
+        break;
+      case 'square':
+        setSquareLogoPreview(null);
+        setSquareLogoRemoved(true);
+        setSquareLogoFile(null);
+        break;
+      case 'wide':
+        setWideLogoPreview(null);
+        setWideLogoRemoved(true);
+        setWideLogoFile(null);
         break;
     }
   };
@@ -530,14 +555,24 @@ export default function ConfigureBusinessPage() {
                       <TabsContent value="default" className="pt-4">
                         <div className="flex items-center gap-4">
                           <div
-                            className="w-32 h-32 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted"
+                            className="w-32 h-32 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted relative"
                           >
                             {defaultLogoPreview ? (
-                              <img
-                                src={defaultLogoPreview}
-                                alt="Default Logo Preview"
-                                className="w-full h-full object-contain"
-                              />
+                              <>
+                                <img
+                                  src={defaultLogoPreview}
+                                  alt="Default Logo Preview"
+                                  className="w-full h-full object-contain"
+                                />
+                                <button
+                                  type="button"
+                                  className="absolute top-[0px] right-[0px] bg-white rounded-full p-1 shadow hover:bg-red-100 z-10"
+                                  onClick={() => handleRemoveLogo('default')}
+                                  aria-label="Remove Default Logo"
+                                >
+                                  <X className="w-4 h-4 text-destructive" />
+                                </button>
+                              </>
                             ) : (
                               <Upload className="h-8 w-8 text-muted-foreground" />
                             )}
@@ -563,14 +598,24 @@ export default function ConfigureBusinessPage() {
                       <TabsContent value="square" className="pt-4">
                         <div className="flex items-center gap-4">
                           <div
-                            className="w-32 h-32 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted"
+                            className="w-32 h-32 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted relative"
                           >
                             {squareLogoPreview ? (
-                              <img
-                                src={squareLogoPreview}
-                                alt="Square Logo Preview"
-                                className="w-full h-full object-contain"
-                              />
+                              <>
+                                <img
+                                  src={squareLogoPreview}
+                                  alt="Square Logo Preview"
+                                  className="w-full h-full object-contain"
+                                />
+                                <button
+                                  type="button"
+                                  className="absolute top-[0px] right-[0px] bg-white rounded-full p-1 shadow hover:bg-red-100 z-10"
+                                  onClick={() => handleRemoveLogo('square')}
+                                  aria-label="Remove Square Logo"
+                                >
+                                  <X className="w-4 h-4 text-destructive" />
+                                </button>
+                              </>
                             ) : (
                               <Upload className="h-8 w-8 text-muted-foreground" />
                             )}
@@ -596,14 +641,24 @@ export default function ConfigureBusinessPage() {
                       <TabsContent value="wide" className="pt-4">
                         <div className="flex items-center gap-4">
                           <div
-                            className="w-48 h-24 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted"
+                            className="w-48 h-24 border-2 border-dashed rounded-lg flex items-center justify-center bg-muted relative"
                           >
                             {wideLogoPreview ? (
-                              <img
-                                src={wideLogoPreview}
-                                alt="Wide Logo Preview"
-                                className="w-full h-full object-contain"
-                              />
+                              <>
+                                <img
+                                  src={wideLogoPreview}
+                                  alt="Wide Logo Preview"
+                                  className="w-full h-full object-contain"
+                                />
+                                <button
+                                  type="button"
+                                  className="absolute top-[0px] right-[0px] bg-white rounded-full p-1 shadow hover:bg-red-100 z-10"
+                                  onClick={() => handleRemoveLogo('wide')}
+                                  aria-label="Remove Wide Logo"
+                                >
+                                  <X className="w-4 h-4 text-destructive" />
+                                </button>
+                              </>
                             ) : (
                               <Upload className="h-8 w-8 text-muted-foreground" />
                             )}

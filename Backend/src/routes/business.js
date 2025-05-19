@@ -121,6 +121,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
 router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, async (req, res) => {
   try {
     const { name, phone, email, abn, acn, state, suburb, country, postcode, street, workspaceId, bankAccountName, bankName, bsb, accountNumber, paymentReference } = req.body;
+    const { defaultLogoRemoved, squareLogoRemoved, wideLogoRemoved } = req.body;
 
     let documentNumbering = {};
     if (req.body.documentNumbering) {
@@ -181,6 +182,25 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
       await uploadFileToS3(req.files['wideLogo'][0].buffer, wideLogoPath);
       setLogo(req.session.Authorization, workspaceId, req.files['wideLogo'][0], "document");
       updateData.wideLogo = wideLogoPath;
+    }
+
+    if (defaultLogoRemoved) {
+      if (business?.defaultLogo) {
+        await deleteFileFromS3(business.defaultLogo);
+      }
+      updateData.defaultLogo = null;
+    }
+    if (squareLogoRemoved) {
+      if (business?.squareLogo) {
+        await deleteFileFromS3(business.squareLogo);
+      }
+      updateData.squareLogo = null;
+    }
+    if (wideLogoRemoved) {
+      if (business?.wideLogo) {
+        await deleteFileFromS3(business.wideLogo);
+      }
+      updateData.wideLogo = null;
     }
 
     if (business) {
