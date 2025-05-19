@@ -266,13 +266,14 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 companyName: JSON.stringify({ "Company Name": business.name }),
                 termsInput: JSON.stringify({
                     "Delivery Date": purchaseOrderValues['Delivery Date'] && new Date(purchaseOrderValues['Delivery Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
-                    "Delivery Address": `${contractorValues.address} ${contractorValues.suburb} ${contractorValues.state} ${contractorValues.postcode}`
+                    "Delivery Address": `${contractorValues.address} ${contractorValues.suburb} ${contractorValues.state} ${contractorValues.postcode}`,
+                    "Additional Notes": `${purchaseOrderValues['Additional Notes']}`
                 }),
                 orders: `[[
                     "${purchaseOrderValues['Job Title']}${purchaseOrderValues['Job Description'] ? ` - ${purchaseOrderValues['Job Description'].replace(/<.*?>/g, "")}` : ''}",
                     "${purchaseOrderValues.Quantity || 1}",
                     "${purchaseOrderValues['Unit Price($) - GST Excl.'] || 1}",
-                    "${purchaseOrderValues['Total Price($) - GST Excl.'] || 1}", 
+                    "${purchaseOrderValues['GST'] || 1}", 
                     "${(purchaseOrderValues.Quantity || 1) * (purchaseOrderValues['Unit Price($) - GST Excl.'] || 1)}"
                 ]]`
             };
@@ -283,7 +284,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 plugins: { text, image, line, table, multiVariableText }
             });
 
-            const filename = `output/${workspaceId}/${boardId}/purchaseorder/${purchaseOrderNumber + '-' + item.id}.pdf`;
+            const filename = `output/${workspaceId}/${boardId}/purchaseorder/${purchaseOrderNumber + '-ISO+™-' + item.id}.pdf`;
             const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename, 7 * 24 * 60 * 60); // 7 days expiration
@@ -297,7 +298,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 });
                 PDFLink.insertOne({ workspaceId: workspaceId, itemId: item.id, type: 'Purchase Order', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" });
                 info('Webhook-Service', 'Successfully generating PDF for Purchase Order', { link: fileUrl }, req);
-                await setGeneratedField(workspaceId, boardId, item.id, `ISO+ ${purchaseOrderNumber}`);
+                await setGeneratedField(workspaceId, boardId, item.id, `${purchaseOrderNumber} (ISO+™)`);
                 res.json({ pdfUrl: fileUrl });
             } else {
                 throw new Error('Upload PDF failed, please provide correct information');

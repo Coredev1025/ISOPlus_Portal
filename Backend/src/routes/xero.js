@@ -213,7 +213,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       req
     });
 
-    await setGeneratedField(workspaceId, boardId, item.id, `Xero ${createdInvoice.invoiceNumber}`);
+    await setGeneratedField(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber}(Xero)`);
 
     res.json(createdInvoice);
   } catch (err) {
@@ -590,7 +590,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
       req
     });
 
-    await setGeneratedField(workspaceId, boardId, item.id, `Xero ${createdQuote.quoteNumber}`);
+    await setGeneratedField(workspaceId, boardId, item.id, `${createdQuote.quoteNumber}(Xero)`);
 
     res.json(createdQuote);
   } catch (err) {
@@ -700,7 +700,6 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
 
     const mappedPO = {
       clientsOrderNumber: purchaseOrderValues["Client's Order Number"],
-      purchaseOrderNumber: purchaseOrderValues['PO Number'],
       issueDate: purchaseOrderValues['Issue Date'],
       deliveryDate: purchaseOrderValues['Delivery Date'],
       jobTitle: purchaseOrderValues['Job Title'],
@@ -712,10 +711,10 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
       contact: { contactID: contact.contactID },
       date: purchaseOrderValues['Issue Date'],
       deliveryDate: purchaseOrderValues['Delivery Date'],
-      purchaseOrderNumber: purchaseOrderValues['PO Number'],
       attentionTo: `${contractorValues.contactPersonsFirstName} ${contractorValues.contactPersonsLastName}`,
       deliveryAddress: `${contractorValues.address} ${contractorValues.suburb} ${contractorValues.state} ${contractorValues.postcode}`,
       telephone: contractorValues.phoneNumber,
+      deliveryInstructions: purchaseOrderValues['Additional Notes'].replace(/<[^>]*>/g, ''),
       lineItems: [
         {
           itemCode: jobType.code,
@@ -727,10 +726,10 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
       ]
     };
 
-    if (await purchaseOrderExists(purchaseOrder.purchaseOrderNumber)) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "WARN: A purchase order with the same number already exists.");
-      return res.status(200).json({ message: "A purchase order with the same number already exists." });
-    }
+    // if (await purchaseOrderExists(purchaseOrder.purchaseOrderNumber)) {
+    //   await setIntegrationMessage(workspaceId, boardId, item.id, "WARN: A purchase order with the same number already exists.");
+    //   return res.status(200).json({ message: "A purchase order with the same number already exists." });
+    // }
 
     const { error: validationError } = Item.validate('PurchaseOrder', mappedPO);
     if (validationError) {
@@ -747,7 +746,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
       detail: `Purchase order created successfully, PO number: ${createdPurchaseOrder.purchaseOrderNumber}`,
       req
     });
-
+    await setGeneratedField(workspaceId, boardId, item.id, `${createdPurchaseOrder.purchaseOrderNumber} (Xero)`);
     res.json(createdPurchaseOrder);
   } catch (err) {
     error('Error creating purchase order', err);

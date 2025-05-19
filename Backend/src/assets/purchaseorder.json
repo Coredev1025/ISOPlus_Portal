@@ -448,7 +448,7 @@
             {
                 "name": "termsInput",
                 "type": "multiVariableText",
-                "content": "{\"Delivery Date\":\"DELIVERY DATE\",\"Delivery Address\":\"DELIVERY ADDRESS\"}",
+                "content": "{\"Delivery Date\":\"DELIVERY DATE\",\"Delivery Address\":\"DELIVERY ADDRESS\",\"Additional Notes\":\"ADDITIONAL NOTES\"}",
                 "position": {
                     "x": 20.26,
                     "y": 223.46
@@ -467,10 +467,11 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": false,
-                "text": "Terms & Conditions\n\n- Payment is due within 14 days from the invoice date.\n\n- Delivery Date: {Delivery Date}\n\n- Delivery Address:{Delivery Address}\n\n- Delivery Instructions:",
+                "text": "Terms & Conditions\n- Payment is due within 14 days from the invoice date.\n- Delivery Date: {Delivery Date}\n- Delivery Address:{Delivery Address}\n- Delivery Instructions:{Additional Notes}",
                 "variables": [
                     "Delivery Date",
-                    "Delivery Address"
+                    "Delivery Address",
+                    "Additional Notes"
                 ],
                 "required": false
             }

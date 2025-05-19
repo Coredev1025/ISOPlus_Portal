@@ -116,7 +116,6 @@ class PurchaseOrderValues extends ItemValues {
         super();
         this.id = data.id || uuidv4();
         this.clientsOrderNumber = data.clientsOrderNumber;
-        this.purchaseOrderNumber = data.purchaseOrderNumber;
         this.issueDate = data.issueDate;
         this.deliveryDate = data.deliveryDate;
         this.jobTitle = data.jobTitle;
@@ -129,14 +128,6 @@ class PurchaseOrderValues extends ItemValues {
         return Joi.object({
             id: Joi.string().guid().optional(),
             clientsOrderNumber: Joi.string().required(),
-            purchaseOrderNumber: Joi.string()
-                .required()
-                .pattern(/^PO-\d+$/)
-                .messages({
-                    'string.empty': 'Purchase Order Number is required.',
-                    'string.pattern.base': 'Purchase Order Number must start with \'PO-\' followed by digits.',
-                    'any.required': 'Purchase Order Number is required.'
-                }),
             issueDate: Joi.date().required().messages({
                 'date.base': 'Issue Date is required.',
                 'any.required': 'Issue Date is required.'
@@ -153,7 +144,7 @@ class PurchaseOrderValues extends ItemValues {
                 'number.base': 'Unit Price is required.',
                 'any.required': 'Unit Price is required.'
             }),
-            quantity: Joi.number().integer().required().messages({
+            quantity: Joi.number().required().messages({
                 'number.base': 'Quantity is required.',
                 'any.required': 'Quantity is required.'
             }),
@@ -282,7 +273,7 @@ class QuoteValues extends ItemValues {
                 'number.base': 'Unit Price is required.',
                 'any.required': 'Unit Price is required.'
             }),
-            quantity: Joi.number().integer().required().messages({
+            quantity: Joi.number().required().messages({
                 'number.base': 'Quantity is required.',
                 'any.required': 'Quantity is required.'
             }),
@@ -318,9 +309,8 @@ class IsoPlusLineItemValues extends ItemValues {
                 'string.empty': 'Description is required.',
                 'any.required': 'Description is required.'
             }),
-            quantity: Joi.number().greater(0).required().messages({
+            quantity: Joi.number().required().messages({
                 'number.base': 'Quantity must be a number.',
-                'number.greater': 'Quantity must be greater than 0',
                 'any.required': 'Quantity is required.'
             }),
             unitAmount: Joi.number().greater(0).required().messages({
