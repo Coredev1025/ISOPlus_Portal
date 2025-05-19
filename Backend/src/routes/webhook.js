@@ -144,7 +144,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 plugins: { text, image, line, table, multiVariableText }
             });
 
-            const filename = `output/${workspaceId}/${boardId}/invoices/${item.id}.pdf`;
+            const filename = `output/${workspaceId}/${boardId}/invoices/${invoiceNumber + '-' + item.id}.pdf`;
             const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename, 7 * 24 * 60 * 60); // 7 days expiration
@@ -283,7 +283,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 plugins: { text, image, line, table, multiVariableText }
             });
 
-            const filename = `output/${workspaceId}/${boardId}/purchaseorder/${item.id}.pdf`;
+            const filename = `output/${workspaceId}/${boardId}/purchaseorder/${purchaseOrderNumber + '-' + item.id}.pdf`;
             const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename, 7 * 24 * 60 * 60); // 7 days expiration
@@ -401,7 +401,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                 plugins: { text, image, line, table, multiVariableText }
             });
 
-            const filename = `output/${workspaceId}/${boardId}/quote/${item.id}.pdf`;
+            const filename = `output/${workspaceId}/${boardId}/quote/${quoteNumber + '-' + item.id}.pdf`;
             const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename, 7 * 24 * 60 * 60); // 7 days expiration
@@ -440,7 +440,6 @@ router.get('/uploads/:filename', async (req, res) => {
         const { filename } = req.params;
         const key = `pdfs/${filename}`;
 
-        // Get a signed URL for temporary access
         const fileUrl = await getS3FileUrl(S3_BUCKET, key);
 
         if (!fileUrl) {

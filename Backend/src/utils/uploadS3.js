@@ -5,8 +5,16 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY || !process.env.AWS_REGION || !process.env.AWS_BUCKET) {
-    throw new Error('Missing required AWS environment variables');
+const checkS3ENV = (publicRead) => {
+    if(publicRead) {
+        if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY || !process.env.AWS_REGION || !process.env.AWS_BUCKET_PUBLIC) {
+            throw new Error('Missing required AWS environment variables');
+        }
+    } else {
+        if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY || !process.env.AWS_REGION || !process.env.AWS_BUCKET) {
+            throw new Error('Missing required AWS environment variables');
+        }
+    }
 }
 
 const s3Client = new S3Client({
@@ -17,12 +25,13 @@ const s3Client = new S3Client({
     },
 });
 
-export const uploadFileToS3 = async (fileBuffer, key) => {
+export const uploadFileToS3 = async (fileBuffer, key, publicRead = false) => {
+    checkS3ENV(publicRead);
     const params = {
-        Bucket: process.env.AWS_BUCKET,
+        Bucket: publicRead ? process.env.AWS_BUCKET_PUBLIC : process.env.AWS_BUCKET,
         Key: key,
         Body: fileBuffer,
-        // ACL: 'public-read', // Make the file publicly readable
+        ACL: publicRead ? 'public-read' : undefined,
     };
 
     try {
@@ -65,11 +74,12 @@ export const downloadFileFromS3Stream = async (key, downloadPath) => {
     }
 };
 
-export const getS3FileUrl = async (key, expiration) => {
+export const getS3FileUrl = async (key, expiration, publicRead = false) => {
+    checkS3ENV(publicRead);
     const params = {
-        Bucket: process.env.AWS_BUCKET,
+        Bucket: publicRead ? process.env.AWS_BUCKET_PUBLIC : process.env.AWS_BUCKET,
         Key: key,
-        expiration: expiration || 3600
+        expiration: publicRead ? expiration || 3600 : undefined
     };
 
     try {
@@ -81,9 +91,10 @@ export const getS3FileUrl = async (key, expiration) => {
     }
 };
 
-export const deleteFileFromS3 = async (key) => {
+export const deleteFileFromS3 = async (key, publicRead = false) => {
+    checkS3ENV(publicRead);
     const params = {
-        Bucket: process.env.AWS_BUCKET,
+        Bucket: publicRead ? process.env.AWS_BUCKET_PUBLIC : process.env.AWS_BUCKET,
         Key: key,
     };
 
