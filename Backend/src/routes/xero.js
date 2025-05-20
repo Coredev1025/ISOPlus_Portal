@@ -185,23 +185,23 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       taxType: "OUTPUT",
     });
 
-    if (invoiceValues.payableMaterialFee > 0) {
-      invoice.lineItems.push({
-        description: "Used Material/Part",
-        quantity: 1,
-        unitAmount: invoiceValues['Payable Material Fee($) - GST Excl.'],
-        taxType: "EXEMPTOUTPUT",
-      });
-    }
+    // if (invoiceValues.payableMaterialFee > 0) {
+    invoice.lineItems.push({
+      description: "Used Material/Part",
+      quantity: 1,
+      unitAmount: invoiceValues['Payable Material Fee($) - GST Excl.'],
+      taxType: "EXEMPTOUTPUT",
+    });
+    // }
 
-    if (invoiceValues.otherPayableFee > 0) {
-      invoice.lineItems.push({
-        description: "Other Payable Fee",
-        quantity: 1,
-        unitAmount: invoiceValues['Other Payable Fee($) - GST Excl.'],
-        taxType: "OUTPUT",
-      });
-    }
+    // if (invoiceValues.otherPayableFee > 0) {
+    invoice.lineItems.push({
+      description: "Other Payable Fee",
+      quantity: 1,
+      unitAmount: invoiceValues['Other Payable Fee($) - GST Excl.'],
+      taxType: "OUTPUT",
+    });
+    // }
 
     const createdInvoice = await createInvoice(invoice);
     await setIntegrationMessage(workspaceId, boardId, item.id, "Your invoice is successfully created.");
@@ -542,7 +542,6 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
       quoteChecklist = [rawChecklist];
     }
     const mappedQuote = {
-      quoteNumber: quoteValues['Quote Number'],
       issueDate: quoteValues['Issue Date'],
       expiryDate: quoteValues['Expiry Date'],
       jobTitle: quoteValues['Job Title'],
@@ -555,7 +554,6 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
       contact: { contactID: contact.contactID },
       date: quoteValues['Issue Date'],
       expiryDate: quoteValues['Expiry Date'],
-      quoteNumber: quoteValues['Quote Number'],
       title: quoteValues['Job Title'],
       summary: quoteValues['Job Description'].toString().replace(/<[^>]*>/g, ''),
       lineItems: [
@@ -569,10 +567,10 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
       ]
     };
 
-    if (await quoteExists(quoteValues['Quote Number'])) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "WARN: A quote with the same number already exists.");
-      return res.status(200).json({ message: "A quote with the same number already exists." });
-    }
+    // if (await quoteExists(quoteValues['Quote Number'])) {
+    //   await setIntegrationMessage(workspaceId, boardId, item.id, "WARN: A quote with the same number already exists.");
+    //   return res.status(200).json({ message: "A quote with the same number already exists." });
+    // }
 
     const { error: validationError } = Item.validate('Quote', mappedQuote);
     if (validationError) {

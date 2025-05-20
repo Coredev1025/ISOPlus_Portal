@@ -82,18 +82,18 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
 
             const invoiceValues = item.values;
             let subTotal = 0;
-            let invoiceDescription = `[["${jobPlanningValues.jobTitle}-${serviceFeeTypeValues.feeType}-${invoiceValues["Job Duration (Hrs.)"]}Hrs.", "${invoiceValues["Job Duration (Hrs.)"]}", "${serviceFeeTypeValues.rate}", "${invoiceValues["GST"]}", "${parseFloat(invoiceValues["Job Duration (Hrs.)"]) * parseFloat(serviceFeeTypeValues.rate)}"]`;
-            subTotal += parseFloat(invoiceValues["Job Duration (Hrs.)"]) * parseFloat(serviceFeeTypeValues.rate);
+            let invoiceDescription = `[["${jobPlanningValues.jobTitle}-${serviceFeeTypeValues.feeType}-${invoiceValues["Job Duration (Hrs.)"]}Hrs.", "1", "${invoiceValues["Payable Service Fee($) - GST Excl."]}", "${invoiceValues["GST"]}", "${invoiceValues["Payable Service Fee($) - GST Excl."]}"]`;
+            subTotal += parseFloat(invoiceValues["Payable Service Fee($) - GST Excl."]);
 
-            if (invoiceValues["Payable Material Fee($) - GST Excl."] > 0) {
-                invoiceDescription += `,["Used Material/Part", "1", "${invoiceValues["Payable Material Fee($) - GST Excl."]}", "${invoiceValues["GST"]}", "${parseFloat(invoiceValues["Payable Material Fee($) - GST Excl."])}"]`;
-                subTotal += parseFloat(invoiceValues["Payable Material Fee($) - GST Excl."]);
-            }
+            // if (invoiceValues["Payable Material Fee($) - GST Excl."]) {
+            invoiceDescription += `,["Used Material/Part", "1", "${invoiceValues["Payable Material Fee($) - GST Excl."]}", "${invoiceValues["GST"]}", "${parseFloat(invoiceValues["Payable Material Fee($) - GST Excl."])}"]`;
+            subTotal += parseFloat(invoiceValues["Payable Material Fee($) - GST Excl."]);
+            // }
 
-            if (invoiceValues["Other Payable Fee($) - GST Excl."] > 0) {
-                invoiceDescription += `,["Other Payable Fee", "1", "${invoiceValues["Other Payable Fee($) - GST Excl."]}", "${invoiceValues["GST"]}", "${parseFloat(invoiceValues["Other Payable Fee($) - GST Excl."])}"]`;
-                subTotal += parseFloat(invoiceValues["Other Payable Fee($) - GST Excl."]);
-            }
+            // if (invoiceValues["Other Payable Fee($) - GST Excl."]) {
+            invoiceDescription += `,["Other Payable Fee", "1", "${invoiceValues["Other Payable Fee($) - GST Excl."]}", "${invoiceValues["GST"]}", "${parseFloat(invoiceValues["Other Payable Fee($) - GST Excl."])}"]`;
+            subTotal += parseFloat(invoiceValues["Other Payable Fee($) - GST Excl."]);
+            // }
 
             invoiceDescription += "]";
 
@@ -260,7 +260,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 }),
                 quoteDetails: JSON.stringify({
                     "Issue Date": purchaseOrderValues['Issue Date'] && new Date(purchaseOrderValues['Issue Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
-                    "expiry Date": new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                    "expiry Date": purchaseOrderValues['Expiry Date'] && new Date(purchaseOrderValues['Expiry Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
                     "PO Number": purchaseOrderNumber || purchaseOrderValues['PO Number']
                 }),
                 companyName: JSON.stringify({ "Company Name": business.name }),
@@ -327,7 +327,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     }
 
     const business = await Business.findOne({ workspaceId });
-
+    console.log(req.body.items);
     await Promise.all(req.body.items.map(async (item) => {
         try {
             await validateItemBelongsToTenant(workspaceId, boardId, item.id);
@@ -369,8 +369,10 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
             };
 
             const quoteValues = item.values;
+
+            console.log(quoteValues);
             let subTotal = (quoteValues.Quantity || 1) * (quoteValues['Unit Price($) - GST Excl.'] || 1);
-            let gstTotal = subTotal * parseFloat(item.values["GST"]) / 100;
+            let gstTotal = subTotal * parseFloat(quoteValues["GST"]) / 100;
             let total = subTotal + gstTotal;
 
             const pdfBytes = await generate({
@@ -384,7 +386,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                         clientDetails: JSON.stringify(clientDetails),
                         quoteDetails: JSON.stringify({
                             "Issue Date": quoteValues['Issue Date'] ? new Date(quoteValues['Issue Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
-                            "expiry Date": new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                            "expiry Date": quoteValues['Expiry Date'] ? new Date(quoteValues['Expiry Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
                             "Quote Number": quoteNumber || quoteValues['Quote Number']
                         }),
                         companyName: JSON.stringify({ "Company Name": business.name }),
@@ -396,13 +398,13 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                             Postcode: business.address.postcode,
                             Country: business.address.country
                         }),
-                        orders: `[["${quoteValues['Job Title']} - ${quoteValues['Job Description'] ? quoteValues['Job Description'].replace(/<.*?>/g, "") : ""}","${quoteValues.Quantity || 1}","${quoteValues['Unit Price($) - GST Excl.'] || 1}", "${quoteValues['Total Price($) - GST Excl.'] || 1}", "${(quoteValues.Quantity || 1) * (quoteValues['Unit Price($) - GST Excl.'] || 1)}"]]`
+                        orders: `[["${quoteValues['Job Title']} - ${quoteValues['Job Description'] ? quoteValues['Job Description'].replace(/<.*?>/g, "") : ""}","${quoteValues.Quantity || 1}","${quoteValues['Unit Price($) - GST Excl.'] || 1}", "${quoteValues["GST"] || 1}", "${(quoteValues.Quantity || 1) * (quoteValues['Unit Price($) - GST Excl.'] || 1)}"]]`
                     }
                 ],
                 plugins: { text, image, line, table, multiVariableText }
             });
 
-            const filename = `output/${workspaceId}/${boardId}/quote/${quoteNumber + '-' + item.id}.pdf`;
+            const filename = `output/${workspaceId}/${boardId}/quote/${quoteNumber + '-ISO+™-' + item.id}.pdf`;
             const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename, 7 * 24 * 60 * 60); // 7 days expiration
@@ -416,7 +418,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                 });
                 PDFLink.insertOne({ workspaceId: workspaceId, itemId: item.id, type: 'Quote', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" });
                 info('Webhook-Service', 'Successfully generating PDF for Quote', { link: fileUrl }, req);
-                await setGeneratedField(workspaceId, boardId, item.id, `ISO+ ${quoteNumber}`);
+                await setGeneratedField(workspaceId, boardId, item.id, `${quoteNumber}(ISO+™)`);
                 res.json({ pdfUrl: fileUrl });
             } else {
                 throw new Error('Upload PDF failed, please provide correct information');

@@ -236,7 +236,6 @@ class QuoteValues extends ItemValues {
     constructor(data) {
         super();
         this.id = data.id || uuidv4();
-        this.quoteNumber = data.quoteNumber;
         this.issueDate = data.issueDate;
         this.expiryDate = data.expiryDate;
         this.jobTitle = data.title;
@@ -249,14 +248,6 @@ class QuoteValues extends ItemValues {
     static validationSchema() {
         return Joi.object({
             id: Joi.string().guid().optional(),
-            quoteNumber: Joi.string()
-                .required()
-                .pattern(/^QU-\d+$/)
-                .messages({
-                    'string.empty': 'Quote Number is required.',
-                    'string.pattern.base': 'Quote Number must start with \'QU-\' followed by digits.',
-                    'any.required': 'Quote Number is required.'
-                }),
             issueDate: Joi.date().required().messages({
                 'date.base': 'Issue Date is required.',
                 'any.required': 'Issue Date is required.'
