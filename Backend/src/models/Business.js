@@ -70,6 +70,12 @@ const businessSchema = new mongoose.Schema({
     },
     paymentReference: {
       type: String
+    },
+    accountsReceivableTerms: {
+      type: String
+    },
+    accountsPayableTerms: {
+      type: String
     }
   },
   documentNumbering: {

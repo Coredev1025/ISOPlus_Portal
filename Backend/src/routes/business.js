@@ -120,7 +120,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
 
 router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, async (req, res) => {
   try {
-    const { name, phone, email, abn, acn, state, suburb, country, postcode, street, workspaceId, bankAccountName, bankName, bsb, accountNumber, paymentReference } = req.body;
+    const { name, phone, email, abn, acn, state, suburb, country, postcode, street, workspaceId, bankAccountName, bankName, bsb, accountNumber, paymentReference, accountsReceivableTerms, accountsPayableTerms } = req.body;
     const { defaultLogoRemoved, squareLogoRemoved, wideLogoRemoved } = req.body;
 
     let documentNumbering = {};
@@ -149,7 +149,9 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
         bankName,
         bsb,
         accountNumber,
-        paymentReference
+        paymentReference,
+        accountsReceivableTerms,
+        accountsPayableTerms
       },
       documentNumbering
     };

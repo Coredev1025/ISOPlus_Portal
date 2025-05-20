@@ -287,6 +287,8 @@ export default function ConfigureBusinessPage() {
     bsb: "",
     accountNumber: "",
     paymentReference: "",
+    accountsReceivableTerms: "",
+    accountsPayableTerms: "",
   });
 
   useEffect(() => {
@@ -321,6 +323,8 @@ export default function ConfigureBusinessPage() {
             bsb: data.bankDetails?.bsb || "",
             accountNumber: data.bankDetails?.accountNumber || "",
             paymentReference: data.bankDetails?.paymentReference || "",
+            accountsReceivableTerms: data.bankDetails?.accountsReceivableTerms || "",
+            accountsPayableTerms: data.bankDetails?.accountsPayableTerms || "",
           });
 
           // Set document numbering sequences
@@ -881,8 +885,26 @@ export default function ConfigureBusinessPage() {
                       <Label htmlFor="paymentReference">Payment Reference</Label>
                       <Input
                         id="paymentReference"
-                        placeholder="Enter payment reference (optional)"
+                        placeholder="Reference to match payment with invoice (Optional)"
                         value={formData.paymentReference}
+                        onChange={handleInputChange}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="accountsReceivableTerms">Accounts Receivable Payment Terms</Label>
+                      <Input
+                        id="accountsReceivableTerms"
+                        placeholder="When clients are expected to pay you"
+                        value={formData.accountsReceivableTerms}
+                        onChange={handleInputChange}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="accountsPayableTerms">Accounts Payable Payment Terms</Label>
+                      <Input
+                        id="accountsPayableTerms"
+                        placeholder="When your business pays contractors or suppliers"
+                        value={formData.accountsPayableTerms}
                         onChange={handleInputChange}
                       />
                     </div>
