@@ -342,7 +342,6 @@ class IsoPlusInvoiceValues extends ItemValues {
         this.dueDate = data.dueDate;
         this.status = data.status;
         this.reference = data.reference;
-        this.invoiceNumber = data.invoiceNumber;
         this.customerName = data.customerName;
         this.amount = data.amount;
     }
@@ -372,7 +371,6 @@ class IsoPlusInvoiceValues extends ItemValues {
                 'any.only': 'Status must be either AUTHORISED or DRAFT'
             }),
             reference: Joi.string().allow(null, ''),
-            invoiceNumber: Joi.string().allow(null, ''),
             customerName: Joi.string().allow(null, ''),
             amount: Joi.number().allow(null, '')
         });

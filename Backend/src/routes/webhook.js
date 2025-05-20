@@ -23,6 +23,17 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const router = express.Router();
 
+function formatValue(val) {
+    const num = Number(val);
+    if (Number.isInteger(num)) {
+        return num.toString();
+    } else if (!isNaN(num)) {
+        return num.toFixed(2);
+    } else {
+        return val;
+    }
+}
+
 router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     const { workspaceId, boardId } = req.params;
 
@@ -63,7 +74,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
             const logoKey = business.defaultLogo;
             let logoUrl = '';
             if (logoKey) {
-                logoUrl = await getS3FileUrl(logoKey);
+                logoUrl = await getS3FileUrl(logoKey, 3600, false);
                 if (!logoUrl) throw new Error('Failed to retrieve logo from S3');
             }
 
@@ -82,23 +93,20 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
 
             const invoiceValues = item.values;
             let subTotal = 0;
-            let invoiceDescription = `[["${jobPlanningValues.jobTitle}-${serviceFeeTypeValues.feeType}-${invoiceValues["Job Duration (Hrs.)"]}Hrs.", "1", "${invoiceValues["Payable Service Fee($) - GST Excl."]}", "${invoiceValues["GST"]}", "${invoiceValues["Payable Service Fee($) - GST Excl."]}"]`;
+            let invoiceDescription = `[["${jobPlanningValues.jobTitle}-${serviceFeeTypeValues.feeType}-${formatValue(invoiceValues["Job Duration (Hrs.)"])}Hrs.", "1", "${formatValue(invoiceValues["Payable Service Fee($) - GST Excl."])}", "${invoiceValues["GST"]}", "${formatValue(invoiceValues["Payable Service Fee($) - GST Excl."])}"]`;
             subTotal += parseFloat(invoiceValues["Payable Service Fee($) - GST Excl."]);
 
-            // if (invoiceValues["Payable Material Fee($) - GST Excl."]) {
-            invoiceDescription += `,["Used Material/Part", "1", "${invoiceValues["Payable Material Fee($) - GST Excl."]}", "${invoiceValues["GST"]}", "${parseFloat(invoiceValues["Payable Material Fee($) - GST Excl."])}"]`;
+            invoiceDescription += `,["Used Material/Part", "1", "${formatValue(invoiceValues["Payable Material Fee($) - GST Excl."])}", "${invoiceValues["GST"]}", "${formatValue(invoiceValues["Payable Material Fee($) - GST Excl."])}"]`;
             subTotal += parseFloat(invoiceValues["Payable Material Fee($) - GST Excl."]);
-            // }
 
-            // if (invoiceValues["Other Payable Fee($) - GST Excl."]) {
-            invoiceDescription += `,["Other Payable Fee", "1", "${invoiceValues["Other Payable Fee($) - GST Excl."]}", "${invoiceValues["GST"]}", "${parseFloat(invoiceValues["Other Payable Fee($) - GST Excl."])}"]`;
+            invoiceDescription += `,["Other Payable Fee", "1", "${formatValue(invoiceValues["Other Payable Fee($) - GST Excl."])}", "${invoiceValues["GST"]}", "${formatValue(invoiceValues["Other Payable Fee($) - GST Excl."])}"]`;
             subTotal += parseFloat(invoiceValues["Other Payable Fee($) - GST Excl."]);
-            // }
 
             invoiceDescription += "]";
 
-            const gstTotal = subTotal * parseFloat(invoiceValues["GST"]) / 100;
-            const total = subTotal + gstTotal;
+            subTotal = formatValue(subTotal);
+            const gstTotal = formatValue((subTotal * parseFloat(invoiceValues["GST"]) / 100));
+            const total = formatValue(parseFloat(subTotal) + parseFloat(gstTotal));
 
             const clientDetails = {
                 Address: contactValues.address,
@@ -113,9 +121,9 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 inputs: [
                     {
                         logo: logoBase64,
-                        subtotal: `${subTotal}`,
-                        totalGST: `${gstTotal}`,
-                        total: `${total}`,
+                        subtotal: subTotal,
+                        totalGST: gstTotal,
+                        total: total,
                         clientDetails: JSON.stringify(clientDetails),
                         invoiceDetails: JSON.stringify({
                             Date: new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
@@ -145,9 +153,9 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
             });
 
             const filename = `output/${workspaceId}/${boardId}/invoices/${invoiceNumber + '-' + item.id}.pdf`;
-            const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+            const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, false);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
-                const fileUrl = await getS3FileUrl(filename, 7 * 24 * 60 * 60); // 7 days expiration
+                const fileUrl = await getS3FileUrl(filename, 604800, false);
                 const expiryDate = new Date(Date.now() + 604800000); // 7 days in milliseconds
                 await putInternalMessage(workspaceId, boardId, item.id, `Your invoice successfully created. \n Click <a href="${fileUrl}">here</a> \n This is a temporary link and will expire on ${expiryDate.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}. Make sure to download the file before expiry.`);
                 logAuditTrail({
@@ -158,7 +166,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 });
                 PDFLink.insertOne({ workspaceId: workspaceId, itemId: item.id, type: 'Invoice', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" });
                 info('Webhook-Service', 'Successfully generating PDF invoice', { link: fileUrl }, req);
-                await setGeneratedField(workspaceId, boardId, item.id, `ISO+ ${invoiceNumber}`);
+                await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber}(ISO+™)`);
                 res.json({ pdfUrl: fileUrl });
             } else {
                 throw new Error('Upload PDF failed, please provide correct information');
@@ -212,7 +220,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
             const logoKey = business.defaultLogo;
             let logoUrl = '';
             if (logoKey) {
-                logoUrl = await getS3FileUrl(logoKey);
+                logoUrl = await getS3FileUrl(logoKey, 3600, false);
                 if (!logoUrl) {
                     await putInternalMessage(workspaceId, boardId, item.id, "Failed to retrieve logo from S3");
                     throw new Error('Failed to retrieve logo from S3');
@@ -240,15 +248,15 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
             };
 
             const purchaseOrderValues = item.values;
-            let subTotal = (purchaseOrderValues.Quantity || 1) * (purchaseOrderValues['Unit Price($) - GST Excl.'] || 1);
-            let gstTotal = subTotal * parseFloat(item.values["GST"]) / 100;
-            let total = subTotal + gstTotal;
+            let subTotal = formatValue((purchaseOrderValues.Quantity || 1) * (purchaseOrderValues['Unit Price($) - GST Excl.'] || 1));
+            let gstTotal = formatValue((subTotal * parseFloat(item.values["GST"]) / 100));
+            let total = formatValue(parseFloat(subTotal) + parseFloat(gstTotal));
 
             const inputs = {
                 logo: logoBase64,
-                subtotal: `${subTotal}`,
-                totalGST: `${gstTotal}`,
-                total: `${total}`,
+                subtotal: subTotal,
+                totalGST: gstTotal,
+                total: total,
                 clientDetails: JSON.stringify(clientDetails),
                 companyDetails: JSON.stringify({
                     ABN: business.abn,
@@ -261,20 +269,20 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 quoteDetails: JSON.stringify({
                     "Issue Date": purchaseOrderValues['Issue Date'] && new Date(purchaseOrderValues['Issue Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
                     "expiry Date": purchaseOrderValues['Expiry Date'] && new Date(purchaseOrderValues['Expiry Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
-                    "PO Number": purchaseOrderNumber || purchaseOrderValues['PO Number']
+                    "PO Number": purchaseOrderNumber
                 }),
                 companyName: JSON.stringify({ "Company Name": business.name }),
                 termsInput: JSON.stringify({
                     "Delivery Date": purchaseOrderValues['Delivery Date'] && new Date(purchaseOrderValues['Delivery Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
                     "Delivery Address": `${contractorValues.address} ${contractorValues.suburb} ${contractorValues.state} ${contractorValues.postcode}`,
-                    "Additional Notes": `${purchaseOrderValues['Additional Notes']}`
+                    "Additional Notes": `${purchaseOrderValues['Additional Notes'] ? purchaseOrderValues['Additional Notes'].replace(/<[^>]*>/g, '') : ' '}`
                 }),
                 orders: `[[
-                    "${purchaseOrderValues['Job Title']}${purchaseOrderValues['Job Description'] ? ` - ${purchaseOrderValues['Job Description'].replace(/<.*?>/g, "")}` : ''}",
-                    "${purchaseOrderValues.Quantity || 1}",
-                    "${purchaseOrderValues['Unit Price($) - GST Excl.'] || 1}",
-                    "${purchaseOrderValues['GST'] || 1}", 
-                    "${(purchaseOrderValues.Quantity || 1) * (purchaseOrderValues['Unit Price($) - GST Excl.'] || 1)}"
+                    "${purchaseOrderValues['Job Title']}${purchaseOrderValues['Job Description'] ? ` - ${purchaseOrderValues['Job Description'].replace(/<[^>]*>/g, '')}` : ''}",
+                    "${formatValue(purchaseOrderValues.Quantity || 1)}",
+                    "${formatValue(purchaseOrderValues['Unit Price($) - GST Excl.'] || 1)}",
+                    "${purchaseOrderValues['GST']}", 
+                    "${formatValue((purchaseOrderValues.Quantity || 1) * (purchaseOrderValues['Unit Price($) - GST Excl.'] || 1))}"
                 ]]`
             };
 
@@ -285,9 +293,9 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
             });
 
             const filename = `output/${workspaceId}/${boardId}/purchaseorder/${purchaseOrderNumber + '-ISO+™-' + item.id}.pdf`;
-            const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+            const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, false);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
-                const fileUrl = await getS3FileUrl(filename, 7 * 24 * 60 * 60); // 7 days expiration
+                const fileUrl = await getS3FileUrl(filename, 604800, false);
                 const expiryDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
                 await putInternalMessage(workspaceId, boardId, item.id, `Your purchase order successfully created. \n Click <a href="${fileUrl}">here</a> \n This is a temporary link and will expire on ${expiryDate.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}. Make sure to download the file before expiry.`);
                 logAuditTrail({
@@ -344,7 +352,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
             const logoKey = business.defaultLogo;
             let logoUrl = '';
             if (logoKey) {
-                logoUrl = await getS3FileUrl(logoKey);
+                logoUrl = await getS3FileUrl(logoKey, 3600, false);
                 if (!logoUrl) throw new Error('Failed to retrieve logo from S3');
             }
 
@@ -370,24 +378,23 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
 
             const quoteValues = item.values;
 
-            console.log(quoteValues);
-            let subTotal = (quoteValues.Quantity || 1) * (quoteValues['Unit Price($) - GST Excl.'] || 1);
-            let gstTotal = subTotal * parseFloat(quoteValues["GST"]) / 100;
-            let total = subTotal + gstTotal;
+            let subTotal = formatValue((quoteValues.Quantity || 1) * (quoteValues['Unit Price($) - GST Excl.'] || 1));
+            let gstTotal = formatValue((subTotal * parseFloat(quoteValues["GST"]) / 100));
+            let total = formatValue(parseFloat(subTotal) + parseFloat(gstTotal));
 
             const pdfBytes = await generate({
                 template: template,
                 inputs: [
                     {
                         logo: logoBase64,
-                        subtotal: `${subTotal}`,
-                        totalGST: `${gstTotal}`,
-                        total: `${total}`,
+                        subtotal: subTotal,
+                        totalGST: gstTotal,
+                        total: total,
                         clientDetails: JSON.stringify(clientDetails),
                         quoteDetails: JSON.stringify({
                             "Issue Date": quoteValues['Issue Date'] ? new Date(quoteValues['Issue Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
                             "expiry Date": quoteValues['Expiry Date'] ? new Date(quoteValues['Expiry Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
-                            "Quote Number": quoteNumber || quoteValues['Quote Number']
+                            "Quote Number": quoteNumber
                         }),
                         companyName: JSON.stringify({ "Company Name": business.name }),
                         companyDetails: JSON.stringify({
@@ -398,16 +405,16 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                             Postcode: business.address.postcode,
                             Country: business.address.country
                         }),
-                        orders: `[["${quoteValues['Job Title']} - ${quoteValues['Job Description'] ? quoteValues['Job Description'].replace(/<.*?>/g, "") : ""}","${quoteValues.Quantity || 1}","${quoteValues['Unit Price($) - GST Excl.'] || 1}", "${quoteValues["GST"] || 1}", "${(quoteValues.Quantity || 1) * (quoteValues['Unit Price($) - GST Excl.'] || 1)}"]]`
+                        orders: `[["${quoteValues['Job Title']} - ${quoteValues['Job Description'] ? quoteValues['Job Description'].replace(/<[^>]*>/g, '') : ''}","${formatValue(quoteValues.Quantity || 1)}","${formatValue(quoteValues['Unit Price($) - GST Excl.'] || 1)}", "${quoteValues["GST"]}", "${formatValue((quoteValues.Quantity || 1) * (quoteValues['Unit Price($) - GST Excl.'] || 1))}"]]`
                     }
                 ],
                 plugins: { text, image, line, table, multiVariableText }
             });
 
             const filename = `output/${workspaceId}/${boardId}/quote/${quoteNumber + '-ISO+™-' + item.id}.pdf`;
-            const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+            const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, false);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
-                const fileUrl = await getS3FileUrl(filename, 7 * 24 * 60 * 60); // 7 days expiration
+                const fileUrl = await getS3FileUrl(filename, 604800, false);
                 const expiryDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
                 await putInternalMessage(workspaceId, boardId, item.id, `Your quote successfully created. \n Click <a href="${fileUrl}">here</a> \n This is a temporary link and will expire on ${expiryDate.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}. Make sure to download the file before expiry.`);
                 logAuditTrail({
@@ -443,7 +450,7 @@ router.get('/uploads/:filename', async (req, res) => {
         const { filename } = req.params;
         const key = `pdfs/${filename}`;
 
-        const fileUrl = await getS3FileUrl(S3_BUCKET, key);
+        const fileUrl = await getS3FileUrl(key, 604800, true);
 
         if (!fileUrl) {
             res.redirect(fileUrl);

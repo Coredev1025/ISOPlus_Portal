@@ -567,11 +567,6 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
       ]
     };
 
-    // if (await quoteExists(quoteValues['Quote Number'])) {
-    //   await setIntegrationMessage(workspaceId, boardId, item.id, "WARN: A quote with the same number already exists.");
-    //   return res.status(200).json({ message: "A quote with the same number already exists." });
-    // }
-
     const { error: validationError } = Item.validate('Quote', mappedQuote);
     if (validationError) {
       await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Quote validation failed: ${JSON.stringify(validationError.details)}`);
@@ -712,22 +707,17 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
       attentionTo: `${contractorValues.contactPersonsFirstName} ${contractorValues.contactPersonsLastName}`,
       deliveryAddress: `${contractorValues.address} ${contractorValues.suburb} ${contractorValues.state} ${contractorValues.postcode}`,
       telephone: contractorValues.phoneNumber,
-      deliveryInstructions: purchaseOrderValues['Additional Notes'].replace(/<[^>]*>/g, ''),
+      deliveryInstructions: `${purchaseOrderValues['Additional Notes'] ? purchaseOrderValues['Additional Notes'].replace(/<[^>]*>/g, '') : ''}`,
       lineItems: [
         {
           itemCode: jobType.code,
-          description: `${purchaseOrderValues['Job Title']} - ${purchaseOrderValues['Job Description'].replace(/<[^>]*>/g, '')}`,
+          description: `${purchaseOrderValues['Job Title']}${purchaseOrderValues['Job Description'] ? ` - ${purchaseOrderValues['Job Description'].replace(/<[^>]*>/g, '')}` : ''}`,
           quantity: purchaseOrderValues.Quantity,
           unitAmount: purchaseOrderValues['Unit Price($) - GST Excl.'],
           taxType: "INPUT",
         }
       ]
     };
-
-    // if (await purchaseOrderExists(purchaseOrder.purchaseOrderNumber)) {
-    //   await setIntegrationMessage(workspaceId, boardId, item.id, "WARN: A purchase order with the same number already exists.");
-    //   return res.status(200).json({ message: "A purchase order with the same number already exists." });
-    // }
 
     const { error: validationError } = Item.validate('PurchaseOrder', mappedPO);
     if (validationError) {

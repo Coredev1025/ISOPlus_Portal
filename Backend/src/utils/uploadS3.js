@@ -25,7 +25,7 @@ const s3Client = new S3Client({
     },
 });
 
-export const uploadFileToS3 = async (fileBuffer, key, publicRead = false) => {
+export const uploadFileToS3 = async (fileBuffer, key, publicRead = true) => {
     checkS3ENV(publicRead);
     const params = {
         Bucket: publicRead ? process.env.AWS_BUCKET_PUBLIC : process.env.AWS_BUCKET,
@@ -74,12 +74,12 @@ export const downloadFileFromS3Stream = async (key, downloadPath) => {
     }
 };
 
-export const getS3FileUrl = async (key, expiration, publicRead = false) => {
+export const getS3FileUrl = async (key, expiration = 3600, publicRead = true) => {
     checkS3ENV(publicRead);
     const params = {
         Bucket: publicRead ? process.env.AWS_BUCKET_PUBLIC : process.env.AWS_BUCKET,
         Key: key,
-        expiration: publicRead ? expiration || 3600 : undefined
+        expiration: publicRead ? expiration : undefined
     };
 
     try {
