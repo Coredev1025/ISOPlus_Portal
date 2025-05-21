@@ -101,13 +101,13 @@ router.get('/profile', authenticateToken, async (req, res) => {
       return res.status(404).json({ message: 'Business profile not found' });
     }
     if (business.defaultLogo) {
-      business.defaultLogo = await getS3FileUrl(business.defaultLogo);
+      business.defaultLogo = await getS3FileUrl(business.defaultLogo, 3600, false);
     }
     if (business.squareLogo) {
-      business.squareLogo = await getS3FileUrl(business.squareLogo);
+      business.squareLogo = await getS3FileUrl(business.squareLogo, 3600, false);
     }
     if (business.wideLogo) {
-      business.wideLogo = await getS3FileUrl(business.wideLogo);
+      business.wideLogo = await getS3FileUrl(business.wideLogo, 3600, false);
     }
 
     info('Business-Service', 'Fetching Business profile data successfully', { businessName: business.name }, req);
