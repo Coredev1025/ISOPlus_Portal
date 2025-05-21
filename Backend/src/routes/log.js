@@ -19,11 +19,11 @@ const Log = mongoose.model('Log', logSchema);
 // Route to get logs
 router.get('/', authenticateToken, async (req, res) => {
     try {
-        if(req.user.role == 'user') {
+        if(req.user.role == 'isoplus_user') {
             warn('Log-Service', 'Unauthorized access', { email: req.user.email }, req);
             return res.status(403).json({ message: 'Unauthorized access' });
         }
-        const logs = await Log.find({ 'metadata.email': req.user.email });
+        const logs = await Log.find();
         res.json(logs);
     } catch (err) {
         res.status(500).json({ message: err.message });
