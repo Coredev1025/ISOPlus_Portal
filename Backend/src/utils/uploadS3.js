@@ -31,7 +31,7 @@ export const uploadFileToS3 = async (fileBuffer, key, publicRead = true) => {
         Bucket: publicRead ? process.env.AWS_BUCKET_PUBLIC : process.env.AWS_BUCKET,
         Key: key,
         Body: fileBuffer,
-        ACL: publicRead ? 'public-read' : undefined,
+        // ACL: publicRead ? 'public-read' : undefined,
     };
 
     try {
@@ -91,7 +91,7 @@ export const getS3FileUrl = async (key, expiration = 3600, publicRead = true) =>
     }
 };
 
-export const deleteFileFromS3 = async (key, publicRead = false) => {
+export const deleteFileFromS3 = async (key, publicRead = true) => {
     checkS3ENV(publicRead);
     const params = {
         Bucket: publicRead ? process.env.AWS_BUCKET_PUBLIC : process.env.AWS_BUCKET,
