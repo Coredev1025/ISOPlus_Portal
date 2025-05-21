@@ -211,7 +211,7 @@ export default function LoginPage() {
           // ISO+ Login
           <div className="space-y-6">
             <div className="text-center mb-8">
-              <h1 className="text-3xl font-bold text-primary mb-4">ISO+™</h1>
+              <h1 className="text-3xl font-bold text-primary mb-4">ISO+™ Portal</h1>
               <div className="flex items-center justify-center">
                 <Image
                   src="/assets/logo_rgb_black.png"
