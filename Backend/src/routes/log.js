@@ -1,7 +1,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import { authenticateToken } from '../middleware/auth.js';
-import { warn } from '../utils/logger.js';
+import { warn, info, error } from '../utils/logger.js';
 
 const router = express.Router();
 
@@ -24,8 +24,10 @@ router.get('/', authenticateToken, async (req, res) => {
             return res.status(403).json({ message: 'Unauthorized access' });
         }
         const logs = await Log.find();
+        info('Log-Service', 'Logs fetched successfully', { count: logs.length }, req);
         res.json(logs);
     } catch (err) {
+        error('Log-Service', 'Error fetching logs', { error: err.message }, req);
         res.status(500).json({ message: err.message });
     }
 });

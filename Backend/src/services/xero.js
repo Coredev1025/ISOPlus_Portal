@@ -25,7 +25,7 @@ export async function configure() {
         xeroClient = new XeroClient(config);
         return xeroClient;
     } catch (err) {
-        error('Error configuring Xero client', err);
+        error('Xero-Service', 'Error configuring Xero client', err);
         throw new Error('Error configuring Xero client');
     }
 }
@@ -53,7 +53,7 @@ export async function callback(code, url) {
             tenants
         };
     } catch (err) {
-        error('Error in Xero callback', err);
+        error('Xero-Service', 'Error in Xero callback', err);
         return {
             success: false,
             message: 'Failed to authenticate: ' + err.message
@@ -74,7 +74,7 @@ export async function exchangeCode(code) {
 
         return tokenSet;
     } catch (err) {
-        error('Error exchanging authorization code', err);
+        error('Xero-Service', 'Error exchanging authorization code', err);
         throw new Error('Error exchanging authorization code');
     }
 }
@@ -88,7 +88,7 @@ export async function refreshTokenSet(tokenSet) {
         const newTokenSet = await xeroClient.refreshToken(tokenSet);
         return newTokenSet;
     } catch (err) {
-        error('Error refreshing token', err);
+        error('Xero-Service', 'Error refreshing token', err);
         throw new Error('Error refreshing token');
     }
 }
@@ -105,7 +105,7 @@ export async function createToken() {
 
         return { token, xeroTenantId };
     } catch (err) {
-        error('Error creating token', err);
+        error('Xero-Service', 'Error creating token', err);
         throw new Error('Error creating token');
     }
 }
@@ -178,7 +178,7 @@ export async function createInvoice(invoice) {
 
         return response.body.invoices[0];
     } catch (err) {
-        error('Invoice creation failed:', err);
+        error('Xero-Service', 'Invoice creation failed:', err);
         let jsonString = Object.values(err).join('');
         let errorMessage = JSON.parse(jsonString);
         if (errorMessage.response?.statusCode === 403) {
@@ -203,7 +203,7 @@ export async function getContactByEmail(email) {
 
         return response.body.contacts[0];
     } catch (err) {
-        error('Error retrieving contact from Xero', err);
+        error('Xero-Service', 'Error retrieving contact from Xero', err);
 
         if (err.response?.statusCode === 403) {
             throw new Error('Permission denied. Ensure your app has accounting.contacts scope.');
@@ -239,7 +239,7 @@ export async function createOrUpdateContact(contact) {
 
         return response.body.contacts[0];
     } catch (err) {
-        error('Error creating or updating contact in Xero', err);
+        error('Xero-Service', 'Error creating or updating contact in Xero', err);
         throw new Error('Error creating or updating contact in Xero');
     }
 }
@@ -283,7 +283,7 @@ export async function findOrCreateItem(itemCode, itemName) {
         return createResponse.body.items[0];
 
     } catch (err) {
-        error('Item operation failed:', err);
+        error('Xero-Service', 'Item operation failed:', err);
 
         if (err.response?.statusCode === 403) {
             throw new Error('Missing accounting.settings scope');
@@ -311,7 +311,7 @@ export async function createQuote(quote) {
 
         return createdQuotes.body.quotes[0];
     } catch (err) {
-        error('Error creating quote in Xero', err);
+        error('Xero-Service', 'Error creating quote in Xero', err);
         throw new Error('Error creating quote in Xero');
     }
 }
@@ -336,7 +336,7 @@ export async function quoteExists(quoteNumber) {
 
         return response.body.quotes.length > 0;
     } catch (err) {
-        error('Error checking if quote exists in Xero', err);
+        error('Xero-Service', 'Error checking if quote exists in Xero', err);
         throw new Error('Error checking if quote exists in Xero');
     }
 }
@@ -356,7 +356,7 @@ export async function purchaseOrderExists(purchaseOrderNumber) {
 
         return response.body.purchaseOrders.length > 0;
     } catch (err) {
-        error('Error checking if purchase order exists in Xero', err);
+        error('Xero-Service', 'Error checking if purchase order exists in Xero', err);
         return false;
     }
 }
@@ -376,7 +376,7 @@ export async function createPurchaseOrder(purchaseOrder) {
 
         return createdPurchaseOrders.body.purchaseOrders[0];
     } catch (err) {
-        error('Error creating purchase order in Xero', err);
+        error('Xero-Service', 'Error creating purchase order in Xero', err);
         throw new Error('Error creating purchase order in Xero');
     }
 }
@@ -401,7 +401,7 @@ export async function ensureAuthenticated(accessToken, refreshToken, expiresAt) 
                 const newTokenSet = await xeroClient.refreshWithRefreshToken(process.env.XERO_CLIENT_ID, process.env.XERO_CLIENT_SECRET, currentTokenSet.refresh_token);
                 await Business.updateOne({ 'xeroTokens.accessToken': accessToken, 'xeroTokens.refreshToken': refreshToken }, { $set: { 'xeroTokens.accessToken': newTokenSet.access_token, 'xeroTokens.refreshToken': newTokenSet.refresh_token, 'xeroTokens.expiresAt': newTokenSet.expires_at } })
             } catch (refreshError) {
-                error('Error refreshing token', refreshError);
+                error('Xero-Service', 'Error refreshing token', refreshError);
                 throw new Error('Your Xero authorization token is expired. Please go to ISOPlus Portal and authorize again.');
             }
         }

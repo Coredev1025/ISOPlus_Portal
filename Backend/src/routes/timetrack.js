@@ -41,7 +41,7 @@ router.get('/', authenticateToken, async (req, res) => {
 
             res.status(200).json({ tasks: myTasks });
         } catch (err) {
-            error(err.message);
+            console.error(err.message);
             res.status(500).json({ message: err.message });
         }
     } else {

@@ -59,6 +59,7 @@ const validateBusinessProfile = (req, res, next) => {
     }
   }
   if (errors.length > 0) {
+    warn('Business-Service', 'Validation failed', { errors: errors }, req);
     return res.status(400).json({
       status: 'error',
       errors: errors
@@ -94,10 +95,6 @@ router.get('/profile', authenticateToken, async (req, res) => {
     const business = await Business.findOne({ workspaceId: req.query.workspaceId });
     if (!business) {
       warn('Business-Service', 'Business profile not found', {}, req);
-      return res.status(404).json({ message: 'Business profile not found' });
-    }
-
-    if (!business) {
       return res.status(404).json({ message: 'Business profile not found' });
     }
     if (business.defaultLogo) {
@@ -268,6 +265,7 @@ router.post('/xero/disconnect', authenticateToken, async (req, res) => {
 
     const business = await Business.findOne({ workspaceId });
     if (!business) {
+      warn('Business-Service', 'Business not found', { workspaceId }, req);
       return res.status(404).json({ message: 'Business not found' });
     }
 

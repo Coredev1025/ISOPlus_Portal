@@ -65,7 +65,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
   const { workspaceId, boardId } = req.params;
   const payload = req.body;
   if (!payload.items || payload.items.length === 0) {
-    warn('Received payload with empty items.');
+    warn('Xero-Service', 'Received payload with empty items.', { payload }, req);
     return res.json('No items found in the payload.');
   }
 
@@ -217,7 +217,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
 
     res.json(createdInvoice);
   } catch (err) {
-    error('Error creating invoice', err);
+    error('Xero-Service', 'Error creating invoice', err);
     if (payload.items[0]) {
       await setIntegrationMessage(workspaceId, boardId, payload.items[0].id, "An error occurred while creating the invoice. Please contact support. More information: " + err.message);
     }
@@ -235,7 +235,7 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
   const { workspaceId, boardId } = req.params;
   const payload = req.body;
   if (!payload.items || payload.items.length === 0) {
-    warn('Received payload with empty items.');
+    warn('Xero-Service', 'Received payload with empty items.', { payload }, req);
     return res.json('No items found in the payload.');
   }
 
@@ -333,7 +333,7 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
 
     res.json(contact);
   } catch (err) {
-    error('Error creating/updating contact', err);
+    error('Xero-Service', 'Error creating/updating contact', err);
     if (item) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating/updating the contact. Please contact support. More information: " + err.message);
     }
@@ -345,7 +345,7 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
   const { workspaceId, boardId } = req.params;
   const payload = req.body;
   if (!payload.items || payload.items.length === 0) {
-    warn('Received payload with empty items.');
+    warn('Xero-Service', 'Received payload with empty items.', { payload }, req);
     return res.json('No items found in the payload.');
   }
 
@@ -438,7 +438,7 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
 
     res.json(contact);
   } catch (err) {
-    error('Error creating/updating contractor', err);
+    error('Xero-Service', 'Error creating/updating contractor', err);
     if (item) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating/updating the contractor. Please contact support. More information: " + err.message);
     }
@@ -450,7 +450,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
   const { workspaceId, boardId } = req.params;
   const payload = req.body;
   if (!payload.items || payload.items.length === 0) {
-    warn('Received payload with empty items.');
+    warn('Xero-Service', 'Received payload with empty items.', { payload }, req);
     return res.json('No items found in the payload.');
   }
 
@@ -587,7 +587,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
 
     res.json(createdQuote);
   } catch (err) {
-    error('Error creating quote', err);
+    error('Xero-Service', 'Error creating quote', err);
     if (item) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating the quote. Please contact support. More information: " + err.message);
     }
@@ -605,7 +605,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
   const { workspaceId, boardId } = req.params;
   const payload = req.body;
   if (!payload.items || payload.items.length === 0) {
-    warn('Received payload with empty items.');
+    warn('Xero-Service', 'Received payload with empty items.', { payload }, req);
     return res.json('No items found in the payload.');
   }
 
@@ -737,7 +737,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     await setGeneratedField(workspaceId, boardId, item.id, `${createdPurchaseOrder.purchaseOrderNumber} (Xero)`);
     res.json(createdPurchaseOrder);
   } catch (err) {
-    error('Error creating purchase order', err);
+    error('Xero-Service', 'Error creating purchase order', err);
     if (item) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating the purchase order. Please contact support. More information: " + err.message);
     }
@@ -757,7 +757,7 @@ router.get("/redirect", async (req, res) => {
     const url = await getAuthUrl();
     res.json({ url });
   } catch (err) {
-    error('Error generating redirect URL', err);
+    error('Xero-Service', 'Error generating redirect URL', err);
     res.status(200).json({ message: 'Error generating redirect URL', error: err.message });
   }
 });
@@ -777,7 +777,7 @@ router.get('/callback', async (req, res) => {
             </html>
         `);
   } catch (err) {
-    error('Error in Xero callback', err);
+    error('Xero-Service', 'Error in Xero callback', err);
     res.status(200).send(`
             <html>
                 <body>
@@ -798,7 +798,7 @@ router.post('/refresh', async (req, res) => {
     const newTokenSet = await refreshTokenSet(tokenSet);
     res.json({ tokenSet: newTokenSet });
   } catch (err) {
-    error('Error refreshing token', err);
+    error('Xero-Service', 'Error refreshing token', err);
     res.status(200).json({ message: 'Error refreshing token', error: err.message });
   }
 });

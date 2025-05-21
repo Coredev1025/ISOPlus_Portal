@@ -1,6 +1,7 @@
 import axios from "axios";
 import Board from '../models/Board.js';
 import FormData from 'form-data';
+import { warn, error } from '../utils/logger.js';
 
 export async function getWorkspace(authorization, userEmail = null) {
     try {
@@ -310,7 +311,7 @@ export async function putInternalMessage(workspaceId, boardId, itemId, message) 
         );
         return true;
     } catch (err) {
-        console.error("Error putting internal message:", err);
+        error('ISO+ Service', 'Error putting internal message:', err);
         return false;
     }
 }
@@ -350,7 +351,7 @@ export async function getItemValues(workspaceId, boardId, itemId) {
         const result = await axios.get(url, { headers });
         return result.status === 200 ? result.data : null;
     } catch (err) {
-        console.error("Error getting item values:", err);
+        error('ISO+ Service', 'Error getting item values:', err);
         return null;
     }
 }
@@ -359,7 +360,7 @@ export async function validateItemBelongsToTenant(workspaceId, boardId, itemId) 
     const validatedItemOwnership = await getItemValues(workspaceId, boardId, itemId);
     if (!validatedItemOwnership) {
         const errorMessage = "CRITICAL: Item does not exist. This may be a result of an intrusion attempt or misconfiguration of the tenant!";
-        console.warn(errorMessage);
+        warn('ISO+ Service', errorMessage);
         throw new Error(errorMessage);
     }
 }
@@ -376,7 +377,7 @@ export async function getReferences(workspaceId, boardId, itemId) {
         const result = await axios.get(url, { headers });
         return result.status === 200 ? result.data : null;
     } catch (err) {
-        console.error("Error getting references:", err);
+        error('ISO+ Service', 'Error getting references:', err);
         return null;
     }
 }
@@ -394,7 +395,7 @@ export async function getAttribute(workspaceId, boardId, attributeId) {
         const result = await axios.get(url, { headers });
         return result.status === 200 ? result.data : null;
     } catch (err) {
-        console.error("Error getting attribute:", err);
+        error('ISO+ Service', 'Error getting attribute:', err);
         return null;
     }
 }
@@ -773,7 +774,7 @@ export async function setIntegrationMessage(workspaceId, boardId, itemId, messag
             throw new Error("Failed to update item with integration message");
         }
     } catch (err) {
-        console.error("Error setting integration message:", err);
+        error('ISO+ Service', 'Error setting integration message:', err);
         throw err;
     }
 }
@@ -800,10 +801,12 @@ export async function setLogo(authorization, workspaceId, logo, type) {
             for (const boardItem of boards.board) {
                 const response = await getAllViews(authorization, workspaceId, boardItem.id);
                 if (response.status !== 200) {
+                    warn(`ISO+ Service`, `Failed to fetch views for board ${boardItem.id}`, { response }, req);
                     continue;
                 }
                 const views = response.views.filter(item => item.type.toLocaleString() === type);
                 if (!views || views.length === 0) {
+                    warn(`ISO+ Service`, `No views found for board ${boardItem.id}`, { response }, req);
                     continue;
                 }
                 if (type == "form") {
@@ -826,55 +829,65 @@ export async function setLogo(authorization, workspaceId, logo, type) {
                                     "Accept": "application/json"
                                 }
                             });
-                            console.log("Logo set successfully for view:", viewItem.id);
+                            info('ISO+ Service', `Logo set successfully for view: ${viewItem.id}`);
                         } catch (err) {
-                            console.error("Error setting logo for view:", err.response?.data || err.message);
+                            error('ISO+ Service', `Error setting logo for view: ${err.response?.data || err.message}`);
                         }
                     }));
                 } else if (type == "document") {
                     await Promise.all(views.map(async (viewItem) => {
                         const coverAttributeid = viewItem.settings.editorCoverAttributeId;
+                        if (!coverAttributeid) {
+                            warn(`ISO+ Service`, `No cover attribute id found for view ${viewItem.id}`, { viewItem }, req);
+                            return;
+                        }
                         const items = await getItem(workspaceId, boardItem.id, viewItem.folder_id);
                         if (items.status == 200 && items.item && items.item.length > 0) {
                             await Promise.all(items.item.map(async (item) => {
                                 const itemValues = await getItemValues(workspaceId, boardItem.id, item.id);
                                 if (itemValues) {
                                     const values = itemValues.values;
-                                    const doc = values.find(v => v.attribute.id == coverAttributeid);
+                                    let doc = values.find(v => v.attribute.id == coverAttributeid);
                                     if (doc) {
                                         doc.data.push({ id: uploadImageURL.data.id });
-                                        try {
-                                            await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardItem.id}/items/${item.id}`,
-                                                { values: [{ data: doc.data, attribute_id: doc.attribute.id }] },
-                                                {
-                                                    headers: {
-                                                        "Authorization": authorization,
-                                                        "Content-Type": "application/json",
-                                                        "Accept": "application/json"
-                                                    }
+                                    } else {
+                                        doc = { data: [{ id: uploadImageURL.data.id }], attribute: { id: coverAttributeid } };
+                                    }
+                                    try {
+                                        await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardItem.id}/items/${item.id}`,
+                                            { values: [{ data: doc.data, attribute_id: doc.attribute.id }] },
+                                            {
+                                                headers: {
+                                                    "Authorization": authorization,
+                                                    "Content-Type": "application/json",
+                                                    "Accept": "application/json"
                                                 }
-                                            );
-                                            if (response.status === 200) {
-                                                viewItem.settings.editorItems[item.id].cover = uploadImageURL.data.id;
                                             }
-                                        } catch (err) {
-                                            console.error("Error updating item for document logo:", err.response?.data || err.message);
+                                        );
+                                        if (response.status === 200) {
+                                            if (item.id in viewItem.settings.editorItems) {
+                                                viewItem.settings.editorItems[item.id].cover = uploadImageURL.data.id; 
+                                            } else {
+                                                viewItem.settings.editorItems[item.id] = { cover: uploadImageURL.data.id };
+                                            }
                                         }
+                                    } catch (err) {
+                                        error('ISO+ Service', 'Error updating item for document logo:', err.response?.data || err.message);
                                     }
                                 }
                             }));
-                        }
-                        try {
-                            await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardItem.id}/views/${viewItem.id}`, viewItem, {
-                                headers: {
-                                    "Authorization": authorization,
-                                    "Content-Type": "application/json",
-                                    "Accept": "application/json"
-                                }
-                            });
-                            console.log("Logo set successfully for view:", viewItem.id);
-                        } catch (err) {
-                            console.error("Error setting logo for view:", err.response?.data || err.message);
+                            try {
+                                await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardItem.id}/views/${viewItem.id}`, viewItem, {
+                                    headers: {
+                                        "Authorization": authorization,
+                                        "Content-Type": "application/json",
+                                        "Accept": "application/json"
+                                    }
+                                });
+                                    info('ISO+ Service', `Logo set successfully for view: ${viewItem.id}`);
+                            } catch (err) {
+                                error('ISO+ Service', 'Error setting logo for view:', err.response?.data || err.message);
+                            }
                         }
                     }));
                 }
@@ -883,7 +896,7 @@ export async function setLogo(authorization, workspaceId, logo, type) {
             throw new Error("Failed to fetch boards");
         }
     } catch (err) {
-        console.error("Error setting form logo:", err);
+        error('ISO+ Service', 'Error setting form logo:', err);
         return null;
     }
 }
@@ -913,7 +926,7 @@ export async function setGeneratedField(workspaceId, boardId, itemId, message) {
         }
         return false;
     } catch (err) {
-        console.error("Error setting generated field:", err);
+        error('ISO+ Service', 'Error setting generated field:', err);
         throw err;
     }
 }
