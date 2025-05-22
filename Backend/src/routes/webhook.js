@@ -265,16 +265,16 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                     Country: business.address.country
                 }),
                 quoteDetails: JSON.stringify({
-                    "Issue Date": purchaseOrderValues['Issue Date'] && new Date(purchaseOrderValues['Issue Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
-                    "expiry Date": purchaseOrderValues['Expiry Date'] && new Date(purchaseOrderValues['Expiry Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                    "Issue Date": purchaseOrderValues['Issue Date'] ? new Date(purchaseOrderValues['Issue Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                    "expiry Date": purchaseOrderValues['Expiry Date'] ? new Date(purchaseOrderValues['Expiry Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
                     "PO Number": purchaseOrderNumber
                 }),
                 companyName: JSON.stringify({ "Company Name": business.name }),
                 termsInput: JSON.stringify({
-                    "Delivery Date": purchaseOrderValues['Delivery Date'] && new Date(purchaseOrderValues['Delivery Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                    "Delivery Date": purchaseOrderValues['Delivery Date'] ? new Date(purchaseOrderValues['Delivery Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
                     "Delivery Address": `${contractorValues.address} ${contractorValues.suburb} ${contractorValues.state} ${contractorValues.postcode}`,
-                    "Additional Notes": `${purchaseOrderValues['Additional Notes'] ? purchaseOrderValues['Additional Notes'].replace(/<[^>]*>/g, '') : ' '}`,
-                    "Accounts Payable Payment Terms": `${business.bankDetails.accountsPayableTerms? business.bankDetails.accountsPayableTerms : ' ' }`
+                    "Additional Notes": `${purchaseOrderValues['Additional Notes'] && purchaseOrderValues['Additional Notes'].replace(/<[^>]*>/g, '') ? purchaseOrderValues['Additional Notes'].replace(/<[^>]*>/g, '') : ' '}`,
+                    "Accounts Payable Payment Terms": `${business.bankDetails.accountsPayableTerms ? business.bankDetails.accountsPayableTerms : ' '}`
                 }),
                 orders: `[[
                     "${purchaseOrderValues['Job Title']}${purchaseOrderValues['Job Description'] ? ` - ${purchaseOrderValues['Job Description'].replace(/<[^>]*>/g, '')}` : ''}",
