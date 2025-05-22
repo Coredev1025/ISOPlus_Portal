@@ -156,8 +156,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
             const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename);
-                const expiryDate = new Date(Date.now() + 604800000); // 7 days in milliseconds
-                await putInternalMessage(workspaceId, boardId, item.id, `Your invoice successfully created. \n Click <a href="${fileUrl}">here</a> \n This is a temporary link and will expire on ${expiryDate.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}. Make sure to download the file before expiry.`);
+                await putInternalMessage(workspaceId, boardId, item.id, `Your invoice successfully created. \n Click <a href="${fileUrl}">here</a>`);
                 logAuditTrail({
                     workspaceId,
                     action: 'Generate PDF Invoice',
@@ -296,8 +295,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
             const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename);
-                const expiryDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-                await putInternalMessage(workspaceId, boardId, item.id, `Your purchase order successfully created. \n Click <a href="${fileUrl}">here</a> \n This is a temporary link and will expire on ${expiryDate.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}. Make sure to download the file before expiry.`);
+                await putInternalMessage(workspaceId, boardId, item.id, `Your purchase order successfully created. \n Click <a href="${fileUrl}">here</a>`);
                 logAuditTrail({
                     workspaceId,
                     action: 'Generate PDF Purchase Order',
@@ -415,8 +413,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
             const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename);
-                const expiryDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-                await putInternalMessage(workspaceId, boardId, item.id, `Your quote successfully created. \n Click <a href="${fileUrl}">here</a> \n This is a temporary link and will expire on ${expiryDate.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })}. Make sure to download the file before expiry.`);
+                await putInternalMessage(workspaceId, boardId, item.id, `Your quote successfully created. \n Click <a href="${fileUrl}">here</a>`);
                 logAuditTrail({
                     workspaceId,
                     action: 'Generate PDF Quote',
