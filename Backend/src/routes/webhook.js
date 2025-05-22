@@ -156,7 +156,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
             const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename);
-                await putInternalMessage(workspaceId, boardId, item.id, `Your invoice successfully created. \n Click <a href="${fileUrl}">here</a>`);
+                await putInternalMessage(workspaceId, boardId, item.id, `Your invoice successfully created. \n Click <a href="${fileUrl}">here</a> to download.`);
                 logAuditTrail({
                     workspaceId,
                     action: 'Generate PDF Invoice',
@@ -165,7 +165,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 });
                 PDFLink.insertOne({ workspaceId: workspaceId, itemId: item.id, type: 'Invoice', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" });
                 info('Webhook-Service', 'Successfully generating PDF invoice', { link: fileUrl }, req);
-                await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber}(ISO+™)`);
+                await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
                 res.json({ pdfUrl: fileUrl });
             } else {
                 throw new Error('Upload PDF failed, please provide correct information');
@@ -295,7 +295,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
             const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename);
-                await putInternalMessage(workspaceId, boardId, item.id, `Your purchase order successfully created. \n Click <a href="${fileUrl}">here</a>`);
+                await putInternalMessage(workspaceId, boardId, item.id, `Your purchase order successfully created. \n Click <a href="${fileUrl}">here</a> to download.`);
                 logAuditTrail({
                     workspaceId,
                     action: 'Generate PDF Purchase Order',
@@ -413,7 +413,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
             const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename);
-                await putInternalMessage(workspaceId, boardId, item.id, `Your quote successfully created. \n Click <a href="${fileUrl}">here</a>`);
+                await putInternalMessage(workspaceId, boardId, item.id, `Your quote successfully created. \n Click <a href="${fileUrl}">here</a> to download.`);
                 logAuditTrail({
                     workspaceId,
                     action: 'Generate PDF Quote',
@@ -422,7 +422,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                 });
                 PDFLink.insertOne({ workspaceId: workspaceId, itemId: item.id, type: 'Quote', pdfLink: fileUrl, createdBy: "", isDeleted: false, SignatureStatus: "Unsigned" });
                 info('Webhook-Service', 'Successfully generating PDF for Quote', { link: fileUrl }, req);
-                await setGeneratedField(workspaceId, boardId, item.id, `${quoteNumber}(ISO+™)`);
+                await setGeneratedField(workspaceId, boardId, item.id, `${quoteNumber} (ISO+™)`);
                 res.json({ pdfUrl: fileUrl });
             } else {
                 throw new Error('Upload PDF failed, please provide correct information');

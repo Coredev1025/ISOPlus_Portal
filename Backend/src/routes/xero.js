@@ -213,7 +213,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       req
     });
 
-    await setGeneratedField(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber}(Xero)`);
+    await setGeneratedField(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`);
 
     res.json(createdInvoice);
   } catch (err) {
@@ -583,7 +583,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
       req
     });
 
-    await setGeneratedField(workspaceId, boardId, item.id, `${createdQuote.quoteNumber}(Xero)`);
+    await setGeneratedField(workspaceId, boardId, item.id, `${createdQuote.quoteNumber} (Xero)`);
 
     res.json(createdQuote);
   } catch (err) {
