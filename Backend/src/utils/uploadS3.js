@@ -76,18 +76,22 @@ export const downloadFileFromS3Stream = async (key, downloadPath) => {
 
 export const getS3FileUrl = async (key, expiration = 3600, publicRead = true) => {
     checkS3ENV(publicRead);
-    const params = {
-        Bucket: publicRead ? process.env.AWS_BUCKET_PUBLIC : process.env.AWS_BUCKET,
-        Key: key,
-        expiration: publicRead ? expiration : undefined
-    };
-
-    try {
-        const url = await getSignedUrl(s3Client, new GetObjectCommand(params));
-        return url;
-    } catch (err) {
-        console.error('Error generating signed URL:', err);
-        throw err;
+    if (publicRead) {
+        return 'https://' + process.env.AWS_BUCKET_PUBLIC + '.s3.' + process.env.AWS_REGION + '.amazonaws.com/' + key;
+    } else {
+        const params = {
+            Bucket: process.env.AWS_BUCKET,
+            Key: key,
+            expiration: expiration
+        };
+    
+        try {
+            const url = await getSignedUrl(s3Client, new GetObjectCommand(params));
+            return url;
+        } catch (err) {
+            console.error('Error generating signed URL:', err);
+            throw err;
+        }
     }
 };
 
