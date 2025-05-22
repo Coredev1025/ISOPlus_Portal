@@ -13,6 +13,7 @@
                 "height": 26.72,
                 "rotate": 0,
                 "opacity": 1,
+                "readOnly": false,
                 "required": false
             },
             {
@@ -316,31 +317,6 @@
             },
             {
                 "type": "text",
-                "position": {
-                    "x": 133,
-                    "y": 202
-                },
-                "name": "gstLabel",
-                "content": "GST",
-                "width": 25,
-                "height": 8,
-                "rotate": 0,
-                "alignment": "right",
-                "verticalAlignment": "middle",
-                "fontSize": 12,
-                "lineHeight": 1,
-                "characterSpacing": 0,
-                "fontColor": "#000000",
-                "backgroundColor": "",
-                "opacity": 1,
-                "strikethrough": false,
-                "underline": false,
-                "readOnly": true,
-                "required": false,
-                "fontName": "Roboto"
-            },
-            {
-                "type": "text",
                 "content": "",
                 "position": {
                     "x": 160,
@@ -383,7 +359,7 @@
                     "x": 133,
                     "y": 216
                 },
-                "content": "Total AUD",
+                "content": "TOTAL AUD",
                 "width": 25,
                 "height": 8,
                 "rotate": 0,
@@ -422,30 +398,6 @@
                 "name": "total",
                 "readOnly": false,
                 "required": false
-            },
-            {
-                "name": "Due date",
-                "type": "text",
-                "content": "",
-                "position": {
-                    "x": 160,
-                    "y": 224
-                },
-                "width": 25,
-                "height": 8,
-                "rotate": 0,
-                "alignment": "left",
-                "verticalAlignment": "middle",
-                "fontSize": 13,
-                "lineHeight": 1,
-                "characterSpacing": 0,
-                "fontColor": "#000000",
-                "backgroundColor": "",
-                "opacity": 1,
-                "strikethrough": false,
-                "underline": false,
-                "required": false,
-                "readOnly": false
             },
             {
                 "name": "Bank Details",
@@ -508,6 +460,55 @@
                 "required": false,
                 "readOnly": true,
                 "fontName": "Roboto"
+            },
+            {
+                "name": "dueDate",
+                "type": "text",
+                "content": "",
+                "position": {
+                    "x": 160,
+                    "y": 224
+                },
+                "width": 25,
+                "height": 8,
+                "rotate": 0,
+                "alignment": "left",
+                "verticalAlignment": "middle",
+                "fontSize": 13,
+                "lineHeight": 1,
+                "characterSpacing": 0,
+                "fontColor": "#000000",
+                "backgroundColor": "",
+                "opacity": 1,
+                "strikethrough": false,
+                "underline": false,
+                "required": false,
+                "readOnly": false
+            },
+            {
+                "name": "gstLabel",
+                "type": "text",
+                "content": "TOTAL GST",
+                "position": {
+                    "x": 133,
+                    "y": 202
+                },
+                "width": 25,
+                "height": 8,
+                "rotate": 0,
+                "alignment": "right",
+                "verticalAlignment": "middle",
+                "fontSize": 12,
+                "lineHeight": 1,
+                "characterSpacing": 0,
+                "fontColor": "#000000",
+                "backgroundColor": "",
+                "opacity": 1,
+                "strikethrough": false,
+                "underline": false,
+                "required": false,
+                "readOnly": true,
+                "fontName": "Roboto"
             }
         ]
     ],
@@ -522,5 +523,5 @@
         ],
         "staticSchema": []
     },
-    "pdfmeVersion": "5.3.13"
+    "pdfmeVersion": "5.3.16"
 }

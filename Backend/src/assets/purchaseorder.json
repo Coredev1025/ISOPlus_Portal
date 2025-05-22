@@ -198,30 +198,6 @@
             },
             {
                 "type": "text",
-                "position": {
-                    "x": 133,
-                    "y": 202
-                },
-                "name": "gstLabel",
-                "content": "GST",
-                "width": 25,
-                "height": 8,
-                "rotate": 0,
-                "alignment": "right",
-                "verticalAlignment": "middle",
-                "fontSize": 12,
-                "lineHeight": 1,
-                "characterSpacing": 0,
-                "fontColor": "#000000",
-                "backgroundColor": "",
-                "opacity": 1,
-                "strikethrough": false,
-                "underline": false,
-                "readOnly": true,
-                "required": false
-        },
-            {
-                "type": "text",
                 "content": "",
                 "position": {
                     "x": 160,
@@ -264,7 +240,7 @@
                     "x": 133,
                     "y": 215
                 },
-                "content": "Total AUD",
+                "content": "TOTAL AUD",
                 "width": 25,
                 "height": 8,
                 "rotate": 0,
@@ -338,7 +314,8 @@
                 "height": 26.72,
                 "rotate": 0,
                 "opacity": 1,
-                "required": false
+                "required": false,
+                "readOnly": false
             },
             {
                 "name": "clientDetails",
@@ -448,7 +425,7 @@
             {
                 "name": "termsInput",
                 "type": "multiVariableText",
-                "content": "{\"Delivery Date\":\"DELIVERY DATE\",\"Delivery Address\":\"DELIVERY ADDRESS\",\"Additional Notes\":\"ADDITIONAL NOTES\"}",
+                "content": "{\"Delivery Date\":\"DELIVERY DATE\",\"Delivery Address\":\"DELIVERY ADDRESS\",\"Additional Notes\":\"ADDITIONAL NOTES\",\"Accounts Payable Payment Terms\":\"ACCOUNTS PAYABLE PAYMENT TERMS\"}",
                 "position": {
                     "x": 20.26,
                     "y": 223.46
@@ -467,13 +444,38 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": false,
-                "text": "Terms & Conditions\n- Payment is due within 14 days from the invoice date.\n- Delivery Date: {Delivery Date}\n- Delivery Address:{Delivery Address}\n- Delivery Instructions:{Additional Notes}",
+                "text": "Terms & Conditions\n\n- Payment Terms: {Accounts Payable Payment Terms}\n\n- Delivery Date: {Delivery Date}\n\n- Delivery Address: {Delivery Address}\n\n- Delivery Instructions: {Additional Notes}",
                 "variables": [
                     "Delivery Date",
                     "Delivery Address",
-                    "Additional Notes"
+                    "Additional Notes",
+                    "Accounts Payable Payment Terms"
                 ],
                 "required": false
+            },
+            {
+                "name": "field16",
+                "type": "text",
+                "content": "TOTAL GST",
+                "position": {
+                    "x": 133,
+                    "y": 202
+                },
+                "width": 25,
+                "height": 8,
+                "rotate": 0,
+                "alignment": "right",
+                "verticalAlignment": "middle",
+                "fontSize": 12,
+                "lineHeight": 1,
+                "characterSpacing": 0,
+                "fontColor": "#000000",
+                "backgroundColor": "",
+                "opacity": 1,
+                "strikethrough": false,
+                "underline": false,
+                "required": false,
+                "readOnly": true
             }
         ]
     ],
@@ -488,5 +490,5 @@
         ],
         "staticSchema": []
     },
-    "pdfmeVersion": "5.3.13"
+    "pdfmeVersion": "5.3.16"
 }

@@ -139,7 +139,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                             Country: business.address.country
                         }),
                         orders: invoiceDescription,
-                        "Due date": dueDate.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                        "dueDate": dueDate.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
                         "Bank Details": JSON.stringify({
                             "Account Name": business.bankDetails.accountName,
                             "Bank Name": business.bankDetails.bankName,
@@ -152,7 +152,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 plugins: { text, image, line, table, multiVariableText }
             });
 
-            const filename = `output/${workspaceId}/${boardId}/invoices/${invoiceNumber + '-' + item.id}.pdf`;
+            const filename = `output/${workspaceId}/${boardId}/invoices/${invoiceNumber + '-ISO+™-' + item.id}.pdf`;
             const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename);
@@ -274,7 +274,8 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 termsInput: JSON.stringify({
                     "Delivery Date": purchaseOrderValues['Delivery Date'] && new Date(purchaseOrderValues['Delivery Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
                     "Delivery Address": `${contractorValues.address} ${contractorValues.suburb} ${contractorValues.state} ${contractorValues.postcode}`,
-                    "Additional Notes": `${purchaseOrderValues['Additional Notes'] ? purchaseOrderValues['Additional Notes'].replace(/<[^>]*>/g, '') : ' '}`
+                    "Additional Notes": `${purchaseOrderValues['Additional Notes'] ? purchaseOrderValues['Additional Notes'].replace(/<[^>]*>/g, '') : ' '}`,
+                    "Accounts Payable Payment Terms": `${business.bankDetails.accountsPayableTerms? business.bankDetails.accountsPayableTerms : ' ' }`
                 }),
                 orders: `[[
                     "${purchaseOrderValues['Job Title']}${purchaseOrderValues['Job Description'] ? ` - ${purchaseOrderValues['Job Description'].replace(/<[^>]*>/g, '')}` : ''}",
@@ -403,7 +404,10 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                             Postcode: business.address.postcode,
                             Country: business.address.country
                         }),
-                        orders: `[["${quoteValues['Job Title']} - ${quoteValues['Job Description'] ? quoteValues['Job Description'].replace(/<[^>]*>/g, '') : ''}","${formatValue(quoteValues.Quantity || 1)}","${formatValue(quoteValues['Unit Price($) - GST Excl.'] || 1)}", "${quoteValues["GST"]}", "${formatValue((quoteValues.Quantity || 1) * (quoteValues['Unit Price($) - GST Excl.'] || 1))}"]]`
+                        orders: `[["${quoteValues['Job Title']} - ${quoteValues['Job Description'] ? quoteValues['Job Description'].replace(/<[^>]*>/g, '') : ''}","${formatValue(quoteValues.Quantity || 1)}","${formatValue(quoteValues['Unit Price($) - GST Excl.'] || 1)}", "${quoteValues["GST"]}", "${formatValue((quoteValues.Quantity || 1) * (quoteValues['Unit Price($) - GST Excl.'] || 1))}"]]`,
+                        termsInputs: JSON.stringify({
+                            "Accounts Receivable Payment Terms": `${business.bankDetails.accountsReceivableTerms ? business.bankDetails.accountsReceivableTerms : ' '}`
+                        })
                     }
                 ],
                 plugins: { text, image, line, table, multiVariableText }

@@ -77,7 +77,7 @@ export const downloadFileFromS3Stream = async (key, downloadPath) => {
 export const getS3FileUrl = async (key, expiration = 3600, publicRead = true) => {
     checkS3ENV(publicRead);
     if (publicRead) {
-        return 'https://' + process.env.AWS_BUCKET_PUBLIC + '.s3.' + process.env.AWS_REGION + '.amazonaws.com/' + key;
+        return 'https://' + process.env.AWS_BUCKET_PUBLIC + '.s3.' + process.env.AWS_REGION + '.amazonaws.com/' + key.replace(/\+/g, '%2B');
     } else {
         const params = {
             Bucket: process.env.AWS_BUCKET,
