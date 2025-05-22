@@ -1,7 +1,7 @@
 import axios from "axios";
 import Board from '../models/Board.js';
 import FormData from 'form-data';
-import { warn, error } from '../utils/logger.js';
+import { info, warn, error } from '../utils/logger.js';
 
 export async function getWorkspace(authorization, userEmail = null) {
     try {
@@ -810,7 +810,7 @@ export async function setLogo(authorization, workspaceId, logo, type) {
                     continue;
                 }
                 if (type == "form") {
-                    await Promise.all(views.map(async (viewItem) => {
+                    for (const viewItem of views) {
                         const updateView = {
                             ...viewItem,
                             settings: {
@@ -833,21 +833,21 @@ export async function setLogo(authorization, workspaceId, logo, type) {
                         } catch (err) {
                             error('ISO+ Service', `Error setting logo for view: ${err.response?.data || err.message}`);
                         }
-                    }));
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    }
                 } else if (type == "document") {
-                    await Promise.all(views.map(async (viewItem) => {
+                    for (const viewItem of views) {
                         const coverAttributeid = viewItem.settings.editorCoverAttributeId;
                         if (!coverAttributeid) {
                             warn(`ISO+ Service`, `No cover attribute id found for view ${viewItem.id}`, { viewItem }, req);
-                            return;
+                            continue;
                         }
                         const items = await getItem(workspaceId, boardItem.id, viewItem.folder_id);
                         if (items.status == 200 && items.item && items.item.length > 0) {
-                            await Promise.all(items.item.map(async (item) => {
+                            for (const item of items.item) {
                                 const itemValues = await getItemValues(workspaceId, boardItem.id, item.id);
                                 if (itemValues) {
-                                    const values = itemValues.values;
-                                    let doc = values.find(v => v.attribute.id == coverAttributeid);
+                                    let doc = itemValues.values.find(v => v.attribute.id == coverAttributeid);
                                     if (doc) {
                                         doc.data.push({ id: uploadImageURL.data.id });
                                     } else {
@@ -866,7 +866,7 @@ export async function setLogo(authorization, workspaceId, logo, type) {
                                         );
                                         if (response.status === 200) {
                                             if (item.id in viewItem.settings.editorItems) {
-                                                viewItem.settings.editorItems[item.id].cover = uploadImageURL.data.id; 
+                                                viewItem.settings.editorItems[item.id].cover = uploadImageURL.data.id;
                                             } else {
                                                 viewItem.settings.editorItems[item.id] = { cover: uploadImageURL.data.id };
                                             }
@@ -874,8 +874,9 @@ export async function setLogo(authorization, workspaceId, logo, type) {
                                     } catch (err) {
                                         error('ISO+ Service', 'Error updating item for document logo:', err.response?.data || err.message);
                                     }
+                                    await new Promise(resolve => setTimeout(resolve, 2000));
                                 }
-                            }));
+                            }
                             try {
                                 await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardItem.id}/views/${viewItem.id}`, viewItem, {
                                     headers: {
@@ -884,12 +885,13 @@ export async function setLogo(authorization, workspaceId, logo, type) {
                                         "Accept": "application/json"
                                     }
                                 });
-                                    info('ISO+ Service', `Logo set successfully for view: ${viewItem.id}`);
+                                info('ISO+ Service', `Logo set successfully for view: ${viewItem.id}`);
                             } catch (err) {
                                 error('ISO+ Service', 'Error setting logo for view:', err.response?.data || err.message);
                             }
                         }
-                    }));
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    }
                 }
             }
         } else {
