@@ -120,7 +120,6 @@ export async function createInvoice(invoice) {
         dueDate,
         status,
         reference,
-        invoiceNumber,
         customerName,
         amount
     } = invoice;
@@ -135,7 +134,6 @@ export async function createInvoice(invoice) {
         dueDate,
         status,
         reference,
-        invoiceNumber,
         customerName,
         amount
     };
