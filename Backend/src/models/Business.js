@@ -68,9 +68,6 @@ const businessSchema = new mongoose.Schema({
     accountNumber: {
       type: String
     },
-    paymentReference: {
-      type: String
-    },
     accountsReceivableTerms: {
       type: String
     },

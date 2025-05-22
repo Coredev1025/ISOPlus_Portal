@@ -882,15 +882,6 @@ export default function ConfigureBusinessPage() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="paymentReference">Payment Reference</Label>
-                      <Input
-                        id="paymentReference"
-                        placeholder="Reference to match payment with invoice (Optional)"
-                        value={formData.paymentReference}
-                        onChange={handleInputChange}
-                      />
-                    </div>
-                    <div className="space-y-2">
                       <Label htmlFor="accountsReceivableTerms">Accounts Receivable Payment Terms</Label>
                       <Input
                         id="accountsReceivableTerms"
