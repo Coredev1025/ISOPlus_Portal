@@ -402,7 +402,7 @@
             {
                 "name": "Bank Details",
                 "type": "multiVariableText",
-                "content": "{\"Account Name\":\"ACCOUNT NAME\",\"Bank Name\":\"BANK NAME\",\"BSB\":\"BSB\",\"Account Number\":\"ACCOUNT NUMBER\",\"invoice Number\":\"INVOICE NUMBER\"}",
+                "content": "{\"Account Name\":\"ACCOUNT NAME\",\"Bank Name\":\"BANK NAME\",\"BSB\":\"BSB\",\"Account Number\":\"ACCOUNT NUMBER\"}",
                 "position": {
                     "x": 21.29,
                     "y": 237.47
@@ -426,13 +426,12 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": false,
-                "text": "Bank Details\n\n- Account Name: {Account Name}\n- Bank Name: {Bank Name}\n- BSB: {BSB}\n- Account Number: {Account Number}\n- Payment Reference: {invoice Number}",
+                "text": "Bank Details\n\n- Account Name: {Account Name}\n- Bank Name: {Bank Name}\n- BSB: {BSB}\n- Account Number: {Account Number}",
                 "variables": [
                     "Account Name",
                     "Bank Name",
                     "BSB",
-                    "Account Number",
-                    "invoice Number"
+                    "Account Number"
                 ],
                 "required": false
             },
