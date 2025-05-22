@@ -104,6 +104,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
 
     let contact = await getContactByEmail(contactValues.emailAddress);
     if (!contact) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
       contact = await createOrUpdateContact({
         name: contactValues.client,
         phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
@@ -477,7 +478,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
 
     let contact = await getContactByEmail(contactValues.emailAddress);
     if (!contact) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "Creating a new contact...");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
       contact = await createOrUpdateContact({
         name: contactValues.client,
         phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
@@ -633,7 +634,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
 
     let contact = await getContactByEmail(contractorValues.emailAddress);
     if (!contact) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "Creating a new contact...");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
       contact = await createOrUpdateContact({
         name: contractorValues.contractor,
         phones: [{ phoneType: 'DEFAULT', phoneNumber: contractorValues.phoneNumber }],
