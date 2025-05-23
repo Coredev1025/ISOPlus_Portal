@@ -169,7 +169,7 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
       }
       const squareLogoPath = `logos/${workspaceId}/square-logo${path.extname(req.files['squareLogo'][0].originalname)}`;
       await uploadFileToS3(req.files['squareLogo'][0].buffer, squareLogoPath, false);
-      setLogo(req.session.Authorization, workspaceId, req.files['squareLogo'][0], "form");
+      setLogo(req.session.Authorization, workspaceId, req.files['squareLogo'][0], "form", req);
       updateData.squareLogo = squareLogoPath;
     }
 
@@ -179,7 +179,7 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
       }
       const wideLogoPath = `logos/${workspaceId}/wide-logo${path.extname(req.files['wideLogo'][0].originalname)}`;
       await uploadFileToS3(req.files['wideLogo'][0].buffer, wideLogoPath, false);
-      setLogo(req.session.Authorization, workspaceId, req.files['wideLogo'][0], "document");
+      setLogo(req.session.Authorization, workspaceId, req.files['wideLogo'][0], "document", req);
       updateData.wideLogo = wideLogoPath;
     }
 

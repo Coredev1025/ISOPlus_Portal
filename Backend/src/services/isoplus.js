@@ -779,7 +779,7 @@ export async function setIntegrationMessage(workspaceId, boardId, itemId, messag
     }
 }
 
-export async function setLogo(authorization, workspaceId, logo, type) {
+export async function setLogo(authorization, workspaceId, logo, type, req) {
     try {
         const boards = await getBoard(authorization, workspaceId);
         const body = new FormData();
@@ -898,7 +898,7 @@ export async function setLogo(authorization, workspaceId, logo, type) {
             throw new Error("Failed to fetch boards");
         }
     } catch (err) {
-        error('ISO+ Service', 'Error setting form logo:', err);
+        error('ISO+ Service', 'Error setting form logo:', err?.response?.data || err?.message || err);
         return null;
     }
 }
