@@ -96,11 +96,15 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
             let invoiceDescription = `[["${jobPlanningValues.jobTitle}-${serviceFeeTypeValues.feeType}-${formatValue(invoiceValues["Job Duration (Hrs.)"])}Hrs.", "1", "${formatValue(invoiceValues["Payable Service Fee($) - GST Excl."])}", "${invoiceValues["GST"]}", "${formatValue(invoiceValues["Payable Service Fee($) - GST Excl."])}"]`;
             subTotal += parseFloat(invoiceValues["Payable Service Fee($) - GST Excl."]);
 
-            invoiceDescription += `,["Used Material/Part", "1", "${formatValue(invoiceValues["Payable Material Fee($) - GST Excl."])}", "${invoiceValues["GST"]}", "${formatValue(invoiceValues["Payable Material Fee($) - GST Excl."])}"]`;
-            subTotal += parseFloat(invoiceValues["Payable Material Fee($) - GST Excl."]);
+            if (invoiceValues["Payable Material Fee($) - GST Excl."] > 0) {
+                invoiceDescription += `,["Used Material/Part", "1", "${formatValue(invoiceValues["Payable Material Fee($) - GST Excl."])}", "${invoiceValues["GST"]}", "${formatValue(invoiceValues["Payable Material Fee($) - GST Excl."])}"]`;
+                subTotal += parseFloat(invoiceValues["Payable Material Fee($) - GST Excl."]);
+            }
 
-            invoiceDescription += `,["Other Payable Fee", "1", "${formatValue(invoiceValues["Other Payable Fee($) - GST Excl."])}", "${invoiceValues["GST"]}", "${formatValue(invoiceValues["Other Payable Fee($) - GST Excl."])}"]`;
-            subTotal += parseFloat(invoiceValues["Other Payable Fee($) - GST Excl."]);
+            if (invoiceValues["Other Payable Fee($) - GST Excl."] > 0) {
+                invoiceDescription += `,["Other Payable Fee", "1", "${formatValue(invoiceValues["Other Payable Fee($) - GST Excl."])}", "${invoiceValues["GST"]}", "${formatValue(invoiceValues["Other Payable Fee($) - GST Excl."])}"]`;
+                subTotal += parseFloat(invoiceValues["Other Payable Fee($) - GST Excl."]);
+            }
 
             invoiceDescription += "]";
 

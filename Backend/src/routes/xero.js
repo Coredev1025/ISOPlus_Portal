@@ -184,23 +184,26 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       quantity: 1,
       unitAmount: invoiceValues['Payable Service Fee($) - GST Excl.'],
       taxType: "OUTPUT",
+      taxAmount: invoiceValues['Payable Service Fee($) - GST Excl.'] * (parseFloat(invoiceValues['GST']) / 100),
     });
 
-    if (invoiceValues.payableMaterialFee > 0) {
+    if (invoiceValues['Payable Material Fee($) - GST Excl.'] > 0) {
       invoice.lineItems.push({
         description: "Used Material/Part",
         quantity: 1,
         unitAmount: invoiceValues['Payable Material Fee($) - GST Excl.'],
-        taxType: "EXEMPTOUTPUT",
+        taxType: "OUTPUT",
+        taxAmount: invoiceValues['Payable Material Fee($) - GST Excl.'] * (parseFloat(invoiceValues['GST']) / 100),
       });
     }
 
-    if (invoiceValues.otherPayableFee > 0) {
+    if (invoiceValues['Other Payable Fee($) - GST Excl.'] > 0) {
       invoice.lineItems.push({
         description: "Other Payable Fee",
         quantity: 1,
         unitAmount: invoiceValues['Other Payable Fee($) - GST Excl.'],
         taxType: "OUTPUT",
+        taxAmount: invoiceValues['Other Payable Fee($) - GST Excl.'] * (parseFloat(invoiceValues['GST']) / 100),
       });
     }
 
