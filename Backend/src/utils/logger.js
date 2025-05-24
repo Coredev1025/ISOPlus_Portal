@@ -3,6 +3,7 @@ const { combine, timestamp, printf, colorize, json } = winston.format;
 import "winston-daily-rotate-file";
 import "winston-mongodb";
 import dotenv from 'dotenv';
+import util from 'util';
 
 dotenv.config();
 
@@ -23,7 +24,14 @@ const colors = {
 winston.addColors(colors);
 
 const consoleFormat = printf(({ level, message, timestamp, source, ip, email, ...metadata }) => {
-  const metaString = Object.keys(metadata).length ? JSON.stringify(metadata) : '';
+  let metaString = '';
+  if (Object.keys(metadata).length) {
+    try {
+      metaString = util.inspect(metadata, { depth: 3, colors: false });
+    } catch (e) {
+      metaString = '[Unable to stringify metadata: ' + e.message + ']';
+    }
+  }
   return `${timestamp}===> [${level}]: ${ip || 'N/A'}==>${email || 'N/A'}=> ${source || 'App'}: ${message} ${metaString}`;
 });
 
