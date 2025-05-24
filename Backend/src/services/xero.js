@@ -156,14 +156,14 @@ export async function createInvoice(invoice) {
             invoices: [{
                 type: invoice.type || 'ACCREC',
                 contact: { contactID: invoice.contact.contactID },
+                reference: invoice.reference,
                 dueDate: new Date(invoice.dueDate).toISOString().split('T')[0], // YYYY-MM-DD format
                 lineItems: invoice.lineItems.map(item => ({
+                    itemCode: item.itemCode,
                     description: item.description,
                     quantity: item.quantity,
                     unitAmount: item.unitAmount,
-                    accountCode: item.accountCode,
                     taxType: item.taxType,
-                    taxAmount: item.taxAmount
                 })),
                 status: invoice.status || 'AUTHORISED'
             }]
@@ -267,10 +267,6 @@ export async function findOrCreateItem(itemCode, itemName) {
         const newItem = {
             code: itemCode,
             name: itemName,
-            isTrackedAsInventory: false,
-            purchaseDescription: itemName,
-            salesDescription: itemName,
-            inventoryAssetAccountCode: null
         };
 
         const createResponse = await xeroClient.accountingApi.createItems(

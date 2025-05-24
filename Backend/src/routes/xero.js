@@ -166,7 +166,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
-
+    
     const invoice = {
       type: 'ACCREC',
       contact: { contactID: contact.contactID },
@@ -184,7 +184,6 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       quantity: 1,
       unitAmount: invoiceValues['Payable Service Fee($) - GST Excl.'],
       taxType: "OUTPUT",
-      taxAmount: invoiceValues['Payable Service Fee($) - GST Excl.'] * (parseFloat(invoiceValues['GST']) / 100),
     });
 
     if (invoiceValues['Payable Material Fee($) - GST Excl.'] > 0) {
@@ -192,8 +191,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
         description: "Used Material/Part",
         quantity: 1,
         unitAmount: invoiceValues['Payable Material Fee($) - GST Excl.'],
-        taxType: "OUTPUT",
-        taxAmount: invoiceValues['Payable Material Fee($) - GST Excl.'] * (parseFloat(invoiceValues['GST']) / 100),
+        taxType: "EXEMPTOUTPUT",
       });
     }
 
@@ -203,7 +201,6 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
         quantity: 1,
         unitAmount: invoiceValues['Other Payable Fee($) - GST Excl.'],
         taxType: "OUTPUT",
-        taxAmount: invoiceValues['Other Payable Fee($) - GST Excl.'] * (parseFloat(invoiceValues['GST']) / 100),
       });
     }
 

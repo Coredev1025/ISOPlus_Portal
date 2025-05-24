@@ -337,7 +337,6 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     }
 
     const business = await Business.findOne({ workspaceId });
-    console.log(req.body.items);
     await Promise.all(req.body.items.map(async (item) => {
         try {
             await validateItemBelongsToTenant(workspaceId, boardId, item.id);
