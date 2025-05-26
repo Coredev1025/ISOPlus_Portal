@@ -71,7 +71,7 @@ export function Header() {
       <div className="container mx-auto flex h-16 items-center justify-between px-4">
         <span className="text-lg font-semibold">ISO+™ Portal</span>
 
-        <div className="flex items-center justify-center">
+        <div className="flex items-center justify-center cursor-pointer" onClick={() => { window.location.href = "https://app.isoplus.online/home"; }}>
           <img
             src="/assets/logo_rgb_black.png"
             alt="ISO+ Logo"
