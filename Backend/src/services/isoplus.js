@@ -804,7 +804,7 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                     warn(`ISO+™ Service`, `Failed to fetch views for board ${boardItem.id}`, { response }, req);
                     continue;
                 }
-                const views = response.views.filter(item => item.type.toLocaleString() === type);
+                const views = response.views.filter(item => item.type.toLowerCase() === type);
                 if (!views || views.length === 0) {
                     warn(`ISO+™ Service`, `No views found for board ${boardItem.id}`, { response }, req);
                     continue;
