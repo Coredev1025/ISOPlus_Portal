@@ -68,8 +68,6 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
             const templatePath = path.join(__dirname, '..', 'assets', `invoice.json`);
             const templateData = await fs.readFile(templatePath, 'utf8');
             const template = JSON.parse(templateData);
-            const dueDate = new Date();
-            dueDate.setDate(dueDate.getDate() + 7);
 
             const logoKey = business.defaultLogo;
             let logoUrl = '';
@@ -92,24 +90,27 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
             await business.save();
 
             const invoiceValues = item.values;
+            const invoiceDate = invoiceValues["Issue Date"]? invoiceValues["Issue Date"].replace('Z', '') : "";
+            const dueDate = invoiceValues["Due Date"]? invoiceValues["Due Date"].replace('Z', '') : "";
             let subTotal = 0;
-            let invoiceDescription = `[["${jobPlanningValues.jobTitle}-${serviceFeeTypeValues.feeType}-${formatValue(invoiceValues["Job Duration (Hrs.)"])}Hrs.", "1", "${formatValue(invoiceValues["Payable Service Fee($) - GST Excl."])}", "${invoiceValues["GST"]}", "${formatValue(invoiceValues["Payable Service Fee($) - GST Excl."])}"]`;
+            let gst = invoiceValues["GST"] == "10%" ? "10%" : "0%";
+            let invoiceDescription = `[["${jobPlanningValues.jobTitle}-${serviceFeeTypeValues.feeType}-${formatValue(invoiceValues["Job Duration (Hrs.)"])}Hrs.", "1", "${formatValue(invoiceValues["Payable Service Fee($) - GST Excl."])}", "${gst}", "${formatValue(invoiceValues["Payable Service Fee($) - GST Excl."])}"]`;
             subTotal += parseFloat(invoiceValues["Payable Service Fee($) - GST Excl."]);
 
             if (invoiceValues["Payable Material Fee($) - GST Excl."] > 0) {
-                invoiceDescription += `,["Used Material/Part", "1", "${formatValue(invoiceValues["Payable Material Fee($) - GST Excl."])}", "${invoiceValues["GST"]}", "${formatValue(invoiceValues["Payable Material Fee($) - GST Excl."])}"]`;
+                invoiceDescription += `,["Used Material/Part", "1", "${formatValue(invoiceValues["Payable Material Fee($) - GST Excl."])}", "${gst}", "${formatValue(invoiceValues["Payable Material Fee($) - GST Excl."])}"]`;
                 subTotal += parseFloat(invoiceValues["Payable Material Fee($) - GST Excl."]);
             }
 
             if (invoiceValues["Other Payable Fee($) - GST Excl."] > 0) {
-                invoiceDescription += `,["Other Payable Fee", "1", "${formatValue(invoiceValues["Other Payable Fee($) - GST Excl."])}", "${invoiceValues["GST"]}", "${formatValue(invoiceValues["Other Payable Fee($) - GST Excl."])}"]`;
+                invoiceDescription += `,["Other Payable Fee", "1", "${formatValue(invoiceValues["Other Payable Fee($) - GST Excl."])}", "${gst}", "${formatValue(invoiceValues["Other Payable Fee($) - GST Excl."])}"]`;
                 subTotal += parseFloat(invoiceValues["Other Payable Fee($) - GST Excl."]);
             }
 
             invoiceDescription += "]";
 
             subTotal = formatValue(subTotal);
-            const gstTotal = formatValue((subTotal * parseFloat(invoiceValues["GST"]) / 100));
+            const gstTotal = formatValue((subTotal * parseFloat(gst) / 100));
             const total = formatValue(parseFloat(subTotal) + parseFloat(gstTotal));
 
             const clientDetails = {
@@ -130,7 +131,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                         total: total,
                         clientDetails: JSON.stringify(clientDetails),
                         invoiceDetails: JSON.stringify({
-                            Date: new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                            Date: invoiceDate && invoiceDate != "" ? new Date(invoiceDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
                             "Invoice Number": invoiceNumber
                         }),
                         companyName: JSON.stringify({ "Company Name": business.name }),
@@ -143,7 +144,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                             Country: business.address.country
                         }),
                         orders: invoiceDescription,
-                        "dueDate": dueDate.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                        "dueDate": dueDate && dueDate != "" ? new Date(dueDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
                         "Bank Details": JSON.stringify({
                             "Account Name": business.bankDetails.accountName,
                             "Bank Name": business.bankDetails.bankName,
@@ -216,8 +217,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
             const templatePath = path.join(__dirname, '..', 'assets', `purchaseorder.json`);
             const templateData = await fs.readFile(templatePath, 'utf8');
             const template = JSON.parse(templateData);
-            const dueDate = new Date();
-            dueDate.setDate(dueDate.getDate() + 7);
+
 
             const logoKey = business.defaultLogo;
             let logoUrl = '';
@@ -250,8 +250,11 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
             };
 
             const purchaseOrderValues = item.values;
+            const gst = purchaseOrderValues["GST"] == "10%" ? "10%" : "0%";
+            const issueDate = purchaseOrderValues["Issue Date"]? purchaseOrderValues["Issue Date"].replace('Z', '') : "";
+            const deliveryDate = purchaseOrderValues["Delivery Date"]? purchaseOrderValues["Delivery Date"].replace('Z', '') : "";
             let subTotal = formatValue((purchaseOrderValues.Quantity || 1) * (purchaseOrderValues['Unit Price($) - GST Excl.'] || 1));
-            let gstTotal = formatValue((subTotal * parseFloat(item.values["GST"]) / 100));
+            let gstTotal = formatValue((subTotal * parseFloat(gst) / 100));
             let total = formatValue(parseFloat(subTotal) + parseFloat(gstTotal));
 
             const inputs = {
@@ -269,8 +272,8 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                     Country: business.address.country
                 }),
                 quoteDetails: JSON.stringify({
-                    "Issue Date": purchaseOrderValues['Issue Date'] ? new Date(purchaseOrderValues['Issue Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
-                    "expiry Date": purchaseOrderValues['Delivery Date'] ? new Date(purchaseOrderValues['Delivery Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                    "Issue Date": issueDate && issueDate != "" ? new Date(issueDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                    "expiry Date": deliveryDate && deliveryDate != "" ? new Date(deliveryDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
                     "PO Number": purchaseOrderNumber
                 }),
                 companyName: JSON.stringify({ "Company Name": business.name }),
@@ -283,7 +286,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                     "${purchaseOrderValues['Job Title']}${purchaseOrderValues['Job Description'] ? ` - ${purchaseOrderValues['Job Description'].replace(/<[^>]*>/g, '')}` : ''}",
                     "${formatValue(purchaseOrderValues.Quantity || 1)}",
                     "${formatValue(purchaseOrderValues['Unit Price($) - GST Excl.'] || 1)}",
-                    "${purchaseOrderValues['GST']}", 
+                    "${gst}", 
                     "${formatValue((purchaseOrderValues.Quantity || 1) * (purchaseOrderValues['Unit Price($) - GST Excl.'] || 1))}"
                 ]]`
             };
@@ -377,7 +380,8 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
             };
 
             const quoteValues = item.values;
-
+            const issueDate = quoteValues['Issue Date']? quoteValues['Issue Date'].replace('Z', '') : "";
+            const expiryDate = quoteValues['Expiry Date']? quoteValues['Expiry Date'].replace('Z', '') : "";
             let subTotal = formatValue((quoteValues.Quantity || 1) * (quoteValues['Unit Price($) - GST Excl.'] || 1));
             let gstTotal = formatValue((subTotal * parseFloat(quoteValues["GST"]) / 100));
             let total = formatValue(parseFloat(subTotal) + parseFloat(gstTotal));
@@ -392,8 +396,8 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                         total: total,
                         clientDetails: JSON.stringify(clientDetails),
                         quoteDetails: JSON.stringify({
-                            "Issue Date": quoteValues['Issue Date'] ? new Date(quoteValues['Issue Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
-                            "expiry Date": quoteValues['Expiry Date'] ? new Date(quoteValues['Expiry Date']).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                            "Issue Date": issueDate && issueDate != "" ? new Date(issueDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                            "expiry Date": expiryDate && expiryDate != "" ? new Date(expiryDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
                             "Quote Number": quoteNumber
                         }),
                         companyName: JSON.stringify({ "Company Name": business.name }),
