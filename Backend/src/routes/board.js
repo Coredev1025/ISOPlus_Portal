@@ -42,7 +42,7 @@ router.get('/', authenticateToken, async (req, res) => {
             res.status(200).json({ board: existingBoard });
         } else {
             warn('Board-Service', 'Failed fetching board detail data', { boardId: req.query.id }, req);
-            res.status(404).json({ message: 'Board not found' });
+            res.status(200).json({ message: 'Board not found' });
         }
     } catch (err) {
         error('Board-Service', 'Server error', { message: err.message }, req);
