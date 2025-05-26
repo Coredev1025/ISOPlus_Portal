@@ -311,7 +311,7 @@ export async function putInternalMessage(workspaceId, boardId, itemId, message) 
         );
         return true;
     } catch (err) {
-        error('ISO+ Service', 'Error putting internal message:', err);
+        error('ISO+™ Service', 'Error putting internal message:', err);
         return false;
     }
 }
@@ -351,7 +351,7 @@ export async function getItemValues(workspaceId, boardId, itemId) {
         const result = await axios.get(url, { headers });
         return result.status === 200 ? result.data : null;
     } catch (err) {
-        error('ISO+ Service', 'Error getting item values:', err);
+        error('ISO+™ Service', 'Error getting item values:', err);
         return null;
     }
 }
@@ -360,7 +360,7 @@ export async function validateItemBelongsToTenant(workspaceId, boardId, itemId) 
     const validatedItemOwnership = await getItemValues(workspaceId, boardId, itemId);
     if (!validatedItemOwnership) {
         const errorMessage = "CRITICAL: Item does not exist. This may be a result of an intrusion attempt or misconfiguration of the tenant!";
-        warn('ISO+ Service', errorMessage);
+        warn('ISO+™ Service', errorMessage);
         throw new Error(errorMessage);
     }
 }
@@ -377,7 +377,7 @@ export async function getReferences(workspaceId, boardId, itemId) {
         const result = await axios.get(url, { headers });
         return result.status === 200 ? result.data : null;
     } catch (err) {
-        error('ISO+ Service', 'Error getting references:', err);
+        error('ISO+™ Service', 'Error getting references:', err);
         return null;
     }
 }
@@ -395,7 +395,7 @@ export async function getAttribute(workspaceId, boardId, attributeId) {
         const result = await axios.get(url, { headers });
         return result.status === 200 ? result.data : null;
     } catch (err) {
-        error('ISO+ Service', 'Error getting attribute:', err);
+        error('ISO+™ Service', 'Error getting attribute:', err);
         return null;
     }
 }
@@ -771,10 +771,10 @@ export async function setIntegrationMessage(workspaceId, boardId, itemId, messag
     try {
         const response = await putInternalMessage(workspaceId, boardId, itemId, message);
         if (!response) {
-            throw new Error("Failed to update item with integration message");
+            throw new Error("Failed to update item with integration message in ISO+™.");
         }
     } catch (err) {
-        error('ISO+ Service', 'Error setting integration message:', err);
+        error('ISO+™ Service', 'Error setting integration message:', err);
         throw err;
     }
 }
@@ -801,12 +801,12 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
             for (const boardItem of boards.board) {
                 const response = await getAllViews(authorization, workspaceId, boardItem.id);
                 if (response.status !== 200) {
-                    warn(`ISO+ Service`, `Failed to fetch views for board ${boardItem.id}`, { response }, req);
+                    warn(`ISO+™ Service`, `Failed to fetch views for board ${boardItem.id}`, { response }, req);
                     continue;
                 }
                 const views = response.views.filter(item => item.type.toLocaleString() === type);
                 if (!views || views.length === 0) {
-                    warn(`ISO+ Service`, `No views found for board ${boardItem.id}`, { response }, req);
+                    warn(`ISO+™ Service`, `No views found for board ${boardItem.id}`, { response }, req);
                     continue;
                 }
                 if (type == "form") {
@@ -829,9 +829,9 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                                     "Accept": "application/json"
                                 }
                             });
-                            info('ISO+ Service', `Logo set successfully for view: ${viewItem.id}`);
+                            info('ISO+™ Service', `Logo set successfully for view: ${viewItem.id}`);
                         } catch (err) {
-                            error('ISO+ Service', `Error setting logo for view: ${err.response?.data || err.message}`);
+                            error('ISO+™ Service', `Error setting logo for view: ${err.response?.data || err.message}`);
                         }
                         await new Promise(resolve => setTimeout(resolve, 2000));
                     }
@@ -839,7 +839,7 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                     for (const viewItem of views) {
                         const coverAttributeid = viewItem.settings.editorCoverAttributeId;
                         if (!coverAttributeid) {
-                            warn(`ISO+ Service`, `No cover attribute id found for view ${viewItem.id}`, { viewItem }, req);
+                            warn(`ISO+™ Service`, `No cover attribute id found for view ${viewItem.id}`, { viewItem }, req);
                             continue;
                         }
                         const items = await getItem(workspaceId, boardItem.id, viewItem.folder_id);
@@ -872,7 +872,7 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                                             }
                                         }
                                     } catch (err) {
-                                        error('ISO+ Service', 'Error updating item for document logo:', err.response?.data || err.message);
+                                        error('ISO+™ Service', 'Error updating item for document logo:', err.response?.data || err.message);
                                     }
                                     await new Promise(resolve => setTimeout(resolve, 2000));
                                 }
@@ -885,9 +885,9 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                                         "Accept": "application/json"
                                     }
                                 });
-                                info('ISO+ Service', `Logo set successfully for view: ${viewItem.id}`);
+                                info('ISO+™ Service', `Logo set successfully for view: ${viewItem.id}`);
                             } catch (err) {
-                                error('ISO+ Service', 'Error setting logo for view:', err.response?.data || err.message);
+                                error('ISO+™ Service', 'Error setting logo for view:', err.response?.data || err.message);
                             }
                         }
                         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -898,7 +898,7 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
             throw new Error("Failed to fetch boards");
         }
     } catch (err) {
-        error('ISO+ Service', 'Error setting form logo:', err?.response?.data || err?.message || err);
+        error('ISO+™ Service', 'Error setting form logo:', err?.response?.data || err?.message || err);
         return null;
     }
 }
@@ -928,7 +928,7 @@ export async function setGeneratedField(workspaceId, boardId, itemId, message) {
         }
         return false;
     } catch (err) {
-        error('ISO+ Service', 'Error setting generated field:', err);
+        error('ISO+™ Service', 'Error setting generated field:', err);
         throw err;
     }
 }

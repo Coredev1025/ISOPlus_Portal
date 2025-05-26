@@ -159,7 +159,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
             const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename);
-                await putInternalMessage(workspaceId, boardId, item.id, `Your invoice successfully created. \n Click <a href="${fileUrl}">here</a> to download.`);
+                await putInternalMessage(workspaceId, boardId, item.id, `Your invoice has been successfully created.\n Click <a href="${fileUrl}">here</a> to download.`);
                 logAuditTrail({
                     workspaceId,
                     action: 'Generate PDF Invoice',
@@ -171,10 +171,10 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
                 res.json({ pdfUrl: fileUrl });
             } else {
-                throw new Error('Upload PDF failed, please provide correct information');
+                throw new Error('Upload of PDF failed, please provide correct information.');
             }
         } catch (err) {
-            const errorMessage = (err && err.message) ? err.message : 'An unknown error occurred. Please contact admin';
+            const errorMessage = (err && err.message) ? err.message : 'An unknown error occurred. Please contact support via ISO+™ Portal.';
             await putInternalMessage(workspaceId, boardId, item.id, 'Server error: ' + errorMessage);
             error('Webhook-Service', 'Server error', { message: errorMessage }, req);
             logAuditTrail({
@@ -299,7 +299,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
             const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename);
-                await putInternalMessage(workspaceId, boardId, item.id, `Your purchase order successfully created. \n Click <a href="${fileUrl}">here</a> to download.`);
+                await putInternalMessage(workspaceId, boardId, item.id, `Your purchase order has been successfully created.\n Click <a href="${fileUrl}">here</a> to download.`);
                 logAuditTrail({
                     workspaceId,
                     action: 'Generate PDF Purchase Order',
@@ -311,10 +311,10 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 await setGeneratedField(workspaceId, boardId, item.id, `${purchaseOrderNumber} (ISO+™)`);
                 res.json({ pdfUrl: fileUrl });
             } else {
-                throw new Error('Upload PDF failed, please provide correct information');
+                throw new Error('Upload of PDF failed, please provide correct information.');
             }
         } catch (err) {
-            const errorMessage = (err && err.message) ? err.message : 'An unknown error occurred. Please contact admin';
+            const errorMessage = (err && err.message) ? err.message : 'An unknown error occurred. Please contact support via ISO+™ Portal.';
             await putInternalMessage(workspaceId, boardId, item.id, 'Server error: ' + errorMessage);
             error('Webhook-Service', 'Server error', { message: errorMessage }, req);
             logAuditTrail({
@@ -419,7 +419,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
             const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename);
-                await putInternalMessage(workspaceId, boardId, item.id, `Your quote successfully created. \n Click <a href="${fileUrl}">here</a> to download.`);
+                await putInternalMessage(workspaceId, boardId, item.id, `Your quote has been successfully created.\n Click <a href="${fileUrl}">here</a> to download.`);
                 logAuditTrail({
                     workspaceId,
                     action: 'Generate PDF Quote',
@@ -431,10 +431,10 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                 await setGeneratedField(workspaceId, boardId, item.id, `${quoteNumber} (ISO+™)`);
                 res.json({ pdfUrl: fileUrl });
             } else {
-                throw new Error('Upload PDF failed, please provide correct information');
+                throw new Error('Upload of PDF failed, please provide correct information.');
             }
         } catch (err) {
-            const errorMessage = (err && err.message) ? err.message : 'An unknown error occurred. Please contact admin';
+            const errorMessage = (err && err.message) ? err.message : 'An unknown error occurred. Please contact support via ISO+™ Portal.';
             await putInternalMessage(workspaceId, boardId, item.id, 'Server error: ' + errorMessage);
             error('Webhook-Service', 'Server error', { message: errorMessage }, req);
             logAuditTrail({
@@ -462,7 +462,7 @@ router.get('/uploads/:filename', async (req, res) => {
         }
     } catch (err) {
         error('Webook-Service', 'Error downloading file', { message: err.message }, req);
-        res.status(404).json({ message: 'File not found' });
+        res.status(404).json({ message: 'File not found in ISO+™ Portal.' });
     }
 });
 

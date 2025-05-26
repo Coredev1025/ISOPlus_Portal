@@ -84,7 +84,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     const invoiceValues = item.values;
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Processing in progress via ISO+™...");
 
     const [jobPlanningValues, serviceFeeTypeValues] = await getJobReportingReferencedItems(workspaceId, boardId, item.id);
     if (!jobPlanningValues) {
@@ -205,7 +205,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     }
 
     const createdInvoice = await createInvoice(invoice);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Your invoice is successfully created.");
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Your invoice has been created successfully in Xero.");
 
     logAuditTrail({
       workspaceId,
@@ -220,7 +220,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
   } catch (err) {
     error('Xero-Service', 'Error creating invoice', err);
     if (payload.items[0]) {
-      await setIntegrationMessage(workspaceId, boardId, payload.items[0].id, "An error occurred while creating the invoice. Please contact support. More information: " + err.message);
+      await setIntegrationMessage(workspaceId, boardId, payload.items[0].id, "An error occurred whilst creating the invoice. Please contact ISO+™ support. Further information: " + err.message);
     }
     logAuditTrail({
       workspaceId,
@@ -274,7 +274,7 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
     await ensureAuthenticated(business.xeroTokens.accessToken, business.xeroTokens.refreshToken, business.xeroTokens.expiresAt);
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Processing in progress via ISO+™...");
 
     const existingContact = await getContactByEmail(contactValues['Email Address']);
     let contact;
@@ -303,7 +303,7 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
       existingContact.emailAddress = contactValues['Email Address'];
 
       contact = await createOrUpdateContact(existingContact);
-      await setIntegrationMessage(workspaceId, boardId, item.id, "Your contact is successfully updated.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Your contact has been updated successfully in Xero.");
     } else {
       contact = await createOrUpdateContact({
         name: contactValues.Client,
@@ -329,14 +329,14 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
         emailAddress: contactValues['Email Address']
       });
 
-      await setIntegrationMessage(workspaceId, boardId, item.id, "Your contact is successfully created.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Your contact has been created successfully in Xero.");
     }
 
     res.json(contact);
   } catch (err) {
     error('Xero-Service', 'Error creating/updating contact', err);
     if (item) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating/updating the contact. Please contact support. More information: " + err.message);
+      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred whilst creating or updating the contact. Please contact ISO+™ support. Further information: " + err.message);
     }
     res.status(200).json({ message: 'Error creating/updating contact', error: err.message });
   }
@@ -380,7 +380,7 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
     await ensureAuthenticated(business.xeroTokens.accessToken, business.xeroTokens.refreshToken, business.xeroTokens.expiresAt);
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Processing in progress via ISO+™...");
 
     const existingContact = await getContactByEmail(contractorValues['Email Address']);
     let contact;
@@ -409,7 +409,7 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
       existingContact.emailAddress = contractorValues['Email Address'];
 
       contact = await createOrUpdateContact(existingContact);
-      await setIntegrationMessage(workspaceId, boardId, item.id, "Your contractor is successfully updated.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Your contractor has been updated successfully in Xero.");
     } else {
       contact = await createOrUpdateContact({
         name: contractorValues.Contractor,
@@ -434,14 +434,14 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
         ],
         emailAddress: contractorValues['Email Address']
       });
-      await setIntegrationMessage(workspaceId, boardId, item.id, "Your contractor is successfully created.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Your contractor has been created successfully in Xero.");
     }
 
     res.json(contact);
   } catch (err) {
     error('Xero-Service', 'Error creating/updating contractor', err);
     if (item) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating/updating the contractor. Please contact support. More information: " + err.message);
+      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred whilst creating or updating the contractor. Please contact ISO+™ support. Further information: " + err.message);
     }
     res.status(200).json({ message: 'Error creating/updating contractor', error: err.message });
   }
@@ -464,7 +464,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     const quoteValues = item.values;
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Processing in progress via ISO+™...");
 
     const [contactValues, jobTypeValues] = await getQuoteReferencedItems(workspaceId, boardId, item.id);
     if (!contactValues) {
@@ -472,8 +472,8 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
       throw new Error("Client information is required.");
     }
     if (!jobTypeValues) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "ERROR: Job Type is required.");
-      throw new Error("Job Type is required.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "ERROR: Job type information is required.");
+      throw new Error("Job type information is required.");
     }
 
     let contact = await getContactByEmail(contactValues.emailAddress);
@@ -575,7 +575,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     }
 
     const createdQuote = await createQuote(xeroQuote);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Your quote is successfully created.");
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Your quote has been created successfully in Xero.");
 
     logAuditTrail({
       workspaceId,
@@ -590,7 +590,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
   } catch (err) {
     error('Xero-Service', 'Error creating quote', err);
     if (item) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating the quote. Please contact support. More information: " + err.message);
+      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred whilst creating the quote. Please contact ISO+™ support. Further information: " + err.message);
     }
     logAuditTrail({
       workspaceId,
@@ -620,7 +620,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     const purchaseOrderValues = item.values;
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Processing in progress via ISO+™...");
 
     const [contractorValues, jobTypeValues] = await getPurchaseOrderReferencedItems(workspaceId, boardId, item.id);
     if (!contractorValues) {
@@ -727,7 +727,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     }
 
     const createdPurchaseOrder = await createPurchaseOrder(purchaseOrder);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Your purchase order is successfully created.");
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Your purchase order has been created successfully in Xero.");
 
     logAuditTrail({
       workspaceId,
@@ -740,7 +740,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
   } catch (err) {
     error('Xero-Service', 'Error creating purchase order', err);
     if (item) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred while creating the purchase order. Please contact support. More information: " + err.message);
+      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred whilst creating the purchase order. Please contact ISO+™ support. Further information: " + err.message);
     }
     logAuditTrail({
       workspaceId,
