@@ -149,7 +149,8 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                             "Account Name": business.bankDetails.accountName,
                             "Bank Name": business.bankDetails.bankName,
                             BSB: business.bankDetails.bsb,
-                            "Account Number": business.bankDetails.accountNumber
+                            "Account Number": business.bankDetails.accountNumber,
+                            "invoice Number" : invoiceNumber
                         })
                     }
                 ],

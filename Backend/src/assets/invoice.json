@@ -200,8 +200,8 @@
                 ],
                 "headWidthPercentages": [
                     42.38116511793954,
-                    16.571040764413386,
-                    12.444852941176498,
+                    15.39457017617809,
+                    13.621323529411793,
                     11.838235294117641,
                     16.764705882352942
                 ],
@@ -359,7 +359,7 @@
                     "x": 133,
                     "y": 216
                 },
-                "content": "TOTAL AUD",
+                "content": "Total",
                 "width": 25,
                 "height": 8,
                 "rotate": 0,
@@ -402,7 +402,7 @@
             {
                 "name": "Bank Details",
                 "type": "multiVariableText",
-                "content": "{\"Account Name\":\"ACCOUNT NAME\",\"Bank Name\":\"BANK NAME\",\"BSB\":\"BSB\",\"Account Number\":\"ACCOUNT NUMBER\"}",
+                "content": "{\"Account Name\":\"ACCOUNT NAME\",\"Bank Name\":\"BANK NAME\",\"BSB\":\"BSB\",\"Account Number\":\"ACCOUNT NUMBER\",\"invoice Number\":\"INVOICE NUMBER\"}",
                 "position": {
                     "x": 21.29,
                     "y": 237.47
@@ -426,12 +426,13 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": false,
-                "text": "Bank Details\n\n- Account Name: {Account Name}\n- Bank Name: {Bank Name}\n- BSB: {BSB}\n- Account Number: {Account Number}",
+                "text": "Bank Details\n\n- Account Name: {Account Name}\n- Bank Name: {Bank Name}\n- BSB: {BSB}\n- Account Number: {Account Number}\n- Payment Reference: {invoice Number}",
                 "variables": [
                     "Account Name",
                     "Bank Name",
                     "BSB",
-                    "Account Number"
+                    "Account Number",
+                    "invoice Number"
                 ],
                 "required": false
             },
@@ -487,7 +488,7 @@
             {
                 "name": "gstLabel",
                 "type": "text",
-                "content": "TOTAL GST",
+                "content": "GST",
                 "position": {
                     "x": 133,
                     "y": 202
@@ -522,5 +523,5 @@
         ],
         "staticSchema": []
     },
-    "pdfmeVersion": "5.3.16"
+    "pdfmeVersion": "5.3.18"
 }
