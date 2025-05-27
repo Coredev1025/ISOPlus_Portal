@@ -90,20 +90,20 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
             await business.save();
 
             const invoiceValues = item.values;
-            const invoiceDate = invoiceValues["Issue Date"]? invoiceValues["Issue Date"].replace('Z', '') : "";
-            const dueDate = invoiceValues["Due Date"]? invoiceValues["Due Date"].replace('Z', '') : "";
+            const invoiceDate = invoiceValues["Issue Date"] ? invoiceValues["Issue Date"].replace('Z', '') : "";
+            const dueDate = invoiceValues["Due Date"] ? invoiceValues["Due Date"].replace('Z', '') : "";
             let subTotal = 0;
             let gst = invoiceValues["GST"] == "10%" ? "10%" : "0%";
-            let invoiceDescription = `[["${jobPlanningValues.jobTitle}-${serviceFeeTypeValues.feeType}-${formatValue(invoiceValues["Job Duration (Hrs.)"])}Hrs.", "1", "${formatValue(invoiceValues["Payable Service Fee($) - GST Excl."])}", "${gst}", "${formatValue(invoiceValues["Payable Service Fee($) - GST Excl."])}"]`;
+            let invoiceDescription = `[["${jobPlanningValues.jobTitle}-${serviceFeeTypeValues.feeType}-${formatValue(invoiceValues["Job Duration (Hrs.)"])}Hrs.", "1", "${formatValue(invoiceValues["Payable Service Fee($) - GST Excl."])}", "${gst == "10%"? "GST on Income":"GST Free Income"}", "${formatValue(invoiceValues["Payable Service Fee($) - GST Excl."])}"]`;
             subTotal += parseFloat(invoiceValues["Payable Service Fee($) - GST Excl."]);
 
             if (invoiceValues["Payable Material Fee($) - GST Excl."] > 0) {
-                invoiceDescription += `,["Used Material/Part", "1", "${formatValue(invoiceValues["Payable Material Fee($) - GST Excl."])}", "${gst}", "${formatValue(invoiceValues["Payable Material Fee($) - GST Excl."])}"]`;
+                invoiceDescription += `,["Used Material/Part", "1", "${formatValue(invoiceValues["Payable Material Fee($) - GST Excl."])}", "${gst == "10%"? "GST on Income":"GST Free Income"}", "${formatValue(invoiceValues["Payable Material Fee($) - GST Excl."])}"]`;
                 subTotal += parseFloat(invoiceValues["Payable Material Fee($) - GST Excl."]);
             }
 
             if (invoiceValues["Other Payable Fee($) - GST Excl."] > 0) {
-                invoiceDescription += `,["Other Payable Fee", "1", "${formatValue(invoiceValues["Other Payable Fee($) - GST Excl."])}", "${gst}", "${formatValue(invoiceValues["Other Payable Fee($) - GST Excl."])}"]`;
+                invoiceDescription += `,["Other Payable Fee", "1", "${formatValue(invoiceValues["Other Payable Fee($) - GST Excl."])}", "${gst == "10%"? "GST on Income":"GST Free Income"}", "${formatValue(invoiceValues["Other Payable Fee($) - GST Excl."])}"]`;
                 subTotal += parseFloat(invoiceValues["Other Payable Fee($) - GST Excl."]);
             }
 
@@ -251,8 +251,8 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
 
             const purchaseOrderValues = item.values;
             const gst = purchaseOrderValues["GST"] == "10%" ? "10%" : "0%";
-            const issueDate = purchaseOrderValues["Issue Date"]? purchaseOrderValues["Issue Date"].replace('Z', '') : "";
-            const deliveryDate = purchaseOrderValues["Delivery Date"]? purchaseOrderValues["Delivery Date"].replace('Z', '') : "";
+            const issueDate = purchaseOrderValues["Issue Date"] ? purchaseOrderValues["Issue Date"].replace('Z', '') : "";
+            const deliveryDate = purchaseOrderValues["Delivery Date"] ? purchaseOrderValues["Delivery Date"].replace('Z', '') : "";
             let subTotal = formatValue((purchaseOrderValues.Quantity || 1) * (purchaseOrderValues['Unit Price($) - GST Excl.'] || 1));
             let gstTotal = formatValue((subTotal * parseFloat(gst) / 100));
             let total = formatValue(parseFloat(subTotal) + parseFloat(gstTotal));
@@ -286,7 +286,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                     "${purchaseOrderValues['Job Title']}${purchaseOrderValues['Job Description'] ? ` - ${purchaseOrderValues['Job Description'].replace(/<[^>]*>/g, '')}` : ''}",
                     "${formatValue(purchaseOrderValues.Quantity || 1)}",
                     "${formatValue(purchaseOrderValues['Unit Price($) - GST Excl.'] || 1)}",
-                    "${gst}", 
+                    "${gst == "10%" ? "GST on Expenses" : "GST Free Expenses"}", 
                     "${formatValue((purchaseOrderValues.Quantity || 1) * (purchaseOrderValues['Unit Price($) - GST Excl.'] || 1))}"
                 ]]`
             };
@@ -380,10 +380,11 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
             };
 
             const quoteValues = item.values;
-            const issueDate = quoteValues['Issue Date']? quoteValues['Issue Date'].replace('Z', '') : "";
-            const expiryDate = quoteValues['Expiry Date']? quoteValues['Expiry Date'].replace('Z', '') : "";
+            let gst = quoteValues["GST"] == "10%" ? "10%" : "0%";
+            const issueDate = quoteValues['Issue Date'] ? quoteValues['Issue Date'].replace('Z', '') : "";
+            const expiryDate = quoteValues['Expiry Date'] ? quoteValues['Expiry Date'].replace('Z', '') : "";
             let subTotal = formatValue((quoteValues.Quantity || 1) * (quoteValues['Unit Price($) - GST Excl.'] || 1));
-            let gstTotal = formatValue((subTotal * parseFloat(quoteValues["GST"]) / 100));
+            let gstTotal = formatValue((subTotal * parseFloat(gst) / 100));
             let total = formatValue(parseFloat(subTotal) + parseFloat(gstTotal));
 
             const pdfBytes = await generate({
@@ -409,7 +410,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                             Postcode: business.address.postcode,
                             Country: business.address.country
                         }),
-                        orders: `[["${quoteValues['Job Title']} - ${quoteValues['Job Description'] ? quoteValues['Job Description'].replace(/<[^>]*>/g, '') : ''}","${formatValue(quoteValues.Quantity || 1)}","${formatValue(quoteValues['Unit Price($) - GST Excl.'] || 1)}", "${quoteValues["GST"]}", "${formatValue((quoteValues.Quantity || 1) * (quoteValues['Unit Price($) - GST Excl.'] || 1))}"]]`,
+                        orders: `[["${quoteValues['Job Title']} - ${quoteValues['Job Description'] ? quoteValues['Job Description'].replace(/<[^>]*>/g, '') : ''}","${formatValue(quoteValues.Quantity || 1)}","${formatValue(quoteValues['Unit Price($) - GST Excl.'] || 1)}", "${gst == "10%" ? "GST on Income" : "GST Free Income"}", "${formatValue((quoteValues.Quantity || 1) * (quoteValues['Unit Price($) - GST Excl.'] || 1))}"]]`,
                         termsInputs: JSON.stringify({
                             "Accounts Receivable Payment Terms": `${business.bankDetails.accountsReceivableTerms ? business.bankDetails.accountsReceivableTerms : ' '}`
                         })
