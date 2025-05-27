@@ -84,7 +84,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     const invoiceValues = item.values;
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Processing in progress via ISO+™...");
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
     const [jobPlanningValues, serviceFeeTypeValues] = await getJobReportingReferencedItems(workspaceId, boardId, item.id);
     if (!jobPlanningValues) {
@@ -166,7 +166,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
-    
+    let gst = invoiceValues["GST"] == "10%" ? "10%" : "0%";
     const invoice = {
       type: 'ACCREC',
       contact: { contactID: contact.contactID },
@@ -183,7 +183,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       description: `${jobPlanningValues.jobTitle} - ${serviceFeeType} - ${invoiceValues['Job Duration (Hrs.)']} Hrs.`,
       quantity: 1,
       unitAmount: invoiceValues['Payable Service Fee($) - GST Excl.'],
-      taxType: "OUTPUT",
+      taxType: gst == "10%"? "OUTPUT" : "EXEMPTOUTPUT",
     });
 
     if (invoiceValues['Payable Material Fee($) - GST Excl.'] > 0) {
@@ -191,7 +191,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
         description: "Used Material/Part",
         quantity: 1,
         unitAmount: invoiceValues['Payable Material Fee($) - GST Excl.'],
-        taxType: "EXEMPTOUTPUT",
+        taxType: gst == "10%"? "OUTPUT" : "EXEMPTOUTPUT",
       });
     }
 
@@ -200,7 +200,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
         description: "Other Payable Fee",
         quantity: 1,
         unitAmount: invoiceValues['Other Payable Fee($) - GST Excl.'],
-        taxType: "OUTPUT",
+        taxType: gst == "10%"? "OUTPUT" : "EXEMPTOUTPUT",
       });
     }
 
@@ -274,7 +274,7 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
     await ensureAuthenticated(business.xeroTokens.accessToken, business.xeroTokens.refreshToken, business.xeroTokens.expiresAt);
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Processing in progress via ISO+™...");
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
     const existingContact = await getContactByEmail(contactValues['Email Address']);
     let contact;
@@ -380,7 +380,7 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
     await ensureAuthenticated(business.xeroTokens.accessToken, business.xeroTokens.refreshToken, business.xeroTokens.expiresAt);
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Processing in progress via ISO+™...");
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
     const existingContact = await getContactByEmail(contractorValues['Email Address']);
     let contact;
@@ -464,7 +464,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     const quoteValues = item.values;
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Processing in progress via ISO+™...");
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
     const [contactValues, jobTypeValues] = await getQuoteReferencedItems(workspaceId, boardId, item.id);
     if (!contactValues) {
@@ -563,7 +563,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
           description: `${quoteValues['Job Title']} - ${quoteValues['Job Description'].toString().replace(/<[^>]*>/g, '')}`,
           quantity: quoteValues.Quantity,
           unitAmount: quoteValues['Unit Price($) - GST Excl.'],
-          taxType: "OUTPUT",
+          taxType: quoteValues['GST'] == "10%"? "OUTPUT" : "EXEMPTOUTPUT",
         }
       ]
     };
@@ -620,7 +620,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     const purchaseOrderValues = item.values;
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Processing in progress via ISO+™...");
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
     const [contractorValues, jobTypeValues] = await getPurchaseOrderReferencedItems(workspaceId, boardId, item.id);
     if (!contractorValues) {
@@ -715,7 +715,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
           description: `${purchaseOrderValues['Job Title']}${purchaseOrderValues['Job Description'] ? ` - ${purchaseOrderValues['Job Description'].replace(/<[^>]*>/g, '')}` : ''}`,
           quantity: purchaseOrderValues.Quantity,
           unitAmount: purchaseOrderValues['Unit Price($) - GST Excl.'],
-          taxType: "INPUT",
+          taxType: purchaseOrderValues['GST'] == "10%" ? "INPUT" : "EXEMPTEXPENSES",
         }
       ]
     };

@@ -282,7 +282,7 @@ export async function findOrCreateItem(itemCode, itemName) {
         if (err.response?.statusCode === 403) {
             throw new Error('Missing accounting.settings scope');
         }
-        if (err.message.includes('toISOString')) {
+        if (err.message && err.message.includes('toISOString')) {
             throw new Error('Invalid date parameter in API request');
         }
 
