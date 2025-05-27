@@ -84,7 +84,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     const invoiceValues = item.values;
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Processing in progress via ISO+™...");
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
     const [jobPlanningValues, serviceFeeTypeValues] = await getJobReportingReferencedItems(workspaceId, boardId, item.id);
     if (!jobPlanningValues) {
@@ -274,7 +274,7 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
     await ensureAuthenticated(business.xeroTokens.accessToken, business.xeroTokens.refreshToken, business.xeroTokens.expiresAt);
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Processing in progress via ISO+™...");
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
     const existingContact = await getContactByEmail(contactValues['Email Address']);
     let contact;
@@ -380,7 +380,7 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
     await ensureAuthenticated(business.xeroTokens.accessToken, business.xeroTokens.refreshToken, business.xeroTokens.expiresAt);
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Processing in progress via ISO+™...");
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
     const existingContact = await getContactByEmail(contractorValues['Email Address']);
     let contact;
@@ -464,7 +464,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     const quoteValues = item.values;
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Processing in progress via ISO+™...");
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
     const [contactValues, jobTypeValues] = await getQuoteReferencedItems(workspaceId, boardId, item.id);
     if (!contactValues) {
@@ -620,7 +620,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     const purchaseOrderValues = item.values;
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Processing in progress via ISO+™...");
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
     const [contractorValues, jobTypeValues] = await getPurchaseOrderReferencedItems(workspaceId, boardId, item.id);
     if (!contractorValues) {
