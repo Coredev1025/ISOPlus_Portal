@@ -10,7 +10,7 @@ import PDFLink from '../models/PDFLink.js';
 import { getS3FileUrl, uploadFileToS3 } from '../utils/uploadS3.js';
 import {
     validateItemBelongsToTenant,
-    putInternalMessage,
+    setIntegrationMessage,
     getJobReportingReferencedItems,
     getJobPlanningReferencedItems,
     getQuoteReferencedItems,
@@ -47,21 +47,21 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     await Promise.all(req.body.items.map(async (item) => {
         try {
             await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-            await putInternalMessage(workspaceId, boardId, item.id, "Running...");
+            await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
             const [jobPlanningValues, serviceFeeTypeValues] = await getJobReportingReferencedItems(workspaceId, boardId, item.id);
             if (!jobPlanningValues) {
-                putInternalMessage(workspaceId, boardId, item.id, "Job planning information is required. Job reporting is missing a job planning reference.");
+                setIntegrationMessage(workspaceId, boardId, item.id, "Job planning information is required. Job reporting is missing a job planning reference.");
                 throw new Error("Job planning information is required. Job reporting is missing a job planning reference.");
             }
             if (!serviceFeeTypeValues) {
-                putInternalMessage(workspaceId, boardId, item.id, "Service fee type information is required. Job reporting is missing a service fee type reference.");
+                setIntegrationMessage(workspaceId, boardId, item.id, "Service fee type information is required. Job reporting is missing a service fee type reference.");
                 throw new Error("Service fee type information is required. Job reporting is missing a service fee type reference.");
             }
 
             const [contactValues] = await getJobPlanningReferencedItems(workspaceId, boardId, jobPlanningValues.id);
             if (!contactValues) {
-                putInternalMessage(workspaceId, boardId, item.id, "Client information is required. Job planning is missing a client reference.");
+                setIntegrationMessage(workspaceId, boardId, item.id, "Client information is required. Job planning is missing a client reference.");
                 throw new Error("Client information is required. Job planning is missing a client reference.");
             }
 
@@ -94,16 +94,16 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
             const dueDate = invoiceValues["Due Date"] ? invoiceValues["Due Date"].replace('Z', '') : "";
             let subTotal = 0;
             let gst = invoiceValues["GST"] == "10%" ? "10%" : "0%";
-            let invoiceDescription = `[["${jobPlanningValues.jobTitle}-${serviceFeeTypeValues.feeType}-${formatValue(invoiceValues["Job Duration (Hrs.)"])}Hrs.", "1", "${formatValue(invoiceValues["Payable Service Fee($) - GST Excl."])}", "${gst == "10%"? "GST on Income":"GST Free Income"}", "${formatValue(invoiceValues["Payable Service Fee($) - GST Excl."])}"]`;
+            let invoiceDescription = `[["${jobPlanningValues.jobTitle}-${serviceFeeTypeValues.feeType}-${formatValue(invoiceValues["Job Duration (Hrs.)"])}Hrs.", "1", "${formatValue(invoiceValues["Payable Service Fee($) - GST Excl."])}", "${gst == "10%" ? "10%" : "GST free"}", "${formatValue(invoiceValues["Payable Service Fee($) - GST Excl."])}"]`;
             subTotal += parseFloat(invoiceValues["Payable Service Fee($) - GST Excl."]);
 
             if (invoiceValues["Payable Material Fee($) - GST Excl."] > 0) {
-                invoiceDescription += `,["Used Material/Part", "1", "${formatValue(invoiceValues["Payable Material Fee($) - GST Excl."])}", "${gst == "10%"? "GST on Income":"GST Free Income"}", "${formatValue(invoiceValues["Payable Material Fee($) - GST Excl."])}"]`;
+                invoiceDescription += `,["Used Material/Part", "1", "${formatValue(invoiceValues["Payable Material Fee($) - GST Excl."])}", "${gst == "10%" ? "10%" : "GST free"}", "${formatValue(invoiceValues["Payable Material Fee($) - GST Excl."])}"]`;
                 subTotal += parseFloat(invoiceValues["Payable Material Fee($) - GST Excl."]);
             }
 
             if (invoiceValues["Other Payable Fee($) - GST Excl."] > 0) {
-                invoiceDescription += `,["Other Payable Fee", "1", "${formatValue(invoiceValues["Other Payable Fee($) - GST Excl."])}", "${gst == "10%"? "GST on Income":"GST Free Income"}", "${formatValue(invoiceValues["Other Payable Fee($) - GST Excl."])}"]`;
+                invoiceDescription += `,["Other Payable Fee", "1", "${formatValue(invoiceValues["Other Payable Fee($) - GST Excl."])}", "${gst == "10%" ? "10%" : "GST free"}", "${formatValue(invoiceValues["Other Payable Fee($) - GST Excl."])}"]`;
                 subTotal += parseFloat(invoiceValues["Other Payable Fee($) - GST Excl."]);
             }
 
@@ -150,7 +150,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                             "Bank Name": business.bankDetails.bankName,
                             BSB: business.bankDetails.bsb,
                             "Account Number": business.bankDetails.accountNumber,
-                            "invoice Number" : invoiceNumber
+                            "invoice Number": invoiceNumber
                         })
                     }
                 ],
@@ -161,7 +161,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
             const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename);
-                await putInternalMessage(workspaceId, boardId, item.id, `Your invoice has been successfully created.\n Click <a href="${fileUrl}">here</a> to download.`);
+                await setIntegrationMessage(workspaceId, boardId, item.id, `Your invoice has been successfully created.\n Click <a href="${fileUrl}">here</a> to download.`);
                 logAuditTrail({
                     workspaceId,
                     action: 'Generate PDF Invoice',
@@ -177,7 +177,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
             }
         } catch (err) {
             const errorMessage = (err && err.message) ? err.message : 'An unknown error occurred. Please contact support via ISO+™ Portal.';
-            await putInternalMessage(workspaceId, boardId, item.id, 'Server error: ' + errorMessage);
+            await setIntegrationMessage(workspaceId, boardId, item.id, 'Server error: ' + errorMessage);
             error('Webhook-Service', 'Server error', { message: errorMessage }, req);
             logAuditTrail({
                 workspaceId,
@@ -203,15 +203,15 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     await Promise.all(req.body.items.map(async (item) => {
         try {
             await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-            await putInternalMessage(workspaceId, boardId, item.id, "Running...");
+            await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
             const [contractorValues, jobTypeValues] = await getPurchaseOrderReferencedItems(workspaceId, boardId, item.id);
             if (!contractorValues) {
-                await putInternalMessage(workspaceId, boardId, item.id, "Contractor information is required. Purchase order is missing Contractor.");
+                await setIntegrationMessage(workspaceId, boardId, item.id, "Contractor information is required. Purchase order is missing Contractor.");
                 throw new Error("Contractor information is required. Purchase order is missing Contractor.");
             }
             if (!jobTypeValues) {
-                await putInternalMessage(workspaceId, boardId, item.id, "Job type information is required. Purchase order is missing Job Type.");
+                await setIntegrationMessage(workspaceId, boardId, item.id, "Job type information is required. Purchase order is missing Job Type.");
                 throw new Error("Job type information is required. Purchase order is missing Job Type.");
             }
 
@@ -225,7 +225,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
             if (logoKey) {
                 logoUrl = await getS3FileUrl(logoKey, 3600, false);
                 if (!logoUrl) {
-                    await putInternalMessage(workspaceId, boardId, item.id, "Failed to retrieve logo from S3");
+                    await setIntegrationMessage(workspaceId, boardId, item.id, "Failed to retrieve logo from S3");
                     throw new Error('Failed to retrieve logo from S3');
                 }
             }
@@ -287,7 +287,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                     "${purchaseOrderValues['Job Title']}${purchaseOrderValues['Job Description'] ? ` - ${purchaseOrderValues['Job Description'].replace(/<[^>]*>/g, '')}` : ''}",
                     "${formatValue(purchaseOrderValues.Quantity || 1)}",
                     "${formatValue(purchaseOrderValues['Unit Price($) - GST Excl.'] || 1)}",
-                    "${gst == "10%" ? "GST on Expenses" : "GST Free Expenses"}", 
+                    "${gst == "10%" ? "10%" : "GST free"}", 
                     "${formatValue((purchaseOrderValues.Quantity || 1) * (purchaseOrderValues['Unit Price($) - GST Excl.'] || 1))}"
                 ]]`
             };
@@ -302,7 +302,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
             const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename);
-                await putInternalMessage(workspaceId, boardId, item.id, `Your purchase order has been successfully created.\n Click <a href="${fileUrl}">here</a> to download.`);
+                await setIntegrationMessage(workspaceId, boardId, item.id, `Your purchase order has been successfully created.\n Click <a href="${fileUrl}">here</a> to download.`);
                 logAuditTrail({
                     workspaceId,
                     action: 'Generate PDF Purchase Order',
@@ -318,7 +318,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
             }
         } catch (err) {
             const errorMessage = (err && err.message) ? err.message : 'An unknown error occurred. Please contact support via ISO+™ Portal.';
-            await putInternalMessage(workspaceId, boardId, item.id, 'Server error: ' + errorMessage);
+            await setIntegrationMessage(workspaceId, boardId, item.id, 'Server error: ' + errorMessage);
             error('Webhook-Service', 'Server error', { message: errorMessage }, req);
             logAuditTrail({
                 workspaceId,
@@ -343,7 +343,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     await Promise.all(req.body.items.map(async (item) => {
         try {
             await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-            await putInternalMessage(workspaceId, boardId, item.id, "Running...");
+            await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
             const [contactValues, jobTypeValues] = await getQuoteReferencedItems(workspaceId, boardId, item.id);
             if (!contactValues) throw new Error("Client information is required.");
@@ -411,7 +411,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                             Postcode: business.address.postcode,
                             Country: business.address.country
                         }),
-                        orders: `[["${quoteValues['Job Title']} - ${quoteValues['Job Description'] ? quoteValues['Job Description'].replace(/<[^>]*>/g, '') : ''}","${formatValue(quoteValues.Quantity || 1)}","${formatValue(quoteValues['Unit Price($) - GST Excl.'] || 1)}", "${gst == "10%" ? "GST on Income" : "GST Free Income"}", "${formatValue((quoteValues.Quantity || 1) * (quoteValues['Unit Price($) - GST Excl.'] || 1))}"]]`,
+                        orders: `[["${quoteValues['Job Title']} - ${quoteValues['Job Description'] ? quoteValues['Job Description'].replace(/<[^>]*>/g, '') : ''}","${formatValue(quoteValues.Quantity || 1)}","${formatValue(quoteValues['Unit Price($) - GST Excl.'] || 1)}", "${gst == "10%" ? "10%" : "GST free"}", "${formatValue((quoteValues.Quantity || 1) * (quoteValues['Unit Price($) - GST Excl.'] || 1))}"]]`,
                         termsInputs: JSON.stringify({
                             "Accounts Receivable Payment Terms": `${business.bankDetails.accountsReceivableTerms ? business.bankDetails.accountsReceivableTerms : ' '}`
                         })
@@ -424,7 +424,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
             const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename);
-                await putInternalMessage(workspaceId, boardId, item.id, `Your quote has been successfully created.\n Click <a href="${fileUrl}">here</a> to download.`);
+                await setIntegrationMessage(workspaceId, boardId, item.id, `Your quote has been successfully created.\n Click <a href="${fileUrl}">here</a> to download.`);
                 logAuditTrail({
                     workspaceId,
                     action: 'Generate PDF Quote',
@@ -440,7 +440,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
             }
         } catch (err) {
             const errorMessage = (err && err.message) ? err.message : 'An unknown error occurred. Please contact support via ISO+™ Portal.';
-            await putInternalMessage(workspaceId, boardId, item.id, 'Server error: ' + errorMessage);
+            await setIntegrationMessage(workspaceId, boardId, item.id, 'Server error: ' + errorMessage);
             error('Webhook-Service', 'Server error', { message: errorMessage }, req);
             logAuditTrail({
                 workspaceId,
