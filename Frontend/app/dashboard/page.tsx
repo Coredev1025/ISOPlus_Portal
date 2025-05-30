@@ -569,6 +569,13 @@ function GlobalApplicationLogs() {
 
 export default function Dashboard() {
   const { user } = useAppContext();
+  const router = useRouter();
+  useEffect(() => {
+    if (user.role !== "isoplus_user" && user.role !== "owner" && user.role !== "support_admin") {
+      router.replace("/access-denied");
+    }
+    
+  }, [user, router]);
 
   return (
     <div className="min-h-screen bg-background relative">

@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import Link from "next/link";
 import Image from "next/image";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import axios from "@/app/utils/axiosConfig";
 import { isTokenValid } from "./utils/cookies";
 import { useAppContext } from "@/app/context/index";
@@ -22,6 +22,13 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [isSupportLogin, setIsSupportLogin] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  
+  const handleError = useCallback((msg: string, err: any) => {
+    if (!axios.isCancel(err)) {
+      console.error(msg, err);
+      setError(msg);
+    }
+  }, []);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -39,11 +46,10 @@ export default function LoginPage() {
           localStorage.removeItem("board");
         }
       } catch (error) {
-        if (!axios.isCancel(error)) {
-          console.error('Token verification failed:', error);
-        }
+        handleError('Token verification failed:', error);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
 
     checkToken();
@@ -51,110 +57,91 @@ export default function LoginPage() {
     return () => {
       abortController.abort();
     };
-  }, [router, setUser]);
+  }, [router, setUser, handleError]);
 
-  const handleAdminLogin = async (e: React.FormEvent) => {
+  const handleAdminLogin = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    const abortController = new AbortController();
-
     setError("");
     setIsLoading(true);
     try {
       const response = await axios.post(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/login`,
-        { email, password },
-        { signal: abortController.signal }
+        { email, password }
       );
 
-      if (!abortController.signal.aborted && response.status === 200) {
+      if (response.status === 200) {
         setUser(response.data.user);
         router.push('/dashboard');
       } else {
         setError("Credential is not correct!");
       }
     } catch (error) {
-      if (!axios.isCancel(error)) {
-        console.error('Login failed:', error);
-        setError("Login Failed");
-      }
+      handleError("Login Failed", error);
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
+  }, [email, password, router, setUser, handleError]);
 
-    return () => {
-      abortController.abort();
-    };
-  };
-
-  const handleISOPlusLogin = async () => {
-    const abortController = new AbortController();
+  const handleISOPlusLogin = useCallback(async () => {
     setIsLoading(true);
+    setError("");
+    let popup: Window | null = null;
+    const handleMessage = async (event: MessageEvent) => {
+      if (event.data.type === 'AUTH_SUCCESS') {
+        try {
+          const response = await axios.post(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/oauth-login`,
+            { oauthData: event.data.data },
+            {
+              headers: { Authorization: event.data.accessToken },
+            }
+          );
+
+          if (response.status === 200) {
+            setUser(response.data.user);
+            router.push('/dashboard');
+          }
+        } catch (error) {
+          handleError('Login error:', error);
+        } finally {
+          window.removeEventListener('message', handleMessage);
+          if (popup) popup.close();
+          setIsLoading(false);
+        }
+      } else if (event.data.type === 'AUTH_ERROR') {
+        handleError(event.data.error, event.data.error);
+        window.removeEventListener('message', handleMessage);
+        if (popup) popup.close();
+        setIsLoading(false);
+      }
+    };
     try {
       const redirectUrl = await axios.get(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/isoplus/redirect`,
         {
           headers: { 'X-API-Version': '2025-02-26.morava' },
-          signal: abortController.signal
         }
       );
 
-      if (!abortController.signal.aborted && redirectUrl.status === 200) {
+      if (redirectUrl.status === 200) {
         const width = 600;
         const height = 600;
         const left = window.screenX + (window.outerWidth - width) / 2;
         const top = window.screenY + (window.outerHeight - height) / 2;
 
-        const popup = window.open(
+        popup = window.open(
           redirectUrl.data.redirect_uri,
           'OAuth2 Login',
           `width=${width},height=${height},left=${left},top=${top},status=yes,scrollbars=yes`
         );
 
-        const handleMessage = async (event: MessageEvent) => {
-          if (event.data.type === 'AUTH_SUCCESS') {
-            try {
-              const response = await axios.post(
-                `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/oauth-login`,
-                { oauthData: event.data.data },
-                {
-                  headers: { Authorization: event.data.accessToken },
-                  signal: abortController.signal
-                }
-              );
-
-              if (!abortController.signal.aborted && response.status === 200) {
-                setUser(response.data.user);
-                router.push('/dashboard');
-              }
-            } catch (error) {
-              if (!axios.isCancel(error)) {
-                console.error('Login error:', error);
-                setError("Login Failed");
-              }
-            }
-          } else if (event.data.type === 'AUTH_ERROR') {
-            console.error('Authentication failed:', event.data.error);
-            setError(event.data.error);
-          }
-
-          window.removeEventListener('message', handleMessage);
-          if (popup) popup.close();
-          setIsLoading(false);
-        };
-
         window.addEventListener('message', handleMessage);
-        return () => {
-          window.removeEventListener('message', handleMessage);
-          abortController.abort();
-        };
       }
     } catch (error) {
-      if (!axios.isCancel(error)) {
-        console.error('Redirect URL fetch failed:', error);
-        setError("Login Failed");
-      }
+      handleError('Redirect URL fetch failed:', error);
+      setIsLoading(false);
     }
-    setIsLoading(false);
-  };
+  }, [router, setUser, handleError]);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -180,6 +167,7 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                  disabled={isLoading}
                 />
               </div>
               <div className="space-y-2">
@@ -191,6 +179,7 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  disabled={isLoading}
                 />
               </div>
               <Button type="submit" className="w-full" disabled={isLoading}>

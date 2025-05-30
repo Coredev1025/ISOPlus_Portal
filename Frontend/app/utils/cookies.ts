@@ -11,9 +11,10 @@ export const isTokenValid = async (signal: AbortSignal): Promise<any> => {
     } catch (error) {
         if (axios.isCancel(error)) {
             console.error("Request canceled", error.message);
+            return false;
         } else {
             console.error("Error verifying token", error);
+            return error;
         }
-        return false;
     }
 };

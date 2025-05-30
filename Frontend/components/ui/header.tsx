@@ -21,19 +21,22 @@ export function Header() {
       try {
         const valid = await isTokenValid(abortController.signal);
 
-        if (!abortController.signal.aborted && valid.status === 200) {
-          setUser(valid.data.user);
-        } else if (!abortController.signal.aborted) {
-          setUser({
-            id: "",
-            name: "",
-            email: "",
-            avatar: "",
-            role: "isoplus_user"
-          });
-          setWorkspaces([]);
-          router.push("/");
-        }
+        if (!abortController.signal.aborted)
+          if (valid.status === 200) {
+            setUser(valid.data.user);
+          } else if (valid.status === 403) {
+            console.log(valid.message);
+          } else {
+            setUser({
+              id: "",
+              name: "",
+              email: "",
+              avatar: "",
+              role: "isoplus_user"
+            });
+            setWorkspaces([]);
+            router.push("/");
+          }
       } catch (error) {
         if (!axios.isCancel(error)) {
           console.error('Token verification failed:', error);
