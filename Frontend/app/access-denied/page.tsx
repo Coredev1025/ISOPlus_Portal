@@ -19,18 +19,18 @@ export default function AccessDenied() {
               <Ban className="h-10 w-10 text-destructive" />
             </div>
           </div>
-          
+
           <h1 className="text-3xl font-bold text-destructive mb-2">Access Denied</h1>
           <p className="text-muted-foreground mb-6">
             You don't have permission to access this resource. Please contact your administrator if you believe this is a mistake.
           </p>
-          
+
           <Button
-            onClick={() => router.push("/dashboard")}
-            variant="outline"
+            onClick={() => window.location.href = "https://app.isoplus.online/home"}
+            variant="destructive"
             className="w-full"
           >
-            Return to Dashboard
+            Return to ISO+ Main Website
           </Button>
         </Card>
       </div>
