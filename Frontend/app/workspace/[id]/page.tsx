@@ -96,6 +96,18 @@ export default function WorkspaceDetail() {
       }
     };
 
+    if (workspace === undefined) {
+      return;
+    }
+
+    const isOwnerOrSupport = user.role === "owner" || user.role === "support_admin";
+    const isIsoPlusUserWithAdminOrOwner = user.role === "isoplus_user" && (workspace && (workspace.user_role === "admin" || workspace.user_role === "owner"));
+
+    if (!isOwnerOrSupport && !isIsoPlusUserWithAdminOrOwner) {
+      router.replace("/workspace/access-denied");
+      return;
+    }
+
     fetchBoards();
 
     return () => {
