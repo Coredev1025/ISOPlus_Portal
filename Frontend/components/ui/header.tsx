@@ -24,8 +24,6 @@ export function Header() {
         if (!abortController.signal.aborted)
           if (valid.status === 200) {
             setUser(valid.data.user);
-          } else if (valid.status === 403) {
-            console.log(valid.message);
           } else {
             setUser({
               id: "",

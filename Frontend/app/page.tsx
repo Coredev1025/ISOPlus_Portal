@@ -38,7 +38,7 @@ export default function LoginPage() {
         setIsLoading(true);
         const valid = await isTokenValid(abortController.signal);
         if (!abortController.signal.aborted)
-          if (valid.status === 200 || valid.status === 403) {
+          if (valid.status === 200) {
             if(valid.data?.user) setUser(valid.data.user);
             router.push('/dashboard');
           } else {
