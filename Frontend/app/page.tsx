@@ -16,7 +16,7 @@ import Spinner from "@/components/ui/spin";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { setUser } = useAppContext();
+  const { setUser, setWorkspaces } = useAppContext();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -37,14 +37,26 @@ export default function LoginPage() {
       try {
         setIsLoading(true);
         const valid = await isTokenValid(abortController.signal);
-        if (!abortController.signal.aborted && valid.status === 200) {
-          setUser(valid.data.user);
-          router.push('/dashboard');
-        } else {
-          localStorage.removeItem("user");
-          localStorage.removeItem("workspace");
-          localStorage.removeItem("board");
-        }
+        if (!abortController.signal.aborted)
+          if (valid.status === 200 || valid.status === 403) {
+            if(valid.data?.user) setUser(valid.data.user);
+            router.push('/dashboard');
+          } else {
+            axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/logout`, {})
+            .then(() => {
+              localStorage.removeItem("user");
+              localStorage.removeItem("workspace");
+              localStorage.removeItem("board");
+              setUser({
+                id: "",
+                name: "",
+                email: "",
+                avatar: "",
+                role: "isoplus_user"
+              });
+              setWorkspaces([]);
+            })
+          }
       } catch (error) {
         handleError('Token verification failed:', error);
       } finally {
