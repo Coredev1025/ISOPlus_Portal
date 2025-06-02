@@ -18,24 +18,15 @@ export const authenticateToken = (req, res, next) => {
 
     if (user.role === 'support_admin' || user.role === 'owner') {
       req.session.Authorization = `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`;
-    } else {
-      if (user.role != 'support_admin' && user.role != 'owner' && user.role != 'isoplus_user') {
-        warn('Authentication-Service', 'This User is not permitted access to the ISO+™ Portal.', {
-          error: 'This User is not permitted access to the ISO+™ Portal.',
-          userId: user.id,
-          role: user.role,
-          workspaceId,
-        }, req);
-        return res.status(403).json({ message: 'This User is not permitted access to the ISO+™ Portal.', error_type: 'user' });
-      }
+    } else if(user.role === 'isoplus_user') {
       if (workspaceId) {
         const workspaceObj = user.workspace && Array.isArray(user.workspace)
           ? user.workspace.find(w => (w.id || w) == workspaceId)
           : undefined;
-        if (!workspaceObj || (workspaceObj && (workspaceObj.user_role != "owner" || workspaceObj.user_role != "admin"))) {
+        if (!workspaceObj || (workspaceObj.user_role !== 'owner' && workspaceObj.user_role !== 'admin')) {
           warn('Authentication-Service', 'This User does not have permission to access Workspace.', {
             error: 'This User does not have permission to access Workspace.',
-            userId: user.id,
+            userId: user.userId,
             role: user.role,
             workspaceId,
           }, req);
@@ -46,7 +37,7 @@ export const authenticateToken = (req, res, next) => {
           if (!boards.find(b => (b.id || b) == boardId)) {
             warn('Authentication-Service', 'This User does not have permission to access Board.', {
               error: 'This User does not have permission to access Board.',
-              userId: user.id,
+              userId: user.userId,
               role: user.role,
               workspaceId,
               boardId,
