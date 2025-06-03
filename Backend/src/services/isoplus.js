@@ -932,3 +932,154 @@ export async function setGeneratedField(workspaceId, boardId, itemId, message) {
         throw err;
     }
 }
+
+export async function getQuoteNDISReferencedItems(workspaceId, boardId, itemId) {
+    const ServiceAreaMap = {
+        'Non-Remote (ACT)': 'ACT($)',
+        'Non-Remote (NSW)': 'NSW($)',
+        'Non-Remote (NT)': 'NT($)',
+        'Non-Remote (QLD)': 'QLD($)',
+        'Non-Remote (SA)': 'SA($)',
+        'Non-Remote (TAS)': 'TAS($)',
+        'Non-Remote (VIC)': 'VIC($)',
+        'Non-Remote (WA)': 'WA($)',
+        'Remote': 'Remote',
+        'Very Remote': 'Very Remote'
+    }
+    let serviceAreaValues = null, directSupportValues = null, providerTravelValues = null, activityBasedTransportValues = null, centreCapitalCostsValues = null;
+
+    const referenceResponse = await getReferences(workspaceId, boardId, itemId);
+    if (!referenceResponse) return [null, null];
+
+    for (const reference of referenceResponse.data) {
+
+        const attribute = await getAttribute(workspaceId, boardId, reference.attribute_id);
+        if (!attribute) continue;
+
+        switch (attribute.name) {
+            case 'Service Area':
+                {
+                    const serviceValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (serviceValues) {
+                        const values = serviceValues.values;
+                        if (!values.some(v => v.attribute.name === "Service Area")) {
+                            throw new Error("Service Area is required");
+                        }
+                        const serviceAreaType = ServiceAreaMap[values.find(v => v.attribute.name === "Service Area").data.toString()];
+
+                        serviceAreaValues = {
+                            serviceArea: values.find(v => v.attribute.name === "Service Area").data.toString(),
+                            serviceAreaType: serviceAreaType
+                        };
+                    }
+                    break;
+                }
+            case 'Direct Support Item Number':
+                {
+                    const directSupportItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (directSupportItemValues) {
+                        const values = directSupportItemValues.values;
+                        if (!values.some(v => v.attribute.name === "Support Item Number")) {
+                            throw new Error("Support Item Number is required");
+                        }
+
+                        directSupportValues = {
+                            id: directSupportItemValues.id,
+                            unit: values.find(v => v.attribute.name === "Unit").data.toString(),
+                            act: values.find(v => v.attribute.name === "ACT($)").data.toString(),
+                            nsw: values.find(v => v.attribute.name === "NSW($)").data.toString(),
+                            nt: values.find(v => v.attribute.name === "NT($)").data.toString(),
+                            qld: values.find(v => v.attribute.name === "QLD($)").data.toString(),
+                            sa: values.find(v => v.attribute.name === "SA($)").data.toString(),
+                            tas: values.find(v => v.attribute.name === "TAS($)").data.toString(),
+                            vic: values.find(v => v.attribute.name === "VIC($)").data.toString(),
+                            wa: values.find(v => v.attribute.name === "WA($)").data.toString(),
+                            remote: values.find(v => v.attribute.name === "Remote($)").data.toString(),
+                            veryRemote: values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
+                        };
+                    }
+                    break;
+                }
+            case 'Provider Travel - Non-Labour Cost Item Number':
+                {
+                    const probiderTavelNonItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (probiderTavelNonItemValues) {
+                        const values = probiderTavelNonItemValues.values;
+                        if (!values.some(v => v.attribute.name === "Support Item Number")) {
+                            throw new Error("Support Item Number is required");
+                        }
+
+                        providerTravelValues = {
+                            id: probiderTavelNonItemValues.id,
+                            unit: values.find(v => v.attribute.name === "Unit").data.toString(),
+                            act: values.find(v => v.attribute.name === "ACT($)").data.toString(),
+                            nsw: values.find(v => v.attribute.name === "NSW($)").data.toString(),
+                            nt: values.find(v => v.attribute.name === "NT($)").data.toString(),
+                            qld: values.find(v => v.attribute.name === "QLD($)").data.toString(),
+                            sa: values.find(v => v.attribute.name === "SA($)").data.toString(),
+                            tas: values.find(v => v.attribute.name === "TAS($)").data.toString(),
+                            vic: values.find(v => v.attribute.name === "VIC($)").data.toString(),
+                            wa: values.find(v => v.attribute.name === "WA($)").data.toString(),
+                            remote: values.find(v => v.attribute.name === "Remote($)").data.toString(),
+                            veryRemote: values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
+                        };
+                    }
+                    break;
+                }
+            case 'Activity Based Transport Item Number':
+                {
+                    const activityItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (activityItemValues) {
+                        const values = activityItemValues.values;
+                        if (!values.some(v => v.attribute.name === "Support Item Number")) {
+                            throw new Error("Support Item Number is required");
+                        }
+
+                        activityBasedTransportValues = {
+                            id: activityItemValues.id,
+                            unit: values.find(v => v.attribute.name === "Unit").data.toString(),
+                            act: values.find(v => v.attribute.name === "ACT($)").data.toString(),
+                            nsw: values.find(v => v.attribute.name === "NSW($)").data.toString(),
+                            nt: values.find(v => v.attribute.name === "NT($)").data.toString(),
+                            qld: values.find(v => v.attribute.name === "QLD($)").data.toString(),
+                            sa: values.find(v => v.attribute.name === "SA($)").data.toString(),
+                            tas: values.find(v => v.attribute.name === "TAS($)").data.toString(),
+                            vic: values.find(v => v.attribute.name === "VIC($)").data.toString(),
+                            wa: values.find(v => v.attribute.name === "WA($)").data.toString(),
+                            remote: values.find(v => v.attribute.name === "Remote($)").data.toString(),
+                            veryRemote: values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
+                        };
+                    }
+                    break;
+                }
+            case 'Centre Capital Costs Item':
+                {
+                    const centreItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (centreItemValues) {
+                        const values = centreItemValues.values;
+                        if (!values.some(v => v.attribute.name === "Support Item Number")) {
+                            throw new Error("Support Item Number is required");
+                        }
+
+                        centreCapitalCostsValues = {
+                            id: centreItemValues.id,
+                            unit: values.find(v => v.attribute.name === "Unit").data.toString(),
+                            act: values.find(v => v.attribute.name === "ACT($)").data.toString(),
+                            nsw: values.find(v => v.attribute.name === "NSW($)").data.toString(),
+                            nt: values.find(v => v.attribute.name === "NT($)").data.toString(),
+                            qld: values.find(v => v.attribute.name === "QLD($)").data.toString(),
+                            sa: values.find(v => v.attribute.name === "SA($)").data.toString(),
+                            tas: values.find(v => v.attribute.name === "TAS($)").data.toString(),
+                            vic: values.find(v => v.attribute.name === "VIC($)").data.toString(),
+                            wa: values.find(v => v.attribute.name === "WA($)").data.toString(),
+                            remote: values.find(v => v.attribute.name === "Remote($)").data.toString(),
+                            veryRemote: values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
+                        };
+                    }
+                    break;
+                }
+        }
+    }
+
+    return [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues];
+}
