@@ -280,6 +280,31 @@ class QuoteValues extends ItemValues {
     }
 }
 
+class NDISPricingValues extends ItemValues {
+    constructor(data) {
+        super();
+        this.itemId = data.itemId;
+        this.serviceArea = data.serviceArea;
+        this.unit = data.unit;
+        this.unitPrice = data.unitPrice || 0;
+    }
+
+    static validationSchema() {
+        return Joi.object({
+            itemId: Joi.string().required().messages({
+                'string.empty': 'Support Item Number is required.',
+                'any.required': 'Support Item Number is required.'
+            }),
+            serviceArea: Joi.string().required().messages({
+                'string.empty': 'Service Area is required.',
+                'any.required': 'Service Area is required.'
+            }),
+            unit: Joi.string().allow(null),
+            unitPrice: Joi.number().allow(null),
+        });
+    }
+}
+
 class IsoPlusLineItemValues extends ItemValues {
     constructor(data) {
         super();
@@ -415,6 +440,9 @@ class Item {
             case 'IsoPlusInvoice':
                 schema = IsoPlusInvoiceValues.validationSchema();
                 break;
+            case 'NDISPricing':
+                schema = NDISPricingValues.validationSchema();
+                break;
             default:
                 throw new Error('Unknown item type');
         }
@@ -439,6 +467,7 @@ export {
     JobPlanningValues,
     ServiceFeeTypeValues,
     QuoteValues,
+    NDISPricingValues,
     IsoPlusLineItemValues,
     IsoPlusInvoiceValues,
     Item,
