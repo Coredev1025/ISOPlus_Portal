@@ -9,9 +9,20 @@ dotenv.config();
 const router = express.Router();
 
 function extractUnit(unitString) {
-    if (!unitString) return '';
-    const match = unitString.match(/\(([^)]+)\)/);
-    return match ? match[1] : unitString;
+    switch (unitString) {
+        case 'E':
+            return 'Each(E)';
+        case 'H':
+            return 'Hour(H)';
+        case 'D':
+            return 'Daily(D)';
+        case 'WK':
+            return 'Week(WK)';
+        case 'MON':
+            return 'Month(MON)';
+        case 'YR':
+            return 'Annual(YR)';
+    }
 }
 
 const updateUnitAndUnitPrice = async (workspaceId, boardId, itemId, mappingValues, label) => {
@@ -21,9 +32,8 @@ const updateUnitAndUnitPrice = async (workspaceId, boardId, itemId, mappingValue
             return { error: `${label} item not found` };
         }
         const unit = extractUnit(mappingValues.unit);
-        const unitAttr = itemData.values.find(v => v.attribute.name === 'Unit');
-        const priceAttrname = mappingValues.serviceArea;
-        const priceAttr = itemData.values.find(v => v.attribute.name.includes(priceAttrname));
+        const unitAttr = itemData.values.find(v => v.attribute.name.includes(mappingValues.unitAttr));
+        const priceAttr = itemData.values.find(v => v.attribute.name.includes(mappingValues.unitPriceAttr));
         if (!unitAttr || !priceAttr) {
             return { error: 'Unit or Unit Price attribute not found' };
         }
@@ -54,20 +64,19 @@ const updateUnitAndUnitPrice = async (workspaceId, boardId, itemId, mappingValue
     }
 };
 
-async function handleUpdate(type, mappingValues, itemId, req, label) {
-    const { workspaceId, boardId } = req.params;
-
+async function handleUpdate(workspaceId, boardId, itemId, mappingValues, type, label) {
     const { error: validationError } = Item.validate('NDISPricing', mappingValues);
     if (validationError) {
-        error('Xero-Service', `Validation error in set-unit-and-unitprice for ${type}`, { details: validationError.details, mappingValues }, req);
+        error('Xero-Service', `Validation error in set-unit-and-unitprice for ${type}`, { details: validationError.details, mappingValues }, { workspaceId, boardId, itemId, mappingValues, type });
         return { message: validationError.details, error: 'Validation error' };
     }
+    info('Xero-Service', `${label} item updating is processing...`, { mappingValues }, { workspaceId, boardId, itemId, mappingValues, type });
     const result = await updateUnitAndUnitPrice(workspaceId, boardId, itemId, mappingValues, label);
     if (result.error) {
-        warn('Xero-Service', `${label} update failed`, { result }, req);
+        warn('Xero-Service', `${label} update failed`, { result }, { workspaceId, boardId, itemId, mappingValues, type });
         return { message: `${label} update failed`, error: result.error };
     } else {
-        info('Xero-Service', `${label} item updated successfully`, { result }, req);
+        info('Xero-Service', `${label} item updated successfully`, { result }, { workspaceId, boardId, itemId, mappingValues, type });
         return { message: `${label} item updated successfully` };
     }
 }
@@ -86,81 +95,108 @@ router.post('/:workspaceId/:boardId/set-unit-and-unitprice', async (req, res) =>
 
     switch (type) {
         case 'service_area': {
-            const directSupportMappingValues = {
-                itemId: safeGet(itemsValues, 'Direct Support Item Number'),
-                serviceArea: serviceAreaValues.serviceAreaType,
-                unit: itemsValues['Unit (Direct Support)'],
-                unitPrice: itemsValues['Unit Price for Direct Support($)']
-            };
-            const activityMappingValues = {
-                itemId: safeGet(itemsValues, 'Activity Based Transport Item Number'),
-                serviceArea: serviceAreaValues.serviceAreaType,
-                unit: itemsValues['Unit (Activity Based Transport)'],
-                unitPrice: itemsValues['Unit Price for Activity Based Transport($)']
-            };
-            const providerTravelMappingValues = {
-                itemId: safeGet(itemsValues, 'Provider Travel - Non-Labour Cost Item Number'),
-                serviceArea: serviceAreaValues.serviceAreaType,
-                unit: itemsValues['Unit (Provider Travel - Non-Labour Cost)'],
-                unitPrice: itemsValues['Unit Price for Provider Travel($)']
-            };
-            const centreMappingValues = {
-                itemId: safeGet(itemsValues, 'Centre Capital Costs Item'),
-                serviceArea: serviceAreaValues.serviceAreaType,
-                unit: itemsValues['Unit (Centre Capital Costs)'],
-                unitPrice: itemsValues['Unit Price for Centre Capital Costs($)']
-            };
+            if (directSupportValues) {
+                const directSupportMappingValues = {
+                    itemId: safeGet(itemsValues, 'Direct Support Item Number'),
+                    serviceArea: serviceAreaValues.serviceAreaType,
+                    unit: directSupportValues.unit,
+                    unitAttr: 'Unit (Direct Support)',
+                    unitPrice: directSupportValues[serviceAreaValues.serviceAreaType],
+                    unitPriceAttr: 'Unit Price for Direct Support($)'
+                };
+                await handleUpdate(workspaceId, boardId, items.id, directSupportMappingValues, 'direct_support', 'Direct Support');
+            }
+            if (activityBasedTransportValues) {
+                const activityMappingValues = {
+                    itemId: safeGet(itemsValues, 'Activity Based Transport Item Number'),
+                    serviceArea: serviceAreaValues.serviceAreaType,
+                    unit: activityBasedTransportValues.unit,
+                    unitAttr: 'Unit (Activity Based Transport)',
+                    unitPrice: activityBasedTransportValues[serviceAreaValues.serviceAreaType],
+                    unitPriceAttr: 'Unit Price for Activity Based Transport($)'
+                };
+                await handleUpdate(workspaceId, boardId, items.id, activityMappingValues, 'activity_based_transport', 'Activity Based Transport');
+            }
+            if (providerTravelValues) {
+                const providerTravelMappingValues = {
+                    itemId: safeGet(itemsValues, 'Provider Travel - Non-Labour Cost Item Number'),
+                    serviceArea: serviceAreaValues.serviceAreaType,
+                    unit: providerTravelValues.unit,
+                    unitAttr: 'Unit (Provider Travel - Non-Labour Cost)',
+                    unitPrice: providerTravelValues[serviceAreaValues.serviceAreaType],
+                    unitPriceAttr: 'Unit Price for Provider Travel($)'
+                };
+                await handleUpdate(workspaceId, boardId, items.id, providerTravelMappingValues, 'provider_travel_non_labour_cost', 'Provider Travel Non Labour Cost');
+            }
+            if(centreCapitalCostsValues) {
+                const centreMappingValues = {
+                    itemId: safeGet(itemsValues, 'Centre Capital Costs Item'),
+                    serviceArea: serviceAreaValues.serviceAreaType,
+                    unit: centreCapitalCostsValues.unit,
+                    unitAttr: 'Unit (Centre Capital Costs)',
+                    unitPrice: centreCapitalCostsValues[serviceAreaValues.serviceAreaType],
+                    unitPriceAttr: 'Unit Price for Centre Capital Costs($)'
+                };
+                await handleUpdate(workspaceId, boardId, items.id, centreMappingValues, 'centre_capital_cost', 'Centre Capital Costs')
+            }
 
-            info('Xero-Service', 'Processing service type', { DirectSupport: directSupportMappingValues, Activity: activityMappingValues, ProviderTravel: providerTravelMappingValues, Centre: centreMappingValues }, req);
-
-            const result = await Promise.all([
-                handleUpdate('direct_support', directSupportMappingValues, directSupportValues?.id, req, 'Direct Support'),
-                handleUpdate('activity_based_transport', activityMappingValues, activityBasedTransportValues?.id, req, 'Activity Based Transport'),
-                handleUpdate('provider_travel_non_labour_cost', providerTravelMappingValues, providerTravelValues?.id, req, 'Provider Travel Non Labour Cost'),
-                handleUpdate('centre_capital_cost', centreMappingValues, centreCapitalCostsValues?.id, req, 'Centre Capital Costs')
-            ]);
-
-            info('Xero-Service', 'Service area processed successfully', { DirectSupport: directSupportMappingValues, Activity: activityMappingValues, ProviderTravel: providerTravelMappingValues, Centre: centreMappingValues }, req);
-            return res.status(200).json({ message: 'Service area processed', result });
+            info('Xero-Service', 'Service area processed successfully', itemsValues, req);
+            return res.status(200).json({ message: 'Service area processed' });
         }
         case 'direct_support': {
+            if (!directSupportValues)
+                return res.status(200).json({ error: 'Direct Support Item not found' });
             const mappingValues = {
                 itemId: safeGet(itemsValues, 'Direct Support Item Number'),
                 serviceArea: serviceAreaValues.serviceAreaType,
-                unit: itemsValues['Unit (Direct Support)'],
-                unitPrice: itemsValues['Unit Price for Direct Support($)']
+                unit: directSupportValues.unit,
+                unitAttr: 'Unit (Direct Support)',
+                unitPrice: directSupportValues[serviceAreaValues.serviceAreaType],
+                unitPriceAttr: 'Unit Price for Direct Support($)'
             };
-            const result = await handleUpdate('direct_support', mappingValues, directSupportValues?.id, req, 'Direct Support');
+            const result = await handleUpdate(workspaceId, boardId, items.id, mappingValues, 'direct_support', 'Direct Support');
             return res.status(200).json(result);
         }
         case 'activity_based_transport': {
+            if (!activityBasedTransportValues)
+                return res.status(200).json({ error: 'Activity Based Transport Item not found' });
             const mappingValues = {
                 itemId: safeGet(itemsValues, 'Activity Based Transport Item Number'),
                 serviceArea: serviceAreaValues.serviceAreaType,
-                unit: itemsValues['Unit (Activity Based Transport)'],
-                unitPrice: itemsValues['Unit Price for Activity Based Transport($)']
+                unit: activityBasedTransportValues.unit,
+                unitAttr: 'Unit (Activity Based Transport)',
+                unitPrice: activityBasedTransportValues[serviceAreaValues.serviceAreaType],
+                unitPriceAttr: 'Unit Price for Activity Based Transport($)'
             };
-            const result = await handleUpdate('activity_based_transport', mappingValues, activityBasedTransportValues?.id, req, 'Activity Based Transport');
+            const result = await handleUpdate(workspaceId, boardId, items.id, mappingValues, 'activity_based_transport', 'Activity Based Transport');
             return res.status(200).json(result);
         }
         case 'provider_travel_non_labour_cost': {
+            if (!providerTravelValues)
+                return res.status(200).json({ error: 'Provider Travel Non Labour Cost Item not found' });
             const mappingValues = {
                 itemId: safeGet(itemsValues, 'Provider Travel - Non-Labour Cost Item Number'),
                 serviceArea: serviceAreaValues.serviceAreaType,
-                unit: itemsValues['Unit (Provider Travel - Non-Labour Cost)'],
-                unitPrice: itemsValues['Unit Price for Provider Travel($)']
+                unit: providerTravelValues.unit,
+                unitAttr: 'Unit (Provider Travel - Non-Labour Cost)',
+                unitPrice: providerTravelValues[serviceAreaValues.serviceAreaType],
+                unitPriceAttr: 'Unit Price for Provider Travel($)'
             };
-            const result = await handleUpdate('provider_travel_non_labour_cost', mappingValues, providerTravelValues?.id, req, 'Provider Travel Non Labour Cost');
+            const result = await handleUpdate(workspaceId, boardId, items.id, mappingValues, 'provider_travel_non_labour_cost', 'Provider Travel Non Labour Cost');
             return res.status(200).json(result);
         }
         case 'centre_capital_cost': {
+            if (!centreCapitalCostsValues)
+                return res.status(200).json({ error: 'Centre Capital Cost Item not found' });
             const mappingValues = {
                 itemId: safeGet(itemsValues, 'Centre Capital Costs Item'),
                 serviceArea: serviceAreaValues.serviceAreaType,
-                unit: itemsValues['Unit (Centre Capital Costs)'],
-                unitPrice: itemsValues['Unit Price for Centre Capital Costs($)']
+                unit: centreCapitalCostsValues.unit,
+                unitAttr: 'Unit (Centre Capital Costs)',
+                unitPrice: centreCapitalCostsValues[serviceAreaValues.serviceAreaType],
+                unitPriceAttr: 'Unit Price for Centre Capital Costs($)'
             };
-            const result = await handleUpdate('centre_capital_cost', mappingValues, centreCapitalCostsValues?.id, req, 'Centre Capital Costs');
+            const result = await handleUpdate(workspaceId, boardId, items.id, mappingValues, 'centre_capital_cost', 'Centre Capital Costs');
             return res.status(200).json(result);
         }
         default:

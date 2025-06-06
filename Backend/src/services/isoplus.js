@@ -943,8 +943,8 @@ export async function getQuoteNDISReferencedItems(workspaceId, boardId, itemId) 
         'Non-Remote (TAS)': 'TAS($)',
         'Non-Remote (VIC)': 'VIC($)',
         'Non-Remote (WA)': 'WA($)',
-        'Remote': 'Remote',
-        'Very Remote': 'Very Remote'
+        'Remote': 'Remote($)',
+        'Very Remote': 'Very Remote($)'
     }
     let serviceAreaValues = null, directSupportValues = null, providerTravelValues = null, activityBasedTransportValues = null, centreCapitalCostsValues = null;
 
@@ -985,17 +985,18 @@ export async function getQuoteNDISReferencedItems(workspaceId, boardId, itemId) 
 
                         directSupportValues = {
                             id: directSupportItemValues.id,
+                            itemName: values.find(v => v.attribute.name === "Support Item Name").data.toString(),
                             unit: values.find(v => v.attribute.name === "Unit").data.toString(),
-                            act: values.find(v => v.attribute.name === "ACT($)").data.toString(),
-                            nsw: values.find(v => v.attribute.name === "NSW($)").data.toString(),
-                            nt: values.find(v => v.attribute.name === "NT($)").data.toString(),
-                            qld: values.find(v => v.attribute.name === "QLD($)").data.toString(),
-                            sa: values.find(v => v.attribute.name === "SA($)").data.toString(),
-                            tas: values.find(v => v.attribute.name === "TAS($)").data.toString(),
-                            vic: values.find(v => v.attribute.name === "VIC($)").data.toString(),
-                            wa: values.find(v => v.attribute.name === "WA($)").data.toString(),
-                            remote: values.find(v => v.attribute.name === "Remote($)").data.toString(),
-                            veryRemote: values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
+                            "ACT($)": values.find(v => v.attribute.name === "ACT($)").data.toString(),
+                            "NSW($)": values.find(v => v.attribute.name === "NSW($)").data.toString(),
+                            "NT($)": values.find(v => v.attribute.name === "NT($)").data.toString(),
+                            "QLD($)": values.find(v => v.attribute.name === "QLD($)").data.toString(),
+                            "SA($)": values.find(v => v.attribute.name === "SA($)").data.toString(),
+                            "TAS($)": values.find(v => v.attribute.name === "TAS($)").data.toString(),
+                            "VIC($)": values.find(v => v.attribute.name === "VIC($)").data.toString(),
+                            "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
+                            "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
+                            "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
                         };
                     }
                     break;
@@ -1011,17 +1012,18 @@ export async function getQuoteNDISReferencedItems(workspaceId, boardId, itemId) 
 
                         providerTravelValues = {
                             id: probiderTavelNonItemValues.id,
+                            itemName: values.find(v => v.attribute.name === "Support Item Name").data.toString(),
                             unit: values.find(v => v.attribute.name === "Unit").data.toString(),
-                            act: values.find(v => v.attribute.name === "ACT($)").data.toString(),
-                            nsw: values.find(v => v.attribute.name === "NSW($)").data.toString(),
-                            nt: values.find(v => v.attribute.name === "NT($)").data.toString(),
-                            qld: values.find(v => v.attribute.name === "QLD($)").data.toString(),
-                            sa: values.find(v => v.attribute.name === "SA($)").data.toString(),
-                            tas: values.find(v => v.attribute.name === "TAS($)").data.toString(),
-                            vic: values.find(v => v.attribute.name === "VIC($)").data.toString(),
-                            wa: values.find(v => v.attribute.name === "WA($)").data.toString(),
-                            remote: values.find(v => v.attribute.name === "Remote($)").data.toString(),
-                            veryRemote: values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
+                            "ACT($)": values.find(v => v.attribute.name === "ACT($)").data.toString(),
+                            "NSW($)": values.find(v => v.attribute.name === "NSW($)").data.toString(),
+                            "NT($)": values.find(v => v.attribute.name === "NT($)").data.toString(),
+                            "QLD($)": values.find(v => v.attribute.name === "QLD($)").data.toString(),
+                            "SA($)": values.find(v => v.attribute.name === "SA($)").data.toString(),
+                            "TAS($)": values.find(v => v.attribute.name === "TAS($)").data.toString(),
+                            "VIC($)": values.find(v => v.attribute.name === "VIC($)").data.toString(),
+                            "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
+                            "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
+                            "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
                         };
                     }
                     break;
@@ -1037,17 +1039,18 @@ export async function getQuoteNDISReferencedItems(workspaceId, boardId, itemId) 
 
                         activityBasedTransportValues = {
                             id: activityItemValues.id,
+                            itemName: values.find(v => v.attribute.name === "Support Item Name").data.toString(),
                             unit: values.find(v => v.attribute.name === "Unit").data.toString(),
-                            act: values.find(v => v.attribute.name === "ACT($)").data.toString(),
-                            nsw: values.find(v => v.attribute.name === "NSW($)").data.toString(),
-                            nt: values.find(v => v.attribute.name === "NT($)").data.toString(),
-                            qld: values.find(v => v.attribute.name === "QLD($)").data.toString(),
-                            sa: values.find(v => v.attribute.name === "SA($)").data.toString(),
-                            tas: values.find(v => v.attribute.name === "TAS($)").data.toString(),
-                            vic: values.find(v => v.attribute.name === "VIC($)").data.toString(),
-                            wa: values.find(v => v.attribute.name === "WA($)").data.toString(),
-                            remote: values.find(v => v.attribute.name === "Remote($)").data.toString(),
-                            veryRemote: values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
+                            "ACT($)": values.find(v => v.attribute.name === "ACT($)").data.toString(),
+                            "NSW($)": values.find(v => v.attribute.name === "NSW($)").data.toString(),
+                            "NT($)": values.find(v => v.attribute.name === "NT($)").data.toString(),
+                            "QLD($)": values.find(v => v.attribute.name === "QLD($)").data.toString(),
+                            "SA($)": values.find(v => v.attribute.name === "SA($)").data.toString(),
+                            "TAS($)": values.find(v => v.attribute.name === "TAS($)").data.toString(),
+                            "VIC($)": values.find(v => v.attribute.name === "VIC($)").data.toString(),
+                            "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
+                            "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
+                            "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
                         };
                     }
                     break;
@@ -1063,17 +1066,18 @@ export async function getQuoteNDISReferencedItems(workspaceId, boardId, itemId) 
 
                         centreCapitalCostsValues = {
                             id: centreItemValues.id,
+                            itemName: values.find(v => v.attribute.name === "Support Item Name").data.toString(),
                             unit: values.find(v => v.attribute.name === "Unit").data.toString(),
-                            act: values.find(v => v.attribute.name === "ACT($)").data.toString(),
-                            nsw: values.find(v => v.attribute.name === "NSW($)").data.toString(),
-                            nt: values.find(v => v.attribute.name === "NT($)").data.toString(),
-                            qld: values.find(v => v.attribute.name === "QLD($)").data.toString(),
-                            sa: values.find(v => v.attribute.name === "SA($)").data.toString(),
-                            tas: values.find(v => v.attribute.name === "TAS($)").data.toString(),
-                            vic: values.find(v => v.attribute.name === "VIC($)").data.toString(),
-                            wa: values.find(v => v.attribute.name === "WA($)").data.toString(),
-                            remote: values.find(v => v.attribute.name === "Remote($)").data.toString(),
-                            veryRemote: values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
+                            "ACT($)": values.find(v => v.attribute.name === "ACT($)").data.toString(),
+                            "NSW($)": values.find(v => v.attribute.name === "NSW($)").data.toString(),
+                            "NT($)": values.find(v => v.attribute.name === "NT($)").data.toString(),
+                            "QLD($)": values.find(v => v.attribute.name === "QLD($)").data.toString(),
+                            "SA($)": values.find(v => v.attribute.name === "SA($)").data.toString(),
+                            "TAS($)": values.find(v => v.attribute.name === "TAS($)").data.toString(),
+                            "VIC($)": values.find(v => v.attribute.name === "VIC($)").data.toString(),
+                            "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
+                            "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
+                            "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
                         };
                     }
                     break;
