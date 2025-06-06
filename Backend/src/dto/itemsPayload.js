@@ -286,7 +286,9 @@ class NDISPricingValues extends ItemValues {
         this.itemId = data.itemId;
         this.serviceArea = data.serviceArea;
         this.unit = data.unit;
+        this.unitAttr = data.unitAttr;
         this.unitPrice = data.unitPrice || 0;
+        this.unitPriceAttr = data.unitPriceAttr || 0;
     }
 
     static validationSchema() {
@@ -301,6 +303,14 @@ class NDISPricingValues extends ItemValues {
             }),
             unit: Joi.string().allow(null),
             unitPrice: Joi.number().allow(null),
+            unitAttr:  Joi.string().required().messages({
+                'string.empty': 'Unit Attribute is required.',
+                'any.required': 'Unit Attribute is required.'
+            }),
+            unitPriceAttr:  Joi.string().required().messages({
+                'string.empty': 'Unit Price Attribute is required.',
+                'any.required': 'Unit Price Attribute is required.'
+            })
         });
     }
 }
