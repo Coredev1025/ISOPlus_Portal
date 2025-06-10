@@ -167,23 +167,31 @@ router.get("/isoplus/callback", async (req, res) => {
     }, {
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Version': '2025-02-26.morava'
+        'X-API-Version': '2025-02-26.morava',
+        'Accept': 'application/json'
       }
     });
 
-    const accessToken = tokenResponse.data.access_token;
-
-    if (!accessToken) {
-      warn('User-Service', 'Failed to retrieve access token', { state }, req);
-      return res.status(400).json({ error: "Failed to retrieve access token" });
+    if (!tokenResponse.data || !tokenResponse.data.access_token) {
+      warn('User-Service', 'Invalid token response', { state, response: tokenResponse.data }, req);
+      return res.status(400).json({ error: "Invalid token response" });
     }
+
+    const accessToken = tokenResponse.data.access_token;
 
     const userResponse = await axios.get(`${process.env.USER_INFORMATION_ENDPOINT}`, {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-API-Version": "2025-02-26.morava"
       }
     });
+
+    if (!userResponse.data) {
+      warn('User-Service', 'Invalid user response', { state }, req);
+      return res.status(400).json({ error: "Invalid user response" });
+    }
 
     info('User-Service', 'OAuth callback successful', { state, user: userResponse.data }, req);
     res.send(`
@@ -191,25 +199,26 @@ router.get("/isoplus/callback", async (req, res) => {
         <body>
           <script>
             window.opener.postMessage(${JSON.stringify({
-      type: 'AUTH_SUCCESS',
-      data: userResponse.data,
-      accessToken: `Bearer ${accessToken}`
-    })}, '*');
+              type: 'AUTH_SUCCESS',
+              data: userResponse.data,
+              accessToken: `Bearer ${accessToken}`
+            })}, '*');
             window.close();
           </script>
         </body>
       </html>
     `);
   } catch (err) {
-    error('User-Service', 'Token exchange error', { error: err.message, state }, req);
+    error('User-Service', 'Token exchange error', { error: err.message, state, response: err.response?.data, status: err.response?.status }, req);
+    const errorMessage = err.response?.data?.error || err.message || 'Failed to authenticate';
     res.send(`
       <html>
         <body>
           <script>
-            window.opener.postMessage({
+            window.opener.postMessage(${JSON.stringify({
               type: 'AUTH_ERROR',
-              error: 'Failed to authenticate'
-            }, '*');
+              error: errorMessage
+            })}, '*');
             window.close();
           </script>
         </body>
