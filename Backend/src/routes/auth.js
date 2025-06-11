@@ -24,7 +24,9 @@ router.post('/register',
     }
 
     try {
-      const { email, password, name } = req.body;
+      const email = req.body.email?.toString();
+      const password = req.body.password?.toString();
+      const name = req.body.name?.toString();
 
       const existingUser = await User.findOne({ email });
       if (existingUser) {
@@ -66,7 +68,8 @@ router.post('/login',
     }
 
     try {
-      const { email, password } = req.body;
+      const email = req.body.email?.toString();
+      const password = req.body.password?.toString();
       const user = await User.findOne({ email });
 
       if (!user || !(await user.comparePassword(password))) {
@@ -231,20 +234,25 @@ router.post('/oauth-login', async (req, res) => {
   try {
     const { oauthData } = req.body;
 
-    let user = await User.findOne({ email: oauthData.email, oauthId: oauthData.id });
+    const email = oauthData.email?.toString();
+    const oauthId = oauthData.id?.toString();
+    const name = oauthData.name?.toString();
+    const photo_url = oauthData.photo_url?.toString();
+
+    let user = await User.findOne({ email, oauthId });
     let role = 'isoplus_user';
     if (!user) {
       user = new User({
-        email: oauthData.email,
-        name: oauthData.name,
+        email: email,
+        name: name,
         password: "",
-        oauthId: oauthData.id,
-        avatar: oauthData.photo_url,
+        oauthId: oauthId,
+        avatar: photo_url,
         role: role
       });
       await user.save();
     } else {
-      await User.findOneAndUpdate({ email: oauthData.email, oauthId: oauthData.id }, { $set: { avatar: oauthData.photo_url, name: oauthData.name } });
+      await User.findOneAndUpdate({ email: email, oauthId: oauthId }, { $set: { avatar: photo_url, name: name } });
     }
 
     req.session.Authorization = req.headers['authorization'];
