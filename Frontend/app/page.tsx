@@ -23,13 +23,6 @@ export default function LoginPage() {
   const [isSupportLogin, setIsSupportLogin] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
-  const handleError = useCallback((msg: string, err: any) => {
-    if (!axios.isCancel(err)) {
-      console.error(msg, err);
-      setError(msg);
-    }
-  }, []);
-
   useEffect(() => {
     const abortController = new AbortController();
 
@@ -57,8 +50,10 @@ export default function LoginPage() {
               setWorkspaces([]);
             })
           }
-      } catch (error) {
-        handleError('Token verification failed:', error);
+      } catch (err: any) {
+        if (err.name !== "CanceledError" && err.name !== "AbortError") {
+          console.error("Token verification failed:", err);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -69,7 +64,7 @@ export default function LoginPage() {
     return () => {
       abortController.abort();
     };
-  }, [router, setUser, handleError]);
+  }, [router, setUser]);
 
   const handleAdminLogin = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,12 +82,14 @@ export default function LoginPage() {
       } else {
         setError("Credential is not correct!");
       }
-    } catch (error) {
-      handleError("Login Failed", error);
+    } catch (err: any) {
+      if (err.name !== "CanceledError" && err.name !== "AbortError") {
+        console.error("Token verification failed:", err);
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [email, password, router, setUser, handleError]);
+  }, [email, password, router, setUser]);
 
   const handleISOPlusLogin = useCallback(async () => {
     setIsLoading(true);
@@ -113,15 +110,17 @@ export default function LoginPage() {
             setUser(response.data.user);
             router.push('/dashboard');
           }
-        } catch (error) {
-          handleError('Login error:', error);
+        } catch (err: any) {
+          if (err.name !== "CanceledError" && err.name !== "AbortError") {
+            console.error("Token verification failed:", err);
+          }
         } finally {
           window.removeEventListener('message', handleMessage);
           if (popup) popup.close();
           setIsLoading(false);
         }
       } else if (event.data.type === 'AUTH_ERROR') {
-        handleError(event.data.error, event.data.error);
+        console.error("Token verification failed:", event.data.error);
         window.removeEventListener('message', handleMessage);
         if (popup) popup.close();
         setIsLoading(false);
@@ -149,11 +148,13 @@ export default function LoginPage() {
 
         window.addEventListener('message', handleMessage);
       }
-    } catch (error) {
-      handleError('Redirect URL fetch failed:', error);
+    } catch (err: any) {
+      if (err.name !== "CanceledError" && err.name !== "AbortError") {
+        console.error("Token verification failed:", err);
+      }
       setIsLoading(false);
     }
-  }, [router, setUser, handleError]);
+  }, [router, setUser]);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">

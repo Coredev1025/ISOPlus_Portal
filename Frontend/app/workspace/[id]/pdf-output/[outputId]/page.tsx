@@ -49,8 +49,8 @@ export default function PDFOutputDetailPage() {
           }));
           setAllPdfOutputs(result);
         }
-      } catch (error) {
-        if (!axios.isCancel(error)) {
+      } catch (error: any) {
+        if (error.name != "CanceledError" && error.name != "AbortError") {
           console.error("Error fetching PDF outputs:", error);
         }
       }

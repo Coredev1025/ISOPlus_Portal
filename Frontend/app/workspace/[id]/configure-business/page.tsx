@@ -357,8 +357,8 @@ export default function ConfigureBusinessPage() {
             setWideLogoPreview(null);
           }
         }
-      } catch (error) {
-        if (!axios.isCancel(error)) {
+      } catch (error: any) {
+        if (error.name != "CanceledError" && error.name != "AbortError") {
           console.error("Failed to fetch business profile:", error);
         }
       }

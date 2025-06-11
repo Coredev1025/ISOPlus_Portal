@@ -106,8 +106,8 @@ export default function PDFOutputPage() {
                     }));
                     setAllPdfOutputs(result);
                 }
-            } catch (error) {
-                if (!axios.isCancel(error)) {
+            } catch (error: any) {
+                if (error.name != "CanceledError" && error.name != "AbortError") {
                     console.error("Error fetching PDF outputs:", error);
                 }
             }
@@ -150,8 +150,8 @@ export default function PDFOutputPage() {
                 document.body.removeChild(link);
                 window.URL.revokeObjectURL(url);
             }
-        } catch (error) {
-            if (!axios.isCancel(error)) {
+        } catch (error: any) {
+            if (error.name != "CanceledError" && error.name != "AbortError") {
                 console.error('Error generating PDF:', error);
             }
         }

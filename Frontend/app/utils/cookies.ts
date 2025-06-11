@@ -8,8 +8,8 @@ export const isTokenValid = async (signal: AbortSignal): Promise<any> => {
         });
 
         return response;
-    } catch (error) {
-        if (axios.isCancel(error)) {
+    } catch (error: any) {
+        if (error.name === "CanceledError" || error.name === "AbortError") {
             console.error("Request canceled", error.message);
             return false;
         } else {
