@@ -6,7 +6,9 @@ const router = express.Router();
 // GET all PDF links
 router.get('/', async (req, res) => {
     try {
-        const pdfLinks = await PDFLink.find({ workspaceId: req.query.workspaceId });
+        const workspaceId = req.query.workspaceId?.toString();
+        if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
+        const pdfLinks = await PDFLink.find({ workspaceId });
         res.json(pdfLinks);
     } catch (err) {
         res.status(500).json({ message: err.message });
@@ -16,7 +18,10 @@ router.get('/', async (req, res) => {
 // GET selected PDF links
 router.get('/:id', async (req, res) => {
     try {
-        const pdfLinks = await PDFLink.find({ workspaceId: req.query.workspaceId, itemId: req.params.id });
+        const workspaceId = req.query.workspaceId?.toString();
+        const itemId = req.params.id?.toString();
+        if (!workspaceId || !itemId) return res.status(400).json({ message: 'Invalid workspaceId or itemId' });
+        const pdfLinks = await PDFLink.find({ workspaceId, itemId });
         res.json(pdfLinks);
     } catch (err) {
         res.status(500).json({ message: err.message });
@@ -45,7 +50,11 @@ router.post('/', async (req, res) => {
 // PUT update a PDF link
 router.put('/', async (req, res) => {
     try {
-        const pdfLink = await PDFLink.findOne({ itemId: req.body.itemId, workspaceId: req.body.workspaceId, pdfLink: req.body.pdfLink });
+        const workspaceId = req.body.workspaceId?.toString();
+        const itemId = req.body.itemId?.toString();
+        const pdfLinkStr = req.body.pdfLink?.toString();
+        if (!workspaceId || !itemId || !pdfLinkStr) return res.status(400).json({ message: 'Invalid input' });
+        const pdfLink = await PDFLink.findOne({ itemId, workspaceId, pdfLink: pdfLinkStr });
         if (!pdfLink) {
             return res.status(404).json({ message: 'PDF not found' });
         }

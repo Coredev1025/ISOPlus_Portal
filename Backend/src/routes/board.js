@@ -10,13 +10,15 @@ const router = express.Router();
 
 router.post('/', authenticateToken, async (req, res) => {
     try {
-        const existingBoard = await Board.findOne({ boardId: req.body.id });
+        const boardId = req.body.id?.toString();
+        if (!boardId) return res.status(400).json({ message: 'Invalid boardId' });
+        const existingBoard = await Board.findOne({ boardId });
         if (existingBoard) {
             warn('Board-Service', 'Board already exsit', { boardId: req.body.boardId }, req);
             res.status(200).json({ board: existingBoard });
         } else {
             const newBoard = new Board({
-                boardId: req.body.id || '',
+                boardId: boardId,
                 name: req.body.name || '',
                 color: req.body.color || '',
                 description: req.body.color || '',
@@ -35,7 +37,9 @@ router.post('/', authenticateToken, async (req, res) => {
 
 router.get('/', authenticateToken, async (req, res) => {
     try {
-        const existingBoard = await Board.findOne({ boardId: req.query.id });
+        const boardId = req.query.id?.toString();
+        if (!boardId) return res.status(400).json({ message: 'Invalid boardId' });
+        const existingBoard = await Board.findOne({ boardId });
 
         if (existingBoard) {
             info('Board-Service', 'Successfully fetching board detail data', { boardId: req.query.id }, req);
@@ -52,14 +56,17 @@ router.get('/', authenticateToken, async (req, res) => {
 
 router.put('/', authenticateToken, async (req, res) => {
     try {
-        const result = await Board.updateOne({ boardId: req.body.boardId }, { $set: { ...req.body } }, { upsert: true });
+        const boardId = req.body.boardId?.toString();
+        const workspaceId = req.body.workspaceId?.toString();
+        if (!boardId || !workspaceId) return res.status(400).json({ message: 'Invalid boardId or workspaceId' });
+        const result = await Board.updateOne({ boardId }, { $set: { ...req.body } }, { upsert: true });
         if (result.nModified === 0) {
             warn('Board-Service', 'Board not found', { boardId: req.body.id }, req);
             res.status(404).json({ message: 'Board not found' });
         } else {
-            const updatedBoard = await Board.findOne({ boardId: req.body.boardId });
+            const updatedBoard = await Board.findOne({ boardId });
             info('Board-Service', 'Board updated', { boardId: req.body.boardId, label: req.body.label, attributeId: req.body.attribute.id }, req);
-            AuditTrail.insertOne({ workspaceId: req.body.workspaceId, action: 'Updated Board', detail: `Changed Board detail: ${req.body.label? "Label:" + req.body.label + ", " : ""}${req.body.attribute.id? "Attribute ID: " + req.body.attribute.id : ""}`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
+            AuditTrail.insertOne({ workspaceId, action: 'Updated Board', detail: `Changed Board detail: ${req.body.label? "Label:" + req.body.label + ", " : ""}${req.body.attribute.id? "Attribute ID: " + req.body.attribute.id : ""}`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
             res.status(200).json({ board: updatedBoard });
         }
     } catch (err) {

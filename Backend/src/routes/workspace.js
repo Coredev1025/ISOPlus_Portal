@@ -44,7 +44,8 @@ router.post('/', authenticateToken, async (req, res) => {
     });
     await workspace.save();
     info('Workspace-Service', 'New Workspace created', { workspaceId: workspace._id }, req);
-    AuditTrail.insertOne({ workspaceId: workspace._id, action: 'Created new Workspace', detail: `New Workspace created: ${workspace._id}`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
+    const workspaceId = workspace._id?.toString();
+    AuditTrail.insertOne({ workspaceId, action: 'Created new Workspace', detail: `New Workspace created: ${workspaceId}`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
     res.status(201).json(workspace);
   } catch (err) {
     error('Workspace-Service', 'Server error', { message: err.message }, req);
