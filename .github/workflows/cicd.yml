@@ -48,11 +48,19 @@ jobs:
         working-directory: Backend 
         run: aws s3 cp $PACKAGE_FILE_NAME s3://isoplus-backend-deploy-bucket-isoplus-v1/$PACKAGE_FILE_NAME
         
-      - name: Create a new version on EBS from package on S3
+      - name: Create a new version on EBS from package on S3 - PROD
         run: | 
-          aws elasticbeanstalk create-application-version --application-name "isoplus-backend" --version-label ${{ github.sha }} --source-bundle S3Bucket="isoplus-backend-deploy-bucket-isoplus-v1",S3Key="$PACKAGE_FILE_NAME"
+          aws elasticbeanstalk create-application-version --application-name "isoplus-be-prod" --version-label ${{ github.sha }} --source-bundle S3Bucket="isoplus-backend-deploy-bucket-isoplus-v1",S3Key="$PACKAGE_FILE_NAME"
       
-      - name: Update environment with the new vesion
+      - name: Update environment with the new vesion - PROD
         run: |
-          aws elasticbeanstalk update-environment --environment-name isoplus-backend-blue --version-label ${{ github.sha }}
+          aws elasticbeanstalk update-environment --environment-name isoplus-be-prod-blue --version-label ${{ github.sha }}
+      
+      - name: Create a new version on EBS from package on S3 - DEV
+        run: | 
+          aws elasticbeanstalk create-application-version --application-name "isoplus-be-dev" --version-label ${{ github.sha }} --source-bundle S3Bucket="isoplus-backend-deploy-bucket-isoplus-v1",S3Key="$PACKAGE_FILE_NAME"
+      
+      - name: Update environment with the new vesion - DEV
+        run: |
+          aws elasticbeanstalk update-environment --environment-name isoplus-be-dev-blue --version-label ${{ github.sha }}
       
