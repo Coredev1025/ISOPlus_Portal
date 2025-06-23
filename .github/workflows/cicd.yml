@@ -31,7 +31,9 @@ jobs:
         run: |
           TIMESTAMP=$(date +'%Y%m%d%H%M%S')
           FILE_NAME="$TIMESTAMP-isoplus-backend-package-${{ github.ref_name }}-${{ github.sha }}.zip"
+          VERSION_LABEL="$TIMESTAMP-${{ github.sha }}"
           echo "PACKAGE_FILE_NAME=$FILE_NAME" >> $GITHUB_ENV
+          echo "VERSION_LABEL=$VERSION_LABEL" >> $GITHUB_ENV
           
       - name: Generate Deployment Package
         working-directory: Backend 
@@ -50,17 +52,17 @@ jobs:
         
       - name: Create a new version on EBS from package on S3 - PROD
         run: | 
-          aws elasticbeanstalk create-application-version --application-name "isoplus-be-prod" --version-label ${{ github.sha }} --source-bundle S3Bucket="isoplus-backend-deploy-bucket-isoplus-v1",S3Key="$PACKAGE_FILE_NAME"
+          aws elasticbeanstalk create-application-version --application-name "isoplus-be-prod" --version-label $VERSION_LABEL --source-bundle S3Bucket="isoplus-backend-deploy-bucket-isoplus-v1",S3Key="$PACKAGE_FILE_NAME"
       
       - name: Update environment with the new vesion - PROD
         run: |
-          aws elasticbeanstalk update-environment --environment-name isoplus-be-prod-blue --version-label ${{ github.sha }}
+          aws elasticbeanstalk update-environment --environment-name isoplus-be-prod-blue --version-label $VERSION_LABEL
       
       - name: Create a new version on EBS from package on S3 - DEV
         run: | 
-          aws elasticbeanstalk create-application-version --application-name "isoplus-be-dev" --version-label ${{ github.sha }} --source-bundle S3Bucket="isoplus-backend-deploy-bucket-isoplus-v1",S3Key="$PACKAGE_FILE_NAME"
+          aws elasticbeanstalk create-application-version --application-name "isoplus-be-dev" --version-label $VERSION_LABEL --source-bundle S3Bucket="isoplus-backend-deploy-bucket-isoplus-v1",S3Key="$PACKAGE_FILE_NAME"
       
       - name: Update environment with the new vesion - DEV
         run: |
-          aws elasticbeanstalk update-environment --environment-name isoplus-be-dev-blue --version-label ${{ github.sha }}
+          aws elasticbeanstalk update-environment --environment-name isoplus-be-dev-blue --version-label $VERSION_LABEL
       
