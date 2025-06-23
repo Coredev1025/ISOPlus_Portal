@@ -80,7 +80,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
   try {
     const business = await Business.findOne({ workspaceId });
     await configure();
-    await ensureAuthenticated(business.xeroTokens.accessToken, business.xeroTokens.refreshToken, business.xeroTokens.expiresAt);
+    await ensureAuthenticated(workspaceId);
     const invoiceValues = item.values;
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
@@ -271,7 +271,7 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
   try {
     const business = await Business.findOne({ workspaceId });
     await configure();
-    await ensureAuthenticated(business.xeroTokens.accessToken, business.xeroTokens.refreshToken, business.xeroTokens.expiresAt);
+    await ensureAuthenticated(workspaceId);
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
     await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
@@ -377,7 +377,7 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
   try {
     const business = await Business.findOne({ workspaceId });
     await configure();
-    await ensureAuthenticated(business.xeroTokens.accessToken, business.xeroTokens.refreshToken, business.xeroTokens.expiresAt);
+    await ensureAuthenticated(workspaceId);
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
     await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
@@ -460,7 +460,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
   try {
     const business = await Business.findOne({ workspaceId });
     await configure();
-    await ensureAuthenticated(business.xeroTokens.accessToken, business.xeroTokens.refreshToken, business.xeroTokens.expiresAt);
+    await ensureAuthenticated(workspaceId);
     const quoteValues = item.values;
 
     await validateItemBelongsToTenant(workspaceId, boardId, item.id);
@@ -615,7 +615,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
   try {
     const business = await Business.findOne({ workspaceId });
     await configure();
-    await ensureAuthenticated(business.xeroTokens.accessToken, business.xeroTokens.refreshToken, business.xeroTokens.expiresAt);
+    await ensureAuthenticated(workspaceId);
 
     const purchaseOrderValues = item.values;
 
