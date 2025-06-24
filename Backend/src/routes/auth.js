@@ -174,7 +174,17 @@ router.get("/isoplus/callback", async (req, res) => {
     });
 
     if (!tokenResponse.data || !tokenResponse.data.access_token) {
-      warn('User-Service', 'Invalid token response', { state, response: tokenResponse.data }, req);
+      warn('User-Service', 'Invalid token response',  {
+        url: process.env.TOKEN_ENDPOINT,
+        method: "POST",
+        data: {
+          grant_type: "authorization_code",
+          client_id: process.env.CLIENT_ID,
+          redirect_uri: `${process.env.CALLBACK_URL}`,
+          code: code
+        },
+        response: tokenResponse.data
+      }, req);
       return res.status(400).json({ error: "Invalid token response" });
     }
 
@@ -190,7 +200,12 @@ router.get("/isoplus/callback", async (req, res) => {
     });
 
     if (!userResponse.data) {
-      warn('User-Service', 'Invalid user response', { state }, req);
+      warn('User-Service', 'Invalid user response', {
+        url: process.env.USER_INFORMATION_ENDPOINT,
+        method: "GET",
+        data: {},
+        response: userResponse.data
+      }, req);
       return res.status(400).json({ error: "Invalid user response" });
     }
 
@@ -210,7 +225,18 @@ router.get("/isoplus/callback", async (req, res) => {
       </html>
     `);
   } catch (err) {
-    error('User-Service', 'Token exchange error', { error: err.message, state, response: err.response?.data, status: err.response?.status }, req);
+    error('User-Service', 'Token exchange error', {
+      url: process.env.TOKEN_ENDPOINT,
+      method: "POST",
+      data: {
+        grant_type: "authorization_code",
+        client_id: process.env.CLIENT_ID,
+        redirect_uri: `${process.env.CALLBACK_URL}`,
+        code: code
+      },
+      error: err.response?.data || err.message,
+      status: err.response?.status
+    }, req);
     const errorMessage = err.response?.data?.error || err.message || 'Failed to authenticate';
     res.send(`
       <html>
