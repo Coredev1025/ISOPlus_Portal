@@ -169,9 +169,7 @@ router.get("/isoplus/callback", async (req, res) => {
       code: code
     }, {
       headers: {
-        'Content-Type': 'application/json',
-        'X-API-Version': '2025-02-26.morava',
-        'Accept': 'application/json'
+        'Content-Type': 'application/json'
       }
     });
 
@@ -184,10 +182,10 @@ router.get("/isoplus/callback", async (req, res) => {
 
     const userResponse = await axios.get(`${process.env.USER_INFORMATION_ENDPOINT}`, {
       headers: {
-        'Authorization': `Bearer ${accessToken}`,
+        "Authorization": `Bearer ${accessToken}`,
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "X-API-Version": "2025-02-26.morava"
+        "X-API-Version": "2025-02-26.morava",
       }
     });
 
