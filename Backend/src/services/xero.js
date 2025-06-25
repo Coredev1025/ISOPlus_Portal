@@ -382,7 +382,7 @@ async function getLatestTokens(workspaceId) {
 }
 
 export async function ensureAuthenticated(workspaceId) {
-    const { accessToken, refreshToken, expiresAt } = await getLatestTokens(workspaceId);
+    const { accessToken, refreshToken, expiresAt, refreshTokenExpiresAt } = await getLatestTokens(workspaceId);
 
     if (!xeroClient) throw new Error('Xero client not configured');
 
@@ -397,20 +397,29 @@ export async function ensureAuthenticated(workspaceId) {
     let currentTokenSet = xeroClient.readTokenSet();
     if (currentTokenSet) {
         if (currentTokenSet.expired() && currentTokenSet.refresh_token) {
+            if (!refreshTokenExpiresAt || refreshTokenExpiresAt < new Date().getTime()) {
+                throw new Error('Your Xero authorization token is expired. Please go to ISOPlus support team.');
+            }
             try {
-                const newTokenSet = await xeroClient.refreshWithRefreshToken(
+                const newTokenSet = await xeroClient.refreshWithRefreshToken(   
                     process.env.XERO_CLIENT_ID,
                     process.env.XERO_CLIENT_SECRET,
                     currentTokenSet.refresh_token
                 );
 
+                const refreshTokenChanged = newTokenSet.refresh_token && newTokenSet.refresh_token !== currentTokenSet.refresh_token;
+                const now = new Date();
+                const updateFields = {
+                    'xeroTokens.accessToken': newTokenSet.access_token,
+                    'xeroTokens.refreshToken': newTokenSet.refresh_token,
+                    'xeroTokens.expiresAt': newTokenSet.expires_at
+                };
+                if (refreshTokenChanged) {
+                    updateFields['xeroTokens.refreshTokenExpiresAt'] = now.getTime() + 60 * 24 * 60 * 60 * 1000;
+                }
                 await Business.updateOne(
-                    { 'xeroTokens.refreshToken': refreshToken },
-                    { $set: {
-                        'xeroTokens.accessToken': newTokenSet.access_token,
-                        'xeroTokens.refreshToken': newTokenSet.refresh_token,
-                        'xeroTokens.expiresAt': newTokenSet.expires_at
-                    }}
+                    { workspaceId },
+                    { $set: updateFields }
                 );
                 await xeroClient.setTokenSet(newTokenSet);
             } catch (refreshError) {
