@@ -1,6 +1,6 @@
 import { XeroClient } from 'xero-node';
 import Business from '../models/Business.js';
-import { info, error } from '../utils/logger.js';
+import { error } from '../utils/logger.js';
 import {
     IsoPlusInvoiceValues
 } from '../dto/itemsPayload.js';
@@ -376,12 +376,12 @@ export async function createPurchaseOrder(purchaseOrder) {
 }
 
 function isValidWorkspaceId(workspaceId) {
-    return typeof workspaceId === 'string' && /^[a-zA-Z0-9_-]{6,64}$/.test(workspaceId);
+    return typeof workspaceId === 'string';
 }
 
 async function getLatestTokens(workspaceId) {
     if (!isValidWorkspaceId(workspaceId)) {
-        throw new Error('Invalid workspaceId');
+        throw new Error('Invalid workspace Id');
     }
     const business = await Business.findOne({ workspaceId });
     if (!business || !business.xeroTokens) throw new Error('No Xero tokens found');
@@ -390,7 +390,7 @@ async function getLatestTokens(workspaceId) {
 
 export async function ensureAuthenticated(workspaceId) {
     if (!isValidWorkspaceId(workspaceId)) {
-        throw new Error('Invalid workspaceId');
+        throw new Error('Invalid workspace Id');
     }
     const { accessToken, refreshToken, expiresAt, refreshTokenExpiresAt } = await getLatestTokens(workspaceId);
 
