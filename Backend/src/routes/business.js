@@ -236,24 +236,27 @@ router.post('/xero/connect', authenticateToken, async (req, res) => {
 
     let business = await Business.findOne({ workspaceId });
     if (!business) {
+      const now = new Date();
       business = new Business({
         workspaceId,
         xeroIntegrated: true,
         xeroTokens: {
           accessToken: tokens.access_token,
           refreshToken: tokens.refresh_token,
-          expiresAt: tokens.expires_at
+          expiresAt: tokens.expires_at,
+          refreshTokenExpiresAt: now.getTime() + 60 * 24 * 60 * 60 * 1000
         }
       });
       await business.save();
     } else {
+      const now = new Date();
       business.xeroIntegrated = true;
       business.xeroTokens = {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
-        expiresAt: tokens.expires_at
+        expiresAt: tokens.expires_at,
+        refreshTokenExpiresAt: now.getTime() + 60 * 24 * 60 * 60 * 1000
       };
-
       await business.save();
     }
 
