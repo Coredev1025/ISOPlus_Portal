@@ -375,13 +375,23 @@ export async function createPurchaseOrder(purchaseOrder) {
     }
 }
 
+function isValidWorkspaceId(workspaceId) {
+    return typeof workspaceId === 'string' && /^[a-zA-Z0-9_-]{6,64}$/.test(workspaceId);
+}
+
 async function getLatestTokens(workspaceId) {
+    if (!isValidWorkspaceId(workspaceId)) {
+        throw new Error('Invalid workspaceId');
+    }
     const business = await Business.findOne({ workspaceId });
     if (!business || !business.xeroTokens) throw new Error('No Xero tokens found');
     return business.xeroTokens;
 }
 
 export async function ensureAuthenticated(workspaceId) {
+    if (!isValidWorkspaceId(workspaceId)) {
+        throw new Error('Invalid workspaceId');
+    }
     const { accessToken, refreshToken, expiresAt, refreshTokenExpiresAt } = await getLatestTokens(workspaceId);
 
     if (!xeroClient) throw new Error('Xero client not configured');
@@ -398,7 +408,7 @@ export async function ensureAuthenticated(workspaceId) {
     if (currentTokenSet) {
         if (currentTokenSet.expired() && currentTokenSet.refresh_token) {
             if (!refreshTokenExpiresAt || refreshTokenExpiresAt < new Date().getTime()) {
-                throw new Error('Your Xero authorization token is expired. Please go to ISOPlus support team.');
+                throw new Error('Your Xero authorization token is expired.');
             }
             try {
                 const newTokenSet = await xeroClient.refreshWithRefreshToken(   
