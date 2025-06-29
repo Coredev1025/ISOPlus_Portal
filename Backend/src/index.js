@@ -21,7 +21,7 @@ dotenv.config();
 const app = express();
 
 app.use(cors({
-  origin: ['http://localhost:3000', 'https://portal.isoplus.online'], 
+  origin: ['http://localhost:3000', 'https://portal.isoplus.online', 'https://portal-dev.isoplus.online'], 
   methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Cookies', 'X-API-Version', 'Accept'],
   credentials: true,
