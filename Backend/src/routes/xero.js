@@ -1,7 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import Business from '../models/Business.js';
-import { info, warn, error } from '../utils/logger.js';
+import { warn, error } from '../utils/logger.js';
 import {
   validateItemBelongsToTenant,
   getJobReportingReferencedItems,
@@ -18,11 +18,8 @@ import {
   createInvoice,
   createOrUpdateContact,
   createQuote,
-  quoteExists,
   createPurchaseOrder,
-  purchaseOrderExists,
   getAuthUrl,
-  exchangeCode,
   refreshTokenSet,
   callback,
   getContactByEmail,
@@ -33,6 +30,86 @@ import { logAuditTrail } from '../utils/auditLogger.js';
 
 dotenv.config();
 const router = express.Router();
+
+async function validatePayload(payload, req) {
+  if (!payload?.items?.length) {
+    warn('Xero-Service', 'Received payload with empty items.', { payload }, req);
+    return { error: 'No items found in the payload' };
+  }
+  return { item: payload.items[0] };
+}
+
+async function initializeXeroOperation(workspaceId, boardId, item) {
+  const business = await Business.findOne({ workspaceId: workspaceId.toString() });
+  if (!business) {
+    throw new Error('Business not found');
+  }
+  
+  await configure();
+  await ensureAuthenticated(workspaceId);
+  await validateItemBelongsToTenant(workspaceId, boardId, item.id);
+  await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
+  
+  return business;
+}
+
+function createContactPayload(values, isUpdate = false) {
+  const basePayload = {
+    name: values.client || values.Client || values.Contractor,
+    phones: [{ 
+      phoneType: 'DEFAULT', 
+      phoneNumber: values.phoneNumber || values['Phone Number'] || values.PhoneNumber 
+    }],
+    firstName: values.contactPersonsFirstName || values["Contact Person's First Name"] || values.ContactPersonsFirstName,
+    lastName: values.contactPersonsLastName || values["Contact Person's Last Name"] || values.ContactPersonsLastName,
+    addresses: [
+      {
+        addressType: 'POBOX',
+        addressLine1: values.address || values.Address,
+        city: values.suburb || values.Suburb,
+        region: values.state || values.State,
+        postalCode: (values.postcode || values.Postcode).toString()
+      },
+      {
+        addressType: 'STREET',
+        addressLine1: values.address || values.Address,
+        city: values.suburb || values.Suburb,
+        region: values.state || values.State,
+        postalCode: (values.postcode || values.Postcode).toString()
+      }
+    ],
+    emailAddress: values.emailAddress || values['Email Address'] || values.EmailAddress
+  };
+
+  return basePayload;
+}
+
+async function handleError(err, workspaceId, boardId, item, req, entityType = 'item') {
+  error('Xero-Service', `Error processing ${entityType}`, err);
+  if (item) {
+    await setIntegrationMessage(
+      workspaceId, 
+      boardId, 
+      item.id, 
+      `An error occurred whilst processing the ${entityType}. Please contact ISO+™ support. Further information: ${err.message}`
+    );
+  }
+  
+  logAuditTrail({
+    workspaceId,
+    action: `Process Xero ${entityType}`,
+    detail: `Error processing ${entityType}: ${err.message}`,
+    req
+  });
+  
+  return {
+    status: 200,
+    body: { 
+      message: `Error processing ${entityType}`, 
+      error: err.message 
+    }
+  };
+}
 
 function mapInvoiceValuesToJobDTO(values) {
   return {
@@ -62,29 +139,23 @@ router.get('/hello', (req, res) => {
 });
 
 router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
-  const { workspaceId, boardId } = req.params;
-  const payload = req.body;
-  if (!payload.items || payload.items.length === 0) {
-    warn('Xero-Service', 'Received payload with empty items.', { payload }, req);
-    return res.json('No items found in the payload.');
-  }
-
-  const item = payload.items[0];
-  const mappedValues = mapInvoiceValuesToJobDTO(item.values);
-  const { error: validationError } = Item.validate('Job', mappedValues);
-  if (validationError) {
-    await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Invoice validation failed: ${JSON.stringify(validationError.details)}`);
-    return res.status(400).json({ message: 'Invoice validation failed', details: validationError.details });
-  }
-
   try {
-    const business = await Business.findOne({ workspaceId });
-    await configure();
-    await ensureAuthenticated(workspaceId);
-    const invoiceValues = item.values;
+    const { workspaceId, boardId } = req.params;
 
-    await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
+    const payload = req.body;
+    const { item } = await validatePayload(payload, req);
+    const mappedValues = mapInvoiceValuesToJobDTO(item.values);
+    const { error: validationError } = Item.validate('Job', mappedValues);
+    if (validationError) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, 
+        `ERROR: Invoice validation failed: ${JSON.stringify(validationError.details)}`);
+      return res.status(200).json({ 
+        message: 'Invoice validation failed', 
+        details: validationError.details 
+      });
+    }
+
+    const business = await initializeXeroOperation(workspaceId, boardId, item);
 
     const [jobPlanningValues, serviceFeeTypeValues] = await getJobReportingReferencedItems(workspaceId, boardId, item.id);
     if (!jobPlanningValues) {
@@ -166,7 +237,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
-    let gst = invoiceValues["GST"] == "10%" ? "10%" : "0%";
+    let gst = item.values["GST"] == "10%" ? "10%" : "0%";
     const invoice = {
       type: 'ACCREC',
       contact: { contactID: contact.contactID },
@@ -180,26 +251,26 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     const serviceFeeType = serviceFeeTypeValues.feeType;
     invoice.lineItems.push({
       itemCode: jobType.code,
-      description: `${jobPlanningValues.jobTitle} - ${serviceFeeType} - ${invoiceValues['Job Duration (Hrs.)']} Hrs.`,
+      description: `${jobPlanningValues.jobTitle} - ${serviceFeeType} - ${item.values['Job Duration (Hrs.)']} Hrs.`,
       quantity: 1,
-      unitAmount: invoiceValues['Payable Service Fee($) - GST Excl.'],
+      unitAmount: item.values['Payable Service Fee($) - GST Excl.'],
       taxType: gst == "10%"? "OUTPUT" : "EXEMPTOUTPUT",
     });
 
-    if (invoiceValues['Payable Material Fee($) - GST Excl.'] > 0) {
+    if (item.values['Payable Material Fee($) - GST Excl.'] > 0) {
       invoice.lineItems.push({
         description: "Used Material/Part",
         quantity: 1,
-        unitAmount: invoiceValues['Payable Material Fee($) - GST Excl.'],
+        unitAmount: item.values['Payable Material Fee($) - GST Excl.'],
         taxType: gst == "10%"? "OUTPUT" : "EXEMPTOUTPUT",
       });
     }
 
-    if (invoiceValues['Other Payable Fee($) - GST Excl.'] > 0) {
+    if (item.values['Other Payable Fee($) - GST Excl.'] > 0) {
       invoice.lineItems.push({
         description: "Other Payable Fee",
         quantity: 1,
-        unitAmount: invoiceValues['Other Payable Fee($) - GST Excl.'],
+        unitAmount: item.values['Other Payable Fee($) - GST Excl.'],
         taxType: gst == "10%"? "OUTPUT" : "EXEMPTOUTPUT",
       });
     }
@@ -218,29 +289,18 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
 
     res.json(createdInvoice);
   } catch (err) {
-    error('Xero-Service', 'Error creating invoice', err);
-    if (payload.items[0]) {
-      await setIntegrationMessage(workspaceId, boardId, payload.items[0].id, "An error occurred whilst creating the invoice. Please contact ISO+™ support. Further information: " + err.message);
-    }
-    logAuditTrail({
-      workspaceId,
-      action: "Create Xero Invoice",
-      detail: `Error creating invoice: ${err.message}`,
-      req
-    });
-    res.status(200).json({ message: 'Error creating invoice', error: err.message });
+    const result = await handleError(err, workspaceId, boardId, item, req, 'invoice');
+    res.status(result.status).json(result.body);
   }
 });
 
 router.post('/:workspaceId/:boardId/contact', async (req, res) => {
   const { workspaceId, boardId } = req.params;
-  const payload = req.body;
-  if (!payload.items || payload.items.length === 0) {
-    warn('Xero-Service', 'Received payload with empty items.', { payload }, req);
-    return res.json('No items found in the payload.');
+  const { error, item } = await validatePayload(req.body, req);
+  if (error) {
+    return res.status(200).json({ message: error });
   }
 
-  const item = payload.items[0];
   const contactValues = item.values;
   const mappedContact = {
     client: contactValues['Client'],
@@ -262,95 +322,43 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
     integrationValidation: contactValues['Integration Validation'],
     integrationMessage: contactValues['Integration Message'],
   };
+
   const { error: validationError } = Item.validate('Contact', mappedContact);
   if (validationError) {
     await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Contact validation failed: ${JSON.stringify(validationError.details)}`);
-    return res.status(400).json({ message: 'Contact validation failed', details: validationError.details });
+    return res.status(200).json({ message: 'Contact validation failed', details: validationError.details });
   }
 
   try {
-    const business = await Business.findOne({ workspaceId });
-    await configure();
-    await ensureAuthenticated(workspaceId);
-
-    await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
-
+    await initializeXeroOperation(workspaceId, boardId, item);
     const existingContact = await getContactByEmail(contactValues['Email Address']);
     let contact;
 
     if (existingContact) {
-      existingContact.name = contactValues.Client;
-      existingContact.phones = [{ phoneType: 'DEFAULT', phoneNumber: contactValues['Phone Number'] }];
-      existingContact.firstName = contactValues["Contact Person's First Name"];
-      existingContact.lastName = contactValues["Contact Person's Last Name"];
-      existingContact.addresses = [
-        {
-          addressType: 'POBOX',
-          addressLine1: contactValues.Address,
-          city: contactValues.Suburb,
-          region: contactValues.State,
-          postalCode: contactValues.Postcode.toString()
-        },
-        {
-          addressType: 'STREET',
-          addressLine1: contactValues.Address,
-          city: contactValues.Suburb,
-          region: contactValues.State,
-          postalCode: contactValues.Postcode.toString()
-        }
-      ];
-      existingContact.emailAddress = contactValues['Email Address'];
-
-      contact = await createOrUpdateContact(existingContact);
+      contact = await createOrUpdateContact({
+        ...createContactPayload(contactValues),
+        contactID: existingContact.contactID
+      });
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your contact has been updated successfully in Xero.");
     } else {
-      contact = await createOrUpdateContact({
-        name: contactValues.Client,
-        phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues['Phone Number'] }],
-        firstName: contactValues["Contact Person's First Name"],
-        lastName: contactValues["Contact Person's Last Name"],
-        addresses: [
-          {
-            addressType: 'POBOX',
-            addressLine1: contactValues.Address,
-            city: contactValues.Suburb,
-            region: contactValues.State,
-            postalCode: contactValues.Postcode.toString()
-          },
-          {
-            addressType: 'STREET',
-            addressLine1: contactValues.Address,
-            city: contactValues.Suburb,
-            region: contactValues.State,
-            postalCode: contactValues.Postcode.toString()
-          }
-        ],
-        emailAddress: contactValues['Email Address']
-      });
-
+      contact = await createOrUpdateContact(createContactPayload(contactValues));
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your contact has been created successfully in Xero.");
     }
 
     res.json(contact);
   } catch (err) {
-    error('Xero-Service', 'Error creating/updating contact', err);
-    if (item) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred whilst creating or updating the contact. Please contact ISO+™ support. Further information: " + err.message);
-    }
-    res.status(200).json({ message: 'Error creating/updating contact', error: err.message });
+    const result = await handleError(err, workspaceId, boardId, item, req, 'contact');
+    res.status(result.status).json(result.body);
   }
 });
 
 router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
   const { workspaceId, boardId } = req.params;
-  const payload = req.body;
-  if (!payload.items || payload.items.length === 0) {
-    warn('Xero-Service', 'Received payload with empty items.', { payload }, req);
-    return res.json('No items found in the payload.');
+  const { error, item } = await validatePayload(req.body, req);
+  if (error) {
+    return res.status(200).json({ message: error });
   }
 
-  const item = payload.items[0];
   const contractorValues = item.values;
   const mappedContractor = {
     Contractor: contractorValues['Contractor'],
@@ -368,103 +376,44 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
     IntegrationValidation: contractorValues['Integration Validation'],
     IntegrationMessage: contractorValues['Integration Message'],
   };
+
   const { error: validationError } = Item.validate('Contractor', mappedContractor);
   if (validationError) {
     await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Contractor validation failed: ${JSON.stringify(validationError.details)}`);
-    return res.status(400).json({ message: 'Contractor validation failed', details: validationError.details });
+    return res.status(200).json({ message: 'Contractor validation failed', details: validationError.details });
   }
 
   try {
-    const business = await Business.findOne({ workspaceId });
-    await configure();
-    await ensureAuthenticated(workspaceId);
-
-    await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
-
+    await initializeXeroOperation(workspaceId, boardId, item);
     const existingContact = await getContactByEmail(contractorValues['Email Address']);
     let contact;
 
     if (existingContact) {
-      existingContact.name = contractorValues.Contractor;
-      existingContact.phones = [{ phoneType: 'DEFAULT', phoneNumber: contractorValues['Phone Number'] }];
-      existingContact.firstName = contractorValues["Contact Person's First Name"];
-      existingContact.lastName = contractorValues["Contact Person's Last Name"];
-      existingContact.addresses = [
-        {
-          addressType: 'POBOX',
-          addressLine1: contractorValues.Address,
-          city: contractorValues.Suburb,
-          region: contractorValues.State,
-          postalCode: contractorValues.Postcode.toString()
-        },
-        {
-          addressType: 'STREET',
-          addressLine1: contractorValues.Address,
-          city: contractorValues.Suburb,
-          region: contractorValues.State,
-          postalCode: contractorValues.Postcode.toString()
-        }
-      ];
-      existingContact.emailAddress = contractorValues['Email Address'];
-
-      contact = await createOrUpdateContact(existingContact);
+      contact = await createOrUpdateContact({
+        ...createContactPayload(contractorValues),
+        contactID: existingContact.contactID
+      });
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your contractor has been updated successfully in Xero.");
     } else {
-      contact = await createOrUpdateContact({
-        name: contractorValues.Contractor,
-        phones: [{ phoneType: 'DEFAULT', phoneNumber: contractorValues['Phone Number'] }],
-        firstName: contractorValues["Contact Person's First Name"],
-        lastName: contractorValues["Contact Person's Last Name"],
-        addresses: [
-          {
-            addressType: 'POBOX',
-            addressLine1: contractorValues.Address,
-            city: contractorValues.Suburb,
-            region: contractorValues.State,
-            postalCode: contractorValues.Postcode.toString()
-          },
-          {
-            addressType: 'STREET',
-            addressLine1: contractorValues.Address,
-            city: contractorValues.Suburb,
-            region: contractorValues.State,
-            postalCode: contractorValues.Postcode.toString()
-          }
-        ],
-        emailAddress: contractorValues['Email Address']
-      });
+      contact = await createOrUpdateContact(createContactPayload(contractorValues));
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your contractor has been created successfully in Xero.");
     }
 
     res.json(contact);
   } catch (err) {
-    error('Xero-Service', 'Error creating/updating contractor', err);
-    if (item) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred whilst creating or updating the contractor. Please contact ISO+™ support. Further information: " + err.message);
-    }
-    res.status(200).json({ message: 'Error creating/updating contractor', error: err.message });
+    const result = await handleError(err, workspaceId, boardId, item, req, 'contractor');
+    res.status(result.status).json(result.body);
   }
 });
 
 router.post('/:workspaceId/:boardId/quote', async (req, res) => {
   const { workspaceId, boardId } = req.params;
   const payload = req.body;
-  if (!payload.items || payload.items.length === 0) {
-    warn('Xero-Service', 'Received payload with empty items.', { payload }, req);
-    return res.json('No items found in the payload.');
-  }
-
-  const item = payload.items[0];
+  const { item } = await validatePayload(payload, req);
 
   try {
-    const business = await Business.findOne({ workspaceId });
-    await configure();
-    await ensureAuthenticated(workspaceId);
+    const business = await initializeXeroOperation(workspaceId, boardId, item);
     const quoteValues = item.values;
-
-    await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
     const [contactValues, jobTypeValues] = await getQuoteReferencedItems(workspaceId, boardId, item.id);
     if (!contactValues) {
@@ -571,7 +520,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     const { error: validationError } = Item.validate('Quote', mappedQuote);
     if (validationError) {
       await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Quote validation failed: ${JSON.stringify(validationError.details)}`);
-      return res.status(400).json({ message: 'Quote validation failed', details: validationError.details });
+      return res.status(200).json({ message: 'Quote validation failed', details: validationError.details });
     }
 
     const createdQuote = await createQuote(xeroQuote);
@@ -588,39 +537,20 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
 
     res.json(createdQuote);
   } catch (err) {
-    error('Xero-Service', 'Error creating quote', err);
-    if (item) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred whilst creating the quote. Please contact ISO+™ support. Further information: " + err.message);
-    }
-    logAuditTrail({
-      workspaceId,
-      action: "Create Xero Quote",
-      detail: `Error creating quote: ${err.message}`,
-      req
-    });
-    res.status(200).json({ message: 'Error creating quote', error: err.message });
+    const result = await handleError(err, workspaceId, boardId, item, req, 'quote');
+    res.status(result.status).json(result.body);
   }
 });
 
 router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
   const { workspaceId, boardId } = req.params;
   const payload = req.body;
-  if (!payload.items || payload.items.length === 0) {
-    warn('Xero-Service', 'Received payload with empty items.', { payload }, req);
-    return res.json('No items found in the payload.');
-  }
-
-  const item = payload.items[0];
+  const { item } = await validatePayload(payload, req);
 
   try {
-    const business = await Business.findOne({ workspaceId });
-    await configure();
-    await ensureAuthenticated(workspaceId);
+    const business = await initializeXeroOperation(workspaceId, boardId, item);
 
     const purchaseOrderValues = item.values;
-
-    await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
     const [contractorValues, jobTypeValues] = await getPurchaseOrderReferencedItems(workspaceId, boardId, item.id);
     if (!contractorValues) {
@@ -723,7 +653,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     const { error: validationError } = Item.validate('PurchaseOrder', mappedPO);
     if (validationError) {
       await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Purchase order validation failed: ${JSON.stringify(validationError.details)}`);
-      return res.status(400).json({ message: 'Purchase order validation failed', details: validationError.details });
+      return res.status(200).json({ message: 'Purchase order validation failed', details: validationError.details });
     }
 
     const createdPurchaseOrder = await createPurchaseOrder(purchaseOrder);
@@ -738,17 +668,8 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     await setGeneratedField(workspaceId, boardId, item.id, `${createdPurchaseOrder.purchaseOrderNumber} (Xero)`);
     res.json(createdPurchaseOrder);
   } catch (err) {
-    error('Xero-Service', 'Error creating purchase order', err);
-    if (item) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred whilst creating the purchase order. Please contact ISO+™ support. Further information: " + err.message);
-    }
-    logAuditTrail({
-      workspaceId,
-      action: "Create Xero Purchase Order",
-      detail: `Error creating purchase order: ${err.message}`,
-      req
-    });
-    res.status(200).json({ message: 'Error creating purchase order', error: err.message });
+    const result = await handleError(err, workspaceId, boardId, item, req, 'purchase order');
+    res.status(result.status).json(result.body);
   }
 });
 
