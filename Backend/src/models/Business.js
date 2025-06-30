@@ -53,7 +53,8 @@ const businessSchema = new mongoose.Schema({
   xeroTokens: {
     accessToken: String,
     refreshToken: String,
-    expiresAt: Number
+    expiresAt: Number,
+    refreshTokenExpiresAt: Number
   },
   bankDetails: {
     accountName: {

@@ -92,7 +92,9 @@ const multiupload = upload.fields([
 
 router.get('/profile', authenticateToken, async (req, res) => {
   try {
-    const business = await Business.findOne({ workspaceId: req.query.workspaceId });
+    const workspaceId = req.query.workspaceId?.toString();
+    if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
+    const business = await Business.findOne({ workspaceId });
     if (!business) {
       warn('Business-Service', 'Business profile not found', {}, req);
       return res.status(404).json({ message: 'Business profile not found' });
@@ -117,7 +119,9 @@ router.get('/profile', authenticateToken, async (req, res) => {
 
 router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, async (req, res) => {
   try {
-    const { name, phone, email, abn, acn, state, suburb, country, postcode, street, workspaceId, bankAccountName, bankName, bsb, accountNumber, paymentReference, accountsReceivableTerms, accountsPayableTerms } = req.body;
+    const workspaceId = req.body.workspaceId?.toString();
+    if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
+    const { name, phone, email, abn, acn, state, suburb, country, postcode, street, bankAccountName, bankName, bsb, accountNumber, paymentReference, accountsReceivableTerms, accountsPayableTerms } = req.body;
     const { defaultLogoRemoved, squareLogoRemoved, wideLogoRemoved } = req.body;
 
     let documentNumbering = {};
@@ -226,28 +230,33 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
 
 router.post('/xero/connect', authenticateToken, async (req, res) => {
   try {
-    const { workspaceId, tokens } = req.body;
+    const workspaceId = req.body.workspaceId?.toString();
+    if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
+    const { tokens } = req.body;
 
     let business = await Business.findOne({ workspaceId });
     if (!business) {
+      const now = new Date();
       business = new Business({
         workspaceId,
         xeroIntegrated: true,
         xeroTokens: {
           accessToken: tokens.access_token,
           refreshToken: tokens.refresh_token,
-          expiresAt: tokens.expires_at
+          expiresAt: tokens.expires_at,
+          refreshTokenExpiresAt: now.getTime() + 60 * 24 * 60 * 60 * 1000
         }
       });
       await business.save();
     } else {
+      const now = new Date();
       business.xeroIntegrated = true;
       business.xeroTokens = {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
-        expiresAt: tokens.expires_at
+        expiresAt: tokens.expires_at,
+        refreshTokenExpiresAt: now.getTime() + 60 * 24 * 60 * 60 * 1000
       };
-
       await business.save();
     }
 
@@ -261,7 +270,8 @@ router.post('/xero/connect', authenticateToken, async (req, res) => {
 
 router.post('/xero/disconnect', authenticateToken, async (req, res) => {
   try {
-    const { workspaceId } = req.body;
+    const workspaceId = req.body.workspaceId?.toString();
+    if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
 
     const business = await Business.findOne({ workspaceId });
     if (!business) {

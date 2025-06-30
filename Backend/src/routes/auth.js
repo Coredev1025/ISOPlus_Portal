@@ -24,7 +24,9 @@ router.post('/register',
     }
 
     try {
-      const { email, password, name } = req.body;
+      const email = req.body.email?.toString();
+      const password = req.body.password?.toString();
+      const name = req.body.name?.toString();
 
       const existingUser = await User.findOne({ email });
       if (existingUser) {
@@ -66,7 +68,8 @@ router.post('/login',
     }
 
     try {
-      const { email, password } = req.body;
+      const email = req.body.email?.toString();
+      const password = req.body.password?.toString();
       const user = await User.findOne({ email });
 
       if (!user || !(await user.comparePassword(password))) {
@@ -166,24 +169,45 @@ router.get("/isoplus/callback", async (req, res) => {
       code: code
     }, {
       headers: {
-        'Content-Type': 'application/json',
-        'X-API-Version': '2025-02-26.morava'
+        'Content-Type': 'application/json'
       }
     });
+
+    if (!tokenResponse.data || !tokenResponse.data.access_token) {
+      warn('User-Service', 'Invalid token response',  {
+        url: process.env.TOKEN_ENDPOINT,
+        method: "POST",
+        data: {
+          grant_type: "authorization_code",
+          client_id: process.env.CLIENT_ID,
+          redirect_uri: `${process.env.CALLBACK_URL}`,
+          code: code
+        },
+        response: tokenResponse.data
+      }, req);
+      return res.status(400).json({ error: "Invalid token response" });
+    }
 
     const accessToken = tokenResponse.data.access_token;
 
-    if (!accessToken) {
-      warn('User-Service', 'Failed to retrieve access token', { state }, req);
-      return res.status(400).json({ error: "Failed to retrieve access token" });
-    }
-
     const userResponse = await axios.get(`${process.env.USER_INFORMATION_ENDPOINT}`, {
       headers: {
-        'Authorization': `Bearer ${accessToken}`,
+        "Authorization": `Bearer ${accessToken}`,
         "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-API-Version": "2025-02-26.morava",
       }
     });
+
+    if (!userResponse.data) {
+      warn('User-Service', 'Invalid user response', {
+        url: process.env.USER_INFORMATION_ENDPOINT,
+        method: "GET",
+        data: {},
+        response: userResponse.data
+      }, req);
+      return res.status(400).json({ error: "Invalid user response" });
+    }
 
     info('User-Service', 'OAuth callback successful', { state, user: userResponse.data }, req);
     res.send(`
@@ -191,25 +215,37 @@ router.get("/isoplus/callback", async (req, res) => {
         <body>
           <script>
             window.opener.postMessage(${JSON.stringify({
-      type: 'AUTH_SUCCESS',
-      data: userResponse.data,
-      accessToken: `Bearer ${accessToken}`
-    })}, '*');
+              type: 'AUTH_SUCCESS',
+              data: userResponse.data,
+              accessToken: `Bearer ${accessToken}`
+            })}, '*');
             window.close();
           </script>
         </body>
       </html>
     `);
   } catch (err) {
-    error('User-Service', 'Token exchange error', { error: err.message, state }, req);
+    error('User-Service', 'Token exchange error', {
+      url: process.env.TOKEN_ENDPOINT,
+      method: "POST",
+      data: {
+        grant_type: "authorization_code",
+        client_id: process.env.CLIENT_ID,
+        redirect_uri: `${process.env.CALLBACK_URL}`,
+        code: code
+      },
+      error: err.response?.data || err.message,
+      status: err.response?.status
+    }, req);
+    const errorMessage = err.response?.data?.error || err.message || 'Failed to authenticate';
     res.send(`
       <html>
         <body>
           <script>
-            window.opener.postMessage({
+            window.opener.postMessage(${JSON.stringify({
               type: 'AUTH_ERROR',
-              error: 'Failed to authenticate'
-            }, '*');
+              error: errorMessage
+            })}, '*');
             window.close();
           </script>
         </body>
@@ -222,20 +258,25 @@ router.post('/oauth-login', async (req, res) => {
   try {
     const { oauthData } = req.body;
 
-    let user = await User.findOne({ email: oauthData.email, oauthId: oauthData.id });
+    const email = oauthData.email?.toString();
+    const oauthId = oauthData.id?.toString();
+    const name = oauthData.name?.toString();
+    const photo_url = oauthData.photo_url?.toString();
+
+    let user = await User.findOne({ email, oauthId });
     let role = 'isoplus_user';
     if (!user) {
       user = new User({
-        email: oauthData.email,
-        name: oauthData.name,
+        email: email,
+        name: name,
         password: "",
-        oauthId: oauthData.id,
-        avatar: oauthData.photo_url,
+        oauthId: oauthId,
+        avatar: photo_url,
         role: role
       });
       await user.save();
     } else {
-      await User.findOneAndUpdate({ email: oauthData.email, oauthId: oauthData.id }, { $set: { avatar: oauthData.photo_url, name: oauthData.name } });
+      await User.findOneAndUpdate({ email: email, oauthId: oauthId }, { $set: { avatar: photo_url, name: name } });
     }
 
     req.session.Authorization = req.headers['authorization'];

@@ -78,8 +78,8 @@ export default function ConfigurePDFPage() {
         if (!abortController.signal.aborted && response.status === 200) {
           setConfig(response.data);
         }
-      } catch (error) {
-        if (!axios.isCancel(error)) {
+      } catch (error: any) {
+        if (error.name != "CanceledError" && error.name != "AbortError") {
           console.error("Error fetching PDF configuration:", error);
         }
       }
@@ -108,8 +108,8 @@ export default function ConfigurePDFPage() {
       if (!abortController.signal.aborted) {
         router.push(`/workspace/${id}/pdf-output`);
       }
-    } catch (error) {
-      if (!axios.isCancel(error)) {
+    } catch (error: any) {
+      if (error.name != "CanceledError" && error.name != "AbortError") {
         console.error("Error saving PDF configuration:", error);
       }
     } finally {

@@ -87,8 +87,8 @@ export default function AuditTrailPage() {
         auditData = auditData.sort((a: any, b: any) => b.rawTimestamp.getTime() - a.rawTimestamp.getTime()); // Sort by raw timestamp in descending order
 
         setAuditTrail(auditData);
-      } catch (error) {
-        if (!axios.isCancel(error)) {
+      } catch (error: any) {
+        if (error.name != "CanceledError" && error.name != "AbortError") {
           console.error("Error fetching audit trail:", error);
         }
       } finally {
@@ -232,11 +232,11 @@ export default function AuditTrailPage() {
                 Loading audit trail...
                 <span className="ml-2"><Spinner /></span>
               </div>
-            : totalPages == 0 ?
-              <div className="flex flex-col items-center justify-center py-16">
-                No audit trail found
-              </div>
-            : <></>}
+              : totalPages == 0 ?
+                <div className="flex flex-col items-center justify-center py-16">
+                  No audit trail found
+                </div>
+                : <></>}
 
             {/* Pagination */}
             <div className="mt-4 flex justify-center">

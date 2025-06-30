@@ -40,8 +40,8 @@ export default function XeroIntegrationPage() {
           }
           setIsConnected(response.data.xeroIntegrated);
         }
-      } catch (error) {
-        if (!axios.isCancel(error)) {
+      } catch (error: any) {
+        if (error.name != "CanceledError" && error.name != "AbortError") {
           console.error('Error checking Xero connection:', error);
         }
       }
@@ -108,8 +108,8 @@ export default function XeroIntegrationPage() {
           abortController.abort();
         };
       }
-    } catch (error) {
-      if (!axios.isCancel(error)) {
+    } catch (error: any) {
+      if (error.name != "CanceledError" && error.name != "AbortError") {
         console.error(error);
         setResultContent('Error initiating Xero connection. Please try again.');
       }
@@ -135,8 +135,8 @@ export default function XeroIntegrationPage() {
       );
       setIsConnected(false);
       setResultContent('Successfully disconnected from Xero!');
-    } catch (error) {
-      if (!axios.isCancel(error)) {
+    } catch (error: any) {
+      if (error.name != "CanceledError" && error.name != "AbortError") {
         console.error('Error disconnecting from Xero:', error);
         setResultContent('Error disconnecting from Xero. Please try again.');
       }
@@ -200,8 +200,8 @@ export default function XeroIntegrationPage() {
           abortController.abort();
         };
       }
-    } catch (error) {
-      if (!axios.isCancel(error)) {
+    } catch (error: any) {
+      if (error.name != "CanceledError" && error.name != "AbortError") {
         console.error(error);
         setResultContent('Error initiating Xero connection. Please try again.');
       }

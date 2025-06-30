@@ -35,8 +35,8 @@ export function Header() {
             setWorkspaces([]);
             router.push("/");
           }
-      } catch (error) {
-        if (!axios.isCancel(error)) {
+      } catch (error: any) {
+        if (error.name !== "CanceledError" && error.name !== "AbortError") {
           console.error('Token verification failed:', error);
         }
       }

@@ -1,6 +1,6 @@
 import { XeroClient } from 'xero-node';
 import Business from '../models/Business.js';
-import { info, error } from '../utils/logger.js';
+import { error } from '../utils/logger.js';
 import {
     IsoPlusInvoiceValues
 } from '../dto/itemsPayload.js';
@@ -375,10 +375,26 @@ export async function createPurchaseOrder(purchaseOrder) {
     }
 }
 
-export async function ensureAuthenticated(accessToken, refreshToken, expiresAt) {
-    if (!xeroClient) {
-        throw new Error('Xero client not configured');
+function isValidWorkspaceId(workspaceId) {
+    return typeof workspaceId === 'string';
+}
+
+async function getLatestTokens(workspaceId) {
+    if (!isValidWorkspaceId(workspaceId)) {
+        throw new Error('Invalid workspace Id');
     }
+    const business = await Business.findOne({ workspaceId });
+    if (!business || !business.xeroTokens) throw new Error('No Xero tokens found');
+    return business.xeroTokens;
+}
+
+export async function ensureAuthenticated(workspaceId) {
+    if (!isValidWorkspaceId(workspaceId)) {
+        throw new Error('Invalid workspace Id');
+    }
+    const { accessToken, refreshToken, expiresAt, refreshTokenExpiresAt } = await getLatestTokens(workspaceId);
+
+    if (!xeroClient) throw new Error('Xero client not configured');
 
     await xeroClient.setTokenSet({
         access_token: accessToken,
@@ -388,12 +404,34 @@ export async function ensureAuthenticated(accessToken, refreshToken, expiresAt) 
         scopes: 'openid profile email accounting.settings accounting.contacts accounting.transactions accounting.reports.read accounting.attachments offline_access'.split(" "),
     });
 
-    const currentTokenSet = xeroClient.readTokenSet();
+    let currentTokenSet = xeroClient.readTokenSet();
     if (currentTokenSet) {
         if (currentTokenSet.expired() && currentTokenSet.refresh_token) {
+            if (!refreshTokenExpiresAt || refreshTokenExpiresAt < new Date().getTime()) {
+                throw new Error('Your Xero authorization token is expired.');
+            }
             try {
-                const newTokenSet = await xeroClient.refreshWithRefreshToken(process.env.XERO_CLIENT_ID, process.env.XERO_CLIENT_SECRET, currentTokenSet.refresh_token);
-                await Business.updateOne({ 'xeroTokens.accessToken': accessToken, 'xeroTokens.refreshToken': refreshToken }, { $set: { 'xeroTokens.accessToken': newTokenSet.access_token, 'xeroTokens.refreshToken': newTokenSet.refresh_token, 'xeroTokens.expiresAt': newTokenSet.expires_at } })
+                const newTokenSet = await xeroClient.refreshWithRefreshToken(   
+                    process.env.XERO_CLIENT_ID,
+                    process.env.XERO_CLIENT_SECRET,
+                    currentTokenSet.refresh_token
+                );
+
+                const refreshTokenChanged = newTokenSet.refresh_token && newTokenSet.refresh_token !== currentTokenSet.refresh_token;
+                const now = new Date();
+                const updateFields = {
+                    'xeroTokens.accessToken': newTokenSet.access_token,
+                    'xeroTokens.refreshToken': newTokenSet.refresh_token,
+                    'xeroTokens.expiresAt': newTokenSet.expires_at
+                };
+                if (refreshTokenChanged) {
+                    updateFields['xeroTokens.refreshTokenExpiresAt'] = now.getTime() + 60 * 24 * 60 * 60 * 1000;
+                }
+                await Business.updateOne(
+                    { workspaceId },
+                    { $set: updateFields }
+                );
+                await xeroClient.setTokenSet(newTokenSet);
             } catch (refreshError) {
                 error('Xero-Service', 'Error refreshing token', refreshError);
                 throw new Error('Your Xero authorization token is expired. Please go to ISOPlus Portal and authorize again.');
@@ -404,7 +442,6 @@ export async function ensureAuthenticated(accessToken, refreshToken, expiresAt) 
     }
 
     const tenants = await xeroClient.updateTenants(false);
-
     if (!tenants || !tenants.length) {
         throw new Error('No Xero organizations connected');
     }

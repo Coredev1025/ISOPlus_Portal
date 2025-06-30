@@ -128,8 +128,8 @@ export default function ConfigurationPage() {
           });
           console.log("Formatted Attributes:", formattedAttributes);
           setIsoAttributes([...formattedAttributes]);
-        } catch (error) {
-          if (!axios.isCancel(error)) {
+        } catch (error: any) {
+          if (error.name != "CanceledError" && error.name != "AbortError") {
             console.error("Error fetching attributes:", error);
           }
         }
@@ -159,8 +159,8 @@ export default function ConfigurationPage() {
           setBoard(boardData);
           setSelectedAttribute(boardResponse.data.board.attribute.id || '');
           setBoardLabel(boardResponse.data.board.label || 'No Label');
-        } catch (error) {
-          if (!axios.isCancel(error)) {
+        } catch (error: any) {
+          if (error.name != "CanceledError" && error.name != "AbortError") {
             console.error("Error fetching board:", error);
           }
           setBoard({ id: boardId, name: '', label: 'No Label', attributeId: '' });

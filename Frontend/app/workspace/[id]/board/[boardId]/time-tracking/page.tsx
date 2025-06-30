@@ -50,8 +50,8 @@ export default function TimeTrackingPage() {
                   }
                 );
                 return { ...board, label: boardResponse.data.board.label };
-              } catch (error) {
-                if (!axios.isCancel(error)) {
+              } catch (error: any) {
+                if (error.name != "CanceledError" && error.name != "AbortError") {
                   console.error("Error fetching board:", error);
                 }
                 return { ...board, label: null };
@@ -62,8 +62,8 @@ export default function TimeTrackingPage() {
           if (!abortController.signal.aborted) {
             setBoards(data);
           }
-        } catch (error) {
-          if (!axios.isCancel(error)) {
+        } catch (error: any) {
+          if (error.name != "CanceledError" && error.name != "AbortError") {
             console.error("Error fetching boards:", error);
           }
         }

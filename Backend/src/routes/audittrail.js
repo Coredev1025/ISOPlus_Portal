@@ -8,7 +8,9 @@ const router = express.Router();
 // GET all audit trails
 router.get('/', authenticateToken, async (req, res) => {
     try {
-        const auditTrails = await AuditTrail.find({ workspaceId: req.query.workspaceId });
+        const workspaceId = req.query.workspaceId?.toString();
+        if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
+        const auditTrails = await AuditTrail.find({ workspaceId });
         info('AuditTrail-Service', 'Audit trails fetched successfully', { count: auditTrails.length }, req);
         res.json(auditTrails);
     } catch (err) {
@@ -40,7 +42,10 @@ router.post('/', authenticateToken, async (req, res) => {
 // PUT to update an audit trail by ID
 router.put('/:id', authenticateToken, async (req, res) => {
     try {
-        const auditTrail = await AuditTrail.find({ _id: req.params.id, workspaceId: req.body.workspaceId });
+        const id = req.params.id?.toString();
+        const workspaceId = req.body.workspaceId?.toString();
+        if (!id || !workspaceId) return res.status(400).json({ message: 'Invalid id or workspaceId' });
+        const auditTrail = await AuditTrail.findOne({ _id: id, workspaceId });
         if (!auditTrail) {
             return res.status(404).json({ message: 'AuditTrail not found' });
         }

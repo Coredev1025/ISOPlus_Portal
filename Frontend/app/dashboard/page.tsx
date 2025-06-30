@@ -128,8 +128,8 @@ function WorkspacesList() {
           if (response.data.workspace.length === 1) {
             router.push(`/workspace/${response.data.workspace[0].id}`);
           }
-        } catch (error) {
-          if (!axios.isCancel(error)) {
+        } catch (error: any) {
+          if (error.name !== "CanceledError" && error.name !== "AbortError") {
             console.error("Error fetching workspaces:", error);
           }
         }
@@ -358,8 +358,8 @@ function GlobalApplicationLogs() {
           }
         }));
         setLogs(formattedLogs);
-      } catch (error) {
-        if (!axios.isCancel(error)) {
+      } catch (error: any) {
+        if (error.name !== "CanceledError" && error.name !== "AbortError") {
           console.error("Error fetching logs:", error);
         }
       }

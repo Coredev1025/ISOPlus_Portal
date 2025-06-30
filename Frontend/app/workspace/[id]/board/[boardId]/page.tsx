@@ -82,8 +82,8 @@ export default function BoardDetail() {
           const boardData: Board = boardsResponse.data.board.find((b: any) => b.id == boardId);
           setBoard(boardData);
         }
-      } catch (error) {
-        if (!axios.isCancel(error)) {
+      } catch (error: any) {
+        if (error.name != "CanceledError" && error.name != "AbortError") {
           console.error("Error fetching board data:", error);
         }
       } finally {
@@ -133,8 +133,8 @@ export default function BoardDetail() {
           setTimeEntries(data);
         }
 
-      } catch (error) {
-        if (!axios.isCancel(error)) {
+      } catch (error: any) {
+        if (error.name != "CanceledError" && error.name != "AbortError") {
           console.error("Error fetching data:", error);
         }
       }
