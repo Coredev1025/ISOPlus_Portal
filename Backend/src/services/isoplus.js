@@ -3,6 +3,45 @@ import Board from '../models/Board.js';
 import FormData from 'form-data';
 import { info, warn, error } from '../utils/logger.js';
 
+const DEFAULT_HEADERS = {
+  "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+  "Content-Type": "application/json",
+  "Accept": "application/json",
+  "X-API-VERSION": "2025-02-26.morava"
+};
+
+const API_BASE_URL = 'https://app.isoplus.online/api/v2';
+
+async function makeApiRequest(method, endpoint, data = null, customHeaders = {}) {
+  try {
+    const headers = { ...DEFAULT_HEADERS, ...customHeaders };
+    const config = {
+      method,
+      url: `${API_BASE_URL}${endpoint}`,
+      headers
+    };
+
+    if (data) {
+      config.data = data;
+    }
+
+    const result = await axios(config);
+    return { data: result.data, status: result.status };
+  } catch (err) {
+    error('ISO+™ Service', `Error making ${method} request to ${endpoint}:`, err);
+    return { error: err.message, status: err.response?.status || 500 };
+  }
+}
+
+async function validateBoard(boardId) {
+  const board = await Board.findOne({ boardId: boardId.toString() });
+  if (!board) {
+    throw new Error('Board not found');
+  }
+
+  return board;
+}
+
 export async function getWorkspace(authorization, userEmail = null) {
     try {
         const url = "https://app.isoplus.online/api/v2/workspaces";
@@ -288,72 +327,88 @@ export async function getViewsById(authorization, workspaceId, boardId, viewId) 
 }
 
 export async function putInternalMessage(workspaceId, boardId, itemId, message) {
-    try {
-        const board = await Board.findOne({ boardId });
-        await axios.put(
-            `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
-            {
-                "values": [
-                    {
-                        "attribute_id": board.attribute.id || process.env.INTEGRATION_MESSAGE_ATTRIBUTE_ID || "b84bf475-b4f7-4e35-891a-72c24631468f",
-                        "data": `<p>${message}</p>`
-                    }
-                ]
-            },
-            {
-                headers: {
-                    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "X-API-Version": "2025-02-26.morava",
-                }
-            }
-        );
-        return true;
-    } catch (err) {
-        error('ISO+™ Service', 'Error putting internal message:', err);
-        return false;
+  try {
+    if (!workspaceId || !boardId || !itemId || !message) {
+      throw new Error('Missing required parameters');
     }
+
+    const board = await validateBoard(boardId);
+    const attributeId = board?.attribute?.id || 
+                       process.env.INTEGRATION_MESSAGE_ATTRIBUTE_ID || 
+                       "b84bf475-b4f7-4e35-891a-72c24631468f";
+
+    const endpoint = `/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`;
+    const data = {
+      values: [{
+        attribute_id: attributeId,
+        data: `<p>${message}</p>`
+      }]
+    };
+
+    const result = await makeApiRequest('put', endpoint, data);
+    return result.status === 200;
+  } catch (err) {
+    error('ISO+™ Service', 'Error putting internal message:', err);
+    return false;
+  }
 }
 
-export function putTimeTracking(workspaceId, boardId, itemId, startTime, endTime) {
-    axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`, {
-        "values": [
-            {
-                "attribute_id": "b16e64b3-2e79-46af-ae87-3135005d362b",
-                "data": `${new Date(startTime).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}`
-            }, {
-                "attribute_id": "00ece0a4-b3bc-43e1-8580-23854b062439",
-                "data": `${new Date(endTime).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}`
-            }
-        ],
-    }, {
-        headers: {
-            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-API-Version": "2025-02-26.morava",
+export async function putTimeTracking(workspaceId, boardId, itemId, startTime, endTime) {
+  try {
+    if (!workspaceId || !boardId || !itemId || !startTime || !endTime) {
+      throw new Error('Missing required parameters');
+    }
+
+    const endpoint = `/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`;
+    const data = {
+      values: [
+        {
+          attribute_id: "b16e64b3-2e79-46af-ae87-3135005d362b",
+          data: new Date(startTime).toLocaleString('en-AU', { 
+            day: '2-digit', 
+            month: '2-digit', 
+            year: '2-digit', 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          })
+        },
+        {
+          attribute_id: "00ece0a4-b3bc-43e1-8580-23854b062439",
+          data: new Date(endTime).toLocaleString('en-AU', { 
+            day: '2-digit', 
+            month: '2-digit', 
+            year: '2-digit', 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          })
         }
-    });
-    return true;
-};
+      ]
+    };
+
+    const result = await makeApiRequest('put', endpoint, data);
+    return result.status === 200;
+  } catch (err) {
+    error('ISO+™ Service', 'Error putting time tracking:', err);
+    return false;
+  }
+}
 
 export async function getItemValues(workspaceId, boardId, itemId) {
-    try {
-        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}?expand[]=values.attribute`;
-        const headers = {
-            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-API-Version": "2025-02-26.morava",
-        };
-
-        const result = await axios.get(url, { headers });
-        return result.status === 200 ? result.data : null;
-    } catch (err) {
-        error('ISO+™ Service', 'Error getting item values:', err);
-        return null;
+  try {
+    if (!workspaceId || !boardId || !itemId) {
+      throw new Error('Missing required parameters');
     }
+
+    const endpoint = `/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`;
+    const result = await makeApiRequest('get', endpoint, null, {
+      params: { expand: ['values.attribute'] }
+    });
+
+    return result.status === 200 ? result.data : null;
+  } catch (err) {
+    error('ISO+™ Service', 'Error getting item values:', err);
+    return null;
+  }
 }
 
 export async function validateItemBelongsToTenant(workspaceId, boardId, itemId) {
@@ -363,18 +418,20 @@ export async function validateItemBelongsToTenant(workspaceId, boardId, itemId) 
         warn('ISO+™ Service', errorMessage);
         throw new Error(errorMessage);
     }
+    return true;
 }
 
 export async function getReferences(workspaceId, boardId, itemId) {
     try {
-        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/references?from_item_id=${itemId}`;
-        const headers = {
-            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-        };
+        if (!workspaceId || !boardId || !itemId) {
+            throw new Error('Missing required parameters');
+        }
 
-        const result = await axios.get(url, { headers });
+        const endpoint = `/workspaces/${workspaceId}/boards/${boardId}/references`;
+        const result = await makeApiRequest('get', endpoint, null, {
+            params: { from_item_id: itemId }
+        });
+
         return result.status === 200 ? result.data : null;
     } catch (err) {
         error('ISO+™ Service', 'Error getting references:', err);
@@ -384,15 +441,13 @@ export async function getReferences(workspaceId, boardId, itemId) {
 
 export async function getAttribute(workspaceId, boardId, attributeId) {
     try {
-        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/attributes/${attributeId}`;
-        const headers = {
-            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-API-Version": "2025-02-26.morava",
-        };
+        if (!workspaceId || !boardId || !attributeId) {
+            throw new Error('Missing required parameters');
+        }
 
-        const result = await axios.get(url, { headers });
+        const endpoint = `/workspaces/${workspaceId}/boards/${boardId}/attributes/${attributeId}`;
+        const result = await makeApiRequest('get', endpoint);
+
         return result.status === 200 ? result.data : null;
     } catch (err) {
         error('ISO+™ Service', 'Error getting attribute:', err);
@@ -769,13 +824,28 @@ export async function getBoardAttributes(workspaceId, boardId) {
 
 export async function setIntegrationMessage(workspaceId, boardId, itemId, message) {
     try {
-        const response = await putInternalMessage(workspaceId, boardId, itemId, message);
-        if (!response) {
-            throw new Error("Failed to update item with integration message in ISO+™.");
+        if (!workspaceId || !boardId || !itemId || !message) {
+            throw new Error('Missing required parameters');
         }
+
+        const board = await validateBoard(boardId);
+        const attributeId = board?.attribute?.id || 
+                           process.env.INTEGRATION_MESSAGE_ATTRIBUTE_ID || 
+                           "b84bf475-b4f7-4e35-891a-72c24631468f";
+
+        const endpoint = `/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`;
+        const data = {
+          values: [{
+            attribute_id: attributeId,
+            data: `<p>${message}</p>`
+          }]
+        };
+
+        const result = await makeApiRequest('put', endpoint, data);
+        return result.status === 200;
     } catch (err) {
         error('ISO+™ Service', 'Error setting integration message:', err);
-        throw err;
+        return false;
     }
 }
 
@@ -905,31 +975,28 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
 
 export async function setGeneratedField(workspaceId, boardId, itemId, message) {
     try {
-        const itemValues = await getItemValues(workspaceId, boardId, itemId);
-        if (!itemValues) {
-            throw new Error("Failed to update item with integration message");
+        if (!workspaceId || !boardId || !itemId || !message) {
+            throw new Error('Missing required parameters');
         }
-        const values = itemValues.values;
-        const generatedField = values.find(v => v.attribute.name.includes("Generated") && v.attribute.name.includes("Number") && v.attribute.type === "text");
-        if (generatedField) {
-            const response = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
-                { values: [{ data: message, attribute_id: generatedField.attribute.id }] },
-                {
-                    headers: {
-                        "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                        "X-API-Version": "2025-02-26.morava",
-                    }
-                });
-            if (response.status === 200) {
-                return true;
-            }
-        }
-        return false;
+
+        const board = await validateBoard(boardId);
+        const attributeId = board?.attribute?.id || 
+                           process.env.GENERATED_FIELD_ATTRIBUTE_ID || 
+                           "d84bf475-b4f7-4e35-891a-72c24631468f";
+
+        const endpoint = `/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`;
+        const data = {
+          values: [{
+            attribute_id: attributeId,
+            data: message
+          }]
+        };
+
+        const result = await makeApiRequest('put', endpoint, data);
+        return result.status === 200;
     } catch (err) {
         error('ISO+™ Service', 'Error setting generated field:', err);
-        throw err;
+        return false;
     }
 }
 
