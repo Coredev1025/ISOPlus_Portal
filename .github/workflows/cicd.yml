@@ -63,12 +63,12 @@ jobs:
           aws elasticbeanstalk update-environment --environment-name isoplus-be-prod-blue --version-label $VERSION_LABEL
       
       - name: Create a new version on EBS from package on S3 - DEV
-        # if: github.ref == 'refs/heads/develop'
+        if: github.ref == 'refs/heads/develop'
         run: | 
           aws elasticbeanstalk create-application-version --application-name "isoplus-be-dev" --version-label $VERSION_LABEL --source-bundle S3Bucket="isoplus-backend-deploy-bucket-isoplus-v1",S3Key="$PACKAGE_FILE_NAME"
       
       - name: Update environment with the new vesion - DEV
-        # if: github.ref == 'refs/heads/develop'
+        if: github.ref == 'refs/heads/develop'
         run: |
           aws elasticbeanstalk update-environment --environment-name isoplus-be-dev-blue --version-label $VERSION_LABEL
       
