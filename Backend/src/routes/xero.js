@@ -10,7 +10,8 @@ import {
   getPurchaseOrderReferencedItems,
   setIntegrationMessage,
   putInternalMessage,
-  setGeneratedField
+  setGeneratedField,
+  getQuoteNDISReferencedItems
 } from '../services/isoplus.js';
 import {
   configure,
@@ -44,21 +45,21 @@ async function initializeXeroOperation(workspaceId, boardId, item) {
   if (!business) {
     throw new Error('Business not found');
   }
-  
+
   await configure();
   await ensureAuthenticated(workspaceId);
   await validateItemBelongsToTenant(workspaceId, boardId, item.id);
   await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
-  
+
   return business;
 }
 
 function createContactPayload(values, isUpdate = false) {
   const basePayload = {
     name: values.client || values.Client || values.Contractor,
-    phones: [{ 
-      phoneType: 'DEFAULT', 
-      phoneNumber: values.phoneNumber || values['Phone Number'] || values.PhoneNumber 
+    phones: [{
+      phoneType: 'DEFAULT',
+      phoneNumber: values.phoneNumber || values['Phone Number'] || values.PhoneNumber
     }],
     firstName: values.contactPersonsFirstName || values["Contact Person's First Name"] || values.ContactPersonsFirstName,
     lastName: values.contactPersonsLastName || values["Contact Person's Last Name"] || values.ContactPersonsLastName,
@@ -88,25 +89,25 @@ async function handleError(err, workspaceId, boardId, item, req, entityType = 'i
   error('Xero-Service', `Error processing ${entityType}`, err);
   if (item) {
     await setIntegrationMessage(
-      workspaceId, 
-      boardId, 
-      item.id, 
+      workspaceId,
+      boardId,
+      item.id,
       `An error occurred whilst processing the ${entityType}. Please contact ISO+™ support. Further information: ${err.message}`
     );
   }
-  
+
   logAuditTrail({
     workspaceId,
     action: `Process Xero ${entityType}`,
     detail: `Error processing ${entityType}: ${err.message}`,
     req
   });
-  
+
   return {
     status: 200,
-    body: { 
-      message: `Error processing ${entityType}`, 
-      error: err.message 
+    body: {
+      message: `Error processing ${entityType}`,
+      error: err.message
     }
   };
 }
@@ -147,11 +148,11 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     const mappedValues = mapInvoiceValuesToJobDTO(item.values);
     const { error: validationError } = Item.validate('Job', mappedValues);
     if (validationError) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, 
+      await setIntegrationMessage(workspaceId, boardId, item.id,
         `ERROR: Invoice validation failed: ${JSON.stringify(validationError.details)}`);
-      return res.status(200).json({ 
-        message: 'Invoice validation failed', 
-        details: validationError.details 
+      return res.status(200).json({
+        message: 'Invoice validation failed',
+        details: validationError.details
       });
     }
 
@@ -254,7 +255,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       description: `${jobPlanningValues.jobTitle} - ${serviceFeeType} - ${item.values['Job Duration (Hrs.)']} Hrs.`,
       quantity: 1,
       unitAmount: item.values['Payable Service Fee($) - GST Excl.'],
-      taxType: gst == "10%"? "OUTPUT" : "EXEMPTOUTPUT",
+      taxType: gst == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
     });
 
     if (item.values['Payable Material Fee($) - GST Excl.'] > 0) {
@@ -262,7 +263,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
         description: "Used Material/Part",
         quantity: 1,
         unitAmount: item.values['Payable Material Fee($) - GST Excl.'],
-        taxType: gst == "10%"? "OUTPUT" : "EXEMPTOUTPUT",
+        taxType: gst == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
       });
     }
 
@@ -271,7 +272,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
         description: "Other Payable Fee",
         quantity: 1,
         unitAmount: item.values['Other Payable Fee($) - GST Excl.'],
-        taxType: gst == "10%"? "OUTPUT" : "EXEMPTOUTPUT",
+        taxType: gst == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
       });
     }
 
@@ -484,13 +485,13 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
-    let rawChecklist = quoteValues['Quote Checklist'];
-    let quoteChecklist = [];
-    if (Array.isArray(rawChecklist)) {
-      quoteChecklist = rawChecklist.map(String);
-    } else if (typeof rawChecklist === 'string' && rawChecklist.trim() !== '') {
-      quoteChecklist = [rawChecklist];
-    }
+    // let rawChecklist = quoteValues['Quote Checklist'];
+    // let quoteChecklist = [];
+    // if (Array.isArray(rawChecklist)) {
+    //   quoteChecklist = rawChecklist.map(String);
+    // } else if (typeof rawChecklist === 'string' && rawChecklist.trim() !== '') {
+    //   quoteChecklist = [rawChecklist];
+    // }
     const mappedQuote = {
       issueDate: quoteValues['Issue Date'],
       expiryDate: quoteValues['Expiry Date'],
@@ -498,7 +499,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
       unitPrice: quoteValues['Unit Price($) - GST Excl.'],
       quantity: quoteValues.Quantity,
       jobDescription: quoteValues['Job Description'] ? quoteValues['Job Description'].toString().replace(/<[^>]*>/g, '') : '',
-      quoteChecklist,
+      quoteChecklist: lineItems,
     };
     const xeroQuote = {
       contact: { contactID: contact.contactID },
@@ -512,7 +513,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
           description: `${quoteValues['Job Title']} - ${quoteValues['Job Description'].toString().replace(/<[^>]*>/g, '')}`,
           quantity: quoteValues.Quantity,
           unitAmount: quoteValues['Unit Price($) - GST Excl.'],
-          taxType: quoteValues['GST'] == "10%"? "OUTPUT" : "EXEMPTOUTPUT",
+          taxType: quoteValues['GST'] == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
         }
       ]
     };
@@ -539,6 +540,208 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
   } catch (err) {
     const result = await handleError(err, workspaceId, boardId, item, req, 'quote');
     res.status(result.status).json(result.body);
+  }
+});
+
+router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
+  const { workspaceId, boardId } = req.params;
+  const payload = req.body;
+  if (!payload.items || payload.items.length === 0) {
+    warn('Xero-Service', 'Received payload with empty items.', { payload }, req);
+    return res.json('No items found in the payload.');
+  }
+
+  const item = payload.items[0];
+
+  try {
+    await configure();
+    await ensureAuthenticated(workspaceId);
+    const NDISQuoteValues = item.values;
+
+    await validateItemBelongsToTenant(workspaceId, boardId, item.id);
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
+
+    const [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = await getQuoteNDISReferencedItems(workspaceId, boardId, item.id);
+    if (!serviceAreaValues) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, "ERROR: Service Area value is required.");
+      throw new Error("Service Area value is required.");
+    }
+
+    let contact = await getContactByEmail(NDISQuoteValues['Recipient Email']);
+    if (!contact) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
+      contact = await createOrUpdateContact({
+        name: NDISQuoteValues['Recipient of the Quote'],
+        phones: [{ phoneType: 'DEFAULT', phoneNumber: NDISQuoteValues['Recipient Phone Number'] }],
+        addresses: [
+          {
+            addressType: 'POBOX',
+            addressLine1: NDISQuoteValues['Recipient Address'],
+            city: NDISQuoteValues['Suburb'],
+            region: NDISQuoteValues['State'],
+            postalCode: NDISQuoteValues['Postcode'].toString()
+          },
+          {
+            addressType: 'STREET',
+            addressLine1: NDISQuoteValues['Recipient Address'],
+            city: NDISQuoteValues['Suburb'],
+            region: NDISQuoteValues['State'],
+            postalCode: NDISQuoteValues['Postcode'].toString()
+          }
+        ],
+        emailAddress: NDISQuoteValues['Recipient Email']
+      });
+    } else {
+      const xeroUpdatedDate = new Date(contact.updatedDateUTC);
+      const isoplusUpdatedDate = new Date(NDISQuoteValues.updatedAt);
+
+      if (xeroUpdatedDate < isoplusUpdatedDate) {
+        contact = await createOrUpdateContact({
+          contactID: contact.contactID,
+          name: NDISQuoteValues['Recipient of the Quote'],
+          phones: [{ phoneType: 'DEFAULT', phoneNumber: NDISQuoteValues['Recipient Phone Number'] }],
+          addresses: [
+            {
+              addressType: 'POBOX',
+              addressLine1: NDISQuoteValues['Recipient Address'],
+              city: NDISQuoteValues['Suburb'],
+              region: NDISQuoteValues['State'],
+              postalCode: NDISQuoteValues['Postcode'].toString()
+            },
+            {
+              addressType: 'STREET',
+              addressLine1: NDISQuoteValues['Recipient Address'],
+              city: NDISQuoteValues['Suburb'],
+              region: NDISQuoteValues['State'],
+              postalCode: NDISQuoteValues['Postcode'].toString()
+            }
+          ],
+          emailAddress: NDISQuoteValues['Recipient Email']
+        });
+      }
+    }
+
+    let lineItems = [];
+    const gstType = "EXEMPTOUTPUT"; // GST Free for NDIS
+
+    // 1. Direct Support
+    if (directSupportValues && NDISQuoteValues['Quantity (Direct Support)'] && NDISQuoteValues['Unit Price for Direct Support($)']) {
+      lineItems.push({
+        description: `${NDISQuoteValues['Direct Support Item Number'] || ''}${directSupportValues.itemName ? '-[' + directSupportValues.itemName + ']' : ''}`,
+        quantity: Number(NDISQuoteValues['Quantity (Direct Support)']) || 0,
+        unitAmount: Number(NDISQuoteValues['Unit Price for Direct Support($)']) || 0,
+        taxType: gstType,
+      });
+    }
+    // 2. Provider Travel - Non-Labour Cost
+    if (providerTravelValues && NDISQuoteValues['Quantity (Provider Travel)'] && NDISQuoteValues['Unit Price for Provider Travel($)']) {
+      lineItems.push({
+        description: `${NDISQuoteValues['Provider Travel - Non-Labour Cost Item Number'] || ''}${providerTravelValues.itemName ? '-[' + providerTravelValues.itemName + ']' : ''}`,
+        quantity: Number(NDISQuoteValues['Quantity (Provider Travel)']) || 0,
+        unitAmount: Number(NDISQuoteValues['Unit Price for Provider Travel($)']) || 0,
+        taxType: gstType,
+      });
+    }
+    // 3. Activity Based Transport
+    if (activityBasedTransportValues && NDISQuoteValues['Quantity (Activity Based Transport)'] && NDISQuoteValues['Unit Price for Activity Based Transport($)']) {
+      lineItems.push({
+        description: `${NDISQuoteValues['Activity Based Transport Item Number'] || ''}${activityBasedTransportValues.itemName ? '-[' + activityBasedTransportValues.itemName + ']' : ''}`,
+        quantity: Number(NDISQuoteValues['Quantity (Activity Based Transport)']) || 0,
+        unitAmount: Number(NDISQuoteValues['Unit Price for Activity Based Transport($)']) || 0,
+        taxType: gstType,
+      });
+    }
+    // 4. Centre Capital Costs
+    if (centreCapitalCostsValues && NDISQuoteValues['Quantity (Centre Capital Costs)'] && NDISQuoteValues['Unit Price for Centre Capital Costs($)']) {
+      lineItems.push({
+        description: `${NDISQuoteValues['Centre Capital Costs Item'] || ''}${centreCapitalCostsValues.itemName ? '-[' + centreCapitalCostsValues.itemName + ']' : ''}`,
+        quantity: Number(NDISQuoteValues['Quantity (Centre Capital Costs)']) || 0,
+        unitAmount: Number(NDISQuoteValues['Unit Price for Centre Capital Costs($)']) || 0,
+        taxType: gstType,
+      });
+    }
+    // 5. Provider Travel - Labour Travel Time Costs
+    if (NDISQuoteValues['Provider Travel - Labour Travel Time Costs'] && NDISQuoteValues['Quantity (Labour Travel Time)']) {
+      lineItems.push({
+        description: 'Provider Travel - Labour Travel Time Costs',
+        quantity: Number(NDISQuoteValues['Quantity (Labour Travel Time)']) || 0,
+        unitAmount: Number(NDISQuoteValues['Unit Price for Labour Travel Time($)']) || 1,
+        taxType: gstType,
+      });
+    }
+    // 6. Non-Face-to-Face Support
+    if (NDISQuoteValues['Non-Face-to-Face Supports'] && NDISQuoteValues['Quantity (Non-Face-to-Face Support)']) {
+      lineItems.push({
+        description: `Non-Face-t-Face Support - ${NDISQuoteValues['Non-Face-to-Face Supports'] || ''}`,
+        quantity: Number(NDISQuoteValues['Quantity (Non-Face-to-Face Support)']) || 0,
+        unitAmount: Number(NDISQuoteValues['Unit Price for Non-Face-to-Face Support($)']) || 1,
+        taxType: gstType,
+      });
+    }
+    // 7. Allowances
+    if (NDISQuoteValues['Allowances'] && NDISQuoteValues['Allowances Amount($)']) {
+      lineItems.push({
+        description: `Allowances - ${NDISQuoteValues['Allowances'] || ' '}`,
+        quantity: 1,
+        unitAmount: Number(NDISQuoteValues['Allowances Amount($)']) || 0,
+        taxType: gstType,
+      });
+    }
+
+    // Fallbacks for required fields
+    const firstLine = lineItems[0] || {};
+    // Use current date in ISO format if missing
+    const nowISO = new Date().toISOString();
+    const mappedQuote = {
+      issueDate: NDISQuoteValues['Issue Date'] || nowISO,
+      expiryDate: NDISQuoteValues['Expiry Date'] || nowISO,
+      jobTitle: NDISQuoteValues['Job Title'] || firstLine.description || '',
+      unitPrice: NDISQuoteValues['Unit Price($) - GST Excl.'] || firstLine.unitAmount || 0,
+      quantity: NDISQuoteValues.Quantity || firstLine.quantity || 0,
+      jobDescription: NDISQuoteValues['Job Description'] ? NDISQuoteValues['Job Description'].toString().replace(/<[^>]*>/g, '') : (firstLine.description || ''),
+      quoteChecklist: lineItems.map(li => li.description || ''),
+    };
+
+    const xeroQuote = {
+      contact: { contactID: contact.contactID },
+      date: NDISQuoteValues['Issue Date'] || nowISO,
+      expiryDate: NDISQuoteValues['Expiry Date'] || nowISO,
+      title: NDISQuoteValues['Job Title'] || firstLine.description || '',
+      summary: NDISQuoteValues['Job Description'] ? NDISQuoteValues['Job Description'].toString().replace(/<[^>]*>/g, '') : (firstLine.description || ''),
+      lineItems,
+    };
+
+    const { error: validationError } = Item.validate('Quote', mappedQuote);
+    if (validationError) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Quote validation failed: ${JSON.stringify(validationError.details)}`);
+      return res.status(400).json({ message: 'Quote validation failed', details: validationError.details });
+    }
+
+    const createdQuote = await createQuote(xeroQuote);
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Your quote has been created successfully in Xero.");
+
+    logAuditTrail({
+      workspaceId,
+      action: "Create Xero Quote",
+      detail: `Quote created successfully, quote number: ${createdQuote.quoteNumber}`,
+      req
+    });
+
+    await setGeneratedField(workspaceId, boardId, item.id, `${createdQuote.quoteNumber} (Xero)`);
+
+    res.json(createdQuote);
+  } catch (err) {
+    error('Xero-Service', 'Error creating quote', err);
+    if (item) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred whilst creating the quote. Please contact ISO+™ support. Further information: " + err.message);
+    }
+    logAuditTrail({
+      workspaceId,
+      action: "Create Xero Quote",
+      detail: `Error creating quote: ${err.message}`,
+      req
+    });
+    res.status(200).json({ message: 'Error creating quote', error: err.message });
   }
 });
 
