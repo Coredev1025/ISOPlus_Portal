@@ -2,7 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import { info, warn, error } from '../utils/logger.js';
 import { Item } from '../dto/itemsPayload.js';
-import { getQuoteNDISReferencedItems, getItemValues } from '../services/isoplus.js';
+import { getQuoteNDISReferencedItems, getItemValues, getParticipantsServicePlanReferencedItems } from '../services/isoplus.js';
 import axios from 'axios';
 
 dotenv.config();
@@ -64,10 +64,10 @@ const updateUnitAndUnitPrice = async (workspaceId, boardId, itemId, mappingValue
     }
 };
 
-async function handleUpdate(workspaceId, boardId, itemId, mappingValues, type, label) {
+async function handleUpdate(workspaceId, boardId, itemId, mappingValues, type, label, webhookType = 'set-unit-and-unitprice') {
     const { error: validationError } = Item.validate('NDISPricing', mappingValues);
     if (validationError) {
-        error('Xero-Service', `Validation error in set-unit-and-unitprice for ${type}`, { details: validationError.details, mappingValues }, { workspaceId, boardId, itemId, mappingValues, type });
+        error('Xero-Service', `Validation error in ${webhookType} for ${type}`, { details: validationError.details, mappingValues }, { workspaceId, boardId, itemId, mappingValues, type });
         return { message: validationError.details, error: 'Validation error' };
     }
     info('Xero-Service', `${label} item updating is processing...`, { mappingValues }, { workspaceId, boardId, itemId, mappingValues, type });
@@ -128,7 +128,7 @@ router.post('/:workspaceId/:boardId/set-unit-and-unitprice', async (req, res) =>
                 };
                 await handleUpdate(workspaceId, boardId, items.id, providerTravelMappingValues, 'provider_travel_non_labour_cost', 'Provider Travel Non Labour Cost');
             }
-            if(centreCapitalCostsValues) {
+            if (centreCapitalCostsValues) {
                 const centreMappingValues = {
                     itemId: safeGet(itemsValues, 'Centre Capital Costs Item'),
                     serviceArea: serviceAreaValues.serviceAreaType,
@@ -202,6 +202,78 @@ router.post('/:workspaceId/:boardId/set-unit-and-unitprice', async (req, res) =>
         default:
             warn('Xero-Service', 'Invalid type in set-unit-and-unitprice', { type }, req);
             return res.status(200).json({ error: 'Invalid type', message: 'Invalid type in set-unit-and-unitprice' });
+    }
+});
+
+router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res) => {
+    const { workspaceId, boardId } = req.params;
+    const { type } = req.query;
+    const payload = req.body;
+    const items = payload.items[0];
+    const itemsValues = items.values;
+
+    info('Xero-Service', `Incoming request to Participants Service Plan`, { workspaceId, boardId, type, body: itemsValues }, req);
+    const [serviceAreaValues, directSupportValues, centreCapitalCostsValues] = await getParticipantsServicePlanReferencedItems(workspaceId, boardId, items.id);
+    const safeGet = (obj, key) => Array.isArray(obj[key]) && obj[key].length > 0 ? obj[key][0] : undefined;
+ 
+    switch (type) {
+        case 'service_area': {
+            if (directSupportValues) {
+                const directSupportMappingValues = {
+                    itemId: safeGet(itemsValues, 'Direct Support Item Number'),
+                    serviceArea: serviceAreaValues.serviceAreaType,
+                    unit: directSupportValues.unit,
+                    unitAttr: 'Unit (Direct Support)',
+                    unitPrice: directSupportValues[serviceAreaValues.serviceAreaType],
+                    unitPriceAttr: 'Agreed Unit Price for Direct Support ($)'
+                };
+                await handleUpdate(workspaceId, boardId, items.id, directSupportMappingValues, 'direct_support', 'Direct Support', 'ParticipantsServicePlan');
+            } else if (centreCapitalCostsValues) {
+                const centreMappingValues = {
+                    itemId: safeGet(itemsValues, 'Centre Capital Costs Item'),
+                    serviceArea: serviceAreaValues.serviceAreaType,
+                    unit: centreCapitalCostsValues.unit,
+                    unitAttr: 'Unit (Centre Capital Costs)',
+                    unitPrice: centreCapitalCostsValues[serviceAreaValues.serviceAreaType],
+                    unitPriceAttr: 'Agreed Unit Price for Centre Capital Costs($)'
+                };
+                await handleUpdate(workspaceId, boardId, items.id, centreMappingValues, 'centre_capital_cost', 'Centre Capital Costs', 'Participants-Service-Plan')
+            }
+
+            info('Xero-Service', 'Service area processed successfully', itemsValues, req);
+            return res.status(200).json({ message: 'Service area processed' });
+        }
+        case 'direct_support': {
+            if (!directSupportValues)
+                return res.status(200).json({ error: 'Direct Support Item not found' });
+            const mappingValues = {
+                itemId: safeGet(itemsValues, 'Direct Support Item Number'),
+                serviceArea: serviceAreaValues.serviceAreaType,
+                unit: directSupportValues.unit,
+                unitAttr: 'Unit (Direct Support)',
+                unitPrice: directSupportValues[serviceAreaValues.serviceAreaType],
+                unitPriceAttr: 'Agreed Unit Price for Direct Support ($)'
+            };
+            const result = await handleUpdate(workspaceId, boardId, items.id, mappingValues, 'direct_support', 'Direct Support', 'ParticipantsServicePlan');
+            return res.status(200).json(result);
+        }
+        case 'centre_capital_cost': {
+            if (!centreCapitalCostsValues)
+                return res.status(200).json({ error: 'Centre Capital Cost Item not found' });
+            const mappingValues = {
+                itemId: safeGet(itemsValues, 'Centre Capital Costs Item'),
+                serviceArea: serviceAreaValues.serviceAreaType,
+                unit: centreCapitalCostsValues.unit,
+                unitAttr: 'Unit (Centre Capital Costs)',
+                unitPrice: centreCapitalCostsValues[serviceAreaValues.serviceAreaType],
+                unitPriceAttr: 'Agreed Unit Price for Centre Capital Costs($)'
+            };
+            const result = await handleUpdate(workspaceId, boardId, items.id, mappingValues, 'centre_capital_cost', 'Centre Capital Costs', 'Participants-Service-Plan');
+            return res.status(200).json(result);
+        }
+        default:
+            warn('Xero-Service', 'Invalid type in set-unit', { type }, req);
+            return res.status(200).json({ error: 'Invalid type', message: 'Invalid type in set-unit' });
     }
 });
 
