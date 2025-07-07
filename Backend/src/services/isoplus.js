@@ -944,7 +944,8 @@ export async function getQuoteNDISReferencedItems(workspaceId, boardId, itemId) 
         'Non-Remote (VIC)': 'VIC($)',
         'Non-Remote (WA)': 'WA($)',
         'Remote': 'Remote($)',
-        'Very Remote': 'Very Remote($)'
+        'Very Remote': 'Very Remote($)',
+        '': 'ACT($)'
     }
     let serviceAreaValues = null, directSupportValues = null, providerTravelValues = null, activityBasedTransportValues = null, centreCapitalCostsValues = null;
 
@@ -1099,7 +1100,8 @@ export async function getParticipantsServicePlanReferencedItems(workspaceId, boa
         'Non-Remote (VIC)': 'VIC($)',
         'Non-Remote (WA)': 'WA($)',
         'Remote': 'Remote($)',
-        'Very Remote': 'Very Remote($)'
+        'Very Remote': 'Very Remote($)',
+        '': 'ACT($)'
     }
     let serviceAreaValues = null, directSupportValues = null, centreCapitalCostsValues = null;
 

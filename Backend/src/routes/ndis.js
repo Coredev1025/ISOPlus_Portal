@@ -95,6 +95,8 @@ router.post('/:workspaceId/:boardId/set-unit-and-unitprice', async (req, res) =>
 
     switch (type) {
         case 'service_area': {
+            if (!serviceAreaValues)
+                return res.status(200).json({ error: 'Service Area Item not found' });
             if (directSupportValues) {
                 const directSupportMappingValues = {
                     itemId: safeGet(itemsValues, 'Direct Support Item Number'),
@@ -215,9 +217,10 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
     info('Xero-Service', `Incoming request to Participants Service Plan`, { workspaceId, boardId, type, body: itemsValues }, req);
     const [serviceAreaValues, directSupportValues, centreCapitalCostsValues] = await getParticipantsServicePlanReferencedItems(workspaceId, boardId, items.id);
     const safeGet = (obj, key) => Array.isArray(obj[key]) && obj[key].length > 0 ? obj[key][0] : undefined;
- 
     switch (type) {
         case 'service_area': {
+            if (!serviceAreaValues)
+                return res.status(200).json({ error: 'Service Area Item not found' });
             if (directSupportValues) {
                 const directSupportMappingValues = {
                     itemId: safeGet(itemsValues, 'Direct Support Item Number'),
@@ -227,7 +230,7 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
                     unitPrice: directSupportValues[serviceAreaValues.serviceAreaType],
                     unitPriceAttr: 'Agreed Unit Price for Direct Support ($)'
                 };
-                await handleUpdate(workspaceId, boardId, items.id, directSupportMappingValues, 'direct_support', 'Direct Support', 'ParticipantsServicePlan');
+                await handleUpdate(workspaceId, boardId, items.id, directSupportMappingValues, 'direct_support', 'Direct Support', 'Participants-Service-Plan');
             } else if (centreCapitalCostsValues) {
                 const centreMappingValues = {
                     itemId: safeGet(itemsValues, 'Centre Capital Costs Item'),
@@ -237,7 +240,7 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
                     unitPrice: centreCapitalCostsValues[serviceAreaValues.serviceAreaType],
                     unitPriceAttr: 'Agreed Unit Price for Centre Capital Costs($)'
                 };
-                await handleUpdate(workspaceId, boardId, items.id, centreMappingValues, 'centre_capital_cost', 'Centre Capital Costs', 'Participants-Service-Plan')
+                await handleUpdate(workspaceId, boardId, items.id, centreMappingValues, 'centre_capital_cost', 'Centre Capital Costs', 'Participants-Service-Plan');
             }
 
             info('Xero-Service', 'Service area processed successfully', itemsValues, req);
@@ -254,7 +257,7 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
                 unitPrice: directSupportValues[serviceAreaValues.serviceAreaType],
                 unitPriceAttr: 'Agreed Unit Price for Direct Support ($)'
             };
-            const result = await handleUpdate(workspaceId, boardId, items.id, mappingValues, 'direct_support', 'Direct Support', 'ParticipantsServicePlan');
+            const result = await handleUpdate(workspaceId, boardId, items.id, mappingValues, 'direct_support', 'Direct Support', 'Participants-Service-Plan');
             return res.status(200).json(result);
         }
         case 'centre_capital_cost': {
