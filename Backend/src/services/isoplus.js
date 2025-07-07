@@ -1087,3 +1087,104 @@ export async function getQuoteNDISReferencedItems(workspaceId, boardId, itemId) 
 
     return [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues];
 }
+
+export async function getParticipantsServicePlanReferencedItems(workspaceId, boardId, itemId) {
+    const ServiceAreaMap = {
+        'Non-Remote (ACT)': 'ACT($)',
+        'Non-Remote (NSW)': 'NSW($)',
+        'Non-Remote (NT)': 'NT($)',
+        'Non-Remote (QLD)': 'QLD($)',
+        'Non-Remote (SA)': 'SA($)',
+        'Non-Remote (TAS)': 'TAS($)',
+        'Non-Remote (VIC)': 'VIC($)',
+        'Non-Remote (WA)': 'WA($)',
+        'Remote': 'Remote($)',
+        'Very Remote': 'Very Remote($)'
+    }
+    let serviceAreaValues = null, directSupportValues = null, centreCapitalCostsValues = null;
+
+    const referenceResponse = await getReferences(workspaceId, boardId, itemId);
+    if (!referenceResponse) return [null, null];
+
+    for (const reference of referenceResponse.data) {
+
+        const attribute = await getAttribute(workspaceId, boardId, reference.attribute_id);
+        if (!attribute) continue;
+
+        switch (attribute.name) {
+            case 'Service Area':
+                {
+                    const serviceValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (serviceValues) {
+                        const values = serviceValues.values;
+                        if (!values.some(v => v.attribute.name === "Service Area")) {
+                            throw new Error("Service Area is required");
+                        }
+                        const serviceAreaType = ServiceAreaMap[values.find(v => v.attribute.name === "Service Area").data.toString()];
+
+                        serviceAreaValues = {
+                            serviceArea: values.find(v => v.attribute.name === "Service Area").data.toString(),
+                            serviceAreaType: serviceAreaType
+                        };
+                    }
+                    break;
+                }
+            case 'Direct Support Item Number':
+                {
+                    const directSupportItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (directSupportItemValues) {
+                        const values = directSupportItemValues.values;
+                        if (!values.some(v => v.attribute.name === "Support Item Number")) {
+                            throw new Error("Support Item Number is required");
+                        }
+
+                        directSupportValues = {
+                            id: directSupportItemValues.id,
+                            itemName: values.find(v => v.attribute.name === "Support Item Name").data.toString(),
+                            unit: values.find(v => v.attribute.name === "Unit").data.toString(),
+                            "ACT($)": values.find(v => v.attribute.name === "ACT($)").data.toString(),
+                            "NSW($)": values.find(v => v.attribute.name === "NSW($)").data.toString(),
+                            "NT($)": values.find(v => v.attribute.name === "NT($)").data.toString(),
+                            "QLD($)": values.find(v => v.attribute.name === "QLD($)").data.toString(),
+                            "SA($)": values.find(v => v.attribute.name === "SA($)").data.toString(),
+                            "TAS($)": values.find(v => v.attribute.name === "TAS($)").data.toString(),
+                            "VIC($)": values.find(v => v.attribute.name === "VIC($)").data.toString(),
+                            "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
+                            "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
+                            "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
+                        };
+                    }
+                    break;
+                }
+            case 'Centre Capital Costs Item':
+                {
+                    const centreItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (centreItemValues) {
+                        const values = centreItemValues.values;
+                        if (!values.some(v => v.attribute.name === "Support Item Number")) {
+                            throw new Error("Support Item Number is required");
+                        }
+
+                        centreCapitalCostsValues = {
+                            id: centreItemValues.id,
+                            itemName: values.find(v => v.attribute.name === "Support Item Name").data.toString(),
+                            unit: values.find(v => v.attribute.name === "Unit").data.toString(),
+                            "ACT($)": values.find(v => v.attribute.name === "ACT($)").data.toString(),
+                            "NSW($)": values.find(v => v.attribute.name === "NSW($)").data.toString(),
+                            "NT($)": values.find(v => v.attribute.name === "NT($)").data.toString(),
+                            "QLD($)": values.find(v => v.attribute.name === "QLD($)").data.toString(),
+                            "SA($)": values.find(v => v.attribute.name === "SA($)").data.toString(),
+                            "TAS($)": values.find(v => v.attribute.name === "TAS($)").data.toString(),
+                            "VIC($)": values.find(v => v.attribute.name === "VIC($)").data.toString(),
+                            "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
+                            "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
+                            "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
+                        };
+                    }
+                    break;
+                }
+        }
+    }
+
+    return [serviceAreaValues, directSupportValues, centreCapitalCostsValues];
+}
