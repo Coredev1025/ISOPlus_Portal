@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useAppContext } from "@/app/context";
 import axios from "@/app/utils/axiosConfig";
+import { showSaveSuccessToast, showSaveErrorToast, showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
 
 // Define the attribute type as a literal union type
 type AttributeType = "Text" | "Long Text";
@@ -128,9 +129,11 @@ export default function ConfigurationPage() {
           });
           console.log("Formatted Attributes:", formattedAttributes);
           setIsoAttributes([...formattedAttributes]);
+          showFetchSuccessToast("Board attributes");
         } catch (error: any) {
           if (error.name != "CanceledError" && error.name != "AbortError") {
             console.error("Error fetching attributes:", error);
+            showFetchErrorToast("board attributes", error.response?.data?.message || "Failed to load board attributes");
           }
         }
       }
@@ -159,9 +162,11 @@ export default function ConfigurationPage() {
           setBoard(boardData);
           setSelectedAttribute(boardResponse.data.board.attribute.id || '');
           setBoardLabel(boardResponse.data.board.label || 'No Label');
+          showFetchSuccessToast("Board configuration");
         } catch (error: any) {
           if (error.name != "CanceledError" && error.name != "AbortError") {
             console.error("Error fetching board:", error);
+            showFetchErrorToast("board configuration", error.response?.data?.message || "Failed to load board configuration");
           }
           setBoard({ id: boardId, name: '', label: 'No Label', attributeId: '' });
           setSelectedAttribute('');
@@ -211,13 +216,23 @@ export default function ConfigurationPage() {
   };
 
   const handleSaveConfiguration = async () => {
-    const attr = isoAttributes.find(item => item.id == selectedAttribute);
-    console.log(attr?.name)
-    await axios.put(
-      `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards`,
-      { ...board, label: boardLabel, attribute: { id: selectedAttribute, name: attr?.name }, boardId, workspaceId: id },
-      {}
-    );
+    try {
+      const attr = isoAttributes.find(item => item.id == selectedAttribute);
+      console.log(attr?.name);
+      
+      const response = await axios.put(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards`,
+        { ...board, label: boardLabel, attribute: { id: selectedAttribute, name: attr?.name }, boardId, workspaceId: id },
+        {}
+      );
+
+      if (response.status === 200) {
+        showSaveSuccessToast("Board configuration");
+      }
+    } catch (error: any) {
+      console.error("Error saving board configuration:", error);
+      showSaveErrorToast("board configuration", error.response?.data?.message || "Failed to save board configuration");
+    }
   };
 
   return (
@@ -264,7 +279,7 @@ export default function ConfigurationPage() {
                 </div>
                 <p className="text-sm text-muted-foreground">
                   Labels determine which integration features are available for this board.
-                  'Job Management' and 'Care Management' boards have access to specific automation features.
+                  &apos;Job Management&apos; and &apos;Care Management&apos; boards have access to specific automation features.
                 </p>
                 <div className="space-y-2">
                   <Select

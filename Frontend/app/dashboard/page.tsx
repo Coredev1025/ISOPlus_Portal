@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { useAppContext } from "../context";
 import { PaginationNext, PaginationPrevious, PaginationItem, PaginationLink } from "@/components/ui/pagination";
+import { showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
 
 interface Log {
   id: string;
@@ -124,6 +125,7 @@ function WorkspacesList() {
           );
 
           setWorkspaces(sortedWorkspace);
+          showFetchSuccessToast("Workspaces");
 
           if (response.data.workspace.length === 1) {
             router.push(`/workspace/${response.data.workspace[0].id}`);
@@ -131,6 +133,7 @@ function WorkspacesList() {
         } catch (error: any) {
           if (error.name !== "CanceledError" && error.name !== "AbortError") {
             console.error("Error fetching workspaces:", error);
+            showFetchErrorToast("workspaces", error.response?.data?.message || "Failed to load workspaces");
           }
         }
         setLoading(false);
@@ -306,7 +309,7 @@ function GlobalAuditTrail() {
               <TableCell className="max-w-xs truncate">
                 {item.details.changes ? (
                   <span className="text-muted-foreground">
-                    Changed from "{item.details.changes.before}" to "{item.details.changes.after}"
+                    Changed from &quot;{item.details.changes.before}&quot; to &quot;{item.details.changes.after}&quot;
                   </span>
                 ) : (
                   <span className="text-muted-foreground">
@@ -358,11 +361,13 @@ function GlobalApplicationLogs() {
           }
         }));
         setLogs(formattedLogs);
-      } catch (error: any) {
-        if (error.name !== "CanceledError" && error.name !== "AbortError") {
-          console.error("Error fetching logs:", error);
+        showFetchSuccessToast("Application logs");
+              } catch (error: any) {
+          if (error.name !== "CanceledError" && error.name !== "AbortError") {
+            console.error("Error fetching logs:", error);
+            showFetchErrorToast("application logs", error.response?.data?.message || "Failed to load application logs");
+          }
         }
-      }
       setLoading(false);
     };
 

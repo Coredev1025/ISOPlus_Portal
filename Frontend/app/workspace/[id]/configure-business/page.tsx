@@ -17,6 +17,7 @@ import { useEffect, useState } from "react";
 import { Header } from "@/components/ui/header";
 import axios from "@/app/utils/axiosConfig";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { showSaveSuccessToast, showSaveErrorToast, showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -356,10 +357,12 @@ export default function ConfigureBusinessPage() {
           } else {
             setWideLogoPreview(null);
           }
+          showFetchSuccessToast("Business profile");
         }
       } catch (error: any) {
         if (error.name != "CanceledError" && error.name != "AbortError") {
           console.error("Failed to fetch business profile:", error);
+          showFetchErrorToast("business profile", error.response?.data?.message || "Failed to load business profile");
         }
       }
     };
@@ -437,7 +440,7 @@ export default function ConfigureBusinessPage() {
         }
       );
 
-      if (response.data.status === 200) {
+      if (response.status === 200) {
         setShowError(false);
         setShowSuccess(true);
         setLogoFile(null);
@@ -446,11 +449,15 @@ export default function ConfigureBusinessPage() {
         setDefaultLogoRemoved(false);
         setSquareLogoRemoved(false);
         setWideLogoRemoved(false);
+        showSaveSuccessToast("Business profile");
         setTimeout(() => setShowSuccess(false), 2000);
       }
 
     } catch (error: any) {
       setShowSuccess(false);
+      const errorMessage = error.response?.data?.message || 'An unexpected error occurred';
+      showSaveErrorToast("business profile", errorMessage);
+      
       if (error.response?.data?.errors) {
         setErrors(error.response.data.errors);
       } else if (error.response?.data?.message) {
