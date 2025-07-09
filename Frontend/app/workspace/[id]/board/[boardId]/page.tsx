@@ -39,6 +39,7 @@ import axios from "@/app/utils/axiosConfig";
 interface Board {
   id: string;
   name: string;
+  label?: string;
 }
 
 export default function BoardDetail() {
@@ -267,7 +268,18 @@ export default function BoardDetail() {
                 <h1 className="text-3xl font-bold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/80">
                   {board.name}
                 </h1>
-                <p className="text-muted-foreground font-mono text-sm">ID: {board.id}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-muted-foreground font-mono text-sm">ID: {board.id}</p>
+                  {board.label && board.label !== 'No Label' && (
+                    <Badge variant="outline" className={
+                      board.label === 'Job Management' 
+                        ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300'
+                        : 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300'
+                    }>
+                      {board.label}
+                    </Badge>
+                  )}
+                </div>
               </div>
             </div>
           </Card>

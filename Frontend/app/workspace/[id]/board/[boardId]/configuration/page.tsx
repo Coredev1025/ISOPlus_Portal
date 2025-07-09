@@ -28,6 +28,7 @@ import {
 import { useAppContext } from "@/app/context";
 import axios from "@/app/utils/axiosConfig";
 import { showSaveSuccessToast, showSaveErrorToast, showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // Define the attribute type as a literal union type
 type AttributeType = "Text" | "Long Text";
@@ -107,6 +108,7 @@ export default function ConfigurationPage() {
     suggestion: 'No Label',
     reason: ''
   });
+  const [updateAutomation, setUpdateAutomation] = useState(false);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -212,6 +214,7 @@ export default function ConfigurationPage() {
 
   const handleSuggestionConfirm = () => {
     setBoardLabel(suggestionDialog.suggestion);
+    setUpdateAutomation(false); // Reset automation when label changes
     setSuggestionDialog(prev => ({ ...prev, isOpen: false }));
   };
 
@@ -219,7 +222,7 @@ export default function ConfigurationPage() {
     try {
       const attr = isoAttributes.find(item => item.id == selectedAttribute);
       console.log(attr?.name);
-      
+
       const response = await axios.put(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards`,
         { ...board, label: boardLabel, attribute: { id: selectedAttribute, name: attr?.name }, boardId, workspaceId: id },
@@ -228,6 +231,17 @@ export default function ConfigurationPage() {
 
       if (response.status === 200) {
         showSaveSuccessToast("Board configuration");
+      }
+      if (updateAutomation) {
+        const automationResponse = await axios.put(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/automation/${id}/${boardId}`,
+          {}
+        );
+        if (automationResponse.status === 200) {
+          showSaveSuccessToast("Automation enabled");
+        } else {
+          showSaveErrorToast("Automation enabled", automationResponse.data?.message || "Failed to enable automation");
+        }
       }
     } catch (error: any) {
       console.error("Error saving board configuration:", error);
@@ -284,7 +298,11 @@ export default function ConfigurationPage() {
                 <div className="space-y-2">
                   <Select
                     value={boardLabel || "No Label"}
-                    onValueChange={(value) => setBoardLabel(value as BoardLabel)}
+                    onValueChange={(value) => {
+                      const newLabel = value as BoardLabel;
+                      setBoardLabel(newLabel);
+                      setUpdateAutomation(false); // Reset automation when label changes
+                    }}
                   >
                     <SelectTrigger className="w-[200px]">
                       <SelectValue>
@@ -345,6 +363,37 @@ export default function ConfigurationPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+
+              <div className="border-t" />
+
+              {/* Automation Webhooks Configuration */}
+              <div className="space-y-4">
+                <h2 className="text-lg font-semibold">Portal Automation Configuration</h2>
+                <p className="text-sm text-muted-foreground">
+                  Enable or disable automation features for this board. These automations allow external systems to trigger actions based on board events.
+                  {boardLabel === 'No Label' && (
+                    <span className="block mt-1 text-orange-600">
+                      No automations available. Please select a board label to see available automations.
+                    </span>
+                  )}
+                </p>
+
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="automation-enabled"
+                      checked={updateAutomation}
+                      onCheckedChange={(checked) => setUpdateAutomation(!!checked)}
+                    />
+                    <label
+                      htmlFor="automation-enabled"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                    >
+                      Update Portal Automations
+                    </label>
+                  </div>
                 </div>
               </div>
 
