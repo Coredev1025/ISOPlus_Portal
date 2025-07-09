@@ -88,13 +88,12 @@ router.put('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
     try {
         for (const automationItem of automation) {
             let updatedAutomation = { ...automationItem };
-            let needsUpdate = false;
+            let needsUpdate = automationItem.name.startsWith("Portal - ");
             
             // Check if automation has workflow and update URLs containing "portal-"
             if (updatedAutomation.workflow && Array.isArray(updatedAutomation.workflow)) {
                 updatedAutomation.workflow = updatedAutomation.workflow.map(workflow => {
-                    if (workflow.config && workflow.config.url && workflow.config.url.includes('portal-')) {
-                        needsUpdate = true;
+                    if (workflow.config && workflow.config.url && needsUpdate) {
                         // Update the portal URL to use current workspace and board IDs
                         let updatedUrl = workflow.config.url;
                         
