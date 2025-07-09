@@ -13,6 +13,7 @@ import axios from "@/app/utils/axiosConfig";
 import { isTokenValid } from "./utils/cookies";
 import { useAppContext } from "@/app/context/index";
 import Spinner from "@/components/ui/spin";
+import { showSuccessToast, showErrorToast } from "@/lib/toast-utils";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -78,13 +79,16 @@ export default function LoginPage() {
 
       if (response.status === 200) {
         setUser(response.data.user);
+        showSuccessToast("Login successful");
         router.push('/dashboard');
       } else {
         setError("Credential is not correct!");
+        showErrorToast("Login failed", { description: "Invalid credentials" });
       }
     } catch (err: any) {
       if (err.name !== "CanceledError" && err.name !== "AbortError") {
         console.error("Token verification failed:", err);
+        showErrorToast("Login failed", { description: err.response?.data?.message || "An error occurred during login" });
       }
     } finally {
       setIsLoading(false);
@@ -108,11 +112,13 @@ export default function LoginPage() {
 
           if (response.status === 200) {
             setUser(response.data.user);
+            showSuccessToast("Login successful");
             router.push('/dashboard');
           }
         } catch (err: any) {
           if (err.name !== "CanceledError" && err.name !== "AbortError") {
             console.error("Token verification failed:", err);
+            showErrorToast("OAuth login failed", { description: err.response?.data?.message || "An error occurred during OAuth login" });
           }
         } finally {
           window.removeEventListener('message', handleMessage);
@@ -121,6 +127,7 @@ export default function LoginPage() {
         }
       } else if (event.data.type === 'AUTH_ERROR') {
         console.error("Token verification failed:", event.data.error);
+        showErrorToast("OAuth login failed", { description: event.data.error || "Authentication error occurred" });
         window.removeEventListener('message', handleMessage);
         if (popup) popup.close();
         setIsLoading(false);
@@ -151,6 +158,7 @@ export default function LoginPage() {
     } catch (err: any) {
       if (err.name !== "CanceledError" && err.name !== "AbortError") {
         console.error("Token verification failed:", err);
+        showErrorToast("OAuth redirect failed", { description: err.response?.data?.message || "Failed to initiate OAuth login" });
       }
       setIsLoading(false);
     }

@@ -17,6 +17,7 @@ import { Header } from "@/components/ui/header";
 import { useAppContext } from "@/app/context";
 import axios from "@/app/utils/axiosConfig";
 import Spinner from "@/components/ui/spin";
+import { showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
 import { Badge } from "@/components/ui/badge";
 import {
   Tooltip,
@@ -83,10 +84,12 @@ export default function WorkspaceDetail() {
 
           if (!abortController.signal.aborted) {
             setBoards(data);
+            showFetchSuccessToast("Boards");
           }
         } catch (error: any) {
           if (error.name != "CanceledError" && error.name != "AbortError") {
             console.error("Error fetching boards:", error);
+            showFetchErrorToast("boards", error.response?.data?.message || "Failed to load boards");
           }
         } finally {
           if (!abortController.signal.aborted) {
@@ -245,7 +248,7 @@ export default function WorkspaceDetail() {
                             <Info className="h-4 w-4 text-muted-foreground cursor-help" />
                           </TooltipTrigger>
                           <TooltipContent className="max-w-xs">
-                            Label your boards as 'Job Management' or 'Care Management' to enable integration features.
+                            Label your boards as &apos;Job Management&apos; or &apos;Care Management&apos; to enable integration features.
                             Unlabeled boards will operate normally.
                           </TooltipContent>
                         </Tooltip>

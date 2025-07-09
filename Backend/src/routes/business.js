@@ -221,7 +221,7 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
       AuditTrail.insertOne({ workspaceId, action: 'Created new Business profile', detail: `Resourse ID: ${business._id}`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
     }
 
-    res.json(business);
+    res.status(200).json(business);
   } catch (err) {
     error('Business-Service', 'Server error', { message: err.message }, req);
     res.status(500).json({ message: 'Server error' });
