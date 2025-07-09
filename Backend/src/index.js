@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import authRoutes from './routes/auth.js';
+import automationRoutes from './routes/automation.js';
 import businessRoutes from './routes/business.js';
 import workspaceRoutes from './routes/workspace.js';
 import boardRoutes from './routes/board.js';
@@ -50,6 +51,7 @@ app.use(session({
 
 app.use('/api/healthcheck', HealthCheckRouters);
 app.use('/api/auth', authRoutes);
+app.use('/api/automation', automationRoutes);
 app.use('/api/business', businessRoutes);
 app.use('/api/workspaces', workspaceRoutes);
 app.use('/api/boards', boardRoutes);
