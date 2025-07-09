@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useAppContext } from "@/app/context";
 import axios from "@/app/utils/axiosConfig";
-import { showSaveSuccessToast, showSaveErrorToast, showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
+import { showSaveSuccessToast, showSaveErrorToast, showFetchSuccessToast, showFetchErrorToast, showUpdateSuccessToast, showUpdateErrorToast } from "@/lib/toast-utils";
 import { Checkbox } from "@/components/ui/checkbox";
 
 // Define the attribute type as a literal union type
@@ -238,9 +238,9 @@ export default function ConfigurationPage() {
           {}
         );
         if (automationResponse.status === 200) {
-          showSaveSuccessToast("Automation enabled");
+          showUpdateSuccessToast("Portal automation");
         } else {
-          showSaveErrorToast("Automation enabled", automationResponse.data?.message || "Failed to enable automation");
+          showUpdateErrorToast("Portal automation", automationResponse.data?.message || "Failed to update portal automation");
         }
       }
     } catch (error: any) {

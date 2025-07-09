@@ -99,6 +99,22 @@ export const showSaveErrorToast = (resource: string, error?: string) => {
 };
 
 /**
+ * Show a toast for successful data update
+ */
+export const showUpdateSuccessToast = (resource: string) => {
+  showSuccessToast(`${resource} updated successfully`);
+};
+
+/**
+ * Show a toast for failed data update
+ */
+export const showUpdateErrorToast = (resource: string, error?: string) => {
+  showErrorToast(`Failed to update ${resource}`, {
+    description: error || 'Please check your input and try again',
+  });
+};
+
+/**
  * Show a toast for successful data deletion
  */
 export const showDeleteSuccessToast = (resource: string) => {
