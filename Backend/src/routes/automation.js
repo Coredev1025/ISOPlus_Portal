@@ -21,22 +21,27 @@ const getAutomation = async (workspaceId, boardId, authorization) => {
 
 const updateAutomation = async (workspaceId, boardId, automationId, automation, authorization) => {
     try {
+        console.log("updateAutomation", automation);
         let existingAutomation = await getAutomation(workspaceId, boardId, authorization);
         if (!existingAutomation) {
             return null;
         }
         let existingAutomationIndex = existingAutomation.findIndex(automation => automation.id === automationId);
         if (existingAutomationIndex < 0) {
-            res.status(404).json({ error: 'Automation not found' });
-            return;
+            return null;
         }
 
-        const response = await axios.put(`https://app.isoplus.online/api/${workspaceId}/automations/${automationId}`, automation, {
+        const response = await axios.put(`https://app.isoplus.online/api/${workspaceId}/automations/${automationId}`, {
+            name: automation.name,
+            workflow: automation.workflow,
+            active: automation.active,
+            board_id: automation.board_id
+        }, {
             headers: {
                 'Authorization': `${authorization}`
             }
         });
-        console.log(response.data);
+        console.log("updateAutomation response", response.data);
         return response.data;
     } catch (error) {
         return null;
@@ -69,7 +74,6 @@ router.post('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
                 'Authorization': `Bearer ${req.session.Authorization}`
             }
         });
-        console.log(response.data);
         res.json(response.data);
     } catch (error) {
         res.status(500).json({ error: 'Failed to update data' });
@@ -89,25 +93,24 @@ router.put('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
         for (const automationItem of automation) {
             let updatedAutomation = { ...automationItem };
             let needsUpdate = automationItem.name.startsWith("Portal - ");
+
+            if (needsUpdate) {
+                console.log("needsUpdate", automationItem.name);
+            }
             
-            // Check if automation has workflow and update URLs containing "portal-"
-            if (updatedAutomation.workflow && Array.isArray(updatedAutomation.workflow)) {
+            if (needsUpdate && updatedAutomation.workflow && Array.isArray(updatedAutomation.workflow)) {
                 updatedAutomation.workflow = updatedAutomation.workflow.map(workflow => {
-                    if (workflow.config && workflow.config.url && needsUpdate) {
-                        // Update the portal URL to use current workspace and board IDs
+                    if (workflow.config && workflow.config.url) {
                         let updatedUrl = workflow.config.url;
                         
-                        // Extract and replace the workspace ID and board ID in the URL
-                        // Pattern: /api/something/workspaceId/boardId/rest-of-path
                         const urlPattern = /\/api\/([^\/]+)\/([^\/]+)\/([^\/\?]+)/;
                         const match = updatedUrl.match(urlPattern);
                         
                         if (match) {
-                            const apiPath = match[1]; // e.g., "care-management-ndis-pricing"
-                            const currentWorkspaceId = match[2]; // current workspace ID in URL
-                            const currentBoardId = match[3]; // current board ID in URL
+                            const apiPath = match[1];
+                            const currentWorkspaceId = match[2];
+                            const currentBoardId = match[3];
                             
-                            // Replace the workspace and board IDs with current ones
                             updatedUrl = updatedUrl.replace(
                                 new RegExp(`/api/${apiPath}/${currentWorkspaceId}/${currentBoardId}`),
                                 `/api/${apiPath}/${workspaceId}/${boardId}`
@@ -126,28 +129,21 @@ router.put('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
                 });
             }
             
-            // Update the automation with incremented row_version
-            updatedAutomation.row_version = (updatedAutomation.row_version || 0) + 1;
-            
-            // Only update if there are changes (portal URL updates or status change)
-            console.log("updatedAutomation", updatedAutomation);
             if (needsUpdate) {
                 const result = await updateAutomation(workspaceId, boardId, automationItem.id, updatedAutomation, req.session.Authorization);
                 if (result) {
+                    info('Automation-Service', 'Automation updated', { workspaceId, boardId, automationId: updatedAutomation.id }, req);
                     updatedAutomations.push(result);
                 } else {
-                    updatedAutomations.push(updatedAutomation);
+                    error('Automation-Service', 'Failed to update Automation', { workspaceId, boardId, automationId: updatedAutomation.id }, req);
                 }
-            } else {
-                updatedAutomations.push(updatedAutomation);
-            }
+            } 
         }
+        res.status(200).json(updatedAutomations);
     } catch (err) {
         error('Automation-Service', 'Failed to update Automations', { error: err }, req);
         res.status(500).json({ error: 'Failed to update Automations' });
     }
-    info('Automation-Service', 'Automations updated', { updatedAutomations: updatedAutomations }, req);
-    res.json(updatedAutomations);
 });
 
 export default router;

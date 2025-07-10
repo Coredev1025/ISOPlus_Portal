@@ -232,7 +232,7 @@ export default function ConfigurationPage() {
     try {
       const attr = isoAttributes.find(item => item.id == selectedAttribute);
       const pdfAttr = isoAttributes.find(item => item.id == selectedPdfAttribute);
-      console.log(attr?.name);
+      console.log(attr?.name, pdfAttr?.name);
 
       const response = await axios.put(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards`,
@@ -243,20 +243,20 @@ export default function ConfigurationPage() {
       if (response.status === 200) {
         showSaveSuccessToast("Board configuration");
       }
-      if (updateAutomation) {
-        const automationResponse = await axios.put(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/automation/${id}/${boardId}`,
-          {}
-        );
-        if (automationResponse.status === 200) {
-          showUpdateSuccessToast("Portal automation");
-        } else {
-          showUpdateErrorToast("Portal automation", automationResponse.data?.message || "Failed to update portal automation");
-        }
-      }
     } catch (error: any) {
       console.error("Error saving board configuration:", error);
       showSaveErrorToast("board configuration", error.response?.data?.message || "Failed to save board configuration");
+    }
+    if (updateAutomation) {
+      const automationResponse = await axios.put(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/automation/${id}/${boardId}`,
+        {}
+      );
+      if (automationResponse.status === 200) {
+        showUpdateSuccessToast("Portal automation");
+      } else {
+        showUpdateErrorToast("Portal automation", automationResponse.data?.message || "Failed to update portal automation");
+      }
     }
   };
 
@@ -412,15 +412,7 @@ export default function ConfigurationPage() {
 
               {/* Automation Webhooks Configuration */}
               <div className="space-y-4">
-                <h2 className="text-lg font-semibold">Portal Automation Configuration</h2>
-                <p className="text-sm text-muted-foreground">
-                  Enable or disable automation features for this board. These automations allow external systems to trigger actions based on board events.
-                  {boardLabel === 'No Label' && (
-                    <span className="block mt-1 text-orange-600">
-                      No automations available. Please select a board label to see available automations.
-                    </span>
-                  )}
-                </p>
+                <h2 className="text-lg font-semibold">Portal Automation</h2>
 
                 <div className="space-y-4">
                   <div className="flex items-center space-x-2">
@@ -433,7 +425,7 @@ export default function ConfigurationPage() {
                       htmlFor="automation-enabled"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                     >
-                      Update Portal Automations
+                      Update Portal Automation
                     </label>
                   </div>
                 </div>
