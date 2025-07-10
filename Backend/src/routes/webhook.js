@@ -16,6 +16,7 @@ import {
     getQuoteReferencedItems,
     getPurchaseOrderReferencedItems,
     setGeneratedField,
+    setPDFLinkAttribute,
     getQuoteNDISReferencedItems
 } from '../services/isoplus.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
@@ -82,6 +83,7 @@ function validateRequestParams(req) {
 
 async function handlePDFSuccess(workspaceId, boardId, itemId, fileUrl, docType, req, res) {
     await setIntegrationMessage(workspaceId, boardId, itemId, `Your ${docType.toLowerCase()} has been successfully created.\n Click <a href="${fileUrl}">here</a> to download.`);
+    await setPDFLinkAttribute(workspaceId, boardId, itemId, fileUrl);
     logAuditTrail({
         workspaceId,
         action: `Generate PDF ${docType}`,
@@ -643,6 +645,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename);
                 await setIntegrationMessage(workspaceId, boardId, item.id, `Your quote has been successfully created.\n Click <a href="${fileUrl}">here</a> to download.`);
+                await setPDFLinkAttribute(workspaceId, boardId, item.id, fileUrl);
                 logAuditTrail({
                     workspaceId,
                     action: 'Generate PDF Quote',
