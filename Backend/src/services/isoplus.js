@@ -933,6 +933,35 @@ export async function setGeneratedField(workspaceId, boardId, itemId, message) {
     }
 }
 
+export async function setPDFLinkAttribute(workspaceId, boardId, itemId, pdfUrl) {
+    try {
+        // Get the board to find the PDF attribute ID
+        const board = await Board.findOne({ boardId: boardId.toString() });
+        if (!board || !board.pdfAttribute || !board.pdfAttribute.id) {
+            error('ISO+™ Service', 'PDF attribute not found in board configuration', { boardId, workspaceId });
+            return false;
+        }
+
+        const response = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
+            { values: [{ data: `<a href="${pdfUrl}">${pdfUrl}</a>`, attribute_id: board.pdfAttribute.id }] },
+            {
+                headers: {
+                    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "X-API-Version": "2025-02-26.morava",
+                }
+            });
+        if (response.status === 200) {
+            return true;
+        }
+        return false;
+    } catch (err) {
+        error('ISO+™ Service', 'Error setting PDF link attribute:', err);
+        throw err;
+    }
+}
+
 export async function getQuoteNDISReferencedItems(workspaceId, boardId, itemId) {
     const ServiceAreaMap = {
         'Non-Remote (ACT)': 'ACT($)',

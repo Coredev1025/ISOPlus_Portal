@@ -66,6 +66,7 @@ interface Board {
   name: string;
   label: string;
   attributeId: string;
+  pdfAttributeId: string;
 }
 
 function SuggestionDialog({ isOpen, onClose, onConfirm, suggestion, reason }: SuggestionDialogProps) {
@@ -97,6 +98,7 @@ export default function ConfigurationPage() {
   const { workspaces } = useAppContext();
   const [board, setBoard] = useState<Board>();
   const [selectedAttribute, setSelectedAttribute] = useState<string>("");
+  const [selectedPdfAttribute, setSelectedPdfAttribute] = useState<string>("");
   const [boardLabel, setBoardLabel] = useState<BoardLabel>('No Label');
   const [isoAttributes, setIsoAttributes] = useState<ISOAttribute[]>([]);
   const [suggestionDialog, setSuggestionDialog] = useState<{
@@ -129,8 +131,14 @@ export default function ConfigurationPage() {
               id: attr.id, name: attr.name, type: attr.type == "text" ? "Text" : "Long Text"
             }
           });
-          console.log("Formatted Attributes:", formattedAttributes);
-          setIsoAttributes([...formattedAttributes]);
+          
+          // Sort attributes alphabetically by name
+          const sortedAttributes = formattedAttributes.sort((a: any, b: any) => 
+            a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+          );
+          
+          console.log("Sorted Attributes:", sortedAttributes);
+          setIsoAttributes(sortedAttributes);
           showFetchSuccessToast("Board attributes");
         } catch (error: any) {
           if (error.name != "CanceledError" && error.name != "AbortError") {
@@ -160,9 +168,10 @@ export default function ConfigurationPage() {
               signal: abortController.signal
             }
           );
-          const boardData = { id: boardId, name: boardResponse.data.board.name, label: boardResponse.data.board.label || 'No Label', attributeId: boardResponse.data.board.attribute.id || '' };
+          const boardData = { id: boardId, name: boardResponse.data.board.name, label: boardResponse.data.board.label || 'No Label', attributeId: boardResponse.data.board.attribute.id || '', pdfAttributeId: boardResponse.data.board.pdfAttribute?.id || '' };
           setBoard(boardData);
           setSelectedAttribute(boardResponse.data.board.attribute.id || '');
+          setSelectedPdfAttribute(boardResponse.data.board.pdfAttribute?.id || '');
           setBoardLabel(boardResponse.data.board.label || 'No Label');
           showFetchSuccessToast("Board configuration");
         } catch (error: any) {
@@ -170,8 +179,9 @@ export default function ConfigurationPage() {
             console.error("Error fetching board:", error);
             showFetchErrorToast("board configuration", error.response?.data?.message || "Failed to load board configuration");
           }
-          setBoard({ id: boardId, name: '', label: 'No Label', attributeId: '' });
+          setBoard({ id: boardId, name: '', label: 'No Label', attributeId: '', pdfAttributeId: '' });
           setSelectedAttribute('');
+          setSelectedPdfAttribute('');
           return;
         }
       }
@@ -221,11 +231,12 @@ export default function ConfigurationPage() {
   const handleSaveConfiguration = async () => {
     try {
       const attr = isoAttributes.find(item => item.id == selectedAttribute);
+      const pdfAttr = isoAttributes.find(item => item.id == selectedPdfAttribute);
       console.log(attr?.name);
 
       const response = await axios.put(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards`,
-        { ...board, label: boardLabel, attribute: { id: selectedAttribute, name: attr?.name }, boardId, workspaceId: id },
+        { ...board, label: boardLabel, attribute: { id: selectedAttribute, name: attr?.name }, pdfAttribute: { id: selectedPdfAttribute, name: pdfAttr?.name }, boardId, workspaceId: id },
         {}
       );
 
@@ -353,6 +364,37 @@ export default function ConfigurationPage() {
                     <SelectContent>
                       {isoAttributes.map((attr) => (
                         <SelectItem key={attr.id} value={attr.id} defaultValue={selectedAttribute}>
+                          <div className="flex items-center justify-between w-full">
+                            <span>{attr.name}</span>
+                            <Badge variant="outline" className="ml-2">
+                              {attr.type}
+                            </Badge>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="border-t" />
+
+              {/* PDF Attribute Configuration */}
+              <div className="space-y-4">
+                <h2 className="text-lg font-semibold">PDF Link Configuration</h2>
+                <p className="text-sm text-muted-foreground">
+                  Select which ISO+ attribute should be used for storing PDF links and documents
+                  that will be accessible through the integration.
+                </p>
+                <div className="space-y-2">
+                  <Label htmlFor="pdfAttribute">ISO+ Attribute for PDF Links</Label>
+                  <Select value={selectedPdfAttribute} onValueChange={setSelectedPdfAttribute}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select an attribute for PDF links" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {isoAttributes.map((attr) => (
+                        <SelectItem key={attr.id} value={attr.id} defaultValue={selectedPdfAttribute}>
                           <div className="flex items-center justify-between w-full">
                             <span>{attr.name}</span>
                             <Badge variant="outline" className="ml-2">

@@ -36,6 +36,18 @@ const boardSchema = new mongoose.Schema({
       required: false
     }
   },
+  pdfAttribute: {
+    id: {
+      type: String,
+      ref: 'PDF Attribute Id',
+      required: false
+    },
+    name: {
+      type: String,
+      ref: 'PDF Attribute Name',
+      required: false
+    }
+  },
   createdAt: {
     type: Date,
     default: Date.now

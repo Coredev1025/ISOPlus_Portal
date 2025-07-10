@@ -65,8 +65,8 @@ router.put('/', authenticateToken, async (req, res) => {
             res.status(404).json({ message: 'Board not found' });
         } else {
             const updatedBoard = await Board.findOne({ boardId });
-            info('Board-Service', 'Board updated', { boardId: req.body.boardId, label: req.body.label, attributeId: req.body.attribute.id }, req);
-            AuditTrail.insertOne({ workspaceId, action: 'Updated Board', detail: `Changed Board detail: ${req.body.label? "Label:" + req.body.label + ", " : ""}${req.body.attribute.id? "Attribute ID: " + req.body.attribute.id : ""}`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
+            info('Board-Service', 'Board updated', { boardId: req.body.boardId, label: req.body.label, attributeId: req.body.attribute?.id, pdfAttributeId: req.body.pdfAttribute?.id }, req);
+            AuditTrail.insertOne({ workspaceId, action: 'Updated Board', detail: `Changed Board detail: ${req.body.label? "Label:" + req.body.label + ", " : ""}${req.body.attribute?.id? "Attribute ID: " + req.body.attribute.id + ", " : ""}${req.body.pdfAttribute?.id? "PDF Attribute ID: " + req.body.pdfAttribute.id : ""}`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
             res.status(200).json({ board: updatedBoard });
         }
     } catch (err) {
