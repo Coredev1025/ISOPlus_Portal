@@ -97,7 +97,7 @@ const LOG_LEVEL_ICONS: Record<LogLevel, React.ReactNode> = {
 function WorkspacesList() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
-  const { workspaces, setWorkspaces } = useAppContext();
+  const { user, workspaces, setWorkspaces } = useAppContext();
   const [isLoading, setLoading] = useState(false);
 
   const filteredWorkspaces = workspaces.filter(item =>
@@ -120,15 +120,23 @@ function WorkspacesList() {
             }
           );
 
-          const sortedWorkspace = [...response.data.workspace].sort((a, b) =>
+          let sortedWorkspace: any[] = [];
+
+          response.data.workspace.forEach((workspace: any) => {
+            if ((user.role == "support_admin" || user.role == "owner" || workspace?.user_role == "owner" || workspace?.user_role == "admin")) {
+              sortedWorkspace.push(workspace);
+            }
+          })
+
+          sortedWorkspace = [...sortedWorkspace].sort((a, b) =>
             a.name.localeCompare(b.name)
           );
 
           setWorkspaces(sortedWorkspace);
           showFetchSuccessToast("Workspaces");
 
-          if (response.data.workspace.length === 1) {
-            router.push(`/workspace/${response.data.workspace[0].id}`);
+          if (sortedWorkspace.length === 1) {
+            router.push(`/workspace/${sortedWorkspace[0].id}`);
           }
         } catch (error: any) {
           if (error.name !== "CanceledError" && error.name !== "AbortError") {
@@ -362,12 +370,12 @@ function GlobalApplicationLogs() {
         }));
         setLogs(formattedLogs);
         showFetchSuccessToast("Application logs");
-              } catch (error: any) {
-          if (error.name !== "CanceledError" && error.name !== "AbortError") {
-            console.error("Error fetching logs:", error);
-            showFetchErrorToast("application logs", error.response?.data?.message || "Failed to load application logs");
-          }
+      } catch (error: any) {
+        if (error.name !== "CanceledError" && error.name !== "AbortError") {
+          console.error("Error fetching logs:", error);
+          showFetchErrorToast("application logs", error.response?.data?.message || "Failed to load application logs");
         }
+      }
       setLoading(false);
     };
 
