@@ -943,7 +943,7 @@ export async function setPDFLinkAttribute(workspaceId, boardId, itemId, pdfUrl) 
         }
 
         const response = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
-            { values: [{ data: `<a href="${pdfUrl}">${pdfUrl}</a>`, attribute_id: board.pdfAttribute.id }] },
+            { values: [{ data: `<a href="${pdfUrl}">Download PDF</a>`, attribute_id: board.pdfAttribute.id }] },
             {
                 headers: {
                     "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
