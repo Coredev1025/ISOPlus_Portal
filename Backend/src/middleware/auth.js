@@ -1,5 +1,38 @@
 import jwt from 'jsonwebtoken';
-import { warn } from '../utils/logger.js';
+import { warn, info } from '../utils/logger.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+export const validateApiKey = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  
+  if (!authHeader) {
+    warn('API-Key-Service', 'No authorization header provided', {
+      error: 'No authorization header provided',
+    }, req);
+    return res.status(401).json({ message: 'Authorization header required' });
+  }
+
+
+  if (!process.env.USER_SECRET_API_KEY) {
+    warn('API-Key-Service', 'USER_SECRET_API_KEY not configured', {
+      error: 'USER_SECRET_API_KEY environment variable not set',
+    }, req);
+    return res.status(500).json({ message: 'Server configuration error' });
+  }
+
+  if (authHeader !== process.env.USER_SECRET_API_KEY) {
+    warn('API-Key-Service', 'Invalid API key provided', {
+      error: 'Invalid API key',
+      providedKey: authHeader.substring(0, 8) + '...', // Log only first 8 characters for security
+    }, req);
+    return res.status(401).json({ message: 'Invalid API key' });
+  }
+
+  info('API-Key-Service', 'API key validation successful', {}, req);
+  next();
+};
 
 export const authenticateToken = (req, res, next) => {
   const token = req.session.token;

@@ -2,7 +2,7 @@ import express from 'express';
 import { body, validationResult } from 'express-validator';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, validateApiKey } from '../middleware/auth.js';
 import querystring from 'querystring';
 import axios from 'axios';
 import { error, info, warn } from '../utils/logger.js';
@@ -16,6 +16,7 @@ router.post('/register',
     body('password').isLength({ min: 6 }),
     body('name').notEmpty()
   ],
+  validateApiKey,
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
