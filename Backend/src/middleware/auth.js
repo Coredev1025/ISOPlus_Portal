@@ -8,29 +8,29 @@ export const validateApiKey = (req, res, next) => {
   const authHeader = req.headers.authorization;
   
   if (!authHeader) {
-    warn('API-Key-Service', 'No authorization header provided', {
+    warn('Authentication-Service', 'No authorization header provided', {
       error: 'No authorization header provided',
     }, req);
     return res.status(401).json({ message: 'Authorization header required' });
   }
 
 
-  if (!process.env.USER_SECRET_API_KEY) {
-    warn('API-Key-Service', 'USER_SECRET_API_KEY not configured', {
-      error: 'USER_SECRET_API_KEY environment variable not set',
+  if (!process.env.Admin_API_Key) {
+    warn('Authentication-Service', 'Admin_API_Key not configured', {
+      error: 'Admin_API_Key environment variable not set',
     }, req);
     return res.status(500).json({ message: 'Server configuration error' });
   }
 
-  if (authHeader !== process.env.USER_SECRET_API_KEY) {
-    warn('API-Key-Service', 'Invalid API key provided', {
+  if (authHeader !== process.env.Admin_API_Key) {
+    warn('Authentication-Service', 'Invalid API key provided', {
       error: 'Invalid API key',
       providedKey: authHeader.substring(0, 8) + '...', // Log only first 8 characters for security
     }, req);
     return res.status(401).json({ message: 'Invalid API key' });
   }
 
-  info('API-Key-Service', 'API key validation successful', {}, req);
+  info('Authentication-Service', 'API key validation successful', {}, req);
   next();
 };
 
