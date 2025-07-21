@@ -1219,3 +1219,92 @@ export async function getParticipantsServicePlanReferencedItems(workspaceId, boa
 
     return [serviceAreaValues, directSupportValues, centreCapitalCostsValues];
 }
+
+export async function getMasterPlanReferencedItems(workspaceId, boardId, itemId) {
+    let servicePlanValues = null, cancellationTypeValues = null, fundValues = null;
+
+    const referenceResponse = await getReferences(workspaceId, boardId, itemId);
+    if (!referenceResponse) return [null, null];
+
+    for (const reference of referenceResponse.data) {
+
+        const attribute = await getAttribute(workspaceId, boardId, reference.attribute_id);
+        if (!attribute) continue;
+
+        switch (attribute.name) {
+            case 'Service Plan':
+                {
+                    const servicePlan = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (servicePlan) {
+                        const values = servicePlan.values;
+                        let directSupportUnit = null, directSupportUnitPrice = null, nonLabourTravelUnitPrice = null, activityBasedTransportUnitPrice = null, centreCapitalCostsUnitPrice = null, labourTravelTimeUnitPrice = null, usedAllowanceAmount = null, nonFaceToFaceSupportUnitPrice = null;
+                        if (values.find(v => v.attribute.name === "Unit (Direct Support)")) {
+                            directSupportUnit = values.find(v => v.attribute.name === "Unit (Direct Support)").data.toString();
+                        }
+                        if (values.find(v => v.attribute.name === "Agreed Unit Price for Direct Support ($)")) {
+                            directSupportUnitPrice = values.find(v => v.attribute.name === "Agreed Unit Price for Direct Support ($)").data.toString();
+                        }
+                        if (values.find(v => v.attribute.name === "Agreed Unit Price for Non-Labour Travel ($)")) {
+                            nonLabourTravelUnitPrice = values.find(v => v.attribute.name === "Agreed Unit Price for Non-Labour Travel ($)").data.toString();
+                        }
+                        if (values.find(v => v.attribute.name === "Agreed Unit Price for Activity Based Transport ($)")) {
+                            activityBasedTransportUnitPrice = values.find(v => v.attribute.name === "Agreed Unit Price for Activity Based Transport ($)").data.toString();
+                        }
+                        if (values.find(v => v.attribute.name === "Agreed Unit Price for Centre Capital Costs($)")) {
+                            centreCapitalCostsUnitPrice = values.find(v => v.attribute.name === "Agreed Unit Price for Centre Capital Costs($)").data.toString();
+                        }
+                        if (values.find(v => v.attribute.name === "Agreed Unit Price for Labour Travel Time ($)")) {
+                            labourTravelTimeUnitPrice = values.find(v => v.attribute.name === "Agreed Unit Price for Labour Travel Time ($)").data.toString();
+                        }
+                        if (values.find(v => v.attribute.name === "Used Allowance Amount($)")) {
+                            usedAllowanceAmount = values.find(v => v.attribute.name === "Used Allowance Amount($)").data.toString();
+                        }
+                        if (values.find(v => v.attribute.name === "Agreed Unit Price for Non-Face-to-Face Support($)")) {
+                            nonFaceToFaceSupportUnitPrice = values.find(v => v.attribute.name === "Agreed Unit Price for Non-Face-to-Face Support($)").data.toString();
+                        }
+
+                        servicePlanValues = {
+                            directSupportUnit: directSupportUnit,
+                            directSupportUnitPrice: directSupportUnitPrice,
+                            nonLabourTravelUnitPrice: nonLabourTravelUnitPrice,
+                            activityBasedTransportUnitPrice: activityBasedTransportUnitPrice,
+                            centreCapitalCostsUnitPrice: centreCapitalCostsUnitPrice,
+                            labourTravelTimeUnitPrice: labourTravelTimeUnitPrice,
+                            usedAllowanceAmount: usedAllowanceAmount,
+                            nonFaceToFaceSupportUnitPrice: nonFaceToFaceSupportUnitPrice,
+                        };
+                    }
+                    break;
+                }
+            case 'Cancellation Type':
+                {
+                    const cancellationType = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (cancellationType) {
+                        const values = cancellationType.values;
+                        cancellationTypeValues = {
+                            definition: values.find(v => v.attribute.name === "Definition").data.toString(),
+                            billableToClient: values.find(v => v.attribute.name === "Billable to Client %").data.toString(),
+                            payableToWorker: values.find(v => v.attribute.name === "Payable to Worker %").data.toString(),
+                        }
+                    }
+                    break;
+                }
+            case 'Fund':
+                {
+                    const fund = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    const fundAmount = fund.values.find(v => v.attribute.name === "Fund Amount($)").data || 0;
+                    const previouslyUsed = fund.values.find(v => v.attribute.name === "Previously Used ($)").data || 0;
+                    const invoicedAndReceived = fund.values.find(v => v.attribute.name === "Invoiced and Received Amount($)").data || 0;
+                    
+                    const availableFund = fundAmount - previouslyUsed - invoicedAndReceived;
+                    const budgetSpent = availableFund * 100 / fundAmount;
+                    const fundingBudgetStatus = budgetSpent > 0 ? "👍 Within Budget" : budgetSpent < 0 ? "👎 Over Budget" : "👌 On Budget";
+                    fundValues = {
+                        fundingBudgetStatus: fundingBudgetStatus,
+                    };
+                }
+        }
+    }
+
+    return [servicePlanValues, cancellationTypeValues, fundValues];
+}
