@@ -78,6 +78,11 @@ router.post('/login',
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
+      if (user.disabled) {
+        warn('User-Service', 'Login attempt for disabled user', { email }, req);
+        return res.status(403).json({ message: 'Account is disabled' });
+      }
+
       const token = jwt.sign(
         { userId: user._id, email: user.email, name: user.name, role: 'support_admin', avatar: '' },
         process.env.JWT_SECRET,
@@ -113,6 +118,11 @@ router.get('/verify', authenticateToken, async (req, res) => {
     if (!user) {
       warn('User-Service', 'User not found during verification', {}, req);
       return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (user.disabled) {
+      warn('User-Service', 'Token verification for disabled user', { userId: req.user.userId }, req);
+      return res.status(403).json({ message: 'Account is disabled' });
     }
 
     const token = jwt.sign(
@@ -280,6 +290,11 @@ router.post('/oauth-login', async (req, res) => {
       await User.findOneAndUpdate({ email: email, oauthId: oauthId }, { $set: { avatar: photo_url, name: name } });
     }
 
+    if (user.disabled) {
+      warn('User-Service', 'OAuth login attempt for disabled user', { email }, req);
+      return res.status(403).json({ message: 'Account is disabled' });
+    }
+
     req.session.Authorization = req.headers['authorization'];
     const workspaceResponse = await getWorkspace(req.session.Authorization, user.email);
 
@@ -322,6 +337,77 @@ router.post('/oauth-login', async (req, res) => {
   } catch (err) {
     error('User-Service', 'Server error during OAuth login', { error: err.message }, req);
     res.status(500).json({ message: 'Server error during OAuth login' });
+  }
+});
+
+router.get('/users', validateApiKey, async (req, res) => {
+  try {
+    const users = await User.find({}).select('-password');
+    info('User-Service', 'Users list retrieved successfully', { count: users.length }, req);
+    res.json({ users });
+  } catch (err) {
+    error('User-Service', 'Server error while retrieving users', { error: err.message }, req);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.patch('/users/:userId/disable', validateApiKey, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const user = await User.findById(userId);
+    if (!user) {
+      warn('User-Service', 'User not found for disable operation', { userId }, req);
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.disabled = true;
+    await user.save();
+
+    info('User-Service', 'User disabled successfully', { userId, email: user.email }, req);
+    res.json({ 
+      message: 'User disabled successfully',
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        disabled: user.disabled
+      }
+    });
+  } catch (err) {
+    error('User-Service', 'Server error while disabling user', { error: err.message }, req);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.patch('/users/:userId/enable', validateApiKey, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const user = await User.findById(userId);
+    if (!user) {
+      warn('User-Service', 'User not found for enable operation', { userId }, req);
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.disabled = false;
+    await user.save();
+
+    info('User-Service', 'User enabled successfully', { userId, email: user.email }, req);
+    res.json({ 
+      message: 'User enabled successfully',
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        disabled: user.disabled
+      }
+    });
+  } catch (err) {
+    error('User-Service', 'Server error while enabling user', { error: err.message }, req);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 

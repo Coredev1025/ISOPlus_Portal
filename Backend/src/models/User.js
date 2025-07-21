@@ -26,6 +26,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: 'isoplus_user',
     enum: ['isoplus_user', 'support_admin', 'owner']
+  },
+  disabled: {
+    type: Boolean,
+    default: false
   }
 });
 
