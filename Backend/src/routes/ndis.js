@@ -286,7 +286,7 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
     const items = payload.items[0];
     const itemsValues = items.values;
 
-    const [servicePlanValues, cancellationTypeValues, fundValues] = await getMasterPlanReferencedItems(workspaceId, boardId, items.id);
+    const [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues] = await getMasterPlanReferencedItems(workspaceId, boardId, items.id);
 
     info('Xero-Service', `Incoming request to Master plan`, { workspaceId, boardId, body: itemsValues }, req);
 
@@ -301,48 +301,56 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
         updateValues.push({
             data: servicePlanValues.directSupportUnitPrice * (itemsValues['Actual Shift Duration(Hr.)'] || 0),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Direct Support Value($) - Time Based Support').attribute.id
-        })
+        });
+        updateValues.push({
+            data: 0,
+            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Direct Support Value($) - Non Time Based Support').attribute.id
+        });
     } else {
         updateValues.push({
-            data: servicePlanValues?.directSupportUnitPrice * (itemsValues['Quantity (Direct Support - Non Time Based Support)'] || 1),
+            data: servicePlanValues?.directSupportUnitPrice * (itemsValues['Quantity (Direct Support - Non Time Based Support)'] || 0),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Direct Support Value($) - Non Time Based Support').attribute.id
-        })
+        });
+        updateValues.push({
+            data: 0,
+            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Direct Support Value($) - Time Based Support').attribute.id
+        });
     }
     if (servicePlanValues.nonLabourTravelUnitPrice) {
         updateValues.push({
             data: servicePlanValues.nonLabourTravelUnitPrice * (itemsValues['Provider Travel - Non-Labour - Mileage (kms) as per the Service plan, if a Vehicle is Used.'] || 0) + (itemsValues['Provider Travel - Non-Labour - as per the Service plan, if other costs are applied.'] || 0),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Provider Travel - Non-Labour Cost Amount($)').attribute.id
-        })
+        });
     }
     if (servicePlanValues.activityBasedTransportUnitPrice) {
         updateValues.push({
             data: servicePlanValues.activityBasedTransportUnitPrice * (itemsValues['Activity Base Transport Mileage(Kms) as per the Service plan, if a Vehicle is Used.'] || 0) + (itemsValues['Activity Base Transport Costs as per the Service plan, if other costs are applied.'] || 0),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Activity Base Transport Amount($)').attribute.id
-        })
+        });
     }
     if (servicePlanValues.centreCapitalCostsUnitPrice) {
         updateValues.push({
             data: servicePlanValues.centreCapitalCostsUnitPrice * (itemsValues['Actual Shift Duration(Hr.)'] || 0),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Centre Capital Costs Amount($)').attribute.id
-        })
+        });
     }
     if (servicePlanValues.labourTravelTimeUnitPrice) {
         updateValues.push({
             data: servicePlanValues.labourTravelTimeUnitPrice * (itemsValues['Labour Travel Time (Min.) as per the Service plan, regarding the Time Cap, if applicable.'] || 0),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Labour Travel Time Amount($)').attribute.id
-        })
+        });
     }
     if (servicePlanValues.usedAllowanceAmount) {
         updateValues.push({
-            data: servicePlanValues.usedAllowanceAmount,
+            data: itemsValues['Used Allowance Amount($) as per the Service Plan'] || 0,
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Allowances Amount($)').attribute.id
-        })
+        });
     }
     if (servicePlanValues.nonFaceToFaceSupportUnitPrice) {
         updateValues.push({
             data: servicePlanValues.nonFaceToFaceSupportUnitPrice * (itemsValues['Time spent in the Non-Face-to-Face Amount as per the Service plan (Hr.)'] || 0),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Non-Face-to-Face Amount($)').attribute.id
-        })
+        });
     }
     if (itemsValues['Job Status'] === 'Cancelled') {
         let scheduledShiftDuration = 0;
@@ -362,19 +370,15 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
             updateValues.push({
                 data: servicePlanValues.directSupportUnitPrice * scheduledShiftDuration * ((cancellationTypeValues.billableToClient || 0) / 100),
                 attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Cancellation Fee($)').attribute.id
-            })
+            });
         }
     }
     if (fundValues) {
         updateValues.push({
             data: fundValues.fundingBudgetStatus,
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Funding Budget Status').attribute.id
-        })
+        });
     }
-
-    updateValues.map(item => {
-        console.log(item.attribute_id, item.data)
-    })
 
     const response = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${items.id}`,
         { values: updateValues },
@@ -388,10 +392,10 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
         }
     );
     if (response.status === 200) {
-        // info('Xero-Service', 'Master plan processed successfully', { updateValues }, req);
+        info('Xero-Service', 'Master plan processed successfully', { updateValues }, req);
         return res.status(200).json({ message: 'Master plan processed' });
     } else {
-        // warn('Xero-Service', 'Failed to update master plan', { updateValues }, req);
+        warn('Xero-Service', 'Failed to update master plan', { updateValues }, req);
         return res.status(200).json({ error: 'Failed to update master plan' });
     }
 });
