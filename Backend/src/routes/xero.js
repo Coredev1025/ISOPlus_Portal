@@ -11,7 +11,8 @@ import {
   setIntegrationMessage,
   putInternalMessage,
   setGeneratedField,
-  getQuoteNDISReferencedItems
+  getQuoteNDISReferencedItems,
+  getMasterPlanReferencedItems
 } from '../services/isoplus.js';
 import {
   configure,
@@ -140,23 +141,23 @@ router.get('/hello', (req, res) => {
 });
 
 router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
+  const { workspaceId, boardId } = req.params;
+
+  const payload = req.body;
+  const { item } = await validatePayload(payload, req);
+  const mappedValues = mapInvoiceValuesToJobDTO(item.values);
+  const { error: validationError } = Item.validate('Job', mappedValues);
+  if (validationError) {
+    await setIntegrationMessage(workspaceId, boardId, item.id,
+      `ERROR: Invoice validation failed: ${JSON.stringify(validationError.details)}`);
+    return res.status(200).json({
+      message: 'Invoice validation failed',
+      details: validationError.details
+    });
+  }
+
   try {
-    const { workspaceId, boardId } = req.params;
-
-    const payload = req.body;
-    const { item } = await validatePayload(payload, req);
-    const mappedValues = mapInvoiceValuesToJobDTO(item.values);
-    const { error: validationError } = Item.validate('Job', mappedValues);
-    if (validationError) {
-      await setIntegrationMessage(workspaceId, boardId, item.id,
-        `ERROR: Invoice validation failed: ${JSON.stringify(validationError.details)}`);
-      return res.status(200).json({
-        message: 'Invoice validation failed',
-        details: validationError.details
-      });
-    }
-
-    const business = await initializeXeroOperation(workspaceId, boardId, item);
+    await initializeXeroOperation(workspaceId, boardId, item);
 
     const [jobPlanningValues, serviceFeeTypeValues] = await getJobReportingReferencedItems(workspaceId, boardId, item.id);
     if (!jobPlanningValues) {
@@ -295,6 +296,323 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
   }
 });
 
+router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
+  const { workspaceId, boardId } = req.params;
+
+  const payload = req.body;
+  const { item } = await validatePayload(payload, req);
+  const invoiceValues = item.values;
+
+  try {
+    await initializeXeroOperation(workspaceId, boardId, item);
+
+    const [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues] = await getMasterPlanReferencedItems(workspaceId, boardId, item.id);
+    if (!servicePlanValues) {
+      putInternalMessage(workspaceId, boardId, item.id, "Master plan information is required. Master plan is missing a master plan reference.");
+      throw new Error("Master plan information is required. Master plan is missing a master plan reference.");
+    }
+
+    let contact = await getContactByEmail(participantProfileValues.email);
+    if (!contact) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
+      contact = await createOrUpdateContact({
+        name: participantProfileValues.firstName + ' ' + participantProfileValues.lastName,
+        phones: [{ phoneType: 'DEFAULT', phoneNumber: participantProfileValues.Phone }],
+        firstName: participantProfileValues.firstName,
+        lastName: participantProfileValues.lastName,
+        addresses: [
+          {
+            addressType: 'POBOX',
+            addressLine1: participantProfileValues.address || ' ',
+            city: participantProfileValues.suburb || ' ',
+            region: participantProfileValues.state || ' ',
+            postalCode: participantProfileValues.postcode?.toString() || ' '
+          },
+          {
+            addressType: 'STREET',
+            addressLine1: participantProfileValues.address || ' ',
+            city: participantProfileValues.suburb || ' ',
+            region: participantProfileValues.state || ' ',
+            postalCode: participantProfileValues.postcode?.toString() || ' '
+          } 
+        ],
+        emailAddress: participantProfileValues.email
+      });
+    } else {
+      const xeroUpdatedDate = new Date(contact.updatedDateUTC);
+      const isoplusUpdatedDate = new Date(participantProfileValues.updatedAt);
+
+      if (xeroUpdatedDate < isoplusUpdatedDate) {
+        contact = await createOrUpdateContact({
+          contactID: contact.contactID,
+          name: participantProfileValues.firstName + ' ' + participantProfileValues.lastName,
+          phones: [{ phoneType: 'DEFAULT', phoneNumber: participantProfileValues.Phone }],
+          firstName: participantProfileValues.firstName,
+          lastName: participantProfileValues.lastName,
+          addresses: [
+            {
+              addressType: 'POBOX',
+              addressLine1: participantProfileValues.address || ' ',
+              city: participantProfileValues.suburb || ' ',
+              region: participantProfileValues.state || ' ',
+              postalCode: participantProfileValues.postcode?.toString() || ' '
+            },
+            {
+              addressType: 'STREET',
+              addressLine1: participantProfileValues.address || ' ',
+              city: participantProfileValues.suburb || ' ',
+              region: participantProfileValues.state || ' ',
+              postalCode: participantProfileValues.postcode?.toString() || ' '
+            }
+          ],
+          emailAddress: participantProfileValues.email
+        });
+      }
+    }
+
+    let lineItems = [];
+    const gstType = "EXEMPTOUTPUT"; // GST Free for NDIS
+
+    const invoice = {
+      type: 'ACCREC',
+      contact: { contactID: contact.contactID },
+      reference: item.values["Invoice Number"],
+      lineItems: [],
+      date: new Date().toISOString().split('T')[0],
+      dueDate: new Date(new Date().setDate(new Date().getDate() + 30)).toISOString().split('T')[0],
+      status: "DRAFT"
+    };
+
+    // Line 1: Direct Support - Hour based
+    if (servicePlanValues?.directSupportUnit === "Hour(H)") {
+      const unitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
+      const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
+      const itemName1 = servicePlanValues?.directSupportItemName || '';
+      const startTime1 = invoiceValues["Actual Shift Start Date and Time"] ? new Date(invoiceValues["Actual Shift Start Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+      const endTime1 = invoiceValues["Actual Shift End Date and Time"] ? new Date(invoiceValues["Actual Shift End Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+      const qty1 = Number(invoiceValues["Actual Shift Duration(Hr.)"]) || 0;
+
+      if (unitPrice1 > 0 && qty1 > 0) {
+        let desc1 = itemNumber1;
+        if (itemName1) {
+          desc1 += ` - [${itemName1}]`;
+        }
+        if (startTime1 && endTime1) {
+          desc1 += ` - from ${startTime1} to ${endTime1}`;
+        }
+        if (desc1 == '') {
+          desc1 = 'Direct Support - Hour based';
+        }
+
+        lineItems.push({
+          description: desc1,
+          quantity: qty1,
+          unitAmount: unitPrice1,
+          taxType: gstType
+        });
+      }
+    }
+
+    // Line 2: Direct Support - Non Hour based
+    if (servicePlanValues?.directSupportUnit !== "Hour(H)") {
+      const unitPrice2 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
+      const itemNumber2 = servicePlanValues?.directSupportItemNumber || '';
+      const itemName2 = servicePlanValues?.directSupportItemName || '';
+      const quantity2 = invoiceValues["Quantity (Direct Support - Non Time Based Support)"] || 0;
+      const unit2 = servicePlanValues?.directSupportUnit || '';
+      const qty2 = Number(quantity2) || 0;
+
+      if (unitPrice2 > 0 && qty2 > 0) {
+        let desc2 = itemNumber2;
+        if (itemName2) {
+          desc2 += ` - [${itemName2}]`;
+        }
+        if (quantity2 && unit2) {
+          desc2 += ` - ${quantity2} ${unit2}`;
+        }
+        if (desc2 == '') {
+          desc2 = 'Direct Support - NOT Hour based';
+        }
+
+        lineItems.push({
+          description: desc2,
+          quantity: qty2,
+          unitAmount: unitPrice2,
+          taxType: gstType
+        });
+      }
+    }
+
+    // Line 3: Provider Travel - Non-Labour Cost
+    const unitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) || 0;
+    const mileage3 = invoiceValues["Provider Travel - Non-Labour - Mileage (kms) as per the Service Plan, if a Vehicle is Used."] || '';
+    const others3 = invoiceValues["Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied."] || '';
+    const itemName3 = servicePlanValues?.providerTravelItemName || '';
+    const itemNumber3 = servicePlanValues?.providerTravelItemNumber || '';
+    const qty3 = Number(invoiceValues["Provider Travel - Non-Labour Cost Amount($)"]) || 0;
+
+    if (unitPrice3 > 0 && qty3 > 0) {
+      let desc3 = itemNumber3;
+      if (itemName3) {
+        desc3 += ` - [${itemName3}]`;
+      }
+      if (mileage3) {
+        desc3 += ` - ${mileage3}km`;
+      }
+      if (others3) {
+        desc3 += ` - Others: ${others3}`;
+      }
+      if (desc3 == '') {
+        desc3 = 'Provider Travel - Non-Labour Cost Item';
+      }
+
+      lineItems.push({
+        description: desc3,
+        quantity: qty3,
+        unitAmount: unitPrice3,
+        taxType: gstType
+      });
+    }
+
+    // Line 4: Activity Based Transport
+    const unitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) || 0;
+    const mileage4 = invoiceValues["Activity Base Transport Mileage(Kms) as per the Service Plan, if a Vehicle is Used."] || '';
+    const others4 = invoiceValues["Activity Base Transport Costs as per the Service Plan, if other costs are applied."] || '';
+    const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
+    const itemNumber4 = servicePlanValues?.activityBasedTransportItemNumber || '';
+    const qty4 = Number(invoiceValues["Activity Base Transport Amount($)"]) || 0;
+
+    if (unitPrice4 > 0 && qty4 > 0) {
+      let desc4 = itemNumber4;
+      if (itemName4) {
+        desc4 += ` - [${itemName4}]`;
+      }
+      if (mileage4) {
+        desc4 += ` - ${mileage4}km`;
+      }
+      if (others4) {
+        desc4 += ` - Others: ${others4}`;
+      }
+      if (desc4 == '') {
+        desc4 = 'Activity Based Transport Item';
+      }
+
+      lineItems.push({
+        description: desc4,
+        quantity: qty4,
+        unitAmount: unitPrice4,
+        taxType: gstType
+      });
+    }
+
+    // Line 5: Centre Capital Costs
+    const unitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) || 0;
+    const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
+    const itemNumber5 = servicePlanValues?.centreCapitalCostsItemNumber || '';
+    const qty5 = Number(invoiceValues["Actual Shift Duration(Hr.)"]) || 0;
+
+    if (unitPrice5 > 0 && qty5 > 0) {
+      let desc5 = itemNumber5;
+      if (itemName5) {
+        desc5 += ` - [${itemName5}]`;
+      }
+      if (desc5 == '') {
+        desc5 = 'Centre Capital Costs Item';
+      }
+
+      lineItems.push({
+        description: desc5,
+        quantity: qty5,
+        unitAmount: unitPrice5,
+        taxType: gstType
+      });
+    }
+
+    // Line 6: Labour Travel Time
+    const unitPrice6 = Number(servicePlanValues?.labourTravelTimeUnitPrice) || 0;
+    const qty6 = Number(invoiceValues["Labour Travel Time (Min.) as per the Service Plan, regarding the Time Cap, if applicable."]) || 0;
+
+    if (unitPrice6 > 0 && qty6 > 0) {
+      let desc6 = 'Provider Travel - Labour Travel Time Costs';
+      lineItems.push({
+        description: desc6,
+        quantity: qty6,
+        unitAmount: unitPrice6,
+        taxType: gstType
+      });
+    }
+
+    // Line 7: Allowances
+    const unitPrice7 = Number(servicePlanValues?.usedAllowanceAmount) || 0;
+    const qty7 = 1;
+
+    if (unitPrice7 > 0) {
+      let desc7 = `Allowances - ${invoiceValues["Allowances"]}`;
+      lineItems.push({
+        description: desc7,
+        quantity: qty7,
+        unitAmount: unitPrice7,
+        taxType: gstType
+      });
+    }
+
+    // Line 8: Non-Face-to-Face Support
+    const unitPrice8 = Number(servicePlanValues?.nonFaceToFaceSupportUnitPrice) || 0;
+    const qty8 = Number(invoiceValues["Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)"]) || 0;
+
+    if (unitPrice8 > 0 && qty8 > 0) {
+      let desc8 = `Non-Face-to-Face Support - ${invoiceValues["Non-Face-to-Face Supports"]}`;
+      lineItems.push({
+        description: desc8,
+        quantity: qty8,
+        unitAmount: unitPrice8,
+        taxType: gstType
+      });
+    }
+
+    // Line 9: Cancellation Fee
+    const baseUnitPrice9 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
+    const cancellationPercentage9 = Number(cancellationTypeValues?.billableToClient) || 0;
+    const itemName9 = servicePlanValues?.directSupportItemName || '';
+    const itemNumber9 = servicePlanValues?.directSupportItemNumber || '';
+    const qty9 = Number(invoiceValues["Actual Shift Duration(Hr.)"]) || 0;
+    const unitPrice9 = baseUnitPrice9 * (cancellationPercentage9 / 100);
+
+    if (unitPrice9 > 0 && qty9 > 0) {
+      let desc9 = 'Cancellation Fee' + `${itemNumber9 ? ' - ' + itemNumber9 : ''}`;
+      if (itemName9) {
+        desc9 += ` - [${itemName9}]`;
+      }
+
+      lineItems.push({
+        description: desc9,
+        quantity: qty9,
+        unitAmount: unitPrice9,
+        taxType: gstType
+      });
+    }
+
+    invoice.lineItems = lineItems;
+
+    const createdInvoice = await createInvoice(invoice);
+    await setIntegrationMessage(workspaceId, boardId, item.id, "Your invoice has been created successfully in Xero.");
+
+    logAuditTrail({
+      workspaceId,
+      action: "Create Xero Invoice",
+      detail: `Invoice created successfully, invoice number: ${createdInvoice.invoiceNumber}`,
+      req
+    });
+
+    await setGeneratedField(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`);
+
+    res.json(createdInvoice);
+  } catch (err) {
+    const result = await handleError(err, workspaceId, boardId, item, req, 'invoice');
+    res.status(result.status).json(result.body);
+  }
+});
+
 router.post('/:workspaceId/:boardId/contact', async (req, res) => {
   const { workspaceId, boardId } = req.params;
   const { error, item } = await validatePayload(req.body, req);
@@ -413,7 +731,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
   const { item } = await validatePayload(payload, req);
 
   try {
-    const business = await initializeXeroOperation(workspaceId, boardId, item);
+    await initializeXeroOperation(workspaceId, boardId, item);
     const quoteValues = item.values;
 
     const [contactValues, jobTypeValues] = await getQuoteReferencedItems(workspaceId, boardId, item.id);
@@ -554,12 +872,8 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
   const item = payload.items[0];
 
   try {
-    await configure();
-    await ensureAuthenticated(workspaceId);
+    await initializeXeroOperation(workspaceId, boardId, item);
     const NDISQuoteValues = item.values;
-
-    await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-    await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
     const [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = await getQuoteNDISReferencedItems(workspaceId, boardId, item.id);
     if (!serviceAreaValues) {
@@ -751,7 +1065,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
   const { item } = await validatePayload(payload, req);
 
   try {
-    const business = await initializeXeroOperation(workspaceId, boardId, item);
+    await initializeXeroOperation(workspaceId, boardId, item);
 
     const purchaseOrderValues = item.values;
 
