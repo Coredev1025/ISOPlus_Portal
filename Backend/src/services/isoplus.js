@@ -1416,7 +1416,12 @@ export async function getMasterPlanReferencedItems(workspaceId, boardId, itemId)
                         const values = participantProfile.values;
                         participantProfileValues = {
                             billingContact: values.find(v => v.attribute.name === "Billing Contact")?.data?.toString() || '',
-                            billingAddress: values.find(v => v.attribute.name === "Billing Address")?.data?.toString() || ''
+                            billingAddress: values.find(v => v.attribute.name === "Billing Address")?.data?.toString() || '',
+                            Phone: values.find(v => v.attribute.name === "Primary Phone Number")?.data?.toString() || '',
+                            email: values.find(v => v.attribute.name === "Email")?.data?.toString() || '',
+                            address: values.find(v => v.attribute.name === "Address")?.data?.toString() || '',
+                            firstName: values.find(v => v.attribute.name === "First Name")?.data?.toString() || '',
+                            lastName: values.find(v => v.attribute.name === "Last Name")?.data?.toString() || '',
                         };
                     }
                     break;
