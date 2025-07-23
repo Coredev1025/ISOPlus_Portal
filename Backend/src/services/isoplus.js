@@ -351,7 +351,7 @@ export async function getItemValues(workspaceId, boardId, itemId) {
         const result = await axios.get(url, { headers });
         return result.status === 200 ? result.data : null;
     } catch (err) {
-        error('ISO+™ Service', 'Error getting item values:', err);
+        error('ISO+™ Service', `Error getting item values: ${err.message}`, { workspaceId, boardId, itemId });
         return null;
     }
 }
@@ -943,7 +943,7 @@ export async function setPDFLinkAttribute(workspaceId, boardId, itemId, pdfUrl) 
         }
 
         const response = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
-            { values: [{ data: `<a href="${pdfUrl}">Download PDF</a>`, attribute_id: board.pdfAttribute.id }] },
+            { values: [{ data: `<a href="${pdfUrl}">${pdfUrl}</a>`, attribute_id: board.pdfAttribute.id }] },
             {
                 headers: {
                     "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
@@ -1132,7 +1132,7 @@ export async function getParticipantsServicePlanReferencedItems(workspaceId, boa
         'Very Remote': 'Very Remote($)',
         '': 'ACT($)'
     }
-    let serviceAreaValues = null, directSupportValues = null, centreCapitalCostsValues = null;
+    let serviceAreaValues = null, directSupportValues = null, providerTravelValues = null, activityBasedTransportValues = null, centreCapitalCostsValues = null;
 
     const referenceResponse = await getReferences(workspaceId, boardId, itemId);
     if (!referenceResponse) return [null, null];
@@ -1143,7 +1143,7 @@ export async function getParticipantsServicePlanReferencedItems(workspaceId, boa
         if (!attribute) continue;
 
         switch (attribute.name) {
-            case 'Service Area':
+            case 'Service Area': 
                 {
                     const serviceValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
                     if (serviceValues) {
@@ -1172,6 +1172,63 @@ export async function getParticipantsServicePlanReferencedItems(workspaceId, boa
                         directSupportValues = {
                             id: directSupportItemValues.id,
                             itemName: values.find(v => v.attribute.name === "Support Item Name").data.toString(),
+                            itemNumber: values.find(v => v.attribute.name === "Support Item Number").data.toString(),
+                            unit: values.find(v => v.attribute.name === "Unit").data.toString(),
+                            "ACT($)": values.find(v => v.attribute.name === "ACT($)").data.toString(),
+                            "NSW($)": values.find(v => v.attribute.name === "NSW($)").data.toString(),
+                            "NT($)": values.find(v => v.attribute.name === "NT($)").data.toString(),
+                            "QLD($)": values.find(v => v.attribute.name === "QLD($)").data.toString(),
+                            "SA($)": values.find(v => v.attribute.name === "SA($)").data.toString(),
+                            "TAS($)": values.find(v => v.attribute.name === "TAS($)").data.toString(),
+                            "VIC($)": values.find(v => v.attribute.name === "VIC($)").data.toString(),
+                            "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
+                            "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
+                            "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
+                        };
+                    }
+                    break;
+                }
+            case 'Provider Travel - Non-Labour Cost Item Number':
+                {
+                    const probiderTavelNonItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (probiderTavelNonItemValues) {
+                        const values = probiderTavelNonItemValues.values;
+                        if (!values.some(v => v.attribute.name === "Support Item Number")) {
+                            throw new Error("Support Item Number is required");
+                        }
+
+                        providerTravelValues = {
+                            id: probiderTavelNonItemValues.id,
+                            itemName: values.find(v => v.attribute.name === "Support Item Name").data.toString(),
+                            itemNumber: values.find(v => v.attribute.name === "Support Item Number").data.toString(),
+                            unit: values.find(v => v.attribute.name === "Unit").data.toString(),
+                            "ACT($)": values.find(v => v.attribute.name === "ACT($)").data.toString(),
+                            "NSW($)": values.find(v => v.attribute.name === "NSW($)").data.toString(),
+                            "NT($)": values.find(v => v.attribute.name === "NT($)").data.toString(),
+                            "QLD($)": values.find(v => v.attribute.name === "QLD($)").data.toString(),
+                            "SA($)": values.find(v => v.attribute.name === "SA($)").data.toString(),
+                            "TAS($)": values.find(v => v.attribute.name === "TAS($)").data.toString(),
+                            "VIC($)": values.find(v => v.attribute.name === "VIC($)").data.toString(),
+                            "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
+                            "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
+                            "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
+                        };
+                    }
+                    break;
+                }
+            case 'Activity Based Transport Item Number':
+                {
+                    const activityItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (activityItemValues) {
+                        const values = activityItemValues.values;
+                        if (!values.some(v => v.attribute.name === "Support Item Number")) {
+                            throw new Error("Support Item Number is required");
+                        }
+
+                        activityBasedTransportValues = {
+                            id: activityItemValues.id,
+                            itemName: values.find(v => v.attribute.name === "Support Item Name").data.toString(),
+                            itemNumber: values.find(v => v.attribute.name === "Support Item Number").data.toString(),
                             unit: values.find(v => v.attribute.name === "Unit").data.toString(),
                             "ACT($)": values.find(v => v.attribute.name === "ACT($)").data.toString(),
                             "NSW($)": values.find(v => v.attribute.name === "NSW($)").data.toString(),
@@ -1199,6 +1256,7 @@ export async function getParticipantsServicePlanReferencedItems(workspaceId, boa
                         centreCapitalCostsValues = {
                             id: centreItemValues.id,
                             itemName: values.find(v => v.attribute.name === "Support Item Name").data.toString(),
+                            itemNumber: values.find(v => v.attribute.name === "Support Item Number").data.toString(),
                             unit: values.find(v => v.attribute.name === "Unit").data.toString(),
                             "ACT($)": values.find(v => v.attribute.name === "ACT($)").data.toString(),
                             "NSW($)": values.find(v => v.attribute.name === "NSW($)").data.toString(),
@@ -1217,11 +1275,11 @@ export async function getParticipantsServicePlanReferencedItems(workspaceId, boa
         }
     }
 
-    return [serviceAreaValues, directSupportValues, centreCapitalCostsValues];
+    return [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues];
 }
 
 export async function getMasterPlanReferencedItems(workspaceId, boardId, itemId) {
-    let servicePlanValues = null, cancellationTypeValues = null, fundValues = null;
+    let servicePlanValues = null, cancellationTypeValues = null, fundValues = null, participantProfileValues = null;
 
     const referenceResponse = await getReferences(workspaceId, boardId, itemId);
     if (!referenceResponse) return [null, null];
@@ -1236,42 +1294,89 @@ export async function getMasterPlanReferencedItems(workspaceId, boardId, itemId)
                 {
                     const servicePlan = await getItemValues(workspaceId, boardId, reference.to_item_id);
                     if (servicePlan) {
+                        const [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = await getParticipantsServicePlanReferencedItems(workspaceId, boardId, reference.to_item_id);
                         const values = servicePlan.values;
-                        let directSupportUnit = null, directSupportUnitPrice = null, nonLabourTravelUnitPrice = null, activityBasedTransportUnitPrice = null, centreCapitalCostsUnitPrice = null, labourTravelTimeUnitPrice = null, usedAllowanceAmount = null, nonFaceToFaceSupportUnitPrice = null;
+                        let
+                            directSupportUnit = null,
+                            directSupportUnitPrice = null,
+                            nonLabourTravelUnit = null,
+                            nonLabourTravelUnitPrice = null,
+                            activityBasedTransportUnit = null,
+                            activityBasedTransportUnitPrice = null,
+                            centreCapitalCostsUnit = null,
+                            centreCapitalCostsUnitPrice = null,
+                            labourTravelTimeUnit = null,
+                            labourTravelTimeUnitPrice = null,
+                            usedAllowanceUnit = null,
+                            usedAllowanceAmount = null,
+                            nonFaceToFaceSupportUnit = null,
+                            nonFaceToFaceSupportUnitPrice = null;
                         if (values.find(v => v.attribute.name === "Unit (Direct Support)")) {
                             directSupportUnit = values.find(v => v.attribute.name === "Unit (Direct Support)").data.toString();
                         }
                         if (values.find(v => v.attribute.name === "Agreed Unit Price for Direct Support ($)")) {
                             directSupportUnitPrice = values.find(v => v.attribute.name === "Agreed Unit Price for Direct Support ($)").data.toString();
                         }
+                        if (values.find(v => v.attribute.name === "Unit (Provider Travel - Non-Labour Cost)")) {
+                            nonLabourTravelUnit = values.find(v => v.attribute.name === "Unit (Provider Travel - Non-Labour Cost)").data.toString();
+                        }
                         if (values.find(v => v.attribute.name === "Agreed Unit Price for Non-Labour Travel ($)")) {
                             nonLabourTravelUnitPrice = values.find(v => v.attribute.name === "Agreed Unit Price for Non-Labour Travel ($)").data.toString();
                         }
-                        if (values.find(v => v.attribute.name === "Agreed Unit Price for Activity Based Transport ($)")) {
-                            activityBasedTransportUnitPrice = values.find(v => v.attribute.name === "Agreed Unit Price for Activity Based Transport ($)").data.toString();
+                        if (values.find(v => v.attribute.name === "Unit (Activity Based Transport)")) {
+                            activityBasedTransportUnit = values.find(v => v.attribute.name === "Unit (Activity Based Transport)").data.toString();
+                        }
+                        if (values.find(v => v.attribute.name === "Agreed Price for Activity Based Transport ($)")) {
+                            activityBasedTransportUnitPrice = values.find(v => v.attribute.name === "Agreed Price for Activity Based Transport ($)").data.toString();
+                        }
+                        if (values.find(v => v.attribute.name === "Unit (Centre Capital Costs)")) {
+                            centreCapitalCostsUnit = values.find(v => v.attribute.name === "Unit (Centre Capital Costs)").data.toString();
                         }
                         if (values.find(v => v.attribute.name === "Agreed Unit Price for Centre Capital Costs($)")) {
                             centreCapitalCostsUnitPrice = values.find(v => v.attribute.name === "Agreed Unit Price for Centre Capital Costs($)").data.toString();
                         }
+                        if (values.find(v => v.attribute.name === "Unit (Labour Travel Time)")) {
+                            labourTravelTimeUnit = values.find(v => v.attribute.name === "Unit (Labour Travel Time)").data.toString();
+                        }
                         if (values.find(v => v.attribute.name === "Agreed Unit Price for Labour Travel Time ($)")) {
                             labourTravelTimeUnitPrice = values.find(v => v.attribute.name === "Agreed Unit Price for Labour Travel Time ($)").data.toString();
                         }
-                        if (values.find(v => v.attribute.name === "Used Allowance Amount($)")) {
-                            usedAllowanceAmount = values.find(v => v.attribute.name === "Used Allowance Amount($)").data.toString();
+                        if (values.find(v => v.attribute.name === "Unit (Allowances)")) {
+                            usedAllowanceUnit = values.find(v => v.attribute.name === "Unit (Allowances)").data.toString();
+                        }
+                        if (values.find(v => v.attribute.name === "Agreed Price for Allowances($)")) {
+                            usedAllowanceAmount = values.find(v => v.attribute.name === "Agreed Price for Allowances($)").data.toString();
+                        }
+                        if (values.find(v => v.attribute.name === "Unit (Non-Face-to-Face Support)")) {
+                            nonFaceToFaceSupportUnit = values.find(v => v.attribute.name === "Unit (Non-Face-to-Face Support)").data.toString();
                         }
                         if (values.find(v => v.attribute.name === "Agreed Unit Price for Non-Face-to-Face Support($)")) {
                             nonFaceToFaceSupportUnitPrice = values.find(v => v.attribute.name === "Agreed Unit Price for Non-Face-to-Face Support($)").data.toString();
                         }
 
                         servicePlanValues = {
+                            directSupportItemNumber: directSupportValues.itemNumber,
+                            directSupportItemName: directSupportValues.itemName,
                             directSupportUnit: directSupportUnit,
                             directSupportUnitPrice: directSupportUnitPrice,
+                            providerTravelItemNumber: providerTravelValues.itemNumber,
+                            providerTravelItemName: providerTravelValues.itemName,
+                            nonLabourTravelUnit: nonLabourTravelUnit,
                             nonLabourTravelUnitPrice: nonLabourTravelUnitPrice,
+                            activityBasedTransportItemNumber: activityBasedTransportValues.itemNumber,
+                            activityBasedTransportItemName: activityBasedTransportValues.itemName,
+                            activityBasedTransportUnit: activityBasedTransportUnit,
                             activityBasedTransportUnitPrice: activityBasedTransportUnitPrice,
+                            centreCapitalCostsItemNumber: centreCapitalCostsValues.itemNumber,
+                            centreCapitalCostsItemName: centreCapitalCostsValues.itemName,
+                            centreCapitalCostsUnit: centreCapitalCostsUnit,
                             centreCapitalCostsUnitPrice: centreCapitalCostsUnitPrice,
+                            labourTravelTimeUnit: labourTravelTimeUnit,
                             labourTravelTimeUnitPrice: labourTravelTimeUnitPrice,
+                            usedAllowanceUnit: usedAllowanceUnit,
                             usedAllowanceAmount: usedAllowanceAmount,
-                            nonFaceToFaceSupportUnitPrice: nonFaceToFaceSupportUnitPrice,
+                            nonFaceToFaceSupportUnit: nonFaceToFaceSupportUnit,
+                            nonFaceToFaceSupportUnitPrice: nonFaceToFaceSupportUnitPrice
                         };
                     }
                     break;
@@ -1295,16 +1400,29 @@ export async function getMasterPlanReferencedItems(workspaceId, boardId, itemId)
                     const fundAmount = fund.values.find(v => v.attribute.name === "Fund Amount($)").data || 0;
                     const previouslyUsed = fund.values.find(v => v.attribute.name === "Previously Used ($)").data || 0;
                     const invoicedAndReceived = fund.values.find(v => v.attribute.name === "Invoiced and Received Amount($)").data || 0;
-                    
+
                     const availableFund = fundAmount - previouslyUsed - invoicedAndReceived;
                     const budgetSpent = availableFund * 100 / fundAmount;
                     const fundingBudgetStatus = budgetSpent > 0 ? "👍 Within Budget" : budgetSpent < 0 ? "👎 Over Budget" : "👌 On Budget";
                     fundValues = {
                         fundingBudgetStatus: fundingBudgetStatus,
                     };
+                    break;
+                }
+            case 'Participant Profile':
+                {
+                    const participantProfile = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (participantProfile) {
+                        const values = participantProfile.values;
+                        participantProfileValues = {
+                            billingContact: values.find(v => v.attribute.name === "Billing Contact")?.data?.toString() || '',
+                            billingAddress: values.find(v => v.attribute.name === "Billing Address")?.data?.toString() || ''
+                        };
+                    }
+                    break;
                 }
         }
     }
 
-    return [servicePlanValues, cancellationTypeValues, fundValues];
+    return [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues];
 }
