@@ -56,6 +56,16 @@ const businessSchema = new mongoose.Schema({
     expiresAt: Number,
     refreshTokenExpiresAt: Number
   },
+  xeroOrganization: {
+    name: String,
+    legalName: String,
+    shortCode: String,
+    organisationId: String,
+    baseCurrency: String,
+    countryCode: String,
+    isDemoCompany: Boolean,
+    organisationStatus: String
+  },
   bankDetails: {
     accountName: {
       type: String

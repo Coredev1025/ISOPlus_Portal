@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, FileSpreadsheet, KeyRound } from "lucide-react";
+import { ArrowLeft, FileSpreadsheet, KeyRound, Building2 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import axios from "@/app/utils/axiosConfig";
@@ -16,6 +16,13 @@ export default function XeroIntegrationPage() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isExpired, setIsExpired] = useState(false);
+  const [organizationInfo, setOrganizationInfo] = useState({
+    name: "",
+    legalName: "",
+    shortCode: "",
+    baseCurrency: "",
+    countryCode: ""
+  });
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -37,6 +44,7 @@ export default function XeroIntegrationPage() {
             } else {
               setIsExpired(false);
             }
+            setOrganizationInfo(response.data.xeroOrganization);
           }
           setIsConnected(response.data.xeroIntegrated);
         }
@@ -86,13 +94,15 @@ export default function XeroIntegrationPage() {
                 `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/xero/connect`,
                 {
                   workspaceId: id,
-                  tokens: event.data.tokenSet
+                  tokens: event.data.tokenSet,
+                  organization: event.data.organization
                 },
                 { 
                   signal: abortController.signal
                 }
               );
               setIsConnected(true);
+              setOrganizationInfo(event.data.organization);
               setResultContent('Successfully connected to Xero!');
             } else {
               setResultContent('Error completing Xero connection. Please try again.');
@@ -134,6 +144,13 @@ export default function XeroIntegrationPage() {
         }
       );
       setIsConnected(false);
+      setOrganizationInfo({
+        name: "",
+        legalName: "",
+        shortCode: "",
+        baseCurrency: "",
+        countryCode: ""
+      });
       setResultContent('Successfully disconnected from Xero!');
     } catch (error: any) {
       if (error.name != "CanceledError" && error.name != "AbortError") {
@@ -178,13 +195,15 @@ export default function XeroIntegrationPage() {
                 `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/xero/connect`,
                 {
                   workspaceId: id,
-                  tokens: event.data.tokenSet
+                  tokens: event.data.tokenSet,
+                  organization: event.data.organization
                 },
                 { 
                   signal: abortController.signal
                 }
               );
               setIsConnected(true);
+              setOrganizationInfo(event.data.organization);
               setResultContent('Successfully connected to Xero!');
             } else {
               setResultContent('Error completing Xero connection. Please try again.');
@@ -209,6 +228,27 @@ export default function XeroIntegrationPage() {
       if (!abortController.signal.aborted) {
         setIsConnecting(false);
       }
+    }
+  };
+
+  const handleRefreshOrganization = async () => {
+    try {
+      const response = await axios.post(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/xero/update-organization`,
+        {
+          workspaceId: id
+        }
+      );
+      
+      if (response.data.success) {
+        setOrganizationInfo(response.data.organization);
+        setResultContent('Organization information updated successfully!');
+      } else {
+        setResultContent('Failed to update organization information.');
+      }
+    } catch (error: any) {
+      console.error('Error updating organization info:', error);
+      setResultContent('Error updating organization information. Please try again.');
     }
   };
 
@@ -237,6 +277,52 @@ export default function XeroIntegrationPage() {
                 streamline your financial management.
               </p>
             </div>
+
+            {isConnected && organizationInfo && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <Building2 className="h-5 w-5 text-green-600 mt-0.5" />
+                  <div className="space-y-2 flex-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-green-800">Connected Organization</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRefreshOrganization}
+                        className="text-xs"
+                      >
+                        Refresh
+                      </Button>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-green-700">
+                        <span className="font-medium">Name:</span> {organizationInfo.name}
+                      </p>
+                      {organizationInfo.legalName && (
+                        <p className="text-sm text-green-700">
+                          <span className="font-medium">Legal Name:</span> {organizationInfo.legalName}
+                        </p>
+                      )}
+                      {organizationInfo.shortCode && (
+                        <p className="text-sm text-green-700">
+                          <span className="font-medium">Short Code:</span> {organizationInfo.shortCode}
+                        </p>
+                      )}
+                      {organizationInfo.baseCurrency && (
+                        <p className="text-sm text-green-700">
+                          <span className="font-medium">Currency:</span> {organizationInfo.baseCurrency}
+                        </p>
+                      )}
+                      {organizationInfo.countryCode && (
+                        <p className="text-sm text-green-700">
+                          <span className="font-medium">Country:</span> {organizationInfo.countryCode}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="bg-muted/50 rounded-lg p-4">
               <div className="flex items-start gap-3">

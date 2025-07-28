@@ -46,11 +46,19 @@ export async function callback(code, url) {
         await xeroClient.apiCallback(url);
         const tokenSet = xeroClient.readTokenSet();
         const tenants = await xeroClient.updateTenants(false);
+        
+        // Get organization information
+        let organizationInfo = null;
+        if (tenants && tenants.length > 0) {
+            organizationInfo = await getOrganizationInfo(tenants[0].tenantId);
+        }
+        
         return {
             success: true,
             message: 'Successfully connected to Xero!',
             tokenSet,
-            tenants
+            tenants,
+            organization: organizationInfo
         };
     } catch (err) {
         error('Xero-Service', 'Error in Xero callback', err);
@@ -58,6 +66,37 @@ export async function callback(code, url) {
             success: false,
             message: 'Failed to authenticate: ' + err.message
         };
+    }
+}
+
+export async function getOrganizationInfo(tenantId) {
+    try {
+        if (!xeroClient) {
+            throw new Error('Xero client is not configured.');
+        }
+
+        // Get organization details using the accounting API
+        const response = await xeroClient.accountingApi.getOrganisations(tenantId);
+        
+        if (response.body.organisations && response.body.organisations.length > 0) {
+            const org = response.body.organisations[0];
+            return {
+                name: org.name,
+                legalName: org.legalName,
+                shortCode: org.shortCode,
+                organisationId: org.organisationId,
+                baseCurrency: org.baseCurrency,
+                countryCode: org.countryCode,
+                isDemoCompany: org.isDemoCompany,
+                organisationStatus: org.organisationStatus
+            };
+        }
+        
+        return null;
+    } catch (err) {
+        error('Xero-Service', 'Error getting organization info', err);
+        // Don't throw error here as it's not critical for the OAuth flow
+        return null;
     }
 }
 
@@ -444,5 +483,34 @@ export async function ensureAuthenticated(workspaceId) {
     const tenants = await xeroClient.updateTenants(false);
     if (!tenants || !tenants.length) {
         throw new Error('No Xero organizations connected');
+    }
+}
+
+export async function updateOrganizationInfo(workspaceId) {
+    try {
+        if (!isValidWorkspaceId(workspaceId)) {
+            throw new Error('Invalid workspace Id');
+        }
+        
+        await ensureAuthenticated(workspaceId);
+        
+        const tenants = await xeroClient.updateTenants(false);
+        if (!tenants || !tenants.length) {
+            throw new Error('No Xero organizations connected');
+        }
+        
+        const organizationInfo = await getOrganizationInfo(tenants[0].tenantId);
+        
+        if (organizationInfo) {
+            await Business.updateOne(
+                { workspaceId },
+                { $set: { xeroOrganization: organizationInfo } }
+            );
+        }
+        
+        return organizationInfo;
+    } catch (err) {
+        error('Xero-Service', 'Error updating organization info', err);
+        throw new Error('Error updating organization info: ' + err.message);
     }
 }
