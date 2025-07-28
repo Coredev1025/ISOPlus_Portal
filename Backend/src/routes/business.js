@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import AuditTrail from '../models/AuditTrail.js';
 import { uploadFileToS3, getS3FileUrl, deleteFileFromS3 } from '../utils/uploadS3.js'; // Import S3 utility functions
 import { setLogo } from '../services/isoplus.js';
+import { updateOrganizationInfo } from '../services/xero.js';
 
 const validateBusinessProfile = (req, res, next) => {
   const errors = [];
@@ -232,7 +233,7 @@ router.post('/xero/connect', authenticateToken, async (req, res) => {
   try {
     const workspaceId = req.body.workspaceId?.toString();
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
-    const { tokens } = req.body;
+    const { tokens, organization } = req.body;
 
     let business = await Business.findOne({ workspaceId });
     if (!business) {
@@ -245,7 +246,8 @@ router.post('/xero/connect', authenticateToken, async (req, res) => {
           refreshToken: tokens.refresh_token,
           expiresAt: tokens.expires_at,
           refreshTokenExpiresAt: now.getTime() + 60 * 24 * 60 * 60 * 1000
-        }
+        },
+        xeroOrganization: organization || null
       });
       await business.save();
     } else {
@@ -257,6 +259,9 @@ router.post('/xero/connect', authenticateToken, async (req, res) => {
         expiresAt: tokens.expires_at,
         refreshTokenExpiresAt: now.getTime() + 60 * 24 * 60 * 60 * 1000
       };
+      if (organization) {
+        business.xeroOrganization = organization;
+      }
       await business.save();
     }
 
@@ -285,12 +290,47 @@ router.post('/xero/disconnect', authenticateToken, async (req, res) => {
       refreshToken: null,
       expiresAt: null
     };
+    business.xeroOrganization = null;
 
     await business.save();
     info('Business-Service', 'Xero integration disconnected', { businessId: business._id }, req);
     res.json({ success: true });
   } catch (err) {
     error('Business-Service', 'Server error during Xero disconnection', { message: err.message }, req);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.post('/xero/update-organization', authenticateToken, async (req, res) => {
+  try {
+    const workspaceId = req.body.workspaceId?.toString();
+    if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
+
+    const business = await Business.findOne({ workspaceId });
+    if (!business) {
+      warn('Business-Service', 'Business not found', { workspaceId }, req);
+      return res.status(404).json({ message: 'Business not found' });
+    }
+
+    if (!business.xeroIntegrated) {
+      warn('Business-Service', 'Xero integration not found', { workspaceId }, req);
+      return res.status(400).json({ message: 'Xero integration not found' });
+    }
+
+    const updatedOrganization = await updateOrganizationInfo(workspaceId);
+
+    if (updatedOrganization) {
+      business.xeroOrganization = updatedOrganization;
+      await business.save();
+      info('Business-Service', 'Xero organization info updated', { businessId: business._id }, req);
+      AuditTrail.insertOne({ workspaceId, action: 'Updated Xero organization info', detail: `Updated Xero organization info to "${JSON.stringify(updatedOrganization)}"`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
+      res.json({ success: true, organization: updatedOrganization });
+    } else {
+      error('Business-Service', 'Failed to update Xero organization info', { workspaceId }, req);
+      res.status(500).json({ message: 'Failed to update Xero organization info' });
+    }
+  } catch (err) {
+    error('Business-Service', 'Server error during Xero organization update', { message: err.message }, req);
     res.status(500).json({ message: 'Server error' });
   }
 });
