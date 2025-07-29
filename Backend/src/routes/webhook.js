@@ -469,7 +469,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
 
                 // 1. Direct Support
                 if (directSupportValues && NDISQuoteValues['Quantity (Direct Support)'] && NDISQuoteValues['Unit Price for Direct Support($)']) {
-                    const desc = `${NDISQuoteValues['Direct Support Item Number'] || ''}${directSupportValues.itemName ? '-[' + directSupportValues.itemName + ']' : ''}`;
+                    const desc = `${NDISQuoteValues['Direct Support Item Number'] || ''}${directSupportValues.itemName ? '-' + directSupportValues.itemName : ''}`;
                     const qty = Number(NDISQuoteValues['Quantity (Direct Support)']) || 0;
                     const unitPrice = Number(NDISQuoteValues['Unit Price for Direct Support($)']) || 0;
                     const amount = qty * unitPrice;
@@ -485,7 +485,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                 }
                 // 2. Provider Travel - Non-Labour Cost
                 if (providerTravelValues && NDISQuoteValues['Quantity (Provider Travel)'] && NDISQuoteValues['Unit Price for Provider Travel($)']) {
-                    const desc = `${NDISQuoteValues['Provider Travel - Non-Labour Cost Item Number'] || ''}${providerTravelValues.itemName ? '-\[' + providerTravelValues.itemName + ']' : ''}`;
+                    const desc = `${NDISQuoteValues['Provider Travel - Non-Labour Cost Item Number'] || ''}${providerTravelValues.itemName ? '-' + providerTravelValues.itemName : ''}`;
                     const qty = Number(NDISQuoteValues['Quantity (Provider Travel)']) || 0;
                     const unitPrice = Number(NDISQuoteValues['Unit Price for Provider Travel($)']) || 0;
                     const amount = qty * unitPrice;
@@ -501,7 +501,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                 }
                 // 3. Activity Based Transport
                 if (activityBasedTransportValues && NDISQuoteValues['Quantity (Activity Based Transport)'] && NDISQuoteValues['Unit Price for Activity Based Transport($)']) {
-                    const desc = `${NDISQuoteValues['Activity Based Transport Item Number'] || ''}${activityBasedTransportValues.itemName ? '-\[' + activityBasedTransportValues.itemName + ']' : ''}`;
+                    const desc = `${NDISQuoteValues['Activity Based Transport Item Number'] || ''}${activityBasedTransportValues.itemName ? '-' + activityBasedTransportValues.itemName : ''}`;
                     const qty = Number(NDISQuoteValues['Quantity (Activity Based Transport)']) || 0;
                     const unitPrice = Number(NDISQuoteValues['Unit Price for Activity Based Transport($)']) || 0;
                     const amount = qty * unitPrice;
@@ -517,7 +517,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                 }
                 // 4. Centre Capital Costs
                 if (centreCapitalCostsValues && NDISQuoteValues['Quantity (Centre Capital Costs)'] && NDISQuoteValues['Unit Price for Centre Capital Costs($)']) {
-                    const desc = `${NDISQuoteValues['Centre Capital Costs Item'] || ''}${centreCapitalCostsValues.itemName ? '-[' + centreCapitalCostsValues.itemName + ']' : ''}`;
+                    const desc = `${NDISQuoteValues['Centre Capital Costs Item'] || ''}${centreCapitalCostsValues.itemName ? '-' + centreCapitalCostsValues.itemName : ''}`;
                     const qty = Number(NDISQuoteValues['Quantity (Centre Capital Costs)']) || 0;
                     const unitPrice = Number(NDISQuoteValues['Unit Price for Centre Capital Costs($)']) || 0;
                     const amount = qty * unitPrice;
@@ -535,7 +535,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                 if (NDISQuoteValues['Provider Travel - Labour Travel Time Costs'] && NDISQuoteValues['Quantity (Labour Travel Time)']) {
                     const desc = 'Provider Travel - Labour Travel Time Costs';
                     const qty = Number(NDISQuoteValues['Quantity (Labour Travel Time)']) || 0;
-                    const unitPrice = Number(NDISQuoteValues['Unit Price for Labour Travel Time($)']) || 1;
+                    const unitPrice = Number(NDISQuoteValues['Unit Price for Labour Travel Time ($)']) || 1;
                     const amount = qty * unitPrice;
                     ordersArr.push([
                         desc,
@@ -549,9 +549,9 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                 }
                 // 6. Non-Face-to-Face Support
                 if (NDISQuoteValues['Non-Face-to-Face Supports'] && NDISQuoteValues['Quantity (Non-Face-to-Face Support)']) {
-                    const desc = `Non-Face-t-Face Support - ${NDISQuoteValues['Non-Face-to-Face Supports'] || ''}`;
+                    const desc = `Non-Face-to-Face Support - ${NDISQuoteValues['Non-Face-to-Face Supports'] || ''}`;
                     const qty = Number(NDISQuoteValues['Quantity (Non-Face-to-Face Support)']) || 0;
-                    const unitPrice = Number(NDISQuoteValues['Unit Price for Non-Face-to-Face Support($)']) || 1;
+                    const unitPrice = Number(NDISQuoteValues['Unit Price for Non-Face-to-Face Support ($)']) || 1;
                     const amount = qty * unitPrice;
                     ordersArr.push([
                         desc,
