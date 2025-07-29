@@ -434,7 +434,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                 await validateItemBelongsToTenant(workspaceId, boardId, item.id);
                 await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
-                const [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = await getQuoteNDISReferencedItems(workspaceId, boardId, item.id);
+                const [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues, providerTravelLabourTravelTime] = await getQuoteNDISReferencedItems(workspaceId, boardId, item.id);
                 if (!serviceAreaValues) throw new Error("Service Area value is required.");
 
                 const templatePath = path.join(__dirname, '..', 'assets', `NDISquote.json`);
@@ -532,8 +532,8 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                     subTotal += amount;
                 }
                 // 5. Provider Travel - Labour Travel Time Costs
-                if (NDISQuoteValues['Provider Travel - Labour Travel Time Costs'] && NDISQuoteValues['Quantity (Labour Travel Time)']) {
-                    const desc = 'Provider Travel - Labour Travel Time Costs';
+                if (providerTravelLabourTravelTime && NDISQuoteValues['Quantity (Labour Travel Time)']) {
+                    const desc = 'Provider Travel - Labour Travel Time Costs' + (providerTravelLabourTravelTime.itemName ? '-' + providerTravelLabourTravelTime.itemName : '');
                     const qty = Number(NDISQuoteValues['Quantity (Labour Travel Time)']) || 0;
                     const unitPrice = Number(NDISQuoteValues['Unit Price for Labour Travel Time ($)']) || 1;
                     const amount = qty * unitPrice;
