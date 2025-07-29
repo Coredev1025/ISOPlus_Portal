@@ -83,7 +83,7 @@ function validateRequestParams(req) {
 }
 
 async function handlePDFSuccess(workspaceId, boardId, itemId, fileUrl, docType, req, res) {
-    await setIntegrationMessage(workspaceId, boardId, itemId, `Your ${docType.toLowerCase()} has been successfully created.\n Click <a href="${fileUrl}">here</a> to download.`);
+    await setIntegrationMessage(workspaceId, boardId, itemId, `Your ${docType} has been successfully created.\n Click <a href="${fileUrl}">here</a> to download.`);
     await setPDFLinkAttribute(workspaceId, boardId, itemId, fileUrl);
     logAuditTrail({
         workspaceId,
@@ -434,7 +434,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                 await validateItemBelongsToTenant(workspaceId, boardId, item.id);
                 await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
-                const [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = await getQuoteNDISReferencedItems(workspaceId, boardId, item.id);
+                const [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues, providerTravelLabourTravelTime] = await getQuoteNDISReferencedItems(workspaceId, boardId, item.id);
                 if (!serviceAreaValues) throw new Error("Service Area value is required.");
 
                 const templatePath = path.join(__dirname, '..', 'assets', `NDISquote.json`);
@@ -469,7 +469,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
 
                 // 1. Direct Support
                 if (directSupportValues && NDISQuoteValues['Quantity (Direct Support)'] && NDISQuoteValues['Unit Price for Direct Support($)']) {
-                    const desc = `${NDISQuoteValues['Direct Support Item Number'] || ''}${directSupportValues.itemName ? '-[' + directSupportValues.itemName + ']' : ''}`;
+                    const desc = `${NDISQuoteValues['Direct Support Item Number'] || ''}${directSupportValues.itemName ? '-' + directSupportValues.itemName : ''}`;
                     const qty = Number(NDISQuoteValues['Quantity (Direct Support)']) || 0;
                     const unitPrice = Number(NDISQuoteValues['Unit Price for Direct Support($)']) || 0;
                     const amount = qty * unitPrice;
@@ -485,7 +485,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                 }
                 // 2. Provider Travel - Non-Labour Cost
                 if (providerTravelValues && NDISQuoteValues['Quantity (Provider Travel)'] && NDISQuoteValues['Unit Price for Provider Travel($)']) {
-                    const desc = `${NDISQuoteValues['Provider Travel - Non-Labour Cost Item Number'] || ''}${providerTravelValues.itemName ? '-\[' + providerTravelValues.itemName + ']' : ''}`;
+                    const desc = `${NDISQuoteValues['Provider Travel - Non-Labour Cost Item Number'] || ''}${providerTravelValues.itemName ? '-' + providerTravelValues.itemName : ''}`;
                     const qty = Number(NDISQuoteValues['Quantity (Provider Travel)']) || 0;
                     const unitPrice = Number(NDISQuoteValues['Unit Price for Provider Travel($)']) || 0;
                     const amount = qty * unitPrice;
@@ -501,7 +501,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                 }
                 // 3. Activity Based Transport
                 if (activityBasedTransportValues && NDISQuoteValues['Quantity (Activity Based Transport)'] && NDISQuoteValues['Unit Price for Activity Based Transport($)']) {
-                    const desc = `${NDISQuoteValues['Activity Based Transport Item Number'] || ''}${activityBasedTransportValues.itemName ? '-\[' + activityBasedTransportValues.itemName + ']' : ''}`;
+                    const desc = `${NDISQuoteValues['Activity Based Transport Item Number'] || ''}${activityBasedTransportValues.itemName ? '-' + activityBasedTransportValues.itemName : ''}`;
                     const qty = Number(NDISQuoteValues['Quantity (Activity Based Transport)']) || 0;
                     const unitPrice = Number(NDISQuoteValues['Unit Price for Activity Based Transport($)']) || 0;
                     const amount = qty * unitPrice;
@@ -517,7 +517,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                 }
                 // 4. Centre Capital Costs
                 if (centreCapitalCostsValues && NDISQuoteValues['Quantity (Centre Capital Costs)'] && NDISQuoteValues['Unit Price for Centre Capital Costs($)']) {
-                    const desc = `${NDISQuoteValues['Centre Capital Costs Item'] || ''}${centreCapitalCostsValues.itemName ? '-[' + centreCapitalCostsValues.itemName + ']' : ''}`;
+                    const desc = `${NDISQuoteValues['Centre Capital Costs Item'] || ''}${centreCapitalCostsValues.itemName ? '-' + centreCapitalCostsValues.itemName : ''}`;
                     const qty = Number(NDISQuoteValues['Quantity (Centre Capital Costs)']) || 0;
                     const unitPrice = Number(NDISQuoteValues['Unit Price for Centre Capital Costs($)']) || 0;
                     const amount = qty * unitPrice;
@@ -532,10 +532,10 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                     subTotal += amount;
                 }
                 // 5. Provider Travel - Labour Travel Time Costs
-                if (NDISQuoteValues['Provider Travel - Labour Travel Time Costs'] && NDISQuoteValues['Quantity (Labour Travel Time)']) {
-                    const desc = 'Provider Travel - Labour Travel Time Costs';
+                if (providerTravelLabourTravelTime && NDISQuoteValues['Quantity (Labour Travel Time)']) {
+                    const desc = 'Provider Travel - Labour Travel Time Costs' + (providerTravelLabourTravelTime.itemName ? '-' + providerTravelLabourTravelTime.itemName : '');
                     const qty = Number(NDISQuoteValues['Quantity (Labour Travel Time)']) || 0;
-                    const unitPrice = Number(NDISQuoteValues['Unit Price for Labour Travel Time($)']) || 1;
+                    const unitPrice = Number(NDISQuoteValues['Unit Price for Labour Travel Time ($)']) || 1;
                     const amount = qty * unitPrice;
                     ordersArr.push([
                         desc,
@@ -549,9 +549,9 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                 }
                 // 6. Non-Face-to-Face Support
                 if (NDISQuoteValues['Non-Face-to-Face Supports'] && NDISQuoteValues['Quantity (Non-Face-to-Face Support)']) {
-                    const desc = `Non-Face-t-Face Support - ${NDISQuoteValues['Non-Face-to-Face Supports'] || ''}`;
+                    const desc = `Non-Face-to-Face Support - ${NDISQuoteValues['Non-Face-to-Face Supports'] || ''}`;
                     const qty = Number(NDISQuoteValues['Quantity (Non-Face-to-Face Support)']) || 0;
-                    const unitPrice = Number(NDISQuoteValues['Unit Price for Non-Face-to-Face Support($)']) || 1;
+                    const unitPrice = Number(NDISQuoteValues['Unit Price for Non-Face-to-Face Support ($)']) || 1;
                     const amount = qty * unitPrice;
                     ordersArr.push([
                         desc,
@@ -626,13 +626,13 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                 const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
                     const fileUrl = await getS3FileUrl(filename);
-                    await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS-Quote', req, res);
+                    await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS Quote', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${quoteNumber} (ISO+™)`);
                 } else {
                     throw new Error('Upload of PDF failed, please provide correct information.');
                 }
             } catch (err) {
-                await handlePDFError(err, workspaceId, boardId, item.id, 'Generate PDF NDIS-Quote', req, res);
+                await handlePDFError(err, workspaceId, boardId, item.id, 'Generate PDF NDIS Quote', req, res);
             }
         }));
     } catch (err) {
@@ -971,13 +971,13 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
 
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
                     const fileUrl = await getS3FileUrl(filename);
-                    await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS-Invoice', req, res);
+                    await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS Invoice', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
                 } else {
                     throw new Error('Upload of PDF failed, please provide correct information.');
                 }
             } catch (err) {
-                await handlePDFError(err, workspaceId, boardId, item.id, 'Generate PDF NDIS-Invoice', req, res);
+                await handlePDFError(err, workspaceId, boardId, item.id, 'Generate PDF NDIS Invoice', req, res);
             }
         }));
     } catch (err) {

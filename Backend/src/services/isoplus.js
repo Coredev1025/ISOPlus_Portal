@@ -976,7 +976,7 @@ export async function getQuoteNDISReferencedItems(workspaceId, boardId, itemId) 
         'Very Remote': 'Very Remote($)',
         '': 'ACT($)'
     }
-    let serviceAreaValues = null, directSupportValues = null, providerTravelValues = null, activityBasedTransportValues = null, centreCapitalCostsValues = null;
+    let serviceAreaValues = null, directSupportValues = null, providerTravelValues = null, activityBasedTransportValues = null, centreCapitalCostsValues = null, providerTravelLabourTravelTime=null;
 
     const referenceResponse = await getReferences(workspaceId, boardId, itemId);
     if (!referenceResponse) return [null, null];
@@ -1112,10 +1112,23 @@ export async function getQuoteNDISReferencedItems(workspaceId, boardId, itemId) 
                     }
                     break;
                 }
+            case 'Provider Travel - Labour Travel Time Costs': {
+                const providerTravelLabourTravelTimeValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                if (providerTravelLabourTravelTimeValues) {
+                    const values = providerTravelLabourTravelTimeValues.values;
+                    if (!values.some(v => v.attribute.name === "Labour Travel Time Costs")) {
+                        throw new Error("Labour Travel Time Costs is required");
+                    }
+                    providerTravelLabourTravelTime = {
+                        id: providerTravelLabourTravelTimeValues.id,
+                        itemName: values.find(v => v.attribute.name === "Labour Travel Time Costs").data.toString(),
+                    };
+                }
+                break;
+            }
         }
     }
-
-    return [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues];
+    return [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues, providerTravelLabourTravelTime];
 }
 
 export async function getParticipantsServicePlanReferencedItems(workspaceId, boardId, itemId) {
