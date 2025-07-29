@@ -83,7 +83,7 @@ function validateRequestParams(req) {
 }
 
 async function handlePDFSuccess(workspaceId, boardId, itemId, fileUrl, docType, req, res) {
-    await setIntegrationMessage(workspaceId, boardId, itemId, `Your ${docType.toLowerCase()} has been successfully created.\n Click <a href="${fileUrl}">here</a> to download.`);
+    await setIntegrationMessage(workspaceId, boardId, itemId, `Your ${docType} has been successfully created.\n Click <a href="${fileUrl}">here</a> to download.`);
     await setPDFLinkAttribute(workspaceId, boardId, itemId, fileUrl);
     logAuditTrail({
         workspaceId,
@@ -626,13 +626,13 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                 const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
                     const fileUrl = await getS3FileUrl(filename);
-                    await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS-Quote', req, res);
+                    await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS Quote', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${quoteNumber} (ISO+™)`);
                 } else {
                     throw new Error('Upload of PDF failed, please provide correct information.');
                 }
             } catch (err) {
-                await handlePDFError(err, workspaceId, boardId, item.id, 'Generate PDF NDIS-Quote', req, res);
+                await handlePDFError(err, workspaceId, boardId, item.id, 'Generate PDF NDIS Quote', req, res);
             }
         }));
     } catch (err) {
@@ -971,13 +971,13 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
 
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
                     const fileUrl = await getS3FileUrl(filename);
-                    await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS-Invoice', req, res);
+                    await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS Invoice', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
                 } else {
                     throw new Error('Upload of PDF failed, please provide correct information.');
                 }
             } catch (err) {
-                await handlePDFError(err, workspaceId, boardId, item.id, 'Generate PDF NDIS-Invoice', req, res);
+                await handlePDFError(err, workspaceId, boardId, item.id, 'Generate PDF NDIS Invoice', req, res);
             }
         }));
     } catch (err) {
