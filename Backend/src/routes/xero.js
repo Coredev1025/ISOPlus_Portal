@@ -575,7 +575,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
     const cancellationPercentage9 = Number(cancellationTypeValues?.billableToClient) || 0;
     const itemName9 = servicePlanValues?.directSupportItemName || '';
     const itemNumber9 = servicePlanValues?.directSupportItemNumber || '';
-    const qty9 = Number(invoiceValues["Actual Shift Duration(Hr.)"]) || 0;
+    const qty9 = Number(invoiceValues["Scheduled Shift Duration(Hr.)"]) && Number(invoiceValues["Scheduled Shift Duration(Hr.)"]) > 0 ? Number(invoiceValues["Scheduled Shift Duration(Hr.)"]) : 0;
     const unitPrice9 = baseUnitPrice9 * (cancellationPercentage9 / 100);
 
     if (unitPrice9 > 0 && qty9 > 0) {
