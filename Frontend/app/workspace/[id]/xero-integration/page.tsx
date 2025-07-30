@@ -278,50 +278,75 @@ export default function XeroIntegrationPage() {
               </p>
             </div>
 
-            {isConnected && organizationInfo && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <div className="flex items-start gap-3">
-                  <Building2 className="h-5 w-5 text-green-600 mt-0.5" />
-                  <div className="space-y-2 flex-1">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-green-800">Connected Organization</p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleRefreshOrganization}
-                        className="text-xs"
-                      >
-                        Refresh
-                      </Button>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-green-700">
-                        <span className="font-medium">Name:</span> {organizationInfo.name}
-                      </p>
-                      {organizationInfo.legalName && (
+            {isConnected && (
+              organizationInfo && organizationInfo?.name ? (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <Building2 className="h-5 w-5 text-green-600 mt-0.5" />
+                    <div className="space-y-2 flex-1">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium text-green-800">Connected Organization</p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleRefreshOrganization}
+                          className="text-xs"
+                        >
+                          Refresh
+                        </Button>
+                      </div>
+                      <div className="space-y-1">
                         <p className="text-sm text-green-700">
-                          <span className="font-medium">Legal Name:</span> {organizationInfo.legalName}
+                          <span className="font-medium">Name:</span> {organizationInfo?.name}
                         </p>
-                      )}
-                      {organizationInfo.shortCode && (
-                        <p className="text-sm text-green-700">
-                          <span className="font-medium">Short Code:</span> {organizationInfo.shortCode}
-                        </p>
-                      )}
-                      {organizationInfo.baseCurrency && (
-                        <p className="text-sm text-green-700">
-                          <span className="font-medium">Currency:</span> {organizationInfo.baseCurrency}
-                        </p>
-                      )}
-                      {organizationInfo.countryCode && (
-                        <p className="text-sm text-green-700">
-                          <span className="font-medium">Country:</span> {organizationInfo.countryCode}
-                        </p>
-                      )}
+                        {organizationInfo?.legalName && (
+                          <p className="text-sm text-green-700">
+                            <span className="font-medium">Legal Name:</span> {organizationInfo?.legalName}
+                          </p>
+                        )}
+                        {organizationInfo?.shortCode && (
+                          <p className="text-sm text-green-700">
+                            <span className="font-medium">Short Code:</span> {organizationInfo?.shortCode}
+                          </p>
+                        )}
+                        {organizationInfo?.baseCurrency && (
+                          <p className="text-sm text-green-700">
+                            <span className="font-medium">Currency:</span> {organizationInfo?.baseCurrency}
+                          </p>
+                        )}
+                        {organizationInfo?.countryCode && (
+                          <p className="text-sm text-green-700">
+                            <span className="font-medium">Country:</span> {organizationInfo?.countryCode}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <Building2 className="h-5 w-5 text-yellow-600 mt-0.5" />
+                    <div className="space-y-2 flex-1">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium text-yellow-800">Connected to Xero</p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleRefreshOrganization}
+                          className="text-xs"
+                        >
+                          Get Organization Info
+                        </Button>
+                      </div>
+                      <p className="text-sm text-yellow-700">
+                        Your Xero account is connected, but organization information is not available. 
+                        Click "Get Organization Info" to retrieve your organization details.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )
             )}
 
             <div className="bg-muted/50 rounded-lg p-4">
