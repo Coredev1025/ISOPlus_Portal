@@ -491,7 +491,7 @@ export async function updateOrganizationInfo(workspaceId) {
         if (!isValidWorkspaceId(workspaceId)) {
             throw new Error('Invalid workspace Id');
         }
-        
+        await configure();        
         await ensureAuthenticated(workspaceId);
         
         const tenants = await xeroClient.updateTenants(false);
