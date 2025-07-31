@@ -547,23 +547,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                     ]);
                     subTotal += amount;
                 }
-                // 6. Non-Face-to-Face Support
-                if (NDISQuoteValues['Non-Face-to-Face Supports'] && NDISQuoteValues['Quantity (Non-Face-to-Face Support)']) {
-                    const desc = `Non-Face-to-Face Support - ${NDISQuoteValues['Non-Face-to-Face Supports'] || ''}`;
-                    const qty = Number(NDISQuoteValues['Quantity (Non-Face-to-Face Support)']) || 0;
-                    const unitPrice = Number(NDISQuoteValues['Unit Price for Non-Face-to-Face Support ($)']) || 1;
-                    const amount = qty * unitPrice;
-                    ordersArr.push([
-                        desc,
-                        NDISQuoteValues['Unit (Non-Face-to-Face Support)'] || ' ',
-                        formatValue(qty),
-                        formatValue(unitPrice),
-                        gstLabel,
-                        formatValue(amount)
-                    ]);
-                    subTotal += amount;
-                }
-                // 7. Allowances
+                // 6. Allowances
                 if (NDISQuoteValues['Allowances'] && NDISQuoteValues['Allowances Amount($)']) {
                     const desc = `Allowances - ${NDISQuoteValues['Allowances'] || ' '}`;
                     const qty = 1;
@@ -572,6 +556,22 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                     ordersArr.push([
                         desc,
                         NDISQuoteValues['Unit (Allowances)'] || ' ',
+                        formatValue(qty),
+                        formatValue(unitPrice),
+                        gstLabel,
+                        formatValue(amount)
+                    ]);
+                    subTotal += amount;
+                }
+                // 7. Non-Face-to-Face Support
+                if (NDISQuoteValues['Non-Face-to-Face Supports'] && NDISQuoteValues['Quantity (Non-Face-to-Face Support)']) {
+                    const desc = `Non-Face-to-Face Support - ${NDISQuoteValues['Non-Face-to-Face Supports'] || ''}`;
+                    const qty = Number(NDISQuoteValues['Quantity (Non-Face-to-Face Support)']) || 0;
+                    const unitPrice = Number(NDISQuoteValues['Unit Price for Non-Face-to-Face Support ($)']) || 1;
+                    const amount = qty * unitPrice;
+                    ordersArr.push([
+                        desc,
+                        NDISQuoteValues['Unit (Non-Face-to-Face Support)'] || ' ',
                         formatValue(qty),
                         formatValue(unitPrice),
                         gstLabel,
