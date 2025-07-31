@@ -875,7 +875,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
     await initializeXeroOperation(workspaceId, boardId, item);
     const NDISQuoteValues = item.values;
 
-    const [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = await getQuoteNDISReferencedItems(workspaceId, boardId, item.id);
+    const [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues, providerTravelLabourTravelTime] = await getQuoteNDISReferencedItems(workspaceId, boardId, item.id);
     if (!serviceAreaValues) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "ERROR: Service Area value is required.");
       throw new Error("Service Area value is required.");
