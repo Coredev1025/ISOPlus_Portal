@@ -983,16 +983,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
         taxType: gstType,
       });
     }
-    // 6. Non-Face-to-Face Support
-    if (NDISQuoteValues['Non-Face-to-Face Supports'] && NDISQuoteValues['Quantity (Non-Face-to-Face Support)']) {
-      lineItems.push({
-        description: `Non-Face-to-Face Support - ${NDISQuoteValues['Non-Face-to-Face Supports'] || ''}`,
-        quantity: Number(NDISQuoteValues['Quantity (Non-Face-to-Face Support)']) || 0,
-        unitAmount: Number(NDISQuoteValues['Unit Price for Non-Face-to-Face Support ($)']) || 1,
-        taxType: gstType,
-      });
-    }
-    // 7. Allowances
+    // 6. Allowances
     if (NDISQuoteValues['Allowances'] && NDISQuoteValues['Allowances Amount($)']) {
       lineItems.push({
         description: `Allowances - ${NDISQuoteValues['Allowances'] || ' '}`,
@@ -1001,6 +992,15 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
         taxType: gstType,
       });
     }
+    // 7. Non-Face-to-Face Support
+    if (NDISQuoteValues['Non-Face-to-Face Supports'] && NDISQuoteValues['Quantity (Non-Face-to-Face Support)']) {
+      lineItems.push({
+        description: `Non-Face-to-Face Support - ${NDISQuoteValues['Non-Face-to-Face Supports'] || ''}`,
+        quantity: Number(NDISQuoteValues['Quantity (Non-Face-to-Face Support)']) || 0,
+        unitAmount: Number(NDISQuoteValues['Unit Price for Non-Face-to-Face Support ($)']) || 1,
+        taxType: gstType,
+      });
+    }    
 
     // Fallbacks for required fields
     const firstLine = lineItems[0] || {};
