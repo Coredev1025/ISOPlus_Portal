@@ -686,9 +686,9 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     const amount1 = qty1 * unitPrice1;
 
                     if (unitPrice1 > 0 && amount1 > 0) {
-                        let desc1 = itemNumber1;
-                        if (itemName1) {
-                            desc1 += ` - [${itemName1}]`;
+                        let desc1 = itemName1;
+                        if (itemNumber1) {
+                            desc1 += ` - ${itemNumber1}`;
                         }
                         if (startTime1 && endTime1) {
                             desc1 += ` - from ${startTime1} to ${endTime1}`;
@@ -720,9 +720,9 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     const amount2 = qty2 * unitPrice2;
 
                     if (unitPrice2 > 0 && amount2 > 0) {
-                        let desc2 = itemNumber2;
-                        if (itemName2) {
-                            desc2 += ` - [${itemName2}]`;
+                        let desc2 = itemName2;
+                        if (itemNumber2) {
+                            desc2 += ` - ${itemNumber2}`;
                         }
                         if (quantity2 && unit2) {
                             desc2 += ` - ${quantity2} ${unit2}`;
@@ -753,9 +753,9 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                 const amount3 = qty3 * unitPrice3;
 
                 if (amount3 > 0) {
-                    let desc3 = itemNumber3;
-                    if (itemName3) {
-                        desc3 += ` - [${itemName3}]`;
+                    let desc3 = itemName3;
+                    if (itemNumber3) {
+                        desc3 += ` - ${itemNumber3}`;
                     }
                     if (mileage3) {
                         desc3 += ` - ${mileage3}km`;
@@ -788,9 +788,9 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                 const amount4 = qty4 * unitPrice4;
 
                 if (amount4 > 0) {
-                    let desc4 = itemNumber4;
-                    if (itemName4) {
-                        desc4 += ` - [${itemName4}]`;
+                    let desc4 = itemName4;
+                    if (itemNumber4) {
+                        desc4 += ` - ${itemNumber4}`;
                     }
                     if (mileage4) {
                         desc4 += ` - ${mileage4}km`;
@@ -821,9 +821,9 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                 const amount5 = qty5 * unitPrice5;
 
                 if (unitPrice5 > 0 && amount5 > 0) {
-                    let desc5 = itemNumber5;
-                    if (itemName5) {
-                        desc5 += ` - [${itemName5}]`;
+                    let desc5 = itemName5;
+                    if (itemNumber5) {
+                        desc5 += ` - ${itemNumber5}`;
                     }
                     if (desc5 == '') {
                         desc5 = 'Centre Capital Costs Item';
@@ -904,9 +904,12 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                 const amount9 = qty9 * unitPrice9;
 
                 if (baseUnitPrice9 > 0 && amount9 > 0) {
-                    let desc9 = 'Cancellation Fee' + `${itemNumber9 ? ' - ' + itemNumber9 : ''}`;
+                    let desc9 = 'Cancellation Fee';
                     if (itemName9) {
                         desc9 += ` - [${itemName9}]`;
+                    }
+                    if (itemNumber9) {
+                        desc9 += ` - ${itemNumber9}`;
                     }
 
                     ordersArr.push([
