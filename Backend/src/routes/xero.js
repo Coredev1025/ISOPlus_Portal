@@ -962,7 +962,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
       });
     }
     // 2. Provider Travel - Non-Labour Cost
-    if (providerTravelValues && NDISQuoteValues['Quantity (Provider Travel)'] && NDISQuoteValues['Unit Price for Provider Travel($)']) {
+    if (NDISQuoteValues['Quantity (Provider Travel)'] && NDISQuoteValues['Unit Price for Provider Travel($)']) {
       lineItems.push({
         description: `${NDISQuoteValues['Provider Travel - Non-Labour Cost Item Number'] || ''}${providerTravelValues.itemName ? '-' + providerTravelValues.itemName : ''}`,
         quantity: Number(NDISQuoteValues['Quantity (Provider Travel)']) || 0,

@@ -484,7 +484,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                     subTotal += amount;
                 }
                 // 2. Provider Travel - Non-Labour Cost
-                if (providerTravelValues && NDISQuoteValues['Quantity (Provider Travel)'] && NDISQuoteValues['Unit Price for Provider Travel($)']) {
+                if (NDISQuoteValues['Quantity (Provider Travel)'] && NDISQuoteValues['Unit Price for Provider Travel($)']) {
                     const desc = `${NDISQuoteValues['Provider Travel - Non-Labour Cost Item Number'] || ''}${providerTravelValues.itemName ? '-' + providerTravelValues.itemName : ''}`;
                     const qty = Number(NDISQuoteValues['Quantity (Provider Travel)']) || 0;
                     const unitPrice = Number(NDISQuoteValues['Unit Price for Provider Travel($)']) || 0;
