@@ -20,7 +20,7 @@
                 "type": "text",
                 "position": {
                     "x": 20,
-                    "y": 27.4
+                    "y": 21.4
                 },
                 "content": "TAX INVOICE",
                 "width": 103.98,
@@ -45,7 +45,7 @@
                 "content": "{\"Contact\":\"CONTACT\",\"Address\":\"ADDRESS\"}",
                 "position": {
                     "x": 20.26,
-                    "y": 56.78
+                    "y": 54.78
                 },
                 "width": 45.77,
                 "height": 28.84,
@@ -77,7 +77,7 @@
                 "type": "multiVariableText",
                 "position": {
                     "x": 85.95,
-                    "y": 57.31
+                    "y": 55.31
                 },
                 "content": "{\"Date\":\"16/02/2025\",\"Invoice Number\":\"INVOICE NUMBER\"}",
                 "width": 38.1,
@@ -113,7 +113,7 @@
                 "content": "{\"Company Name\":\"COMPANY NAME\"}",
                 "position": {
                     "x": 140,
-                    "y": 56.78
+                    "y": 54.78
                 },
                 "width": 50,
                 "height": 15,
@@ -146,7 +146,7 @@
                 "content": "{\"ABN\":\"ABN\",\"Street Address\":\"STREET ADDRESS\",\"Suburb\":\"SUBURB\",\"State\":\"STATE\",\"Postcode\":\"POSTCODE\",\"Country\":\"COUNTRY\"}",
                 "position": {
                     "x": 139.86,
-                    "y": 74.77
+                    "y": 72.77
                 },
                 "width": 50.139999999999986,
                 "height": 15.08,
@@ -182,11 +182,11 @@
                 "type": "table",
                 "position": {
                     "x": 20,
-                    "y": 100
+                    "y": 94
                 },
                 "width": 170,
-                "height": 86.36512,
-                "content": "[[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"]]",
+                "height": 96.24592000000001,
+                "content": "[[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\"]]",
                 "showHead": true,
                 "head": [
                     "Description",
@@ -226,14 +226,14 @@
                         "left": 0
                     },
                     "padding": {
-                        "top": 5,
-                        "right": 5,
-                        "bottom": 5,
-                        "left": 5
+                        "top": 4,
+                        "right": 2,
+                        "bottom": 4,
+                        "left": 2
                     }
                 },
                 "bodyStyles": {
-                    "fontName": "",
+                    "fontName": "Roboto",
                     "fontSize": 11,
                     "characterSpacing": 0,
                     "alignment": "center",
@@ -250,10 +250,10 @@
                         "left": 0
                     },
                     "padding": {
-                        "top": 3,
-                        "right": 5,
-                        "bottom": 5,
-                        "left": 5
+                        "top": 4,
+                        "right": 2,
+                        "bottom": 4,
+                        "left": 2
                     }
                 },
                 "columnStyles": {
@@ -273,11 +273,11 @@
                 "type": "text",
                 "position": {
                     "x": 133,
-                    "y": 195
+                    "y": 193
                 },
                 "content": "Subtotal",
                 "width": 25,
-                "height": 8,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
@@ -288,7 +288,7 @@
                 "backgroundColor": "",
                 "opacity": 1,
                 "readOnly": true,
-                "fontName": "",
+                "fontName": "Roboto",
                 "name": "subtotalLabel",
                 "required": false
             },
@@ -297,10 +297,10 @@
                 "content": "",
                 "position": {
                     "x": 160,
-                    "y": 195
+                    "y": 193
                 },
                 "width": 25,
-                "height": 8,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
@@ -320,10 +320,10 @@
                 "content": "",
                 "position": {
                     "x": 160,
-                    "y": 202
+                    "y": 201
                 },
                 "width": 25,
-                "height": 8,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
@@ -341,10 +341,10 @@
             {
                 "type": "line",
                 "position": {
-                    "x": 137.09,
-                    "y": 213.05
+                    "x": 132.09,
+                    "y": 210.05
                 },
-                "width": 52.91,
+                "width": 57.91,
                 "height": 0.1,
                 "rotate": 0,
                 "opacity": 1,
@@ -357,11 +357,11 @@
                 "type": "text",
                 "position": {
                     "x": 133,
-                    "y": 216
+                    "y": 213
                 },
                 "content": "TOTAL AUD",
                 "width": 25,
-                "height": 8,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
@@ -369,7 +369,7 @@
                 "lineHeight": 1,
                 "characterSpacing": 0,
                 "fontColor": "#000000",
-                "fontName": "",
+                "fontName": "Roboto",
                 "backgroundColor": "",
                 "opacity": 1,
                 "readOnly": true,
@@ -381,10 +381,10 @@
                 "content": "",
                 "position": {
                     "x": 160,
-                    "y": 216
+                    "y": 213
                 },
                 "width": 25,
-                "height": 8,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
@@ -405,21 +405,16 @@
                 "content": "{\"Account Name\":\"ACCOUNT NAME\",\"Bank Name\":\"BANK NAME\",\"BSB\":\"BSB\",\"Account Number\":\"ACCOUNT NUMBER\",\"invoice Number\":\"INVOICE NUMBER\"}",
                 "position": {
                     "x": 21.29,
-                    "y": 237.47
+                    "y": 226.47
                 },
-                "width": 121.44,
+                "width": 168.71,
                 "height": 33.07,
                 "rotate": 0,
                 "alignment": "left",
                 "verticalAlignment": "middle",
-                "fontSize": 13,
+                "fontSize": 11,
                 "lineHeight": 1,
                 "characterSpacing": 0,
-                "dynamicFontSize": {
-                    "min": 4,
-                    "max": 72,
-                    "fit": "vertical"
-                },
                 "fontColor": "#000000",
                 "backgroundColor": "",
                 "opacity": 1,
@@ -434,7 +429,8 @@
                     "Account Number",
                     "invoice Number"
                 ],
-                "required": false
+                "required": false,
+                "fontName": "Roboto"
             },
             {
                 "name": "duedateLabel",
@@ -442,10 +438,10 @@
                 "content": "Due Date",
                 "position": {
                     "x": 133,
-                    "y": 224
+                    "y": 221
                 },
                 "width": 25,
-                "height": 8,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
@@ -467,10 +463,10 @@
                 "content": "",
                 "position": {
                     "x": 160,
-                    "y": 224
+                    "y": 221
                 },
                 "width": 25,
-                "height": 8,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "left",
                 "verticalAlignment": "middle",
@@ -483,7 +479,8 @@
                 "strikethrough": false,
                 "underline": false,
                 "required": false,
-                "readOnly": false
+                "readOnly": false,
+                "fontName": "Roboto"
             },
             {
                 "name": "gstLabel",
@@ -491,10 +488,10 @@
                 "content": "TOTAL GST",
                 "position": {
                     "x": 133,
-                    "y": 202
+                    "y": 201
                 },
                 "width": 25,
-                "height": 8,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
@@ -523,5 +520,5 @@
         ],
         "staticSchema": []
     },
-    "pdfmeVersion": "5.3.16"
+    "pdfmeVersion": "5.4.1"
 }
