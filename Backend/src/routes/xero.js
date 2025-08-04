@@ -390,8 +390,11 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const itemName1 = servicePlanValues?.directSupportItemName || '';
       const startTime1 = invoiceValues["Actual Shift Start Date and Time"] ? new Date(invoiceValues["Actual Shift Start Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
       const endTime1 = invoiceValues["Actual Shift End Date and Time"] ? new Date(invoiceValues["Actual Shift End Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-      const qty1 = Number(invoiceValues["Actual Shift Duration(Hr.)"].toFixed(1)) || 0;
-
+      const qty1 = 0;
+      const actualShiftDuration = Number(invoiceValues["Actual Shift Duration(Hr.)"]);
+      if (typeof actualShiftDuration === 'number' && !isNaN(actualShiftDuration)) {
+        qty1 = Number(actualShiftDuration.toFixed(1));
+      }
       if (unitPrice1 > 0 && qty1 > 0) {
         let desc1 = itemName1;
         if (itemNumber1) {
@@ -509,7 +512,11 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
     const unitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) || 0;
     const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
     const itemNumber5 = servicePlanValues?.centreCapitalCostsItemNumber || '';
-    const qty5 = Number(invoiceValues["Actual Shift Duration(Hr.)"].toFixed(1)) || 0;
+    const qty5 = 0;
+    const actualShiftDuration = Number(invoiceValues["Actual Shift Duration(Hr.)"]);
+    if (typeof actualShiftDuration === 'number' && !isNaN(actualShiftDuration)) {
+      qty5 = Number(actualShiftDuration.toFixed(1));
+    }
 
     if (unitPrice5 > 0 && qty5 > 0) {
       let desc5 = itemName5;
@@ -575,7 +582,11 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
     const cancellationPercentage9 = Number(cancellationTypeValues?.billableToClient) || 0;
     const itemName9 = servicePlanValues?.directSupportItemName || '';
     const itemNumber9 = servicePlanValues?.directSupportItemNumber || '';
-    const qty9 = Number(invoiceValues["Scheduled Shift Duration(Hr.)"].toFixed(1)) && Number(invoiceValues["Scheduled Shift Duration(Hr.)"].toFixed(1)) > 0 ? Number(invoiceValues["Scheduled Shift Duration(Hr.)"].toFixed(1)) : 0;
+    const qty9 = 0;
+    const scheduledShiftDuration = Number(invoiceValues["Scheduled Shift Duration(Hr.)"]);
+    if (typeof scheduledShiftDuration === 'number' && !isNaN(scheduledShiftDuration)) {
+      qty9 = Number(scheduledShiftDuration.toFixed(1));
+    }
     const unitPrice9 = baseUnitPrice9 * (cancellationPercentage9 / 100);
 
     if (unitPrice9 > 0 && qty9 > 0) {
