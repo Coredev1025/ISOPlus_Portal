@@ -918,7 +918,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                 if (baseUnitPrice9 > 0 && amount9 > 0) {
                     let desc9 = 'Cancellation Fee';
                     if (itemName9) {
-                        desc9 += ` - [${itemName9}]`;
+                        desc9 += ` - ${itemName9}`;
                     }
                     if (itemNumber9) {
                         desc9 += ` - ${itemNumber9}`;
