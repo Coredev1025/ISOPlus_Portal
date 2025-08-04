@@ -683,9 +683,9 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     const startTime1 = invoiceValues["Actual Shift Start Date and Time"] ? new Date(invoiceValues["Actual Shift Start Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
                     const endTime1 = invoiceValues["Actual Shift End Date and Time"] ? new Date(invoiceValues["Actual Shift End Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
                     let qty1 = 0;
-                    const actualShiftDuration = Number(invoiceValues["Actual Shift Duration(Hr.)"]);
-                    if (typeof actualShiftDuration === 'number' && !isNaN(actualShiftDuration)) {
-                        qty1 = Number(actualShiftDuration.toFixed(1));
+                    let actualShiftDuration1 = Number(invoiceValues["Actual Shift Duration(Hr.)"]);
+                    if (typeof actualShiftDuration1 === 'number' && !isNaN(actualShiftDuration1)) {
+                        qty1 = Number(actualShiftDuration1.toFixed(1));
                     }
                     const amount1 = qty1 * unitPrice1;
 
@@ -821,10 +821,10 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                 const unitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) || 0;
                 const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
                 const itemNumber5 = servicePlanValues?.centreCapitalCostsItemNumber || '';
-                const qty5 = 0;
-                const actualShiftDuration = Number(invoiceValues["Actual Shift Duration(Hr.)"]);
-                if (typeof actualShiftDuration === 'number' && !isNaN(actualShiftDuration)) {
-                    qty5 = Number(actualShiftDuration.toFixed(1));
+                let qty5 = 0;
+                let actualShiftDuration5 = Number(invoiceValues["Actual Shift Duration(Hr.)"]);
+                if (typeof actualShiftDuration5 === 'number' && !isNaN(actualShiftDuration5)) {
+                    qty5 = Number(actualShiftDuration5.toFixed(1));
                 }
                 const amount5 = qty5 * unitPrice5;
 
@@ -907,10 +907,10 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                 const cancellationPercentage9 = Number(cancellationTypeValues?.billableToClient) || 0;
                 const itemName9 = servicePlanValues?.directSupportItemName || '';
                 const itemNumber9 = servicePlanValues?.directSupportItemNumber || '';
-                const qty9 = 0;
-                const scheduledShiftDuration = Number(invoiceValues["Scheduled Shift Duration(Hr.)"]);
-                if (typeof scheduledShiftDuration === 'number' && !isNaN(scheduledShiftDuration)) {
-                    qty9 = Number(scheduledShiftDuration.toFixed(1));
+                let qty9 = 0;
+                let scheduledShiftDuration9 = Number(invoiceValues["Scheduled Shift Duration(Hr.)"]);
+                if (typeof scheduledShiftDuration9 === 'number' && !isNaN(scheduledShiftDuration9)) {
+                    qty9 = Number(scheduledShiftDuration9.toFixed(1));
                 }
                 const unitPrice9 = baseUnitPrice9 * (cancellationPercentage9 / 100);
                 const amount9 = qty9 * unitPrice9;
