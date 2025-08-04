@@ -390,7 +390,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const itemName1 = servicePlanValues?.directSupportItemName || '';
       const startTime1 = invoiceValues["Actual Shift Start Date and Time"] ? new Date(invoiceValues["Actual Shift Start Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
       const endTime1 = invoiceValues["Actual Shift End Date and Time"] ? new Date(invoiceValues["Actual Shift End Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-      const qty1 = 0;
+      let qty1 = 0;
       const actualShiftDuration = Number(invoiceValues["Actual Shift Duration(Hr.)"]);
       if (typeof actualShiftDuration === 'number' && !isNaN(actualShiftDuration)) {
         qty1 = Number(actualShiftDuration.toFixed(1));
