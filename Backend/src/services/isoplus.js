@@ -933,7 +933,7 @@ export async function setGeneratedField(workspaceId, boardId, itemId, message) {
     }
 }
 
-export async function setPDFLinkAttribute(workspaceId, boardId, itemId, pdfUrl) {
+export async function setPDFLinkAttribute(workspaceId, boardId, itemId, pdfUrl, docType) {
     try {
         // Get the board to find the PDF attribute ID
         const board = await Board.findOne({ boardId: boardId.toString() });
@@ -941,9 +941,19 @@ export async function setPDFLinkAttribute(workspaceId, boardId, itemId, pdfUrl) 
             error('ISO+™ Service', 'PDF attribute not found in board configuration', { boardId, workspaceId });
             return false;
         }
+        let payload = {}
+        if (docType && docType.toLowerCase().includes("ndis")) {
+            payload = {
+                values: [{ data: `<p>Click <a href="${pdfUrl}">here</a> to download.</p>`, attribute_id: board.pdfAttribute.id }]
+            }
+        } else {
+            payload = {
+                values: [{ data: `<a href="${pdfUrl}">${pdfUrl}</a>`, attribute_id: board.pdfAttribute.id }]
+            }
+        }
 
         const response = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
-            { values: [{ data: `<a href="${pdfUrl}">${pdfUrl}</a>`, attribute_id: board.pdfAttribute.id }] },
+            payload,
             {
                 headers: {
                     "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
