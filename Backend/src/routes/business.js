@@ -118,6 +118,48 @@ router.get('/profile', authenticateToken, async (req, res) => {
   }
 });
 
+// Get logo URL for QR code generation
+router.get('/logo', authenticateToken, async (req, res) => {
+  try {
+    const { workspaceId, logoKey } = req.query;
+    
+    if (!workspaceId || !logoKey) {
+      return res.status(400).json({ message: 'workspaceId and logoKey are required' });
+    }
+
+    const business = await Business.findOne({ workspaceId: workspaceId.toString() });
+    if (!business) {
+      return res.status(404).json({ message: 'Business not found' });
+    }
+
+    const logoPath = business[logoKey];
+    if (!logoPath) {
+      return res.status(404).json({ message: 'Logo not found' });
+    }
+
+    const logoUrl = await getS3FileUrl(logoPath, 3600, false);
+    if (!logoUrl) {
+      return res.status(404).json({ message: 'Logo file not found' });
+    }
+
+    info('Business-Service', 'Logo URL retrieved successfully', { 
+      workspaceId, 
+      logoKey, 
+      logoPath 
+    }, req);
+
+    res.json({ logoUrl });
+
+  } catch (err) {
+    error('Business-Service', 'Error retrieving logo URL', { 
+      error: err.message,
+      workspaceId: req.query.workspaceId,
+      logoKey: req.query.logoKey
+    }, req);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, async (req, res) => {
   try {
     const workspaceId = req.body.workspaceId?.toString();

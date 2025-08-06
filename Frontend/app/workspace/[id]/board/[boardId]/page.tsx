@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Clock, Terminal, Download, Filter, MapPin, Search, List, Map } from "lucide-react";
+import { ArrowLeft, Clock, Terminal, Download, Filter, MapPin, Search, List, Map, QrCode } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useState, useEffect } from "react";
@@ -285,23 +285,44 @@ export default function BoardDetail() {
           </Card>
 
           {/* Board Actions */}
-          {(user.role == "support_admin" || user.role == "owner") && (
+          {(user.role == "support_admin" || user.role == "owner" || user.role == "isoplus_user") && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {/* Configuration Card */}
+              {/* Configuration Card - Only for Owner and Support Admin */}
+              {(user.role == "support_admin" || user.role == "owner") && (
+                <Card className="p-6 space-y-4 card-hover">
+                  <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                    <Terminal className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold">Configuration</h2>
+                    <p className="text-muted-foreground mb-4 text-sm">
+                      Configure board settings and options
+                    </p>
+                    <Button
+                      onClick={() => router.push(`/workspace/${id}/board/${board.id}/configuration`)}
+                      className="w-full"
+                    >
+                      Configure Board
+                    </Button>
+                  </div>
+                </Card>
+              )}
+
+              {/* QR Generator Card */}
               <Card className="p-6 space-y-4 card-hover">
                 <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
-                  <Terminal className="h-6 w-6 text-primary" />
+                  <QrCode className="h-6 w-6 text-primary" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-semibold">Configuration</h2>
+                  <h2 className="text-xl font-semibold">QR Generator</h2>
                   <p className="text-muted-foreground mb-4 text-sm">
-                    Configure board settings and options
+                    Create QR codes for your forms
                   </p>
                   <Button
-                    onClick={() => router.push(`/workspace/${id}/board/${board.id}/configuration`)}
+                    onClick={() => router.push(`/workspace/${id}/board/${board.id}/qr-generator`)}
                     className="w-full"
                   >
-                    Configure Board
+                    Generate QR Code
                   </Button>
                 </div>
               </Card>
