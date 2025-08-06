@@ -137,7 +137,6 @@ export default function ConfigurationPage() {
             a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
           );
           
-          console.log("Sorted Attributes:", sortedAttributes);
           setIsoAttributes(sortedAttributes);
           showFetchSuccessToast("Board attributes");
         } catch (error: any) {
@@ -232,7 +231,6 @@ export default function ConfigurationPage() {
     try {
       const attr = isoAttributes.find(item => item.id == selectedAttribute);
       const pdfAttr = isoAttributes.find(item => item.id == selectedPdfAttribute);
-      console.log(attr?.name, pdfAttr?.name);
 
       const response = await axios.put(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards`,
@@ -393,7 +391,7 @@ export default function ConfigurationPage() {
                       <SelectValue placeholder="Select an attribute for PDF links" />
                     </SelectTrigger>
                     <SelectContent>
-                      {isoAttributes.map((attr) => (
+                      {isoAttributes.filter(attr => attr.type.toLowerCase().includes("long")).map((attr) => (
                         <SelectItem key={attr.id} value={attr.id} defaultValue={selectedPdfAttribute}>
                           <div className="flex items-center justify-between w-full">
                             <span>{attr.name}</span>

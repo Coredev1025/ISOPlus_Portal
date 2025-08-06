@@ -2,6 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import Business from '../models/Business.js';
 import { warn, error } from '../utils/logger.js';
+import { isEmpty } from '../utils/helpers.js';
 import {
   validateItemBelongsToTenant,
   getJobReportingReferencedItems,
@@ -953,9 +954,9 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
     const gstType = "EXEMPTOUTPUT"; // GST Free for NDIS
 
     // 1. Direct Support
-    if (directSupportValues && NDISQuoteValues['Quantity (Direct Support)'] && NDISQuoteValues['Unit Price for Direct Support($)']) {
+    if (NDISQuoteValues['Quantity (Direct Support)'] && NDISQuoteValues['Unit Price for Direct Support($)']) {
       lineItems.push({
-        description: `${NDISQuoteValues['Direct Support Item Number'] || ''}${directSupportValues.itemName ? '-' + directSupportValues.itemName : ''}`,
+        description: `${NDISQuoteValues['Direct Support Item Number'] || ''}${directSupportValues && directSupportValues.itemName ? '-' + directSupportValues.itemName : ''}` || 'Direct Support',
         quantity: Number(NDISQuoteValues['Quantity (Direct Support)']) || 0,
         unitAmount: Number(NDISQuoteValues['Unit Price for Direct Support($)']) || 0,
         taxType: gstType,
@@ -964,34 +965,34 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
     // 2. Provider Travel - Non-Labour Cost
     if (NDISQuoteValues['Quantity (Provider Travel)'] && NDISQuoteValues['Unit Price for Provider Travel($)']) {
       lineItems.push({
-        description: `${NDISQuoteValues['Provider Travel - Non-Labour Cost Item Number'] || ''}${providerTravelValues.itemName ? '-' + providerTravelValues.itemName : ''}`,
+        description: `${NDISQuoteValues['Provider Travel - Non-Labour Cost Item Number'] || ''}${providerTravelValues && providerTravelValues.itemName ? '-' + providerTravelValues.itemName : ''}` || 'Provider Travel - Non-Labour Cost', 
         quantity: Number(NDISQuoteValues['Quantity (Provider Travel)']) || 0,
         unitAmount: Number(NDISQuoteValues['Unit Price for Provider Travel($)']) || 0,
         taxType: gstType,
       });
     }
     // 3. Activity Based Transport
-    if (activityBasedTransportValues && NDISQuoteValues['Quantity (Activity Based Transport)'] && NDISQuoteValues['Unit Price for Activity Based Transport($)']) {
+    if (NDISQuoteValues['Quantity (Activity Based Transport)'] && NDISQuoteValues['Unit Price for Activity Based Transport($)']) {
       lineItems.push({
-        description: `${NDISQuoteValues['Activity Based Transport Item Number'] || ''}${activityBasedTransportValues.itemName ? '-' + activityBasedTransportValues.itemName : ''}`,
+        description: `${NDISQuoteValues['Activity Based Transport Item Number'] || ''}${activityBasedTransportValues && activityBasedTransportValues.itemName ? '-' + activityBasedTransportValues.itemName : ''}` || 'Activity Based Transport',
         quantity: Number(NDISQuoteValues['Quantity (Activity Based Transport)']) || 0,
         unitAmount: Number(NDISQuoteValues['Unit Price for Activity Based Transport($)']) || 0,
         taxType: gstType,
       });
     }
     // 4. Centre Capital Costs
-    if (centreCapitalCostsValues && NDISQuoteValues['Quantity (Centre Capital Costs)'] && NDISQuoteValues['Unit Price for Centre Capital Costs($)']) {
+    if (NDISQuoteValues['Quantity (Centre Capital Costs)'] && NDISQuoteValues['Unit Price for Centre Capital Costs($)']) {
       lineItems.push({
-        description: `${NDISQuoteValues['Centre Capital Costs Item'] || ''}${centreCapitalCostsValues.itemName ? '-' + centreCapitalCostsValues.itemName : ''}`,
+        description: `${NDISQuoteValues['Centre Capital Costs Item'] || ''}${centreCapitalCostsValues && centreCapitalCostsValues.itemName ? '-' + centreCapitalCostsValues.itemName : ''}` || 'Centre Capital Costs',
         quantity: Number(NDISQuoteValues['Quantity (Centre Capital Costs)']) || 0,
         unitAmount: Number(NDISQuoteValues['Unit Price for Centre Capital Costs($)']) || 0,
         taxType: gstType,
       });
     }
     // 5. Provider Travel - Labour Travel Time Costs
-    if (providerTravelLabourTravelTime && NDISQuoteValues['Quantity (Labour Travel Time)']) {
+    if (NDISQuoteValues['Quantity (Labour Travel Time)']) {
       lineItems.push({
-        description: 'Provider Travel - Labour Travel Time Costs' + (providerTravelLabourTravelTime.itemName ? '-' + providerTravelLabourTravelTime.itemName : ''),
+        description: 'Provider Travel - Labour Travel Time Costs' + (providerTravelLabourTravelTime && providerTravelLabourTravelTime.itemName ? '-' + providerTravelLabourTravelTime.itemName : '') || 'Provider Travel - Labour Travel Time Costs',
         quantity: Number(NDISQuoteValues['Quantity (Labour Travel Time)']) || 0,
         unitAmount: Number(NDISQuoteValues['Unit Price for Labour Travel Time ($)']) || 1,
         taxType: gstType,
@@ -1000,7 +1001,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
     // 6. Allowances
     if (NDISQuoteValues['Allowances'] && NDISQuoteValues['Allowances Amount($)']) {
       lineItems.push({
-        description: `Allowances - ${NDISQuoteValues['Allowances'] || ' '}`,
+        description: isEmpty(NDISQuoteValues['Allowances']) ? 'Allowances' : `Allowances - ${NDISQuoteValues['Allowances']}`,
         quantity: 1,
         unitAmount: Number(NDISQuoteValues['Allowances Amount($)']) || 0,
         taxType: gstType,
@@ -1009,7 +1010,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
     // 7. Non-Face-to-Face Support
     if (NDISQuoteValues['Non-Face-to-Face Supports'] && NDISQuoteValues['Quantity (Non-Face-to-Face Support)']) {
       lineItems.push({
-        description: `Non-Face-to-Face Support - ${NDISQuoteValues['Non-Face-to-Face Supports'] || ''}`,
+        description: isEmpty(NDISQuoteValues['Non-Face-to-Face Supports']) ? 'Non-Face-to-Face Support' : `Non-Face-to-Face Support - ${NDISQuoteValues['Non-Face-to-Face Supports']}`,
         quantity: Number(NDISQuoteValues['Quantity (Non-Face-to-Face Support)']) || 0,
         unitAmount: Number(NDISQuoteValues['Unit Price for Non-Face-to-Face Support ($)']) || 1,
         taxType: gstType,
