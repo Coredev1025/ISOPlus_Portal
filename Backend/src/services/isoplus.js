@@ -1005,7 +1005,7 @@ export async function getQuoteNDISReferencedItems(workspaceId, boardId, itemId) 
                         if (!values.some(v => v.attribute.name === "Service Area")) {
                             throw new Error("Service Area is required");
                         }
-                        const serviceAreaType = ServiceAreaMap[values.find(v => v.attribute.name === "Service Area").data.toString()];
+                        const serviceAreaType = ServiceAreaMap[values.find(v => v.attribute.name === "Service Area").data.toString()] || 'ACT($)';
 
                         serviceAreaValues = {
                             serviceArea: values.find(v => v.attribute.name === "Service Area").data.toString(),
