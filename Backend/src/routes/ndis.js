@@ -89,8 +89,12 @@ router.post('/:workspaceId/:boardId/set-unit-and-unitprice', async (req, res) =>
     const itemsValues = items.values;
 
     info('Xero-Service', `Incoming request to set-unit-and-unitprice`, { workspaceId, boardId, type, body: itemsValues }, req);
-    const [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = await getQuoteNDISReferencedItems(workspaceId, boardId, items.id);
-
+    let [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = await getQuoteNDISReferencedItems(workspaceId, boardId, items.id);
+    if (serviceAreaValues == null || serviceAreaValues.serviceAreaType == null) {
+        serviceAreaValues = {
+            serviceAreaType: 'ACT($)'
+        }
+    }
     const safeGet = (obj, key) => Array.isArray(obj[key]) && obj[key].length > 0 ? obj[key][0] : undefined;
 
     switch (type) {
