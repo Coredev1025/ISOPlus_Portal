@@ -378,13 +378,13 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
     }
     if (servicePlanValues.nonLabourTravelUnitPrice) {
         updateValues.push({
-            data: servicePlanValues.nonLabourTravelUnitPrice * (itemsValues['Provider Travel - Non-Labour - Mileage (kms) as per the Service plan, if a Vehicle is Used.'] || 0) + (itemsValues['Provider Travel - Non-Labour - as per the Service plan, if other costs are applied.'] || 0),
+            data: servicePlanValues.nonLabourTravelUnitPrice * (itemsValues['Provider Travel - Non-Labour - Mileage (kms) as per the Service Plan, if a vehicle is used.'] || 0) + (itemsValues['Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied.'] || 0),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Provider Travel - Non-Labour Cost Amount($)').attribute.id
         });
     }
     if (servicePlanValues.activityBasedTransportUnitPrice) {
         updateValues.push({
-            data: servicePlanValues.activityBasedTransportUnitPrice * (itemsValues['Activity Base Transport Mileage(Kms) as per the Service plan, if a Vehicle is Used.'] || 0) + (itemsValues['Activity Base Transport Costs as per the Service plan, if other costs are applied.'] || 0),
+            data: servicePlanValues.activityBasedTransportUnitPrice * (itemsValues['Activity Base Transport Mileage(Kms) as per the Service Plan, if a vehicle is used.'] || 0) + (itemsValues['Activity Base Transport Costs as per the Service Plan, if other costs are applied.'] || 0),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Activity Base Transport Amount($)').attribute.id
         });
     }
@@ -393,14 +393,19 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
             data: servicePlanValues.centreCapitalCostsUnitPrice * (itemsValues['Actual Shift Duration(Hr.)'] || 0),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Centre Capital Costs Amount($)').attribute.id
         });
+    } else {
+        updateValues.push({
+            data: 0,
+            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Centre Capital Costs Amount($)').attribute.id
+        });
     }
     if (servicePlanValues.labourTravelTimeUnitPrice) {
         updateValues.push({
-            data: servicePlanValues.labourTravelTimeUnitPrice * (itemsValues['Labour Travel Time (Min.) as per the Service plan, regarding the Time Cap, if applicable.'] || 0),
+            data: servicePlanValues.labourTravelTimeUnitPrice * (itemsValues['Labour Travel Time (Min.) as per the Service Plan, regarding the Time Cap, if applicable.'] || 0),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Labour Travel Time Amount($)').attribute.id
         });
     }
-    if (servicePlanValues.usedAllowanceAmount) {
+    if (itemsValues['Used Allowance Amount($) as per the Service Plan'] ) {
         updateValues.push({
             data: itemsValues['Used Allowance Amount($) as per the Service Plan'] || 0,
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Allowances Amount($)').attribute.id
@@ -413,20 +418,10 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
         });
     }
     if (itemsValues['Job Status'] === 'Cancelled') {
-        let scheduledShiftDuration = 0;
-        if (itemsValues['Scheduled Shift Start Date & Time'] && itemsValues['Scheduled Shift End Date & Time']) {
-            const scheduledShiftStart = new Date(itemsValues['Scheduled Shift Start Date & Time']);
-            const scheduledShiftEnd = new Date(itemsValues['Scheduled Shift End Date & Time']);
-            scheduledShiftDuration = (scheduledShiftEnd.getTime() - scheduledShiftStart.getTime()) / (1000 * 60 * 60);
-        } else if (itemsValues['Scheduled Shift Start Date & Time']) {
-            const scheduledShiftStart = new Date(itemsValues['Scheduled Shift Start Date & Time']);
-            const scheduledShiftEnd = new Date();
-            scheduledShiftDuration = (scheduledShiftEnd.getTime() - scheduledShiftStart.getTime()) / (1000 * 60 * 60);
-        } else {
-            scheduledShiftDuration = 0;
-        }
-
         if (cancellationTypeValues) {
+            const scheduledShiftDuration = (itemsValues['Scheduled Shift Duration(Hr.)'] > 0)
+                ? Number(itemsValues['Scheduled Shift Duration(Hr.)']).toFixed(1)
+                : 0;
             updateValues.push({
                 data: servicePlanValues.directSupportUnitPrice * scheduledShiftDuration * ((cancellationTypeValues.billableToClient || 0) / 100),
                 attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Cancellation Fee($)').attribute.id
