@@ -359,7 +359,16 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
 
     if (servicePlanValues.directSupportUnit == 'Hour(H)') {
         updateValues.push({
-            data: servicePlanValues.directSupportUnitPrice * (itemsValues['Actual Shift Duration(Hr.)'] || 0),
+            data: (() => {
+                const duration = Number(itemsValues['Actual Shift Duration(Hr.)']);
+                let qty = 0;
+                if (duration > 0) {
+                    qty = Number(duration.toFixed(1));
+                } else {
+                    qty = 0;
+                }
+                return servicePlanValues.directSupportUnitPrice * qty;
+            })(),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Direct Support Value($) - Time Based Support').attribute.id
         });
         updateValues.push({
@@ -390,7 +399,16 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
     }
     if (servicePlanValues.centreCapitalCostsUnitPrice) {
         updateValues.push({
-            data: servicePlanValues.centreCapitalCostsUnitPrice * (itemsValues['Actual Shift Duration(Hr.)'] || 0),
+            data: (() => {
+                const duration = Number(itemsValues['Actual Shift Duration(Hr.)']);
+                let qty = 0;
+                if (duration > 0) {
+                    qty = Number(duration.toFixed(1));
+                } else {
+                    qty = 0;
+                }
+                return servicePlanValues.centreCapitalCostsUnitPrice * qty;
+            })(),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Centre Capital Costs Amount($)').attribute.id
         });
     } else {
@@ -413,7 +431,7 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
     }
     if (servicePlanValues.nonFaceToFaceSupportUnitPrice) {
         updateValues.push({
-            data: servicePlanValues.nonFaceToFaceSupportUnitPrice * (itemsValues['Time spent in the Non-Face-to-Face Amount as per the Service plan (Hr.)'] || 0),
+            data: Number(servicePlanValues.nonFaceToFaceSupportUnitPrice * (itemsValues['Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)'] || 0)),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Non-Face-to-Face Amount($)').attribute.id
         });
     }
