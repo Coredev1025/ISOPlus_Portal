@@ -335,7 +335,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             city: participantProfileValues.suburb || ' ',
             region: participantProfileValues.state || ' ',
             postalCode: participantProfileValues.postcode?.toString() || ' '
-          } 
+          }
         ],
         emailAddress: participantProfileValues.email
       });
@@ -384,227 +384,226 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       status: "DRAFT"
     };
 
-    // Line 1: Direct Support - Hour based
-    if (servicePlanValues?.directSupportUnit === "Hour(H)") {
-      const unitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
-      const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
-      const itemName1 = servicePlanValues?.directSupportItemName || '';
-      const startTime1 = invoiceValues["Actual Shift Start Date and Time"] ? new Date(invoiceValues["Actual Shift Start Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-      const endTime1 = invoiceValues["Actual Shift End Date and Time"] ? new Date(invoiceValues["Actual Shift End Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-      let qty1 = 0;
-      const actualShiftDuration = Number(invoiceValues["Actual Shift Duration(Hr.)"]);
-      if (typeof actualShiftDuration === 'number' && !isNaN(actualShiftDuration)) {
-        qty1 = Number(actualShiftDuration.toFixed(1));
+    if (invoiceValues['Job Status'] === 'Cancelled') {
+      // Line 1: Direct Support - Hour based
+      if (servicePlanValues?.directSupportUnit === "Hour(H)") {
+        const unitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
+        const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
+        const itemName1 = servicePlanValues?.directSupportItemName || '';
+        const startTime1 = invoiceValues["Actual Shift Start Date and Time"] ? new Date(invoiceValues["Actual Shift Start Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+        const endTime1 = invoiceValues["Actual Shift End Date and Time"] ? new Date(invoiceValues["Actual Shift End Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+        let qty1 = 0;
+        const actualShiftDuration = Number(invoiceValues["Actual Shift Duration(Hr.)"]);
+        if (typeof actualShiftDuration === 'number' && !isNaN(actualShiftDuration)) {
+          qty1 = Number(actualShiftDuration.toFixed(1));
+        }
+        if (unitPrice1 > 0 && qty1 > 0) {
+          let desc1 = itemName1;
+          if (itemNumber1) {
+            desc1 += ` - [${itemNumber1}]`;
+          }
+          if (startTime1 && endTime1) {
+            desc1 += ` - from ${startTime1} to ${endTime1}`;
+          }
+          if (desc1 == '') {
+            desc1 = 'Direct Support - Hour based';
+          }
+
+          lineItems.push({
+            description: desc1,
+            quantity: qty1,
+            unitAmount: unitPrice1,
+            taxType: gstType
+          });
+        }
       }
-      if (unitPrice1 > 0 && qty1 > 0) {
-        let desc1 = itemName1;
-        if (itemNumber1) {
-          desc1 += ` - [${itemNumber1}]`;
+
+      // Line 2: Direct Support - Non Hour based
+      if (servicePlanValues?.directSupportUnit !== "Hour(H)") {
+        const unitPrice2 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
+        const itemNumber2 = servicePlanValues?.directSupportItemNumber || '';
+        const itemName2 = servicePlanValues?.directSupportItemName || '';
+        const quantity2 = invoiceValues["Quantity (Direct Support - Non Time Based Support)"] || 0;
+        const unit2 = servicePlanValues?.directSupportUnit || '';
+        const qty2 = Number(quantity2) || 0;
+
+        if (unitPrice2 > 0 && qty2 > 0) {
+          let desc2 = itemName2;
+          if (itemNumber2) {
+            desc2 += ` - [${itemNumber2}]`;
+          }
+          if (quantity2 && unit2) {
+            desc2 += ` - ${quantity2} ${unit2}`;
+          }
+          if (desc2 == '') {
+            desc2 = 'Direct Support - NOT Hour based';
+          }
+
+          lineItems.push({
+            description: desc2,
+            quantity: qty2,
+            unitAmount: unitPrice2,
+            taxType: gstType
+          });
         }
-        if (startTime1 && endTime1) {
-          desc1 += ` - from ${startTime1} to ${endTime1}`;
+      }
+
+      // Line 3: Provider Travel - Non-Labour Cost
+      const unitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) || 0;
+      const mileage3 = invoiceValues["Provider Travel - Non-Labour - Mileage (kms) as per the Service Plan, if a Vehicle is Used."] || '';
+      const others3 = invoiceValues["Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied."] || '';
+      const itemName3 = servicePlanValues?.providerTravelItemName || '';
+      const itemNumber3 = servicePlanValues?.providerTravelItemNumber || '';
+      const qty3 = Number(invoiceValues["Provider Travel - Non-Labour Cost Amount($)"]) || 0;
+
+      if (unitPrice3 > 0 && qty3 > 0) {
+        let desc3 = itemName3;
+        if (itemNumber3) {
+          desc3 += ` - [${itemNumber3}]`;
         }
-        if (desc1 == '') {
-          desc1 = 'Direct Support - Hour based';
+        if (mileage3) {
+          desc3 += ` - ${mileage3}km`;
+        }
+        if (others3) {
+          desc3 += ` - Others: ${others3}`;
+        }
+        if (desc3 == '') {
+          desc3 = 'Provider Travel - Non-Labour Cost Item';
         }
 
         lineItems.push({
-          description: desc1,
-          quantity: qty1,
-          unitAmount: unitPrice1,
+          description: desc3,
+          quantity: qty3,
+          unitAmount: unitPrice3,
           taxType: gstType
         });
       }
-    }
 
-    // Line 2: Direct Support - Non Hour based
-    if (servicePlanValues?.directSupportUnit !== "Hour(H)") {
-      const unitPrice2 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
-      const itemNumber2 = servicePlanValues?.directSupportItemNumber || '';
-      const itemName2 = servicePlanValues?.directSupportItemName || '';
-      const quantity2 = invoiceValues["Quantity (Direct Support - Non Time Based Support)"] || 0;
-      const unit2 = servicePlanValues?.directSupportUnit || '';
-      const qty2 = Number(quantity2) || 0;
+      // Line 4: Activity Based Transport
+      const unitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) || 0;
+      const mileage4 = invoiceValues["Activity Base Transport Mileage(Kms) as per the Service Plan, if a Vehicle is Used."] || '';
+      const others4 = invoiceValues["Activity Base Transport Costs as per the Service Plan, if other costs are applied."] || '';
+      const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
+      const itemNumber4 = servicePlanValues?.activityBasedTransportItemNumber || '';
+      const qty4 = Number(invoiceValues["Activity Base Transport Amount($)"]) || 0;
 
-      if (unitPrice2 > 0 && qty2 > 0) {
-        let desc2 = itemName2;
-        if (itemNumber2) {
-          desc2 += ` - [${itemNumber2}]`;
+      if (unitPrice4 > 0 && qty4 > 0) {
+        let desc4 = itemName4;
+        if (itemNumber4) {
+          desc4 += ` - [${itemNumber4}]`;
         }
-        if (quantity2 && unit2) {
-          desc2 += ` - ${quantity2} ${unit2}`;
+        if (mileage4) {
+          desc4 += ` - ${mileage4}km`;
         }
-        if (desc2 == '') {
-          desc2 = 'Direct Support - NOT Hour based';
+        if (others4) {
+          desc4 += ` - Others: ${others4}`;
+        }
+        if (desc4 == '') {
+          desc4 = 'Activity Based Transport Item';
         }
 
         lineItems.push({
-          description: desc2,
-          quantity: qty2,
-          unitAmount: unitPrice2,
+          description: desc4,
+          quantity: qty4,
+          unitAmount: unitPrice4,
           taxType: gstType
         });
       }
-    }
 
-    // Line 3: Provider Travel - Non-Labour Cost
-    const unitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) || 0;
-    const mileage3 = invoiceValues["Provider Travel - Non-Labour - Mileage (kms) as per the Service Plan, if a Vehicle is Used."] || '';
-    const others3 = invoiceValues["Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied."] || '';
-    const itemName3 = servicePlanValues?.providerTravelItemName || '';
-    const itemNumber3 = servicePlanValues?.providerTravelItemNumber || '';
-    const qty3 = Number(invoiceValues["Provider Travel - Non-Labour Cost Amount($)"]) || 0;
-
-    if (unitPrice3 > 0 && qty3 > 0) {
-      let desc3 = itemName3;
-      if (itemNumber3) {
-        desc3 += ` - [${itemNumber3}]`;
-      }
-      if (mileage3) {
-        desc3 += ` - ${mileage3}km`;
-      }
-      if (others3) {
-        desc3 += ` - Others: ${others3}`;
-      }
-      if (desc3 == '') {
-        desc3 = 'Provider Travel - Non-Labour Cost Item';
+      // Line 5: Centre Capital Costs
+      const unitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) || 0;
+      const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
+      const itemNumber5 = servicePlanValues?.centreCapitalCostsItemNumber || '';
+      let qty5 = 0;
+      const actualShiftDuration5 = Number(invoiceValues["Actual Shift Duration(Hr.)"]);
+      if (typeof actualShiftDuration5 === 'number' && !isNaN(actualShiftDuration5)) {
+        qty5 = Number(actualShiftDuration5.toFixed(1));
       }
 
-      lineItems.push({
-        description: desc3,
-        quantity: qty3,
-        unitAmount: unitPrice3,
-        taxType: gstType
-      });
-    }
+      if (unitPrice5 > 0 && qty5 > 0) {
+        let desc5 = itemName5;
+        if (itemNumber5) {
+          desc5 += ` - [${itemNumber5}]`;
+        }
+        if (desc5 == '') {
+          desc5 = 'Centre Capital Costs Item';
+        }
 
-    // Line 4: Activity Based Transport
-    const unitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) || 0;
-    const mileage4 = invoiceValues["Activity Base Transport Mileage(Kms) as per the Service Plan, if a Vehicle is Used."] || '';
-    const others4 = invoiceValues["Activity Base Transport Costs as per the Service Plan, if other costs are applied."] || '';
-    const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
-    const itemNumber4 = servicePlanValues?.activityBasedTransportItemNumber || '';
-    const qty4 = Number(invoiceValues["Activity Base Transport Amount($)"]) || 0;
-
-    if (unitPrice4 > 0 && qty4 > 0) {
-      let desc4 = itemName4;
-      if (itemNumber4) {
-        desc4 += ` - [${itemNumber4}]`;
-      }
-      if (mileage4) {
-        desc4 += ` - ${mileage4}km`;
-      }
-      if (others4) {
-        desc4 += ` - Others: ${others4}`;
-      }
-      if (desc4 == '') {
-        desc4 = 'Activity Based Transport Item';
+        lineItems.push({
+          description: desc5,
+          quantity: qty5,
+          unitAmount: unitPrice5,
+          taxType: gstType
+        });
       }
 
-      lineItems.push({
-        description: desc4,
-        quantity: qty4,
-        unitAmount: unitPrice4,
-        taxType: gstType
-      });
-    }
+      // Line 6: Labour Travel Time
+      const unitPrice6 = Number(servicePlanValues?.labourTravelTimeUnitPrice) || 0;
+      const qty6 = Number(invoiceValues["Labour Travel Time (Min.) as per the Service Plan, regarding the Time Cap, if applicable."]) || 0;
 
-    // Line 5: Centre Capital Costs
-    const unitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) || 0;
-    const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
-    const itemNumber5 = servicePlanValues?.centreCapitalCostsItemNumber || '';
-    let qty5 = 0;
-    const actualShiftDuration5 = Number(invoiceValues["Actual Shift Duration(Hr.)"]);
-    if (typeof actualShiftDuration5 === 'number' && !isNaN(actualShiftDuration5)) {
-      qty5 = Number(actualShiftDuration5.toFixed(1));
-    }
-
-    if (unitPrice5 > 0 && qty5 > 0) {
-      let desc5 = itemName5;
-      if (itemNumber5) {
-        desc5 += ` - [${itemNumber5}]`;
-      }
-      if (desc5 == '') {
-        desc5 = 'Centre Capital Costs Item';
+      if (unitPrice6 > 0 && qty6 > 0) {
+        let desc6 = 'Provider Travel - Labour Travel Time Costs';
+        lineItems.push({
+          description: desc6,
+          quantity: qty6,
+          unitAmount: unitPrice6,
+          taxType: gstType
+        });
       }
 
-      lineItems.push({
-        description: desc5,
-        quantity: qty5,
-        unitAmount: unitPrice5,
-        taxType: gstType
-      });
-    }
+      // Line 7: Allowances
+      const unitPrice7 = Number(servicePlanValues?.usedAllowanceAmount) || 0;
+      const qty7 = 1;
 
-    // Line 6: Labour Travel Time
-    const unitPrice6 = Number(servicePlanValues?.labourTravelTimeUnitPrice) || 0;
-    const qty6 = Number(invoiceValues["Labour Travel Time (Min.) as per the Service Plan, regarding the Time Cap, if applicable."]) || 0;
-
-    if (unitPrice6 > 0 && qty6 > 0) {
-      let desc6 = 'Provider Travel - Labour Travel Time Costs';
-      lineItems.push({
-        description: desc6,
-        quantity: qty6,
-        unitAmount: unitPrice6,
-        taxType: gstType
-      });
-    }
-
-    // Line 7: Allowances
-    const unitPrice7 = Number(servicePlanValues?.usedAllowanceAmount) || 0;
-    const qty7 = 1;
-
-    if (unitPrice7 > 0) {
-      let desc7 = `Allowances - ${invoiceValues["Allowances"]}`;
-      lineItems.push({
-        description: desc7,
-        quantity: qty7,
-        unitAmount: unitPrice7,
-        taxType: gstType
-      });
-    }
-
-    // Line 8: Non-Face-to-Face Support
-    const unitPrice8 = Number(servicePlanValues?.nonFaceToFaceSupportUnitPrice) || 0;
-    const qty8 = Number(invoiceValues["Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)"]) || 0;
-
-    if (unitPrice8 > 0 && qty8 > 0) {
-      let desc8 = `Non-Face-to-Face Support - ${invoiceValues["Non-Face-to-Face Supports"]}`;
-      lineItems.push({
-        description: desc8,
-        quantity: qty8,
-        unitAmount: unitPrice8,
-        taxType: gstType
-      });
-    }
-
-    // Line 9: Cancellation Fee
-    const baseUnitPrice9 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
-    const cancellationPercentage9 = Number(cancellationTypeValues?.billableToClient) || 0;
-    const itemName9 = servicePlanValues?.directSupportItemName || '';
-    const itemNumber9 = servicePlanValues?.directSupportItemNumber || '';
-    let qty9 = 0;
-    let scheduledShiftDuration9 = Number(invoiceValues["Scheduled Shift Duration(Hr.)"]);
-    if (typeof scheduledShiftDuration9 === 'number' && !isNaN(scheduledShiftDuration9)) {
-      qty9 = Number(scheduledShiftDuration9.toFixed(1));
-    }
-    const unitPrice9 = baseUnitPrice9 * (cancellationPercentage9 / 100);
-
-    if (unitPrice9 > 0 && qty9 > 0) {
-      let desc9 = 'Cancellation Fee';
-      if (itemName9) {
-        desc9 += ` - ${itemName9}`;
-      }
-      if (itemNumber9) {
-        desc9 += ` - [${itemNumber9}]`;
+      if (unitPrice7 > 0) {
+        let desc7 = `Allowances - ${invoiceValues["Allowances"]}`;
+        lineItems.push({
+          description: desc7,
+          quantity: qty7,
+          unitAmount: unitPrice7,
+          taxType: gstType
+        });
       }
 
-      lineItems.push({
-        description: desc9,
-        quantity: qty9,
-        unitAmount: unitPrice9,
-        taxType: gstType
-      });
+      // Line 8: Non-Face-to-Face Support
+      const unitPrice8 = Number(servicePlanValues?.nonFaceToFaceSupportUnitPrice) || 0;
+      const qty8 = Number(invoiceValues["Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)"]) || 0;
+
+      if (unitPrice8 > 0 && qty8 > 0) {
+        let desc8 = `Non-Face-to-Face Support - ${invoiceValues["Non-Face-to-Face Supports"]}`;
+        lineItems.push({
+          description: desc8,
+          quantity: qty8,
+          unitAmount: unitPrice8,
+          taxType: gstType
+        });
+      }
+    } else {
+      // Line 9: Cancellation Fee
+      const baseUnitPrice9 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
+      const cancellationPercentage9 = Number(cancellationTypeValues?.billableToClient) || 0;
+      const itemName9 = servicePlanValues?.directSupportItemName || '';
+      const itemNumber9 = servicePlanValues?.directSupportItemNumber || '';
+      let qty9 = 1;
+      const unitPrice9 = baseUnitPrice9 * (cancellationPercentage9 / 100);
+      const amount9 = qty9 * unitPrice9;
+
+      if (amount9 > 0) {
+        let desc9 = 'Cancellation Fee';
+        if (itemName9) {
+          desc9 += ` - ${itemName9}`;
+        }
+        if (itemNumber9) {
+          desc9 += ` - [${itemNumber9}]`;
+        }
+
+        lineItems.push({
+          description: desc9,
+          quantity: qty9,
+          unitAmount: unitPrice9,
+          taxType: gstType
+        });
+      }
     }
 
     invoice.lineItems = lineItems;
@@ -1016,7 +1015,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
         unitAmount: Number(NDISQuoteValues['Unit Price for Non-Face-to-Face Support ($)']) || 1,
         taxType: gstType,
       });
-    }    
+    }
 
     // Fallbacks for required fields
     const firstLine = lineItems[0] || {};
