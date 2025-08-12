@@ -408,6 +408,9 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           if (desc1 == '') {
             desc1 = 'Direct Support - Hour based';
           }
+          if (servicePlanValues?.directSupportUnit) {
+            desc1 += ` - ${servicePlanValues?.directSupportUnit}`;
+          }
 
           lineItems.push({
             description: desc1,
@@ -437,6 +440,9 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           }
           if (desc2 == '') {
             desc2 = 'Direct Support - NOT Hour based';
+          }
+          if (servicePlanValues?.directSupportUnit) {
+            desc2 += ` - ${servicePlanValues?.directSupportUnit}`;
           }
 
           lineItems.push({
@@ -470,6 +476,9 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         if (desc3 == '') {
           desc3 = 'Provider Travel - Non-Labour Cost Item';
         }
+        if (servicePlanValues?.nonLabourTravelUnit) {
+          desc3 += ` - ${servicePlanValues?.nonLabourTravelUnit}`;
+        }
 
         lineItems.push({
           description: desc3,
@@ -501,6 +510,9 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         if (desc4 == '') {
           desc4 = 'Activity Based Transport Item';
         }
+        if (servicePlanValues?.activityBasedTransportUnit) {
+          desc4 += ` - ${servicePlanValues?.activityBasedTransportUnit}`;
+        }
 
         lineItems.push({
           description: desc4,
@@ -528,6 +540,9 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         if (desc5 == '') {
           desc5 = 'Centre Capital Costs Item';
         }
+        if (servicePlanValues?.centreCapitalCostsUnit) {
+          desc5 += ` - ${servicePlanValues?.centreCapitalCostsUnit}`;
+        }
 
         lineItems.push({
           description: desc5,
@@ -543,6 +558,10 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
 
       if (unitPrice6 > 0 && qty6 > 0) {
         let desc6 = 'Provider Travel - Labour Travel Time Costs';
+        if (servicePlanValues?.labourTravelTimeUnit) {
+          desc6 += ` - ${servicePlanValues?.labourTravelTimeUnit}`;
+        }
+
         lineItems.push({
           description: desc6,
           quantity: qty6,
@@ -557,6 +576,10 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
 
       if (unitPrice7 > 0) {
         let desc7 = `Allowances - ${invoiceValues["Allowances"]}`;
+        if (servicePlanValues?.usedAllowanceUnit) {
+          desc7 += ` - ${servicePlanValues?.usedAllowanceUnit}`;
+        }
+
         lineItems.push({
           description: desc7,
           quantity: qty7,
@@ -571,6 +594,10 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
 
       if (unitPrice8 > 0 && qty8 > 0) {
         let desc8 = `Non-Face-to-Face Support - ${invoiceValues["Non-Face-to-Face Supports"]}`;
+        if (servicePlanValues?.nonFaceToFaceSupportUnit) {
+          desc8 += ` - ${servicePlanValues?.nonFaceToFaceSupportUnit}`;
+        }
+
         lineItems.push({
           description: desc8,
           quantity: qty8,
@@ -595,6 +622,9 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         }
         if (itemNumber9) {
           desc9 += ` - ${itemNumber9}`;
+        }
+        if (servicePlanValues?.directSupportUnit) {
+          desc9 += ` - ${servicePlanValues?.directSupportUnit}`;
         }
 
         lineItems.push({
