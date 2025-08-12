@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Building2, FileSpreadsheet, FileText, BarChart, Info, History } from "lucide-react";
+import { ArrowLeft, Building2, FileSpreadsheet, FileText, BarChart, Info, History, Terminal } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import {
   Table,
@@ -224,6 +224,24 @@ export default function WorkspaceDetail() {
                       className="w-full button-hover"
                     >
                       View Audit Trail
+                    </Button>
+                  </div>
+                </Card>
+
+                <Card className="p-6 space-y-4 card-hover">
+                  <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                    <Terminal className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold">Workspace Configuration</h2>
+                    <p className="text-muted-foreground mb-4 text-sm">
+                      Configure workspace settings and manage board links
+                    </p>
+                    <Button
+                      onClick={() => router.push(`/workspace/${workspace?.id}/configuration`)}
+                      className="w-full button-hover"
+                    >
+                      Configure Workspace
                     </Button>
                   </div>
                 </Card>
