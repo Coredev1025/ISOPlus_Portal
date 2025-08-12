@@ -1302,7 +1302,7 @@ export async function getParticipantsServicePlanReferencedItems(workspaceId, boa
 }
 
 export async function getMasterPlanReferencedItems(workspaceId, boardId, itemId) {
-    let servicePlanValues = null, cancellationTypeValues = null, fundValues = null, participantProfileValues = null;
+    let servicePlanValues = null, cancellationTypeValues = null, fundValues = null, participantProfileValues = null, participationTypeValues = null;
 
     const referenceResponse = await getReferences(workspaceId, boardId, itemId);
     if (!referenceResponse) return [null, null];
@@ -1449,8 +1449,19 @@ export async function getMasterPlanReferencedItems(workspaceId, boardId, itemId)
                     }
                     break;
                 }
+            case 'Participation Type':
+                {
+                    const participationType = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (participationType) {
+                        const values = participationType.values;
+                        participationTypeValues = {
+                            participationType: values.find(v => v.attribute.name === "Participation Type").data.toString(),
+                            definition: values.find(v => v.attribute.name === "Definition").data.toString(),
+                        }
+                    }
+                }
         }
     }
 
-    return [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues];
+    return [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues, participationTypeValues];
 }
