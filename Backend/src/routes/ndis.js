@@ -346,7 +346,7 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
     const items = payload.items[0];
     const itemsValues = items.values;
 
-    const [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues] = await getMasterPlanReferencedItems(workspaceId, boardId, items.id);
+    const [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues, participationTypeValues] = await getMasterPlanReferencedItems(workspaceId, boardId, items.id);
 
     info('Xero-Service', `Incoming request to Master plan`, { workspaceId, boardId, body: itemsValues }, req);
 
@@ -447,6 +447,12 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
         updateValues.push({
             data: fundValues.fundingBudgetStatus,
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Funding Budget Status').attribute.id
+        });
+    }
+    if (participationTypeValues) {
+        updateValues.push({
+            data: participationTypeValues.participationType == 'Individual (1:1) Service' ? 1 : 2,
+            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Group Size').attribute.id
         });
     }
 
