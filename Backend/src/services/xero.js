@@ -196,6 +196,7 @@ export async function createInvoice(invoice) {
                 type: invoice.type || 'ACCREC',
                 contact: { contactID: invoice.contact.contactID },
                 reference: invoice.reference,
+                date: new Date(invoice.date).toISOString().split('T')[0],
                 dueDate: new Date(invoice.dueDate).toISOString().split('T')[0], // YYYY-MM-DD format
                 lineItems: invoice.lineItems.map(item => ({
                     itemCode: item.itemCode,
