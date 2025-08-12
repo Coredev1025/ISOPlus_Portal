@@ -303,6 +303,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
   const payload = req.body;
   const { item } = await validatePayload(payload, req);
   const invoiceValues = item.values;
+  const invoiceDate = invoiceValues["Invoice Date"];
+  const dueDate = invoiceValues["Due Date"];
 
   try {
     await initializeXeroOperation(workspaceId, boardId, item);
@@ -373,14 +375,15 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
 
     let lineItems = [];
     const gstType = "EXEMPTOUTPUT"; // GST Free for NDIS
+    const nowISO = new Date().toISOString();
 
     const invoice = {
       type: 'ACCREC',
       contact: { contactID: contact.contactID },
       reference: item.values["Invoice Number"],
       lineItems: [],
-      date: new Date().toISOString().split('T')[0],
-      dueDate: new Date(new Date().setDate(new Date().getDate() + 30)).toISOString().split('T')[0],
+      date: invoiceDate || nowISO,
+      dueDate: dueDate || nowISO,
       status: "DRAFT"
     };
 
@@ -638,6 +641,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
 
     invoice.lineItems = lineItems;
 
+    console.log(invoice);
     const createdInvoice = await createInvoice(invoice);
     await setIntegrationMessage(workspaceId, boardId, item.id, "Your invoice has been created successfully in Xero.");
 
