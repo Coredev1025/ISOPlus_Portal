@@ -400,13 +400,16 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         if (unitPrice1 > 0 && qty1 > 0) {
           let desc1 = itemName1;
           if (itemNumber1) {
-            desc1 += ` - [${itemNumber1}]`;
+            desc1 += ` - ${itemNumber1}`;
           }
           if (startTime1 && endTime1) {
             desc1 += ` - from ${startTime1} to ${endTime1}`;
           }
           if (desc1 == '') {
             desc1 = 'Direct Support - Hour based';
+          }
+          if (servicePlanValues?.directSupportUnit) {
+            desc1 += ` - ${servicePlanValues?.directSupportUnit}`;
           }
 
           lineItems.push({
@@ -430,13 +433,16 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         if (unitPrice2 > 0 && qty2 > 0) {
           let desc2 = itemName2;
           if (itemNumber2) {
-            desc2 += ` - [${itemNumber2}]`;
+            desc2 += ` - ${itemNumber2}`;
           }
           if (quantity2 && unit2) {
             desc2 += ` - ${quantity2} ${unit2}`;
           }
           if (desc2 == '') {
             desc2 = 'Direct Support - NOT Hour based';
+          }
+          if (servicePlanValues?.directSupportUnit) {
+            desc2 += ` - ${servicePlanValues?.directSupportUnit}`;
           }
 
           lineItems.push({
@@ -459,7 +465,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       if (unitPrice3 > 0 && qty3 > 0) {
         let desc3 = itemName3;
         if (itemNumber3) {
-          desc3 += ` - [${itemNumber3}]`;
+          desc3 += ` - ${itemNumber3}`;
         }
         if (mileage3) {
           desc3 += ` - ${mileage3}km`;
@@ -469,6 +475,9 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         }
         if (desc3 == '') {
           desc3 = 'Provider Travel - Non-Labour Cost Item';
+        }
+        if (servicePlanValues?.nonLabourTravelUnit) {
+          desc3 += ` - ${servicePlanValues?.nonLabourTravelUnit}`;
         }
 
         lineItems.push({
@@ -490,7 +499,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       if (unitPrice4 > 0 && qty4 > 0) {
         let desc4 = itemName4;
         if (itemNumber4) {
-          desc4 += ` - [${itemNumber4}]`;
+          desc4 += ` - ${itemNumber4}`;
         }
         if (mileage4) {
           desc4 += ` - ${mileage4}km`;
@@ -500,6 +509,9 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         }
         if (desc4 == '') {
           desc4 = 'Activity Based Transport Item';
+        }
+        if (servicePlanValues?.activityBasedTransportUnit) {
+          desc4 += ` - ${servicePlanValues?.activityBasedTransportUnit}`;
         }
 
         lineItems.push({
@@ -523,10 +535,13 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       if (unitPrice5 > 0 && qty5 > 0) {
         let desc5 = itemName5;
         if (itemNumber5) {
-          desc5 += ` - [${itemNumber5}]`;
+          desc5 += ` - ${itemNumber5}`;
         }
         if (desc5 == '') {
           desc5 = 'Centre Capital Costs Item';
+        }
+        if (servicePlanValues?.centreCapitalCostsUnit) {
+          desc5 += ` - ${servicePlanValues?.centreCapitalCostsUnit}`;
         }
 
         lineItems.push({
@@ -543,6 +558,10 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
 
       if (unitPrice6 > 0 && qty6 > 0) {
         let desc6 = 'Provider Travel - Labour Travel Time Costs';
+        if (servicePlanValues?.labourTravelTimeUnit) {
+          desc6 += ` - ${servicePlanValues?.labourTravelTimeUnit}`;
+        }
+
         lineItems.push({
           description: desc6,
           quantity: qty6,
@@ -557,6 +576,10 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
 
       if (unitPrice7 > 0) {
         let desc7 = `Allowances - ${invoiceValues["Allowances"]}`;
+        if (servicePlanValues?.usedAllowanceUnit) {
+          desc7 += ` - ${servicePlanValues?.usedAllowanceUnit}`;
+        }
+
         lineItems.push({
           description: desc7,
           quantity: qty7,
@@ -571,6 +594,10 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
 
       if (unitPrice8 > 0 && qty8 > 0) {
         let desc8 = `Non-Face-to-Face Support - ${invoiceValues["Non-Face-to-Face Supports"]}`;
+        if (servicePlanValues?.nonFaceToFaceSupportUnit) {
+          desc8 += ` - ${servicePlanValues?.nonFaceToFaceSupportUnit}`;
+        }
+
         lineItems.push({
           description: desc8,
           quantity: qty8,
@@ -594,7 +621,10 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           desc9 += ` - ${itemName9}`;
         }
         if (itemNumber9) {
-          desc9 += ` - [${itemNumber9}]`;
+          desc9 += ` - ${itemNumber9}`;
+        }
+        if (servicePlanValues?.directSupportUnit) {
+          desc9 += ` - ${servicePlanValues?.directSupportUnit}`;
         }
 
         lineItems.push({
