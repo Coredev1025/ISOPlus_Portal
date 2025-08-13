@@ -680,7 +680,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                 const gst = "0%";
                 const gstLabel = "GST Free";
 
-                if(invoiceValues['Job Status'] === 'Cancelled'){
+                if(invoiceValues['Job Status'] !== 'Cancelled'){
                     // Line 1: Direct Support - Hour based
                     if (servicePlanValues?.directSupportUnit === "Hour(H)") {
                         const unitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
@@ -693,6 +693,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                         if (typeof actualShiftDuration1 === 'number' && !isNaN(actualShiftDuration1)) {
                             qty1 = Number(actualShiftDuration1.toFixed(1));
                         }
+                        const amountValue1 = invoiceValues["Direct Support Value($) - Time Based Support"] || 0;
                         const amount1 = qty1 * unitPrice1;
 
                         if (unitPrice1 > 0 && amount1 > 0) {
@@ -705,6 +706,11 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                             }
                             if (desc1 == '') {
                                 desc1 = 'Direct Support - Hour based';
+                            }
+
+                            if (amountValue1 != amount1) {
+                                setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+                                throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                             }
 
                             ordersArr.push([
@@ -727,6 +733,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                         const quantity2 = invoiceValues["Quantity (Direct Support - Non Time Based Support)"] || 0;
                         const unit2 = servicePlanValues?.directSupportUnit || '';
                         const qty2 = Number(quantity2) || 0;
+                        const amountValue2 = invoiceValues["Direct Support Value($) - Non Time Based Support"] || 0;
                         const amount2 = qty2 * unitPrice2;
 
                         if (unitPrice2 > 0 && amount2 > 0) {
@@ -739,6 +746,11 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                             }
                             if (desc2 == '') {
                                 desc2 = 'Direct Support - NOT Hour based';
+                            }
+
+                            if (amountValue2 != amount2) {
+                                setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+                                throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                             }
 
                             ordersArr.push([
@@ -760,6 +772,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     const itemName3 = servicePlanValues?.providerTravelItemName || '';
                     const itemNumber3 = servicePlanValues?.providerTravelItemNumber || '';
                     const qty3 = Number(invoiceValues["Provider Travel - Non-Labour Cost Amount($)"]) || 0;
+                    const amountValue3 = Number(invoiceValues["Provider Travel - Non-Labour Cost Amount($)"]) || 0;
                     const amount3 = qty3 * unitPrice3;
 
                     if (amount3 > 0) {
@@ -775,6 +788,11 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                         }
                         if (desc3 == '') {
                             desc3 = 'Provider Travel - Non-Labour Cost Item';
+                        }
+
+                        if (amountValue3 * unitPrice3 != amount3) {
+                            setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+                            throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                         }
 
                         ordersArr.push([
@@ -795,6 +813,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
                     const itemNumber4 = servicePlanValues?.activityBasedTransportItemNumber || '';
                     const qty4 = Number(invoiceValues["Activity Base Transport Amount($)"]) || 0;
+                    const amountValue4 = Number(invoiceValues["Activity Base Transport Amount($)"]) || 0;
                     const amount4 = qty4 * unitPrice4;
 
                     if (amount4 > 0) {
@@ -810,6 +829,11 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                         }
                         if (desc4 == '') {
                             desc4 = 'Activity Based Transport Item';
+                        }
+
+                        if (amountValue4 * unitPrice4 != amount4) {
+                            setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+                            throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                         }
 
                         ordersArr.push([
@@ -832,6 +856,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     if (typeof actualShiftDuration5 === 'number' && !isNaN(actualShiftDuration5)) {
                         qty5 = Number(actualShiftDuration5.toFixed(1));
                     }
+                    const amountValue5 = Number(invoiceValues["Centre Capital Costs Amount($)"]) || 0;
                     const amount5 = qty5 * unitPrice5;
 
                     if (unitPrice5 > 0 && amount5 > 0) {
@@ -841,6 +866,11 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                         }
                         if (desc5 == '') {
                             desc5 = 'Centre Capital Costs Item';
+                        }
+
+                        if (amountValue5 != amount5) {
+                            setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+                            throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                         }
 
                         ordersArr.push([
@@ -857,10 +887,17 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     // Line 6: Labour Travel Time
                     const unitPrice6 = Number(servicePlanValues?.labourTravelTimeUnitPrice) || 0;
                     const qty6 = Number(invoiceValues["Labour Travel Time (Min.) as per the Service Plan, regarding the Time Cap, if applicable."]) || 0;
+                    const amountValue6 = Number(invoiceValues["Labour Travel Time Amount($)"]) || 0;
                     const amount6 = qty6 * unitPrice6;
 
                     if (unitPrice6 > 0 && amount6 > 0) {
                         const desc6 = 'Provider Travel - Labour Travel Time Costs';
+
+                        if (amountValue6 != amount6) {
+                            setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+                            throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+                        }
+
                         ordersArr.push([
                             desc6,
                             servicePlanValues?.labourTravelTimeUnit || ' ',
@@ -875,11 +912,18 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     // Line 7: Allowances
                     const unitPrice7 = Number(servicePlanValues?.usedAllowanceAmount) || 0;
                     const qty7 = 1;
+                    const amountValue7 = Number(invoiceValues["Allowances Amount($)"]) || 0;
                     const amount7 = unitPrice7;
 
                     if (unitPrice7 > 0) {
                         const desc7 = `Allowances - ${invoiceValues["Allowances"]}`;
-                        ordersArr.push([
+
+                        if (amountValue7 * unitPrice7 != amount7) {
+                            setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+                            throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+                        }
+
+                            ordersArr.push([
                             desc7,
                             servicePlanValues?.usedAllowanceUnit || ' ',
                             formatValue(qty7),
@@ -893,10 +937,17 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     // Line 8: Non-Face-to-Face Support
                     const unitPrice8 = Number(servicePlanValues?.nonFaceToFaceSupportUnitPrice) || 0;
                     const qty8 = Number(invoiceValues["Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)"]) || 0;
+                    const amountValue8 = Number(invoiceValues["Non-Face-to-Face Amount($)"]) || 0;
                     const amount8 = qty8 * unitPrice8;
 
                     if (unitPrice8 > 0 && amount8 > 0) {
                         const desc8 = `Non-Face-to-Face Support - ${invoiceValues["Non-Face-to-Face Supports"]}`;
+
+                        if (amountValue8 * unitPrice8 != amount8) {
+                            setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+                            throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+                        }
+
                         ordersArr.push([
                             desc8,
                             servicePlanValues?.nonFaceToFaceSupportUnit || ' ',
@@ -916,7 +967,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     let qty9 = 1;
                     const unitPrice9 = baseUnitPrice9 * (cancellationPercentage9 / 100);
                     const amount9 = qty9 * unitPrice9;
-    
+                    const amountValue9 = Number(invoiceValues["Cancellation Fee Amount($)"]) || 0;
+
                     if (amount9 > 0) {
                         let desc9 = 'Cancellation Fee';
                         if (itemName9) {
@@ -925,7 +977,12 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                         if (itemNumber9) {
                             desc9 += ` - ${itemNumber9}`;
                         }
-    
+
+                        if (amountValue9 != amount9) {
+                            setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+                            throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+                        }
+
                         ordersArr.push([
                             desc9,
                             servicePlanValues?.directSupportUnit || ' ',
