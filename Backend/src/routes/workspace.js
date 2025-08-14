@@ -4,6 +4,7 @@ import Workspace from '../models/Workspace.js';
 import AuditTrail from '../models/AuditTrail.js';
 import { info, error } from '../utils/logger.js';
 import { getWorkspace, getBoard } from '../services/isoplus.js';
+import DynamicLinkingService from '../services/dynamicLinking.js';
 
 const router = express.Router();
 
@@ -49,6 +50,51 @@ router.post('/', authenticateToken, async (req, res) => {
   } catch (err) {
     error('Workspace-Service', 'Server error', { message: err.message }, req);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Dynamic Linking routes
+router.post('/:workspaceId/check-links', authenticateToken, async (req, res) => {
+  try {
+    const { workspaceId } = req.params;
+    const host = 'https://app.isoplus.online';
+    
+    // Check if user has permission (owner or support_admin)
+    if (req.user.role !== 'owner' && req.user.role !== 'support_admin') {
+      return res.status(403).json({ message: 'Access denied. Owner or Support Admin permission required.' });
+    }
+
+    const dynamicLinkingService = new DynamicLinkingService(req.session.Authorization, host);
+    console.log("Checking links");
+    const results = await dynamicLinkingService.main(workspaceId, false);
+
+    info('Workspace-Service', 'Links checked', { workspaceId, results }, req);
+    res.status(200).json(results);
+  } catch (err) {
+    error('Workspace-Service', 'Failed to check links', { workspaceId: req.params.workspaceId, error: err.message }, req);
+    res.status(500).json({ message: 'Failed to check links', error: err.message });
+  }
+});
+
+router.post('/:workspaceId/create-links', authenticateToken, async (req, res) => {
+  try {
+    const { workspaceId } = req.params;
+    const host = 'https://app.isoplus.online';
+    
+    // Check if user has permission (owner or support_admin)
+    if (req.user.role !== 'owner' && req.user.role !== 'support_admin') {
+      return res.status(403).json({ message: 'Access denied. Owner or Support Admin permission required.' });
+    }
+
+    const dynamicLinkingService = new DynamicLinkingService(req.session.Authorization, host);
+    console.log("Creating links");
+    const results = await dynamicLinkingService.main(workspaceId, true);
+
+    info('Workspace-Service', 'Links created', { workspaceId, results }, req);
+    res.status(200).json(results);
+  } catch (err) {
+    error('Workspace-Service', 'Failed to create links', { workspaceId: req.params.workspaceId, error: err.message }, req);
+    res.status(500).json({ message: 'Failed to create links', error: err.message });
   }
 });
 
