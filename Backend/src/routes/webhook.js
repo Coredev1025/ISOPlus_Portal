@@ -959,39 +959,115 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                         subTotal += amount8;
                     }
                 } else {    
-                    // Line 9: Cancellation Fee
-                    const baseUnitPrice9 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
-                    const cancellationPercentage9 = Number(cancellationTypeValues?.billableToClient) || 0;
-                    const itemName9 = servicePlanValues?.directSupportItemName || '';
-                    const itemNumber9 = servicePlanValues?.directSupportItemNumber || '';
-                    let qty9 = 1;
-                    const unitPrice9 = baseUnitPrice9 * (cancellationPercentage9 / 100);
-                    const amount9 = qty9 * unitPrice9;
-                    const amountValue9 = Number(invoiceValues["Cancellation Fee Amount($)"]) || 0;
+                    // Line 1: Direct Support - Hour based (Cancelled)
+                    const baseUnitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
+                    const cancellationPercentage1 = Number(cancellationTypeValues?.billableToClient) || 0;
+                    const itemName1 = servicePlanValues?.directSupportItemName || '';
+                    const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
+                    let qty1 = 1;
+                    const unitPrice1 = baseUnitPrice1 * (cancellationPercentage1 / 100);
+                    const amount1 = qty1 * unitPrice1;
+                    const amountValue1 = Number(invoiceValues["Cancellation Fee Amount($)"]) || 0;
 
-                    if (amount9 > 0) {
-                        let desc9 = 'Cancellation Fee';
-                        if (itemName9) {
-                            desc9 += ` - ${itemName9}`;
+                    if (amount1 > 0) {
+                        let desc1 = 'Cancellation Fee';
+                        if (itemName1) {
+                            desc1 += ` - ${itemName1}`;
                         }
-                        if (itemNumber9) {
-                            desc9 += ` - ${itemNumber9}`;
-                        }
-
-                        if (amountValue9 != amount9) {
-                            setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                            throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+                        if (itemNumber1) {
+                            desc1 += ` - ${itemNumber1}`;
                         }
 
                         ordersArr.push([
-                            desc9,
+                            desc1,
                             servicePlanValues?.directSupportUnit || ' ',
-                            formatValue(qty9),
-                            formatValue(unitPrice9),
+                            formatValue(qty1),
+                            formatValue(unitPrice1),
                             gstLabel,
-                            formatValue(amount9)
+                            formatValue(amount1)
                         ]);
-                        subTotal += amount9;
+                        subTotal += amount1;
+                    }
+
+                    // Line 3: Provider Travel - Non-Labour Cost
+                    const baseUnitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) || 0;
+                    const itemName3 = servicePlanValues?.providerTravelItemName || '';
+                    const itemNumber3 = servicePlanValues?.providerTravelItemNumber || '';
+                    const qty3 = 1;
+                    const amount3 = qty3 * baseUnitPrice3;
+
+                    if (amount3 > 0) {
+                        let desc3 = 'Cancellation Fee';
+                        if (itemName3) {
+                            desc3 += ` - ${itemName3}`;
+                        }
+                        if (itemNumber3) {
+                            desc3 += ` - ${itemNumber3}`;
+                        }
+
+                        ordersArr.push([
+                            desc3,
+                            servicePlanValues?.nonLabourTravelUnit || ' ',
+                            formatValue(qty3),
+                            formatValue(baseUnitPrice3),
+                            gstLabel,
+                            formatValue(amount3)
+                        ]);
+                        subTotal += amount3;
+                    }
+
+                    // Line 4: Activity Based Transport
+                    const baseUnitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) || 0;
+                    const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
+                    const itemNumber4 = servicePlanValues?.activityBasedTransportItemNumber || '';
+                    const qty4 = 1;
+                    const amount4 = qty4 * baseUnitPrice4;
+
+                    if (amount4 > 0) {    
+                        let desc4 = 'Cancellation Fee';
+                        if (itemName4) {
+                            desc4 += ` - ${itemName4}`;
+                        }
+                        if (itemNumber4) {
+                            desc4 += ` - ${itemNumber4}`;
+                        }
+
+                        ordersArr.push([
+                            desc4,
+                            servicePlanValues?.activityBasedTransportUnit || ' ',
+                            formatValue(qty4),
+                            formatValue(baseUnitPrice4),
+                            gstLabel,
+                            formatValue(amount4)
+                        ]);
+                        subTotal += amount4;
+                    }
+
+                    // Line 5: Centre Capital Costs
+                    const baseUnitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) || 0;
+                    const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
+                    const itemNumber5 = servicePlanValues?.centreCapitalCostsItemNumber || '';
+                    let qty5 = 1;
+                    const amount5 = qty5 * baseUnitPrice5;
+
+                    if (baseUnitPrice5 > 0 && amount5 > 0) {
+                        let desc5 = 'Cancellation Fee';
+                        if (itemName5) {
+                            desc5 += ` - ${itemName5}`;
+                        }
+                        if (itemNumber5) {
+                            desc5 += ` - ${itemNumber5}`;
+                        }
+
+                        ordersArr.push([
+                            desc5,
+                            servicePlanValues?.centreCapitalCostsUnit || ' ',
+                            formatValue(qty5),
+                            formatValue(baseUnitPrice5),
+                            gstLabel,
+                            formatValue(amount5)
+                        ]);
+                        subTotal += amount5;
                     }
                 }
 
