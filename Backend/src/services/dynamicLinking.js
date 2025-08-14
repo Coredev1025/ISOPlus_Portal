@@ -1,344 +1,210 @@
-import axios from "axios";
 import Loki from 'lokijs';
 import sanitizeHtml from 'sanitize-html';
 import he from 'he';
 import { tokenizeString } from '../utils/dynamicLinking.js';
 import { info, warn, error } from '../utils/logger.js';
+import got from 'got';
 
 const TEMPLATE_REGEX = /{{\s*([^}]+)\s*}}/g;
 
 class DynamicLinkingService {
-    constructor() {
-        this.db = new Loki('dynamicLinking');
+    constructor(authorization, host) {
+        if (!authorization || typeof authorization !== 'string') {
+            throw new Error('Invalid authorization parameter. Expected a string authorization token.');
+        }
+        
+        if (!host || typeof host !== 'string') {
+            throw new Error('Invalid host parameter. Expected a string host URL.');
+        }
+        
+        this.host = host.endsWith('/') ? host.slice(0, -1) : host;
+        this.authorization = authorization.startsWith('Bearer ') ? authorization : `Bearer ${authorization}`;
+        
+        console.log(`DynamicLinkingService initialized with host: ${this.host}`);
+        
+        this.db = new Loki('entries');
         this.sources = this.db.addCollection('links');
-        this.destinationsRepository = this.db.addCollection('items', { indices: ['boardName', 'name'] });
-    }
-
-    async checkLinks(authorization, workspaceId, host) {
-        try {
-            info('DynamicLinking-Service', 'Starting link check', { workspaceId }, null);
-            
-            // Clear previous data
-            this.sources.clear();
-            this.destinationsRepository.clear();
-
-            const boards = await this.fetchAllBoards(authorization, workspaceId);
-            info('DynamicLinking-Service', `Checking ${boards.length} boards`, { workspaceId, boardCount: boards.length }, null);
-
-            const results = {
-                boardsChecked: boards.length,
-                potentialLinks: 0,
-                destinationsFound: 0,
-                errors: []
-            };
-
-            for (const board of boards) {
-                try {
-                    await this.processBoard(authorization, workspaceId, board, host, results);
-                } catch (boardError) {
-                    results.errors.push({
-                        boardId: board.id,
-                        boardName: board.name,
-                        error: boardError.message
-                    });
+        this.destinations = this.db.addCollection('items', { indices: ['boardName', 'name'] });
+        this.api = () => {
+            return got.extend({
+                prefixUrl: `${this.host}/api/v2/`,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `${this.authorization}`
                 }
-            }
-
-            info('DynamicLinking-Service', 'Link check completed', { workspaceId, results }, null);
-            return results;
-
-        } catch (err) {
-            error('DynamicLinking-Service', 'Link check failed', { workspaceId, error: err.message }, null);
-            throw err;
-        }
-    }
-
-    async createLinks(authorization, workspaceId, host) {
-        try {
-            info('DynamicLinking-Service', 'Starting link creation', { workspaceId }, null);
-            
-            // First check links to get current state
-            await this.checkLinks(authorization, workspaceId, host);
-
-            const results = {
-                linksCreated: 0,
-                boardsUpdated: 0,
-                errors: []
-            };
-
-            // Process all sources and create links
-            const sources = this.sources.chain().data();
-            for (const source of sources) {
-                try {
-                    const linksCreated = await this.processSource(authorization, workspaceId, source, host);
-                    if (linksCreated > 0) {
-                        results.linksCreated += linksCreated;
-                        results.boardsUpdated++;
-                    }
-                } catch (sourceError) {
-                    results.errors.push({
-                        boardId: source.boardId,
-                        itemId: source.item?.id,
-                        error: sourceError.message
-                    });
-                }
-            }
-
-            info('DynamicLinking-Service', 'Link creation completed', { workspaceId, results }, null);
-            return results;
-
-        } catch (err) {
-            error('DynamicLinking-Service', 'Link creation failed', { workspaceId, error: err.message }, null);
-            throw err;
-        }
-    }
-
-    async fetchAllBoards(authorization, workspaceId) {
-        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards`;
-        const headers = {
-            "Authorization": authorization,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
+            });
         };
-        const params = {
-            "limit": "100",
-            "sort_by": "created_at",
-            "sort_direction": "desc",
-        };
-
-        let boards = [];
-        const result = await axios.get(url, { headers, params });
-
-        if (result.status === 200) {
-            boards = boards.concat(result.data.data);
-            let has_more = result.data.has_more, after = result.data.after;
-
-            while (has_more) {
-                const response = await axios.get(url, { headers, params: { ...params, after } });
-                if (response.status === 200) {
-                    boards = boards.concat(response.data.data);
-                    has_more = response.data.has_more;
-                    after = response.data.after;
-                } else {
-                    has_more = false;
-                }
-            }
-        }
-
-        return boards;
     }
 
-    async processBoard(authorization, workspaceId, board, host, results) {
-        const boardId = board.id;
-
-        // Process views
-        await this.processViews(authorization, workspaceId, boardId, board, host, results);
-
-        // Process items
-        await this.processItems(authorization, workspaceId, boardId, board, host, results);
-    }
-
-    async processViews(authorization, workspaceId, boardId, board, host, results) {
+    async main(workspaceId, update) {
         try {
-            const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/views`;
-            const headers = {
-                "Authorization": authorization,
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            };
-            const params = {
-                "limit": "50",
-                "sort_by": "created_at",
-                "sort_direction": "desc",
-            };
-
-            let views = [];
-            const result = await axios.get(url, { headers, params });
-
-            if (result.status === 200) {
-                views = views.concat(result.data.data);
-                let has_more = result.data.has_more, after = result.data.after;
-
-                while (has_more) {
-                    const response = await axios.get(url, { headers, params: { ...params, after } });
-                    if (response.status === 200) {
-                        views = views.concat(response.data.data);
-                        has_more = response.data.has_more;
-                        after = response.data.after;
-                    } else {
-                        has_more = false;
-                    }
-                }
+            if (!workspaceId || typeof workspaceId !== 'string') {
+                throw new Error('Invalid workspaceId parameter. Expected a string workspace ID.');
             }
-
-            for (const view of views) {
-                this.destinationsRepository.insert({
-                    boardName: board.name,
-                    name: view.name,
-                    selfLink: `${host}/b/${boardId}/${view.folder_id}?view=${view.id}`
-                });
-                results.destinationsFound++;
-
-                if (view.type === 'form' && view.settings?.formSettings?.enabled) {
-                    this.destinationsRepository.insert({
-                        boardName: board.name,
-                        name: `public ${view.name}`,
-                        selfLink: `${host}/form/${view.id}`
+            
+            if (workspaceId.includes('http') || workspaceId.includes('://')) {
+                throw new Error(`Invalid workspaceId: "${workspaceId}". Expected a workspace ID, not a full URL.`);
+            }
+            
+            console.log("Starting dynamic linking");
+            console.log(`Host: ${this.host}`);
+            console.log(`Workspace ID: ${workspaceId}`);
+            
+            const boards = await this.api().paginate.all(`workspaces/${workspaceId}/boards`, {
+                searchParams: {
+                    limit: 20,
+                    sort_by: 'created_at',
+                    sort_direction: 'desc',
+                },
+                pagination: {
+                    transform: (res) => JSON.parse(res.body).data
+                }
+            }).catch(error => {
+                console.error(`Failed to fetch boards for workspace ${workspaceId}:`, error.message);
+                throw new Error(`Failed to fetch boards: ${error.message}`);
+            });
+            console.log(`Checking ${boards.length} boards...`);
+        
+            const fetchingItems = boards.map(async board => {
+                try {
+                    const boardId = board.id;
+            
+                    const paginateViews = this.api().paginate(`workspaces/${workspaceId}/boards/${boardId}/views`, {
+                        searchParams: {
+                            limit: 50,
+                            sort_by: 'created_at',
+                            sort_direction: 'desc',
+                        },
+                        pagination: {
+                            transform: (res) => JSON.parse(res.body).data
+                        }
                     });
-                    results.destinationsFound++;
-                }
-            }
-        } catch (err) {
-            warn('DynamicLinking-Service', 'Failed to process views', { boardId, error: err.message }, null);
-        }
-    }
-
-    async processItems(authorization, workspaceId, boardId, board, host, results) {
-        try {
-            const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items`;
-            const headers = {
-                "Authorization": authorization,
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            };
-            const params = {
-                "limit": "50",
-                "sort_by": "created_at",
-                "sort_direction": "desc",
-                ['expand[]']: 'values'
-            };
-
-            let items = [];
-            const result = await axios.get(url, { headers, params });
-
-            if (result.status === 200) {
-                items = items.concat(result.data.data);
-                let has_more = result.data.has_more, after = result.data.after;
-
-                while (has_more) {
-                    const response = await axios.get(url, { headers, params: { ...params, after } });
-                    if (response.status === 200) {
-                        items = items.concat(response.data.data);
-                        has_more = response.data.has_more;
-                        after = response.data.after;
-                    } else {
-                        has_more = false;
-                    }
-                }
-            }
-
-            for (const item of items) {
-                for (const value of item.values || []) {
-                    const textAttributeValue = value.data;
-
-                    if (typeof textAttributeValue !== 'string') {
-                        continue;
-                    }
-
-                    this.destinationsRepository.insert({
-                        name: textAttributeValue,
-                        boardName: board.name,
-                        selfLink: `${host}/b/${boardId}/${item.folder_id}/${item.id}`
-                    });
-                    results.destinationsFound++;
-
-                    const links = [];
-                    let match;
-                    while ((match = TEMPLATE_REGEX.exec(textAttributeValue)) !== null) {
-                        try {
-                            const [label, targetBoardName, targetName] = tokenizeString(
-                                he.decode(
-                                    sanitizeHtml(match[1], {
-                                        allowedTags: [],
-                                        allowedAttributes: {}
-                                    })
-                                )
-                            ).map(x => x.replace(/\s+/g, ' ').trim());
-
-                            links.push({
-                                label,
-                                targetBoardName,
-                                targetName,
-                                originalMatch: match[0]
+            
+                    for await (const view of paginateViews) {
+                        this.destinations.insert({
+                            boardName: board.name,
+                            name: view.name,
+                            selfLink: `${this.host}/b/${boardId}/${view.folder_id}?view=${view.id}`
+                        });
+                        if (view.type === 'form' && view.settings?.formSettings?.enabled) {
+                            this.destinations.insert({
+                                boardName: board.name,
+                                name: `public ${view.name}`,
+                                selfLink: `${this.host}/form/${view.id}`
                             });
-                        } catch (parseError) {
-                            warn('DynamicLinking-Service', 'Failed to parse template', { 
-                                template: match[0], 
-                                error: parseError.message 
-                            }, null);
                         }
                     }
-
-                    if (links.length > 0) {
-                        this.sources.insert({
-                            boardId,
-                            item,
-                            value,
-                            links
+            
+                    const paginateItems = this.api().paginate(`workspaces/${workspaceId}/boards/${boardId}/items`, {
+                        searchParams: {
+                            limit: 50,
+                            sort_by: 'created_at',
+                            sort_direction: 'desc',
+                            ['expand[]']: 'values'
+                        },
+                        pagination: {
+                            transform: (res) => JSON.parse(res.body).data
+                        }
+                    });
+            
+                    for await (const item of paginateItems) {
+                        item.values.forEach(value => {
+                            const textAttributeValue = value.data;
+            
+                            if (typeof textAttributeValue !== 'string') {
+                                return;
+                            }
+                            this.destinations.insert({
+                                name: textAttributeValue,
+                                boardName: board.name,
+                                selfLink: `${this.host}/b/${boardId}/${item.folder_id}/${item.id}`
+                            });
+                            const links = [];
+                            let match;
+                            while ((match = TEMPLATE_REGEX.exec(textAttributeValue)) !== null) {
+                                const [label, targetBoardName, targetName] = tokenizeString(
+                                    he.decode(
+                                        sanitizeHtml(match[1], {
+                                            allowedTags: [],  // Remove all tags
+                                            allowedAttributes: {}
+                                        })
+                                    )
+                                ).map(x => x.replace(/\s+/g, ' ').trim());
+            
+                                links.push({
+                                    label,
+                                    targetBoardName,
+                                    targetName,
+                                    originalMatch: match[0]
+                                });
+                            }
+                            if (links.length > 0) {
+                                this.sources.insert({
+                                    boardId,
+                                    item,
+                                    value,
+                                    links
+                                });
+                            }
                         });
-                        results.potentialLinks += links.length;
                     }
+                } catch (boardError) {
+                    console.error(`Error processing board ${board?.name || 'unknown'}:`, boardError);
                 }
-            }
-        } catch (err) {
-            warn('DynamicLinking-Service', 'Failed to process items', { boardId, error: err.message }, null);
-        }
-    }
-
-    async processSource(authorization, workspaceId, source, host) {
-        const originItem = `${host}/b/${source.boardId}/${source.item.folder_id}/${source.item.id}`;
-        const linksCreated = [];
-
-        for (const link of source.links) {
-            const destination = this.destinationsRepository.findOne({
-                name: link.targetName, 
-                boardName: link.targetBoardName
             });
-
-            if (!destination) {
-                warn('DynamicLinking-Service', 'Destination not found', { 
-                    targetName: link.targetName, 
-                    targetBoardName: link.targetBoardName 
-                }, null);
-                continue;
+        
+            await Promise.all(fetchingItems);
+            let totalLinksCreated = [], totalLinksFailed = [];
+            await Promise.all(this.sources.chain().data().map(async source => {
+                try {
+                    const _originItem = `${this.host}/b/${source.boardId}/${source.item.folder_id}/${source.item.id}`;
+                    const linksCreated = [];
+            
+                    source.links.forEach(link => {
+                        const destination = this.destinations.findOne({name: link.targetName, boardName: link.targetBoardName});
+            
+                        if (!destination) {
+                            if (!update) {
+                                totalLinksFailed.push({link, originItem: _originItem, originalMatch: link.originalMatch});
+                                console.warn(`Failed to create link from ${_originItem}\n\t Trying to parse template "${he.decode(link.originalMatch)}"\n`);
+                            }
+                            return;
+                        }
+            
+                        source.value.data = source.value.data.replace(link.originalMatch, `<a href="${destination.selfLink}">${link.label}</a>`);
+                        linksCreated.push(destination.selfLink);
+                        totalLinksCreated.push({link, originItem: _originItem, originalMatch: link.originalMatch});
+                    });
+            
+                    if (linksCreated.length > 0) {
+                        console.log(`Link created from ${_originItem} to:\n\t> ${linksCreated.join('\n\t> ')}`);
+                        if (update) {
+                            await this.api().put(`workspaces/${workspaceId}/boards/${source.boardId}/items/${source.item.id}`, {
+                                json: {
+                                    "values": [{
+                                        attribute_id: source.value.attribute_id,
+                                        data: source.value.data
+                                    }],
+                                }
+                            });
+                        }
+                    }
+                } catch (sourceError) {
+                    console.error('Error processing source:', sourceError);
+                }
+            }));
+            
+            if(update) {
+                console.log(`Links created: ${totalLinksCreated.length}`);
+                return totalLinksCreated;
+            } else {
+                console.log(`Links failed: ${totalLinksFailed.length}`);
+                return totalLinksFailed;
             }
-
-            source.value.data = source.value.data.replace(
-                link.originalMatch, 
-                `<a href="${destination.selfLink}">${link.label}</a>`
-            );
-            linksCreated.push(destination.selfLink);
+        } catch (error) {
+            console.error('Error in main method:', error);
+            throw error;
         }
-
-        if (linksCreated.length > 0) {
-            try {
-                const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${source.boardId}/items/${source.item.id}`;
-                const headers = {
-                    "Authorization": authorization,
-                    "Content-Type": "application/json",
-                };
-                const data = {
-                    "values": [{
-                        attribute_id: source.value.attribute_id,
-                        data: source.value.data
-                    }],
-                };
-
-                await axios.put(url, data, { headers });
-                info('DynamicLinking-Service', 'Links created', { 
-                    originItem, 
-                    linksCreated: linksCreated.length 
-                }, null);
-            } catch (updateError) {
-                error('DynamicLinking-Service', 'Failed to update item', { 
-                    originItem, 
-                    error: updateError.message 
-                }, null);
-                throw updateError;
-            }
-        }
-
-        return linksCreated.length;
     }
 }
 

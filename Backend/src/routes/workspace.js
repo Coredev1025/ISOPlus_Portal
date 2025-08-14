@@ -64,12 +64,9 @@ router.post('/:workspaceId/check-links', authenticateToken, async (req, res) => 
       return res.status(403).json({ message: 'Access denied. Owner or Support Admin permission required.' });
     }
 
-    const dynamicLinkingService = new DynamicLinkingService();
-    const results = await dynamicLinkingService.checkLinks(
-      req.session.Authorization, 
-      workspaceId, 
-      host
-    );
+    const dynamicLinkingService = new DynamicLinkingService(req.session.Authorization, host);
+    console.log("Checking links");
+    const results = await dynamicLinkingService.main(workspaceId, false);
 
     info('Workspace-Service', 'Links checked', { workspaceId, results }, req);
     res.status(200).json(results);
@@ -89,12 +86,9 @@ router.post('/:workspaceId/create-links', authenticateToken, async (req, res) =>
       return res.status(403).json({ message: 'Access denied. Owner or Support Admin permission required.' });
     }
 
-    const dynamicLinkingService = new DynamicLinkingService();
-    const results = await dynamicLinkingService.createLinks(
-      req.session.Authorization, 
-      workspaceId, 
-      host
-    );
+    const dynamicLinkingService = new DynamicLinkingService(req.session.Authorization, host);
+    console.log("Creating links");
+    const results = await dynamicLinkingService.main(workspaceId, true);
 
     info('Workspace-Service', 'Links created', { workspaceId, results }, req);
     res.status(200).json(results);
