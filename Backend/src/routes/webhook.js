@@ -36,8 +36,8 @@ async function getValidatedBusiness(workspaceId) {
 }
 
 async function handlePDFError(err, workspaceId, boardId, itemId, action, req, res) {
-    const errorMessage = (err && err.message) ? err.message : 'An unknown error occurred. Please contact support via ISO+™ Portal.';
-    await setIntegrationMessage(workspaceId, boardId, itemId, 'Server error: ' + errorMessage);
+    const errorMessage = (err && err.message) ? err.message : 'Server error: An unknown error occurred. Please contact support via ISO+™ Portal.';
+    await setIntegrationMessage(workspaceId, boardId, itemId, errorMessage);
     error('Webhook-Service', 'Server error', { message: errorMessage }, req);
     logAuditTrail({
         workspaceId,
@@ -45,7 +45,7 @@ async function handlePDFError(err, workspaceId, boardId, itemId, action, req, re
         detail: `Resource ID: ${itemId}, Error: ${errorMessage}`,
         req
     });
-    return res.status(200).json({ message: 'Server error: ' + errorMessage });
+    return res.status(200).json({ message: errorMessage });
 }
 
 async function getLogoData(business) {
