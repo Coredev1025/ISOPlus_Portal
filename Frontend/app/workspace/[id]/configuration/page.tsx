@@ -11,6 +11,13 @@ import axios from "@/app/utils/axiosConfig";
 import { showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
 import Spinner from "@/components/ui/spin";
 
+// Function to decode HTML entities
+const decodeHtmlEntities = (text: string): string => {
+  const textarea = document.createElement('textarea');
+  textarea.innerHTML = text;
+  return textarea.value;
+};
+
 export default function WorkspaceConfiguration() {
   const router = useRouter();
   const pathname = usePathname();
@@ -25,6 +32,7 @@ export default function WorkspaceConfiguration() {
   const handleCheckLinks = async () => {
     setIsCheckingLinks(true);
     setCheckResults(null);
+    setCreateResults(null);
     try {
       const response = await axios.post(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/${id}/check-links`
@@ -42,6 +50,7 @@ export default function WorkspaceConfiguration() {
   const handleCreateLinks = async () => {
     setIsCreatingLinks(true);
     setCreateResults(null);
+    setCheckResults(null);
     try {
       const response = await axios.post(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/${id}/create-links`
@@ -176,9 +185,52 @@ export default function WorkspaceConfiguration() {
                 <CheckCircle className="h-5 w-5 text-green-500" />
                 Link Check Results
               </h3>
-              <div className="bg-muted p-4 rounded-lg">
-                <pre className="whitespace-pre-wrap text-sm">{JSON.stringify(checkResults, null, 2)}</pre>
-              </div>
+              {Array.isArray(checkResults) && checkResults.length > 0 ? (
+                <div className="space-y-3">
+                  {checkResults.map((result, index) => (
+                    <div key={index} className="border rounded-lg p-4 bg-card">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <h4 className="font-medium text-primary mb-2">Link Details</h4>
+                          <div className="space-y-2 text-sm">
+                            <div><span className="font-medium">Label:</span> {result.link?.label || 'N/A'}</div>
+                            <div><span className="font-medium">Target Board:</span> {result.link?.targetBoardName || 'N/A'}</div>
+                            <div><span className="font-medium">Target Name:</span> {result.link?.targetName || 'N/A'}</div>
+                          </div>
+                        </div>
+                        <div>
+                          <h4 className="font-medium text-primary mb-2">Original Match</h4>
+                          <div className="text-sm">
+                            <code className="bg-muted px-2 py-1 rounded text-xs break-all">
+                              {decodeHtmlEntities(result.originalMatch || 'N/A')}
+                            </code>
+                          </div>
+                        </div>
+                      </div>
+                      {result.originItem && (
+                        <div className="mt-3 pt-3 border-t">
+                          <div className="text-sm">
+                            <span className="font-medium">Origin Item:</span>
+                            <a 
+                              href={result.originItem} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 underline ml-2 break-all"
+                            >
+                              {result.originItem}
+                            </a>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <CheckCircle className="h-12 w-12 mx-auto mb-3 text-green-500" />
+                  <p>No links found to check</p>
+                </div>
+              )}
             </Card>
           )}
 
@@ -188,9 +240,52 @@ export default function WorkspaceConfiguration() {
                 <Link className="h-5 w-5 text-blue-500" />
                 Link Creation Results
               </h3>
-              <div className="bg-muted p-4 rounded-lg">
-                <pre className="whitespace-pre-wrap text-sm">{JSON.stringify(createResults, null, 2)}</pre>
-              </div>
+              {Array.isArray(createResults) && createResults.length > 0 ? (
+                <div className="space-y-3">
+                  {createResults.map((result, index) => (
+                    <div key={index} className="border rounded-lg p-4 bg-card">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <h4 className="font-medium text-primary mb-2">Link Details</h4>
+                          <div className="space-y-2 text-sm">
+                            <div><span className="font-medium">Label:</span> {result.link?.label || 'N/A'}</div>
+                            <div><span className="font-medium">Target Board:</span> {result.link?.targetBoardName || 'N/A'}</div>
+                            <div><span className="font-medium">Target Name:</span> {result.link?.targetName || 'N/A'}</div>
+                          </div>
+                        </div>
+                        <div>
+                          <h4 className="font-medium text-primary mb-2">Original Match</h4>
+                          <div className="text-sm">
+                            <code className="bg-muted px-2 py-1 rounded text-xs break-all">
+                              {decodeHtmlEntities(result.originalMatch || 'N/A')}
+                            </code>
+                          </div>
+                        </div>
+                      </div>
+                      {result.originItem && (
+                        <div className="mt-3 pt-3 border-t">
+                          <div className="text-sm">
+                            <span className="font-medium">Origin Item:</span>
+                            <a 
+                              href={result.originItem} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 underline ml-2 break-all"
+                            >
+                              {result.originItem}
+                            </a>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Link className="h-12 w-12 mx-auto mb-3 text-blue-500" />
+                  <p>No links were created</p>
+                </div>
+              )}
             </Card>
           )}
         </div>
