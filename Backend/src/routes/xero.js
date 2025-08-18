@@ -694,7 +694,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       let qty1 = 1;
       const unitPrice1 = Number((baseUnitPrice1 * (cancellationPercentage1 / 100)).toFixed(2));
       const amount1 = formatValue(qty1 * unitPrice1);
-      const amountValue1 = formatValue(Number(invoiceValues["Cancellation Fee Amount($)"])) || 0;
+      const amountValue1 = formatValue(Number(invoiceValues["Cancellation Fee($)"])) || 0;
 
       if (amount1 > 0) {
         let desc1 = 'Cancellation Fee';
