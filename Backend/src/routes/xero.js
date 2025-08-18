@@ -45,11 +45,11 @@ async function validatePayload(payload, req) {
 function formatValue(val) {
   const num = Number(val);
   if (Number.isInteger(num)) {
-      return num.toString();
+    return num.toString();
   } else if (!isNaN(num)) {
-      return num.toFixed(2);
+    return num.toFixed(2);
   } else {
-      return val;
+    return val;
   }
 }
 
@@ -411,6 +411,9 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         if (typeof actualShiftDuration === 'number' && !isNaN(actualShiftDuration)) {
           qty1 = Number(actualShiftDuration.toFixed(1));
         }
+        const amountValue1 = invoiceValues["Direct Support Value($) - Time Based Support"] || 0;
+        const amount1 = qty1 * unitPrice1;
+
         if (unitPrice1 > 0 && qty1 > 0) {
           let desc1 = itemName1;
           if (itemNumber1) {
@@ -426,11 +429,17 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             desc1 += ` - ${servicePlanValues?.directSupportUnit}`;
           }
 
+          if (amountValue1 != amount1) {
+            setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+            throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+          }
+
           lineItems.push({
             description: desc1,
-            quantity: qty1,
-            unitAmount: unitPrice1,
-            taxType: gstType
+            quantity: formatValue(qty1),
+            unitAmount: formatValue(unitPrice1),
+            taxType: gstType,
+            lineAmount: formatValue(amount1)
           });
         }
       }
@@ -443,6 +452,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         const quantity2 = invoiceValues["Quantity (Direct Support - Non Time Based Support)"] || 0;
         const unit2 = servicePlanValues?.directSupportUnit || '';
         const qty2 = Number(quantity2) || 0;
+        const amountValue2 = invoiceValues["Direct Support Value($) - Non Time Based Support"] || 0;
+        const amount2 = qty2 * unitPrice2;
 
         if (unitPrice2 > 0 && qty2 > 0) {
           let desc2 = itemName2;
@@ -459,11 +470,17 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             desc2 += ` - ${servicePlanValues?.directSupportUnit}`;
           }
 
+          if (amountValue2 != amount2) {
+            setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+            throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+          }
+
           lineItems.push({
             description: desc2,
-            quantity: qty2,
-            unitAmount: unitPrice2,
-            taxType: gstType
+            quantity: formatValue(qty2),
+            unitAmount: formatValue(unitPrice2),
+            taxType: gstType,
+            lineAmount: formatValue(amount2)
           });
         }
       }
@@ -475,6 +492,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const itemName3 = servicePlanValues?.providerTravelItemName || '';
       const itemNumber3 = servicePlanValues?.providerTravelItemNumber || '';
       const qty3 = Number(invoiceValues["Provider Travel - Non-Labour Cost Amount($)"]) || 0;
+      const amountValue3 = Number(invoiceValues["Provider Travel - Non-Labour Cost Amount($)"]) || 0;
+      const amount3 = qty3 * unitPrice3;
 
       if (unitPrice3 > 0 && qty3 > 0) {
         let desc3 = itemName3;
@@ -494,11 +513,17 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           desc3 += ` - ${servicePlanValues?.nonLabourTravelUnit}`;
         }
 
+        if (amountValue3 != amount3) {
+          setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+          throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+        }
+
         lineItems.push({
           description: desc3,
-          quantity: qty3,
-          unitAmount: unitPrice3,
-          taxType: gstType
+          quantity: formatValue(qty3),
+          unitAmount: formatValue(unitPrice3),
+          taxType: gstType,
+          lineAmount: formatValue(amount3)
         });
       }
 
@@ -509,6 +534,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
       const itemNumber4 = servicePlanValues?.activityBasedTransportItemNumber || '';
       const qty4 = Number(invoiceValues["Activity Base Transport Amount($)"]) || 0;
+      const amountValue4 = Number(invoiceValues["Activity Base Transport Amount($)"]) || 0;
+      const amount4 = qty4 * unitPrice4;
 
       if (unitPrice4 > 0 && qty4 > 0) {
         let desc4 = itemName4;
@@ -528,11 +555,17 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           desc4 += ` - ${servicePlanValues?.activityBasedTransportUnit}`;
         }
 
+        if (amountValue4 != amount4) {
+          setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+          throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+        }
+
         lineItems.push({
           description: desc4,
-          quantity: qty4,
-          unitAmount: unitPrice4,
-          taxType: gstType
+          quantity: formatValue(qty4),
+          unitAmount: formatValue(unitPrice4),
+          taxType: gstType,
+          lineAmount: formatValue(amount4)
         });
       }
 
@@ -545,6 +578,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       if (typeof actualShiftDuration5 === 'number' && !isNaN(actualShiftDuration5)) {
         qty5 = Number(actualShiftDuration5.toFixed(1));
       }
+      const amountValue5 = Number(invoiceValues["Centre Capital Costs Amount($)"]) || 0;
+      const amount5 = qty5 * unitPrice5;
 
       if (unitPrice5 > 0 && qty5 > 0) {
         let desc5 = itemName5;
@@ -558,17 +593,25 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           desc5 += ` - ${servicePlanValues?.centreCapitalCostsUnit}`;
         }
 
+        if (amountValue5 != amount5) {
+          setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+          throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+        }
+
         lineItems.push({
           description: desc5,
-          quantity: qty5,
-          unitAmount: unitPrice5,
-          taxType: gstType
+          quantity: formatValue(qty5),
+          unitAmount: formatValue(unitPrice5),
+          taxType: gstType,
+          lineAmount: formatValue(amount5)
         });
       }
 
       // Line 6: Labour Travel Time
       const unitPrice6 = Number(servicePlanValues?.labourTravelTimeUnitPrice) || 0;
       const qty6 = Number(invoiceValues["Labour Travel Time (Min.) as per the Service Plan, regarding the Time Cap, if applicable."]) || 0;
+      const amountValue6 = Number(invoiceValues["Labour Travel Time Amount($)"]) || 0;
+      const amount6 = qty6 * unitPrice6;
 
       if (unitPrice6 > 0 && qty6 > 0) {
         let desc6 = 'Provider Travel - Labour Travel Time Costs';
@@ -576,17 +619,25 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           desc6 += ` - ${servicePlanValues?.labourTravelTimeUnit}`;
         }
 
+        if (amountValue6 != amount6) {
+          setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+          throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+        }
+
         lineItems.push({
           description: desc6,
-          quantity: qty6,
-          unitAmount: unitPrice6,
-          taxType: gstType
+          quantity: formatValue(qty6),
+          unitAmount: formatValue(unitPrice6),
+          taxType: gstType,
+          lineAmount: formatValue(amount6)
         });
       }
 
       // Line 7: Allowances
       const unitPrice7 = Number(servicePlanValues?.usedAllowanceAmount) || 0;
       const qty7 = 1;
+      const amountValue7 = Number(invoiceValues["Allowances Amount($)"]) || 0;
+      const amount7 = unitPrice7;
 
       if (unitPrice7 > 0) {
         let desc7 = `Allowances - ${invoiceValues["Allowances"]}`;
@@ -594,17 +645,26 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           desc7 += ` - ${servicePlanValues?.usedAllowanceUnit}`;
         }
 
+        if (amountValue7 * unitPrice7 != amount7) {
+          setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+          throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+        }
+
+
         lineItems.push({
           description: desc7,
-          quantity: qty7,
-          unitAmount: unitPrice7,
-          taxType: gstType
+          quantity: formatValue(qty7),
+          unitAmount: formatValue(unitPrice7),
+          taxType: gstType,
+          lineAmount: formatValue(amount7)
         });
       }
 
       // Line 8: Non-Face-to-Face Support
       const unitPrice8 = Number(servicePlanValues?.nonFaceToFaceSupportUnitPrice) || 0;
       const qty8 = Number(invoiceValues["Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)"]) || 0;
+      const amountValue8 = Number(invoiceValues["Non-Face-to-Face Amount($)"]) || 0;
+      const amount8 = qty8 * unitPrice8;
 
       if (unitPrice8 > 0 && qty8 > 0) {
         let desc8 = `Non-Face-to-Face Support - ${invoiceValues["Non-Face-to-Face Supports"]}`;
@@ -612,11 +672,17 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           desc8 += ` - ${servicePlanValues?.nonFaceToFaceSupportUnit}`;
         }
 
+        if (amountValue8 * unitPrice8 != amount8) {
+          setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+          throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+        }
+
         lineItems.push({
           description: desc8,
-          quantity: qty8,
-          unitAmount: unitPrice8,
-          taxType: gstType
+          quantity: formatValue(qty8),
+          unitAmount: formatValue(unitPrice8),
+          taxType: gstType,
+          lineAmount: formatValue(amount8)
         });
       }
     } else {
@@ -631,20 +697,21 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const amountValue1 = Number(invoiceValues["Cancellation Fee Amount($)"]) || 0;
 
       if (amount1 > 0) {
-          let desc1 = 'Cancellation Fee';
-          if (itemName1) {
-              desc1 += ` - ${itemName1}`;
-          }
-          if (itemNumber1) {
-              desc1 += ` - ${itemNumber1}`;
-          }
+        let desc1 = 'Cancellation Fee';
+        if (itemName1) {
+          desc1 += ` - ${itemName1}`;
+        }
+        if (itemNumber1) {
+          desc1 += ` - ${itemNumber1}`;
+        }
 
-          lineItems.push({
-            description: desc1,
-            quantity: qty1,
-            unitAmount: formatValue(unitPrice1),
-            taxType: gstType
-          });
+        lineItems.push({
+          description: desc1,
+          quantity: formatValue(qty1),
+          unitAmount: formatValue(unitPrice1),
+          taxType: gstType,
+          lineAmount: formatValue(amount1)
+        });
       }
 
       // Line 3: Provider Travel - Non-Labour Cost
@@ -656,20 +723,21 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const amount3 = qty3 * unitPrice3;
 
       if (amount3 > 0) {
-          let desc3 = 'Cancellation Fee';
-          if (itemName3) {
-              desc3 += ` - ${itemName3}`;
-          }
-          if (itemNumber3) {
-              desc3 += ` - ${itemNumber3}`;
-          }
+        let desc3 = 'Cancellation Fee';
+        if (itemName3) {
+          desc3 += ` - ${itemName3}`;
+        }
+        if (itemNumber3) {
+          desc3 += ` - ${itemNumber3}`;
+        }
 
-          lineItems.push({
-            description: desc3,
-            quantity: qty3,
-            unitAmount: formatValue(unitPrice3),
-            taxType: gstType
-          });
+        lineItems.push({
+          description: desc3,
+          quantity: formatValue(qty3),
+          unitAmount: formatValue(unitPrice3),
+          taxType: gstType,
+          lineAmount: formatValue(amount3)
+        });
       }
 
       // Line 4: Activity Based Transport
@@ -680,21 +748,22 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const unitPrice4 = Number((baseUnitPrice4 * (cancellationPercentage1 / 100)).toFixed(2));
       const amount4 = qty4 * unitPrice4;
 
-      if (amount4 > 0) {    
-          let desc4 = 'Cancellation Fee';
-          if (itemName4) {
-              desc4 += ` - ${itemName4}`;
-          }
-          if (itemNumber4) {
-              desc4 += ` - ${itemNumber4}`;
-          }
+      if (amount4 > 0) {
+        let desc4 = 'Cancellation Fee';
+        if (itemName4) {
+          desc4 += ` - ${itemName4}`;
+        }
+        if (itemNumber4) {
+          desc4 += ` - ${itemNumber4}`;
+        }
 
-          lineItems.push({
-            description: desc4,
-            quantity: qty4,
-            unitAmount: formatValue(unitPrice4),
-            taxType: gstType
-          });
+        lineItems.push({
+          description: desc4,
+          quantity: formatValue(qty4),
+          unitAmount: formatValue(unitPrice4),
+          taxType: gstType,
+          lineAmount: formatValue(amount4)
+        });
       }
 
       // Line 5: Centre Capital Costs
@@ -706,20 +775,21 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const amount5 = qty5 * unitPrice5;
 
       if (baseUnitPrice5 > 0 && amount5 > 0) {
-          let desc5 = 'Cancellation Fee';
-          if (itemName5) {
-              desc5 += ` - ${itemName5}`;
-          }
-          if (itemNumber5) {
-              desc5 += ` - ${itemNumber5}`;
-          }
+        let desc5 = 'Cancellation Fee';
+        if (itemName5) {
+          desc5 += ` - ${itemName5}`;
+        }
+        if (itemNumber5) {
+          desc5 += ` - ${itemNumber5}`;
+        }
 
-          lineItems.push({
-            description: desc5,
-            quantity: qty5,
-            unitAmount: formatValue(unitPrice5),
-            taxType: gstType
-          });
+        lineItems.push({
+          description: desc5,
+          quantity: formatValue(qty5),
+          unitAmount: formatValue(unitPrice5),
+          taxType: gstType,
+          lineAmount: formatValue(amount5)
+        });
       }
     }
 
@@ -1082,7 +1152,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
     // 2. Provider Travel - Non-Labour Cost
     if (NDISQuoteValues['Quantity (Provider Travel)'] && NDISQuoteValues['Unit Price for Provider Travel($)']) {
       lineItems.push({
-        description: (`${NDISQuoteValues['Provider Travel - Non-Labour Cost Item Number'] || ''}${providerTravelValues && providerTravelValues.itemName ? '-' + providerTravelValues.itemName : ''}` || 'Provider Travel - Non-Labour Cost') + (NDISQuoteValues['Unit (Provider Travel - Non-Labour Cost)']? ' - ' + NDISQuoteValues['Unit (Provider Travel - Non-Labour Cost)'] : ''), 
+        description: (`${NDISQuoteValues['Provider Travel - Non-Labour Cost Item Number'] || ''}${providerTravelValues && providerTravelValues.itemName ? '-' + providerTravelValues.itemName : ''}` || 'Provider Travel - Non-Labour Cost') + (NDISQuoteValues['Unit (Provider Travel - Non-Labour Cost)'] ? ' - ' + NDISQuoteValues['Unit (Provider Travel - Non-Labour Cost)'] : ''),
         quantity: Number(NDISQuoteValues['Quantity (Provider Travel)']) || 0,
         unitAmount: Number(NDISQuoteValues['Unit Price for Provider Travel($)']) || 0,
         taxType: gstType,
@@ -1155,7 +1225,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
       // title: NDISQuoteValues['Job Title'] || firstLine.description || '',
       // summary: NDISQuoteValues['Job Description'] ? NDISQuoteValues['Job Description'].toString().replace(/<[^>]*>/g, '') : (firstLine.description || ''),
       lineItems,
-      terms: `Terms & Conditions\n- This quote remains valid until the expiry date indicated above.\n- Payment Terms: ${ business && business.bankDetails && business.bankDetails.accountsReceivableTerms ? business.bankDetails.accountsReceivableTerms : ' '}\n- All prices are subject to change with prior notice.\n- A cancellation fee may apply as per the terms of the service agreement.`,
+      terms: `Terms & Conditions\n- This quote remains valid until the expiry date indicated above.\n- Payment Terms: ${business && business.bankDetails && business.bankDetails.accountsReceivableTerms ? business.bankDetails.accountsReceivableTerms : ' '}\n- All prices are subject to change with prior notice.\n- A cancellation fee may apply as per the terms of the service agreement.`,
     };
 
     const { error: validationError } = Item.validate('Quote', mappedQuote);
