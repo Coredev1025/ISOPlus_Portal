@@ -425,7 +425,7 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
     }
     if (itemsValues['Used Allowance Amount($) as per the Service Plan'] ) {
         updateValues.push({
-            data: itemsValues['Used Allowance Amount($) as per the Service Plan'] || 0,
+            data:   servicePlanValues.usedAllowanceAmount || 0,
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Allowances Amount($)').attribute.id
         });
     }

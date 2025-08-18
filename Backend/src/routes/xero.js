@@ -42,6 +42,17 @@ async function validatePayload(payload, req) {
   return { item: payload.items[0] };
 }
 
+function formatValue(val) {
+  const num = Number(val);
+  if (Number.isInteger(num)) {
+      return num.toString();
+  } else if (!isNaN(num)) {
+      return num.toFixed(2);
+  } else {
+      return val;
+  }
+}
+
 async function initializeXeroOperation(workspaceId, boardId, item) {
   const business = await Business.findOne({ workspaceId: workspaceId.toString() });
   if (!business) {
@@ -387,7 +398,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       status: "DRAFT"
     };
 
-    if (invoiceValues['Job Status'] === 'Cancelled') {
+    if (invoiceValues['Job Status'] !== 'Cancelled') {
       // Line 1: Direct Support - Hour based
       if (servicePlanValues?.directSupportUnit === "Hour(H)") {
         const unitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
@@ -609,39 +620,111 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         });
       }
     } else {
-      // Line 9: Cancellation Fee
-      const baseUnitPrice9 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
-      const cancellationPercentage9 = Number(cancellationTypeValues?.billableToClient) || 0;
-      const itemName9 = servicePlanValues?.directSupportItemName || '';
-      const itemNumber9 = servicePlanValues?.directSupportItemNumber || '';
-      let qty9 = 1;
-      const unitPrice9 = baseUnitPrice9 * (cancellationPercentage9 / 100);
-      const amount9 = qty9 * unitPrice9;
+      // Line 1: Direct Support - Hour based (Cancelled)
+      const baseUnitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
+      const cancellationPercentage1 = Number(cancellationTypeValues?.billableToClient) || 0;
+      const itemName1 = servicePlanValues?.directSupportItemName || '';
+      const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
+      let qty1 = 1;
+      const unitPrice1 = Number((baseUnitPrice1 * (cancellationPercentage1 / 100)).toFixed(2));
+      const amount1 = qty1 * unitPrice1;
+      const amountValue1 = Number(invoiceValues["Cancellation Fee Amount($)"]) || 0;
 
-      if (amount9 > 0) {
-        let desc9 = 'Cancellation Fee';
-        if (itemName9) {
-          desc9 += ` - ${itemName9}`;
-        }
-        if (itemNumber9) {
-          desc9 += ` - ${itemNumber9}`;
-        }
-        if (servicePlanValues?.directSupportUnit) {
-          desc9 += ` - ${servicePlanValues?.directSupportUnit}`;
-        }
+      if (amount1 > 0) {
+          let desc1 = 'Cancellation Fee';
+          if (itemName1) {
+              desc1 += ` - ${itemName1}`;
+          }
+          if (itemNumber1) {
+              desc1 += ` - ${itemNumber1}`;
+          }
 
-        lineItems.push({
-          description: desc9,
-          quantity: qty9,
-          unitAmount: unitPrice9,
-          taxType: gstType
-        });
+          lineItems.push({
+            description: desc1,
+            quantity: qty1,
+            unitAmount: formatValue(unitPrice1),
+            taxType: gstType
+          });
+      }
+
+      // Line 3: Provider Travel - Non-Labour Cost
+      const baseUnitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) || 0;
+      const itemName3 = servicePlanValues?.providerTravelItemName || '';
+      const itemNumber3 = servicePlanValues?.providerTravelItemNumber || '';
+      const qty3 = 1;
+      const unitPrice3 = Number((baseUnitPrice3 * (cancellationPercentage1 / 100)).toFixed(2));
+      const amount3 = qty3 * unitPrice3;
+
+      if (amount3 > 0) {
+          let desc3 = 'Cancellation Fee';
+          if (itemName3) {
+              desc3 += ` - ${itemName3}`;
+          }
+          if (itemNumber3) {
+              desc3 += ` - ${itemNumber3}`;
+          }
+
+          lineItems.push({
+            description: desc3,
+            quantity: qty3,
+            unitAmount: formatValue(unitPrice3),
+            taxType: gstType
+          });
+      }
+
+      // Line 4: Activity Based Transport
+      const baseUnitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) || 0;
+      const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
+      const itemNumber4 = servicePlanValues?.activityBasedTransportItemNumber || '';
+      const qty4 = 1;
+      const unitPrice4 = Number((baseUnitPrice4 * (cancellationPercentage1 / 100)).toFixed(2));
+      const amount4 = qty4 * unitPrice4;
+
+      if (amount4 > 0) {    
+          let desc4 = 'Cancellation Fee';
+          if (itemName4) {
+              desc4 += ` - ${itemName4}`;
+          }
+          if (itemNumber4) {
+              desc4 += ` - ${itemNumber4}`;
+          }
+
+          lineItems.push({
+            description: desc4,
+            quantity: qty4,
+            unitAmount: formatValue(unitPrice4),
+            taxType: gstType
+          });
+      }
+
+      // Line 5: Centre Capital Costs
+      const baseUnitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) || 0;
+      const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
+      const itemNumber5 = servicePlanValues?.centreCapitalCostsItemNumber || '';
+      let qty5 = 1;
+      const unitPrice5 = Number((baseUnitPrice5 * (cancellationPercentage1 / 100)).toFixed(2));
+      const amount5 = qty5 * unitPrice5;
+
+      if (baseUnitPrice5 > 0 && amount5 > 0) {
+          let desc5 = 'Cancellation Fee';
+          if (itemName5) {
+              desc5 += ` - ${itemName5}`;
+          }
+          if (itemNumber5) {
+              desc5 += ` - ${itemNumber5}`;
+          }
+
+          lineItems.push({
+            description: desc5,
+            quantity: qty5,
+            unitAmount: formatValue(unitPrice5),
+            taxType: gstType
+          });
       }
     }
 
     invoice.lineItems = lineItems;
 
-    console.log(invoice);
     const createdInvoice = await createInvoice(invoice);
     await setIntegrationMessage(workspaceId, boardId, item.id, "Your invoice has been created successfully in Xero.");
 
