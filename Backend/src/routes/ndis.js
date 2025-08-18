@@ -350,8 +350,10 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
 
     info('Xero-Service', `Incoming request to Master plan`, { workspaceId, boardId, body: itemsValues }, req);
 
-    if (!servicePlanValues)
-        return res.status(200).json({ error: 'Master Plan Item not found' });
+    if (!servicePlanValues) {
+        setIntegrationMessage(workspaceId, boardId, items.id, "Service Plan Item not found");
+        return res.status(200).json({ error: 'Service Plan Item not found' });
+    }
 
     let updateValues = [];
     const responseItemValues = await getItemValues(workspaceId, boardId, items.id);
@@ -423,9 +425,9 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Labour Travel Time Amount($)').attribute.id
         });
     }
-    if (itemsValues['Used Allowance Amount($) as per the Service Plan'] ) {
+    if (itemsValues['Used Allowance Amount($) as per the Service Plan']) {
         updateValues.push({
-            data:   servicePlanValues.usedAllowanceAmount || 0,
+            data: servicePlanValues.usedAllowanceAmount || 0,
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Allowances Amount($)').attribute.id
         });
     }
@@ -468,9 +470,11 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
         }
     );
     if (response.status === 200) {
+        setIntegrationMessage(workspaceId, boardId, items.id, "Master plan processed successfully");
         info('Xero-Service', 'Master plan processed successfully', { updateValues }, req);
         return res.status(200).json({ message: 'Master plan processed' });
     } else {
+        setIntegrationMessage(workspaceId, boardId, items.id, "Failed to update master plan");
         warn('Xero-Service', 'Failed to update master plan', { updateValues }, req);
         return res.status(200).json({ error: 'Failed to update master plan' });
     }
