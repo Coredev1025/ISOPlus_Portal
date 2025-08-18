@@ -42,6 +42,17 @@ async function validatePayload(payload, req) {
   return { item: payload.items[0] };
 }
 
+function formatValue(val) {
+  const num = Number(val);
+  if (Number.isInteger(num)) {
+      return num.toString();
+  } else if (!isNaN(num)) {
+      return num.toFixed(2);
+  } else {
+      return val;
+  }
+}
+
 async function initializeXeroOperation(workspaceId, boardId, item) {
   const business = await Business.findOne({ workspaceId: workspaceId.toString() });
   if (!business) {
@@ -615,7 +626,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const itemName1 = servicePlanValues?.directSupportItemName || '';
       const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
       let qty1 = 1;
-      const unitPrice1 = baseUnitPrice1 * (cancellationPercentage1 / 100);
+      const unitPrice1 = Number((baseUnitPrice1 * (cancellationPercentage1 / 100)).toFixed(2));
       const amount1 = qty1 * unitPrice1;
       const amountValue1 = Number(invoiceValues["Cancellation Fee Amount($)"]) || 0;
 
@@ -628,15 +639,12 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
               desc1 += ` - ${itemNumber1}`;
           }
 
-          lineItems.push([
-              desc1,
-              servicePlanValues?.directSupportUnit || ' ',
-              formatValue(qty1),
-              formatValue(unitPrice1),
-              gstLabel,
-              formatValue(amount1)
-          ]);
-          subTotal += amount1;
+          lineItems.push({
+            description: desc1,
+            quantity: qty1,
+            unitAmount: formatValue(unitPrice1),
+            taxType: gstType
+          });
       }
 
       // Line 3: Provider Travel - Non-Labour Cost
@@ -644,7 +652,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const itemName3 = servicePlanValues?.providerTravelItemName || '';
       const itemNumber3 = servicePlanValues?.providerTravelItemNumber || '';
       const qty3 = 1;
-      const amount3 = qty3 * baseUnitPrice3;
+      const unitPrice3 = Number((baseUnitPrice3 * (cancellationPercentage1 / 100)).toFixed(2));
+      const amount3 = qty3 * unitPrice3;
 
       if (amount3 > 0) {
           let desc3 = 'Cancellation Fee';
@@ -655,15 +664,12 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
               desc3 += ` - ${itemNumber3}`;
           }
 
-          lineItems.push([
-              desc3,
-              servicePlanValues?.nonLabourTravelUnit || ' ',
-              formatValue(qty3),
-              formatValue(baseUnitPrice3),
-              gstLabel,
-              formatValue(amount3)
-          ]);
-          subTotal += amount3;
+          lineItems.push({
+            description: desc3,
+            quantity: qty3,
+            unitAmount: formatValue(unitPrice3),
+            taxType: gstType
+          });
       }
 
       // Line 4: Activity Based Transport
@@ -671,7 +677,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
       const itemNumber4 = servicePlanValues?.activityBasedTransportItemNumber || '';
       const qty4 = 1;
-      const amount4 = qty4 * baseUnitPrice4;
+      const unitPrice4 = Number((baseUnitPrice4 * (cancellationPercentage1 / 100)).toFixed(2));
+      const amount4 = qty4 * unitPrice4;
 
       if (amount4 > 0) {    
           let desc4 = 'Cancellation Fee';
@@ -682,15 +689,12 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
               desc4 += ` - ${itemNumber4}`;
           }
 
-          lineItems.push([
-              desc4,
-              servicePlanValues?.activityBasedTransportUnit || ' ',
-              formatValue(qty4),
-              formatValue(baseUnitPrice4),
-              gstLabel,
-              formatValue(amount4)
-          ]);
-          subTotal += amount4;
+          lineItems.push({
+            description: desc4,
+            quantity: qty4,
+            unitAmount: formatValue(unitPrice4),
+            taxType: gstType
+          });
       }
 
       // Line 5: Centre Capital Costs
@@ -698,7 +702,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
       const itemNumber5 = servicePlanValues?.centreCapitalCostsItemNumber || '';
       let qty5 = 1;
-      const amount5 = qty5 * baseUnitPrice5;
+      const unitPrice5 = Number((baseUnitPrice5 * (cancellationPercentage1 / 100)).toFixed(2));
+      const amount5 = qty5 * unitPrice5;
 
       if (baseUnitPrice5 > 0 && amount5 > 0) {
           let desc5 = 'Cancellation Fee';
@@ -709,15 +714,12 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
               desc5 += ` - ${itemNumber5}`;
           }
 
-          lineItems.push([
-              desc5,
-              servicePlanValues?.centreCapitalCostsUnit || ' ',
-              formatValue(qty5),
-              formatValue(baseUnitPrice5),
-              gstLabel,
-              formatValue(amount5)
-          ]);
-          subTotal += amount5;
+          lineItems.push({
+            description: desc5,
+            quantity: qty5,
+            unitAmount: formatValue(unitPrice5),
+            taxType: gstType
+          });
       }
     }
 

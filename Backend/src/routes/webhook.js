@@ -680,7 +680,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                 const gst = "0%";
                 const gstLabel = "GST Free";
 
-                if(invoiceValues['Job Status'] !== 'Cancelled'){
+                if (invoiceValues['Job Status'] !== 'Cancelled') {
                     // Line 1: Direct Support - Hour based
                     if (servicePlanValues?.directSupportUnit === "Hour(H)") {
                         const unitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
@@ -923,7 +923,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                             throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                         }
 
-                            ordersArr.push([
+                        ordersArr.push([
                             desc7,
                             servicePlanValues?.usedAllowanceUnit || ' ',
                             formatValue(qty7),
@@ -958,14 +958,14 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                         ]);
                         subTotal += amount8;
                     }
-                } else {    
+                } else {
                     // Line 1: Direct Support - Hour based (Cancelled)
                     const baseUnitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
                     const cancellationPercentage1 = Number(cancellationTypeValues?.billableToClient) || 0;
                     const itemName1 = servicePlanValues?.directSupportItemName || '';
                     const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
                     let qty1 = 1;
-                    const unitPrice1 = baseUnitPrice1 * (cancellationPercentage1 / 100);
+                    const unitPrice1 = Number((baseUnitPrice1 * (cancellationPercentage1 / 100)).toFixed(2));
                     const amount1 = qty1 * unitPrice1;
                     const amountValue1 = Number(invoiceValues["Cancellation Fee Amount($)"]) || 0;
 
@@ -994,7 +994,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     const itemName3 = servicePlanValues?.providerTravelItemName || '';
                     const itemNumber3 = servicePlanValues?.providerTravelItemNumber || '';
                     const qty3 = 1;
-                    const amount3 = qty3 * baseUnitPrice3;
+                    const unitPrice3 = Number((baseUnitPrice3 * (cancellationPercentage1 / 100)).toFixed(2));
+                    const amount3 = qty3 * unitPrice3;
 
                     if (amount3 > 0) {
                         let desc3 = 'Cancellation Fee';
@@ -1009,7 +1010,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                             desc3,
                             servicePlanValues?.nonLabourTravelUnit || ' ',
                             formatValue(qty3),
-                            formatValue(baseUnitPrice3),
+                            formatValue(unitPrice3),
                             gstLabel,
                             formatValue(amount3)
                         ]);
@@ -1021,9 +1022,9 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
                     const itemNumber4 = servicePlanValues?.activityBasedTransportItemNumber || '';
                     const qty4 = 1;
-                    const amount4 = qty4 * baseUnitPrice4;
-
-                    if (amount4 > 0) {    
+                    const unitPrice4 = Number((baseUnitPrice4 * (cancellationPercentage1 / 100)).toFixed(2));
+                    const amount4 = qty4 * unitPrice4;
+                    if (amount4 > 0) {
                         let desc4 = 'Cancellation Fee';
                         if (itemName4) {
                             desc4 += ` - ${itemName4}`;
@@ -1036,7 +1037,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                             desc4,
                             servicePlanValues?.activityBasedTransportUnit || ' ',
                             formatValue(qty4),
-                            formatValue(baseUnitPrice4),
+                            formatValue(unitPrice4),
                             gstLabel,
                             formatValue(amount4)
                         ]);
@@ -1048,8 +1049,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
                     const itemNumber5 = servicePlanValues?.centreCapitalCostsItemNumber || '';
                     let qty5 = 1;
-                    const amount5 = qty5 * baseUnitPrice5;
-
+                    const unitPrice5 = Number((baseUnitPrice5 * (cancellationPercentage1 / 100)).toFixed(2));
+                    const amount5 = qty5 * unitPrice5;
                     if (baseUnitPrice5 > 0 && amount5 > 0) {
                         let desc5 = 'Cancellation Fee';
                         if (itemName5) {
@@ -1063,7 +1064,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                             desc5,
                             servicePlanValues?.centreCapitalCostsUnit || ' ',
                             formatValue(qty5),
-                            formatValue(baseUnitPrice5),
+                            formatValue(unitPrice5),
                             gstLabel,
                             formatValue(amount5)
                         ]);
