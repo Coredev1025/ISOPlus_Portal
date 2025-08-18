@@ -2,7 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import { info, warn, error } from '../utils/logger.js';
 import { Item } from '../dto/itemsPayload.js';
-import { getQuoteNDISReferencedItems, getItemValues, getParticipantsServicePlanReferencedItems, getMasterPlanReferencedItems } from '../services/isoplus.js';
+import { getQuoteNDISReferencedItems, getItemValues, getParticipantsServicePlanReferencedItems, getMasterPlanReferencedItems, setIntegrationMessage } from '../services/isoplus.js';
 import axios from 'axios';
 
 dotenv.config();
