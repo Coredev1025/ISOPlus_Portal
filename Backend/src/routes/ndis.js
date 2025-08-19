@@ -440,23 +440,23 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
     }
     if (itemsValues['Used Allowance Amount($) as per the Service Plan']) {
         updateValues.push({
-            data: servicePlanValues.usedAllowanceAmount || 0 / groupSize,
+            data: formatValue((servicePlanValues.usedAllowanceAmount || 0) / groupSize),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Allowances Amount($)').attribute.id
         });
     }
     if (servicePlanValues.nonFaceToFaceSupportUnitPrice) {
         updateValues.push({
-            data: Number(servicePlanValues.nonFaceToFaceSupportUnitPrice * (itemsValues['Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)'] || 0) / groupSize),
+            data: formatValue(servicePlanValues.nonFaceToFaceSupportUnitPrice * (itemsValues['Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)'] || 0) / groupSize),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Non-Face-to-Face Amount($)').attribute.id
         });
     }
     if (itemsValues['Job Status'] === 'Cancelled') {
         if (cancellationTypeValues) {
             updateValues.push({
-                data: servicePlanValues.directSupportUnitPrice * ((cancellationTypeValues.billableToClient || 0) / 100) / groupSize,
+                data: formatValue(servicePlanValues.directSupportUnitPrice * ((cancellationTypeValues.billableToClient || 0) / 100) / groupSize),
                 attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Cancellation Fee($)').attribute.id
             });
-        }
+    }
     }
     if (fundValues) {
         updateValues.push({
