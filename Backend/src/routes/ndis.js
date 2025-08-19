@@ -8,6 +8,17 @@ import axios from 'axios';
 dotenv.config();
 const router = express.Router();
 
+function formatValue(val) {
+    const num = Number(val);
+    if (Number.isInteger(num)) {
+        return num.toString();
+    } else if (!isNaN(num)) {
+        return num.toFixed(2);
+    } else {
+        return val;
+    }
+}
+
 function extractUnit(unitString) {
     switch (unitString) {
         case 'E':
@@ -358,6 +369,8 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
     let updateValues = [];
     const responseItemValues = await getItemValues(workspaceId, boardId, items.id);
     const itemValuesWithAttributeId = responseItemValues.values;
+    const isGroupService = participationTypeValues?.participationType == 'Group Service';
+    const groupSize = isGroupService ? Number(itemsValues['Group Size']) || 1 : 1;
 
     if (servicePlanValues.directSupportUnit == 'Hour(H)') {
         updateValues.push({
@@ -369,7 +382,7 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
                 } else {
                     qty = 0;
                 }
-                return servicePlanValues.directSupportUnitPrice * qty;
+                return formatValue(servicePlanValues.directSupportUnitPrice * qty / groupSize);
             })(),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Direct Support Value($) - Time Based Support').attribute.id
         });
@@ -379,7 +392,7 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
         });
     } else {
         updateValues.push({
-            data: servicePlanValues?.directSupportUnitPrice * (itemsValues['Quantity (Direct Support - Non Time Based Support)'] || 0),
+            data: formatValue(servicePlanValues?.directSupportUnitPrice * (itemsValues['Quantity (Direct Support - Non Time Based Support)'] || 0) / groupSize),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Direct Support Value($) - Non Time Based Support').attribute.id
         });
         updateValues.push({
@@ -389,13 +402,13 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
     }
     if (servicePlanValues.nonLabourTravelUnitPrice) {
         updateValues.push({
-            data: servicePlanValues.nonLabourTravelUnitPrice * (itemsValues['Provider Travel - Non-Labour - Mileage (kms) as per the Service Plan, if a vehicle is used.'] || 0) + (itemsValues['Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied.'] || 0),
+            data: formatValue(servicePlanValues.nonLabourTravelUnitPrice * (itemsValues['Provider Travel - Non-Labour - Mileage (kms) as per the Service Plan, if a vehicle is used.'] || 0) + (itemsValues['Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied.'] || 0) / groupSize),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Provider Travel - Non-Labour Cost Amount($)').attribute.id
         });
     }
     if (servicePlanValues.activityBasedTransportUnitPrice) {
         updateValues.push({
-            data: servicePlanValues.activityBasedTransportUnitPrice * (itemsValues['Activity Base Transport Mileage(Kms) as per the Service Plan, if a vehicle is used.'] || 0) + (itemsValues['Activity Base Transport Costs as per the Service Plan, if other costs are applied.'] || 0),
+            data: formatValue(servicePlanValues.activityBasedTransportUnitPrice * (itemsValues['Activity Base Transport Mileage(Kms) as per the Service Plan, if a vehicle is used.'] || 0) + (itemsValues['Activity Base Transport Costs as per the Service Plan, if other costs are applied.'] || 0) / groupSize),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Activity Base Transport Amount($)').attribute.id
         });
     }
@@ -409,7 +422,7 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
                 } else {
                     qty = 0;
                 }
-                return servicePlanValues.centreCapitalCostsUnitPrice * qty;
+                return formatValue(servicePlanValues.centreCapitalCostsUnitPrice * qty / groupSize);
             })(),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Centre Capital Costs Amount($)').attribute.id
         });
@@ -421,26 +434,26 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
     }
     if (servicePlanValues.labourTravelTimeUnitPrice) {
         updateValues.push({
-            data: servicePlanValues.labourTravelTimeUnitPrice * (itemsValues['Labour Travel Time (Min.) as per the Service Plan, regarding the Time Cap, if applicable.'] || 0),
+            data: formatValue(servicePlanValues.labourTravelTimeUnitPrice * (itemsValues['Labour Travel Time (Min.) as per the Service Plan, regarding the Time Cap, if applicable.'] || 0) / groupSize),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Labour Travel Time Amount($)').attribute.id
         });
     }
     if (itemsValues['Used Allowance Amount($) as per the Service Plan']) {
         updateValues.push({
-            data: servicePlanValues.usedAllowanceAmount || 0,
+            data: servicePlanValues.usedAllowanceAmount || 0 / groupSize,
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Allowances Amount($)').attribute.id
         });
     }
     if (servicePlanValues.nonFaceToFaceSupportUnitPrice) {
         updateValues.push({
-            data: Number(servicePlanValues.nonFaceToFaceSupportUnitPrice * (itemsValues['Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)'] || 0)),
+            data: Number(servicePlanValues.nonFaceToFaceSupportUnitPrice * (itemsValues['Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)'] || 0) / groupSize),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Non-Face-to-Face Amount($)').attribute.id
         });
     }
     if (itemsValues['Job Status'] === 'Cancelled') {
         if (cancellationTypeValues) {
             updateValues.push({
-                data: servicePlanValues.directSupportUnitPrice * ((cancellationTypeValues.billableToClient || 0) / 100),
+                data: servicePlanValues.directSupportUnitPrice * ((cancellationTypeValues.billableToClient || 0) / 100) / groupSize,
                 attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Cancellation Fee($)').attribute.id
             });
         }
@@ -452,10 +465,12 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
         });
     }
     if (participationTypeValues) {
-        updateValues.push({
-            data: participationTypeValues.participationType == 'Individual (1:1) Service' ? 1 : 2,
-            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Group Size').attribute.id
-        });
+        if (participationTypeValues.participationType == 'Individual (1:1) Service') {
+            updateValues.push({
+                data: 1,
+                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Group Size').attribute.id
+            });
+        }
     }
 
     const response = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${items.id}`,
