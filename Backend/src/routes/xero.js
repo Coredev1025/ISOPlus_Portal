@@ -430,7 +430,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             desc1 += ` - ${servicePlanValues?.directSupportUnit}`;
           }
 
-          if (parseFloat(amountValue1) != parseFloat(amount1)) {
+          if (parseFloat(formatValue(amountValue1)) != parseFloat(formatValue(amount1))) {
             setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
             throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
           }
@@ -471,7 +471,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             desc2 += ` - ${servicePlanValues?.directSupportUnit}`;
           }
 
-          if (parseFloat(amountValue2) != parseFloat(amount2)) {
+          if (parseFloat(formatValue(amountValue2)) != parseFloat(formatValue(amount2))) {
             setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
             throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
           }
@@ -514,7 +514,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           desc3 += ` - ${servicePlanValues?.nonLabourTravelUnit}`;
         }
 
-        if (parseFloat(amountValue3) != parseFloat(amount3)) {
+        if (parseFloat(formatValue(amountValue3)) != parseFloat(formatValue(amount3))) {
           setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
           throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
         }
@@ -556,7 +556,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           desc4 += ` - ${servicePlanValues?.activityBasedTransportUnit}`;
         }
 
-        if (parseFloat(amountValue4) != parseFloat(amount4)) {
+        if (parseFloat(formatValue(amountValue4)) != parseFloat(formatValue(amount4))) {
           setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
           throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
         }
@@ -594,7 +594,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           desc5 += ` - ${servicePlanValues?.centreCapitalCostsUnit}`;
         }
 
-        if (parseFloat(amountValue5) != parseFloat(amount5)) {
+        if (parseFloat(formatValue(amountValue5)) != parseFloat(formatValue(amount5))) {
           setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
           throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
         }
@@ -620,7 +620,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           desc6 += ` - ${servicePlanValues?.labourTravelTimeUnit}`;
         }
 
-        if (parseFloat(amountValue6) != parseFloat(amount6)) {
+        if (parseFloat(formatValue(amountValue6)) != parseFloat(formatValue(amount6))) {
           setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
           throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
         }
@@ -646,7 +646,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           desc7 += ` - ${servicePlanValues?.usedAllowanceUnit}`;
         }
 
-        if (parseFloat(amountValue7) != parseFloat(amount7)) {
+        if (parseFloat(formatValue(amountValue7)) != parseFloat(formatValue(amount7))) {
           setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
           throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
         }
@@ -673,7 +673,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           desc8 += ` - ${servicePlanValues?.nonFaceToFaceSupportUnit}`;
         }
 
-        if (parseFloat(amountValue8) != parseFloat(amount8)) {
+        if (parseFloat(formatValue(amountValue8)) != parseFloat(formatValue(amount8))) {
           setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
           throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
         }
@@ -706,7 +706,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           desc1 += ` - ${itemNumber1}`;
         }
 
-        if (parseFloat(amountValue1) != parseFloat(amount1)) {
+        if (parseFloat(formatValue(amountValue1)) != parseFloat(formatValue(amount1))) {
           setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
           throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
         }
