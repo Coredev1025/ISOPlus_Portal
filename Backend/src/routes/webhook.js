@@ -677,13 +677,14 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
 
                 let ordersArr = [];
                 let subTotal = 0;
+                const groupSize = Number(invoiceValues['Group Size']) || 1;
                 const gst = "0%";
                 const gstLabel = "GST Free";
 
                 if (invoiceValues['Job Status'] !== 'Cancelled') {
                     // Line 1: Direct Support - Hour based
                     if (servicePlanValues?.directSupportUnit === "Hour(H)") {
-                        const unitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
+                        const unitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) / groupSize || 0;
                         const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
                         const itemName1 = servicePlanValues?.directSupportItemName || '';
                         const startTime1 = invoiceValues["Actual Shift Start Date and Time"] ? new Date(invoiceValues["Actual Shift Start Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
@@ -708,7 +709,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                                 desc1 = 'Direct Support - Hour based';
                             }
 
-                            if (amountValue1 != amount1) {
+                            if (parseFloat(amountValue1) != parseFloat(amount1)) {
                                 setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                                 throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                             }
@@ -727,7 +728,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
 
                     // Line 2: Direct Support - Non Hour based
                     if (servicePlanValues?.directSupportUnit !== "Hour(H)") {
-                        const unitPrice2 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
+                        const unitPrice2 = Number(servicePlanValues?.directSupportUnitPrice) / groupSize || 0;
                         const itemNumber2 = servicePlanValues?.directSupportItemNumber || '';
                         const itemName2 = servicePlanValues?.directSupportItemName || '';
                         const quantity2 = invoiceValues["Quantity (Direct Support - Non Time Based Support)"] || 0;
@@ -748,7 +749,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                                 desc2 = 'Direct Support - NOT Hour based';
                             }
 
-                            if (amountValue2 != amount2) {
+                            if (parseFloat(amountValue2) != parseFloat(amount2)) {
                                 setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                                 throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                             }
@@ -766,7 +767,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
 
                     // Line 3: Provider Travel - Non-Labour Cost
-                    const unitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) || 0;
+                    const unitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) / groupSize || 0;
                     const mileage3 = invoiceValues["Provider Travel - Non-Labour - Mileage (kms) as per the Service Plan, if a Vehicle is Used."] || '';
                     const others3 = invoiceValues["Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied."] || '';
                     const itemName3 = servicePlanValues?.providerTravelItemName || '';
@@ -790,7 +791,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                             desc3 = 'Provider Travel - Non-Labour Cost Item';
                         }
 
-                        if (amountValue3 != amount3) {
+                        if (parseFloat(amountValue3) != parseFloat(amount3)) {
                             setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                             throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                         }
@@ -807,7 +808,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
 
                     // Line 4: Activity Based Transport
-                    const unitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) || 0;
+                    const unitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) / groupSize || 0;
                     const mileage4 = invoiceValues["Activity Base Transport Mileage(Kms) as per the Service Plan, if a Vehicle is Used."] || '';
                     const others4 = invoiceValues["Activity Base Transport Costs as per the Service Plan, if other costs are applied."] || '';
                     const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
@@ -831,7 +832,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                             desc4 = 'Activity Based Transport Item';
                         }
 
-                        if (amountValue4 != amount4) {
+                        if (parseFloat(amountValue4) != parseFloat(amount4)) {
                             setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                             throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                         }
@@ -848,7 +849,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
 
                     // Line 5: Centre Capital Costs
-                    const unitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) || 0;
+                    const unitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) / groupSize || 0;
                     const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
                     const itemNumber5 = servicePlanValues?.centreCapitalCostsItemNumber || '';
                     let qty5 = 0;
@@ -858,7 +859,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
                     const amountValue5 = formatValue(Number(invoiceValues["Centre Capital Costs Amount($)"])) || 0;
                     const amount5 = formatValue(qty5 * unitPrice5);
-
+                    
                     if (unitPrice5 > 0 && amount5 > 0) {
                         let desc5 = itemName5;
                         if (itemNumber5) {
@@ -868,7 +869,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                             desc5 = 'Centre Capital Costs Item';
                         }
 
-                        if (amountValue5 != amount5) {
+                        if (parseFloat(amountValue5) != parseFloat(amount5)) {
                             setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                             throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                         }
@@ -885,15 +886,15 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
 
                     // Line 6: Labour Travel Time
-                    const unitPrice6 = Number(servicePlanValues?.labourTravelTimeUnitPrice) || 0;
+                    const unitPrice6 = Number(servicePlanValues?.labourTravelTimeUnitPrice) / groupSize || 0;
                     const qty6 = Number(invoiceValues["Labour Travel Time (Min.) as per the Service Plan, regarding the Time Cap, if applicable."]) || 0;
                     const amountValue6 = formatValue(Number(invoiceValues["Labour Travel Time Amount($)"])) || 0;
                     const amount6 = formatValue(qty6 * unitPrice6);
-
+                    
                     if (unitPrice6 > 0 && amount6 > 0) {
                         const desc6 = 'Provider Travel - Labour Travel Time Costs';
 
-                        if (amountValue6 != amount6) {
+                        if (parseFloat(amountValue6) != parseFloat(amount6)) {
                             setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                             throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                         }
@@ -910,7 +911,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
 
                     // Line 7: Allowances
-                    const unitPrice7 = Number(servicePlanValues?.usedAllowanceAmount) || 0;
+                    const unitPrice7 = Number(servicePlanValues?.usedAllowanceAmount) / groupSize || 0;
                     const qty7 = 1;
                     const amountValue7 = formatValue(Number(invoiceValues["Allowances Amount($)"])) || 0;
                     const amount7 = formatValue(unitPrice7);
@@ -918,7 +919,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     if (unitPrice7 > 0) {
                         const desc7 = `Allowances - ${invoiceValues["Allowances"]}`;
 
-                        if (amountValue7 != amount7) {
+                        if (parseFloat(amountValue7) != parseFloat(amount7)) {
                             setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                             throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                         }
@@ -935,15 +936,15 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
 
                     // Line 8: Non-Face-to-Face Support
-                    const unitPrice8 = Number(servicePlanValues?.nonFaceToFaceSupportUnitPrice) || 0;
+                    const unitPrice8 = Number(servicePlanValues?.nonFaceToFaceSupportUnitPrice) / groupSize || 0;
                     const qty8 = Number(invoiceValues["Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)"]) || 0;
                     const amountValue8 = formatValue(Number(invoiceValues["Non-Face-to-Face Amount($)"])) || 0;
                     const amount8 = formatValue(qty8 * unitPrice8);
-
+                    
                     if (unitPrice8 > 0 && amount8 > 0) {
                         const desc8 = `Non-Face-to-Face Support - ${invoiceValues["Non-Face-to-Face Supports"]}`;
 
-                        if (amountValue8 != amount8) {
+                        if (parseFloat(amountValue8) != parseFloat(amount8)) {
                             setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                             throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                         }
@@ -960,7 +961,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
                 } else {
                     // Line 1: Direct Support - Hour based (Cancelled)
-                    const baseUnitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
+                    const baseUnitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) / groupSize || 0;
                     const cancellationPercentage1 = Number(cancellationTypeValues?.billableToClient) || 0;
                     const itemName1 = servicePlanValues?.directSupportItemName || '';
                     const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
@@ -978,7 +979,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                             desc1 += ` - ${itemNumber1}`;
                         }
 
-                        if (amountValue1 != amount1) {
+                        if (parseFloat(amountValue1) != parseFloat(amount1)) {
                             setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                             throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                         }
@@ -995,7 +996,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
 
                     // Line 3: Provider Travel - Non-Labour Cost
-                    const baseUnitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) || 0;
+                    const baseUnitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) / groupSize || 0;
                     const itemName3 = servicePlanValues?.providerTravelItemName || '';
                     const itemNumber3 = servicePlanValues?.providerTravelItemNumber || '';
                     const qty3 = 1;
@@ -1023,7 +1024,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
 
                     // Line 4: Activity Based Transport
-                    const baseUnitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) || 0;
+                    const baseUnitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) / groupSize || 0;
                     const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
                     const itemNumber4 = servicePlanValues?.activityBasedTransportItemNumber || '';
                     const qty4 = 1;
@@ -1050,7 +1051,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
 
                     // Line 5: Centre Capital Costs
-                    const baseUnitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) || 0;
+                    const baseUnitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) / groupSize || 0;
                     const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
                     const itemNumber5 = servicePlanValues?.centreCapitalCostsItemNumber || '';
                     let qty5 = 1;
