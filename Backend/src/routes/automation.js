@@ -3,50 +3,9 @@ import axios from 'axios';
 import { authenticateToken } from '../middleware/auth.js';
 import { v4 as uuidv4 } from 'uuid';
 import { info, error } from '../utils/logger.js';
+import { getAutomation, updateAutomation } from '../services/isoplus.js';
 
 const router = express.Router();
-
-const getAutomation = async (workspaceId, boardId, authorization) => {
-    try {
-        const response = await axios.get(`https://app.isoplus.online/api/${workspaceId}/automations/${boardId}`, {
-            headers: {
-                'Authorization': `${authorization}`
-            }
-        });
-        return response.data;
-    } catch (error) {
-        return null;
-    }
-}
-
-const updateAutomation = async (workspaceId, boardId, automationId, automation, authorization) => {
-    try {
-        console.log("updateAutomation", automation);
-        let existingAutomation = await getAutomation(workspaceId, boardId, authorization);
-        if (!existingAutomation) {
-            return null;
-        }
-        let existingAutomationIndex = existingAutomation.findIndex(automation => automation.id === automationId);
-        if (existingAutomationIndex < 0) {
-            return null;
-        }
-
-        const response = await axios.put(`https://app.isoplus.online/api/${workspaceId}/automations/${automationId}`, {
-            name: automation.name,
-            workflow: automation.workflow,
-            active: automation.active,
-            board_id: automation.board_id
-        }, {
-            headers: {
-                'Authorization': `${authorization}`
-            }
-        });
-        console.log("updateAutomation response", response.data);
-        return response.data;
-    } catch (error) {
-        return null;
-    }
-}
 
 router.get('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
     const automation = await getAutomation(req.params.workspaceId, req.params.boardId, req.session.Authorization);
