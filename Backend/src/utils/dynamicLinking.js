@@ -2,7 +2,27 @@ function trimAndUnwrapQuotes(str) {
     return str.trim().replace(/^(['"])(.+)\1$/, '$2')
 }
 
+function decodeHtmlEntities(str) {
+    const htmlEntities = {
+        '&gt;': '>',
+        '&lt;': '<',
+        '&amp;': '&',
+        '&quot;': '"',
+        '&#39;': "'",
+        '&apos;': "'",
+        '&nbsp;': ' ',
+        '&copy;': '©',
+        '&reg;': '®',
+        '&trade;': '™'
+    };
+    
+    return str.replace(/&[a-z]+;|&#\d+;/gi, (match) => {
+        return htmlEntities[match] || match;
+    });
+}
+
 function tokenizeString(str) {
+    str = decodeHtmlEntities(str);
     let tokens = [];
     let currentToken = '';
     let isInQuotes = false;
