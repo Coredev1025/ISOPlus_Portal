@@ -438,7 +438,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           lineItems.push({
             description: desc1,
             quantity: formatValue(qty1),
-            unitAmount: formatValue(unitPrice1),
+            unitAmount: unitPrice1,
             taxType: gstType,
             lineAmount: formatValue(amount1)
           });
@@ -479,7 +479,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           lineItems.push({
             description: desc2,
             quantity: formatValue(qty2),
-            unitAmount: formatValue(unitPrice2),
+            unitAmount: unitPrice2,
             taxType: gstType,
             lineAmount: formatValue(amount2)
           });
@@ -522,7 +522,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         lineItems.push({
           description: desc3,
           quantity: formatValue(qty3),
-          unitAmount: formatValue(unitPrice3),
+          unitAmount: unitPrice3,
           taxType: gstType,
           lineAmount: formatValue(amount3)
         });
@@ -564,7 +564,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         lineItems.push({
           description: desc4,
           quantity: formatValue(qty4),
-          unitAmount: formatValue(unitPrice4),
+          unitAmount: unitPrice4,
           taxType: gstType,
           lineAmount: formatValue(amount4)
         });
@@ -602,7 +602,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         lineItems.push({
           description: desc5,
           quantity: formatValue(qty5),
-          unitAmount: formatValue(unitPrice5),
+          unitAmount: unitPrice5,
           taxType: gstType,
           lineAmount: formatValue(amount5)
         });
@@ -628,7 +628,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         lineItems.push({
           description: desc6,
           quantity: formatValue(qty6),
-          unitAmount: formatValue(unitPrice6),
+          unitAmount: unitPrice6,
           taxType: gstType,
           lineAmount: formatValue(amount6)
         });
@@ -655,7 +655,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         lineItems.push({
           description: desc7,
           quantity: formatValue(qty7),
-          unitAmount: formatValue(unitPrice7),
+          unitAmount: unitPrice7,
           taxType: gstType,
           lineAmount: formatValue(amount7)
         });
@@ -681,7 +681,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         lineItems.push({
           description: desc8,
           quantity: formatValue(qty8),
-          unitAmount: formatValue(unitPrice8),
+          unitAmount: unitPrice8,
           taxType: gstType,
           lineAmount: formatValue(amount8)
         });
@@ -714,7 +714,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         lineItems.push({
           description: desc1,
           quantity: formatValue(qty1),
-          unitAmount: formatValue(unitPrice1),
+          unitAmount: unitPrice1,
           taxType: gstType,
           lineAmount: formatValue(amount1)
         });
@@ -726,7 +726,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const itemNumber3 = servicePlanValues?.providerTravelItemNumber || '';
       const qty3 = 1;
       const unitPrice3 = Number((baseUnitPrice3 * (cancellationPercentage1 / 100)).toFixed(2));
-      const amount3 = formatValue(qty3 * unitPrice3);      
+      const amount3 = formatValue(qty3 * unitPrice3);
 
       if (amount3 > 0) {
         let desc3 = 'Cancellation Fee';
@@ -740,7 +740,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         lineItems.push({
           description: desc3,
           quantity: formatValue(qty3),
-          unitAmount: formatValue(unitPrice3),
+          unitAmount: unitPrice3,
           taxType: gstType,
           lineAmount: formatValue(amount3)
         });
@@ -766,7 +766,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         lineItems.push({
           description: desc4,
           quantity: formatValue(qty4),
-          unitAmount: formatValue(unitPrice4),
+          unitAmount: unitPrice4,
           taxType: gstType,
           lineAmount: formatValue(amount4)
         });
@@ -792,7 +792,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         lineItems.push({
           description: desc5,
           quantity: formatValue(qty5),
-          unitAmount: formatValue(unitPrice5),
+          unitAmount: unitPrice5,
           taxType: gstType,
           lineAmount: formatValue(amount5)
         });

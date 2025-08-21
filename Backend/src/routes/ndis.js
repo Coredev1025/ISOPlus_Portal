@@ -456,7 +456,12 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
                 data: formatValue(servicePlanValues.directSupportUnitPrice * ((cancellationTypeValues.billableToClient || 0) / 100) / groupSize),
                 attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Cancellation Fee($)').attribute.id
             });
-    }
+        } else {
+            updateValues.push({
+                data: 0,
+                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Cancellation Fee($)').attribute.id
+            });
+        }
     }
     if (fundValues) {
         updateValues.push({
