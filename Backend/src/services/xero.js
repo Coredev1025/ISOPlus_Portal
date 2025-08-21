@@ -204,6 +204,7 @@ export async function createInvoice(invoice) {
                     quantity: item.quantity,
                     unitAmount: item.unitAmount,
                     taxType: item.taxType,
+                    lineAmount: item.lineAmount
                 })),
                 status: invoice.status || 'AUTHORISED'
             }]
