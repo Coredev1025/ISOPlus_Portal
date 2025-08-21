@@ -143,34 +143,71 @@ class DynamicLinkingService {
 
                     for await (const automation of paginateAutomations) {
                         automation.workflow.forEach(value => {
-                            if (value && value.config && value.config.text) {
-                                const links = [];
-                                let match;
+                            if (value && value.config) {
+                                if (value.config.text) {
+                                    const links = [];
+                                    let match;
 
-                                while ((match = TEMPLATE_REGEX.exec(value.config.text)) !== null) {
-                                    const [label, targetBoardName, targetName] = tokenizeString(
-                                        he.decode(
-                                            sanitizeHtml(match[1], {
-                                                allowedTags: [],  // Remove all tags
-                                                allowedAttributes: {}
-                                            })
-                                        )
-                                    ).map(x => x.replace(/\s+/g, ' ').trim());
+                                    while ((match = TEMPLATE_REGEX.exec(value.config.text)) !== null) {
+                                        const [label, targetBoardName, targetName] = tokenizeString(
+                                            he.decode(
+                                                sanitizeHtml(match[1], {
+                                                    allowedTags: [],  // Remove all tags
+                                                    allowedAttributes: {}
+                                                })
+                                            )
+                                        ).map(x => x.replace(/\s+/g, ' ').trim());
 
-                                    links.push({
-                                        label,
-                                        targetBoardName,
-                                        targetName,
-                                        originalMatch: match[0]
-                                    });
+                                        links.push({
+                                            label,
+                                            targetBoardName,
+                                            targetName,
+                                            originalMatch: match[0]
+                                        });
+                                    }
+                                    if (links.length > 0) {
+                                        this.sources.insert({
+                                            boardId,
+                                            item: automation,
+                                            value,
+                                            links,
+                                            automation: true,
+                                            templateItemValues: false
+                                        });
+                                    }
                                 }
-                                if (links.length > 0) {
-                                    this.sources.insert({
-                                        boardId,
-                                        item: automation,
-                                        value,
-                                        links,
-                                        automation: true
+                                if (value.config.templateItemValues) {
+                                    value.config.templateItemValues.forEach(templateItemValue => {
+                                        const links = [];
+                                        let match;
+
+                                        while ((match = TEMPLATE_REGEX.exec(templateItemValue.data)) !== null) {
+                                            const [label, targetBoardName, targetName] = tokenizeString(
+                                                he.decode(
+                                                    sanitizeHtml(match[1], {
+                                                        allowedTags: [],  // Remove all tags
+                                                        allowedAttributes: {}
+                                                    })
+                                                )
+                                            ).map(x => x.replace(/\s+/g, ' ').trim());
+
+                                            links.push({
+                                                label,
+                                                targetBoardName,
+                                                targetName,
+                                                originalMatch: match[0]
+                                            });
+                                        }
+                                        if (links.length > 0) {
+                                            this.sources.insert({
+                                                boardId,
+                                                item: automation,
+                                                value,
+                                                links,
+                                                automation: true,
+                                                templateItemValues: true
+                                            });
+                                        }
                                     });
                                 }
                             }
@@ -203,13 +240,26 @@ class DynamicLinkingService {
                             return;
                         }
                         if (source && source?.automation) {
-                            source.item.workflow.forEach((value, index) => {
-                                if (value && value.config && value.config.text && value.config.text.includes(link.originalMatch)) {
-                                    console.log(link.originalMatch)
-                                    value.config.text = value.config.text.replace(link.originalMatch, `<a href="${destination.selfLink}">${link.label}</a>`);
-                                    source.item.workflow[index] = value;
-                                }
-                            });
+                            if (source?.templateItemValues) {
+                                source.item.workflow.forEach((value, index) => {
+                                    if (value && value.config && value.config.templateItemValues) {
+                                        value.config.templateItemValues.forEach((templateItemValue, templateItemValueIndex) => {
+                                            if (templateItemValue.data.includes(link.originalMatch)) {
+                                                templateItemValue.data = templateItemValue.data.replace(link.originalMatch, `<a href="${destination.selfLink}">${link.label}</a>`);
+                                                source.item.workflow[index].config.templateItemValues[templateItemValueIndex] = templateItemValue;
+                                            }
+                                        });
+                                    }
+                                });
+                            } else {                                
+                                source.item.workflow.forEach((value, index) => {
+                                    if (value && value.config && value.config.text && value.config.text.includes(link.originalMatch)) {
+                                        console.log(link.originalMatch)
+                                        value.config.text = value.config.text.replace(link.originalMatch, `<a href="${destination.selfLink}">${link.label}</a>`);
+                                        source.item.workflow[index] = value;
+                                    }
+                                });
+                            }
                         } else {
                             source.value.data = source.value.data.replace(link.originalMatch, `<a href="${destination.selfLink}">${link.label}</a>`);
                         }
