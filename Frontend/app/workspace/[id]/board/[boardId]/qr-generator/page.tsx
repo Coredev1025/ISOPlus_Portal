@@ -2,14 +2,14 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, QrCode, Download, FileText, Image } from "lucide-react";
+import { ArrowLeft, QrCode, Download, FileText, Image, Copy, Info } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useState, useEffect, useRef } from "react";
 import { useAppContext } from "@/app/context/index";
 import axios from "@/app/utils/axiosConfig";
 import Spinner from "@/components/ui/spin";
-import { showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
+import { showFetchSuccessToast, showFetchErrorToast, showSuccessToast } from "@/lib/toast-utils";
 import {
   Select,
   SelectContent,
@@ -53,7 +53,7 @@ export default function QRGeneratorPage() {
   const [forms, setForms] = useState<Form[]>([]);
   const [business, setBusiness] = useState<Business>();
   const [selectedForm, setSelectedForm] = useState<string>('');
-  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
+  const [qrCodeGenerated, setQrCodeGenerated] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string>('');
@@ -65,27 +65,26 @@ export default function QRGeneratorPage() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        
-        // Fetch board data
-        const boardsResponse = await axios.get(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`
-        );
+        const boardsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`);
         const boardData: Board = boardsResponse.data.board.find((b: any) => b.id == boardId);
         setBoard(boardData);
-
-        // Fetch business data for logos
         const businessResponse = await axios.get(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile?workspaceId=${id}`
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`,
+          {
+            params: { workspaceId: id }
+          }
         );
-        setBusiness(businessResponse.data.business);
-
-        setForms([{
-          id: '1',
-          name: 'Form 1',
-          url: 'https://www.google.com',
-          type: 'form'
-        }]);
-
+        setBusiness(businessResponse.data);
+        const formResponse = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards/form?workspaceId=${id}&boardId=${boardId}`
+        );
+        const formData = formResponse.data.views;
+        setForms(formData.map((form: any) => ({
+          id: form.id,
+          name: form.name,
+          url: `https://app.isoplus.online/form/${form.id}`,
+          type: form.type
+        })));
       } catch (error: any) {
         console.error("Error fetching data:", error);
         showFetchErrorToast("data", error.response?.data?.message || "Failed to load data");
@@ -97,18 +96,6 @@ export default function QRGeneratorPage() {
     fetchData();
   }, [id, boardId]);
 
-  const getLogoUrl = async (logoKey: string): Promise<string> => {
-    try {
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/logo?workspaceId=${id}&logoKey=${logoKey}`
-      );
-      return response.data.logoUrl;
-    } catch (error) {
-      console.error("Error fetching logo:", error);
-      return '';
-    }
-  };
-
   const generateQRCode = async () => {
     if (!selectedForm) return;
 
@@ -116,35 +103,39 @@ export default function QRGeneratorPage() {
       setGenerating(true);
       const form = forms.find(f => f.id === selectedForm);
       if (!form) return;
-
-      // Get logo URL (priority: squareLogo > defaultLogo > no logo)
-      let logoUrl = '';
+      
+      let logoTempUrl = '';
       if (business?.squareLogo) {
-        logoUrl = await getLogoUrl('squareLogo');
+        logoTempUrl = business?.squareLogo || '';
       } else if (business?.defaultLogo) {
-        logoUrl = await getLogoUrl('defaultLogo');
+        logoTempUrl = business?.defaultLogo || '';
       }
-
-      // Generate QR code with high error correction for logo overlay
-      const qrDataUrl = await QRCode.toDataURL(form.url, {
-        errorCorrectionLevel: 'H', // 30% error correction for logo overlay
-        type: 'image/png',
-        margin: 1,
+      
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        throw new Error("Canvas not available");
+      }
+      
+      canvas.width = 400;
+      canvas.height = 400;
+      
+      await QRCode.toCanvas(canvas, form.url, {
+        errorCorrectionLevel: 'H',
+        margin: 3,
         color: {
           dark: '#000000',
-          light: '#FFFFFF'
+          light: '#ffffff'
         },
         width: 400
       });
-
-      setQrCodeDataUrl(qrDataUrl);
-      setLogoUrl(logoUrl);
-
-      // If we have a logo, overlay it on the QR code
-      if (logoUrl) {
-        await overlayLogoOnQR(qrDataUrl, logoUrl);
+      
+      setLogoUrl(logoTempUrl);
+      
+      if (logoTempUrl) {
+        await overlayLogoOnQR(canvas, logoTempUrl);
       }
-
+      
+      setQrCodeGenerated(true);
     } catch (error: any) {
       console.error("Error generating QR code:", error);
       showFetchErrorToast("QR code", error.message || "Failed to generate QR code");
@@ -153,82 +144,174 @@ export default function QRGeneratorPage() {
     }
   };
 
-  const overlayLogoOnQR = async (qrDataUrl: string, logoUrl: string) => {
+  const overlayLogoOnQR = async (canvas: HTMLCanvasElement, logoUrl: string) => {
     return new Promise<void>((resolve, reject) => {
-      const canvas = canvasRef.current;
-      if (!canvas) {
-        reject(new Error("Canvas not available"));
-        return;
-      }
-
       const ctx = canvas.getContext('2d');
       if (!ctx) {
         reject(new Error("Canvas context not available"));
         return;
       }
-
-      const qrImage = new window.Image();
+      
       const logoImage = new window.Image();
-
-      qrImage.onload = () => {
-        // Set canvas size
-        canvas.width = qrImage.width;
-        canvas.height = qrImage.height;
-
-        // Draw QR code
-        ctx.drawImage(qrImage, 0, 0);
-
-        logoImage.onload = () => {
-          // Calculate logo size (20% of QR code size)
-          const logoSize = Math.min(qrImage.width, qrImage.height) * 0.2;
-          const logoX = (qrImage.width - logoSize) / 2;
-          const logoY = (qrImage.height - logoSize) / 2;
-
-          // Create circular mask for logo
+      logoImage.crossOrigin = "Anonymous";
+      
+      logoImage.onload = () => {
+        try {
+          const logoSize = Math.min(canvas.width, canvas.height) * 0.15;
+          const logoX = (canvas.width - logoSize) / 2;
+          const logoY = (canvas.height - logoSize) / 2;
+          const padding = logoSize * 0.2;
+          const bgSize = logoSize + (padding * 2);
+          const bgX = logoX - padding;
+          const bgY = logoY - padding;
+          const borderRadius = padding * 0.5;
+          
+          // Draw white background with rounded corners
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.moveTo(bgX + borderRadius, bgY);
+          ctx.lineTo(bgX + bgSize - borderRadius, bgY);
+          ctx.quadraticCurveTo(bgX + bgSize, bgY, bgX + bgSize, bgY + borderRadius);
+          ctx.lineTo(bgX + bgSize, bgY + bgSize - borderRadius);
+          ctx.quadraticCurveTo(bgX + bgSize, bgY + bgSize, bgX + bgSize - borderRadius, bgY + bgSize);
+          ctx.lineTo(bgX + borderRadius, bgY + bgSize);
+          ctx.quadraticCurveTo(bgX, bgY + bgSize, bgX, bgY + bgSize - borderRadius);
+          ctx.lineTo(bgX, bgY + borderRadius);
+          ctx.quadraticCurveTo(bgX, bgY, bgX + borderRadius, bgY);
+          ctx.closePath();
+          ctx.fill();
+          
+          // Draw the logo as a circle
           ctx.save();
           ctx.beginPath();
           ctx.arc(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2, 0, 2 * Math.PI);
           ctx.clip();
-
-          // Draw logo
           ctx.drawImage(logoImage, logoX, logoY, logoSize, logoSize);
           ctx.restore();
-
-          // Update QR code data URL with logo
-          const newDataUrl = canvas.toDataURL('image/png');
-          setQrCodeDataUrl(newDataUrl);
+          
           resolve();
-        };
-
-        logoImage.onerror = () => {
-          console.warn("Failed to load logo, using QR code without logo");
-          resolve();
-        };
-
-        logoImage.src = logoUrl;
+        } catch (error) {
+          console.error("Error drawing logo:", error);
+          resolve(); // Don't reject, just resolve without the logo
+        }
       };
-
-      qrImage.onerror = () => {
-        reject(new Error("Failed to load QR code"));
+      
+      logoImage.onerror = () => {
+        console.warn("Failed to load logo, using QR code without logo");
+        resolve();
       };
-
-      qrImage.src = qrDataUrl;
+      
+      logoImage.onabort = () => {
+        console.warn("Logo loading aborted, using QR code without logo");
+        resolve();
+      };
+      
+      logoImage.src = logoUrl;
     });
   };
 
   const downloadQRCode = () => {
-    if (!qrCodeDataUrl) return;
+    const canvas = canvasRef.current;
+    if (!canvas || !qrCodeGenerated) return;
+    
+    try {
+      const link = document.createElement('a');
+      link.download = `qr-code-${selectedForm}.png`;
+      link.href = canvas.toDataURL('image/png');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error("Error downloading QR code:", error);
+      showFetchErrorToast("QR code", "Failed to download QR code due to security restrictions");
+      
+      // Fallback: Try to open the QR code in a new tab
+      try {
+        const dataUrl = canvas.toDataURL('image/png');
+        const newWindow = window.open();
+        if (newWindow) {
+          newWindow.document.write(`<img src="${dataUrl}" alt="QR Code">`);
+          showSuccessToast("QR code opened in a new tab");
+        }
+      } catch (fallbackError) {
+        console.error("Fallback also failed:", fallbackError);
+        showFetchErrorToast("QR code", "Unable to export QR code. Please try taking a screenshot.");
+      }
+    }
+  };
 
-    const link = document.createElement('a');
-    link.download = `qr-code-${selectedForm}.png`;
-    link.href = qrCodeDataUrl;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const copyQRCodeToClipboard = async () => {
+    const canvas = canvasRef.current;
+    if (!canvas || !qrCodeGenerated) return;
+    
+    try {
+      // Create a new canvas to avoid potential issues with the original
+      const tempCanvas = document.createElement('canvas');
+      const tempCtx = tempCanvas.getContext('2d');
+      if (!tempCtx) {
+        throw new Error("Failed to get canvas context");
+      }
+      
+      // Set the same dimensions as the original canvas
+      tempCanvas.width = canvas.width;
+      tempCanvas.height = canvas.height;
+      
+      // Copy the content from the original canvas
+      tempCtx.drawImage(canvas, 0, 0);
+      
+      // Convert to blob
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        tempCanvas.toBlob((blob) => {
+          if (blob) {
+            resolve(blob);
+          } else {
+            reject(new Error("Failed to create blob from canvas"));
+          }
+        }, 'image/png');
+      });
+      
+      // Write to clipboard
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'image/png': blob
+        })
+      ]);
+      
+      showSuccessToast("QR code copied to clipboard successfully!");
+    } catch (error) {
+      console.error("Error copying QR code to clipboard:", error);
+      
+      // Fallback: Try to download the image
+      try {
+        const link = document.createElement('a');
+        link.download = `qr-code-${selectedForm}.png`;
+        link.href = canvas.toDataURL('image/png');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        showSuccessToast("QR code downloaded (clipboard not available)");
+      } catch (fallbackError) {
+        console.error("Fallback also failed:", fallbackError);
+        
+        // Second fallback: Open in a new tab
+        try {
+          const dataUrl = canvas.toDataURL('image/png');
+          const newWindow = window.open();
+          if (newWindow) {
+            newWindow.document.write(`<img src="${dataUrl}" alt="QR Code">`);
+            showSuccessToast("QR code opened in a new tab");
+          }
+        } catch (secondFallbackError) {
+          console.error("Second fallback also failed:", secondFallbackError);
+          showFetchErrorToast("QR code", "Unable to export QR code. Please try taking a screenshot.");
+        }
+      }
+    }
   };
 
   const selectedFormData = forms.find(f => f.id === selectedForm);
-
+  
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -250,7 +333,7 @@ export default function QRGeneratorPage() {
                 <QrCode className="h-6 w-6 text-primary" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/80">
+                <h1 className="text-3xl font-bold mb-2 text-foreground">
                   QR Generator
                 </h1>
                 <p className="text-muted-foreground">
@@ -344,66 +427,60 @@ export default function QRGeneratorPage() {
               <Card className="p-6 space-y-6">
                 <div>
                   <h2 className="text-xl font-semibold mb-4">Generated QR Code</h2>
-                  
-                  {qrCodeDataUrl ? (
-                    <div className="space-y-4">
-                      <div className="flex justify-center">
-                        <div className="relative">
-                          <img
-                            src={qrCodeDataUrl}
-                            alt="Generated QR Code"
-                            className="max-w-full h-auto border rounded-lg shadow-lg"
-                          />
-                          {logoUrl && (
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <div className="absolute top-2 right-2 bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-medium">
-                                    <Image className="h-3 w-3 inline mr-1" />
-                                    Logo Applied
-                                  </div>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>Logo has been embedded in the QR code</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          )}
-                        </div>
-                      </div>
-                      
-                      <div className="flex justify-center">
+                  <div className="space-y-6 w-full" style={{ display: qrCodeGenerated ? 'block' : 'none' }}>
+                    <div className="flex justify-center">
+                      <canvas
+                        ref={canvasRef}
+                        className="w-64 h-64 object-contain border border-border rounded-lg"
+                      />
+                    </div>
+                    {/* Form URL display with light purple border */}
+                    <div className="flex justify-center">
+                      <input
+                        type="text"
+                        value={selectedFormData?.url || ''}
+                        readOnly
+                        className="w-64 px-4 py-3 border-2 border-primary/30 rounded-lg bg-card text-foreground text-sm font-mono"
+                      />
+                    </div>
+                    {/* Action buttons with info icon */}
+                    <div className="flex justify-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <Info className="h-4 w-4 text-muted-foreground" />
                         <Button
-                          onClick={downloadQRCode}
+                          onClick={copyQRCodeToClipboard}
                           variant="outline"
-                          className="gap-2"
+                          className="bg-card border-2 border-primary/30 text-foreground hover:bg-primary/10 hover:border-primary/50 hover:text-foreground px-6 py-2 rounded-lg transition-colors"
                         >
-                          <Download className="h-4 w-4" />
-                          Download PNG
+                          <Copy className="h-4 w-4 mr-2" />
+                          Copy
                         </Button>
                       </div>
-
-                      <div className="text-center text-sm text-muted-foreground">
-                        <p>QR code is ready for use. You can scan it to access the form.</p>
-                      </div>
+                      <Button
+                        onClick={downloadQRCode}
+                        variant="outline"
+                        className="bg-card border-2 border-primary/30 text-foreground hover:bg-primary/10 hover:border-primary/50 hover:text-foreground px-6 py-2 rounded-lg transition-colors"
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Download
+                      </Button>
                     </div>
-                  ) : (
-                    <div className="text-center py-12">
-                      <QrCode className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                      <p className="text-muted-foreground">
-                        Select a form and generate a QR code to see it here
-                      </p>
+                    <div className="text-center text-sm text-muted-foreground">
+                      <p>QR code is ready for use. You can scan it to access the form.</p>
                     </div>
-                  )}
+                  </div>
+                  <div className="text-center py-12" style={{ display: qrCodeGenerated ? 'none' : 'block' }}>
+                    <QrCode className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground">
+                      Select a form and generate a QR code to see it here
+                    </p>
+                  </div>
                 </div>
               </Card>
             </div>
           )}
         </div>
       </div>
-
-      {/* Hidden canvas for logo overlay */}
-      <canvas ref={canvasRef} style={{ display: 'none' }} />
     </div>
   );
-} 
+}

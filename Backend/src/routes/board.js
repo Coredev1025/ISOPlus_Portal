@@ -4,7 +4,7 @@ import Board from '../models/Board.js';
 import TimeTrack from '../models/TimeTrack.js';
 import AuditTrail from '../models/AuditTrail.js';
 import { info, error, warn } from '../utils/logger.js';
-import { getBoardAttributes } from '../services/isoplus.js';
+import { getBoardAttributes, getAllViews } from '../services/isoplus.js';
 
 const router = express.Router();
 
@@ -84,6 +84,21 @@ router.get('/attribute', authenticateToken, async (req, res) => {
             return res.status(404).json({ message: 'Attribute not found' });
         }
         res.status(attributes.status).json({ attributes: data || [] });
+    } catch (err) {
+        error('Board-Service', 'Server error', { message: err.message }, req);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+router.get('/form', authenticateToken, async (req, res) => {
+    try {
+        const views = await getAllViews(req.session.Authorization, req.query.workspaceId, req.query.boardId);
+        const data = views.views.filter(item => item.type == "form" && item.settings.formSettings.enabled);
+        if (!data) {
+            warn('Board-Service', 'Failed fetching board form data', { boardId: req.query.boardId }, req);
+            return res.status(404).json({ message: 'Form not found' });
+        }
+        res.status(200).json({ views: data || [] });
     } catch (err) {
         error('Board-Service', 'Server error', { message: err.message }, req);
         res.status(500).json({ message: 'Server error' });
