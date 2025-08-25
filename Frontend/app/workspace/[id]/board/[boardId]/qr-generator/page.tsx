@@ -56,7 +56,6 @@ export default function QRGeneratorPage() {
   const [qrCodeGenerated, setQrCodeGenerated] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [logoUrl, setLogoUrl] = useState<string>('');
   const { workspaces, user } = useAppContext();
   const workspace = workspaces.find(w => w.id.toString() === id);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -103,22 +102,15 @@ export default function QRGeneratorPage() {
       setGenerating(true);
       const form = forms.find(f => f.id === selectedForm);
       if (!form) return;
-      
-      let logoTempUrl = '';
-      if (business?.squareLogo) {
-        logoTempUrl = business?.squareLogo || '';
-      } else if (business?.defaultLogo) {
-        logoTempUrl = business?.defaultLogo || '';
-      }
-      
+
       const canvas = canvasRef.current;
       if (!canvas) {
         throw new Error("Canvas not available");
       }
-      
+
       canvas.width = 400;
       canvas.height = 400;
-      
+
       await QRCode.toCanvas(canvas, form.url, {
         errorCorrectionLevel: 'H',
         margin: 3,
@@ -128,13 +120,11 @@ export default function QRGeneratorPage() {
         },
         width: 400
       });
-      
-      setLogoUrl(logoTempUrl);
-      
-      if (logoTempUrl) {
-        await overlayLogoOnQR(canvas, logoTempUrl);
+
+      if(business?.squareLogo || business?.defaultLogo) {
+        await overlayLogoOnQR(canvas, `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/qr-logo?workspaceId=${id}`);
       }
-      
+
       setQrCodeGenerated(true);
     } catch (error: any) {
       console.error("Error generating QR code:", error);
@@ -151,10 +141,9 @@ export default function QRGeneratorPage() {
         reject(new Error("Canvas context not available"));
         return;
       }
-      
-      const logoImage = new window.Image();
-      logoImage.crossOrigin = "Anonymous";
-      
+
+      let logoImage = new window.Image();
+      logoImage.crossOrigin = "anonymous";
       logoImage.onload = () => {
         try {
           const logoSize = Math.min(canvas.width, canvas.height) * 0.15;
@@ -165,7 +154,7 @@ export default function QRGeneratorPage() {
           const bgX = logoX - padding;
           const bgY = logoY - padding;
           const borderRadius = padding * 0.5;
-          
+
           // Draw white background with rounded corners
           ctx.fillStyle = '#ffffff';
           ctx.beginPath();
@@ -180,7 +169,7 @@ export default function QRGeneratorPage() {
           ctx.quadraticCurveTo(bgX, bgY, bgX + borderRadius, bgY);
           ctx.closePath();
           ctx.fill();
-          
+
           // Draw the logo as a circle
           ctx.save();
           ctx.beginPath();
@@ -188,24 +177,24 @@ export default function QRGeneratorPage() {
           ctx.clip();
           ctx.drawImage(logoImage, logoX, logoY, logoSize, logoSize);
           ctx.restore();
-          
+
           resolve();
         } catch (error) {
           console.error("Error drawing logo:", error);
           resolve(); // Don't reject, just resolve without the logo
         }
       };
-      
+
       logoImage.onerror = () => {
         console.warn("Failed to load logo, using QR code without logo");
         resolve();
       };
-      
+
       logoImage.onabort = () => {
         console.warn("Logo loading aborted, using QR code without logo");
         resolve();
       };
-      
+
       logoImage.src = logoUrl;
     });
   };
@@ -213,7 +202,7 @@ export default function QRGeneratorPage() {
   const downloadQRCode = () => {
     const canvas = canvasRef.current;
     if (!canvas || !qrCodeGenerated) return;
-    
+
     try {
       const link = document.createElement('a');
       link.download = `qr-code-${selectedForm}.png`;
@@ -223,27 +212,27 @@ export default function QRGeneratorPage() {
       document.body.removeChild(link);
     } catch (error) {
       console.error("Error downloading QR code:", error);
-      showFetchErrorToast("QR code", "Failed to download QR code due to security restrictions");
-      
-      // Fallback: Try to open the QR code in a new tab
-      try {
-        const dataUrl = canvas.toDataURL('image/png');
-        const newWindow = window.open();
-        if (newWindow) {
-          newWindow.document.write(`<img src="${dataUrl}" alt="QR Code">`);
-          showSuccessToast("QR code opened in a new tab");
-        }
-      } catch (fallbackError) {
-        console.error("Fallback also failed:", fallbackError);
-        showFetchErrorToast("QR code", "Unable to export QR code. Please try taking a screenshot.");
+
+      // Check if it's a tainted canvas error
+      if (error instanceof Error && error.message.includes('tainted')) {
+        showFetchErrorToast("QR code", "Cannot download QR code with logo due to security restrictions. Try taking a screenshot instead.");
+        return;
       }
+
+      showFetchErrorToast("QR code", "Failed to download QR code due to security restrictions");
     }
   };
 
   const copyQRCodeToClipboard = async () => {
     const canvas = canvasRef.current;
     if (!canvas || !qrCodeGenerated) return;
-    
+
+    // Check if Clipboard API is available
+    if (!navigator.clipboard || !window.ClipboardItem) {
+      showFetchErrorToast("Clipboard", "Your browser doesn't support copying images to clipboard. Try downloading instead.");
+      return;
+    }
+
     try {
       // Create a new canvas to avoid potential issues with the original
       const tempCanvas = document.createElement('canvas');
@@ -251,14 +240,14 @@ export default function QRGeneratorPage() {
       if (!tempCtx) {
         throw new Error("Failed to get canvas context");
       }
-      
+
       // Set the same dimensions as the original canvas
       tempCanvas.width = canvas.width;
       tempCanvas.height = canvas.height;
-      
+
       // Copy the content from the original canvas
       tempCtx.drawImage(canvas, 0, 0);
-      
+
       // Convert to blob
       const blob = await new Promise<Blob>((resolve, reject) => {
         tempCanvas.toBlob((blob) => {
@@ -269,18 +258,28 @@ export default function QRGeneratorPage() {
           }
         }, 'image/png');
       });
-      
+
       // Write to clipboard
       await navigator.clipboard.write([
         new ClipboardItem({
           'image/png': blob
         })
       ]);
-      
+
       showSuccessToast("QR code copied to clipboard successfully!");
     } catch (error) {
       console.error("Error copying QR code to clipboard:", error);
-      
+
+      // Check if it's a tainted canvas error
+      if (error instanceof Error && (
+        error.message.includes('tainted') ||
+        error.message.includes('security') ||
+        error.message.includes('CORS')
+      )) {
+        showFetchErrorToast("QR code", "Cannot copy QR code with logo due to security restrictions. Try regenerating without logo or downloading instead.");
+        return;
+      }
+
       // Fallback: Try to download the image
       try {
         const link = document.createElement('a');
@@ -289,11 +288,11 @@ export default function QRGeneratorPage() {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        
+
         showSuccessToast("QR code downloaded (clipboard not available)");
       } catch (fallbackError) {
         console.error("Fallback also failed:", fallbackError);
-        
+
         // Second fallback: Open in a new tab
         try {
           const dataUrl = canvas.toDataURL('image/png');
@@ -304,14 +303,14 @@ export default function QRGeneratorPage() {
           }
         } catch (secondFallbackError) {
           console.error("Second fallback also failed:", secondFallbackError);
-          showFetchErrorToast("QR code", "Unable to export QR code. Please try taking a screenshot.");
+          showFetchErrorToast("QR code", "Unable to export QR code. Please try taking a screenshot or regenerating without logo.");
         }
       }
     }
   };
 
   const selectedFormData = forms.find(f => f.id === selectedForm);
-  
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -419,6 +418,8 @@ export default function QRGeneratorPage() {
                     <p>• Default logo will be used as fallback</p>
                     <p>• Logo will be placed in the center of the QR code</p>
                     <p>• QR code uses high error correction for logo overlay</p>
+                    <p className="text-amber-600 dark:text-amber-400">• Note: QR codes with logos may have export restrictions due to browser security</p>
+                    <p className="text-amber-600 dark:text-amber-400">• Use &quot;Regenerate Without Logo&quot; button if you encounter export issues</p>
                   </div>
                 </div>
               </Card>
