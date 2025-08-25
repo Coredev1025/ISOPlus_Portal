@@ -111,3 +111,40 @@ export const deleteFileFromS3 = async (key, publicRead = true) => {
         throw err;
     }
 };
+
+export const getS3File = async (key, publicRead = false) => {
+    checkS3ENV(publicRead);
+    const params = {
+        Bucket: publicRead ? process.env.AWS_BUCKET_PUBLIC : process.env.AWS_BUCKET,
+        Key: key,
+    };
+
+    try {
+        const data = await s3Client.send(new GetObjectCommand(params));
+        const chunks = [];
+        
+        for await (const chunk of data.Body) {
+            chunks.push(chunk);
+        }
+        
+        return Buffer.concat(chunks);
+    } catch (err) {
+        console.error('Error downloading file:', err);
+        throw err;
+    }
+};
+
+export const getContentType = (fileExtension) => {
+    const contentTypes = {
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'gif': 'image/gif',
+        'svg': 'image/svg+xml',
+        'webp': 'image/webp',
+        'bmp': 'image/bmp',
+        'ico': 'image/x-icon'
+    };
+    
+    return contentTypes[fileExtension] || 'application/octet-stream';
+};

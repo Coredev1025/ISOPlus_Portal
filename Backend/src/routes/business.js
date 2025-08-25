@@ -6,7 +6,7 @@ import { info, error, warn } from '../utils/logger.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import AuditTrail from '../models/AuditTrail.js';
-import { uploadFileToS3, getS3FileUrl, deleteFileFromS3 } from '../utils/uploadS3.js'; // Import S3 utility functions
+import { uploadFileToS3, getS3FileUrl, deleteFileFromS3, getS3File, getContentType } from '../utils/uploadS3.js'; // Import S3 utility functions
 import { setLogo } from '../services/isoplus.js';
 import { updateOrganizationInfo } from '../services/xero.js';
 
@@ -267,6 +267,53 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
     res.status(200).json(business);
   } catch (err) {
     error('Business-Service', 'Server error', { message: err.message }, req);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.get('/qr-logo', async (req, res) => {
+  try {
+    const { workspaceId } = req.query;
+    
+    if (!workspaceId) {
+      return res.status(400).json({ message: 'workspaceId is required' });
+    }
+
+    const business = await Business.findOne({ workspaceId: workspaceId.toString() });
+
+    if (!business) {
+      return res.status(404).json({ message: 'Business not found' });
+    }
+
+    const logoPath = business.squareLogo || business.defaultLogo;
+    if (!logoPath) {
+      return res.status(404).json({ message: 'Logo not found' });
+    }
+
+    // Get the logo file from S3
+    const logoBuffer = await getS3File(logoPath);
+    if (!logoBuffer) {
+      return res.status(404).json({ message: 'Logo file not found' });
+    }
+
+    info('Business-Service', 'Logo retrieved successfully', { 
+      workspaceId, 
+      logoPath 
+    }, req);
+
+    // Set appropriate headers for image response
+    const fileExtension = logoPath.split('.').pop().toLowerCase();
+    const contentType = getContentType(fileExtension);
+    
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.send(logoBuffer);
+
+  } catch (err) {
+    error('Business-Service', 'Error retrieving logo', { 
+      error: err.message,
+      workspaceId: req.query.workspaceId
+    }, req);
     res.status(500).json({ message: 'Server error' });
   }
 });
