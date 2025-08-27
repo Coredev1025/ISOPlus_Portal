@@ -23,6 +23,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import QRCode from 'qrcode';
 
 interface Board {
@@ -56,6 +58,7 @@ export default function QRGeneratorPage() {
   const [qrCodeGenerated, setQrCodeGenerated] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [drawLogo, setDrawLogo] = useState<boolean>(false);
   const { workspaces, user } = useAppContext();
   const workspace = workspaces.find(w => w.id.toString() === id);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -121,7 +124,7 @@ export default function QRGeneratorPage() {
         width: 400
       });
 
-      if(business?.squareLogo || business?.defaultLogo) {
+      if(drawLogo && (business?.squareLogo || business?.defaultLogo)) {
         await overlayLogoOnQR(canvas, `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/qr-logo?workspaceId=${id}`);
       }
 
@@ -387,8 +390,36 @@ export default function QRGeneratorPage() {
                         <p className="text-sm text-muted-foreground break-all">
                           <strong>URL:</strong> {selectedFormData.url}
                         </p>
+                        <p className="text-sm text-muted-foreground mt-2">
+                          <strong>Logo Status:</strong> {(business?.squareLogo || business?.defaultLogo) ? 
+                            <span className="text-green-600">Available</span> : 
+                            <span className="text-orange-600">Not Configured</span>
+                          }
+                        </p>
                       </div>
                     )}
+
+                    {/* Logo Options */}
+                    <div className="space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="drawLogo"
+                          checked={drawLogo}
+                          onCheckedChange={(checked: boolean | "indeterminate") => 
+                            setDrawLogo(checked === true)
+                          }
+                          disabled={!business?.squareLogo && !business?.defaultLogo}
+                        />
+                        <Label htmlFor="drawLogo" className="text-sm font-medium">
+                          Include business logo on QR code
+                        </Label>
+                      </div>
+                      {!business?.squareLogo && !business?.defaultLogo && (
+                        <p className="text-xs text-muted-foreground ml-6">
+                          No business logo available. Upload a logo in business settings to enable this option.
+                        </p>
+                      )}
+                    </div>
 
                     <Button
                       onClick={generateQRCode}
@@ -418,8 +449,6 @@ export default function QRGeneratorPage() {
                     <p>• Default logo will be used as fallback</p>
                     <p>• Logo will be placed in the center of the QR code</p>
                     <p>• QR code uses high error correction for logo overlay</p>
-                    <p className="text-amber-600 dark:text-amber-400">• Note: QR codes with logos may have export restrictions due to browser security</p>
-                    <p className="text-amber-600 dark:text-amber-400">• Use &quot;Regenerate Without Logo&quot; button if you encounter export issues</p>
                   </div>
                 </div>
               </Card>
