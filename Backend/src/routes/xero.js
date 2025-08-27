@@ -691,8 +691,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         setIntegrationMessage(workspaceId, boardId, item.id, "Cancellation Type Item not found");
         throw new Error("Cancellation Type Item not found");
       }
-      const scheduledShiftDuration = (itemsValues['Scheduled Shift Duration(Hr.)'] > 0)
-        ? Number(itemsValues['Scheduled Shift Duration(Hr.)']).toFixed(1)
+      const scheduledShiftDuration = (invoiceValues['Scheduled Shift Duration(Hr.)'] > 0)
+        ? Number(invoiceValues['Scheduled Shift Duration(Hr.)']).toFixed(1)
         : 0;
       // Line 1: Direct Support - Hour based (Cancelled)
       const baseUnitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) / groupSize || 0;
