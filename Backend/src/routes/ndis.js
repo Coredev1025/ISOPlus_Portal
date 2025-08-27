@@ -452,8 +452,11 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
     }
     if (itemsValues['Job Status'] === 'Cancelled') {
         if (cancellationTypeValues) {
+            const scheduledShiftDuration = (itemsValues['Scheduled Shift Duration(Hr.)'] > 0)
+                ? Number(itemsValues['Scheduled Shift Duration(Hr.)']).toFixed(1)
+                : 0;
             updateValues.push({
-                data: formatValue(servicePlanValues.directSupportUnitPrice * ((cancellationTypeValues.billableToClient || 0) / 100) / groupSize),
+                data: formatValue(servicePlanValues.directSupportUnitPrice * scheduledShiftDuration * ((cancellationTypeValues.billableToClient || 0) / 100) / groupSize),
                 attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Cancellation Fee($)').attribute.id
             });
         } else {

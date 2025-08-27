@@ -687,13 +687,20 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         });
       }
     } else {
+      if (!cancellationTypeValues) {
+        setIntegrationMessage(workspaceId, boardId, item.id, "Cancellation Type Item not found");
+        throw new Error("Cancellation Type Item not found");
+      }
+      const scheduledShiftDuration = (invoiceValues['Scheduled Shift Duration(Hr.)'] > 0)
+        ? Number(invoiceValues['Scheduled Shift Duration(Hr.)']).toFixed(1)
+        : 0;
       // Line 1: Direct Support - Hour based (Cancelled)
       const baseUnitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) / groupSize || 0;
       const cancellationPercentage1 = Number(cancellationTypeValues?.billableToClient) || 0;
       const itemName1 = servicePlanValues?.directSupportItemName || '';
       const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
       let qty1 = 1;
-      const unitPrice1 = Number((baseUnitPrice1 * (cancellationPercentage1 / 100)).toFixed(2));
+      const unitPrice1 = Number((baseUnitPrice1 * (cancellationPercentage1 / 100) * scheduledShiftDuration).toFixed(2));
       const amount1 = formatValue(qty1 * unitPrice1);
       const amountValue1 = formatValue(Number(invoiceValues["Cancellation Fee($)"])) || 0;
 
@@ -725,7 +732,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const itemName3 = servicePlanValues?.providerTravelItemName || '';
       const itemNumber3 = servicePlanValues?.providerTravelItemNumber || '';
       const qty3 = 1;
-      const unitPrice3 = Number((baseUnitPrice3 * (cancellationPercentage1 / 100)).toFixed(2));
+      const unitPrice3 = Number((baseUnitPrice3 * (cancellationPercentage1 / 100) * scheduledShiftDuration).toFixed(2));
       const amount3 = formatValue(qty3 * unitPrice3);
 
       if (amount3 > 0) {
@@ -751,7 +758,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
       const itemNumber4 = servicePlanValues?.activityBasedTransportItemNumber || '';
       const qty4 = 1;
-      const unitPrice4 = Number((baseUnitPrice4 * (cancellationPercentage1 / 100)).toFixed(2));
+      const unitPrice4 = Number((baseUnitPrice4 * (cancellationPercentage1 / 100) * scheduledShiftDuration).toFixed(2));
       const amount4 = formatValue(qty4 * unitPrice4);
 
       if (amount4 > 0) {
@@ -777,7 +784,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
       const itemNumber5 = servicePlanValues?.centreCapitalCostsItemNumber || '';
       let qty5 = 1;
-      const unitPrice5 = Number((baseUnitPrice5 * (cancellationPercentage1 / 100)).toFixed(2));
+      const unitPrice5 = Number((baseUnitPrice5 * (cancellationPercentage1 / 100) * scheduledShiftDuration).toFixed(2));
       const amount5 = formatValue(qty5 * unitPrice5);
 
       if (baseUnitPrice5 > 0 && amount5 > 0) {
