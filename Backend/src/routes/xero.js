@@ -691,13 +691,13 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         setIntegrationMessage(workspaceId, boardId, item.id, "Cancellation Type Item not found");
         throw new Error("Cancellation Type Item not found");
       }
+      const cancellationPercentage1 = Number(cancellationTypeValues?.billableToClient) || 0;
       const scheduledShiftDuration = (invoiceValues['Scheduled Shift Duration(Hr.)'] > 0)
         ? Number(invoiceValues['Scheduled Shift Duration(Hr.)']).toFixed(1)
         : 0;
       if (servicePlanValues.directSupportShortNoticeCancellations === 'Y') {
         // Line 1: Direct Support - Hour based (Cancelled)
         const baseUnitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) / groupSize || 0;
-        const cancellationPercentage1 = Number(cancellationTypeValues?.billableToClient) || 0;
         const itemName1 = servicePlanValues?.directSupportItemName || '';
         const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
         let qty1 = 1;
@@ -739,7 +739,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             lineAmount: formatValue(amount1)
           });
         }
-
+      }
+      if (servicePlanValues.providerTravelShortNoticeCancellations === 'Y') {
         // Line 3: Provider Travel - Non-Labour Cost
         const baseUnitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) / groupSize || 0;
         const itemName3 = servicePlanValues?.providerTravelItemName || '';
@@ -770,7 +771,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             lineAmount: formatValue(amount3)
           });
         }
-
+      }
+      if (servicePlanValues.activityBasedTransportShortNoticeCancellations === 'Y') {
         // Line 4: Activity Based Transport
         const baseUnitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) / groupSize || 0;
         const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
@@ -801,7 +803,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             lineAmount: formatValue(amount4)
           });
         }
-
+      }
+      if (servicePlanValues.centreCapitalCostsShortNoticeCancellations === 'Y') {
         // Line 5: Centre Capital Costs
         const baseUnitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) / groupSize || 0;
         const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
