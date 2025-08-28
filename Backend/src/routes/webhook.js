@@ -859,7 +859,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
                     const amountValue5 = formatValue(Number(invoiceValues["Centre Capital Costs Amount($)"])) || 0;
                     const amount5 = formatValue(qty5 * unitPrice5);
-                    
+
                     if (unitPrice5 > 0 && amount5 > 0) {
                         let desc5 = itemName5;
                         if (itemNumber5) {
@@ -890,7 +890,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     const qty6 = Number(invoiceValues["Labour Travel Time (Min.) as per the Service Plan, regarding the Time Cap, if applicable."]) || 0;
                     const amountValue6 = formatValue(Number(invoiceValues["Labour Travel Time Amount($)"])) || 0;
                     const amount6 = formatValue(qty6 * unitPrice6);
-                    
+
                     if (unitPrice6 > 0 && amount6 > 0) {
                         const desc6 = 'Provider Travel - Labour Travel Time Costs';
 
@@ -911,7 +911,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
 
                     // Line 7: Allowances
-                    const unitPrice7 = Number(servicePlanValues?.usedAllowanceAmount) / groupSize || 0;
+                    const unitPrice7 = Number(invoiceValues['Used Allowance Amount($) as per the Service Plan']) / groupSize || 0;
                     const qty7 = 1;
                     const amountValue7 = formatValue(Number(invoiceValues["Allowances Amount($)"])) || 0;
                     const amount7 = formatValue(unitPrice7);
@@ -940,7 +940,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     const qty8 = Number(invoiceValues["Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)"]) || 0;
                     const amountValue8 = formatValue(Number(invoiceValues["Non-Face-to-Face Amount($)"])) || 0;
                     const amount8 = formatValue(qty8 * unitPrice8);
-                    
+
                     if (unitPrice8 > 0 && amount8 > 0) {
                         const desc8 = `Non-Face-to-Face Support - ${invoiceValues["Non-Face-to-Face Supports"]}`;
 
@@ -964,125 +964,146 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                         setIntegrationMessage(workspaceId, boardId, item.id, "Cancellation Type Item not found");
                         throw new Error("Cancellation Type Item not found");
                     }
+                    const cancellationPercentage1 = Number(cancellationTypeValues?.billableToClient) || 0;
                     const scheduledShiftDuration = (invoiceValues['Scheduled Shift Duration(Hr.)'] > 0)
                         ? Number(invoiceValues['Scheduled Shift Duration(Hr.)']).toFixed(1)
                         : 0;
-                    // Line 1: Direct Support - Hour based (Cancelled)
-                    const baseUnitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) / groupSize || 0;
-                    const cancellationPercentage1 = Number(cancellationTypeValues?.billableToClient) || 0;
-                    const itemName1 = servicePlanValues?.directSupportItemName || '';
-                    const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
-                    let qty1 = 1;
-                    const unitPrice1 = Number((baseUnitPrice1 * (cancellationPercentage1 / 100) * scheduledShiftDuration).toFixed(2));
-                    const amount1 = formatValue(qty1 * unitPrice1);
-                    const amountValue1 = formatValue(Number(invoiceValues["Cancellation Fee($)"])) || 0;
-
-                    if (amount1 > 0) {
-                        let desc1 = 'Cancellation Fee';
-                        if (itemName1) {
-                            desc1 += ` - ${itemName1}`;
-                        }
-                        if (itemNumber1) {
-                            desc1 += ` - ${itemNumber1}`;
+                    if (servicePlanValues.directSupportShortNoticeCancellations === 'Y') {
+                        // Line 1: Direct Support - Hour based (Cancelled)
+                        const baseUnitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) / groupSize || 0;
+                        const itemName1 = servicePlanValues?.directSupportItemName || '';
+                        const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
+                        let qty1 = 1;
+                        let unitPrice1, amount1;
+                        if (servicePlanValues?.directSupportUnit === "Hour(H)") {
+                            unitPrice1 = Number((baseUnitPrice1 * (cancellationPercentage1 / 100) * scheduledShiftDuration).toFixed(2));
+                        } else {
+                            const nonTimeBasedValue = Number(invoiceValues["Direct Support Value($) - Non Time Based Support"]) || 0;
+                            unitPrice1 = Number((nonTimeBasedValue * (cancellationPercentage1 / 100)).toFixed(2));
                         }
 
-                        if (parseFloat(formatValue(amountValue1)) != parseFloat(formatValue(amount1))) {
-                            setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                            throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                        }
+                        amount1 = formatValue(qty1 * unitPrice1);
+                        const amountValue1 = formatValue(Number(invoiceValues["Cancellation Fee($)"])) || 0;
 
-                        ordersArr.push([
-                            desc1,
-                            servicePlanValues?.directSupportUnit || ' ',
-                            formatValue(qty1),
-                            formatValue(unitPrice1),
-                            gstLabel,
-                            formatValue(amount1)
-                        ]);
-                        subTotal += Number(amount1);
+                        if (amount1 > 0) {
+                            let desc1 = 'Cancellation Fee';
+                            if (itemName1) {
+                                desc1 += ` - ${itemName1}`;
+                            }
+                            if (itemNumber1) {
+                                desc1 += ` - ${itemNumber1}`;
+                            }
+                            desc1 += ` - ${cancellationPercentage1}%`;
+
+                            if (parseFloat(formatValue(amountValue1)) != parseFloat(formatValue(amount1))) {
+                                setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+                                throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+                            }
+
+                            ordersArr.push([
+                                desc1,
+                                servicePlanValues?.directSupportUnit || ' ',
+                                formatValue(qty1),
+                                formatValue(unitPrice1),
+                                gstLabel,
+                                formatValue(amount1)
+                            ]);
+                            subTotal += Number(amount1);
+                        }
                     }
+                    if (servicePlanValues.providerTravelShortNoticeCancellations === 'Y') {
+                        // Line 3: Provider Travel - Non-Labour Cost
+                        const baseUnitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) / groupSize || 0;
+                        const itemName3 = servicePlanValues?.providerTravelItemName || '';
+                        const itemNumber3 = servicePlanValues?.providerTravelItemNumber || '';
+                        const qty3 = 1;
+                        const unitPrice3 = Number((baseUnitPrice3 * (cancellationPercentage1 / 100) * scheduledShiftDuration).toFixed(2));
+                        const amount3 = formatValue(qty3 * unitPrice3);
 
-                    // Line 3: Provider Travel - Non-Labour Cost
-                    const baseUnitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) / groupSize || 0;
-                    const itemName3 = servicePlanValues?.providerTravelItemName || '';
-                    const itemNumber3 = servicePlanValues?.providerTravelItemNumber || '';
-                    const qty3 = 1;
-                    const unitPrice3 = Number((baseUnitPrice3 * (cancellationPercentage1 / 100) * scheduledShiftDuration).toFixed(2));
-                    const amount3 = formatValue(qty3 * unitPrice3);
+                        if (amount3 > 0) {
+                            let desc3 = 'Cancellation Fee';
+                            if (itemName3) {
+                                desc3 += ` - ${itemName3}`;
+                            }
+                            if (itemNumber3) {
+                                desc3 += ` - ${itemNumber3}`;
+                            }
+                            desc3 += ` - ${cancellationPercentage1}%`;
 
-                    if (amount3 > 0) {
-                        let desc3 = 'Cancellation Fee';
-                        if (itemName3) {
-                            desc3 += ` - ${itemName3}`;
+                            ordersArr.push([
+                                desc3,
+                                servicePlanValues?.nonLabourTravelUnit || ' ',
+                                formatValue(qty3),
+                                formatValue(unitPrice3),
+                                gstLabel,
+                                formatValue(amount3)
+                            ]);
+                            subTotal += Number(amount3);
                         }
-                        if (itemNumber3) {
-                            desc3 += ` - ${itemNumber3}`;
-                        }
-
-                        ordersArr.push([
-                            desc3,
-                            servicePlanValues?.nonLabourTravelUnit || ' ',
-                            formatValue(qty3),
-                            formatValue(unitPrice3),
-                            gstLabel,
-                            formatValue(amount3)
-                        ]);
-                        subTotal += Number(amount3);
                     }
+                    if (servicePlanValues.activityBasedTransportShortNoticeCancellations === 'Y') {
+                        // Line 4: Activity Based Transport
+                        const baseUnitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) / groupSize || 0;
+                        const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
+                        const itemNumber4 = servicePlanValues?.activityBasedTransportItemNumber || '';
+                        const qty4 = 1;
+                        const unitPrice4 = Number((baseUnitPrice4 * (cancellationPercentage1 / 100) * scheduledShiftDuration).toFixed(2));
+                        const amount4 = formatValue(qty4 * unitPrice4);
+                        if (amount4 > 0) {
+                            let desc4 = 'Cancellation Fee';
+                            if (itemName4) {
+                                desc4 += ` - ${itemName4}`;
+                            }
+                            if (itemNumber4) {
+                                desc4 += ` - ${itemNumber4}`;
+                            }
+                            desc4 += ` - ${cancellationPercentage1}%`;
 
-                    // Line 4: Activity Based Transport
-                    const baseUnitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) / groupSize || 0;
-                    const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
-                    const itemNumber4 = servicePlanValues?.activityBasedTransportItemNumber || '';
-                    const qty4 = 1;
-                    const unitPrice4 = Number((baseUnitPrice4 * (cancellationPercentage1 / 100) * scheduledShiftDuration).toFixed(2));
-                    const amount4 = formatValue(qty4 * unitPrice4);
-                    if (amount4 > 0) {
-                        let desc4 = 'Cancellation Fee';
-                        if (itemName4) {
-                            desc4 += ` - ${itemName4}`;
+                            ordersArr.push([
+                                desc4,
+                                servicePlanValues?.activityBasedTransportUnit || ' ',
+                                formatValue(qty4),
+                                formatValue(unitPrice4),
+                                gstLabel,
+                                formatValue(amount4)
+                            ]);
+                            subTotal += Number(amount4);
                         }
-                        if (itemNumber4) {
-                            desc4 += ` - ${itemNumber4}`;
-                        }
-
-                        ordersArr.push([
-                            desc4,
-                            servicePlanValues?.activityBasedTransportUnit || ' ',
-                            formatValue(qty4),
-                            formatValue(unitPrice4),
-                            gstLabel,
-                            formatValue(amount4)
-                        ]);
-                        subTotal += Number(amount4);
                     }
-
-                    // Line 5: Centre Capital Costs
-                    const baseUnitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) / groupSize || 0;
-                    const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
-                    const itemNumber5 = servicePlanValues?.centreCapitalCostsItemNumber || '';
-                    let qty5 = 1;
-                    const unitPrice5 = Number((baseUnitPrice5 * (cancellationPercentage1 / 100) * scheduledShiftDuration).toFixed(2));
-                    const amount5 = formatValue(qty5 * unitPrice5);
-                    if (baseUnitPrice5 > 0 && amount5 > 0) {
-                        let desc5 = 'Cancellation Fee';
-                        if (itemName5) {
-                            desc5 += ` - ${itemName5}`;
+                    if (servicePlanValues.centreCapitalCostsShortNoticeCancellations === 'Y') {
+                        // Line 5: Centre Capital Costs
+                        const baseUnitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) / groupSize || 0;
+                        const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
+                        const itemNumber5 = servicePlanValues?.centreCapitalCostsItemNumber || '';
+                        let qty5 = 1;
+                        const unitPrice5 = Number((baseUnitPrice5 * (cancellationPercentage1 / 100) * scheduledShiftDuration).toFixed(2));
+                        const amount5 = formatValue(qty5 * unitPrice5);
+                        if (baseUnitPrice5 > 0 && amount5 > 0) {
+                            let desc5 = 'Cancellation Fee';
+                            if (itemName5) {
+                                desc5 += ` - ${itemName5}`;
+                            }
+                            if (itemNumber5) {
+                                desc5 += ` - ${itemNumber5}`;
+                            }
+                            desc5 += ` - ${cancellationPercentage1}%`;
+                            
+                            ordersArr.push([
+                                desc5,
+                                servicePlanValues?.centreCapitalCostsUnit || ' ',
+                                formatValue(qty5),
+                                formatValue(unitPrice5),
+                                gstLabel,
+                                formatValue(amount5)
+                            ]);
+                            subTotal += Number(amount5);
                         }
-                        if (itemNumber5) {
-                            desc5 += ` - ${itemNumber5}`;
-                        }
-
-                        ordersArr.push([
-                            desc5,
-                            servicePlanValues?.centreCapitalCostsUnit || ' ',
-                            formatValue(qty5),
-                            formatValue(unitPrice5),
-                            gstLabel,
-                            formatValue(amount5)
-                        ]);
-                        subTotal += Number(amount5);
                     }
+                }
+
+                if (ordersArr.length === 0) {
+                    await setIntegrationMessage(workspaceId, boardId, item.id, "There is nothing to invoice!");
+                    return res.status(200).json({ message: "There is nothing to invoice!" });
                 }
 
                 const orders = JSON.stringify(ordersArr);
