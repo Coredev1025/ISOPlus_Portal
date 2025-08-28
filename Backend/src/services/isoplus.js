@@ -1207,6 +1207,7 @@ export async function getParticipantsServicePlanReferencedItems(workspaceId, boa
                             "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
                             "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
                             "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
+                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations").data.toString(),
                         };
                     }
                     break;
@@ -1235,6 +1236,7 @@ export async function getParticipantsServicePlanReferencedItems(workspaceId, boa
                             "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
                             "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
                             "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
+                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations").data.toString(),
                         };
                     }
                     break;
@@ -1263,6 +1265,7 @@ export async function getParticipantsServicePlanReferencedItems(workspaceId, boa
                             "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
                             "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
                             "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
+                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations").data.toString(),
                         };
                     }
                     break;
@@ -1291,6 +1294,7 @@ export async function getParticipantsServicePlanReferencedItems(workspaceId, boa
                             "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
                             "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
                             "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
+                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations").data.toString(),
                         };
                     }
                     break;
@@ -1399,7 +1403,11 @@ export async function getMasterPlanReferencedItems(workspaceId, boardId, itemId)
                             usedAllowanceUnit: usedAllowanceUnit,
                             usedAllowanceAmount: usedAllowanceAmount,
                             nonFaceToFaceSupportUnit: nonFaceToFaceSupportUnit,
-                            nonFaceToFaceSupportUnitPrice: nonFaceToFaceSupportUnitPrice
+                            nonFaceToFaceSupportUnitPrice: nonFaceToFaceSupportUnitPrice,
+                            directSupportShortNoticeCancellations: directSupportValues.shortNoticeCancellations,
+                            providerTravelShortNoticeCancellations: providerTravelValues.shortNoticeCancellations,
+                            activityBasedTransportShortNoticeCancellations: activityBasedTransportValues.shortNoticeCancellations,
+                            centreCapitalCostsShortNoticeCancellations: centreCapitalCostsValues.shortNoticeCancellations,
                         };
                     }
                     break;
