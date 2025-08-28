@@ -402,13 +402,13 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
     }
     if (servicePlanValues.nonLabourTravelUnitPrice) {
         updateValues.push({
-            data: formatValue(servicePlanValues.nonLabourTravelUnitPrice * (itemsValues['Provider Travel - Non-Labour - Mileage (kms) as per the Service Plan, if a vehicle is used.'] || 0) + (itemsValues['Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied.'] || 0) / groupSize),
+            data: formatValue(servicePlanValues.nonLabourTravelUnitPrice * ((itemsValues['Provider Travel - Non-Labour - Mileage (kms) as per the Service Plan, if a vehicle is used.'] || 0) + (itemsValues['Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied.'] || 0)) / groupSize),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Provider Travel - Non-Labour Cost Amount($)').attribute.id
         });
     }
     if (servicePlanValues.activityBasedTransportUnitPrice) {
         updateValues.push({
-            data: formatValue(servicePlanValues.activityBasedTransportUnitPrice * (itemsValues['Activity Base Transport Mileage(Kms) as per the Service Plan, if a vehicle is used.'] || 0) + (itemsValues['Activity Base Transport Costs as per the Service Plan, if other costs are applied.'] || 0) / groupSize),
+            data: formatValue(servicePlanValues.activityBasedTransportUnitPrice * ((itemsValues['Activity Base Transport Mileage(Kms) as per the Service Plan, if a vehicle is used.'] || 0) + (itemsValues['Activity Base Transport Costs as per the Service Plan, if other costs are applied.'] || 0)) / groupSize),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Activity Base Transport Amount($)').attribute.id
         });
     }
@@ -440,7 +440,7 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
     }
     if (itemsValues['Used Allowance Amount($) as per the Service Plan']) {
         updateValues.push({
-            data: formatValue((servicePlanValues.usedAllowanceAmount || 0) / groupSize),
+            data: formatValue((itemsValues['Used Allowance Amount($) as per the Service Plan'] || 0) / groupSize),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Allowances Amount($)').attribute.id
         });
     }
@@ -451,14 +451,26 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
         });
     }
     if (itemsValues['Job Status'] === 'Cancelled') {
-        if (cancellationTypeValues) {
+        if (!cancellationTypeValues) {
+            setIntegrationMessage(workspaceId, boardId, items.id, "A cancellation type is required.");
+            return res.status(200).json({ error: 'A cancellation type is required.' });
+        }
+        if (servicePlanValues.directSupportShortNoticeCancellations === 'Y') {
             const scheduledShiftDuration = (itemsValues['Scheduled Shift Duration(Hr.)'] > 0)
                 ? Number(itemsValues['Scheduled Shift Duration(Hr.)']).toFixed(1)
                 : 0;
-            updateValues.push({
-                data: formatValue(servicePlanValues.directSupportUnitPrice * scheduledShiftDuration * ((cancellationTypeValues.billableToClient || 0) / 100) / groupSize),
-                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Cancellation Fee($)').attribute.id
-            });
+            if (servicePlanValues.directSupportUnit === 'Hour(H)') {
+                updateValues.push({
+                    data: formatValue(servicePlanValues.directSupportUnitPrice * scheduledShiftDuration * ((cancellationTypeValues.billableToClient || 0) / 100) / groupSize),
+                    attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Cancellation Fee($)').attribute.id
+                });
+            } else {
+                const nonTimeBasedValue = servicePlanValues?.directSupportUnitPrice * (itemsValues['Quantity (Direct Support - Non Time Based Support)'] || 0) / groupSize;
+                updateValues.push({
+                    data: formatValue(nonTimeBasedValue * ((cancellationTypeValues.billableToClient || 0) / 100)),
+                    attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Cancellation Fee($)').attribute.id
+                });
+            }
         } else {
             updateValues.push({
                 data: 0,
