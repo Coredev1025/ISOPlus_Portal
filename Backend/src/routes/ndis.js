@@ -10,9 +10,7 @@ const router = express.Router();
 
 function formatValue(val) {
     const num = Number(val);
-    if (Number.isInteger(num)) {
-        return num.toString();
-    } else if (!isNaN(num)) {
+    if (!isNaN(num)) {
         return num.toFixed(2);
     } else {
         return val;
