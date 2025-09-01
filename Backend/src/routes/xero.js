@@ -413,7 +413,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         const amount1 = formatValue(qty1 * unitPrice1);
         const amountValue1 = formatValue(Number(invoiceValues["Direct Support Value($) - Time Based Support"])) || 0;
 
-        if (unitPrice1 > 0 && qty1 > 0) {
+        if (amountValue1 > 0) {
           let desc1 = itemName1;
           if (itemNumber1) {
             desc1 += ` - ${itemNumber1}`;
@@ -454,7 +454,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         const amount2 = formatValue(qty2 * unitPrice2);
         const amountValue2 = formatValue(Number(invoiceValues["Direct Support Value($) - Non Time Based Support"])) || 0;
 
-        if (unitPrice2 > 0 && qty2 > 0) {
+        if (amountValue2 > 0) {
           let desc2 = itemName2;
           if (itemNumber2) {
             desc2 += ` - ${itemNumber2}`;
@@ -494,7 +494,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const amount3 = formatValue(qty3 * unitPrice3);
       const amountValue3 = formatValue(Number(invoiceValues["Provider Travel - Non-Labour Cost Amount($)"]) * unitPrice3) || 0;
 
-      if (unitPrice3 > 0 && qty3 > 0) {
+      if (amountValue3 > 0) {
         let desc3 = itemName3;
         if (itemNumber3) {
           desc3 += ` - ${itemNumber3}`;
@@ -536,7 +536,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const amount4 = formatValue(qty4 * unitPrice4);
       const amountValue4 = formatValue(Number(invoiceValues["Activity Base Transport Amount($)"]) * unitPrice4) || 0;
 
-      if (unitPrice4 > 0 && qty4 > 0) {
+      if (amountValue4 > 0) {
         let desc4 = itemName4;
         if (itemNumber4) {
           desc4 += ` - ${itemNumber4}`;
@@ -580,7 +580,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const amount5 = formatValue(qty5 * unitPrice5);
       const amountValue5 = formatValue(Number(invoiceValues["Centre Capital Costs Amount($)"])) || 0;
 
-      if (unitPrice5 > 0 && qty5 > 0) {
+      if (amountValue5 > 0) {
         let desc5 = itemName5;
         if (itemNumber5) {
           desc5 += ` - ${itemNumber5}`;
@@ -612,7 +612,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const amount6 = formatValue(qty6 * unitPrice6);
       const amountValue6 = formatValue(Number(invoiceValues["Labour Travel Time Amount($)"])) || 0;
 
-      if (unitPrice6 > 0 && qty6 > 0) {
+      if (amountValue6 > 0) {
         let desc6 = 'Provider Travel - Labour Travel Time Costs';
         if (servicePlanValues?.labourTravelTimeUnit) {
           desc6 += ` - ${servicePlanValues?.labourTravelTimeUnit}`;
@@ -638,7 +638,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const amount7 = unitPrice7;
       const amountValue7 = formatValue(Number(invoiceValues["Allowances Amount($)"])) || 0;
 
-      if (unitPrice7 > 0) {
+      if (amountValue7 > 0) {
         let desc7 = `Allowances - ${invoiceValues["Allowances"]}`;
         if (servicePlanValues?.usedAllowanceUnit) {
           desc7 += ` - ${servicePlanValues?.usedAllowanceUnit}`;
@@ -665,7 +665,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const amount8 = formatValue(qty8 * unitPrice8);
       const amountValue8 = formatValue(Number(invoiceValues["Non-Face-to-Face Amount($)"])) || 0;
 
-      if (unitPrice8 > 0 && qty8 > 0) {
+      if (amountValue8 > 0) {
         let desc8 = `Non-Face-to-Face Support - ${invoiceValues["Non-Face-to-Face Supports"]}`;
         if (servicePlanValues?.nonFaceToFaceSupportUnit) {
           desc8 += ` - ${servicePlanValues?.nonFaceToFaceSupportUnit}`;
@@ -710,7 +710,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         amount1 = formatValue(qty1 * unitPrice1);
         const amountValue1 = formatValue(Number(invoiceValues["Cancellation Fee($)"])) || 0;
 
-        if (amount1 > 0) {
+        if (amountValue1 > 0) {
           let desc1 = 'Cancellation Fee';
           if (itemName1) {
             desc1 += ` - ${itemName1}`;
