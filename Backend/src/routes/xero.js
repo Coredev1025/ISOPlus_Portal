@@ -100,7 +100,7 @@ function createContactPayload(values, isUpdate = false) {
 }
 
 async function handleError(err, workspaceId, boardId, item, req, entityType = 'item') {
-  error('Xero-Service', `Error processing ${entityType}`, err);
+  error('Xero-Service', `Error processing ${entityType} in Xero`, err);
   if (item) {
     await setIntegrationMessage(
       workspaceId,
@@ -120,7 +120,7 @@ async function handleError(err, workspaceId, boardId, item, req, entityType = 'i
   return {
     status: 200,
     body: {
-      message: `Error processing ${entityType}`,
+      message: `Error processing ${entityType} in Xero`,
       error: err.message
     }
   };
@@ -327,14 +327,20 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       throw new Error("Master plan information is required. Master plan is missing a master plan reference.");
     }
 
+    let { firstName, lastName } = participantProfileValues;
+    firstName = firstName.trim();
+    lastName = lastName.trim();
     let contact = await getContactByEmail(participantProfileValues.email);
     if (!contact) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
+      if(!firstName || !lastName) {
+        throw new Error("First name and last name are required for NDIS invoice contact creation. Please ensure the participant profile contains both first and last name.");
+      }
       contact = await createOrUpdateContact({
-        name: participantProfileValues.fullName || participantProfileValues.firstName + ' ' + participantProfileValues.lastName,
+        name: participantProfileValues.fullName || firstName + ' ' + lastName,
         phones: [{ phoneType: 'DEFAULT', phoneNumber: participantProfileValues.Phone }],
-        firstName: participantProfileValues.firstName || ' ',
-        lastName: participantProfileValues.lastName || ' ',
+        firstName: firstName,
+        lastName: lastName,
         addresses: [
           {
             addressType: 'POBOX',
@@ -356,14 +362,13 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
     } else {
       const xeroUpdatedDate = new Date(contact.updatedDateUTC);
       const isoplusUpdatedDate = new Date(participantProfileValues.updatedAt);
-
-      if (xeroUpdatedDate < isoplusUpdatedDate) {
+      if (xeroUpdatedDate < isoplusUpdatedDate && firstName && lastName) {
         contact = await createOrUpdateContact({
           contactID: contact.contactID,
-          name: participantProfileValues.fullName || participantProfileValues.firstName + ' ' + participantProfileValues.lastName ,
+          name: participantProfileValues.fullName || firstName + ' ' + lastName,
           phones: [{ phoneType: 'DEFAULT', phoneNumber: participantProfileValues.Phone }],
-          firstName: participantProfileValues.firstName || ' ',
-          lastName: participantProfileValues.lastName || ' ',
+          firstName: firstName,
+          lastName: lastName,
           addresses: [
             {
               addressType: 'POBOX',
@@ -1292,17 +1297,8 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
 
     res.json(createdQuote);
   } catch (err) {
-    error('Xero-Service', 'Error creating quote', err);
-    if (item) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "An error occurred whilst creating the quote. Please contact ISO+™ support. Further information: " + err.message);
-    }
-    logAuditTrail({
-      workspaceId,
-      action: "Create Xero Quote",
-      detail: `Error creating quote: ${err.message}`,
-      req
-    });
-    res.status(200).json({ message: 'Error creating quote', error: err.message });
+    const result = await handleError(err, workspaceId, boardId, item, req, 'quote');
+    res.status(200).json(result.body);
   }
 });
 
