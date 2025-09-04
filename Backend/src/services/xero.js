@@ -217,16 +217,23 @@ export async function createInvoice(invoice) {
 
         return response.body.invoices[0];
     } catch (err) {
-        error('Xero-Service', 'Invoice creation failed:', err);
         let jsonString = Object.values(err).join('');
         let errorMessage = JSON.parse(jsonString);
         if (errorMessage.response?.statusCode === 403) {
             throw new Error('Authentication failed. Please re-authenticate.');
         }
+        if(errorMessage.body?.Type === 'ValidationException') {
+            let validationErrors = "";
+            errorMessage.body.Elements.forEach(element => {
+                validationErrors += element.ValidationErrors.map(error => error.Message).join(', ');
+            });
+            validationErrors = validationErrors.trim();
+            throw new Error(`Xero Invoice Validation Errors: ${validationErrors}`);
+        }
         if (errorMessage.response?.body) {
             throw new Error(`Xero API Error: ${JSON.stringify(errorMessage.response.body)}`);
         }
-        throw new Error(`Invoice creation failed: ${err.message}`);
+        throw new Error(`Xero Invoice creation failed: ${err.message}`);
     }
 }
 
