@@ -11,11 +11,14 @@ const router = express.Router();
 function formatValue(val) {
     const num = Number(val);
     if (!isNaN(num)) {
-        return num.toFixed(2);
+      const factor = Math.pow(10, 2);
+      const result = Math.round(num * factor) / factor;
+  
+      return result.toFixed(2);
     } else {
-        return val;
+      return val;
     }
-}
+  }
 
 function extractUnit(unitString) {
     switch (unitString) {
@@ -370,7 +373,56 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
     const isGroupService = participationTypeValues?.participationType == 'Group Service';
     const groupSize = isGroupService ? Number(itemsValues['Group Size']) || 1 : 1;
 
-    if (servicePlanValues.directSupportUnit == 'Hour(H)') {
+    await setIntegrationMessage(workspaceId, boardId, items.id, "Calculating values...");
+    await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${items.id}`,
+        { values: [
+            {
+                data: 0,
+                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Direct Support Value($) - Time Based Support').attribute.id
+            },
+            {
+                data: 0,
+                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Direct Support Value($) - Non Time Based Support').attribute.id
+            },
+            {
+                data: 0,
+                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Provider Travel - Non-Labour Cost Amount($)').attribute.id
+            },
+            {
+                data: 0,
+                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Activity Base Transport Amount($)').attribute.id
+            },
+            {
+                data: 0,
+                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Centre Capital Costs Amount($)').attribute.id
+            },
+            {
+                data: 0,
+                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Labour Travel Time Amount($)').attribute.id
+            },
+            {
+                data: 0,
+                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Allowances Amount($)').attribute.id
+            },
+            {
+                data: 0,
+                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Non-Face-to-Face Amount($)').attribute.id
+            },
+            {
+                data: 0,
+                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Cancellation Fee($)').attribute.id
+            }
+        ] },
+        {
+            headers: {
+                "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-API-Version": "2025-02-26.morava",
+            }
+        }
+    );
+    if (servicePlanValues?.directSupportUnit == 'Hour(H)') {
         updateValues.push({
             data: (() => {
                 const duration = Number(itemsValues['Actual Shift Duration(Hr.)']);
@@ -390,7 +442,7 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
         });
     } else {
         updateValues.push({
-            data: formatValue(servicePlanValues?.directSupportUnitPrice * (itemsValues['Quantity (Direct Support - Non Time Based Support)'] || 0) / groupSize),
+            data: formatValue(servicePlanValues?.directSupportUnitPrice * (itemsValues['Quantity (Direct Support - Non Time Based Support)'] || 0)),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Direct Support Value($) - Non Time Based Support').attribute.id
         });
         updateValues.push({
@@ -398,19 +450,19 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Direct Support Value($) - Time Based Support').attribute.id
         });
     }
-    if (servicePlanValues.nonLabourTravelUnitPrice) {
+    if (servicePlanValues?.nonLabourTravelUnitPrice) {
         updateValues.push({
-            data: formatValue(servicePlanValues.nonLabourTravelUnitPrice * ((itemsValues['Provider Travel - Non-Labour - Mileage (kms) as per the Service Plan, if a vehicle is used.'] || 0) + (itemsValues['Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied.'] || 0)) / groupSize),
+            data: formatValue(servicePlanValues.nonLabourTravelUnitPrice * ((itemsValues['Provider Travel - Non-Labour - Mileage (kms) as per the Service Plan, if a vehicle is used.'] || 0) + (itemsValues['Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied.'] || 0))),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Provider Travel - Non-Labour Cost Amount($)').attribute.id
         });
     }
-    if (servicePlanValues.activityBasedTransportUnitPrice) {
+    if (servicePlanValues?.activityBasedTransportUnitPrice) {
         updateValues.push({
-            data: formatValue(servicePlanValues.activityBasedTransportUnitPrice * ((itemsValues['Activity Base Transport Mileage(Kms) as per the Service Plan, if a vehicle is used.'] || 0) + (itemsValues['Activity Base Transport Costs as per the Service Plan, if other costs are applied.'] || 0)) / groupSize),
+            data: formatValue(servicePlanValues.activityBasedTransportUnitPrice * ((itemsValues['Activity Base Transport Mileage(Kms) as per the Service Plan, if a vehicle is used.'] || 0) + (itemsValues['Activity Base Transport Costs as per the Service Plan, if other costs are applied.'] || 0))),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Activity Base Transport Amount($)').attribute.id
         });
     }
-    if (servicePlanValues.centreCapitalCostsUnitPrice) {
+    if (servicePlanValues?.centreCapitalCostsUnitPrice) {
         updateValues.push({
             data: (() => {
                 const duration = Number(itemsValues['Actual Shift Duration(Hr.)']);
@@ -420,7 +472,7 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
                 } else {
                     qty = 0;
                 }
-                return formatValue(servicePlanValues.centreCapitalCostsUnitPrice * qty / groupSize);
+                return formatValue(servicePlanValues.centreCapitalCostsUnitPrice * qty);
             })(),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Centre Capital Costs Amount($)').attribute.id
         });
@@ -430,21 +482,21 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Centre Capital Costs Amount($)').attribute.id
         });
     }
-    if (servicePlanValues.labourTravelTimeUnitPrice) {
+    if (servicePlanValues?.labourTravelTimeUnitPrice) {
         updateValues.push({
-            data: formatValue(servicePlanValues.labourTravelTimeUnitPrice * (itemsValues['Labour Travel Time (Min.) as per the Service Plan, regarding the Time Cap, if applicable.'] || 0) / groupSize),
+            data: formatValue(servicePlanValues.labourTravelTimeUnitPrice * (itemsValues['Labour Travel Time (Min.) as per the Service Plan, regarding the Time Cap, if applicable.'] || 0)),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Labour Travel Time Amount($)').attribute.id
         });
     }
     if (itemsValues['Used Allowance Amount($) as per the Service Plan']) {
         updateValues.push({
-            data: formatValue((itemsValues['Used Allowance Amount($) as per the Service Plan'] || 0) / groupSize),
+            data: formatValue((itemsValues['Used Allowance Amount($) as per the Service Plan'] || 0)),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Allowances Amount($)').attribute.id
         });
     }
-    if (servicePlanValues.nonFaceToFaceSupportUnitPrice) {
+    if (servicePlanValues?.nonFaceToFaceSupportUnitPrice) {
         updateValues.push({
-            data: formatValue(servicePlanValues.nonFaceToFaceSupportUnitPrice * (itemsValues['Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)'] || 0) / groupSize),
+            data: formatValue(servicePlanValues.nonFaceToFaceSupportUnitPrice * (itemsValues['Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)'] || 0)),
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Non-Face-to-Face Amount($)').attribute.id
         });
     }
@@ -453,28 +505,31 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
             setIntegrationMessage(workspaceId, boardId, items.id, "A cancellation type is required.");
             return res.status(200).json({ error: 'A cancellation type is required.' });
         }
-        if (servicePlanValues.directSupportShortNoticeCancellations === 'Y') {
-            const scheduledShiftDuration = (itemsValues['Scheduled Shift Duration(Hr.)'] > 0)
-                ? Number(itemsValues['Scheduled Shift Duration(Hr.)']).toFixed(1)
-                : 0;
-            if (servicePlanValues.directSupportUnit === 'Hour(H)') {
-                updateValues.push({
-                    data: formatValue(servicePlanValues.directSupportUnitPrice * scheduledShiftDuration * ((cancellationTypeValues.billableToClient || 0) / 100) / groupSize),
-                    attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Cancellation Fee($)').attribute.id
-                });
+        const cancellationPercentage = Number(cancellationTypeValues?.billableToClient) / 100 || 0;
+        const scheduledShiftDuration = (itemsValues['Scheduled Shift Duration(Hr.)'] > 0)
+            ? Number(itemsValues['Scheduled Shift Duration(Hr.)']).toFixed(1)
+            : 0;
+        let cancellationFee = 0;
+        if (servicePlanValues?.directSupportShortNoticeCancellations === 'Y') {
+            if (servicePlanValues?.directSupportUnit === 'Hour(H)') {
+                cancellationFee += Number(formatValue(Number(formatValue(servicePlanValues.directSupportUnitPrice * cancellationPercentage / groupSize)) * scheduledShiftDuration));
             } else {
-                const nonTimeBasedValue = servicePlanValues?.directSupportUnitPrice * (itemsValues['Quantity (Direct Support - Non Time Based Support)'] || 0) / groupSize;
-                updateValues.push({
-                    data: formatValue(nonTimeBasedValue * ((cancellationTypeValues.billableToClient || 0) / 100)),
-                    attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Cancellation Fee($)').attribute.id
-                });
+                cancellationFee += Number(formatValue(Number(formatValue(servicePlanValues.directSupportUnitPrice * cancellationPercentage)) * (itemsValues['Quantity (Direct Support - Non Time Based Support)'] || 0)));
             }
-        } else {
-            updateValues.push({
-                data: 0,
-                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Cancellation Fee($)').attribute.id
-            });
         }
+        if (servicePlanValues?.providerTravelShortNoticeCancellations === 'Y') {
+            cancellationFee += Number(formatValue(Number(formatValue(servicePlanValues.nonLabourTravelUnitPrice * cancellationPercentage)) * scheduledShiftDuration));
+        }
+        if (servicePlanValues?.activityBasedTransportShortNoticeCancellations === 'Y') {
+            cancellationFee += Number(formatValue(Number(formatValue(servicePlanValues.activityBasedTransportUnitPrice * cancellationPercentage)) * scheduledShiftDuration));
+        }
+        if (servicePlanValues?.centreCapitalCostsShortNoticeCancellations === 'Y') {
+            cancellationFee += Number(formatValue(Number(formatValue(servicePlanValues.centreCapitalCostsUnitPrice * cancellationPercentage)) * scheduledShiftDuration));
+        }
+        updateValues.push({
+            data: formatValue(cancellationFee),
+            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Cancellation Fee($)').attribute.id
+        });
     }
     if (fundValues) {
         updateValues.push({

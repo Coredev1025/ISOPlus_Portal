@@ -1382,20 +1382,20 @@ export async function getMasterPlanReferencedItems(workspaceId, boardId, itemId)
                         }
 
                         servicePlanValues = {
-                            directSupportItemNumber: directSupportValues.itemNumber,
-                            directSupportItemName: directSupportValues.itemName,
+                            directSupportItemNumber: directSupportValues?.itemNumber || '',
+                            directSupportItemName: directSupportValues?.itemName || '',
                             directSupportUnit: directSupportUnit,
                             directSupportUnitPrice: directSupportUnitPrice,
-                            providerTravelItemNumber: providerTravelValues.itemNumber,
-                            providerTravelItemName: providerTravelValues.itemName,
+                            providerTravelItemNumber: providerTravelValues?.itemNumber || '',
+                            providerTravelItemName: providerTravelValues?.itemName || '',
                             nonLabourTravelUnit: nonLabourTravelUnit,
                             nonLabourTravelUnitPrice: nonLabourTravelUnitPrice,
-                            activityBasedTransportItemNumber: activityBasedTransportValues.itemNumber,
-                            activityBasedTransportItemName: activityBasedTransportValues.itemName,
+                            activityBasedTransportItemNumber: activityBasedTransportValues?.itemNumber || '',
+                            activityBasedTransportItemName: activityBasedTransportValues?.itemName || '',
                             activityBasedTransportUnit: activityBasedTransportUnit,
                             activityBasedTransportUnitPrice: activityBasedTransportUnitPrice,
-                            centreCapitalCostsItemNumber: centreCapitalCostsValues.itemNumber,
-                            centreCapitalCostsItemName: centreCapitalCostsValues.itemName,
+                            centreCapitalCostsItemNumber: centreCapitalCostsValues?.itemNumber || '',
+                            centreCapitalCostsItemName: centreCapitalCostsValues?.itemName || '',
                             centreCapitalCostsUnit: centreCapitalCostsUnit,
                             centreCapitalCostsUnitPrice: centreCapitalCostsUnitPrice,
                             labourTravelTimeUnit: labourTravelTimeUnit,
@@ -1404,10 +1404,10 @@ export async function getMasterPlanReferencedItems(workspaceId, boardId, itemId)
                             usedAllowanceAmount: usedAllowanceAmount,
                             nonFaceToFaceSupportUnit: nonFaceToFaceSupportUnit,
                             nonFaceToFaceSupportUnitPrice: nonFaceToFaceSupportUnitPrice,
-                            directSupportShortNoticeCancellations: directSupportValues.shortNoticeCancellations,
-                            providerTravelShortNoticeCancellations: providerTravelValues.shortNoticeCancellations,
-                            activityBasedTransportShortNoticeCancellations: activityBasedTransportValues.shortNoticeCancellations,
-                            centreCapitalCostsShortNoticeCancellations: centreCapitalCostsValues.shortNoticeCancellations,
+                            directSupportShortNoticeCancellations: directSupportValues?.shortNoticeCancellations || '',
+                            providerTravelShortNoticeCancellations: providerTravelValues?.shortNoticeCancellations || '',
+                            activityBasedTransportShortNoticeCancellations: activityBasedTransportValues?.shortNoticeCancellations || '',
+                            centreCapitalCostsShortNoticeCancellations: centreCapitalCostsValues?.shortNoticeCancellations || '',
                         };
                     }
                     break;
@@ -1453,6 +1453,7 @@ export async function getMasterPlanReferencedItems(workspaceId, boardId, itemId)
                             address: values.find(v => v.attribute.name === "Address")?.data?.toString() || '',
                             firstName: values.find(v => v.attribute.name === "First Name")?.data?.toString() || '',
                             lastName: values.find(v => v.attribute.name === "Last Name")?.data?.toString() || '',
+                            fullName: values.find(v => v.attribute.name === "Full Name/Preferred Name")?.data?.toString() || '',
                         };
                     }
                     break;
