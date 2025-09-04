@@ -79,6 +79,9 @@ const logger = winston.createLogger({
 const log = (level, source, message, meta = {}, req = {}) => {
   const ip = req.ip?.split(':').pop() || 'N/A';
   const email = req.user?.email || 'N/A';
+  if(typeof meta === 'string') {
+    meta = JSON.parse(meta);
+  }
   logger.log(level, message, { source, ip, email, ...meta });
 };
 
