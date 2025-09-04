@@ -45,7 +45,10 @@ async function validatePayload(payload, req) {
 function formatValue(val) {
   const num = Number(val);
   if (!isNaN(num)) {
-    return num.toFixed(2);
+    const factor = Math.pow(10, 2);
+    const result = Math.round(num * factor) / factor;
+
+    return result.toFixed(2);
   } else {
     return val;
   }
@@ -302,7 +305,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     res.json(createdInvoice);
   } catch (err) {
     const result = await handleError(err, workspaceId, boardId, item, req, 'invoice');
-    res.status(result.status).json(result.body);
+    res.status(200).json(result.body);
   }
 });
 
@@ -328,10 +331,10 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
     if (!contact) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
       contact = await createOrUpdateContact({
-        name: participantProfileValues.firstName + ' ' + participantProfileValues.lastName,
+        name: participantProfileValues.fullName || participantProfileValues.firstName + ' ' + participantProfileValues.lastName,
         phones: [{ phoneType: 'DEFAULT', phoneNumber: participantProfileValues.Phone }],
-        firstName: participantProfileValues.firstName,
-        lastName: participantProfileValues.lastName,
+        firstName: participantProfileValues.firstName || ' ',
+        lastName: participantProfileValues.lastName || ' ',
         addresses: [
           {
             addressType: 'POBOX',
@@ -357,10 +360,10 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       if (xeroUpdatedDate < isoplusUpdatedDate) {
         contact = await createOrUpdateContact({
           contactID: contact.contactID,
-          name: participantProfileValues.firstName + ' ' + participantProfileValues.lastName,
+          name: participantProfileValues.fullName || participantProfileValues.firstName + ' ' + participantProfileValues.lastName ,
           phones: [{ phoneType: 'DEFAULT', phoneNumber: participantProfileValues.Phone }],
-          firstName: participantProfileValues.firstName,
-          lastName: participantProfileValues.lastName,
+          firstName: participantProfileValues.firstName || ' ',
+          lastName: participantProfileValues.lastName || ' ',
           addresses: [
             {
               addressType: 'POBOX',
@@ -437,15 +440,14 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             description: desc1,
             quantity: formatValue(qty1),
             unitAmount: unitPrice1,
-            taxType: gstType,
-            lineAmount: formatValue(amount1)
+            taxType: gstType
           });
         }
       }
 
       // Line 2: Direct Support - Non Hour based
       if (servicePlanValues?.directSupportUnit !== "Hour(H)") {
-        const unitPrice2 = Number(servicePlanValues?.directSupportUnitPrice) / groupSize || 0;
+        const unitPrice2 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
         const itemNumber2 = servicePlanValues?.directSupportItemNumber || '';
         const itemName2 = servicePlanValues?.directSupportItemName || '';
         const quantity2 = invoiceValues["Quantity (Direct Support - Non Time Based Support)"] || 0;
@@ -478,14 +480,13 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             description: desc2,
             quantity: formatValue(qty2),
             unitAmount: unitPrice2,
-            taxType: gstType,
-            lineAmount: formatValue(amount2)
+            taxType: gstType
           });
         }
       }
 
       // Line 3: Provider Travel - Non-Labour Cost
-      const unitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) / groupSize || 0;
+      const unitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) || 0;
       const mileage3 = invoiceValues["Provider Travel - Non-Labour - Mileage (kms) as per the Service Plan, if a Vehicle is Used."] || '';
       const others3 = invoiceValues["Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied."] || '';
       const itemName3 = servicePlanValues?.providerTravelItemName || '';
@@ -521,13 +522,12 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           description: desc3,
           quantity: formatValue(qty3),
           unitAmount: unitPrice3,
-          taxType: gstType,
-          lineAmount: formatValue(amount3)
+          taxType: gstType
         });
       }
 
       // Line 4: Activity Based Transport
-      const unitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) / groupSize || 0;
+      const unitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) || 0;
       const mileage4 = invoiceValues["Activity Base Transport Mileage(Kms) as per the Service Plan, if a Vehicle is Used."] || '';
       const others4 = invoiceValues["Activity Base Transport Costs as per the Service Plan, if other costs are applied."] || '';
       const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
@@ -563,13 +563,12 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           description: desc4,
           quantity: formatValue(qty4),
           unitAmount: unitPrice4,
-          taxType: gstType,
-          lineAmount: formatValue(amount4)
+          taxType: gstType
         });
       }
 
       // Line 5: Centre Capital Costs
-      const unitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) / groupSize || 0;
+      const unitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) || 0;
       const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
       const itemNumber5 = servicePlanValues?.centreCapitalCostsItemNumber || '';
       let qty5 = 0;
@@ -601,13 +600,12 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           description: desc5,
           quantity: formatValue(qty5),
           unitAmount: unitPrice5,
-          taxType: gstType,
-          lineAmount: formatValue(amount5)
+          taxType: gstType
         });
       }
 
       // Line 6: Labour Travel Time
-      const unitPrice6 = Number(servicePlanValues?.labourTravelTimeUnitPrice) / groupSize || 0;
+      const unitPrice6 = Number(servicePlanValues?.labourTravelTimeUnitPrice) || 0;
       const qty6 = Number(invoiceValues["Labour Travel Time (Min.) as per the Service Plan, regarding the Time Cap, if applicable."]) || 0;
       const amount6 = formatValue(qty6 * unitPrice6);
       const amountValue6 = formatValue(Number(invoiceValues["Labour Travel Time Amount($)"])) || 0;
@@ -627,13 +625,12 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           description: desc6,
           quantity: formatValue(qty6),
           unitAmount: unitPrice6,
-          taxType: gstType,
-          lineAmount: formatValue(amount6)
+          taxType: gstType
         });
       }
 
       // Line 7: Allowances
-      const unitPrice7 = Number(invoiceValues['Used Allowance Amount($) as per the Service Plan']) / groupSize || 0;
+      const unitPrice7 = Number(invoiceValues['Used Allowance Amount($) as per the Service Plan']) || 0;
       const qty7 = 1;
       const amount7 = unitPrice7;
       const amountValue7 = formatValue(Number(invoiceValues["Allowances Amount($)"])) || 0;
@@ -654,13 +651,12 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           description: desc7,
           quantity: formatValue(qty7),
           unitAmount: unitPrice7,
-          taxType: gstType,
-          lineAmount: formatValue(amount7)
+          taxType: gstType
         });
       }
 
       // Line 8: Non-Face-to-Face Support
-      const unitPrice8 = Number(servicePlanValues?.nonFaceToFaceSupportUnitPrice) / groupSize || 0;
+      const unitPrice8 = Number(servicePlanValues?.nonFaceToFaceSupportUnitPrice) || 0;
       const qty8 = Number(invoiceValues["Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)"]) || 0;
       const amount8 = formatValue(qty8 * unitPrice8);
       const amountValue8 = formatValue(Number(invoiceValues["Non-Face-to-Face Amount($)"])) || 0;
@@ -680,8 +676,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           description: desc8,
           quantity: formatValue(qty8),
           unitAmount: unitPrice8,
-          taxType: gstType,
-          lineAmount: formatValue(amount8)
+          taxType: gstType
         });
       }
     } else {
@@ -693,22 +688,24 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       const scheduledShiftDuration = (invoiceValues['Scheduled Shift Duration(Hr.)'] > 0)
         ? Number(invoiceValues['Scheduled Shift Duration(Hr.)']).toFixed(1)
         : 0;
+      let totalCancellationFee = 0;
+      const amountValue1 = formatValue(Number(invoiceValues["Cancellation Fee($)"])) || 0;
       if (servicePlanValues.directSupportShortNoticeCancellations === 'Y') {
         // Line 1: Direct Support - Hour based (Cancelled)
         const baseUnitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) / groupSize || 0;
         const itemName1 = servicePlanValues?.directSupportItemName || '';
         const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
-        let qty1 = 1;
+        let qty1 = scheduledShiftDuration;
         let unitPrice1, amount1;
         if (servicePlanValues?.directSupportUnit === "Hour(H)") {
-          unitPrice1 = Number((baseUnitPrice1 * (cancellationPercentage1 / 100) * scheduledShiftDuration).toFixed(2));
+          unitPrice1 = Number((baseUnitPrice1 * (cancellationPercentage1 / 100)).toFixed(2));
         } else {
-          const nonTimeBasedValue = Number(invoiceValues["Direct Support Value($) - Non Time Based Support"]) || 0;
+          const nonTimeBasedValue = Number(servicePlanValues.directSupportUnitPrice) || 0;
           unitPrice1 = Number((nonTimeBasedValue * (cancellationPercentage1 / 100)).toFixed(2));
+          qty1 = Number(invoiceValues["Quantity (Direct Support - Non Time Based Support)"]) || 0;
         }
 
         amount1 = formatValue(qty1 * unitPrice1);
-        const amountValue1 = formatValue(Number(invoiceValues["Cancellation Fee($)"])) || 0;
 
         if (amountValue1 > 0) {
           let desc1 = 'Cancellation Fee';
@@ -724,27 +721,22 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             desc1 += ` - ${servicePlanValues.directSupportUnit}`;
           }
 
-          if (parseFloat(formatValue(amountValue1)) != parseFloat(formatValue(amount1))) {
-            setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-            throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-          }
-
           lineItems.push({
             description: desc1,
             quantity: formatValue(qty1),
             unitAmount: unitPrice1,
-            taxType: gstType,
-            lineAmount: formatValue(amount1)
+            taxType: gstType
           });
+          totalCancellationFee += Number(amount1);
         }
       }
       if (servicePlanValues.providerTravelShortNoticeCancellations === 'Y') {
         // Line 3: Provider Travel - Non-Labour Cost
-        const baseUnitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) / groupSize || 0;
+        const baseUnitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) || 0;
         const itemName3 = servicePlanValues?.providerTravelItemName || '';
         const itemNumber3 = servicePlanValues?.providerTravelItemNumber || '';
-        const qty3 = 1;
-        const unitPrice3 = Number((baseUnitPrice3 * (cancellationPercentage1 / 100) * scheduledShiftDuration).toFixed(2));
+        const qty3 = scheduledShiftDuration;
+        const unitPrice3 = Number((baseUnitPrice3 * (cancellationPercentage1 / 100)).toFixed(2));
         const amount3 = formatValue(qty3 * unitPrice3);
 
         if (amount3 > 0) {
@@ -765,18 +757,18 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             description: desc3,
             quantity: formatValue(qty3),
             unitAmount: unitPrice3,
-            taxType: gstType,
-            lineAmount: formatValue(amount3)
+            taxType: gstType
           });
+          totalCancellationFee += Number(amount3);
         }
       }
       if (servicePlanValues.activityBasedTransportShortNoticeCancellations === 'Y') {
         // Line 4: Activity Based Transport
-        const baseUnitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) / groupSize || 0;
+        const baseUnitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) || 0;
         const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
         const itemNumber4 = servicePlanValues?.activityBasedTransportItemNumber || '';
-        const qty4 = 1;
-        const unitPrice4 = Number((baseUnitPrice4 * (cancellationPercentage1 / 100) * scheduledShiftDuration).toFixed(2));
+        const qty4 = scheduledShiftDuration;
+        const unitPrice4 = Number((baseUnitPrice4 * (cancellationPercentage1 / 100)).toFixed(2));
         const amount4 = formatValue(qty4 * unitPrice4);
 
         if (amount4 > 0) {
@@ -797,18 +789,18 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             description: desc4,
             quantity: formatValue(qty4),
             unitAmount: unitPrice4,
-            taxType: gstType,
-            lineAmount: formatValue(amount4)
+            taxType: gstType
           });
+          totalCancellationFee += Number(amount4);
         }
       }
       if (servicePlanValues.centreCapitalCostsShortNoticeCancellations === 'Y') {
         // Line 5: Centre Capital Costs
-        const baseUnitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) / groupSize || 0;
+        const baseUnitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) || 0;
         const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
         const itemNumber5 = servicePlanValues?.centreCapitalCostsItemNumber || '';
-        let qty5 = 1;
-        const unitPrice5 = Number((baseUnitPrice5 * (cancellationPercentage1 / 100) * scheduledShiftDuration).toFixed(2));
+        let qty5 = scheduledShiftDuration;
+        const unitPrice5 = Number((baseUnitPrice5 * (cancellationPercentage1 / 100)).toFixed(2));
         const amount5 = formatValue(qty5 * unitPrice5);
 
         if (baseUnitPrice5 > 0 && amount5 > 0) {
@@ -829,10 +821,14 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             description: desc5,
             quantity: formatValue(qty5),
             unitAmount: unitPrice5,
-            taxType: gstType,
-            lineAmount: formatValue(amount5)
+            taxType: gstType
           });
+          totalCancellationFee += Number(amount5);
         }
+      }
+      if (parseFloat(formatValue(amountValue1)) != parseFloat(formatValue(totalCancellationFee))) {
+        setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+        throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
       }
     }
 
@@ -858,7 +854,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
     res.json(createdInvoice);
   } catch (err) {
     const result = await handleError(err, workspaceId, boardId, item, req, 'invoice');
-    res.status(result.status).json(result.body);
+    res.status(200).json(result.body);
   }
 });
 
@@ -916,7 +912,7 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
     res.json(contact);
   } catch (err) {
     const result = await handleError(err, workspaceId, boardId, item, req, 'contact');
-    res.status(result.status).json(result.body);
+    res.status(200).json(result.body);
   }
 });
 
@@ -970,7 +966,7 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
     res.json(contact);
   } catch (err) {
     const result = await handleError(err, workspaceId, boardId, item, req, 'contractor');
-    res.status(result.status).json(result.body);
+    res.status(200).json(result.body);
   }
 });
 
@@ -1106,7 +1102,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     res.json(createdQuote);
   } catch (err) {
     const result = await handleError(err, workspaceId, boardId, item, req, 'quote');
-    res.status(result.status).json(result.body);
+    res.status(200).json(result.body);
   }
 });
 
@@ -1279,7 +1275,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
     const { error: validationError } = Item.validate('Quote', mappedQuote);
     if (validationError) {
       await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Quote validation failed: ${JSON.stringify(validationError.details)}`);
-      return res.status(400).json({ message: 'Quote validation failed', details: validationError.details });
+      return res.status(200).json({ message: 'Quote validation failed', details: validationError.details });
     }
 
     const createdQuote = await createQuote(xeroQuote);
@@ -1437,7 +1433,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     res.json(createdPurchaseOrder);
   } catch (err) {
     const result = await handleError(err, workspaceId, boardId, item, req, 'purchase order');
-    res.status(result.status).json(result.body);
+    res.status(200).json(result.body);
   }
 });
 

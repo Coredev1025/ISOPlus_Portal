@@ -66,11 +66,14 @@ async function getLogoData(business) {
 function formatValue(val) {
     const num = Number(val);
     if (!isNaN(num)) {
-        return num.toFixed(2);
+      const factor = Math.pow(10, 2);
+      const result = Math.round(num * factor) / factor;
+  
+      return result.toFixed(2);
     } else {
-        return val;
+      return val;
     }
-}
+  }
 
 function validateRequestParams(req) {
     const { workspaceId, boardId } = req.params;
@@ -137,8 +140,6 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 const logoBase64 = await getLogoData(business);
 
                 const invoiceNumber = business.documentNumbering.invoice.prefix + business.documentNumbering.invoice.nextNumber;
-                business.documentNumbering.invoice.nextNumber += 1;
-                await business.save();
 
                 const invoiceValues = item.values;
                 const invoiceDate = invoiceValues["Issue Date"] ? invoiceValues["Issue Date"].replace('Z', '') : "";
@@ -215,6 +216,8 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                     const fileUrl = await getS3FileUrl(filename);
                     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'Invoice', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
+                    business.documentNumbering.invoice.nextNumber += 1;
+                    await business.save();
                 } else {
                     throw new Error('Upload of PDF failed, please provide correct information.');
                 }
@@ -253,8 +256,6 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 const logoBase64 = await getLogoData(business);
 
                 const purchaseOrderNumber = business.documentNumbering.purchaseOrder.prefix + business.documentNumbering.purchaseOrder.nextNumber;
-                business.documentNumbering.purchaseOrder.nextNumber += 1;
-                await business.save();
 
                 const clientDetails = {
                     Address: contractorValues.address,
@@ -319,6 +320,8 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                     const fileUrl = await getS3FileUrl(filename);
                     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'Purchase Order', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${purchaseOrderNumber} (ISO+™)`);
+                    business.documentNumbering.purchaseOrder.nextNumber += 1;
+                    await business.save();
                 } else {
                     throw new Error('Upload of PDF failed, please provide correct information.');
                 }
@@ -357,8 +360,6 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                 const logoBase64 = await getLogoData(business);
 
                 const quoteNumber = business.documentNumbering.quote.prefix + business.documentNumbering.quote.nextNumber;
-                business.documentNumbering.quote.nextNumber += 1;
-                await business.save();
 
                 const clientDetails = {
                     Address: contactValues.address,
@@ -415,6 +416,8 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                     const fileUrl = await getS3FileUrl(filename);
                     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'Quote', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${quoteNumber} (ISO+™)`);
+                    business.documentNumbering.quote.nextNumber += 1;
+                    await business.save();
                 } else {
                     throw new Error('Upload of PDF failed, please provide correct information.');
                 }
@@ -447,8 +450,6 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                 const logoBase64 = await getLogoData(business);
 
                 const quoteNumber = business.documentNumbering.quote.prefix + business.documentNumbering.quote.nextNumber;
-                business.documentNumbering.quote.nextNumber += 1;
-                await business.save();
 
                 const NDISQuoteValues = item.values;
 
@@ -631,6 +632,8 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                     const fileUrl = await getS3FileUrl(filename);
                     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS Quote', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${quoteNumber} (ISO+™)`);
+                    business.documentNumbering.quote.nextNumber += 1;
+                    await business.save();
                 } else {
                     throw new Error('Upload of PDF failed, please provide correct information.');
                 }
@@ -666,8 +669,6 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                 const logoBase64 = await getLogoData(business);
 
                 const invoiceNumber = business.documentNumbering.invoice.prefix + business.documentNumbering.invoice.nextNumber;
-                business.documentNumbering.invoice.nextNumber += 1;
-                await business.save();
 
                 const invoiceValues = item.values;
                 const invoiceDate = invoiceValues["Invoice Date"] ? invoiceValues["Invoice Date"].replace('Z', '') : "";
@@ -726,7 +727,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
 
                     // Line 2: Direct Support - Non Hour based
                     if (servicePlanValues?.directSupportUnit !== "Hour(H)") {
-                        const unitPrice2 = Number(servicePlanValues?.directSupportUnitPrice) / groupSize || 0;
+                        const unitPrice2 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
                         const itemNumber2 = servicePlanValues?.directSupportItemNumber || '';
                         const itemName2 = servicePlanValues?.directSupportItemName || '';
                         const quantity2 = invoiceValues["Quantity (Direct Support - Non Time Based Support)"] || 0;
@@ -765,7 +766,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
 
                     // Line 3: Provider Travel - Non-Labour Cost
-                    const unitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) / groupSize || 0;
+                    const unitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) || 0;
                     const mileage3 = invoiceValues["Provider Travel - Non-Labour - Mileage (kms) as per the Service Plan, if a Vehicle is Used."] || '';
                     const others3 = invoiceValues["Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied."] || '';
                     const itemName3 = servicePlanValues?.providerTravelItemName || '';
@@ -806,7 +807,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
 
                     // Line 4: Activity Based Transport
-                    const unitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) / groupSize || 0;
+                    const unitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) || 0;
                     const mileage4 = invoiceValues["Activity Base Transport Mileage(Kms) as per the Service Plan, if a Vehicle is Used."] || '';
                     const others4 = invoiceValues["Activity Base Transport Costs as per the Service Plan, if other costs are applied."] || '';
                     const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
@@ -847,7 +848,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
 
                     // Line 5: Centre Capital Costs
-                    const unitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) / groupSize || 0;
+                    const unitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) || 0;
                     const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
                     const itemNumber5 = servicePlanValues?.centreCapitalCostsItemNumber || '';
                     let qty5 = 0;
@@ -884,7 +885,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
 
                     // Line 6: Labour Travel Time
-                    const unitPrice6 = Number(servicePlanValues?.labourTravelTimeUnitPrice) / groupSize || 0;
+                    const unitPrice6 = Number(servicePlanValues?.labourTravelTimeUnitPrice) || 0;
                     const qty6 = Number(invoiceValues["Labour Travel Time (Min.) as per the Service Plan, regarding the Time Cap, if applicable."]) || 0;
                     const amountValue6 = formatValue(Number(invoiceValues["Labour Travel Time Amount($)"])) || 0;
                     const amount6 = formatValue(qty6 * unitPrice6);
@@ -909,7 +910,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
 
                     // Line 7: Allowances
-                    const unitPrice7 = Number(invoiceValues['Used Allowance Amount($) as per the Service Plan']) / groupSize || 0;
+                    const unitPrice7 = Number(invoiceValues['Used Allowance Amount($) as per the Service Plan']) || 0;
                     const qty7 = 1;
                     const amountValue7 = formatValue(Number(invoiceValues["Allowances Amount($)"])) || 0;
                     const amount7 = formatValue(unitPrice7);
@@ -934,7 +935,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
 
                     // Line 8: Non-Face-to-Face Support
-                    const unitPrice8 = Number(servicePlanValues?.nonFaceToFaceSupportUnitPrice) / groupSize || 0;
+                    const unitPrice8 = Number(servicePlanValues?.nonFaceToFaceSupportUnitPrice) || 0;
                     const qty8 = Number(invoiceValues["Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)"]) || 0;
                     const amountValue8 = formatValue(Number(invoiceValues["Non-Face-to-Face Amount($)"])) || 0;
                     const amount8 = formatValue(qty8 * unitPrice8);
@@ -966,22 +967,24 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     const scheduledShiftDuration = (invoiceValues['Scheduled Shift Duration(Hr.)'] > 0)
                         ? Number(invoiceValues['Scheduled Shift Duration(Hr.)']).toFixed(1)
                         : 0;
+                    let totalCancellationFee = 0;
+                    const amountValue1 = formatValue(Number(invoiceValues["Cancellation Fee($)"])) || 0;
                     if (servicePlanValues.directSupportShortNoticeCancellations === 'Y') {
                         // Line 1: Direct Support - Hour based (Cancelled)
                         const baseUnitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) / groupSize || 0;
                         const itemName1 = servicePlanValues?.directSupportItemName || '';
                         const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
-                        let qty1 = 1;
                         let unitPrice1, amount1;
+                        let qty1 = scheduledShiftDuration;
                         if (servicePlanValues?.directSupportUnit === "Hour(H)") {
-                            unitPrice1 = Number((baseUnitPrice1 * (cancellationPercentage1 / 100) * scheduledShiftDuration).toFixed(2));
+                            unitPrice1 = Number((baseUnitPrice1 * (cancellationPercentage1 / 100)).toFixed(2));
                         } else {
-                            const nonTimeBasedValue = Number(invoiceValues["Direct Support Value($) - Non Time Based Support"]) || 0;
+                            const nonTimeBasedValue = Number(servicePlanValues?.directSupportUnitPrice) || 0;
                             unitPrice1 = Number((nonTimeBasedValue * (cancellationPercentage1 / 100)).toFixed(2));
+                            qty1 = Number(invoiceValues["Quantity (Direct Support - Non Time Based Support)"]) || 0;
                         }
 
                         amount1 = formatValue(qty1 * unitPrice1);
-                        const amountValue1 = formatValue(Number(invoiceValues["Cancellation Fee($)"])) || 0;
 
                         if (amountValue1 > 0) {
                             let desc1 = 'Cancellation Fee';
@@ -993,11 +996,6 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                             }
                             desc1 += ` - ${cancellationPercentage1}%`;
 
-                            if (parseFloat(formatValue(amountValue1)) != parseFloat(formatValue(amount1))) {
-                                setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                                throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                            }
-
                             ordersArr.push([
                                 desc1,
                                 servicePlanValues?.directSupportUnit || ' ',
@@ -1007,15 +1005,16 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                                 formatValue(amount1)
                             ]);
                             subTotal += Number(amount1);
+                            totalCancellationFee += Number(amount1);
                         }
                     }
                     if (servicePlanValues.providerTravelShortNoticeCancellations === 'Y') {
                         // Line 3: Provider Travel - Non-Labour Cost
-                        const baseUnitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) / groupSize || 0;
+                        const baseUnitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) || 0;
                         const itemName3 = servicePlanValues?.providerTravelItemName || '';
                         const itemNumber3 = servicePlanValues?.providerTravelItemNumber || '';
-                        const qty3 = 1;
-                        const unitPrice3 = Number((baseUnitPrice3 * (cancellationPercentage1 / 100) * scheduledShiftDuration).toFixed(2));
+                        const qty3 = scheduledShiftDuration;
+                        const unitPrice3 = Number((baseUnitPrice3 * (cancellationPercentage1 / 100)).toFixed(2));
                         const amount3 = formatValue(qty3 * unitPrice3);
 
                         if (amount3 > 0) {
@@ -1037,15 +1036,16 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                                 formatValue(amount3)
                             ]);
                             subTotal += Number(amount3);
+                            totalCancellationFee += Number(amount3);
                         }
                     }
                     if (servicePlanValues.activityBasedTransportShortNoticeCancellations === 'Y') {
                         // Line 4: Activity Based Transport
-                        const baseUnitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) / groupSize || 0;
+                        const baseUnitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) || 0;
                         const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
                         const itemNumber4 = servicePlanValues?.activityBasedTransportItemNumber || '';
-                        const qty4 = 1;
-                        const unitPrice4 = Number((baseUnitPrice4 * (cancellationPercentage1 / 100) * scheduledShiftDuration).toFixed(2));
+                        const qty4 = scheduledShiftDuration;
+                        const unitPrice4 = Number((baseUnitPrice4 * (cancellationPercentage1 / 100)).toFixed(2));
                         const amount4 = formatValue(qty4 * unitPrice4);
                         if (amount4 > 0) {
                             let desc4 = 'Cancellation Fee';
@@ -1066,15 +1066,16 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                                 formatValue(amount4)
                             ]);
                             subTotal += Number(amount4);
+                            totalCancellationFee += Number(amount4);
                         }
                     }
                     if (servicePlanValues.centreCapitalCostsShortNoticeCancellations === 'Y') {
                         // Line 5: Centre Capital Costs
-                        const baseUnitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) / groupSize || 0;
+                        const baseUnitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) || 0;
                         const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
                         const itemNumber5 = servicePlanValues?.centreCapitalCostsItemNumber || '';
-                        let qty5 = 1;
-                        const unitPrice5 = Number((baseUnitPrice5 * (cancellationPercentage1 / 100) * scheduledShiftDuration).toFixed(2));
+                        let qty5 = scheduledShiftDuration;
+                        const unitPrice5 = Number((baseUnitPrice5 * (cancellationPercentage1 / 100)).toFixed(2));
                         const amount5 = formatValue(qty5 * unitPrice5);
                         if (baseUnitPrice5 > 0 && amount5 > 0) {
                             let desc5 = 'Cancellation Fee';
@@ -1095,7 +1096,12 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                                 formatValue(amount5)
                             ]);
                             subTotal += Number(amount5);
+                            totalCancellationFee += Number(amount5);
                         }
+                    }
+                    if (parseFloat(formatValue(amountValue1)) != parseFloat(formatValue(totalCancellationFee))) {
+                        setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+                        throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
                     }
                 }
 
@@ -1157,6 +1163,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     const fileUrl = await getS3FileUrl(filename);
                     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS Invoice', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
+                    business.documentNumbering.invoice.nextNumber += 1;
+                    await business.save();
                 } else {
                     throw new Error('Upload of PDF failed, please provide correct information.');
                 }
