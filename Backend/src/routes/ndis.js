@@ -505,26 +505,42 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
             setIntegrationMessage(workspaceId, boardId, items.id, "A cancellation type is required.");
             return res.status(200).json({ error: 'A cancellation type is required.' });
         }
-        const cancellationPercentage = Number(cancellationTypeValues?.billableToClient) / 100 || 0;
+        const cancellationPercentage = Number(cancellationTypeValues?.billableToClient) || 0;
         const scheduledShiftDuration = (itemsValues['Scheduled Shift Duration(Hr.)'] > 0)
             ? Number(itemsValues['Scheduled Shift Duration(Hr.)']).toFixed(1)
             : 0;
         let cancellationFee = 0;
         if (servicePlanValues?.directSupportShortNoticeCancellations === 'Y') {
             if (servicePlanValues?.directSupportUnit === 'Hour(H)') {
-                cancellationFee += Number(formatValue(Number(formatValue(servicePlanValues.directSupportUnitPrice * cancellationPercentage / groupSize)) * scheduledShiftDuration));
+                const baseUnitPrice = Number(servicePlanValues.directSupportUnitPrice) / groupSize || 0;
+                const unitPrice = Number(formatValue(baseUnitPrice * (cancellationPercentage / 100)));
+                const amount = formatValue(scheduledShiftDuration * unitPrice);
+                cancellationFee += Number(amount);
             } else {
-                cancellationFee += Number(formatValue(Number(formatValue(servicePlanValues.directSupportUnitPrice * cancellationPercentage)) * (itemsValues['Quantity (Direct Support - Non Time Based Support)'] || 0)));
+                const nonTimeBasedValue = Number(servicePlanValues.directSupportUnitPrice) || 0;
+                const unitPrice = Number(formatValue(nonTimeBasedValue * (cancellationPercentage / 100)));
+                const qty = Number(itemsValues['Quantity (Direct Support - Non Time Based Support)']) || 0;
+                const amount = formatValue(qty * unitPrice);
+                cancellationFee += Number(amount);
             }
         }
         if (servicePlanValues?.providerTravelShortNoticeCancellations === 'Y') {
-            cancellationFee += Number(formatValue(Number(formatValue(servicePlanValues.nonLabourTravelUnitPrice * cancellationPercentage)) * scheduledShiftDuration));
+            const baseUnitPrice = Number(servicePlanValues.nonLabourTravelUnitPrice) || 0;
+            const unitPrice = Number(formatValue(baseUnitPrice * (cancellationPercentage / 100)));
+            const amount = formatValue(scheduledShiftDuration * unitPrice);
+            cancellationFee += Number(amount);
         }
         if (servicePlanValues?.activityBasedTransportShortNoticeCancellations === 'Y') {
-            cancellationFee += Number(formatValue(Number(formatValue(servicePlanValues.activityBasedTransportUnitPrice * cancellationPercentage)) * scheduledShiftDuration));
+            const baseUnitPrice = Number(servicePlanValues.activityBasedTransportUnitPrice) || 0;
+            const unitPrice = Number(formatValue(baseUnitPrice * (cancellationPercentage / 100)));
+            const amount = formatValue(scheduledShiftDuration * unitPrice);
+            cancellationFee += Number(amount);
         }
         if (servicePlanValues?.centreCapitalCostsShortNoticeCancellations === 'Y') {
-            cancellationFee += Number(formatValue(Number(formatValue(servicePlanValues.centreCapitalCostsUnitPrice * cancellationPercentage)) * scheduledShiftDuration));
+            const baseUnitPrice = Number(servicePlanValues.centreCapitalCostsUnitPrice) || 0;
+            const unitPrice = Number(formatValue(baseUnitPrice * (cancellationPercentage / 100)));
+            const amount = formatValue(scheduledShiftDuration * unitPrice);
+            cancellationFee += Number(amount);
         }
         updateValues.push({
             data: formatValue(cancellationFee),
