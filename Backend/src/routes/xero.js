@@ -411,12 +411,12 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         const unitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) / groupSize || 0;
         const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
         const itemName1 = servicePlanValues?.directSupportItemName || '';
-        const startTime1 = invoiceValues["Scheduled Shift Start Date & Time"] ? new Date(invoiceValues["Scheduled Shift Start Date & Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-        const endTime1 = invoiceValues["Scheduled Shift End Date & Time"] ? new Date(invoiceValues["Scheduled Shift End Date & Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+        const startTime1 = invoiceValues["Actual Shift Start Date and Time"] ? new Date(invoiceValues["Actual Shift Start Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+        const endTime1 = invoiceValues["Actual Shift End Date and Time"] ? new Date(invoiceValues["Actual Shift End Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
         let qty1 = 0;
-        const scheduledShiftDuration = Number(invoiceValues["Scheduled Shift Duration(Hr.)"]);
-        if (typeof scheduledShiftDuration === 'number' && !isNaN(scheduledShiftDuration)) {
-          qty1 = Number(scheduledShiftDuration.toFixed(1));
+        const actualShiftDuration1 = Number(invoiceValues["Actual Shift Duration(Hr.)"]);
+        if (typeof actualShiftDuration1 === 'number' && !isNaN(actualShiftDuration1)) {
+          qty1 = Number(actualShiftDuration1.toFixed(1));
         }
         const amount1 = formatValue(qty1 * unitPrice1);
         const amountValue1 = formatValue(Number(invoiceValues["Direct Support Value($) - Time Based Support"])) || 0;
