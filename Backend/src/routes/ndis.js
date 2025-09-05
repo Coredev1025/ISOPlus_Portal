@@ -425,7 +425,7 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
     if (servicePlanValues?.directSupportUnit == 'Hour(H)') {
         updateValues.push({
             data: (() => {
-                const duration = Number(itemsValues['Scheduled Shift Duration(Hr.)']);
+                const duration = Number(itemsValues['Actual Shift Duration(Hr.)']);
                 let qty = 0;
                 if (duration > 0) {
                     qty = Number(duration.toFixed(1));
