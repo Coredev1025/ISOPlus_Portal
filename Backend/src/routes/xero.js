@@ -435,6 +435,9 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           if (servicePlanValues?.directSupportUnit) {
             desc1 += ` - ${servicePlanValues?.directSupportUnit}`;
           }
+          if (groupSize !== 1) {
+            desc1 += ` - Group Size: ${groupSize}`;
+          }
 
           if (parseFloat(formatValue(amountValue1)) != parseFloat(formatValue(amount1))) {
             setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
@@ -721,6 +724,9 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             desc1 += ` - ${itemNumber1}`;
           }
           desc1 += ` - ${cancellationPercentage1}%`;
+          if (groupSize !== 1) {
+            desc1 += ` - Group Size: ${groupSize}`;
+          }
 
           if (servicePlanValues?.directSupportUnit) {
             desc1 += ` - ${servicePlanValues.directSupportUnit}`;
