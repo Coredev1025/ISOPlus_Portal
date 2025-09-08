@@ -370,8 +370,7 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
     let updateValues = [];
     const responseItemValues = await getItemValues(workspaceId, boardId, items.id);
     const itemValuesWithAttributeId = responseItemValues.values;
-    const isGroupService = participationTypeValues?.participationType == 'Group Service';
-    const groupSize = isGroupService ? Number(itemsValues['Group Size']) || 1 : 1;
+    const groupSize = Number(itemsValues['Group Size']) || 1;
 
     await setIntegrationMessage(workspaceId, boardId, items.id, "Calculating values...");
     await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${items.id}`,
@@ -552,14 +551,6 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
             data: fundValues.fundingBudgetStatus,
             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Funding Budget Status').attribute.id
         });
-    }
-    if (participationTypeValues) {
-        if (participationTypeValues.participationType == 'Individual (1:1) Service') {
-            updateValues.push({
-                data: 1,
-                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Group Size').attribute.id
-            });
-        }
     }
 
     const response = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${items.id}`,
