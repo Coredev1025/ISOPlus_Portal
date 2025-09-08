@@ -432,11 +432,11 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           if (desc1 == '') {
             desc1 = 'Direct Support - Hour based';
           }
-          if (servicePlanValues?.directSupportUnit) {
-            desc1 += ` - ${servicePlanValues?.directSupportUnit}`;
-          }
           if (groupSize !== 1) {
             desc1 += ` - Group Size: ${groupSize}`;
+          }
+          if (servicePlanValues?.directSupportUnit) {
+            desc1 += ` - Unit: ${servicePlanValues?.directSupportUnit}`;
           }
 
           if (parseFloat(formatValue(amountValue1)) != parseFloat(formatValue(amount1))) {
@@ -729,7 +729,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           }
 
           if (servicePlanValues?.directSupportUnit) {
-            desc1 += ` - ${servicePlanValues.directSupportUnit}`;
+            desc1 += ` - Unit: ${servicePlanValues.directSupportUnit}`;
           }
 
           lineItems.push({
