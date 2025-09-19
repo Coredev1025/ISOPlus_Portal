@@ -287,9 +287,13 @@ export async function getViewsById(authorization, workspaceId, boardId, viewId) 
     }
 }
 
-export async function putInternalMessage(workspaceId, boardId, itemId, message) {
+
+export async function setIntegrationMessage(workspaceId, boardId, itemId, message) {
     try {
         const board = await Board.findOne({ boardId: boardId.toString() });
+        if(!board.attribute.id) {
+            throw new Error("Internal message attribute not found in board configuration");
+        }
         await axios.put(
             `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
             {
@@ -311,7 +315,7 @@ export async function putInternalMessage(workspaceId, boardId, itemId, message) 
         );
         return true;
     } catch (err) {
-        error('ISO+™ Service', 'Error putting internal message:', err);
+        error('ISO+™ Service', 'Error putting internal message: ', err.message);
         return false;
     }
 }
@@ -764,18 +768,6 @@ export async function getBoardAttributes(workspaceId, boardId) {
         return { attribute: attribute, status: 200 };
     } catch (err) {
         return { message: err.message, status: 500 };
-    }
-}
-
-export async function setIntegrationMessage(workspaceId, boardId, itemId, message) {
-    try {
-        const response = await putInternalMessage(workspaceId, boardId, itemId, message);
-        if (!response) {
-            throw new Error("Failed to update item with integration message in ISO+™.");
-        }
-    } catch (err) {
-        error('ISO+™ Service', 'Error setting integration message:', err);
-        throw err;
     }
 }
 

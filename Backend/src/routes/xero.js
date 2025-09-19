@@ -10,7 +10,6 @@ import {
   getQuoteReferencedItems,
   getPurchaseOrderReferencedItems,
   setIntegrationMessage,
-  putInternalMessage,
   setGeneratedField,
   getQuoteNDISReferencedItems,
   getMasterPlanReferencedItems
@@ -174,17 +173,17 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
 
     const [jobPlanningValues, serviceFeeTypeValues] = await getJobReportingReferencedItems(workspaceId, boardId, item.id);
     if (!jobPlanningValues) {
-      putInternalMessage(workspaceId, boardId, item.id, "Job planning information is required. Job reporting is missing a job planning reference.");
+      setIntegrationMessage(workspaceId, boardId, item.id, "Job planning information is required. Job reporting is missing a job planning reference.");
       throw new Error("Job planning information is required. Job reporting is missing a job planning reference.");
     }
     if (!serviceFeeTypeValues) {
-      putInternalMessage(workspaceId, boardId, item.id, "Service fee type information is required. Job reporting is missing a service fee type reference.");
+      setIntegrationMessage(workspaceId, boardId, item.id, "Service fee type information is required. Job reporting is missing a service fee type reference.");
       throw new Error("Service fee type information is required. Job reporting is missing a service fee type reference.");
     }
 
     const [contactValues, jobTypeValues] = await getJobPlanningReferencedItems(workspaceId, boardId, jobPlanningValues.id);
     if (!contactValues) {
-      putInternalMessage(workspaceId, boardId, item.id, "Client information is required. Job planning is missing a client reference.");
+      setIntegrationMessage(workspaceId, boardId, item.id, "Client information is required. Job planning is missing a client reference.");
       throw new Error("Client information is required. Job planning is missing a client reference.");
     }
 
@@ -247,7 +246,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     }
 
     if (!jobTypeValues) {
-      putInternalMessage(workspaceId, boardId, item.id, "Job type information is required. Job planning is missing a job type reference.");
+      setIntegrationMessage(workspaceId, boardId, item.id, "Job type information is required. Job planning is missing a job type reference.");
       throw new Error("Job type information is required. Job planning is missing a job type reference.");
     }
 
@@ -323,7 +322,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
 
     const [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues] = await getMasterPlanReferencedItems(workspaceId, boardId, item.id);
     if (!servicePlanValues) {
-      putInternalMessage(workspaceId, boardId, item.id, "Master plan information is required. Master plan is missing a master plan reference.");
+      setIntegrationMessage(workspaceId, boardId, item.id, "Master plan information is required. Master plan is missing a master plan reference.");
       throw new Error("Master plan information is required. Master plan is missing a master plan reference.");
     }
 
