@@ -19,7 +19,7 @@ import {
     setGeneratedField,
     setPDFLinkAttribute,
     getQuoteNDISReferencedItems,
-    getMasterPlanReferencedItems
+    getNDISMasterPlanReferencedItems
 } from '../services/isoplus.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
 
@@ -657,7 +657,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                 await validateItemBelongsToTenant(workspaceId, boardId, item.id);
                 await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
-                const [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues] = await getMasterPlanReferencedItems(workspaceId, boardId, item.id);
+                const [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues] = await getNDISMasterPlanReferencedItems(workspaceId, boardId, item.id);
                 if (!participantProfileValues || !servicePlanValues) {
                     throw new Error("Participant Profile and Service Plan information is required.");
                 }

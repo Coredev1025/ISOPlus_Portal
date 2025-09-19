@@ -15,6 +15,7 @@ import auditTrailRouters from './routes/audittrail.js';
 import PdfRouters from './routes/pdfLink.js';
 import HealthCheckRouters from './routes/heathcheck.js';
 import ndisRoutes from './routes/ndis.js';
+import ageCareRoutes from './routes/ageCare.js';
 import session from 'express-session';
 import MongoStore from 'connect-mongo';
 
@@ -62,6 +63,7 @@ app.use('/api/pdf', webhookRoutes);
 app.use('/api/audit', auditTrailRouters);
 app.use('/api/pdf', PdfRouters);
 app.use('/api/care-management-ndis-pricing', ndisRoutes);
+app.use('/api/age-care', ageCareRoutes);
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('Connected to MongoDB'))
