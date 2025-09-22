@@ -1133,7 +1133,7 @@ export async function getQuoteNDISReferencedItems(workspaceId, boardId, itemId) 
     return [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues, providerTravelLabourTravelTime];
 }
 
-export async function getParticipantsServicePlanReferencedItems(workspaceId, boardId, itemId) {
+export async function getNDISParticipantsServicePlanReferencedItems(workspaceId, boardId, itemId) {
     const ServiceAreaMap = {
         'Non-Remote (ACT)': 'ACT($)',
         'Non-Remote (NSW)': 'NSW($)',
@@ -1297,7 +1297,7 @@ export async function getParticipantsServicePlanReferencedItems(workspaceId, boa
     return [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues];
 }
 
-export async function getMasterPlanReferencedItems(workspaceId, boardId, itemId) {
+export async function getNDISMasterPlanReferencedItems(workspaceId, boardId, itemId) {
     let servicePlanValues = null, cancellationTypeValues = null, fundValues = null, participantProfileValues = null, participationTypeValues = null;
 
     const referenceResponse = await getReferences(workspaceId, boardId, itemId);
@@ -1313,7 +1313,7 @@ export async function getMasterPlanReferencedItems(workspaceId, boardId, itemId)
                 {
                     const servicePlan = await getItemValues(workspaceId, boardId, reference.to_item_id);
                     if (servicePlan) {
-                        const [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = await getParticipantsServicePlanReferencedItems(workspaceId, boardId, reference.to_item_id);
+                        const [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = await getNDISParticipantsServicePlanReferencedItems(workspaceId, boardId, reference.to_item_id);
                         const values = servicePlan.values;
                         let
                             directSupportUnit = null,
@@ -1465,6 +1465,167 @@ export async function getMasterPlanReferencedItems(workspaceId, boardId, itemId)
     }
 
     return [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues, participationTypeValues];
+}
+
+export async function getAgeCareParticipantsServicePlanReferencedItems(workspaceId, boardId, itemId) {
+    let participantsProfileValues = null, homeSupportValues = null, assistiveTechnologyShortTermValues= null, assistiveTechnologyOngoingValues = null, homeModificationValues = null, healthProfessionalValues = null, wraparoundValues = null;
+
+    const referenceResponse = await getReferences(workspaceId, boardId, itemId);
+    if (!referenceResponse) return [null, null];
+
+    for (const reference of referenceResponse.data) {
+        const attribute = await getAttribute(workspaceId, boardId, reference.attribute_id);
+        if (!attribute) continue;
+        switch (attribute.name) {
+            case 'Participant Profile':
+                {
+                    const participantsProfile = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (participantsProfile) {
+                        const values = participantsProfile.values;
+                        if (!values.some(v => v.attribute.name === "Full Name/Preferred Name")) {
+                            throw new Error("Full Name/Preferred Name is required");
+                        }
+
+                        participantsProfileValues = {
+                            id: participantsProfile.id,
+                            fullName: values.find(v => v.attribute.name === "Full Name/Preferred Name").data.toString() || '',
+                            firstName: values.find(v => v.attribute.name === "First Name").data.toString() || '',
+                            lastName: values.find(v => v.attribute.name === "Last Name").data.toString() || '',
+                            email: values.find(v => v.attribute.name === "Email").data.toString() || '',
+                            phone: values.find(v => v.attribute.name === "Primary Phone Number").data.toString() || '',
+                            address: values.find(v => v.attribute.name === "Address").data.toString() || '',
+                            suburb: values.find(v => v.attribute.name === "Suburb").data.toString() || '',
+                            state: values.find(v => v.attribute.name === "State").data.toString() || '',
+                            postcode: values.find(v => v.attribute.name === "Postcode").data.toString() || '',
+                            billingContact: values.find(v => v.attribute.name === "Billing Contact").data.toString() || '',
+                            billingAddress: values.find(v => v.attribute.name === "Billing Address").data.toString() || '',
+                        };
+                    }
+                    break;
+                }
+            case 'Home Support (HS)': 
+                {
+                    const homeSupport = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (homeSupport) {
+                        const values = homeSupport.values;
+                        if (!values.some(v => v.attribute.name === "Service")) {
+                            throw new Error("Service is required");
+                        }
+
+                        homeSupportValues = {
+                            id: homeSupport.id,
+                            service: values.find(v => v.attribute.name === "Service").data.toString() || '',
+                            serviceType: values.find(v => v.attribute.name === "Service Type").data.toString() || '',
+                            unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
+                            unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
+                            participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                        }
+                    }
+                    break;
+                }
+            case 'Assistive Technology (AT) - Short Term': 
+                {
+                    const assistiveTechnologyShortTerm = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (assistiveTechnologyShortTerm) {
+                        const values = assistiveTechnologyShortTerm.values;
+                        if (!values.some(v => v.attribute.name === "Service")) {
+                            throw new Error("Service is required");
+                        }
+
+                        assistiveTechnologyShortTermValues = {
+                            id: homeSupport.id,
+                            service: values.find(v => v.attribute.name === "Service").data.toString() || '',
+                            serviceType: values.find(v => v.attribute.name === "Service Type").data.toString() || '',
+                            unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
+                            unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
+                            participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                        }
+                    }
+                    break;
+                }
+            case 'Assistive Technology (AT) - Ongoing': 
+                {
+                    const assistiveTechnologyOngoing = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (assistiveTechnologyOngoing) {
+                        const values = assistiveTechnologyOngoing.values;
+                        if (!values.some(v => v.attribute.name === "Service")) {
+                            throw new Error("Service is required");
+                        }
+
+                        assistiveTechnologyOngoingValues = {
+                            id: assistiveTechnologyOngoing.id,
+                            service: values.find(v => v.attribute.name === "Service").data.toString() || '',
+                            serviceType: values.find(v => v.attribute.name === "Service Type").data.toString() || '',
+                            unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
+                            unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
+                            participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                        }
+                    }
+                    break;
+                }
+            case 'Home Modification (HM)': 
+                {
+                    const homeModification = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (homeModification) {
+                        const values = homeModification.values;
+                        if (!values.some(v => v.attribute.name === "Service")) {
+                            throw new Error("Service is required");
+                        }
+                    }
+
+                    homeModificationValues = {
+                        id: homeModification.id,
+                        service: values.find(v => v.attribute.name === "Service").data.toString() || '',
+                        serviceType: values.find(v => v.attribute.name === "Service Type").data.toString() || '',
+                        unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
+                        unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
+                        participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                    }
+                    break;
+                }
+            case 'Health Professional':
+                {
+                    const healthProfessional = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (healthProfessional) {
+                        const values = healthProfessional.values;
+                        if (!values.some(v => v.attribute.name === "Service")) {
+                            throw new Error("Service is required");
+                        }
+                    }
+
+                    healthProfessionalValues = {
+                        id: healthProfessional.id,
+                        service: values.find(v => v.attribute.name === "Service").data.toString() || '',
+                        serviceType: values.find(v => v.attribute.name === "Service Type").data.toString() || '',
+                        unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
+                        unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
+                        participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                    }
+                    break;
+                }
+            case 'Wraparound':
+                {
+                    const wraparound = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (wraparound) {
+                        const values = wraparound.values;
+                        if (!values.some(v => v.attribute.name === "Wraparound Description")) {
+                            throw new Error("Wraparound Description is required");
+                        }
+                    }
+
+                    wraparoundValues = {
+                        id: wraparound.id,
+                        wraparoundDescription: values.find(v => v.attribute.name === "Wraparound Description").data.toString() || '',
+                        unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
+                        unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
+                        participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                    }
+                    break;
+                }
+        }
+    }
+
+    return [participantsProfileValues, homeSupportValues, assistiveTechnologyShortTermValues, assistiveTechnologyOngoingValues, homeModificationValues, healthProfessionalValues, wraparoundValues];
 }
 
 export const getAutomation = async (workspaceId, boardId, authorization) => {

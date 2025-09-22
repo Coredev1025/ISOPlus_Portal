@@ -2,7 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import { info, warn, error } from '../utils/logger.js';
 import { Item } from '../dto/itemsPayload.js';
-import { getQuoteNDISReferencedItems, getItemValues, getParticipantsServicePlanReferencedItems, getMasterPlanReferencedItems, setIntegrationMessage } from '../services/isoplus.js';
+import { getQuoteNDISReferencedItems, getItemValues, getNDISParticipantsServicePlanReferencedItems, getNDISMasterPlanReferencedItems, setIntegrationMessage } from '../services/isoplus.js';
 import axios from 'axios';
 
 dotenv.config();
@@ -231,7 +231,7 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
     const itemsValues = items.values;
 
     info('Xero-Service', `Incoming request to Participants Service Plan`, { workspaceId, boardId, type, body: itemsValues }, req);
-    let [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = await getParticipantsServicePlanReferencedItems(workspaceId, boardId, items.id);
+    let [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = await getNDISParticipantsServicePlanReferencedItems(workspaceId, boardId, items.id);
     if (serviceAreaValues == null || serviceAreaValues.serviceAreaType == null) {
         serviceAreaValues = {
             serviceAreaType: 'ACT($)'
@@ -358,7 +358,7 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
     const items = payload.items[0];
     const itemsValues = items.values;
 
-    const [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues, participationTypeValues] = await getMasterPlanReferencedItems(workspaceId, boardId, items.id);
+    const [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues, participationTypeValues] = await getNDISMasterPlanReferencedItems(workspaceId, boardId, items.id);
 
     info('Xero-Service', `Incoming request to Master plan`, { workspaceId, boardId, body: itemsValues }, req);
 

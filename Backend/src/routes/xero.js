@@ -12,7 +12,7 @@ import {
   setIntegrationMessage,
   setGeneratedField,
   getQuoteNDISReferencedItems,
-  getMasterPlanReferencedItems
+  getNDISMasterPlanReferencedItems
 } from '../services/isoplus.js';
 import {
   configure,
@@ -320,7 +320,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
   try {
     await initializeXeroOperation(workspaceId, boardId, item);
 
-    const [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues] = await getMasterPlanReferencedItems(workspaceId, boardId, item.id);
+    const [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues] = await getNDISMasterPlanReferencedItems(workspaceId, boardId, item.id);
     if (!servicePlanValues) {
       setIntegrationMessage(workspaceId, boardId, item.id, "Master plan information is required. Master plan is missing a master plan reference.");
       throw new Error("Master plan information is required. Master plan is missing a master plan reference.");
