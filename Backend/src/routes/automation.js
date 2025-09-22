@@ -62,17 +62,18 @@ router.put('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
                     if (workflow.config && workflow.config.url) {
                         let updatedUrl = workflow.config.url;
                         
-                        const urlPattern = /\/api\/([^\/]+)\/([^\/]+)\/([^\/\?]+)/;
+                        const urlPattern = /https?:\/\/([^\/]+)\/api\/([^\/]+)\/([^\/]+)\/([^\/\?]+)/;
                         const match = updatedUrl.match(urlPattern);
                         
                         if (match) {
-                            const apiPath = match[1];
-                            const currentWorkspaceId = match[2];
-                            const currentBoardId = match[3];
+                            const backendUrl = match[1];
+                            const apiPath = match[2];
+                            const currentWorkspaceId = match[3];
+                            const currentBoardId = match[4];
                             
                             updatedUrl = updatedUrl.replace(
-                                new RegExp(`/api/${apiPath}/${currentWorkspaceId}/${currentBoardId}`),
-                                `/api/${apiPath}/${workspaceId}/${boardId}`
+                                new RegExp(`${backendUrl}/api/${apiPath}/${currentWorkspaceId}/${currentBoardId}`),
+                                `${process.env.BACKEND_URL.replace('https://', '')}/api/${apiPath}/${workspaceId}/${boardId}`
                             );
                         }
                         
