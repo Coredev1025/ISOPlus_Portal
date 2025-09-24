@@ -1,11 +1,23 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import { info, warn, error } from '../utils/logger.js';
-import { getItemValues, getAgeCareParticipantsServicePlanReferencedItems, setIntegrationMessage } from '../services/isoplus.js';
+import { getItemValues, getAgeCareParticipantsServicePlanReferencedItems, setIntegrationMessage, getAgeCareMasterPlanReferencedItems } from '../services/isoplus.js';
 import axios from 'axios';
 
 dotenv.config();
 const router = express.Router();
+
+function formatValue(val) {
+    const num = Number(val);
+    if (!isNaN(num)) {
+        const factor = Math.pow(10, 2);
+        const result = Math.round(num * factor) / factor;
+
+        return result.toFixed(2);
+    } else {
+        return val;
+    }
+}
 
 const updateVariablesParticipantsService = async (workspaceId, boardId, itemId) => {
     try {
@@ -15,7 +27,6 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId) 
         let updatevariables = [];
         const [participantsProfileValues, homeSupportValues, assistiveTechnologyShortTermValues, assistiveTechnologyOngoingValues, homeModificationValues, healthProfessionalValues, wraparoundValues] = await getAgeCareParticipantsServicePlanReferencedItems(workspaceId, boardId, itemId);
         const serviceCategory = itemValuesWithAttributeId.find(v => v.attribute.name === "Service Category")
-        const configurationStatus = itemValuesWithAttributeId.find(v => v.attribute.name === "Configuration Status")
         let fullName = '';
         if (participantsProfileValues) {
             fullName = participantsProfileValues?.fullName;
@@ -44,9 +55,10 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId) 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
-                    if (Number(homeSupportValues.participantContributionGuideline) > 0) {
+                    const firstPercentageValue = parseFloat(homeSupportValues.participantContributionGuideline.split('-')[0]);
+                    if (firstPercentageValue > 0) {
                         updatevariables.push({
-                            data: Number(homeSupportValues.participantContributionGuideline),
+                            data: firstPercentageValue,
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
                         });
                     }
@@ -69,9 +81,10 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId) 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
-                    if (Number(assistiveTechnologyShortTermValues.participantContributionGuideline) > 0) {
+                    const firstPercentageValue = parseFloat(assistiveTechnologyShortTermValues.participantContributionGuideline.split('-')[0]);
+                    if (firstPercentageValue > 0) {
                         updatevariables.push({
-                            data: Number(assistiveTechnologyShortTermValues.participantContributionGuideline),
+                            data: firstPercentageValue,
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
                         });
                     }
@@ -94,9 +107,10 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId) 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
-                    if (Number(assistiveTechnologyOngoingValues.participantContributionGuideline) > 0) {
+                    const firstPercentageValue = parseFloat(assistiveTechnologyOngoingValues.participantContributionGuideline.split('-')[0]);
+                    if (firstPercentageValue > 0) {
                         updatevariables.push({
-                            data: Number(assistiveTechnologyOngoingValues.participantContributionGuideline),
+                            data: firstPercentageValue,
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
                         });
                     }
@@ -119,9 +133,10 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId) 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
-                    if (Number(homeModificationValues.participantContributionGuideline) > 0) {
+                    const firstPercentageValue = parseFloat(homeModificationValues.participantContributionGuideline.split('-')[0]);
+                    if (firstPercentageValue > 0) {
                         updatevariables.push({
-                            data: Number(homeModificationValues.participantContributionGuideline),
+                            data: firstPercentageValue,
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
                         });
                     }
@@ -145,9 +160,10 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId) 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
-                    if (Number(healthProfessionalValues.participantContributionGuideline) > 0) {
+                    const firstPercentageValue = parseFloat(healthProfessionalValues.participantContributionGuideline.split('-')[0]);
+                    if (firstPercentageValue > 0) {
                         updatevariables.push({
-                            data: Number(healthProfessionalValues.participantContributionGuideline),
+                            data: firstPercentageValue,
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
                         });
                     }
@@ -171,9 +187,10 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId) 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
-                    if (Number(wraparoundValues.participantContributionGuideline) > 0) {
+                    const firstPercentageValue = parseFloat(wraparoundValues.participantContributionGuideline.split('-')[0]);
+                    if (firstPercentageValue > 0) {
                         updatevariables.push({
-                            data: Number(wraparoundValues.participantContributionGuideline),
+                            data: firstPercentageValue,
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
                         });
                     }
@@ -191,8 +208,6 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId) 
         if (statusAttribute && categoryAttribute) {
             const categoryLabelId = categoryAttribute.data?.toString();
             const categoryLabelName = categoryAttribute.attribute.settings.labels.find(l => l.id === categoryLabelId)?.name || '';
-
-            console.log("Category label name", categoryLabelName);
 
             const selectedMap = {
                 homeSupport: !!homeSupportValues,
@@ -212,8 +227,6 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId) 
             else if (categoryLabelName.includes('Home Modification')) expectedKey = 'homeModification';
             else if (categoryLabelName.includes('Health Professional')) expectedKey = 'healthProfessional';
             else if (categoryLabelName.includes('Wraparound')) expectedKey = 'wraparound';
-
-            console.log("Expected key", expectedKey);
 
             let statusColor = '';
             let integrationMsg = '';
@@ -260,20 +273,109 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId) 
             if (response.status === 200) {
                 setIntegrationMessage(workspaceId, boardId, itemId, "Variables participants service updated successfully");
                 info('Xero-Service', 'Variables participants service updated successfully', { updatevariables });
-                return true;
+                return { success: true };
             } else {
                 setIntegrationMessage(workspaceId, boardId, itemId, "Failed to update variables participants service");
                 warn('Xero-Service', 'Failed to update variables participants service', { updatevariables });
-                return false;
+                return { error: 'Failed to update variables participants service' };
             }
         } else {
-            return true;
+            return { success: true };
         }
     } catch {
         setIntegrationMessage(workspaceId, boardId, itemId, "While updating PartiService Plan variables, unknown error occur. Please contact ISO+ Portal Support team.")
+        return { error: 'While updating PartiService Plan variables, unknown error occur. Please contact ISO+ Portal Support team.' };
     }
 }
 
+const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValues) => {
+    try {
+        const [servicePlanValues, cancellationTypeValues, participantProfileValues] = await getAgeCareMasterPlanReferencedItems(workspaceId, boardId, itemId);
+        if (!servicePlanValues) {
+            setIntegrationMessage(workspaceId, boardId, itemId, "Service Plan Item not found");
+            return { error: 'Service Plan Item not found' };
+        }
+
+        let updatevariables = [];
+        const responseItemValues = await getItemValues(workspaceId, boardId, itemId);
+        const itemValuesWithAttributeId = responseItemValues.values;
+
+        const actualDuration = formatValue(itemsValues["Actual Shift Duration(Hr.)"]);
+        const scheduledDuration = formatValue(itemsValues["Scheduled Shift Duration(Hr.)"]);
+        const quantityNonTimeBased = formatValue(itemsValues["Quantity (Non-Time-Based Service"]);
+        const transactionStatus = itemsValues["Transaction Status"];
+        let quantity = 0;
+
+        if (transactionStatus?.includes('Adjustment (Refund)') || transactionStatus?.includes('Adjustment (Charge)')) {
+            quantity = 0;
+        } else {
+            quantity = servicePlanValues.unit.includes('Hour') ? Number(actualDuration) : Number(quantityNonTimeBased);
+        }
+
+        let totalAmount = Number(formatValue(servicePlanValues.unitPrice * quantity));
+        let participantContribution = Number(formatValue((servicePlanValues.participantContribution / 100) * servicePlanValues.unitPrice));
+        let governmentSubsidy = Number(formatValue(totalAmount - participantContribution));
+
+        if (servicePlanValues.unit != ' ' && servicePlanValues.unit != null && servicePlanValues.unit != undefined) {
+            updatevariables.push({
+                data: servicePlanValues.unit,
+                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
+            });
+        }
+        if (quantity > 0) {
+            updatevariables.push({
+                data: quantity,
+                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Quantity").attribute.id
+            });
+        }
+        if (servicePlanValues.unitPrice > 0) {
+            updatevariables.push({
+                data: servicePlanValues.unitPrice,
+                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit Price ($)").attribute.id
+            });
+        }
+        updatevariables.push({
+            data: totalAmount,
+            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Total Amount ($)").attribute.id
+        });
+        updatevariables.push({
+            data: governmentSubsidy,
+            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Government Subsidy ($)").attribute.id
+        });
+        if (participantContribution > 0) {
+            updatevariables.push({
+                data: participantContribution,
+                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution ($)").attribute.id
+            });
+        }
+
+        if (updatevariables.length > 0) {
+            const response = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
+                { values: updatevariables },
+                {
+                    headers: {
+                        "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "X-API-Version": "2025-02-26.morava",
+                    }
+                }
+            );
+            if (response.status === 200) {
+                setIntegrationMessage(workspaceId, boardId, itemId, "Variables MasterPlan updated successfully");
+                info('Xero-Service', 'Variables MasterPlan updated successfully', { updatevariables });
+                return { success: true };
+            } else {
+                setIntegrationMessage(workspaceId, boardId, itemId, "Failed to update variables MasterPlan");
+                warn('Xero-Service', 'Failed to update variables MasterPlan', { updatevariables });
+                return { error: 'Failed to update variables MasterPlan' };
+            }
+        }
+    } catch {
+        setIntegrationMessage(workspaceId, boardId, itemId, "While updating MasterPlan variables, unknown error occur. Please contact ISO+ Portal Support team.")
+        return { error: 'While updating MasterPlan variables, unknown error occur. Please contact ISO+ Portal Support team.' };
+    }
+}
 
 router.post('/:workspaceId/:boardId/update-variables-participants-service', async (req, res) => {
     const { workspaceId, boardId } = req.params;
@@ -284,9 +386,24 @@ router.post('/:workspaceId/:boardId/update-variables-participants-service', asyn
     info('AgeCare-Service', `Incoming request to update variables participants service`, { workspaceId, boardId, itemId, itemsValues }, req);
     const result = await updateVariablesParticipantsService(workspaceId, boardId, itemId);
     if (result.error) {
-        return res.status(200).json({ error: 'Failed to update variables participants service' });
+        return res.status(200).json({ error: result.error });
     }
     res.status(200).json({ message: 'Variables participants service updated' });
+});
+
+router.post('/:workspaceId/:boardId/update-variables-masterplan', async (req, res) => {
+    const { workspaceId, boardId } = req.params;
+    const items = req.body.items[0];
+    const itemId = items.id;
+    const itemsValues = items.values;
+
+    info('AgeCare-Service', `Incoming request to update variables MasterPlan`, { workspaceId, boardId, itemId, itemsValues }, req);
+    const result = await updateVariablesMasterplan(workspaceId, boardId, itemId, itemsValues);
+    
+    if (result.error) {
+        return res.status(200).json({ error: result.error });
+    }
+    res.status(200).json({ success: result.success, message: 'Variables MasterPlan updated' });
 });
 
 export default router;

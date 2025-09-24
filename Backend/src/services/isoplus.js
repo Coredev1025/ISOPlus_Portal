@@ -1628,6 +1628,72 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
     return [participantsProfileValues, homeSupportValues, assistiveTechnologyShortTermValues, assistiveTechnologyOngoingValues, homeModificationValues, healthProfessionalValues, wraparoundValues];
 }
 
+export async function getAgeCareMasterPlanReferencedItems(workspaceId, boardId, itemId) {
+    let servicePlanValues = null, cancellationTypeValues = null, participantProfileValues = null;
+
+    const referenceResponse = await getReferences(workspaceId, boardId, itemId);
+    if (!referenceResponse) return [null, null];
+
+    for (const reference of referenceResponse.data) {
+
+        const attribute = await getAttribute(workspaceId, boardId, reference.attribute_id);
+        if (!attribute) continue;
+
+        switch (attribute.name) {
+            case 'Service Plan':
+                {
+                    const servicePlan = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (servicePlan) {
+                        const values = servicePlan.values;
+                        servicePlanValues = {
+                            unit: values.find(v => v.attribute.name === "Unit").data.toString(),
+                            unitPrice: values.find(v => v.attribute.name === "Agreed Unit Price ($)").data.toString().replace('$', '') || '0',
+                            participantContribution: values.find(v => v.attribute.name === "Participant Contribution (%)").data.toString() || '',
+                        }
+                    }
+                    break;
+                }
+            case 'Cancellation Type':
+                {
+                    const cancellationType = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (cancellationType) {
+                        const values = cancellationType.values;
+                        cancellationTypeValues = {
+                            definition: values.find(v => v.attribute.name === "Definition").data.toString(),
+                            billableToClient: values.find(v => v.attribute.name === "Billable to Client %").data.toString(),
+                            payableToWorker: values.find(v => v.attribute.name === "Payable to Worker %").data.toString(),
+                        }
+                    }
+                    break;
+                }
+            case 'Participant Profile':
+                {
+                    const participantProfile = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (participantProfile) {
+                        const values = participantProfile.values;
+                        participantProfileValues = {
+                            fullName: values.find(v => v.attribute.name === "Full Name/Preferred Name").data.toString() || '',
+                            firstName: values.find(v => v.attribute.name === "First Name").data.toString() || '',
+                            lastName: values.find(v => v.attribute.name === "Last Name").data.toString() || '',
+                            email: values.find(v => v.attribute.name === "Email").data.toString() || '',
+                            phone: values.find(v => v.attribute.name === "Primary Phone Number").data.toString() || '',
+                            address: values.find(v => v.attribute.name === "Address").data.toString() || '',
+                            suburb: values.find(v => v.attribute.name === "Suburb").data.toString() || '',
+                            state: values.find(v => v.attribute.name === "State").data.toString() || '',
+                            postcode: values.find(v => v.attribute.name === "Postcode").data.toString() || '',
+                            billingContact: values.find(v => v.attribute.name === "Billing Contact").data.toString() || '',
+                            billingAddress: values.find(v => v.attribute.name === "Billing Address").data.toString() || '',
+                        };
+                    }
+                    break;
+                }
+        }
+    }
+
+    return [servicePlanValues, cancellationTypeValues, participantProfileValues];
+}
+
+
 export const getAutomation = async (workspaceId, boardId, authorization) => {
     try {
         const response = await axios.get(`https://app.isoplus.online/api/${workspaceId}/automations/${boardId}`, {
