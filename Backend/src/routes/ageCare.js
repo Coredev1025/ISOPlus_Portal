@@ -322,7 +322,7 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
                 attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
             });
         }
-        if (quantity > 0) {
+        if (quantity >= 0) {
             updatevariables.push({
                 data: quantity,
                 attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Quantity").attribute.id
