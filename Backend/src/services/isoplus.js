@@ -291,7 +291,7 @@ export async function getViewsById(authorization, workspaceId, boardId, viewId) 
 export async function setIntegrationMessage(workspaceId, boardId, itemId, message) {
     try {
         const board = await Board.findOne({ boardId: boardId.toString() });
-        if(!board.attribute.id) {
+        if (!board.attribute.id) {
             throw new Error("Internal message attribute not found in board configuration");
         }
         await axios.put(
@@ -978,7 +978,7 @@ export async function getQuoteNDISReferencedItems(workspaceId, boardId, itemId) 
         'Very Remote': 'Very Remote($)',
         '': 'ACT($)'
     }
-    let serviceAreaValues = null, directSupportValues = null, providerTravelValues = null, activityBasedTransportValues = null, centreCapitalCostsValues = null, providerTravelLabourTravelTime=null;
+    let serviceAreaValues = null, directSupportValues = null, providerTravelValues = null, activityBasedTransportValues = null, centreCapitalCostsValues = null, providerTravelLabourTravelTime = null;
 
     const referenceResponse = await getReferences(workspaceId, boardId, itemId);
     if (!referenceResponse) return [null, null];
@@ -1158,7 +1158,7 @@ export async function getNDISParticipantsServicePlanReferencedItems(workspaceId,
         if (!attribute) continue;
 
         switch (attribute.name) {
-            case 'Service Area': 
+            case 'Service Area':
                 {
                     const serviceValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
                     if (serviceValues) {
@@ -1468,7 +1468,7 @@ export async function getNDISMasterPlanReferencedItems(workspaceId, boardId, ite
 }
 
 export async function getAgeCareParticipantsServicePlanReferencedItems(workspaceId, boardId, itemId) {
-    let participantsProfileValues = null, homeSupportValues = null, assistiveTechnologyShortTermValues= null, assistiveTechnologyOngoingValues = null, homeModificationValues = null, healthProfessionalValues = null, wraparoundValues = null;
+    let participantsProfileValues = null, homeSupportValues = null, assistiveTechnologyShortTermValues = null, assistiveTechnologyOngoingValues = null, homeModificationValues = null, healthProfessionalValues = null, wraparoundValues = null;
 
     const referenceResponse = await getReferences(workspaceId, boardId, itemId);
     if (!referenceResponse) return [null, null];
@@ -1503,7 +1503,7 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                     }
                     break;
                 }
-            case 'Home Support (HS)': 
+            case 'Home Support (HS)':
                 {
                     const homeSupport = await getItemValues(workspaceId, boardId, reference.to_item_id);
                     if (homeSupport) {
@@ -1523,7 +1523,7 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                     }
                     break;
                 }
-            case 'Assistive Technology (AT) - Short Term': 
+            case 'Assistive Technology (AT) - Short Term':
                 {
                     const assistiveTechnologyShortTerm = await getItemValues(workspaceId, boardId, reference.to_item_id);
                     if (assistiveTechnologyShortTerm) {
@@ -1533,7 +1533,7 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                         }
 
                         assistiveTechnologyShortTermValues = {
-                            id: homeSupport.id,
+                            id: assistiveTechnologyShortTerm.id,
                             service: values.find(v => v.attribute.name === "Service").data.toString() || '',
                             serviceType: values.find(v => v.attribute.name === "Service Type").data.toString() || '',
                             unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
@@ -1543,7 +1543,7 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                     }
                     break;
                 }
-            case 'Assistive Technology (AT) - Ongoing': 
+            case 'Assistive Technology (AT) - Ongoing':
                 {
                     const assistiveTechnologyOngoing = await getItemValues(workspaceId, boardId, reference.to_item_id);
                     if (assistiveTechnologyOngoing) {
@@ -1563,7 +1563,7 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                     }
                     break;
                 }
-            case 'Home Modification (HM)': 
+            case 'Home Modification (HM)':
                 {
                     const homeModification = await getItemValues(workspaceId, boardId, reference.to_item_id);
                     if (homeModification) {
@@ -1571,15 +1571,15 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                         if (!values.some(v => v.attribute.name === "Service")) {
                             throw new Error("Service is required");
                         }
-                    }
 
-                    homeModificationValues = {
-                        id: homeModification.id,
-                        service: values.find(v => v.attribute.name === "Service").data.toString() || '',
-                        serviceType: values.find(v => v.attribute.name === "Service Type").data.toString() || '',
-                        unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
-                        unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
-                        participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                        homeModificationValues = {
+                            id: homeModification.id,
+                            service: values.find(v => v.attribute.name === "Service").data.toString() || '',
+                            serviceType: values.find(v => v.attribute.name === "Service Type").data.toString() || '',
+                            unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
+                            unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
+                            participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                        }
                     }
                     break;
                 }
@@ -1591,15 +1591,15 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                         if (!values.some(v => v.attribute.name === "Service")) {
                             throw new Error("Service is required");
                         }
-                    }
 
-                    healthProfessionalValues = {
-                        id: healthProfessional.id,
-                        service: values.find(v => v.attribute.name === "Service").data.toString() || '',
-                        serviceType: values.find(v => v.attribute.name === "Service Type").data.toString() || '',
-                        unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
-                        unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
-                        participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                        healthProfessionalValues = {
+                            id: healthProfessional.id,
+                            service: values.find(v => v.attribute.name === "Service").data.toString() || '',
+                            serviceType: values.find(v => v.attribute.name === "Service Type").data.toString() || '',
+                            unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
+                            unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
+                            participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                        }
                     }
                     break;
                 }
@@ -1611,14 +1611,14 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                         if (!values.some(v => v.attribute.name === "Wraparound Description")) {
                             throw new Error("Wraparound Description is required");
                         }
-                    }
 
-                    wraparoundValues = {
-                        id: wraparound.id,
-                        wraparoundDescription: values.find(v => v.attribute.name === "Wraparound Description").data.toString() || '',
-                        unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
-                        unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
-                        participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                        wraparoundValues = {
+                            id: wraparound.id,
+                            wraparoundDescription: values.find(v => v.attribute.name === "Wraparound Description").data.toString() || '',
+                            unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
+                            unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
+                            participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                        }
                     }
                     break;
                 }
