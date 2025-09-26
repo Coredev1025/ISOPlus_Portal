@@ -19,12 +19,45 @@ function formatValue(val) {
     }
 }
 
-const updateVariablesParticipantsService = async (workspaceId, boardId, itemId) => {
+const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, itemsValues) => {
     try {
         const responseItemValues = await getItemValues(workspaceId, boardId, itemId);
         const itemValuesWithAttributeId = responseItemValues.values;
 
         let updatevariables = [];
+        await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
+            { values: [
+                // {
+                //     data: "",
+                //     attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
+                // },
+                {
+                    data: 0,
+                    attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
+                },
+                {
+                    data: 0,
+                    attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
+                },
+                // {
+                //     data: "",
+                //     attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Service Plan ID").attribute.id
+                // },
+                // {
+                //     data: [],
+                //     attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Configuration Status").attribute.id
+                // }
+            ] },
+            {
+                headers: {
+                    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "X-API-Version": "2025-02-26.morava",
+                }
+            }
+        );
+
         const [participantsProfileValues, homeSupportValues, assistiveTechnologyShortTermValues, assistiveTechnologyOngoingValues, homeModificationValues, healthProfessionalValues, wraparoundValues] = await getAgeCareParticipantsServicePlanReferencedItems(workspaceId, boardId, itemId);
         const serviceCategory = itemValuesWithAttributeId.find(v => v.attribute.name === "Service Category")
         let fullName = '';
@@ -49,14 +82,14 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId) 
                         data: homeSupportValues.unit,
                         attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
                     });
-                    if (Number(homeSupportValues.unitPrice) > 0) {
+                    if (Number(homeSupportValues.unitPrice) >= 0) {
                         updatevariables.push({
                             data: Number(homeSupportValues.unitPrice),
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
                     const firstPercentageValue = parseFloat(homeSupportValues.participantContributionGuideline.split('-')[0]);
-                    if (firstPercentageValue > 0) {
+                    if (firstPercentageValue >= 0) {
                         updatevariables.push({
                             data: firstPercentageValue,
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
@@ -75,14 +108,14 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId) 
                         data: assistiveTechnologyShortTermValues.unit,
                         attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
                     });
-                    if (Number(assistiveTechnologyShortTermValues.unitPrice) > 0) {
+                    if (Number(assistiveTechnologyShortTermValues.unitPrice) >= 0) {
                         updatevariables.push({
                             data: Number(assistiveTechnologyShortTermValues.unitPrice),
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
                     const firstPercentageValue = parseFloat(assistiveTechnologyShortTermValues.participantContributionGuideline.split('-')[0]);
-                    if (firstPercentageValue > 0) {
+                    if (firstPercentageValue >= 0) {
                         updatevariables.push({
                             data: firstPercentageValue,
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
@@ -101,14 +134,14 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId) 
                         data: assistiveTechnologyOngoingValues.unit,
                         attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
                     });
-                    if (Number(assistiveTechnologyOngoingValues.unitPrice) > 0) {
+                    if (Number(assistiveTechnologyOngoingValues.unitPrice) >= 0) {
                         updatevariables.push({
                             data: Number(assistiveTechnologyOngoingValues.unitPrice),
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
                     const firstPercentageValue = parseFloat(assistiveTechnologyOngoingValues.participantContributionGuideline.split('-')[0]);
-                    if (firstPercentageValue > 0) {
+                    if (firstPercentageValue >= 0) {
                         updatevariables.push({
                             data: firstPercentageValue,
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
@@ -127,14 +160,14 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId) 
                         data: homeModificationValues.unit,
                         attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
                     });
-                    if (Number(homeModificationValues.unitPrice) > 0) {
+                    if (Number(homeModificationValues.unitPrice) >= 0) {
                         updatevariables.push({
                             data: Number(homeModificationValues.unitPrice),
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
                     const firstPercentageValue = parseFloat(homeModificationValues.participantContributionGuideline.split('-')[0]);
-                    if (firstPercentageValue > 0) {
+                    if (firstPercentageValue >= 0) {
                         updatevariables.push({
                             data: firstPercentageValue,
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
@@ -154,14 +187,14 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId) 
                         data: healthProfessionalValues.unit,
                         attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
                     });
-                    if (Number(healthProfessionalValues.unitPrice) > 0) {
+                    if (Number(healthProfessionalValues.unitPrice) >= 0) {
                         updatevariables.push({
                             data: Number(healthProfessionalValues.unitPrice),
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
                     const firstPercentageValue = parseFloat(healthProfessionalValues.participantContributionGuideline.split('-')[0]);
-                    if (firstPercentageValue > 0) {
+                    if (firstPercentageValue >= 0) {
                         updatevariables.push({
                             data: firstPercentageValue,
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
@@ -181,14 +214,14 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId) 
                         data: wraparoundValues.unit,
                         attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
                     });
-                    if (Number(wraparoundValues.unitPrice) > 0) {
+                    if (Number(wraparoundValues.unitPrice) >= 0) {
                         updatevariables.push({
                             data: Number(wraparoundValues.unitPrice),
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
                     const firstPercentageValue = parseFloat(wraparoundValues.participantContributionGuideline.split('-')[0]);
-                    if (firstPercentageValue > 0) {
+                    if (firstPercentageValue >= 0) {
                         updatevariables.push({
                             data: firstPercentageValue,
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
@@ -231,19 +264,22 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId) 
             let statusColor = '';
             let integrationMsg = '';
             if (selectedCount > 1) {
-                statusColor = '#F665E2';
-                integrationMsg = 'Multiple services selected. Please select only one service type per row.';
+                statusColor = '#EE691E';
+                integrationMsg = 'Multiple Groups selected. Please select only one Group per row.';
             } else if (selectedCount === 1) {
                 const selectedKey = selectedKeys[0];
                 if (expectedKey && selectedKey !== expectedKey) {
-                    statusColor = '#EE691E';
+                    statusColor = '#C60909';
                     integrationMsg = 'Selected service does not match the assigned Service Category.';
                 } else {
-                    statusColor = '#388903';
+                    const count = itemsValues["Home Support (HS)"].length + itemsValues["Assistive Technology (AT) - Short Term"].length + itemsValues["Assistive Technology (AT) - Ongoing"].length + itemsValues["Home Modification (HM)"].length + itemsValues["Health Professional"].length + itemsValues["Wraparound"].length;
+                    if(count > 1) {
+                        statusColor = '#F665E2';
+                        integrationMsg = 'Multiple services selected. Please select only one service type per group.';
+                    } else if (count == 1) {
+                        statusColor = '#388903';
+                    }
                 }
-            } else {
-                statusColor = '#C60909';
-                integrationMsg = 'No service selected. Please choose one service in the correct pricing column.';
             }
 
             if (statusColor) {
@@ -384,7 +420,7 @@ router.post('/:workspaceId/:boardId/update-variables-participants-service', asyn
     const itemsValues = items.values;
 
     info('AgeCare-Service', `Incoming request to update variables participants service`, { workspaceId, boardId, itemId, itemsValues }, req);
-    const result = await updateVariablesParticipantsService(workspaceId, boardId, itemId);
+    const result = await updateVariablesParticipantsService(workspaceId, boardId, itemId, itemsValues);
     if (result.error) {
         return res.status(200).json({ error: result.error });
     }
