@@ -26,10 +26,8 @@ const checkServiceClaimingConditions = async (workspaceId, boardId, itemId, item
         const committedATHM = itemsValues['Committed AT-HM for Delivery'];
         const unit = servicePlanValues.unit;
 
-        // Helper function to check if a value is blank
         const isBlank = (value) => !value || value.toString().trim() === '';
 
-        // Condition 1: Actual Shift End Date NOT blank + Delivered status
         if (!isBlank(actualShiftEndDate) &&
             transactionStatus?.includes('Delivered - To be claimed and Invoiced')) {
             if (unit && unit.toLowerCase().includes('item')) {
@@ -44,8 +42,7 @@ const checkServiceClaimingConditions = async (workspaceId, boardId, itemId, item
             return { success: true };
         }
 
-        // Condition 2: Actual Shift End Date blank + Delivered status
-        else if (isBlank(actualShiftEndDate) &&
+        if (isBlank(actualShiftEndDate) &&
             transactionStatus?.includes('Delivered - To be claimed and Invoiced')) {
             await setIntegrationMessage(workspaceId, boardId, itemId,
                 "Non-time-based case - Service will be claimed and invoiced based on quantity. " +
@@ -53,8 +50,7 @@ const checkServiceClaimingConditions = async (workspaceId, boardId, itemId, item
             return { success: true };
         }
 
-        // Condition 3: Actual Shift End Date blank + Cancelled status
-        else if (isBlank(actualShiftEndDate) &&
+        if (isBlank(actualShiftEndDate) &&
             transactionStatus?.includes('Cancelled - To be claimed and Invoiced if applicable')) {
             await setIntegrationMessage(workspaceId, boardId, itemId,
                 "Cancelled service - Will be claimed and invoiced in the month of actual end date. " +
@@ -62,8 +58,7 @@ const checkServiceClaimingConditions = async (workspaceId, boardId, itemId, item
             return { success: true };
         }
 
-        // Condition 4: Adjustment (Charge/Refund)
-        else if (transactionStatus?.includes('Adjustment (Charge)') ||
+        if (transactionStatus?.includes('Adjustment (Charge)') ||
             transactionStatus?.includes('Adjustment (Refund)')) {
             const adjustmentType = transactionStatus.includes('Charge') ? 'Charge' : 'Refund';
             const amountNote = adjustmentType === 'Refund' ?
@@ -75,8 +70,7 @@ const checkServiceClaimingConditions = async (workspaceId, boardId, itemId, item
             return { success: true };
         }
 
-        // Condition 5: Committed AT-HM for Delivery
-        else if (committedATHM && isBlank(transactionStatus)) {
+        if (committedATHM && isBlank(transactionStatus)) {
             const quantityNote = unit && unit.toLowerCase().includes('time') ?
                 "Duration will be considered as 'Scheduled Duration' for quantity." :
                 "Quantity will be 'Quantity (Non-Time-Based Service)'.";
@@ -88,11 +82,7 @@ const checkServiceClaimingConditions = async (workspaceId, boardId, itemId, item
                 "Committed items will be claimed and invoiced once delivered or cancelled.");
             return { success: true };
         }
-
-        return { 
-            success: false, 
-            error: `Service claiming conditions not met. Actual Shift End Date: "${actualShiftEndDate || 'blank'}", Transaction Status: "${transactionStatus || 'blank'}", Committed AT-HM: "${committedATHM || 'blank'}". Please ensure the service matches one of the expected conditions: 1) Delivered with end date, 2) Delivered without end date, 3) Cancelled without end date, 4) Adjustment (Charge/Refund), or 5) Committed AT-HM for Delivery.` 
-        };
+        return { success: true };
     } catch (error) {
         console.error('Error in checkServiceClaimingConditions:', error);
         await setIntegrationMessage(workspaceId, boardId, itemId,
@@ -391,19 +381,20 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                 }
             );
             if (response.status === 200) {
-                setIntegrationMessage(workspaceId, boardId, itemId, "Variables participants service updated successfully");
+                await setIntegrationMessage(workspaceId, boardId, itemId, "Variables participants service updated successfully");
                 info('Xero-Service', 'Variables participants service updated successfully', { updatevariables });
                 return { success: true };
             } else {
-                setIntegrationMessage(workspaceId, boardId, itemId, "Failed to update variables participants service");
+                await setIntegrationMessage(workspaceId, boardId, itemId, "Failed to update variables participants service");
                 warn('Xero-Service', 'Failed to update variables participants service', { updatevariables });
                 return { error: 'Failed to update variables participants service' };
             }
         } else {
             return { success: true };
         }
-    } catch {
-        setIntegrationMessage(workspaceId, boardId, itemId, "While updating PartiService Plan variables, an unknown error occurred. Please contact ISO+ Portal Support team.")
+    } catch (error) {
+        console.error('Error in updateVariablesParticipantsService:', error);
+        await setIntegrationMessage(workspaceId, boardId, itemId, "While updating PartiService Plan variables, an unknown error occurred. Please contact ISO+ Portal Support team.");
         return { error: 'While updating PartiService Plan variables, an unknown error occurred. Please contact ISO+ Portal Support team.' };
     }
 }
@@ -412,17 +403,18 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
     try {
         const [servicePlanValues, cancellationTypeValues, participantProfileValues] = await getAgeCareMasterPlanReferencedItems(workspaceId, boardId, itemId);
         if (!servicePlanValues) {
-            setIntegrationMessage(workspaceId, boardId, itemId, "Service Plan Item not found");
+            await setIntegrationMessage(workspaceId, boardId, itemId, "Service Plan Item not found");
             return { error: 'Service Plan Item not found' };
         }
 
-        let updatevariables = [];
         const responseItemValues = await getItemValues(workspaceId, boardId, itemId);
         const itemValuesWithAttributeId = responseItemValues.values;
 
+        let updatevariables = [];
+
         const actualDuration = formatValue(itemsValues["Actual Shift Duration(Hr.)"] || 0);
         const scheduledDuration = formatValue(itemsValues["Scheduled Shift Duration(Hr.)"] || 0);
-        const quantityNonTimeBased = formatValue(itemsValues["Quantity (Non-Time-Based Service"] || 0);
+        const quantityNonTimeBased = formatValue(itemsValues["Quantity (Non-Time-Based Service)"] || 0);
         const transactionStatus = itemsValues["Transaction Status"];
         let quantity = 0;
 
@@ -436,8 +428,18 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
             }
         }
 
-        let totalAmount = transactionStatus.includes('Cancelled') ? Number(formatValue(servicePlanValues.unitPrice * quantity * (cancellationTypeValues.billableToClient / 100))) : Number(formatValue(servicePlanValues.unitPrice * quantity));
-        let participantContribution = Number(formatValue((servicePlanValues.participantContribution / 100) * servicePlanValues.unitPrice));
+        let totalAmount = 0;
+        if (transactionStatus?.includes('Cancelled')) {
+            if (cancellationTypeValues?.billableToClient) {
+                totalAmount = Number(formatValue(servicePlanValues.unitPrice * quantity * (cancellationTypeValues.billableToClient / 100)));
+            } else {
+                await setIntegrationMessage(workspaceId, boardId, itemId, "Cancellation Type Item not found");
+                return { error: 'Cancellation Type Item not found' };
+            }
+        } else {
+            totalAmount = Number(formatValue(servicePlanValues.unitPrice * quantity));
+        }
+        let participantContribution = Number(formatValue((servicePlanValues.participantContribution / 100) * totalAmount));
         let governmentSubsidy = Number(formatValue(totalAmount - participantContribution));
         const checkServiceClaimingConditionsResult = await checkServiceClaimingConditions(workspaceId, boardId, itemId, itemsValues, servicePlanValues);
         if (checkServiceClaimingConditionsResult.success === false) {
@@ -490,18 +492,87 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
                 }
             );
             if (response.status === 200) {
-                setIntegrationMessage(workspaceId, boardId, itemId, "Variables MasterPlan updated successfully");
+                await setIntegrationMessage(workspaceId, boardId, itemId, "Variables MasterPlan updated successfully");
                 info('Xero-Service', 'Variables MasterPlan updated successfully', { updatevariables });
                 return { success: true };
             } else {
-                setIntegrationMessage(workspaceId, boardId, itemId, "Failed to update variables MasterPlan");
+                await setIntegrationMessage(workspaceId, boardId, itemId, "Failed to update variables MasterPlan");
                 warn('Xero-Service', 'Failed to update variables MasterPlan', { updatevariables });
                 return { error: 'Failed to update variables MasterPlan' };
             }
+        } else {
+            return { success: true };
         }
-    } catch {
-        setIntegrationMessage(workspaceId, boardId, itemId, "While updating MasterPlan variables, an unknown error occurred. Please contact ISO+ Portal Support team.")
+    } catch (error) {
+        console.error('Error in updateVariablesMasterplan:', error);
+        await setIntegrationMessage(workspaceId, boardId, itemId, "While updating MasterPlan variables, an unknown error occurred. Please contact ISO+ Portal Support team.");
         return { error: 'While updating MasterPlan variables, an unknown error occurred. Please contact ISO+ Portal Support team.' };
+    }
+}
+
+const updateParticipantsServiceplan = async (workspaceId, boardId, itemId, itemsValues) => {
+    try {
+        const [servicePlanValues, cancellationTypeValues, participantProfileValues] = await getAgeCareMasterPlanReferencedItems(workspaceId, boardId, itemId);
+        if (!servicePlanValues) {
+            await setIntegrationMessage(workspaceId, boardId, itemId, "Service Plan Item not found");
+            return { error: 'Service Plan Item not found' };
+        }
+
+        const responseMasteplanValues = await getItemValues(workspaceId, boardId, itemId);
+        const masterplanValuesWithAttributeId = responseMasteplanValues.values;
+        
+        const responseItemValues = await getItemValues(workspaceId, boardId, masterplanValuesWithAttributeId.find(v => v.attribute.name === "Service Plan").data.toString());
+        const itemValuesWithAttributeId = responseItemValues.values;
+        
+        console.log('itemValuesWithAttributeId', itemValuesWithAttributeId);
+        const unit = itemsValues["Unit"];
+        const unitPrice = itemsValues["Unit Price ($)"];
+        let updatevariables = [];
+        
+        if (unit != ' ' && unit != null && unit != undefined) {
+            updatevariables.push({
+                data: unit,
+                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
+            });
+        }
+        
+        if (unitPrice != ' ' && unitPrice != null && unitPrice != undefined) {
+            updatevariables.push({
+                data: unitPrice,
+                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
+            });
+        }
+        if (updatevariables.length > 0) {
+            const response = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${masterplanValuesWithAttributeId.find(v => v.attribute.name === "Service Plan").data.toString()}`,
+                { values: updatevariables },
+                {
+                    headers: {
+                        "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "X-API-Version": "2025-02-26.morava",
+                    }
+                }
+            );
+            if (response.status === 200) {
+                await setIntegrationMessage(workspaceId, boardId, itemId, "Participants ServicePlan updated successfully");
+                info('Xero-Service', 'Participants ServicePlan updated successfully', { updatevariables });
+                const result = await updateVariablesMasterplan(workspaceId, boardId, itemId, itemsValues);
+                if (result.error) {
+                    return { error: result.error };
+                } else {
+                    return { success: true };
+                }
+            } else {
+                await setIntegrationMessage(workspaceId, boardId, itemId, "Failed to update Participants ServicePlan");
+                warn('Xero-Service', 'Failed to update Participants ServicePlan', { updatevariables });
+                return { error: 'Failed to update Participants ServicePlan' };
+            }
+        }
+        return { success: true };
+    } catch (error) {
+        console.error('Error in updateParticipantsServiceplan:', error);
+        return { error: 'While updating Participants ServicePlan, an unknown error occurred. Please contact ISO+ Portal Support team.' };
     }
 }
 
@@ -527,11 +598,41 @@ router.post('/:workspaceId/:boardId/update-variables-masterplan', async (req, re
 
     info('AgeCare-Service', `Incoming request to update variables MasterPlan`, { workspaceId, boardId, itemId, itemsValues }, req);
     const result = await updateVariablesMasterplan(workspaceId, boardId, itemId, itemsValues);
-    
+
     if (result.error) {
         return res.status(200).json({ error: result.error });
     }
     res.status(200).json({ success: result.success, message: 'Variables MasterPlan updated' });
+});
+
+router.post('/:workspaceId/:boardId/update-masterplan', async (req, res) => {
+    const { workspaceId, boardId } = req.params;
+    const items = req.body.items[0];
+    const itemId = items.id;
+    const itemsValues = items.values;
+
+    info('AgeCare-Service', `Incoming request to update MasterPlan`, { workspaceId, boardId, itemId, itemsValues }, req);
+    const result = await updateVariablesMasterplan(workspaceId, boardId, itemId, itemsValues);
+
+    if (result.error) {
+        return res.status(200).json({ error: result.error });
+    }
+    res.status(200).json({ success: result.success, message: 'MasterPlan updated' });
+});
+
+router.post('/:workspaceId/:boardId/update-participants-serviceplan', async (req, res) => {
+    const { workspaceId, boardId } = req.params;
+    const items = req.body.items[0];
+    const itemId = items.id;
+    const itemsValues = items.values;
+
+    // info('AgeCare-Service', `Incoming request to update Participants ServicePlan`, { workspaceId, boardId, itemId, itemsValues }, req);
+    const result = await updateParticipantsServiceplan(workspaceId, boardId, itemId, itemsValues);
+
+    if (result.error) {
+        return res.status(200).json({ error: result.error });
+    }
+    res.status(200).json({ success: result.success, message: 'Participants ServicePlan updated' });
 });
 
 export default router;
