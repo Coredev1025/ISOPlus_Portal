@@ -511,7 +511,7 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
         let cancellationFee = 0;
         if (servicePlanValues?.directSupportShortNoticeCancellations === 'Y') {
             if (servicePlanValues?.directSupportUnit === 'Hour(H)') {
-                const baseUnitPrice = Number(servicePlanValues.directSupportUnitPrice) / groupSize || 0;
+                const baseUnitPrice = groupSize > 0 ? Number(servicePlanValues.directSupportUnitPrice) / groupSize : 0;
                 const unitPrice = Number(formatValue(baseUnitPrice * (cancellationPercentage / 100)));
                 const amount = formatValue(scheduledShiftDuration * unitPrice);
                 cancellationFee += Number(amount);
@@ -524,19 +524,19 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
             }
         }
         if (servicePlanValues?.providerTravelShortNoticeCancellations === 'Y') {
-            const baseUnitPrice = Number(servicePlanValues.nonLabourTravelUnitPrice) || 0;
+            const baseUnitPrice = Number(servicePlanValues?.nonLabourTravelUnitPrice) || 0;
             const unitPrice = Number(formatValue(baseUnitPrice * (cancellationPercentage / 100)));
             const amount = formatValue(scheduledShiftDuration * unitPrice);
             cancellationFee += Number(amount);
         }
         if (servicePlanValues?.activityBasedTransportShortNoticeCancellations === 'Y') {
-            const baseUnitPrice = Number(servicePlanValues.activityBasedTransportUnitPrice) || 0;
+            const baseUnitPrice = Number(servicePlanValues?.activityBasedTransportUnitPrice) || 0;
             const unitPrice = Number(formatValue(baseUnitPrice * (cancellationPercentage / 100)));
             const amount = formatValue(scheduledShiftDuration * unitPrice);
             cancellationFee += Number(amount);
         }
         if (servicePlanValues?.centreCapitalCostsShortNoticeCancellations === 'Y') {
-            const baseUnitPrice = Number(servicePlanValues.centreCapitalCostsUnitPrice) || 0;
+            const baseUnitPrice = Number(servicePlanValues?.centreCapitalCostsUnitPrice) || 0;
             const unitPrice = Number(formatValue(baseUnitPrice * (cancellationPercentage / 100)));
             const amount = formatValue(scheduledShiftDuration * unitPrice);
             cancellationFee += Number(amount);

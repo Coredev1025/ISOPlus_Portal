@@ -162,7 +162,9 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
-                    const firstPercentageValue = parseFloat(homeSupportValues.participantContributionGuideline.split('-')[0]);
+                    const firstPercentageValue = homeSupportValues.participantContributionGuideline && homeSupportValues.participantContributionGuideline.includes('-') 
+                        ? parseFloat(homeSupportValues.participantContributionGuideline.split('-')[0]) 
+                        : 0;
                     if (firstPercentageValue >= 0) {
                         updatevariables.push({
                             data: firstPercentageValue,
@@ -188,7 +190,9 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
-                    const firstPercentageValue = parseFloat(assistiveTechnologyShortTermValues.participantContributionGuideline.split('-')[0]);
+                    const firstPercentageValue = assistiveTechnologyShortTermValues.participantContributionGuideline && assistiveTechnologyShortTermValues.participantContributionGuideline.includes('-') 
+                        ? parseFloat(assistiveTechnologyShortTermValues.participantContributionGuideline.split('-')[0]) 
+                        : 0;
                     if (firstPercentageValue >= 0) {
                         updatevariables.push({
                             data: firstPercentageValue,
@@ -214,7 +218,9 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
-                    const firstPercentageValue = parseFloat(assistiveTechnologyOngoingValues.participantContributionGuideline.split('-')[0]);
+                    const firstPercentageValue = assistiveTechnologyOngoingValues.participantContributionGuideline && assistiveTechnologyOngoingValues.participantContributionGuideline.includes('-') 
+                        ? parseFloat(assistiveTechnologyOngoingValues.participantContributionGuideline.split('-')[0]) 
+                        : 0;
                     if (firstPercentageValue >= 0) {
                         updatevariables.push({
                             data: firstPercentageValue,
@@ -240,7 +246,9 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
-                    const firstPercentageValue = parseFloat(homeModificationValues.participantContributionGuideline.split('-')[0]);
+                    const firstPercentageValue = homeModificationValues.participantContributionGuideline && homeModificationValues.participantContributionGuideline.includes('-') 
+                        ? parseFloat(homeModificationValues.participantContributionGuideline.split('-')[0]) 
+                        : 0;
                     if (firstPercentageValue >= 0) {
                         updatevariables.push({
                             data: firstPercentageValue,
@@ -267,7 +275,9 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
-                    const firstPercentageValue = parseFloat(healthProfessionalValues.participantContributionGuideline.split('-')[0]);
+                    const firstPercentageValue = healthProfessionalValues.participantContributionGuideline && healthProfessionalValues.participantContributionGuideline.includes('-') 
+                        ? parseFloat(healthProfessionalValues.participantContributionGuideline.split('-')[0]) 
+                        : 0;
                     if (firstPercentageValue >= 0) {
                         updatevariables.push({
                             data: firstPercentageValue,
@@ -294,7 +304,9 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
-                    const firstPercentageValue = parseFloat(wraparoundValues.participantContributionGuideline.split('-')[0]);
+                    const firstPercentageValue = wraparoundValues.participantContributionGuideline && wraparoundValues.participantContributionGuideline.includes('-') 
+                        ? parseFloat(wraparoundValues.participantContributionGuideline.split('-')[0]) 
+                        : 0;
                     if (firstPercentageValue >= 0) {
                         updatevariables.push({
                             data: firstPercentageValue,
@@ -346,7 +358,12 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                     statusColor = '#C60909';
                     integrationMsg = 'Selected service does not match the assigned Service Category.';
                 } else {
-                    const count = itemsValues["Home Support (HS)"].length + itemsValues["Assistive Technology (AT) - Short Term"].length + itemsValues["Assistive Technology (AT) - Ongoing"].length + itemsValues["Home Modification (HM)"].length + itemsValues["Health Professional"].length + itemsValues["Wraparound"].length;
+                    const count = (itemsValues["Home Support (HS)"]?.length || 0) + 
+                                  (itemsValues["Assistive Technology (AT) - Short Term"]?.length || 0) + 
+                                  (itemsValues["Assistive Technology (AT) - Ongoing"]?.length || 0) + 
+                                  (itemsValues["Home Modification (HM)"]?.length || 0) + 
+                                  (itemsValues["Health Professional"]?.length || 0) + 
+                                  (itemsValues["Wraparound"]?.length || 0);
                     if (count > 1) {
                         statusColor = '#F665E2';
                         integrationMsg = 'Multiple services selected. Please select only one service type per group.';
