@@ -19,6 +19,88 @@ function formatValue(val) {
     }
 }
 
+const checkServiceClaimingConditions = async (workspaceId, boardId, itemId, itemsValues, servicePlanValues) => {
+    try {
+        const actualShiftEndDate = itemsValues['Actual Shift End Date'];
+        const transactionStatus = itemsValues['Transaction Status'];
+        const committedATHM = itemsValues['Committed AT-HM for Delivery'];
+        const unit = servicePlanValues.unit;
+
+        // Helper function to check if a value is blank
+        const isBlank = (value) => !value || value.toString().trim() === '';
+
+        // Condition 1: Actual Shift End Date NOT blank + Delivered status
+        if (!isBlank(actualShiftEndDate) &&
+            transactionStatus?.includes('Delivered - To be claimed and Invoiced')) {
+            if (unit && unit.toLowerCase().includes('item')) {
+                await setIntegrationMessage(workspaceId, boardId, itemId,
+                    "Normal case - Service will be claimed and invoiced in the month of actual end date. " +
+                    "Non-time-based item: Ignore date and actual duration for quantity calculation.");
+            } else {
+                await setIntegrationMessage(workspaceId, boardId, itemId,
+                    "Normal case - Service will be claimed and invoiced in the month of actual end date. " +
+                    "Time-based item: Use shift end date to calculate quantity.");
+            }
+            return { success: true };
+        }
+
+        // Condition 2: Actual Shift End Date blank + Delivered status
+        else if (isBlank(actualShiftEndDate) &&
+            transactionStatus?.includes('Delivered - To be claimed and Invoiced')) {
+            await setIntegrationMessage(workspaceId, boardId, itemId,
+                "Non-time-based case - Service will be claimed and invoiced based on quantity. " +
+                "Actual start and end dates not required for calculation.");
+            return { success: true };
+        }
+
+        // Condition 3: Actual Shift End Date blank + Cancelled status
+        else if (isBlank(actualShiftEndDate) &&
+            transactionStatus?.includes('Cancelled - To be claimed and Invoiced if applicable')) {
+            await setIntegrationMessage(workspaceId, boardId, itemId,
+                "Cancelled service - Will be claimed and invoiced in the month of actual end date. " +
+                "Cancellation percentage will be applied and included in description.");
+            return { success: true };
+        }
+
+        // Condition 4: Adjustment (Charge/Refund)
+        else if (transactionStatus?.includes('Adjustment (Charge)') ||
+            transactionStatus?.includes('Adjustment (Refund)')) {
+            const adjustmentType = transactionStatus.includes('Charge') ? 'Charge' : 'Refund';
+            const amountNote = adjustmentType === 'Refund' ?
+                " Total Amount Charged, Government Subsidy and Participant Contribution will be negative." : "";
+
+            await setIntegrationMessage(workspaceId, boardId, itemId,
+                `Adjustment (${adjustmentType}) - Unit, Quantity, Unit Price, Total Price, ` +
+                `Government Contribution and Participant Contribution will be added manually.${amountNote}`);
+            return { success: true };
+        }
+
+        // Condition 5: Committed AT-HM for Delivery
+        else if (committedATHM && isBlank(transactionStatus)) {
+            const quantityNote = unit && unit.toLowerCase().includes('time') ?
+                "Duration will be considered as 'Scheduled Duration' for quantity." :
+                "Quantity will be 'Quantity (Non-Time-Based Service)'.";
+
+            await setIntegrationMessage(workspaceId, boardId, itemId,
+                "Committed AT-HM for Delivery - Not considered for claiming and invoicing, " +
+                "but will be shown in Monthly Statement and Individualised Plan for the month of Scheduled Start Date. " +
+                quantityNote + " " +
+                "Committed items will be claimed and invoiced once delivered or cancelled.");
+            return { success: true };
+        }
+
+        return { 
+            success: false, 
+            error: `Service claiming conditions not met. Actual Shift End Date: "${actualShiftEndDate || 'blank'}", Transaction Status: "${transactionStatus || 'blank'}", Committed AT-HM: "${committedATHM || 'blank'}". Please ensure the service matches one of the expected conditions: 1) Delivered with end date, 2) Delivered without end date, 3) Cancelled without end date, 4) Adjustment (Charge/Refund), or 5) Committed AT-HM for Delivery.` 
+        };
+    } catch (error) {
+        console.error('Error in checkServiceClaimingConditions:', error);
+        await setIntegrationMessage(workspaceId, boardId, itemId,
+            `An error occurred while checking service claiming conditions: ${error.message}. Please contact support.`);
+        return { success: false, error: `An error occurred while checking service claiming conditions: ${error.message}. Please contact support.` };
+    }
+};
+
 const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, itemsValues) => {
     try {
         const responseItemValues = await getItemValues(workspaceId, boardId, itemId);
@@ -26,28 +108,30 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
 
         let updatevariables = [];
         await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
-            { values: [
-                // {
-                //     data: "",
-                //     attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
-                // },
-                {
-                    data: 0,
-                    attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
-                },
-                {
-                    data: 0,
-                    attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
-                },
-                // {
-                //     data: "",
-                //     attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Service Plan ID").attribute.id
-                // },
-                // {
-                //     data: [],
-                //     attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Configuration Status").attribute.id
-                // }
-            ] },
+            {
+                values: [
+                    // {
+                    //     data: "",
+                    //     attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
+                    // },
+                    {
+                        data: 0,
+                        attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
+                    },
+                    {
+                        data: 0,
+                        attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
+                    },
+                    // {
+                    //     data: "",
+                    //     attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Service Plan ID").attribute.id
+                    // },
+                    // {
+                    //     data: [],
+                    //     attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Configuration Status").attribute.id
+                    // }
+                ]
+            },
             {
                 headers: {
                     "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
@@ -273,7 +357,7 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                     integrationMsg = 'Selected service does not match the assigned Service Category.';
                 } else {
                     const count = itemsValues["Home Support (HS)"].length + itemsValues["Assistive Technology (AT) - Short Term"].length + itemsValues["Assistive Technology (AT) - Ongoing"].length + itemsValues["Home Modification (HM)"].length + itemsValues["Health Professional"].length + itemsValues["Wraparound"].length;
-                    if(count > 1) {
+                    if (count > 1) {
                         statusColor = '#F665E2';
                         integrationMsg = 'Multiple services selected. Please select only one service type per group.';
                     } else if (count == 1) {
@@ -319,8 +403,8 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
             return { success: true };
         }
     } catch {
-        setIntegrationMessage(workspaceId, boardId, itemId, "While updating PartiService Plan variables, unknown error occur. Please contact ISO+ Portal Support team.")
-        return { error: 'While updating PartiService Plan variables, unknown error occur. Please contact ISO+ Portal Support team.' };
+        setIntegrationMessage(workspaceId, boardId, itemId, "While updating PartiService Plan variables, an unknown error occurred. Please contact ISO+ Portal Support team.")
+        return { error: 'While updating PartiService Plan variables, an unknown error occurred. Please contact ISO+ Portal Support team.' };
     }
 }
 
@@ -336,21 +420,29 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
         const responseItemValues = await getItemValues(workspaceId, boardId, itemId);
         const itemValuesWithAttributeId = responseItemValues.values;
 
-        const actualDuration = formatValue(itemsValues["Actual Shift Duration(Hr.)"]);
-        const scheduledDuration = formatValue(itemsValues["Scheduled Shift Duration(Hr.)"]);
-        const quantityNonTimeBased = formatValue(itemsValues["Quantity (Non-Time-Based Service"]);
+        const actualDuration = formatValue(itemsValues["Actual Shift Duration(Hr.)"] || 0);
+        const scheduledDuration = formatValue(itemsValues["Scheduled Shift Duration(Hr.)"] || 0);
+        const quantityNonTimeBased = formatValue(itemsValues["Quantity (Non-Time-Based Service"] || 0);
         const transactionStatus = itemsValues["Transaction Status"];
         let quantity = 0;
 
         if (transactionStatus?.includes('Adjustment (Refund)') || transactionStatus?.includes('Adjustment (Charge)')) {
             quantity = 0;
         } else {
-            quantity = servicePlanValues.unit.includes('Hour') ? Number(actualDuration) : Number(quantityNonTimeBased);
+            if (transactionStatus?.includes('Cancelled')) {
+                quantity = servicePlanValues.unit.includes('Hour') ? Number(scheduledDuration) : Number(quantityNonTimeBased);
+            } else {
+                quantity = servicePlanValues.unit.includes('Hour') ? Number(actualDuration) : Number(quantityNonTimeBased);
+            }
         }
 
-        let totalAmount = Number(formatValue(servicePlanValues.unitPrice * quantity));
+        let totalAmount = transactionStatus.includes('Cancelled') ? Number(formatValue(servicePlanValues.unitPrice * quantity * (cancellationTypeValues.billableToClient / 100))) : Number(formatValue(servicePlanValues.unitPrice * quantity));
         let participantContribution = Number(formatValue((servicePlanValues.participantContribution / 100) * servicePlanValues.unitPrice));
         let governmentSubsidy = Number(formatValue(totalAmount - participantContribution));
+        const checkServiceClaimingConditionsResult = await checkServiceClaimingConditions(workspaceId, boardId, itemId, itemsValues, servicePlanValues);
+        if (checkServiceClaimingConditionsResult.success === false) {
+            return { error: checkServiceClaimingConditionsResult.error };
+        }
 
         if (servicePlanValues.unit != ' ' && servicePlanValues.unit != null && servicePlanValues.unit != undefined) {
             updatevariables.push({
@@ -364,7 +456,7 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
                 attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Quantity").attribute.id
             });
         }
-        if (servicePlanValues.unitPrice > 0) {
+        if (servicePlanValues.unitPrice >= 0) {
             updatevariables.push({
                 data: servicePlanValues.unitPrice,
                 attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit Price ($)").attribute.id
@@ -408,8 +500,8 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
             }
         }
     } catch {
-        setIntegrationMessage(workspaceId, boardId, itemId, "While updating MasterPlan variables, unknown error occur. Please contact ISO+ Portal Support team.")
-        return { error: 'While updating MasterPlan variables, unknown error occur. Please contact ISO+ Portal Support team.' };
+        setIntegrationMessage(workspaceId, boardId, itemId, "While updating MasterPlan variables, an unknown error occurred. Please contact ISO+ Portal Support team.")
+        return { error: 'While updating MasterPlan variables, an unknown error occurred. Please contact ISO+ Portal Support team.' };
     }
 }
 
