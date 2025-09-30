@@ -1199,7 +1199,7 @@ export async function getNDISParticipantsServicePlanReferencedItems(workspaceId,
                             "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
                             "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
                             "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
-                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations").data.toString(),
+                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations")?.data?.toString() || 'NA',
                         };
                     }
                     break;
@@ -1228,7 +1228,7 @@ export async function getNDISParticipantsServicePlanReferencedItems(workspaceId,
                             "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
                             "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
                             "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
-                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations").data.toString(),
+                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations")?.data?.toString() || 'NA',
                         };
                     }
                     break;
@@ -1257,7 +1257,7 @@ export async function getNDISParticipantsServicePlanReferencedItems(workspaceId,
                             "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
                             "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
                             "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
-                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations").data.toString(),
+                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations")?.data?.toString() || 'NA',
                         };
                     }
                     break;
@@ -1286,7 +1286,7 @@ export async function getNDISParticipantsServicePlanReferencedItems(workspaceId,
                             "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
                             "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
                             "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
-                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations").data.toString(),
+                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations")?.data?.toString() || 'NA',
                         };
                     }
                     break;
