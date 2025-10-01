@@ -398,21 +398,21 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                 }
             );
             if (response.status === 200) {
-                await setIntegrationMessage(workspaceId, boardId, itemId, "Variables participants service updated successfully");
-                info('Xero-Service', 'Variables participants service updated successfully', { updatevariables });
+                await setIntegrationMessage(workspaceId, boardId, itemId, "Participants Service Plan Variables updated successfully.");
+                info('Xero-Service', 'Participants Service Plan Variables updated successfully.', { updatevariables });
                 return { success: true };
             } else {
-                await setIntegrationMessage(workspaceId, boardId, itemId, "Failed to update variables participants service");
-                warn('Xero-Service', 'Failed to update variables participants service', { updatevariables });
-                return { error: 'Failed to update variables participants service' };
+                await setIntegrationMessage(workspaceId, boardId, itemId, "Failed to update Participants Service Plan Variables.");
+                warn('Xero-Service', 'Failed to update Participants Service Plan Variables.', { updatevariables });
+                return { error: 'Failed to update Participants Service Plan Variables.' };
             }
         } else {
             return { success: true };
         }
     } catch (error) {
         console.error('Error in updateVariablesParticipantsService:', error);
-        await setIntegrationMessage(workspaceId, boardId, itemId, "While updating PartiService Plan variables, an unknown error occurred. Please contact ISO+ Portal Support team.");
-        return { error: 'While updating PartiService Plan variables, an unknown error occurred. Please contact ISO+ Portal Support team.' };
+        await setIntegrationMessage(workspaceId, boardId, itemId, "While updating Participants Service Plan Variables, an unknown error occurred. Please contact ISO+ Portal Support team.");
+        return { error: 'While updating Participants Service Plan Variables, an unknown error occurred. Please contact ISO+ Portal Support team.' };
     }
 }
 
@@ -420,8 +420,8 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
     try {
         const [servicePlanValues, cancellationTypeValues, participantProfileValues] = await getAgeCareMasterPlanReferencedItems(workspaceId, boardId, itemId);
         if (!servicePlanValues) {
-            await setIntegrationMessage(workspaceId, boardId, itemId, "Service Plan Item not found");
-            return { error: 'Service Plan Item not found' };
+            await setIntegrationMessage(workspaceId, boardId, itemId, "Service Plan Item not found.");
+            return { error: 'Service Plan Item not found.' };
         }
 
         const responseItemValues = await getItemValues(workspaceId, boardId, itemId);
@@ -450,8 +450,8 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
             if (cancellationTypeValues?.billableToClient) {
                 totalAmount = Number(formatValue(servicePlanValues.unitPrice * quantity * (cancellationTypeValues.billableToClient / 100)));
             } else {
-                await setIntegrationMessage(workspaceId, boardId, itemId, "Cancellation Type Item not found");
-                return { error: 'Cancellation Type Item not found' };
+                await setIntegrationMessage(workspaceId, boardId, itemId, "Cancellation Type Item not found.");
+                return { error: 'Cancellation Type Item not found.' };
             }
         } else {
             totalAmount = Number(formatValue(servicePlanValues.unitPrice * quantity));
@@ -509,21 +509,21 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
                 }
             );
             if (response.status === 200) {
-                await setIntegrationMessage(workspaceId, boardId, itemId, "Variables MasterPlan updated successfully");
-                info('Xero-Service', 'Variables MasterPlan updated successfully', { updatevariables });
+                await setIntegrationMessage(workspaceId, boardId, itemId, "Master Plan Variables updated successfully.");
+                info('Xero-Service', 'Master Plan Variables updated successfully.', { updatevariables });
                 return { success: true };
             } else {
-                await setIntegrationMessage(workspaceId, boardId, itemId, "Failed to update variables MasterPlan");
-                warn('Xero-Service', 'Failed to update variables MasterPlan', { updatevariables });
-                return { error: 'Failed to update variables MasterPlan' };
+                await setIntegrationMessage(workspaceId, boardId, itemId, "Failed to update Master Plan Variables.");
+                warn('Xero-Service', 'Failed to update Master Plan Variables.', { updatevariables });
+                return { error: 'Failed to update Master Plan Variables.' };
             }
         } else {
             return { success: true };
         }
     } catch (error) {
         console.error('Error in updateVariablesMasterplan:', error);
-        await setIntegrationMessage(workspaceId, boardId, itemId, "While updating MasterPlan variables, an unknown error occurred. Please contact ISO+ Portal Support team.");
-        return { error: 'While updating MasterPlan variables, an unknown error occurred. Please contact ISO+ Portal Support team.' };
+        await setIntegrationMessage(workspaceId, boardId, itemId, "While updating Master Plan Variables, an unknown error occurred. Please contact ISO+ Portal Support team.");
+        return { error: 'While updating Master Plan Variables, an unknown error occurred. Please contact ISO+ Portal Support team.' };
     }
 }
 
@@ -620,36 +620,6 @@ router.post('/:workspaceId/:boardId/update-variables-masterplan', async (req, re
         return res.status(200).json({ error: result.error });
     }
     res.status(200).json({ success: result.success, message: 'Variables MasterPlan updated' });
-});
-
-router.post('/:workspaceId/:boardId/update-masterplan', async (req, res) => {
-    const { workspaceId, boardId } = req.params;
-    const items = req.body.items[0];
-    const itemId = items.id;
-    const itemsValues = items.values;
-
-    info('AgeCare-Service', `Incoming request to update MasterPlan`, { workspaceId, boardId, itemId, itemsValues }, req);
-    const result = await updateVariablesMasterplan(workspaceId, boardId, itemId, itemsValues);
-
-    if (result.error) {
-        return res.status(200).json({ error: result.error });
-    }
-    res.status(200).json({ success: result.success, message: 'MasterPlan updated' });
-});
-
-router.post('/:workspaceId/:boardId/update-participants-serviceplan', async (req, res) => {
-    const { workspaceId, boardId } = req.params;
-    const items = req.body.items[0];
-    const itemId = items.id;
-    const itemsValues = items.values;
-
-    // info('AgeCare-Service', `Incoming request to update Participants ServicePlan`, { workspaceId, boardId, itemId, itemsValues }, req);
-    const result = await updateParticipantsServiceplan(workspaceId, boardId, itemId, itemsValues);
-
-    if (result.error) {
-        return res.status(200).json({ error: result.error });
-    }
-    res.status(200).json({ success: result.success, message: 'Participants ServicePlan updated' });
 });
 
 export default router;
