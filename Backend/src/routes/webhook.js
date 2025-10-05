@@ -87,8 +87,6 @@ function validateRequestParams(req) {
 async function handlePDFSuccess(workspaceId, boardId, itemId, fileUrl, docType, req, res) {
     if (docType.toLowerCase().includes("ndis")) {
         await setIntegrationMessage(workspaceId, boardId, itemId, `Your ${docType} has been successfully created.\n`);
-    } else {
-        await setIntegrationMessage(workspaceId, boardId, itemId, `Your ${docType} has been successfully created.\n Click <a href="${fileUrl}">here</a> to download.`);
     }
     await setPDFLinkAttribute(workspaceId, boardId, itemId, fileUrl, docType);
     logAuditTrail({
