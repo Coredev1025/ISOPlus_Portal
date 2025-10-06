@@ -53,7 +53,7 @@ const checkServiceClaimingConditions = async (workspaceId, boardId, itemId, item
         }
 
         let errorMessage = 'ERROR: Invalid transaction status or missing required fields. ';
-        
+
         if (transactionStatus?.includes('Delivered - To be claimed and Invoiced')) {
             if (!isBlank(actualShiftEndDate)) {
                 errorMessage += 'For Delivered status with Actual Shift End Date: ';
@@ -141,7 +141,7 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
         if (fullName != '') {
             fullName += ' - ';
         }
-        switch (serviceCategory.attribute.settings.labels.find(l => l.id === serviceCategory.data.toString()).name) {
+        switch (serviceCategory.attribute.settings.labels.find(l => l.id === serviceCategory.data.toString())?.name) {
             case '🧑‍⚕️ Home Support (HS)': {
                 if (homeSupportValues) {
                     updatevariables.push({
@@ -154,8 +154,8 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
-                    const firstPercentageValue = homeSupportValues.participantContributionGuideline && homeSupportValues.participantContributionGuideline.includes('-') 
-                        ? parseFloat(homeSupportValues.participantContributionGuideline.split('-')[0]) 
+                    const firstPercentageValue = homeSupportValues.participantContributionGuideline && homeSupportValues.participantContributionGuideline.includes('-')
+                        ? parseFloat(homeSupportValues.participantContributionGuideline.split('-')[0])
                         : 0;
                     if (firstPercentageValue >= 0) {
                         updatevariables.push({
@@ -182,8 +182,8 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
-                    const firstPercentageValue = assistiveTechnologyShortTermValues.participantContributionGuideline && assistiveTechnologyShortTermValues.participantContributionGuideline.includes('-') 
-                        ? parseFloat(assistiveTechnologyShortTermValues.participantContributionGuideline.split('-')[0]) 
+                    const firstPercentageValue = assistiveTechnologyShortTermValues.participantContributionGuideline && assistiveTechnologyShortTermValues.participantContributionGuideline.includes('-')
+                        ? parseFloat(assistiveTechnologyShortTermValues.participantContributionGuideline.split('-')[0])
                         : 0;
                     if (firstPercentageValue >= 0) {
                         updatevariables.push({
@@ -216,8 +216,8 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
-                    const firstPercentageValue = assistiveTechnologyOngoingValues.participantContributionGuideline && assistiveTechnologyOngoingValues.participantContributionGuideline.includes('-') 
-                        ? parseFloat(assistiveTechnologyOngoingValues.participantContributionGuideline.split('-')[0]) 
+                    const firstPercentageValue = assistiveTechnologyOngoingValues.participantContributionGuideline && assistiveTechnologyOngoingValues.participantContributionGuideline.includes('-')
+                        ? parseFloat(assistiveTechnologyOngoingValues.participantContributionGuideline.split('-')[0])
                         : 0;
                     if (firstPercentageValue >= 0) {
                         updatevariables.push({
@@ -250,8 +250,8 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
-                    const firstPercentageValue = homeModificationValues.participantContributionGuideline && homeModificationValues.participantContributionGuideline.includes('-') 
-                        ? parseFloat(homeModificationValues.participantContributionGuideline.split('-')[0]) 
+                    const firstPercentageValue = homeModificationValues.participantContributionGuideline && homeModificationValues.participantContributionGuideline.includes('-')
+                        ? parseFloat(homeModificationValues.participantContributionGuideline.split('-')[0])
                         : 0;
                     if (firstPercentageValue >= 0) {
                         updatevariables.push({
@@ -285,8 +285,8 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
-                    const firstPercentageValue = healthProfessionalValues.participantContributionGuideline && healthProfessionalValues.participantContributionGuideline.includes('-') 
-                        ? parseFloat(healthProfessionalValues.participantContributionGuideline.split('-')[0]) 
+                    const firstPercentageValue = healthProfessionalValues.participantContributionGuideline && healthProfessionalValues.participantContributionGuideline.includes('-')
+                        ? parseFloat(healthProfessionalValues.participantContributionGuideline.split('-')[0])
                         : 0;
                     if (firstPercentageValue >= 0) {
                         updatevariables.push({
@@ -320,8 +320,8 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
                         });
                     }
-                    const firstPercentageValue = wraparoundValues.participantContributionGuideline && wraparoundValues.participantContributionGuideline.includes('-') 
-                        ? parseFloat(wraparoundValues.participantContributionGuideline.split('-')[0]) 
+                    const firstPercentageValue = wraparoundValues.participantContributionGuideline && wraparoundValues.participantContributionGuideline.includes('-')
+                        ? parseFloat(wraparoundValues.participantContributionGuideline.split('-')[0])
                         : 0;
                     if (firstPercentageValue >= 0) {
                         updatevariables.push({
@@ -330,16 +330,16 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                         });
                     }
                     let servicePlanId = fullName + wraparoundValues.wraparoundDescription;
-                    
-                    const companionService = assistiveTechnologyShortTermValues?.service || 
-                                           assistiveTechnologyOngoingValues?.service || 
-                                           homeModificationValues?.service || 
-                                           healthProfessionalValues?.service;
-                    
+
+                    const companionService = assistiveTechnologyShortTermValues?.service ||
+                        assistiveTechnologyOngoingValues?.service ||
+                        homeModificationValues?.service ||
+                        healthProfessionalValues?.service;
+
                     if (companionService) {
                         servicePlanId = `${fullName}${wraparoundValues.wraparoundDescription} for ${companionService}`;
                     }
-                    
+
                     updatevariables.push({
                         data: servicePlanId,
                         attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Service Plan ID").attribute.id
@@ -352,13 +352,13 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
         const statusAttribute = itemValuesWithAttributeId.find(v => v.attribute.name === "Configuration Status");
         const categoryAttribute = itemValuesWithAttributeId.find(v => v.attribute.name === "Service Category");
         const wraparoundAttribute = itemValuesWithAttributeId.find(v => v.attribute.name === "Wraparound Category");
-        
-        if (statusAttribute && categoryAttribute) {
+
+        if (statusAttribute) {
             const categoryLabelId = categoryAttribute.data?.toString();
             const categoryLabelName = categoryAttribute.attribute.settings.labels.find(l => l.id === categoryLabelId)?.name || '';
 
             const wraparoundCategoryLabelId = wraparoundAttribute?.data?.toString();
-            const wraparoundCategoryLabelName = wraparoundAttribute 
+            const wraparoundCategoryLabelName = wraparoundAttribute
                 ? wraparoundAttribute.attribute.settings.labels.find(l => l.id === wraparoundCategoryLabelId)?.name || ''
                 : '';
 
@@ -372,8 +372,14 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
             };
             const selectedKeys = Object.keys(selectedMap).filter(k => selectedMap[k]);
             const selectedKeysExcludingWraparound = selectedKeys.filter(k => k !== 'wraparound');
-            const selectedCount = selectedKeys.length;
+            const selectedCount = selectedKeys.length - (selectedMap.wraparound ? 1 : 0);
             const selectedCountExcludingWraparound = selectedKeysExcludingWraparound.length;
+            const countExcludingWraparound = (itemsValues["Home Support (HS)"]?.length || 0) +
+                (itemsValues["Assistive Technology (AT) - Short Term"]?.length || 0) +
+                (itemsValues["Assistive Technology (AT) - Ongoing"]?.length || 0) +
+                (itemsValues["Home Modification (HM)"]?.length || 0) +
+                (itemsValues["Health Professional"]?.length || 0);
+            const countWraparound = (itemsValues["Wraparound"]?.length || 0);
 
             let expectedKey = '';
             if (categoryLabelName.includes('Home Support')) expectedKey = 'homeSupport';
@@ -391,9 +397,23 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                 integrationMsg = 'Error: Wraparound cannot be chosen as a Standalone Service. Please select a service category (except Home Support).';
             }
             else if (selectedMap.wraparound && wraparoundCategoryLabelName) {
-                const wraparoundPrefix = wraparoundCategoryLabelName.substring(0, 2).toUpperCase();
-                const wraparoundDescPrefix = wraparoundValues?.wraparoundDescription ? wraparoundValues.wraparoundDescription.substring(0, 2).toUpperCase() : '';
-                
+                let wraparoundPrefix = '';
+                if (typeof wraparoundCategoryLabelName === 'string') {
+                    if (wraparoundCategoryLabelName.includes('AT')) {
+                        wraparoundPrefix = 'AT';
+                    } else if (wraparoundCategoryLabelName.includes('HM')) {
+                        wraparoundPrefix = 'HM';
+                    }
+                }
+                let wraparoundDescPrefix = '';
+                if (wraparoundValues?.wraparoundDescription && typeof wraparoundValues.wraparoundDescription === 'string') {
+                    if (wraparoundValues.wraparoundDescription.includes('AT')) {
+                        wraparoundDescPrefix = 'AT';
+                    } else if (wraparoundValues.wraparoundDescription.includes('HM')) {
+                        wraparoundDescPrefix = 'HM';
+                    }
+                }
+
                 if (wraparoundPrefix !== wraparoundDescPrefix) {
                     statusColor = '#D99C05';
                     integrationMsg = 'Error: Misalignment of Wraparound Category. The starting letters of the selected Wraparound do not match the Wraparound Category.';
@@ -404,15 +424,15 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                 integrationMsg = 'Error: Misalignment of Service and Wraparound Category. Wraparound should not be chosen for Home Support (HS).';
             }
             if (!statusColor && selectedMap.wraparound && wraparoundCategoryLabelName) {
-                const hasATService = selectedMap.assistiveTechnologyShortTerm || 
-                                   selectedMap.assistiveTechnologyOngoing || 
-                                   (selectedMap.healthProfessional && categoryLabelName.includes('AT'));
-                const hasHMService = selectedMap.homeModification || 
-                                   (selectedMap.healthProfessional && categoryLabelName.includes('HM'));
-                
+                const hasATService = selectedMap.assistiveTechnologyShortTerm ||
+                    selectedMap.assistiveTechnologyOngoing ||
+                    (selectedMap.healthProfessional && categoryLabelName.includes('AT'));
+                const hasHMService = selectedMap.homeModification ||
+                    (selectedMap.healthProfessional && categoryLabelName.includes('HM'));
+
                 const isHMWraparound = wraparoundCategoryLabelName.includes('HM');
                 const isATWraparound = wraparoundCategoryLabelName.includes('AT');
-                
+
                 if (hasATService && isHMWraparound) {
                     statusColor = '#6D30EA';
                     integrationMsg = 'Error: Misalignment of Service and Wraparound Category. HM Wraparound cannot be selected with AT service categories.';
@@ -422,17 +442,11 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                 }
             }
             if (!statusColor && selectedMap.homeModification && selectedMap.wraparound) {
-                statusColor = '6D30EA';
+                statusColor = '#3578D1';
                 integrationMsg = 'Error: Wraparound is NOT Applicable. Both Home Modification (HM) and Wraparound Attributes cannot be selected together.';
             }
             if (!statusColor) {
-                const count = (itemsValues["Home Support (HS)"]?.length || 0) + 
-                              (itemsValues["Assistive Technology (AT) - Short Term"]?.length || 0) + 
-                              (itemsValues["Assistive Technology (AT) - Ongoing"]?.length || 0) + 
-                              (itemsValues["Home Modification (HM)"]?.length || 0) + 
-                              (itemsValues["Health Professional"]?.length || 0) + 
-                              (itemsValues["Wraparound"]?.length || 0);
-                if (count > 1) {
+                if (countExcludingWraparound > 1 || countWraparound > 1) {
                     statusColor = '#F665E2';
                     integrationMsg = 'Error: Multiple Services within a Group. Please select only one service per column.';
                 }
@@ -463,6 +477,9 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
             if (integrationMsg) {
                 await setIntegrationMessage(workspaceId, boardId, itemId, integrationMsg);
             }
+        } else {
+            await setIntegrationMessage(workspaceId, boardId, itemId, "Configuration Status is required.");
+            return { error: 'Configuration Status is required.' };
         }
 
         if (updatevariables.length > 0) {
@@ -617,22 +634,22 @@ const updateParticipantsServiceplan = async (workspaceId, boardId, itemId, items
 
         const responseMasteplanValues = await getItemValues(workspaceId, boardId, itemId);
         const masterplanValuesWithAttributeId = responseMasteplanValues.values;
-        
+
         const responseItemValues = await getItemValues(workspaceId, boardId, masterplanValuesWithAttributeId.find(v => v.attribute.name === "Service Plan").data.toString());
         const itemValuesWithAttributeId = responseItemValues.values;
-        
+
         console.log('itemValuesWithAttributeId', itemValuesWithAttributeId);
         const unit = itemsValues["Unit"];
         const unitPrice = itemsValues["Unit Price ($)"];
         let updatevariables = [];
-        
+
         if (unit != ' ' && unit != null && unit != undefined) {
             updatevariables.push({
                 data: unit,
                 attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
             });
         }
-        
+
         if (unitPrice != ' ' && unitPrice != null && unitPrice != undefined) {
             updatevariables.push({
                 data: unitPrice,
