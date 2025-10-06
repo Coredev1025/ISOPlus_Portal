@@ -30,59 +30,51 @@ const checkServiceClaimingConditions = async (workspaceId, boardId, itemId, item
 
         if (!isBlank(actualShiftEndDate) &&
             transactionStatus?.includes('Delivered - To be claimed and Invoiced')) {
-            if (unit && unit.toLowerCase().includes('item')) {
-                await setIntegrationMessage(workspaceId, boardId, itemId,
-                    "Normal case - Service will be claimed and invoiced in the month of actual end date. " +
-                    "Non-time-based item: Ignore date and actual duration for quantity calculation.");
-            } else {
-                await setIntegrationMessage(workspaceId, boardId, itemId,
-                    "Normal case - Service will be claimed and invoiced in the month of actual end date. " +
-                    "Time-based item: Use shift end date to calculate quantity.");
-            }
             return { success: true };
         }
 
         if (isBlank(actualShiftEndDate) &&
             transactionStatus?.includes('Delivered - To be claimed and Invoiced')) {
-            await setIntegrationMessage(workspaceId, boardId, itemId,
-                "Non-time-based case - Service will be claimed and invoiced based on quantity. " +
-                "Actual start and end dates not required for calculation.");
             return { success: true };
         }
 
         if (isBlank(actualShiftEndDate) &&
             transactionStatus?.includes('Cancelled - To be claimed and Invoiced if applicable')) {
-            await setIntegrationMessage(workspaceId, boardId, itemId,
-                "Cancelled service - Will be claimed and invoiced in the month of actual end date. " +
-                "Cancellation percentage will be applied and included in description.");
             return { success: true };
         }
 
         if (transactionStatus?.includes('Adjustment (Charge)') ||
             transactionStatus?.includes('Adjustment (Refund)')) {
-            const adjustmentType = transactionStatus.includes('Charge') ? 'Charge' : 'Refund';
-            const amountNote = adjustmentType === 'Refund' ?
-                " Total Amount Charged, Government Subsidy and Participant Contribution will be negative." : "";
-
-            await setIntegrationMessage(workspaceId, boardId, itemId,
-                `Adjustment (${adjustmentType}) - Unit, Quantity, Unit Price, Total Price, ` +
-                `Government Contribution and Participant Contribution will be added manually.${amountNote}`);
             return { success: true };
         }
 
         if (committedATHM && isBlank(transactionStatus)) {
-            const quantityNote = unit && unit.toLowerCase().includes('time') ?
-                "Duration will be considered as 'Scheduled Duration' for quantity." :
-                "Quantity will be 'Quantity (Non-Time-Based Service)'.";
-
-            await setIntegrationMessage(workspaceId, boardId, itemId,
-                "Committed AT-HM for Delivery - Not considered for claiming and invoicing, " +
-                "but will be shown in Monthly Statement and Individualised Plan for the month of Scheduled Start Date. " +
-                quantityNote + " " +
-                "Committed items will be claimed and invoiced once delivered or cancelled.");
             return { success: true };
         }
-        return { success: true };
+
+        let errorMessage = 'ERROR: Invalid transaction status or missing required fields. ';
+        
+        if (transactionStatus?.includes('Delivered - To be claimed and Invoiced')) {
+            if (!isBlank(actualShiftEndDate)) {
+                errorMessage += 'For Delivered status with Actual Shift End Date: ';
+                if (unit && unit.toLowerCase().includes('item')) {
+                    errorMessage += 'Non-time-based item should ignore date and actual duration for quantity calculation.';
+                } else {
+                    errorMessage += 'Time-based item should use shift end date to calculate quantity.';
+                }
+            } else {
+                errorMessage += 'For Delivered status without Actual Shift End Date: Non-time-based case requires quantity data.';
+            }
+        } else if (transactionStatus?.includes('Cancelled - To be claimed and Invoiced if applicable')) {
+            errorMessage += 'For Cancelled status: Actual Shift End Date should be blank. Cancellation percentage should be applied.';
+        } else if (!committedATHM || !isBlank(transactionStatus)) {
+            errorMessage += 'For Committed AT-HM: Transaction Status should be blank. Item will be shown in Monthly Statement for Scheduled Start Date.';
+        } else {
+            errorMessage += 'Please ensure the transaction status and related fields are correctly filled according to the service claiming conditions.';
+        }
+
+        await setIntegrationMessage(workspaceId, boardId, itemId, errorMessage);
+        return { success: false, error: errorMessage };
     } catch (error) {
         console.error('Error in checkServiceClaimingConditions:', error);
         await setIntegrationMessage(workspaceId, boardId, itemId,
@@ -199,8 +191,14 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
                         });
                     }
+                    let servicePlanId = '';
+                    if (wraparoundValues && wraparoundValues.wraparoundDescription) {
+                        servicePlanId = `${fullName}${wraparoundValues.wraparoundDescription} for ${assistiveTechnologyShortTermValues.service}`;
+                    } else {
+                        servicePlanId = fullName + assistiveTechnologyShortTermValues.service;
+                    }
                     updatevariables.push({
-                        data: fullName + assistiveTechnologyShortTermValues.service,
+                        data: servicePlanId,
                         attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Service Plan ID").attribute.id
                     });
                 }
@@ -227,8 +225,14 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
                         });
                     }
+                    let servicePlanId = '';
+                    if (wraparoundValues && wraparoundValues.wraparoundDescription) {
+                        servicePlanId = `${fullName}${wraparoundValues.wraparoundDescription} for ${assistiveTechnologyOngoingValues.service}`;
+                    } else {
+                        servicePlanId = fullName + assistiveTechnologyOngoingValues.service;
+                    }
                     updatevariables.push({
-                        data: assistiveTechnologyOngoingValues.service,
+                        data: servicePlanId,
                         attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Service Plan ID").attribute.id
                     });
                 }
@@ -255,8 +259,14 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
                         });
                     }
+                    let servicePlanId = '';
+                    if (wraparoundValues && wraparoundValues.wraparoundDescription) {
+                        servicePlanId = `${fullName}${wraparoundValues.wraparoundDescription} for ${homeModificationValues.service}`;
+                    } else {
+                        servicePlanId = fullName + homeModificationValues.service;
+                    }
                     updatevariables.push({
-                        data: fullName + homeModificationValues.service,
+                        data: servicePlanId,
                         attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Service Plan ID").attribute.id
                     });
                 }
@@ -284,8 +294,14 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
                         });
                     }
+                    let servicePlanId = '';
+                    if (wraparoundValues && wraparoundValues.wraparoundDescription) {
+                        servicePlanId = `${fullName}${wraparoundValues.wraparoundDescription} for ${healthProfessionalValues.service}`;
+                    } else {
+                        servicePlanId = fullName + healthProfessionalValues.service;
+                    }
                     updatevariables.push({
-                        data: fullName + healthProfessionalValues.service,
+                        data: servicePlanId,
                         attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Service Plan ID").attribute.id
                     });
                 }
@@ -313,8 +329,19 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                             attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
                         });
                     }
+                    let servicePlanId = fullName + wraparoundValues.wraparoundDescription;
+                    
+                    const companionService = assistiveTechnologyShortTermValues?.service || 
+                                           assistiveTechnologyOngoingValues?.service || 
+                                           homeModificationValues?.service || 
+                                           healthProfessionalValues?.service;
+                    
+                    if (companionService) {
+                        servicePlanId = `${fullName}${wraparoundValues.wraparoundDescription} for ${companionService}`;
+                    }
+                    
                     updatevariables.push({
-                        data: fullName + wraparoundValues.wraparoundDescription,
+                        data: servicePlanId,
                         attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Service Plan ID").attribute.id
                     });
                 }
@@ -324,9 +351,16 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
 
         const statusAttribute = itemValuesWithAttributeId.find(v => v.attribute.name === "Configuration Status");
         const categoryAttribute = itemValuesWithAttributeId.find(v => v.attribute.name === "Service Category");
+        const wraparoundAttribute = itemValuesWithAttributeId.find(v => v.attribute.name === "Wraparound Category");
+        
         if (statusAttribute && categoryAttribute) {
             const categoryLabelId = categoryAttribute.data?.toString();
             const categoryLabelName = categoryAttribute.attribute.settings.labels.find(l => l.id === categoryLabelId)?.name || '';
+
+            const wraparoundCategoryLabelId = wraparoundAttribute?.data?.toString();
+            const wraparoundCategoryLabelName = wraparoundAttribute 
+                ? wraparoundAttribute.attribute.settings.labels.find(l => l.id === wraparoundCategoryLabelId)?.name || ''
+                : '';
 
             const selectedMap = {
                 homeSupport: !!homeSupportValues,
@@ -337,7 +371,9 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                 wraparound: !!wraparoundValues,
             };
             const selectedKeys = Object.keys(selectedMap).filter(k => selectedMap[k]);
+            const selectedKeysExcludingWraparound = selectedKeys.filter(k => k !== 'wraparound');
             const selectedCount = selectedKeys.length;
+            const selectedCountExcludingWraparound = selectedKeysExcludingWraparound.length;
 
             let expectedKey = '';
             if (categoryLabelName.includes('Home Support')) expectedKey = 'homeSupport';
@@ -349,28 +385,72 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
 
             let statusColor = '';
             let integrationMsg = '';
-            if (selectedCount > 1) {
-                statusColor = '#EE691E';
-                integrationMsg = 'Multiple groups selected. Please select only one group per row.';
-            } else if (selectedCount === 1) {
-                const selectedKey = selectedKeys[0];
-                if (expectedKey && selectedKey !== expectedKey) {
-                    statusColor = '#C60909';
-                    integrationMsg = 'The selected service does not match the assigned service category.';
-                } else {
-                    const count = (itemsValues["Home Support (HS)"]?.length || 0) + 
-                                  (itemsValues["Assistive Technology (AT) - Short Term"]?.length || 0) + 
-                                  (itemsValues["Assistive Technology (AT) - Ongoing"]?.length || 0) + 
-                                  (itemsValues["Home Modification (HM)"]?.length || 0) + 
-                                  (itemsValues["Health Professional"]?.length || 0) + 
-                                  (itemsValues["Wraparound"]?.length || 0);
-                    if (count > 1) {
-                        statusColor = '#F665E2';
-                        integrationMsg = 'Multiple services selected. Please select only one service type per group.';
-                    } else if (count == 1) {
-                        statusColor = '#388903';
-                    }
+
+            if (selectedMap.wraparound && selectedCountExcludingWraparound === 0 && !selectedMap.homeSupport) {
+                statusColor = '#08B7AB';
+                integrationMsg = 'Error: Wraparound cannot be chosen as a Standalone Service. Please select a service category (except Home Support).';
+            }
+            else if (selectedMap.wraparound && wraparoundCategoryLabelName) {
+                const wraparoundPrefix = wraparoundCategoryLabelName.substring(0, 2).toUpperCase();
+                const wraparoundDescPrefix = wraparoundValues?.wraparoundDescription ? wraparoundValues.wraparoundDescription.substring(0, 2).toUpperCase() : '';
+                
+                if (wraparoundPrefix !== wraparoundDescPrefix) {
+                    statusColor = '#D99C05';
+                    integrationMsg = 'Error: Misalignment of Wraparound Category. The starting letters of the selected Wraparound do not match the Wraparound Category.';
                 }
+            }
+            if (!statusColor && selectedMap.homeSupport && selectedMap.wraparound) {
+                statusColor = '#6D30EA';
+                integrationMsg = 'Error: Misalignment of Service and Wraparound Category. Wraparound should not be chosen for Home Support (HS).';
+            }
+            if (!statusColor && selectedMap.wraparound && wraparoundCategoryLabelName) {
+                const hasATService = selectedMap.assistiveTechnologyShortTerm || 
+                                   selectedMap.assistiveTechnologyOngoing || 
+                                   (selectedMap.healthProfessional && categoryLabelName.includes('AT'));
+                const hasHMService = selectedMap.homeModification || 
+                                   (selectedMap.healthProfessional && categoryLabelName.includes('HM'));
+                
+                const isHMWraparound = wraparoundCategoryLabelName.includes('HM');
+                const isATWraparound = wraparoundCategoryLabelName.includes('AT');
+                
+                if (hasATService && isHMWraparound) {
+                    statusColor = '#6D30EA';
+                    integrationMsg = 'Error: Misalignment of Service and Wraparound Category. HM Wraparound cannot be selected with AT service categories.';
+                } else if (hasHMService && isATWraparound) {
+                    statusColor = '#6D30EA';
+                    integrationMsg = 'Error: Misalignment of Service and Wraparound Category. AT Wraparound cannot be selected with HM service categories.';
+                }
+            }
+            if (!statusColor && selectedMap.homeModification && selectedMap.wraparound) {
+                statusColor = '6D30EA';
+                integrationMsg = 'Error: Wraparound is NOT Applicable. Both Home Modification (HM) and Wraparound Attributes cannot be selected together.';
+            }
+            if (!statusColor) {
+                const count = (itemsValues["Home Support (HS)"]?.length || 0) + 
+                              (itemsValues["Assistive Technology (AT) - Short Term"]?.length || 0) + 
+                              (itemsValues["Assistive Technology (AT) - Ongoing"]?.length || 0) + 
+                              (itemsValues["Home Modification (HM)"]?.length || 0) + 
+                              (itemsValues["Health Professional"]?.length || 0) + 
+                              (itemsValues["Wraparound"]?.length || 0);
+                if (count > 1) {
+                    statusColor = '#F665E2';
+                    integrationMsg = 'Error: Multiple Services within a Group. Please select only one service per column.';
+                }
+            }
+            if (!statusColor && selectedCountExcludingWraparound > 1) {
+                statusColor = '#EE691E';
+                integrationMsg = 'Error: Multiple Service Groups. Please select only one service group (Wraparound can be combined with other categories except Home Support).';
+            }
+            if (!statusColor && selectedCountExcludingWraparound === 1) {
+                const selectedKey = selectedKeysExcludingWraparound[0];
+                if (expectedKey && expectedKey !== 'wraparound' && selectedKey !== expectedKey) {
+                    statusColor = '#C60909';
+                    integrationMsg = 'Error: Misalignment of Service Category. The selected service does not match the assigned service category.';
+                }
+            }
+            if (!statusColor && selectedCount >= 1) {
+                statusColor = '#388903';
+                integrationMsg = 'Aligned and Correct Selection.';
             }
 
             if (statusColor) {
