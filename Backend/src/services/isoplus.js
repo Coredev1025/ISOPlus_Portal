@@ -1519,6 +1519,7 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                             unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
                             unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
                             participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                            wraparound: values.find(v => v.attribute.name === "Wraparound")?.data?.toString() || '',
                         }
                     }
                     break;
@@ -1539,6 +1540,7 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                             unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
                             unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
                             participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                            wraparound: values.find(v => v.attribute.name === "Wraparound")?.data?.toString() || '',
                         }
                     }
                     break;
@@ -1559,6 +1561,7 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                             unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
                             unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
                             participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                            wraparound: values.find(v => v.attribute.name === "Wraparound")?.data?.toString() || '',
                         }
                     }
                     break;
@@ -1579,6 +1582,7 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                             unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
                             unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
                             participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                            wraparound: values.find(v => v.attribute.name === "Wraparound")?.data?.toString() || '',
                         }
                     }
                     break;
@@ -1599,6 +1603,7 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                             unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
                             unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
                             participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                            wraparound: values.find(v => v.attribute.name === "Wraparound")?.data?.toString() || '',
                         }
                     }
                     break;
