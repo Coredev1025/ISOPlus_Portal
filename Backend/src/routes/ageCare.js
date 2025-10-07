@@ -92,10 +92,6 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
         await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
             {
                 values: [
-                    // {
-                    //     data: "",
-                    //     attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
-                    // },
                     {
                         data: 0,
                         attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
@@ -103,15 +99,7 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                     {
                         data: 0,
                         attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
-                    },
-                    // {
-                    //     data: "",
-                    //     attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Service Plan ID").attribute.id
-                    // },
-                    // {
-                    //     data: [],
-                    //     attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Configuration Status").attribute.id
-                    // }
+                    }
                 ]
             },
             {
@@ -413,10 +401,14 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                         wraparoundDescPrefix = 'HM';
                     }
                 }
-
-                if (wraparoundPrefix !== wraparoundDescPrefix) {
-                    statusColor = '#D99C05';
-                    integrationMsg = 'Error: Misalignment of Wraparound Category. The starting letters of the selected Wraparound do not match the Wraparound Category.';
+                if (updatevariables.length > 0) {
+                    if (wraparoundPrefix !== wraparoundDescPrefix) {
+                        statusColor = '#6D30EA';
+                        integrationMsg = 'Error: Misalignment of Service and Wraparound Category. Wraparound should not be chosen for Home Support (HS).';    
+                    } else {
+                        statusColor = '#D99C05';
+                        integrationMsg = 'Error: Misalignment of Wraparound Category. The starting letters of the selected Wraparound do not match the Wraparound Category.';
+                    }
                 }
             }
             if (!statusColor && selectedMap.homeSupport && selectedMap.wraparound) {
@@ -441,9 +433,17 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                     integrationMsg = 'Error: Misalignment of Service and Wraparound Category. AT Wraparound cannot be selected with HM service categories.';
                 }
             }
-            if (!statusColor && selectedMap.homeModification && selectedMap.wraparound) {
-                statusColor = '#3578D1';
-                integrationMsg = 'Error: Wraparound is NOT Applicable. Both Home Modification (HM) and Wraparound Attributes cannot be selected together.';
+            if (!statusColor && selectedMap.wraparound) {
+                const selectedService = homeSupportValues || assistiveTechnologyShortTermValues || 
+                    assistiveTechnologyOngoingValues || homeModificationValues || healthProfessionalValues;
+                
+                if (selectedService && selectedService.wraparound) {
+                    const wraparoundValue = selectedService.wraparound.toLowerCase();
+                    if (wraparoundValue.includes('not applicable') || wraparoundValue.includes('n/a')) {
+                        statusColor = '#3578D1';
+                        integrationMsg = 'Error: Wraparound is NOT Applicable. The selected service does not support Wraparound according to Aged Care Pricing guidelines.';
+                    }
+                }
             }
             if (!statusColor) {
                 if (countExcludingWraparound > 1 || countWraparound > 1) {
@@ -638,7 +638,6 @@ const updateParticipantsServiceplan = async (workspaceId, boardId, itemId, items
         const responseItemValues = await getItemValues(workspaceId, boardId, masterplanValuesWithAttributeId.find(v => v.attribute.name === "Service Plan").data.toString());
         const itemValuesWithAttributeId = responseItemValues.values;
 
-        console.log('itemValuesWithAttributeId', itemValuesWithAttributeId);
         const unit = itemsValues["Unit"];
         const unitPrice = itemsValues["Unit Price ($)"];
         let updatevariables = [];
