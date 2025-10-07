@@ -386,8 +386,13 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                     statusColor = '#F665E2';
                     integrationMsg = 'Error: Multiple Services within a Group. Please select only one service per column.';
                 } else if (countExcludingWraparound == 0 && countWraparound == 0) {
-                    statusColor = '#6D30EA';
-                    integrationMsg = 'Error: Misalignment of Service and Wraparound Category. Wraparound should not be chosen for Home Support (HS).';
+                    if(wraparoundCategoryLabelName) {
+                        statusColor = '#6D30EA';
+                    integrationMsg = 'Error: Misalignment of Service and Wraparound Category. Wraparound should not be chosen for Home Support (HS).';    
+                    } else {
+                        statusColor = '#C60909';
+                        integrationMsg = 'Error: Misalignment of Service Category. The selected service does not match the assigned service category.';
+                    }
                 }
             } 
             if (!statusColor && selectedMap.wraparound && selectedCountExcludingWraparound === 0 && !selectedMap.homeSupport) {
@@ -411,14 +416,14 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                         wraparoundDescPrefix = 'HM';
                     }
                 }
+                if (!statusColor && selectedMap.homeSupport && selectedMap.wraparound) {
+                    statusColor = '#3578D1';
+                    integrationMsg = 'Error: Wraparound is NOT Applicable. The selected service does not support Wraparound according to Aged Care Pricing guidelines.';
+                }
                 if (wraparoundPrefix && wraparoundDescPrefix && wraparoundPrefix !== wraparoundDescPrefix) {
                     statusColor = '#D99C05';
                     integrationMsg = 'Error: Misalignment of Wraparound Category. The starting letters of the selected Wraparound do not match the Wraparound Category.';
                 }
-            }
-            if (!statusColor && selectedMap.homeSupport && selectedMap.wraparound) {
-                statusColor = '#6D30EA';
-                integrationMsg = 'Error: Misalignment of Service and Wraparound Category. Wraparound should not be chosen for Home Support (HS).';
             }
             if (!statusColor && selectedMap.wraparound && wraparoundCategoryLabelName) {
                 const hasATService = selectedMap.assistiveTechnologyShortTerm ||
