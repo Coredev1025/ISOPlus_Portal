@@ -380,11 +380,21 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
             let statusColor = '';
             let integrationMsg = '';
 
-            if (selectedMap.wraparound && selectedCountExcludingWraparound === 0 && !selectedMap.homeSupport) {
-                statusColor = '#08B7AB';
+            
+            if (!statusColor) {
+                if (countExcludingWraparound > 1 || countWraparound > 1) {
+                    statusColor = '#F665E2';
+                    integrationMsg = 'Error: Multiple Services within a Group. Please select only one service per column.';
+                } else if (countExcludingWraparound == 0 && countWraparound == 0) {
+                    statusColor = '#6D30EA';
+                    integrationMsg = 'Error: Misalignment of Service and Wraparound Category. Wraparound should not be chosen for Home Support (HS).';
+                }
+            } 
+            if (!statusColor && selectedMap.wraparound && selectedCountExcludingWraparound === 0 && !selectedMap.homeSupport) {
+                statusColor = '#CA56A8';
                 integrationMsg = 'Error: Wraparound cannot be chosen as a Standalone Service. Please select a service category (except Home Support).';
             }
-            else if (selectedMap.wraparound && wraparoundCategoryLabelName) {
+            else if (!statusColor && selectedMap.wraparound && wraparoundCategoryLabelName) {
                 let wraparoundPrefix = '';
                 if (typeof wraparoundCategoryLabelName === 'string') {
                     if (wraparoundCategoryLabelName.includes('AT')) {
@@ -401,14 +411,9 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                         wraparoundDescPrefix = 'HM';
                     }
                 }
-                if (updatevariables.length > 0) {
-                    if (wraparoundPrefix !== wraparoundDescPrefix) {
-                        statusColor = '#6D30EA';
-                        integrationMsg = 'Error: Misalignment of Service and Wraparound Category. Wraparound should not be chosen for Home Support (HS).';    
-                    } else {
-                        statusColor = '#D99C05';
-                        integrationMsg = 'Error: Misalignment of Wraparound Category. The starting letters of the selected Wraparound do not match the Wraparound Category.';
-                    }
+                if (wraparoundPrefix && wraparoundDescPrefix && wraparoundPrefix !== wraparoundDescPrefix) {
+                    statusColor = '#D99C05';
+                    integrationMsg = 'Error: Misalignment of Wraparound Category. The starting letters of the selected Wraparound do not match the Wraparound Category.';
                 }
             }
             if (!statusColor && selectedMap.homeSupport && selectedMap.wraparound) {
@@ -434,21 +439,15 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                 }
             }
             if (!statusColor && selectedMap.wraparound) {
-                const selectedService = homeSupportValues || assistiveTechnologyShortTermValues || 
+                const selectedService = homeSupportValues || assistiveTechnologyShortTermValues ||
                     assistiveTechnologyOngoingValues || homeModificationValues || healthProfessionalValues;
-                
+
                 if (selectedService && selectedService.wraparound) {
                     const wraparoundValue = selectedService.wraparound.toLowerCase();
                     if (wraparoundValue.includes('not applicable') || wraparoundValue.includes('n/a')) {
                         statusColor = '#3578D1';
                         integrationMsg = 'Error: Wraparound is NOT Applicable. The selected service does not support Wraparound according to Aged Care Pricing guidelines.';
                     }
-                }
-            }
-            if (!statusColor) {
-                if (countExcludingWraparound > 1 || countWraparound > 1) {
-                    statusColor = '#F665E2';
-                    integrationMsg = 'Error: Multiple Services within a Group. Please select only one service per column.';
                 }
             }
             if (!statusColor && selectedCountExcludingWraparound > 1) {
