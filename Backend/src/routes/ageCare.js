@@ -342,13 +342,24 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
         const wraparoundAttribute = itemValuesWithAttributeId.find(v => v.attribute.name === "Wraparound Category");
 
         if (statusAttribute) {
-            const categoryLabelId = categoryAttribute.data?.toString();
-            const categoryLabelName = categoryAttribute.attribute.settings.labels.find(l => l.id === categoryLabelId)?.name || '';
+            const categoryLabelId = categoryAttribute?.data?.toString();
+            const categoryLabelName = categoryAttribute?.attribute?.settings?.labels?.find(l => l.id === categoryLabelId)?.name || '';
 
             const wraparoundCategoryLabelId = wraparoundAttribute?.data?.toString();
             const wraparoundCategoryLabelName = wraparoundAttribute
                 ? wraparoundAttribute.attribute.settings.labels.find(l => l.id === wraparoundCategoryLabelId)?.name || ''
                 : '';
+
+            const countHS = (itemsValues["Home Support (HS)"]?.length || 0);
+            const countATShort = (itemsValues["Assistive Technology (AT) - Short Term"]?.length || 0);
+            const countATOngoing = (itemsValues["Assistive Technology (AT) - Ongoing"]?.length || 0);
+            const countHM = (itemsValues["Home Modification (HM)"]?.length || 0);
+            const countHP = (itemsValues["Health Professional"]?.length || 0);
+            const countWraparound = (itemsValues["Wraparound"]?.length || 0);
+
+            const nonWrapCounts = [countHS, countATShort, countATOngoing, countHM, countHP];
+            const numGroupsSelectedExclWrap = nonWrapCounts.filter(c => c > 0).length;
+            const hasMultipleInAnyGroup = [...nonWrapCounts, countWraparound].some(c => c > 1);
 
             const selectedMap = {
                 homeSupport: !!homeSupportValues,
@@ -358,16 +369,6 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                 healthProfessional: !!healthProfessionalValues,
                 wraparound: !!wraparoundValues,
             };
-            const selectedKeys = Object.keys(selectedMap).filter(k => selectedMap[k]);
-            const selectedKeysExcludingWraparound = selectedKeys.filter(k => k !== 'wraparound');
-            const selectedCount = selectedKeys.length - (selectedMap.wraparound ? 1 : 0);
-            const selectedCountExcludingWraparound = selectedKeysExcludingWraparound.length;
-            const countExcludingWraparound = (itemsValues["Home Support (HS)"]?.length || 0) +
-                (itemsValues["Assistive Technology (AT) - Short Term"]?.length || 0) +
-                (itemsValues["Assistive Technology (AT) - Ongoing"]?.length || 0) +
-                (itemsValues["Home Modification (HM)"]?.length || 0) +
-                (itemsValues["Health Professional"]?.length || 0);
-            const countWraparound = (itemsValues["Wraparound"]?.length || 0);
 
             let expectedKey = '';
             if (categoryLabelName.includes('Home Support')) expectedKey = 'homeSupport';
@@ -380,22 +381,22 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
             let statusColor = '';
             let integrationMsg = '';
 
-            
-            if (!statusColor) {
-                if (countExcludingWraparound > 1 || countWraparound > 1) {
-                    statusColor = '#F665E2';
-                    integrationMsg = 'Error: Multiple Services within a Group. Please select only one service per column.';
-                } else if (countExcludingWraparound == 0 && countWraparound == 0) {
-                    if(wraparoundCategoryLabelName) {
-                        statusColor = '#6D30EA';
-                    integrationMsg = 'Error: Misalignment of Service and Wraparound Category. Wraparound should not be chosen for Home Support (HS).';    
-                    } else {
-                        statusColor = '#C60909';
-                        integrationMsg = 'Error: Misalignment of Service Category. The selected service does not match the assigned service category.';
-                    }
+            if (!statusColor && hasMultipleInAnyGroup) {
+                statusColor = '#F665E2';
+                integrationMsg = 'Error: Multiple Services within a Group. Please select only one service per column.';
+            }
+
+            if (!statusColor && numGroupsSelectedExclWrap === 0 && countWraparound === 0) {
+                if (wraparoundCategoryLabelName && categoryLabelName.includes('Home Support')) {
+                    statusColor = '#3578D1';
+                    integrationMsg = 'Error: Wraparound is NOT Applicable. The selected service does not support Wraparound according to Aged Care Pricing guidelines.';
+                } else {
+                    statusColor = '#C60909';
+                    integrationMsg = 'Error: Misalignment of Service Category. The selected service does not match the assigned service category.';
                 }
-            } 
-            if (!statusColor && selectedMap.wraparound && selectedCountExcludingWraparound === 0 && !selectedMap.homeSupport) {
+            }
+
+            if (!statusColor && selectedMap.wraparound && numGroupsSelectedExclWrap === 0 && !selectedMap.homeSupport) {
                 statusColor = '#CA56A8';
                 integrationMsg = 'Error: Wraparound cannot be chosen as a Standalone Service. Please select a service category (except Home Support).';
             }
@@ -425,24 +426,6 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                     integrationMsg = 'Error: Misalignment of Wraparound Category. The starting letters of the selected Wraparound do not match the Wraparound Category.';
                 }
             }
-            if (!statusColor && selectedMap.wraparound && wraparoundCategoryLabelName) {
-                const hasATService = selectedMap.assistiveTechnologyShortTerm ||
-                    selectedMap.assistiveTechnologyOngoing ||
-                    (selectedMap.healthProfessional && categoryLabelName.includes('AT'));
-                const hasHMService = selectedMap.homeModification ||
-                    (selectedMap.healthProfessional && categoryLabelName.includes('HM'));
-
-                const isHMWraparound = wraparoundCategoryLabelName.includes('HM');
-                const isATWraparound = wraparoundCategoryLabelName.includes('AT');
-
-                if (hasATService && isHMWraparound) {
-                    statusColor = '#6D30EA';
-                    integrationMsg = 'Error: Misalignment of Service and Wraparound Category. HM Wraparound cannot be selected with AT service categories.';
-                } else if (hasHMService && isATWraparound) {
-                    statusColor = '#6D30EA';
-                    integrationMsg = 'Error: Misalignment of Service and Wraparound Category. AT Wraparound cannot be selected with HM service categories.';
-                }
-            }
             if (!statusColor && selectedMap.wraparound) {
                 const selectedService = homeSupportValues || assistiveTechnologyShortTermValues ||
                     assistiveTechnologyOngoingValues || homeModificationValues || healthProfessionalValues;
@@ -455,25 +438,27 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                     }
                 }
             }
-            if (!statusColor && selectedCountExcludingWraparound > 1) {
+            if (!statusColor && numGroupsSelectedExclWrap > 1) {
                 statusColor = '#EE691E';
                 integrationMsg = 'Error: Multiple Service Groups. Please select only one service group (Wraparound can be combined with other categories except Home Support).';
             }
-            if (!statusColor && selectedCountExcludingWraparound === 1) {
-                const selectedKey = selectedKeysExcludingWraparound[0];
+            if (!statusColor && numGroupsSelectedExclWrap === 1) {
+                const selectedKey = ['homeSupport','assistiveTechnologyShortTerm','assistiveTechnologyOngoing','homeModification','healthProfessional']
+                    .filter((k, idx) => nonWrapCounts[idx] > 0)[0];
                 if (expectedKey && expectedKey !== 'wraparound' && selectedKey !== expectedKey) {
                     statusColor = '#C60909';
                     integrationMsg = 'Error: Misalignment of Service Category. The selected service does not match the assigned service category.';
                 }
             }
-            if (!statusColor && selectedCount >= 1) {
+            const anySelected = (numGroupsSelectedExclWrap + countWraparound) > 0;
+            if (!statusColor && anySelected) {
                 statusColor = '#388903';
                 integrationMsg = 'Aligned and Correct Selection.';
             }
 
             if (statusColor) {
                 updatevariables.push({
-                    data: [statusAttribute.attribute.settings.labels.find(l => l.color === statusColor).id || ''],
+                    data: [statusAttribute.attribute.settings.labels.find(l => l.color === statusColor)?.id || ''],
                     attribute_id: statusAttribute.attribute.id
                 });
             }
