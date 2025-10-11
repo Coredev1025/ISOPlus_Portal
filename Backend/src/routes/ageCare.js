@@ -385,22 +385,23 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                 statusColor = '#F665E2';
                 integrationMsg = 'Error: Multiple Services within a Group. Please select only one service per column.';
             }
-
-            if (!statusColor && numGroupsSelectedExclWrap === 0 && countWraparound === 0) {
-                if (wraparoundCategoryLabelName && categoryLabelName.includes('Home Support')) {
-                    statusColor = '#3578D1';
-                    integrationMsg = 'Error: Wraparound is NOT Applicable. The selected service does not support Wraparound according to Aged Care Pricing guidelines.';
-                } else {
-                    statusColor = '#C60909';
-                    integrationMsg = 'Error: Misalignment of Service Category. The selected service does not match the assigned service category.';
-                }
+            if (!statusColor && wraparoundCategoryLabelName && categoryLabelName.includes('Home Support')) {
+                statusColor = '#3578D1';
+                integrationMsg = 'Error: Wraparound is NOT Applicable. The selected service does not support Wraparound according to Aged Care Pricing guidelines.';
             }
-
+            if (!statusColor && wraparoundCategoryLabelName && countWraparound === 0) {
+                statusColor = '#D99C05';
+                integrationMsg = 'Error: Misalignment of Wraparound Category. The starting letters of the selected Wraparound do not match the Wraparound Category.';
+            }
+            if (!statusColor && numGroupsSelectedExclWrap === 0 && countWraparound === 0) {
+                statusColor = '#C60909';
+                integrationMsg = 'Error: Misalignment of Service Category. The selected service does not match the assigned service category.';
+            }
             if (!statusColor && selectedMap.wraparound && numGroupsSelectedExclWrap === 0 && !selectedMap.homeSupport) {
                 statusColor = '#CA56A8';
                 integrationMsg = 'Error: Wraparound cannot be chosen as a Standalone Service. Please select a service category (except Home Support).';
             }
-            else if (!statusColor && selectedMap.wraparound && wraparoundCategoryLabelName) {
+            if (!statusColor && selectedMap.wraparound && wraparoundCategoryLabelName) {
                 let wraparoundPrefix = '';
                 if (typeof wraparoundCategoryLabelName === 'string') {
                     if (wraparoundCategoryLabelName.includes('AT')) {
