@@ -42,6 +42,17 @@ interface Board {
   label?: string;
 }
 
+type BoardLabel = 'Job Management' | 'Care Management - NDIS - Certification' | 'Care Management - NDIS - Verification' | 'Care Management - SaH' | 'Care Management - SaH - Low Cat' | 'No Label';
+
+const LABEL_COLORS: Record<NonNullable<BoardLabel>, string> = {
+  'Job Management': 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300',
+  'Care Management - NDIS - Certification': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
+  'Care Management - NDIS - Verification': 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300',
+  'Care Management - SaH': 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300',
+  'Care Management - SaH - Low Cat': 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-300',
+  'No Label': 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300',
+};
+
 export default function BoardDetail() {
   const router = useRouter();
   const pathname = usePathname();
@@ -271,11 +282,7 @@ export default function BoardDetail() {
                 <div className="flex items-center gap-2">
                   <p className="text-muted-foreground font-mono text-sm">ID: {board.id}</p>
                   {board.label && board.label !== 'No Label' && (
-                    <Badge variant="outline" className={
-                      board.label === 'Job Management' 
-                        ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300'
-                        : 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300'
-                    }>
+                    <Badge variant="outline" className={LABEL_COLORS[board.label as NonNullable<BoardLabel>]}>
                       {board.label}
                     </Badge>
                   )}
