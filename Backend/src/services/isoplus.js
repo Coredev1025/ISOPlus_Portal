@@ -248,6 +248,7 @@ export async function getAllViews(authorization, workspaceId, boardId) {
             "limit": "100",
             "sort_by": "created_at",
             "sort_direction": "desc",
+            "sort_by": "id",
         };
 
         let views = [];

@@ -219,7 +219,7 @@ class DynamicLinkingService {
             });
 
             await Promise.all(fetchingItems);
-            let totalLinksCreated = [], totalLinksFailed = [];
+            let totalLinksCreated = [];
             await Promise.all(this.sources.chain().data().map(async source => {
                 try {
                     let _originItem = `${this.host}/b/${source.boardId}/${source.item.folder_id}/${source.item.id}`;
@@ -234,7 +234,6 @@ class DynamicLinkingService {
 
                         if (!destination) {
                             if (!update) {
-                                totalLinksFailed.push({ link, originItem: _originItem, originalMatch: link.originalMatch });
                                 console.warn(`Failed to create link from ${_originItem}\n\t Trying to parse template "${he.decode(link.originalMatch)}"\n`);
                             }
                             return;
@@ -254,7 +253,6 @@ class DynamicLinkingService {
                             } else {                                
                                 source.item.workflow.forEach((value, index) => {
                                     if (value && value.config && value.config.text && value.config.text.includes(link.originalMatch)) {
-                                        console.log(link.originalMatch)
                                         value.config.text = value.config.text.replace(link.originalMatch, `<a href="${destination.selfLink}">${link.label}</a>`);
                                         source.item.workflow[index] = value;
                                     }
@@ -268,13 +266,11 @@ class DynamicLinkingService {
                     });
 
                     if (linksCreated.length > 0) {
-                        console.log(`Link created from ${_originItem} to:\n\t> ${linksCreated.join('\n\t> ')}`);
                         if (update) {
                             if (source && source?.automation) {
-                                console.log("Update Automation", source.item.workflow);
                                 updateAutomation(workspaceId, source.boardId, source.item.id, source.item, this.authorization);
                             } else {
-                                await this.api().put(`workspaces/${workspaceId}/boards/${source.boardId}/items/${source.item.id}`, {
+                                this.api().put(`workspaces/${workspaceId}/boards/${source.boardId}/items/${source.item.id}`, {
                                     json: {
                                         "values": [{
                                             attribute_id: source.value.attribute_id,
@@ -289,14 +285,7 @@ class DynamicLinkingService {
                     console.error('Error processing source:', sourceError);
                 }
             }));
-
-            if (update) {
-                console.log(`Links created: ${totalLinksCreated.length}`);
-                return totalLinksCreated;
-            } else {
-                console.log(`Links failed: ${totalLinksFailed.length}`);
-                return totalLinksFailed;
-            }
+            return totalLinksCreated;
         } catch (error) {
             console.error('Error in main method:', error);
             throw error;
