@@ -32,12 +32,15 @@ interface Board {
   label: string
 }
 
-type BoardLabel = 'Job Management' | 'Care Management' | 'No Label';
+type BoardLabel = 'Job Management' | 'Care Management - NDIS - Certification' | 'Care Management - NDIS - Verification' | 'Care Management - SaH' | 'Care Management - SaH - Low Cat' | 'No Label';
 
 const LABEL_COLORS: Record<NonNullable<BoardLabel>, string> = {
   'Job Management': 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300',
-  'Care Management': 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300',
-  'No Label': 'bg-teal-100 text-teal-800 dark:bg-lightgray-900 dark:text-lightgray-300',
+  'Care Management - NDIS - Certification': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
+  'Care Management - NDIS - Verification': 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300',
+  'Care Management - SaH': 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300',
+  'Care Management - SaH - Low Cat': 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-300',
+  'No Label': 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300',
 };
 
 export default function WorkspaceDetail() {
@@ -266,7 +269,8 @@ export default function WorkspaceDetail() {
                             <Info className="h-4 w-4 text-muted-foreground cursor-help" />
                           </TooltipTrigger>
                           <TooltipContent className="max-w-xs">
-                            Label your boards as &apos;Job Management&apos; or &apos;Care Management&apos; to enable integration features.
+                            Label your boards to enable specific integration features and automations.
+                            Different board types have access to different features.
                             Unlabeled boards will operate normally.
                           </TooltipContent>
                         </Tooltip>

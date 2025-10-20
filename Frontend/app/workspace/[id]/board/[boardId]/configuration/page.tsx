@@ -39,18 +39,24 @@ interface ISOAttribute {
   type: AttributeType;
 }
 
-type BoardLabel = 'Job Management' | 'Care Management' | 'No Label';
+type BoardLabel = 'Job Management' | 'Care Management - NDIS - Certification' | 'Care Management - NDIS - Verification' | 'Care Management - SaH' | 'Care Management - SaH - Low Cat' | 'No Label';
 
 const BOARD_LABELS: NonNullable<BoardLabel>[] = [
   'Job Management',
-  'Care Management',
+  'Care Management - NDIS - Certification',
+  'Care Management - NDIS - Verification',
+  'Care Management - SaH',
+  'Care Management - SaH - Low Cat',
   'No Label'
 ];
 
 const LABEL_COLORS: Record<NonNullable<BoardLabel>, string> = {
   'Job Management': 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300',
-  'Care Management': 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300',
-  'No Label': 'bg-teal-100 text-teal-800 dark:bg-lightgray-900 dark:text-lightgray-300'
+  'Care Management - NDIS - Certification': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
+  'Care Management - NDIS - Verification': 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300',
+  'Care Management - SaH': 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300',
+  'Care Management - SaH - Low Cat': 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-300',
+  'No Label': 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300'
 };
 
 interface SuggestionDialogProps {
@@ -207,9 +213,21 @@ export default function ConfigurationPage() {
     if (name.includes('job management')) {
       suggestion = 'Job Management';
       reason = "Based on the board name containing 'Job Management', we suggest labeling this as a Job Management board.";
+    } else if (name.includes('care management - ndis - certification') || name.includes('ndis - certification')) {
+      suggestion = 'Care Management - NDIS - Certification';
+      reason = "Based on the board name containing 'NDIS - Certification', we suggest labeling this as a Care Management - NDIS - Certification board.";
+    } else if (name.includes('care management - ndis - verification') || name.includes('ndis - verification')) {
+      suggestion = 'Care Management - NDIS - Verification';
+      reason = "Based on the board name containing 'NDIS - Verification', we suggest labeling this as a Care Management - NDIS - Verification board.";
+    } else if (name.includes('care management - sah - low cat') || name.includes('sah - low cat')) {
+      suggestion = 'Care Management - SaH - Low Cat';
+      reason = "Based on the board name containing 'SaH - Low Cat', we suggest labeling this as a Care Management - SaH - Low Cat board.";
+    } else if (name.includes('care management - sah') || name.includes('sah')) {
+      suggestion = 'Care Management - SaH';
+      reason = "Based on the board name containing 'SaH', we suggest labeling this as a Care Management - SaH board.";
     } else if (name.includes('care management')) {
-      suggestion = 'Care Management';
-      reason = "Based on the board name containing 'Care Management', we suggest labeling this as a Care Management board.";
+      suggestion = 'Care Management - NDIS - Certification';
+      reason = "Based on the board name containing 'Care Management', we suggest labeling this as a Care Management - NDIS - Certification board (previously Care Management).";
     } else {
       reason = "We couldn't automatically determine the board type based on its name. Please select a label manually if needed.";
     }
@@ -302,7 +320,7 @@ export default function ConfigurationPage() {
                 </div>
                 <p className="text-sm text-muted-foreground">
                   Labels determine which integration features are available for this board.
-                  &apos;Job Management&apos; and &apos;Care Management&apos; boards have access to specific automation features.
+                  Different board types have access to specific automation features and integrations.
                 </p>
                 <div className="space-y-2">
                   <Select
