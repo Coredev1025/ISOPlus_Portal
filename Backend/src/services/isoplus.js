@@ -1,7 +1,7 @@
 import axios from "axios";
 import Board from '../models/Board.js';
 import FormData from 'form-data';
-import { info, warn, error } from '../utils/logger.js';
+import { info, warn, error, logAttributeError, logApiError, logOperationStart, logOperationEnd } from '../utils/logger.js';
 
 export async function getWorkspace(authorization, userEmail = null) {
     try {
@@ -772,8 +772,84 @@ export async function getBoardAttributes(workspaceId, boardId) {
     }
 }
 
-export async function setLogo(authorization, workspaceId, logo, type, req) {
+// Function to validate board attributes before logo processing
+async function validateBoardAttributes(workspaceId, boardId, viewId, coverAttributeId, req) {
     try {
+        info('ISO+™ Service', 'Validating board attributes', { 
+            workspaceId, 
+            boardId, 
+            viewId, 
+            coverAttributeId 
+        }, req);
+        
+        // Get board attributes to validate the cover attribute exists
+        const attributesResponse = await axios.get(
+            `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/attributes`,
+            {
+                headers: {
+                    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+                    "Accept": "application/json",
+                    "X-API-Version": "2025-02-26.morava",
+                }
+            }
+        );
+        
+        if (attributesResponse.status === 200) {
+            const attributes = attributesResponse.data.attributes || [];
+            const coverAttribute = attributes.find(attr => attr.id === coverAttributeId);
+            
+            if (!coverAttribute) {
+                warn('ISO+™ Service', 'Cover attribute not found in board attributes', {
+                    workspaceId,
+                    boardId,
+                    viewId,
+                    coverAttributeId,
+                    availableAttributes: attributes.map(attr => ({ id: attr.id, name: attr.name, type: attr.type }))
+                }, req);
+                return false;
+            }
+            
+            info('ISO+™ Service', 'Cover attribute validation successful', {
+                workspaceId,
+                boardId,
+                viewId,
+                coverAttributeId,
+                attributeName: coverAttribute.name,
+                attributeType: coverAttribute.type
+            }, req);
+            return true;
+        }
+        
+        return false;
+    } catch (err) {
+        error('ISO+™ Service', 'Error validating board attributes', {
+            workspaceId,
+            boardId,
+            viewId,
+            coverAttributeId,
+            error: err.message,
+            statusCode: err.response?.status
+        }, req);
+        return false;
+    }
+}
+
+export async function setLogo(authorization, workspaceId, logo, type, req) {
+    const requestId = req?.headers?.['x-request-id'] || `logo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const operationContext = { 
+        workspaceId, 
+        logoType: type, 
+        requestId,
+        logoFileName: logo?.originalname,
+        logoSize: logo?.size,
+        logoMimeType: logo?.mimetype
+    };
+    
+    logOperationStart('ISO+™ Service', 'setLogo', operationContext, req);
+    
+    try {
+        // Log workspace validation
+        info('ISO+™ Service', 'Validating workspace access', { workspaceId, requestId }, req);
         const boards = await getBoard(authorization, workspaceId);
         const body = new FormData();
         body.append('file', logo.buffer, logo.originalname);
@@ -791,17 +867,62 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
         );
 
         if (uploadImageURL.status == 201 && boards.status === 200 && boards.board?.length > 0) {
+            info('ISO+™ Service', 'Logo uploaded successfully, processing boards', { 
+                workspaceId, 
+                requestId, 
+                uploadId: uploadImageURL.data.id,
+                boardCount: boards.board.length,
+                boards: boards.board.map(b => ({ id: b.id, name: b.name }))
+            }, req);
+            
             for (const boardItem of boards.board) {
+                info('ISO+™ Service', 'Processing board for logo update', { 
+                    workspaceId, 
+                    requestId, 
+                    boardId: boardItem.id, 
+                    boardName: boardItem.name,
+                    boardDescription: boardItem.description 
+                }, req);
                 const response = await getAllViews(authorization, workspaceId, boardItem.id);
                 if (response.status !== 200) {
-                    warn(`ISO+™ Service`, `Failed to fetch views for board ${boardItem.id}`, { response }, req);
+                    warn(`ISO+™ Service`, `Failed to fetch views for board ${boardItem.id}`, { 
+                        workspaceId, 
+                        requestId, 
+                        boardId: boardItem.id, 
+                        responseStatus: response.status,
+                        responseData: response.data 
+                    }, req);
                     continue;
                 }
+                
+                info('ISO+™ Service', 'Views fetched successfully', { 
+                    workspaceId, 
+                    requestId, 
+                    boardId: boardItem.id, 
+                    totalViews: response.views?.length || 0,
+                    viewTypes: response.views?.map(v => ({ id: v.id, name: v.name, type: v.type })) || []
+                }, req);
+                
                 const views = response.views.filter(item => item.type.toLowerCase() === type);
                 if (!views || views.length === 0) {
-                    warn(`ISO+™ Service`, `No views found for board ${boardItem.id}`, { response }, req);
+                    warn(`ISO+™ Service`, `No views found for board ${boardItem.id}`, { 
+                        workspaceId, 
+                        requestId, 
+                        boardId: boardItem.id, 
+                        requestedType: type,
+                        availableTypes: response.views?.map(v => v.type) || [],
+                        allViews: response.views?.map(v => ({ id: v.id, name: v.name, type: v.type })) || []
+                    }, req);
                     continue;
                 }
+                
+                info('ISO+™ Service', `Found ${views.length} ${type} views for processing`, { 
+                    workspaceId, 
+                    requestId, 
+                    boardId: boardItem.id, 
+                    viewCount: views.length,
+                    views: views.map(v => ({ id: v.id, name: v.name, type: v.type }))
+                }, req);
                 if (type == "form") {
                     for (const viewItem of views) {
                         const updateView = {
@@ -830,16 +951,96 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                     }
                 } else if (type == "document") {
                     for (const viewItem of views) {
+                        info('ISO+™ Service', 'Processing document view for logo update', { 
+                            workspaceId, 
+                            requestId, 
+                            boardId: boardItem.id, 
+                            viewId: viewItem.id,
+                            viewName: viewItem.name,
+                            viewType: viewItem.type,
+                            folderId: viewItem.folder_id,
+                            settings: viewItem.settings
+                        }, req);
+                        
                         const coverAttributeid = viewItem.settings.editorCoverAttributeId;
                         if (!coverAttributeid) {
-                            warn(`ISO+™ Service`, `No cover attribute id found for view ${viewItem.id}`, { viewItem }, req);
+                            warn(`ISO+™ Service`, `No cover attribute id found for view ${viewItem.id}`, { 
+                                workspaceId, 
+                                requestId, 
+                                boardId: boardItem.id, 
+                                viewId: viewItem.id,
+                                viewName: viewItem.name,
+                                viewSettings: viewItem.settings,
+                                availableSettings: Object.keys(viewItem.settings || {})
+                            }, req);
                             continue;
                         }
+                        
+                        info('ISO+™ Service', 'Cover attribute found, validating before processing', { 
+                            workspaceId, 
+                            requestId, 
+                            boardId: boardItem.id, 
+                            viewId: viewItem.id,
+                            coverAttributeId: coverAttributeid
+                        }, req);
+                        
+                        // Validate the cover attribute exists in the board
+                        const isValidAttribute = await validateBoardAttributes(workspaceId, boardItem.id, viewItem.id, coverAttributeid, req);
+                        if (!isValidAttribute) {
+                            warn('ISO+™ Service', 'Skipping view due to invalid cover attribute', {
+                                workspaceId,
+                                requestId,
+                                boardId: boardItem.id,
+                                viewId: viewItem.id,
+                                coverAttributeId: coverAttributeid
+                            }, req);
+                            continue;
+                        }
+                        
+                        info('ISO+™ Service', 'Cover attribute validated, fetching items', { 
+                            workspaceId, 
+                            requestId, 
+                            boardId: boardItem.id, 
+                            viewId: viewItem.id,
+                            coverAttributeId: coverAttributeid
+                        }, req);
                         const items = await getItem(workspaceId, boardItem.id, viewItem.folder_id);
                         if (items.status == 200 && items.item && items.item.length > 0) {
+                            info('ISO+™ Service', 'Items fetched successfully for document view', { 
+                                workspaceId, 
+                                requestId, 
+                                boardId: boardItem.id, 
+                                viewId: viewItem.id,
+                                itemCount: items.item.length,
+                                items: items.item.map(i => ({ id: i.id, name: i.name }))
+                            }, req);
+                            
                             for (const item of items.item) {
+                                info('ISO+™ Service', 'Processing item for logo update', { 
+                                    workspaceId, 
+                                    requestId, 
+                                    boardId: boardItem.id, 
+                                    viewId: viewItem.id,
+                                    itemId: item.id,
+                                    itemName: item.name
+                                }, req);
+                                
                                 const itemValues = await getItemValues(workspaceId, boardItem.id, item.id);
                                 if (itemValues) {
+                                    info('ISO+™ Service', 'Item values fetched, looking for cover attribute', { 
+                                        workspaceId, 
+                                        requestId, 
+                                        boardId: boardItem.id, 
+                                        viewId: viewItem.id,
+                                        itemId: item.id,
+                                        coverAttributeId: coverAttributeid,
+                                        availableAttributes: itemValues.values?.map(v => ({ 
+                                            id: v.attribute.id, 
+                                            name: v.attribute.name, 
+                                            type: v.attribute.type 
+                                        })) || []
+                                    }, req);
+                                    
                                     let doc = itemValues.values.find(v => v.attribute.id == coverAttributeid);
                                     if (doc) {
                                         doc.data.push({ id: uploadImageURL.data.id });
@@ -865,7 +1066,59 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                                             }
                                         }
                                     } catch (err) {
-                                        error('ISO+™ Service', 'Error updating item for document logo:', err.response?.data || err.message);
+                                        const errorContext = {
+                                            workspaceId,
+                                            boardId: boardItem.id,
+                                            boardName: boardItem.name,
+                                            itemId: item.id,
+                                            itemName: item.name,
+                                            viewId: viewItem.id,
+                                            viewName: viewItem.name,
+                                            viewType: viewItem.type,
+                                            folderId: viewItem.folder_id,
+                                            coverAttributeId: coverAttributeid,
+                                            requestId,
+                                            errorDetails: err.response?.data || err.message,
+                                            statusCode: err.response?.status,
+                                            requestPayload: {
+                                                values: [{
+                                                    data: uploadImageURL.data.id,
+                                                    attribute_id: coverAttributeid
+                                                }]
+                                            },
+                                            stackTrace: err.stack,
+                                            itemValues: itemValues?.values?.map(v => ({
+                                                attributeId: v.attribute.id,
+                                                attributeName: v.attribute.name,
+                                                attributeType: v.attribute.type,
+                                                data: v.data
+                                            })) || [],
+                                            viewSettings: viewItem.settings,
+                                            uploadDetails: {
+                                                uploadId: uploadImageURL.data.id,
+                                                fileName: logo?.originalname,
+                                                fileSize: logo?.size,
+                                                mimeType: logo?.mimetype
+                                            }
+                                        };
+                                        
+                                        // Use specialized logging for attribute errors
+                                        if (err.response?.data && err.response.data.includes('Attribute(s) not recognized')) {
+                                            logAttributeError(
+                                                'ISO+™ Service', 
+                                                'Error updating item for document logo: Attribute not recognized', 
+                                                coverAttributeid, 
+                                                errorContext, 
+                                                req
+                                            );
+                                        } else {
+                                            logApiError(
+                                                'ISO+™ Service', 
+                                                'Error updating item for document logo:', 
+                                                errorContext, 
+                                                req
+                                            );
+                                        }
                                     }
                                     await new Promise(resolve => setTimeout(resolve, 2000));
                                 }
@@ -880,7 +1133,23 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                                 });
                                 info('ISO+™ Service', `Logo set successfully for view: ${viewItem.id}`);
                             } catch (err) {
-                                error('ISO+™ Service', 'Error setting logo for view:', err.response?.data || err.message);
+                                const errorContext = {
+                                    workspaceId,
+                                    boardId: boardItem.id,
+                                    boardName: boardItem.name,
+                                    viewId: viewItem.id,
+                                    viewName: viewItem.name,
+                                    viewType: viewItem.type,
+                                    folderId: viewItem.folder_id,
+                                    requestId,
+                                    errorDetails: err.response?.data || err.message,
+                                    statusCode: err.response?.status,
+                                    requestPayload: viewItem,
+                                    stackTrace: err.stack,
+                                    viewSettings: viewItem.settings,
+                                    editorItems: viewItem.settings?.editorItems || {}
+                                };
+                                error('ISO+™ Service', 'Error setting logo for view:', errorContext, req);
                             }
                         }
                         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -890,8 +1159,19 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
         } else {
             throw new Error("Failed to fetch boards");
         }
+        
+        logOperationEnd('ISO+™ Service', 'setLogo', { workspaceId, logoType: type, success: true }, req);
     } catch (err) {
-        error('ISO+™ Service', 'Error setting form logo:', err?.response?.data || err?.message || err);
+        const errorContext = {
+            workspaceId,
+            logoType: type,
+            errorDetails: err?.response?.data || err?.message || err,
+            statusCode: err?.response?.status,
+            stackTrace: err?.stack,
+            operation: 'setLogo'
+        };
+        error('ISO+™ Service', 'Error setting form logo:', errorContext, req);
+        logOperationEnd('ISO+™ Service', 'setLogo', { workspaceId, logoType: type, success: false, error: err.message }, req);
         return null;
     }
 }

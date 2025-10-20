@@ -131,6 +131,9 @@ const log = (level, source, message, meta = {}, req = {}) => {
 
   const ip = req.ip?.split(':').pop() || 'N/A';
   const email = req.user?.email || 'N/A';
+  const userId = req.user?.id || 'N/A';
+  const userRole = req.user?.role || 'N/A';
+  
   let metaData = meta;
   if(typeof metaData === 'string') {
     try{
@@ -141,11 +144,90 @@ const log = (level, source, message, meta = {}, req = {}) => {
       }
     }
   }
-  logger.log(level, message, { source, ip, email, ...meta });
+
+  // Enhanced metadata structure for better diagnostics
+  const enhancedMeta = {
+    source,
+    ip,
+    email,
+    userId,
+    userRole,
+    timestamp: new Date().toISOString(),
+    level,
+    message,
+    ...meta,
+    // Add request context if available
+    requestContext: req ? {
+      method: req.method,
+      url: req.url,
+      userAgent: req.get('User-Agent'),
+      referer: req.get('Referer'),
+      workspaceId: req.params?.workspaceId || req.body?.workspaceId || meta.workspaceId,
+      boardId: req.params?.boardId || req.body?.boardId || meta.boardId
+    } : {}
+  };
+
+  logger.log(level, message, enhancedMeta);
 };
 
 export const error = (source, message, meta, req) => log('error', source, message, meta, req);
 export const warn = (source, message, meta, req) => log('warn', source, message, meta, req);
 export const info = (source, message, meta, req) => log('info', source, message, meta, req);
 export const debug = (source, message, meta, req) => log('debug', source, message, meta, req);
+
+// Enhanced error logging for attribute-related issues
+export const logAttributeError = (source, message, attributeId, context, req) => {
+  const errorContext = {
+    attributeId,
+    errorType: 'ATTRIBUTE_RECOGNITION_ERROR',
+    context,
+    diagnosticInfo: {
+      attributeIdValid: attributeId && typeof attributeId === 'string' && attributeId.length > 0,
+      attributeIdFormat: attributeId ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(attributeId) : false,
+      timestamp: new Date().toISOString()
+    }
+  };
+  error(source, message, errorContext, req);
+};
+
+// Enhanced error logging for API-related issues
+export const logApiError = (source, message, apiContext, req) => {
+  const errorContext = {
+    errorType: 'API_ERROR',
+    apiContext,
+    diagnosticInfo: {
+      hasStatusCode: !!apiContext.statusCode,
+      hasResponseData: !!apiContext.responseData,
+      hasRequestPayload: !!apiContext.requestPayload,
+      timestamp: new Date().toISOString()
+    }
+  };
+  error(source, message, errorContext, req);
+};
+
+// Context-aware logging for operation flow tracking
+export const logOperationStart = (source, operation, context, req) => {
+  const operationContext = {
+    operationType: 'OPERATION_START',
+    operation,
+    context,
+    timestamp: new Date().toISOString(),
+    requestId: req?.headers?.['x-request-id'] || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  };
+  info(source, `Starting operation: ${operation}`, operationContext, req);
+};
+
+export const logOperationEnd = (source, operation, context, req, success = true) => {
+  const operationContext = {
+    operationType: 'OPERATION_END',
+    operation,
+    context,
+    success,
+    timestamp: new Date().toISOString(),
+    requestId: req?.headers?.['x-request-id'] || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  };
+  const level = success ? 'info' : 'warn';
+  log(level, source, `Completed operation: ${operation}`, operationContext, req);
+};
+
 export default logger;
