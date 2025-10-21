@@ -21,11 +21,11 @@ router.post('/', authenticateToken, async (req, res) => {
                 boardId: boardId,
                 name: req.body.name || '',
                 color: req.body.color || '',
-                description: req.body.color || '',
+                description: req.body.description || '',
                 og_image: req.body.og_image || '',
             });
             await newBoard.save();
-            AuditTrail.insertOne({ workspaceId: req.body.workspaceId, action: 'Created new Board', detail: `Resourse ID: ${newBoard._id}`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
+            AuditTrail.insertOne({ workspaceId: req.body.workspaceId, action: 'Created new Board', detail: `Resource ID: ${newBoard._id}`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
             info('Board-Service', 'New board created', { boardId: req.body.id }, req);
             res.status(200).json({ board: newBoard });
         }
@@ -59,14 +59,17 @@ router.put('/', authenticateToken, async (req, res) => {
         const boardId = req.body.boardId?.toString();
         const workspaceId = req.body.workspaceId?.toString();
         if (!boardId || !workspaceId) return res.status(400).json({ message: 'Invalid boardId or workspaceId' });
+        
         const result = await Board.updateOne({ boardId }, { $set: { ...req.body } }, { upsert: true });
-        if (result.nModified === 0) {
-            warn('Board-Service', 'Board not found', { boardId: req.body.id }, req);
+        
+        // Check if board was found and updated (matchedCount > 0) or created via upsert (upsertedCount > 0)
+        if (result.matchedCount === 0 && result.upsertedCount === 0) {
+            warn('Board-Service', 'Board not found and not created', { boardId: req.body.boardId }, req);
             res.status(404).json({ message: 'Board not found' });
         } else {
             const updatedBoard = await Board.findOne({ boardId });
             info('Board-Service', 'Board updated', { boardId: req.body.boardId, label: req.body.label, attributeId: req.body.attribute?.id, pdfAttributeId: req.body.pdfAttribute?.id }, req);
-            AuditTrail.insertOne({ workspaceId, action: 'Updated Board', detail: `Changed Board detail: ${req.body.label? "Label:" + req.body.label + ", " : ""}${req.body.attribute?.id? "Attribute ID: " + req.body.attribute.id + ", " : ""}${req.body.pdfAttribute?.id? "PDF Attribute ID: " + req.body.pdfAttribute.id : ""}`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
+            AuditTrail.insertOne({ workspaceId, action: 'Updated Board', detail: `Changed Board detail: ${req.body.label? "Label: " + req.body.label + ", " : ""}${req.body.attribute?.id? "Attribute ID: " + req.body.attribute.id + ", " : ""}${req.body.pdfAttribute?.id? "PDF Attribute ID: " + req.body.pdfAttribute.id : ""}`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
             res.status(200).json({ board: updatedBoard });
         }
     } catch (err) {

@@ -1,8 +1,9 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import Workspace from '../models/Workspace.js';
+import Board from '../models/Board.js';
 import AuditTrail from '../models/AuditTrail.js';
-import { info, error } from '../utils/logger.js';
+import { info, error, warn } from '../utils/logger.js';
 import { getWorkspace, getBoard } from '../services/isoplus.js';
 import DynamicLinkingService from '../services/dynamicLinking.js';
 
@@ -22,15 +23,67 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 router.get('/boards', authenticateToken, async (req, res) => {
-  const response = await getBoard(req.session.Authorization, req.query.workspaceId);
+  try {
+    const response = await getBoard(req.session.Authorization, req.query.workspaceId);
 
-  if (response.status === 200 && Array.isArray(response.board)) {
-    const sortedBoard = [...response.board].sort((a, b) =>
-      a.name.localeCompare(b.name)
-    );
-    res.status(200).json({ board: sortedBoard });
-  } else {
-    res.status(500).json({ message: response.message || 'Failed to fetch boards' });
+    if (response.status === 200 && Array.isArray(response.board)) {
+      // Store boards in database if they don't exist (parallel processing)
+      const boardPromises = response.board.map(async (board) => {
+        try {
+          const boardId = board.id?.toString();
+          if (!boardId || !board.name) {
+            warn('Workspace-Service', 'Skipping board with missing id or name', { board }, req);
+            return null;
+          }
+
+          // Use findOneAndUpdate with upsert to avoid race conditions
+          await Board.findOneAndUpdate(
+            { boardId },
+            {
+              $setOnInsert: {
+                boardId: boardId,
+                name: board.name,
+                color: board.color || '',
+                description: board.description || '',
+                og_image: board.og_image || '',
+                label: 'No Label',
+                createdAt: new Date()
+              }
+            },
+            { upsert: true, new: true }
+          );
+
+          return boardId;
+        } catch (err) {
+          error('Workspace-Service', 'Failed to save individual board', { 
+            boardId: board.id, 
+            error: err.message 
+          }, req);
+          return null;
+        }
+      });
+
+      // Wait for all board operations to complete
+      const results = await Promise.all(boardPromises);
+      const successCount = results.filter(r => r !== null).length;
+      
+      if (successCount > 0) {
+        info('Workspace-Service', 'Auto-stored boards in database', { 
+          total: response.board.length, 
+          processed: successCount 
+        }, req);
+      }
+
+      const sortedBoard = [...response.board].sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+      res.status(200).json({ board: sortedBoard });
+    } else {
+      res.status(500).json({ message: response.message || 'Failed to fetch boards' });
+    }
+  } catch (err) {
+    error('Workspace-Service', 'Error in boards endpoint', { message: err.message }, req);
+    res.status(500).json({ message: 'Server error' });
   }
 });
 
