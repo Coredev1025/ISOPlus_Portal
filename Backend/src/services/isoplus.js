@@ -1,7 +1,7 @@
 import axios from "axios";
 import Board from '../models/Board.js';
 import FormData from 'form-data';
-import { info, warn, error, logAttributeError, logApiError, logOperationStart, logOperationEnd } from '../utils/logger.js';
+import { info, warn, error, logAttributeError, logApiError, logOperationStart, logOperationEnd, extractContextFromReq } from '../utils/logger.js';
 
 export async function getWorkspace(authorization, userEmail = null) {
     try {
@@ -849,7 +849,7 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
     
     try {
         // Log workspace validation
-        info('ISO+™ Service', 'Validating workspace access', { workspaceId, requestId }, req);
+        info('ISO+™ Service', 'Validating workspace access', { workspaceId, requestId }, extractContextFromReq(req));
         const boards = await getBoard(authorization, workspaceId);
         const body = new FormData();
         body.append('file', logo.buffer, logo.originalname);
@@ -1149,7 +1149,7 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                                     viewSettings: viewItem.settings,
                                     editorItems: viewItem.settings?.editorItems || {}
                                 };
-                                error('ISO+™ Service', 'Error setting logo for view:', errorContext, req);
+                                error('ISO+™ Service', 'Error setting logo for view:', errorContext, extractContextFromReq(req));
                             }
                         }
                         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -1170,7 +1170,7 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
             stackTrace: err?.stack,
             operation: 'setLogo'
         };
-        error('ISO+™ Service', 'Error setting form logo:', errorContext, req);
+        error('ISO+™ Service', 'Error setting form logo:', errorContext, extractContextFromReq(req));
         logOperationEnd('ISO+™ Service', 'setLogo', { workspaceId, logoType: type, success: false, error: err.message }, req);
         return null;
     }

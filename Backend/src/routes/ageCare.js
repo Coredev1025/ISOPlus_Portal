@@ -1,6 +1,6 @@
 import express from 'express';
 import dotenv from 'dotenv';
-import { info, warn, error } from '../utils/logger.js';
+import { info, warn, error, extractContextFromReq } from '../utils/logger.js';
 import { getItemValues, getAgeCareParticipantsServicePlanReferencedItems, setIntegrationMessage, getAgeCareMasterPlanReferencedItems } from '../services/isoplus.js';
 import axios from 'axios';
 
@@ -685,7 +685,7 @@ router.post('/:workspaceId/:boardId/update-variables-participants-service', asyn
     const itemId = items.id;
     const itemsValues = items.values;
 
-    info('AgeCare-Service', `Incoming request to update variables participants service`, { workspaceId, boardId, itemId, itemsValues }, req);
+    info('AgeCare-Service', `Incoming request to update variables participants service`, { workspaceId, boardId, itemId, itemsValues }, extractContextFromReq(req));
     const result = await updateVariablesParticipantsService(workspaceId, boardId, itemId, itemsValues);
     if (result.error) {
         return res.status(200).json({ error: result.error });
@@ -699,7 +699,7 @@ router.post('/:workspaceId/:boardId/update-variables-masterplan', async (req, re
     const itemId = items.id;
     const itemsValues = items.values;
 
-    info('AgeCare-Service', `Incoming request to update variables MasterPlan`, { workspaceId, boardId, itemId, itemsValues }, req);
+    info('AgeCare-Service', `Incoming request to update variables MasterPlan`, { workspaceId, boardId, itemId, itemsValues }, extractContextFromReq(req));
     const result = await updateVariablesMasterplan(workspaceId, boardId, itemId, itemsValues);
 
     if (result.error) {

@@ -5,7 +5,7 @@ import User from '../models/User.js';
 import { authenticateToken, validateApiKey } from '../middleware/auth.js';
 import querystring from 'querystring';
 import axios from 'axios';
-import { error, info, warn } from '../utils/logger.js';
+import { error, info, warn, extractContextFromReq } from '../utils/logger.js';
 import { getBoard, getWorkspace } from '../services/isoplus.js';
 
 const router = express.Router();
@@ -20,7 +20,7 @@ router.post('/register',
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      warn('User-Service', 'Validation failed during registration', { errors: errors.array() }, req);
+      warn('User-Service', 'Validation failed during registration', { errors: errors.array() }, extractContextFromReq(req));
       return res.status(400).json({ errors: errors.array() });
     }
 
@@ -31,7 +31,7 @@ router.post('/register',
 
       const existingUser = await User.findOne({ email });
       if (existingUser) {
-        warn('User-Service', 'User already exists', { email }, req);
+        warn('User-Service', 'User already exists', { email }, extractContextFromReq(req));
         return res.status(400).json({ message: 'User already exists' });
       }
 
@@ -47,10 +47,10 @@ router.post('/register',
       req.session.token = token;
       await req.session.save();
 
-      info('User-Service', 'User registered successfully', { email }, req);
+      info('User-Service', 'User registered successfully', { email }, extractContextFromReq(req));
       res.status(201).json({ user: { id: user._id, email, name, role: 'support_admin', avatar: '' } });
     } catch (err) {
-      error('User-Service', 'Server error during registration', { error: err.message }, req);
+      error('User-Service', 'Server error during registration', { error: err.message }, extractContextFromReq(req));
       res.status(500).json({ message: 'Server error' });
     }
   }
@@ -64,7 +64,7 @@ router.post('/login',
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      warn('User-Service', 'Validation failed during login', { errors: errors.array() }, req);
+      warn('User-Service', 'Validation failed during login', { errors: errors.array() }, extractContextFromReq(req));
       return res.status(400).json({ errors: errors.array() });
     }
 
@@ -74,12 +74,12 @@ router.post('/login',
       const user = await User.findOne({ email });
 
       if (!user || !(await user.comparePassword(password))) {
-        warn('User-Service', 'Invalid credentials', { email }, req);
+        warn('User-Service', 'Invalid credentials', { email }, extractContextFromReq(req));
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
       if (user.disabled) {
-        warn('User-Service', 'Login attempt for disabled user', { email }, req);
+        warn('User-Service', 'Login attempt for disabled user', { email }, extractContextFromReq(req));
         return res.status(403).json({ message: 'Account is disabled' });
       }
 
@@ -92,10 +92,10 @@ router.post('/login',
       req.session.token = token;
       await req.session.save();
 
-      info('User-Service', 'User logged in successfully', { email }, req);
+      info('User-Service', 'User logged in successfully', { email }, extractContextFromReq(req));
       res.json({ user: { id: user._id, email, name: user.name, role: 'support_admin', avatar: '' } });
     } catch (err) {
-      error('User-Service', 'Server error during login', { error: err.message }, req);
+      error('User-Service', 'Server error during login', { error: err.message }, extractContextFromReq(req));
       res.status(500).json({ message: 'Server error' });
     }
   }
@@ -104,7 +104,7 @@ router.post('/login',
 router.post('/logout', (req, res) => {
   req.session.destroy((err) => {
     if (err) {
-      error('Auth-Service', 'Error during logout', { error: err.message }, req);
+      error('Auth-Service', 'Error during logout', { error: err.message }, extractContextFromReq(req));
       return res.status(500).json({ message: 'Logout failed' });
     }
     res.clearCookie('connect.sid');
@@ -116,12 +116,12 @@ router.get('/verify', authenticateToken, async (req, res) => {
   try {
     const user = await User.findById(req.user.userId).select('-password');
     if (!user) {
-      warn('User-Service', 'User not found during verification', {}, req);
+      warn('User-Service', 'User not found during verification', {}, extractContextFromReq(req));
       return res.status(404).json({ message: 'User not found' });
     }
 
     if (user.disabled) {
-      warn('User-Service', 'Token verification for disabled user', { userId: req.user.userId }, req);
+      warn('User-Service', 'Token verification for disabled user', { userId: req.user.userId }, extractContextFromReq(req));
       return res.status(403).json({ message: 'Account is disabled' });
     }
 
@@ -144,7 +144,7 @@ router.get('/verify', authenticateToken, async (req, res) => {
       }
     });
   } catch (err) {
-    error('User-Service', 'Server error during verification', { error: err.message }, req);
+    error('User-Service', 'Server error during verification', { error: err.message }, extractContextFromReq(req));
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -167,7 +167,7 @@ router.get("/isoplus/callback", async (req, res) => {
   const { code, state } = req.query;
 
   if (!code) {
-    warn('User-Service', 'Authorization code is missing', { state }, req);
+    warn('User-Service', 'Authorization code is missing', { state }, extractContextFromReq(req));
     return res.status(400).json({ error: "Authorization code is missing" });
   }
 
@@ -195,7 +195,7 @@ router.get("/isoplus/callback", async (req, res) => {
           code: code
         },
         response: tokenResponse.data
-      }, req);
+      }, extractContextFromReq(req));
       return res.status(400).json({ error: "Invalid token response" });
     }
 
@@ -216,11 +216,11 @@ router.get("/isoplus/callback", async (req, res) => {
         method: "GET",
         data: {},
         response: userResponse.data
-      }, req);
+      }, extractContextFromReq(req));
       return res.status(400).json({ error: "Invalid user response" });
     }
 
-    info('User-Service', 'OAuth callback successful', { state, user: userResponse.data }, req);
+    info('User-Service', 'OAuth callback successful', { state, user: userResponse.data }, extractContextFromReq(req));
     res.send(`
       <html>
         <body>
@@ -247,7 +247,7 @@ router.get("/isoplus/callback", async (req, res) => {
       },
       error: err.response?.data || err.message,
       status: err.response?.status
-    }, req);
+    }, extractContextFromReq(req));
     const errorMessage = err.response?.data?.error || err.message || 'Failed to authenticate';
     res.send(`
       <html>
@@ -291,7 +291,7 @@ router.post('/oauth-login', async (req, res) => {
     }
 
     if (user.disabled) {
-      warn('User-Service', 'OAuth login attempt for disabled user', { email }, req);
+      warn('User-Service', 'OAuth login attempt for disabled user', { email }, extractContextFromReq(req));
       return res.status(403).json({ message: 'Account is disabled' });
     }
 
@@ -323,7 +323,7 @@ router.post('/oauth-login', async (req, res) => {
 
       req.session.token = token;
       await req.session.save();      
-      info('User-Service', 'OAuth login successful', { email: user.email }, req);
+      info('User-Service', 'OAuth login successful', { email: user.email }, extractContextFromReq(req));
       res.json({
         user: {
           id: user._id,
@@ -335,7 +335,7 @@ router.post('/oauth-login', async (req, res) => {
       });
     }    
   } catch (err) {
-    error('User-Service', 'Server error during OAuth login', { error: err.message }, req);
+    error('User-Service', 'Server error during OAuth login', { error: err.message }, extractContextFromReq(req));
     res.status(500).json({ message: 'Server error during OAuth login' });
   }
 });
@@ -343,10 +343,10 @@ router.post('/oauth-login', async (req, res) => {
 router.get('/users', validateApiKey, async (req, res) => {
   try {
     const users = await User.find({}).select('-password');
-    info('User-Service', 'Users list retrieved successfully', { count: users.length }, req);
+    info('User-Service', 'Users list retrieved successfully', { count: users.length }, extractContextFromReq(req));
     res.json({ users });
   } catch (err) {
-    error('User-Service', 'Server error while retrieving users', { error: err.message }, req);
+    error('User-Service', 'Server error while retrieving users', { error: err.message }, extractContextFromReq(req));
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -357,14 +357,14 @@ router.patch('/users/:userId/disable', validateApiKey, async (req, res) => {
     
     const user = await User.findById(userId);
     if (!user) {
-      warn('User-Service', 'User not found for disable operation', { userId }, req);
+      warn('User-Service', 'User not found for disable operation', { userId }, extractContextFromReq(req));
       return res.status(404).json({ message: 'User not found' });
     }
 
     user.disabled = true;
     await user.save();
 
-    info('User-Service', 'User disabled successfully', { userId, email: user.email }, req);
+    info('User-Service', 'User disabled successfully', { userId, email: user.email }, extractContextFromReq(req));
     res.json({ 
       message: 'User disabled successfully',
       user: {
@@ -376,7 +376,7 @@ router.patch('/users/:userId/disable', validateApiKey, async (req, res) => {
       }
     });
   } catch (err) {
-    error('User-Service', 'Server error while disabling user', { error: err.message }, req);
+    error('User-Service', 'Server error while disabling user', { error: err.message }, extractContextFromReq(req));
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -387,14 +387,14 @@ router.patch('/users/:userId/enable', validateApiKey, async (req, res) => {
     
     const user = await User.findById(userId);
     if (!user) {
-      warn('User-Service', 'User not found for enable operation', { userId }, req);
+      warn('User-Service', 'User not found for enable operation', { userId }, extractContextFromReq(req));
       return res.status(404).json({ message: 'User not found' });
     }
 
     user.disabled = false;
     await user.save();
 
-    info('User-Service', 'User enabled successfully', { userId, email: user.email }, req);
+    info('User-Service', 'User enabled successfully', { userId, email: user.email }, extractContextFromReq(req));
     res.json({ 
       message: 'User enabled successfully',
       user: {
@@ -406,7 +406,7 @@ router.patch('/users/:userId/enable', validateApiKey, async (req, res) => {
       }
     });
   } catch (err) {
-    error('User-Service', 'Server error while enabling user', { error: err.message }, req);
+    error('User-Service', 'Server error while enabling user', { error: err.message }, extractContextFromReq(req));
     res.status(500).json({ message: 'Server error' });
   }
 });

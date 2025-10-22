@@ -2,7 +2,7 @@ import express from 'express';
 import axios from 'axios';
 import { authenticateToken } from '../middleware/auth.js';
 import { v4 as uuidv4 } from 'uuid';
-import { info, error } from '../utils/logger.js';
+import { info, error, extractContextFromReq } from '../utils/logger.js';
 import { getAutomation, updateAutomation } from '../services/isoplus.js';
 
 const router = express.Router();
@@ -92,16 +92,16 @@ router.put('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
             if (needsUpdate) {
                 const result = await updateAutomation(workspaceId, boardId, automationItem.id, updatedAutomation, req.session.Authorization);
                 if (result) {
-                    info('Automation-Service', 'Automation updated', { workspaceId, boardId, automationId: updatedAutomation.id }, req);
+                    info('Automation-Service', 'Automation updated', { workspaceId, boardId, automationId: updatedAutomation.id }, extractContextFromReq(req));
                     updatedAutomations.push(result);
                 } else {
-                    error('Automation-Service', 'Failed to update Automation', { workspaceId, boardId, automationId: updatedAutomation.id }, req);
+                    error('Automation-Service', 'Failed to update Automation', { workspaceId, boardId, automationId: updatedAutomation.id }, extractContextFromReq(req));
                 }
             } 
         }
         res.status(200).json(updatedAutomations);
     } catch (err) {
-        error('Automation-Service', 'Failed to update Automations', { error: err }, req);
+        error('Automation-Service', 'Failed to update Automations', { error: err }, extractContextFromReq(req));
         res.status(500).json({ error: 'Failed to update Automations' });
     }
 });
