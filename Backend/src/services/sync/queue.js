@@ -1,5 +1,5 @@
 import { Queue } from 'bullmq';
-import { info } from '../../utils/logger.js';
+import { info, error } from '../../utils/logger.js';
 
 // Redis connection configuration
 const redisConnection = {
@@ -35,8 +35,8 @@ info('Sync-Queue', 'BullMQ sync queue initialized', {
 });
 
 // Queue event listeners
-syncQueue.on('error', (error) => {
-  console.error('Queue error:', error);
+syncQueue.on('error', (err) => {
+  error('Sync-Queue', 'Queue error occurred', { error: err.message, stack: err.stack });
 });
 
 syncQueue.on('waiting', (jobId) => {

@@ -14,11 +14,6 @@ import { info, error, extractContextFromReq } from '../utils/logger.js';
 
 const router = express.Router();
 
-/**
- * Enable sync for a specific board
- * This triggers validation and then backlog sync
- * POST /api/sync/board/enable
- */
 router.post('/board/enable', authenticateToken, async (req, res) => {
   try {
     const { workspaceId, boardId } = req.body;
@@ -50,10 +45,6 @@ router.post('/board/enable', authenticateToken, async (req, res) => {
   }
 });
 
-/**
- * Disable sync for a specific board
- * POST /api/sync/board/disable
- */
 router.post('/board/disable', authenticateToken, async (req, res) => {
   try {
     const { boardId } = req.body;
@@ -64,7 +55,7 @@ router.post('/board/disable', authenticateToken, async (req, res) => {
       });
     }
 
-    const result = await disableBoardSync(boardId);
+    const result = await disableBoardSync(boardId, req.session.Authorization);
     
     info('Sync-Route', 'Board sync disabled', { 
       boardId
@@ -82,10 +73,6 @@ router.post('/board/disable', authenticateToken, async (req, res) => {
   }
 });
 
-/**
- * Trigger manual sync for a specific board
- * POST /api/sync/board/manual
- */
 router.post('/board/manual', authenticateToken, async (req, res) => {
   try {
     const { workspaceId, boardId } = req.body;
@@ -117,10 +104,6 @@ router.post('/board/manual', authenticateToken, async (req, res) => {
   }
 });
 
-/**
- * Retry sync after failure
- * POST /api/sync/board/retry
- */
 router.post('/board/retry', authenticateToken, async (req, res) => {
   try {
     const { workspaceId, boardId } = req.body;
@@ -153,10 +136,6 @@ router.post('/board/retry', authenticateToken, async (req, res) => {
   }
 });
 
-/**
- * Cancel sync for a board
- * POST /api/sync/board/cancel
- */
 router.post('/board/cancel', authenticateToken, async (req, res) => {
   try {
     const { boardId } = req.body;
@@ -167,7 +146,7 @@ router.post('/board/cancel', authenticateToken, async (req, res) => {
       });
     }
 
-    const result = await cancelBoardSync(boardId);
+    const result = await cancelBoardSync(boardId, req.session.Authorization);
     
     info('Sync-Route', 'Sync cancelled', { 
       boardId
@@ -185,10 +164,6 @@ router.post('/board/cancel', authenticateToken, async (req, res) => {
   }
 });
 
-/**
- * Enable sync for all boards in a workspace
- * POST /api/sync/workspace/enable
- */
 router.post('/workspace/enable', authenticateToken, async (req, res) => {
   try {
     const { workspaceId } = req.body;
@@ -218,10 +193,6 @@ router.post('/workspace/enable', authenticateToken, async (req, res) => {
   }
 });
 
-/**
- * Get sync status for a specific board
- * GET /api/sync/board/status/:boardId
- */
 router.get('/board/status/:boardId', authenticateToken, async (req, res) => {
   try {
     const { boardId } = req.params;
@@ -253,10 +224,6 @@ router.get('/board/status/:boardId', authenticateToken, async (req, res) => {
   }
 });
 
-/**
- * Get sync status for all boards with sync enabled in workspace
- * GET /api/sync/workspace/status/:workspaceId
- */
 router.get('/workspace/status/:workspaceId', authenticateToken, async (req, res) => {
   try {
     const { workspaceId } = req.params;

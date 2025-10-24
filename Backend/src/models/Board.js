@@ -111,6 +111,18 @@ const boardSchema = new mongoose.Schema({
       default: 0
     }
   },
+  hookId: {
+    type: String,
+    default: null
+  },
+  hookSecret: {
+    type: String,
+    default: null
+  },
+  workspaceId: {
+    type: String,
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now

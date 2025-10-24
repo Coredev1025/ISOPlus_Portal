@@ -1,24 +1,14 @@
 import syncQueue from './sync/queue.js';
 import Board from '../models/Board.js';
-import Item from '../models/Item.js';
+import { unregisterBoardWebhooks } from './webhookService.js';
 import { info, error, warn } from '../utils/logger.js';
 
-/**
- * Enable sync for a board
- * This triggers the validation and sync process in the background
- * @param {string} authorization - ISO+ authorization token
- * @param {string} workspaceId - Workspace ID
- * @param {string} boardId - Board ID
- * @returns {Promise<Object>} Result
- */
 export async function enableBoardSync(authorization, workspaceId, boardId) {
   try {
     info('Sync-Service', 'Enabling sync for board', { workspaceId, boardId });
     
-    // Check if board exists
     const board = await Board.findOne({ boardId });
     
-    // Prevent enabling sync if already enabled or in progress
     if (board && ['sync_enabled', 'board_validation', 'board_valid', 'data_backlog_sync', 'realtime_sync', 'manual_triggered_sync'].includes(board.syncStatus)) {
       return {
         success: false,
@@ -28,11 +18,11 @@ export async function enableBoardSync(authorization, workspaceId, boardId) {
       };
     }
 
-    // Update board to sync_enabled status
     const updatedBoard = await Board.findOneAndUpdate(
       { boardId },
       {
         $set: {
+          workspaceId: workspaceId,
           syncData: true,
           syncStatus: 'sync_enabled',
           lastSyncError: null,
@@ -42,7 +32,6 @@ export async function enableBoardSync(authorization, workspaceId, boardId) {
       { upsert: true, new: true }
     );
 
-    // Add validation job to queue
     const job = await syncQueue.add('board_validation', {
       jobType: 'board_validation',
       authorization,
@@ -53,8 +42,7 @@ export async function enableBoardSync(authorization, workspaceId, boardId) {
       jobId: `validation-${boardId}-${Date.now()}`,
       priority: 1
     });
-
-    // Update board with job ID
+  
     await Board.findOneAndUpdate(
       { boardId },
       { $set: { syncJobId: job.id } }
@@ -88,9 +76,10 @@ export async function enableBoardSync(authorization, workspaceId, boardId) {
 /**
  * Disable sync for a board
  * @param {string} boardId - Board ID
+ * @param {string} authorization - ISO+ authorization token (optional, for webhook removal)
  * @returns {Promise<Object>} Result
  */
-export async function disableBoardSync(boardId) {
+export async function disableBoardSync(boardId, authorization = null) {
   try {
     info('Sync-Service', 'Disabling sync for board', { boardId });
     
@@ -100,7 +89,6 @@ export async function disableBoardSync(boardId) {
       throw new Error('Board not found');
     }
 
-    // Cancel any pending jobs
     if (board.syncJobId) {
       try {
         const job = await syncQueue.getJob(board.syncJobId);
@@ -120,14 +108,56 @@ export async function disableBoardSync(boardId) {
       }
     }
 
-    // Update board status
+    if (board.hookId) {
+      if (authorization && board.workspaceId) {
+        try {
+          info('Sync-Service', 'Removing hook for board', { 
+            boardId,
+            workspaceId: board.workspaceId,
+            hookId: board.hookId 
+          });
+
+          const hookResult = await unregisterBoardWebhooks(
+            authorization, 
+            board.workspaceId, 
+            boardId, 
+            board.hookId
+          );
+
+          if (hookResult.success) {
+            info('Sync-Service', 'Hook removed successfully', { 
+              boardId,
+              hookId: board.hookId 
+            });
+          } else {
+            warn('Sync-Service', 'Failed to remove hook', { 
+              boardId,
+              hookId: board.hookId,
+              error: hookResult.error 
+            });
+          }
+        } catch (hookErr) {
+          warn('Sync-Service', 'Failed to remove hook', { 
+            boardId,
+            error: hookErr.message 
+          });
+        }
+      } else {
+        warn('Sync-Service', 'Cannot remove hook - no authorization token or workspace ID', { 
+          boardId 
+        });
+      }
+    }
+
     await Board.findOneAndUpdate(
       { boardId },
       {
         $set: {
           syncData: false,
           syncStatus: 'sync_stopped',
-          syncJobId: null
+          syncJobId: null,
+          hookId: null,
+          hookSecret: null
         }
       }
     );
@@ -149,14 +179,6 @@ export async function disableBoardSync(boardId) {
   }
 }
 
-/**
- * Retry sync for a board that failed
- * This handles restarting sync from failed/crashed states
- * @param {string} authorization - ISO+ authorization token
- * @param {string} workspaceId - Workspace ID
- * @param {string} boardId - Board ID
- * @returns {Promise<Object>} Result
- */
 export async function retrySyncAfterFailure(authorization, workspaceId, boardId) {
   try {
     info('Sync-Service', 'Retrying sync after failure', { workspaceId, boardId });
@@ -167,7 +189,6 @@ export async function retrySyncAfterFailure(authorization, workspaceId, boardId)
       throw new Error('Board not found');
     }
 
-    // Check if sync is enabled
     if (!board.syncData) {
       return {
         success: false,
@@ -176,16 +197,13 @@ export async function retrySyncAfterFailure(authorization, workspaceId, boardId)
       };
     }
 
-    // Determine what to retry based on current status
     let jobType, jobName, message;
     
     if (board.syncStatus === 'failed' || board.syncStatus === 'board_invalid') {
-      // If validation or general sync failed, retry validation
       jobType = 'board_validation';
       jobName = `retry-validation-${boardId}-${Date.now()}`;
       message = 'Retrying board validation';
       
-      // Reset status to sync_enabled
       await Board.findOneAndUpdate(
         { boardId },
         {
@@ -197,7 +215,6 @@ export async function retrySyncAfterFailure(authorization, workspaceId, boardId)
         }
       );
     } else if (['sync_stopped', 'sync_cancelled'].includes(board.syncStatus)) {
-      // If sync was stopped/cancelled, restart from validation
       jobType = 'board_validation';
       jobName = `restart-validation-${boardId}-${Date.now()}`;
       message = 'Restarting sync from validation';
@@ -221,7 +238,6 @@ export async function retrySyncAfterFailure(authorization, workspaceId, boardId)
       };
     }
 
-    // Queue the retry job
     const job = await syncQueue.add(jobType, {
       jobType,
       authorization,
@@ -234,7 +250,6 @@ export async function retrySyncAfterFailure(authorization, workspaceId, boardId)
       priority: 1
     });
 
-    // Update board with job ID
     await Board.findOneAndUpdate(
       { boardId },
       {
@@ -290,7 +305,6 @@ export async function triggerManualSync(authorization, workspaceId, boardId) {
       throw new Error('Board not found');
     }
 
-    // Check if sync is enabled
     if (!board.syncData) {
       return {
         success: false,
@@ -299,7 +313,6 @@ export async function triggerManualSync(authorization, workspaceId, boardId) {
       };
     }
 
-    // Check if already syncing
     if (['board_validation', 'data_backlog_sync', 'manual_triggered_sync'].includes(board.syncStatus)) {
       return {
         success: false,
@@ -309,7 +322,6 @@ export async function triggerManualSync(authorization, workspaceId, boardId) {
       };
     }
 
-    // Add manual sync job to queue
     const job = await syncQueue.add('manual_sync', {
       jobType: 'manual_triggered_sync',
       authorization,
@@ -320,7 +332,6 @@ export async function triggerManualSync(authorization, workspaceId, boardId) {
       priority: 2 // Higher priority than regular sync
     });
 
-    // Update board status
     await Board.findOneAndUpdate(
       { boardId },
       {
@@ -360,9 +371,10 @@ export async function triggerManualSync(authorization, workspaceId, boardId) {
  * Cancel sync for a board
  * This cancels any running sync jobs and sets status to cancelled
  * @param {string} boardId - Board ID
+ * @param {string} authorization - ISO+ authorization token (optional, for webhook removal)
  * @returns {Promise<Object>} Result
  */
-export async function cancelBoardSync(boardId) {
+export async function cancelBoardSync(boardId, authorization = null) {
   try {
     info('Sync-Service', 'Cancelling sync for board', { boardId });
     
@@ -372,7 +384,6 @@ export async function cancelBoardSync(boardId) {
       throw new Error('Board not found');
     }
 
-    // Cancel any pending jobs
     if (board.syncJobId) {
       try {
         const job = await syncQueue.getJob(board.syncJobId);
@@ -392,14 +403,56 @@ export async function cancelBoardSync(boardId) {
       }
     }
 
-    // Update board status to cancelled
+    if (board.hookId) {
+      if (authorization && board.workspaceId) {
+        try {
+          info('Sync-Service', 'Removing hook for cancelled board', { 
+            boardId,
+            workspaceId: board.workspaceId,
+            hookId: board.hookId 
+          });
+
+          const hookResult = await unregisterBoardWebhooks(
+            authorization, 
+            board.workspaceId, 
+            boardId, 
+            board.hookId
+          );
+
+          if (hookResult.success) {
+            info('Sync-Service', 'Hook removed successfully', { 
+              boardId,
+              hookId: board.hookId 
+            });
+          } else {
+            warn('Sync-Service', 'Failed to remove hook', { 
+              boardId,
+              hookId: board.hookId,
+              error: hookResult.error 
+            });
+          }
+        } catch (hookErr) {
+          warn('Sync-Service', 'Failed to remove hook', { 
+            boardId,
+            error: hookErr.message 
+          });
+        }
+      } else {
+        warn('Sync-Service', 'Cannot remove hook - no authorization token or workspace ID', { 
+          boardId 
+        });
+      }
+    }
+
     await Board.findOneAndUpdate(
       { boardId },
       {
         $set: {
           syncStatus: 'sync_cancelled',
           syncJobId: null,
-          lastSyncError: 'Sync cancelled by user'
+          lastSyncError: 'Sync cancelled by user',
+          hookId: null,
+          hookSecret: null
         }
       }
     );
@@ -434,7 +487,6 @@ export async function startBacklogSync(authorization, workspaceId, boardId) {
   try {
     info('Sync-Service', 'Starting backlog sync for board', { workspaceId, boardId });
     
-    // Add backlog sync job to queue
     const job = await syncQueue.add('backlog_sync', {
       jobType: 'data_backlog_sync',
       authorization,
@@ -445,7 +497,6 @@ export async function startBacklogSync(authorization, workspaceId, boardId) {
       priority: 3
     });
 
-    // Update board with job ID
     await Board.findOneAndUpdate(
       { boardId },
       { $set: { syncJobId: job.id } }
@@ -482,7 +533,6 @@ export async function enableWorkspaceSync(authorization, workspaceId) {
   try {
     info('Sync-Service', 'Enabling sync for all boards in workspace', { workspaceId });
     
-    // Find all boards that can be synced (disabled or stopped)
     const boards = await Board.find({ 
       syncStatus: { $in: ['disabled', 'sync_stopped', 'sync_cancelled', 'failed'] }
     });
@@ -552,11 +602,6 @@ export async function enableWorkspaceSync(authorization, workspaceId) {
   }
 }
 
-/**
- * Get sync status for a board including job progress
- * @param {string} boardId - Board ID
- * @returns {Promise<Object>} Status
- */
 export async function getBoardSyncStatus(boardId) {
   try {
     const board = await Board.findOne({ boardId });
@@ -567,7 +612,6 @@ export async function getBoardSyncStatus(boardId) {
 
     let jobStatus = null;
     
-    // Get job status if there's an active job
     if (board.syncJobId) {
       try {
         const job = await syncQueue.getJob(board.syncJobId);

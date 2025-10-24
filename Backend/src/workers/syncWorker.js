@@ -3,6 +3,7 @@ import { getBoard, getFolder, getItem } from '../services/isoplus.js';
 import Board from '../models/Board.js';
 import Item from '../models/Item.js';
 import { validateBoard } from '../services/sync/validator.js';
+import { registerBoardWebhooks } from '../services/webhookService.js';
 import { info, error, warn } from '../utils/logger.js';
 
 // Redis connection configuration
@@ -291,6 +292,77 @@ async function processDataBacklogSync(job) {
         itemsUpdated: totalItemsUpdated
       }
     });
+
+    // Register webhook hook for realtime updates after successful backlog sync
+    info('Sync-Worker', 'Preparing to register hook for realtime sync', { 
+      jobId: job.id,
+      workspaceId, 
+      boardId,
+      authorization: authorization ? 'present' : 'missing'
+    });
+
+    try {
+      if (!authorization) {
+        error('Sync-Worker', 'Cannot register hook: authorization token missing', {
+          jobId: job.id,
+          workspaceId,
+          boardId
+        });
+      } else {
+        info('Sync-Worker', 'Calling registerBoardWebhooks', {
+          jobId: job.id,
+          workspaceId,
+          boardId
+        });
+
+        const hookResult = await registerBoardWebhooks(authorization, workspaceId, boardId);
+        
+        info('Sync-Worker', 'Hook registration result received', {
+          jobId: job.id,
+          workspaceId,
+          boardId,
+          success: hookResult.success,
+          hookId: hookResult.hookId,
+          error: hookResult.error
+        });
+
+        if (hookResult.success) {
+          await Board.findOneAndUpdate(
+            { boardId },
+            {
+              $set: {
+                hookId: hookResult.hookId || null,
+                hookSecret: hookResult.secret || null
+              }
+            }
+          );
+
+          info('Sync-Worker', 'Hook registered and board updated successfully', { 
+            jobId: job.id,
+            workspaceId, 
+            boardId,
+            hookId: hookResult.hookId,
+            events: hookResult.events
+          });
+        } else {
+          error('Sync-Worker', 'Hook registration failed', { 
+            jobId: job.id,
+            workspaceId, 
+            boardId,
+            error: hookResult.error,
+            errorDetails: hookResult.errorDetails
+          });
+        }
+      }
+    } catch (hookErr) {
+      error('Sync-Worker', 'Exception during hook registration', { 
+        jobId: job.id,
+        workspaceId, 
+        boardId,
+        error: hookErr.message,
+        stack: hookErr.stack
+      });
+    }
 
     return {
       success: true,
