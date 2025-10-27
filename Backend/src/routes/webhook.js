@@ -1,5 +1,5 @@
 import express from 'express';
-import { info, error } from '../utils/logger.js';
+import { info, error, extractContextFromReq } from '../utils/logger.js';
 import fs from 'fs/promises';
 import { generate } from '@pdfme/generator';
 import { text, table, line, image, multiVariableText } from '@pdfme/schemas';
@@ -38,7 +38,7 @@ async function getValidatedBusiness(workspaceId) {
 async function handlePDFError(err, workspaceId, boardId, itemId, action, req, res) {
     const errorMessage = (err && err.message) ? err.message : 'Server error: An unknown error occurred. Please contact support via ISO+™ Portal.';
     await setIntegrationMessage(workspaceId, boardId, itemId, errorMessage);
-    error('Webhook-Service', 'Server error', { message: errorMessage }, req);
+    error('Webhook-Service', 'Server error', { message: errorMessage }, extractContextFromReq(req));
     logAuditTrail({
         workspaceId,
         action,
@@ -78,7 +78,7 @@ function formatValue(val) {
 function validateRequestParams(req) {
     const { workspaceId, boardId } = req.params;
     if (!req.body.items?.length) {
-        error('Webhook-Service', 'Server error', { message: "There are no items." }, req);
+        error('Webhook-Service', 'Server error', { message: "There are no items." }, extractContextFromReq(req));
         throw new Error('No items found in the payload');
     }
     return { workspaceId, boardId };
@@ -102,7 +102,7 @@ async function handlePDFSuccess(workspaceId, boardId, itemId, fileUrl, docType, 
         isDeleted: false,
         SignatureStatus: "Unsigned"
     });
-    info('Webhook-Service', `Successfully generating PDF ${docType.toLowerCase()}`, { link: fileUrl }, req);
+    info('Webhook-Service', `Successfully generating PDF ${docType.toLowerCase()}`, { link: fileUrl }, extractContextFromReq(req));
     return res.json({ pdfUrl: fileUrl });
 }
 
@@ -222,7 +222,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
             }
         }));
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message }, req);
+        error('Webhook-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
         return res.status(200).json({ message: err.message });
     }
 });
@@ -326,7 +326,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
             }
         }));
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message }, req);
+        error('Webhook-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
         return res.status(200).json({ message: err.message });
     }
 });
@@ -422,7 +422,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
             }
         }));
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message }, req);
+        error('Webhook-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
         return res.status(200).json({ message: err.message });
     }
 });
@@ -638,7 +638,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
             }
         }));
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message }, req);
+        error('Webhook-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
         return res.status(200).json({ message: err.message });
     }
 });
@@ -1175,7 +1175,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             }
         }));
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message }, req);
+        error('Webhook-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
         return res.status(200).json({ message: err.message });
     }
 });
@@ -1193,7 +1193,7 @@ router.get('/uploads/:filename', async (req, res) => {
             throw new Error('Invalid file URL');
         }
     } catch (err) {
-        error('Webhook-Service', 'Error downloading file', { message: err.message }, req);
+        error('Webhook-Service', 'Error downloading file', { message: err.message }, extractContextFromReq(req));
         res.status(404).json({ message: 'File not found in ISO+™ Portal.' });
     }
 });

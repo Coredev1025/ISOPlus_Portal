@@ -1,7 +1,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import { authenticateToken } from '../middleware/auth.js';
-import { warn, info, error } from '../utils/logger.js';
+import { warn, info, error, extractContextFromReq } from '../utils/logger.js';
 
 const router = express.Router();
 
@@ -20,14 +20,14 @@ const Log = mongoose.model('Log', logSchema);
 router.get('/', authenticateToken, async (req, res) => {
     try {
         if(req.user.role == 'isoplus_user') {
-            warn('Log-Service', 'Unauthorized access', { email: req.user.email }, req);
+            warn('Log-Service', 'Unauthorized access', { email: req.user.email }, extractContextFromReq(req));
             return res.status(403).json({ message: 'Unauthorized access' });
         }
         const logs = await Log.find();
-        info('Log-Service', 'Logs fetched successfully', { count: logs.length }, req);
+        info('Log-Service', 'Logs fetched successfully', { count: logs.length }, extractContextFromReq(req));
         res.json(logs);
     } catch (err) {
-        error('Log-Service', 'Error fetching logs', { error: err.message }, req);
+        error('Log-Service', 'Error fetching logs', { error: err.message }, extractContextFromReq(req));
         res.status(500).json({ message: err.message });
     }
 });

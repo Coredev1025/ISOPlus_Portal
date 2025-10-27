@@ -73,6 +73,7 @@ interface Board {
   label: string;
   attributeId: string;
   pdfAttributeId: string;
+  syncData: boolean;
 }
 
 function SuggestionDialog({ isOpen, onClose, onConfirm, suggestion, reason }: SuggestionDialogProps) {
@@ -117,6 +118,7 @@ export default function ConfigurationPage() {
     reason: ''
   });
   const [updateAutomation, setUpdateAutomation] = useState(false);
+  const [syncData, setSyncData] = useState(false);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -173,20 +175,22 @@ export default function ConfigurationPage() {
               signal: abortController.signal
             }
           );
-          const boardData = { id: boardId, name: boardResponse.data.board.name, label: boardResponse.data.board.label || 'No Label', attributeId: boardResponse.data.board.attribute.id || '', pdfAttributeId: boardResponse.data.board.pdfAttribute?.id || '' };
+          const boardData = { id: boardId, name: boardResponse.data.board.name, label: boardResponse.data.board?.label || 'No Label', attributeId: boardResponse.data.board?.attribute?.id || '', pdfAttributeId: boardResponse.data.board?.pdfAttribute?.id || '', syncData: boardResponse.data.board?.syncData || false };
           setBoard(boardData);
-          setSelectedAttribute(boardResponse.data.board.attribute.id || '');
-          setSelectedPdfAttribute(boardResponse.data.board.pdfAttribute?.id || '');
-          setBoardLabel(boardResponse.data.board.label || 'No Label');
+          setSelectedAttribute(boardResponse.data.board?.attribute?.id || '');
+          setSelectedPdfAttribute(boardResponse.data.board?.pdfAttribute?.id || '');
+          setBoardLabel(boardResponse.data.board?.label || 'No Label');
+          setSyncData(boardResponse.data.board?.syncData || false);
           showFetchSuccessToast("Board configuration");
         } catch (error: any) {
           if (error.name != "CanceledError" && error.name != "AbortError") {
             console.error("Error fetching board:", error);
             showFetchErrorToast("board configuration", error.response?.data?.message || "Failed to load board configuration");
           }
-          setBoard({ id: boardId, name: '', label: 'No Label', attributeId: '', pdfAttributeId: '' });
+          setBoard({ id: boardId, name: '', label: 'No Label', attributeId: '', pdfAttributeId: '', syncData: false });
           setSelectedAttribute('');
           setSelectedPdfAttribute('');
+          setSyncData(false);
           return;
         }
       }
@@ -206,28 +210,22 @@ export default function ConfigurationPage() {
   }
 
   const suggestLabel = () => {
-    const name = board.name.toLowerCase();
+    const name = board?.name.toLowerCase();
     let suggestion: BoardLabel = 'No Label';
     let reason = '';
 
     if (name.includes('job management')) {
       suggestion = 'Job Management';
       reason = "Based on the board name containing 'Job Management', we suggest labeling this as a Job Management board.";
-    } else if (name.includes('care management - ndis - certification') || name.includes('ndis - certification')) {
+    } else if (name.includes('ndis') && name.includes('certification')) {
       suggestion = 'Care Management - NDIS - Certification';
       reason = "Based on the board name containing 'NDIS - Certification', we suggest labeling this as a Care Management - NDIS - Certification board.";
-    } else if (name.includes('care management - ndis - verification') || name.includes('ndis - verification')) {
+    } else if (name.includes('ndis') && name.includes('verification')) {
       suggestion = 'Care Management - NDIS - Verification';
       reason = "Based on the board name containing 'NDIS - Verification', we suggest labeling this as a Care Management - NDIS - Verification board.";
-    } else if (name.includes('care management - sah - low cat') || name.includes('sah - low cat')) {
-      suggestion = 'Care Management - SaH - Low Cat';
-      reason = "Based on the board name containing 'SaH - Low Cat', we suggest labeling this as a Care Management - SaH - Low Cat board.";
-    } else if (name.includes('care management - sah') || name.includes('sah')) {
+    } else if (name.includes('care management')) {
       suggestion = 'Care Management - SaH';
       reason = "Based on the board name containing 'SaH', we suggest labeling this as a Care Management - SaH board.";
-    } else if (name.includes('care management')) {
-      suggestion = 'Care Management - NDIS - Certification';
-      reason = "Based on the board name containing 'Care Management', we suggest labeling this as a Care Management - NDIS - Certification board (previously Care Management).";
     } else {
       reason = "We couldn't automatically determine the board type based on its name. Please select a label manually if needed.";
     }
@@ -252,7 +250,7 @@ export default function ConfigurationPage() {
 
       const response = await axios.put(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards`,
-        { ...board, label: boardLabel, attribute: { id: selectedAttribute, name: attr?.name }, pdfAttribute: { id: selectedPdfAttribute, name: pdfAttr?.name }, boardId, workspaceId: id },
+        { ...board, label: boardLabel, attribute: { id: selectedAttribute, name: attr?.name }, pdfAttribute: { id: selectedPdfAttribute, name: pdfAttr?.name }, syncData, boardId, workspaceId: id },
         {}
       );
 
@@ -357,6 +355,37 @@ export default function ConfigurationPage() {
                   {boardLabel && (
                     <p className="text-sm text-muted-foreground">
                       This board will use {boardLabel.toLowerCase()} specific features and automations.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="border-t" />
+
+              {/* Sync Data Configuration */}
+              <div className="space-y-4">
+                <h2 className="text-lg font-semibold">Data Synchronization</h2>
+                <p className="text-sm text-muted-foreground">
+                  Enable automatic synchronization of data from ISO+ to Portal database.
+                  When enabled, this board will automatically sync data changes from ISO+ to keep the Portal database up to date.
+                </p>
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="sync-data"
+                      checked={syncData}
+                      onCheckedChange={(checked) => setSyncData(!!checked)}
+                    />
+                    <label
+                      htmlFor="sync-data"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                    >
+                      Sync data from ISO+ to Portal database
+                    </label>
+                  </div>
+                  {syncData && (
+                    <p className="text-sm text-muted-foreground">
+                      Data synchronization is enabled. Changes in ISO+ will be automatically synced to the Portal database.
                     </p>
                   )}
                 </div>

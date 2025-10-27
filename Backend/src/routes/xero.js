@@ -1,7 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import Business from '../models/Business.js';
-import { warn, error } from '../utils/logger.js';
+import { warn, error, extractContextFromReq } from '../utils/logger.js';
 import { isEmpty } from '../utils/helpers.js';
 import {
   validateItemBelongsToTenant,
@@ -35,7 +35,7 @@ const router = express.Router();
 
 async function validatePayload(payload, req) {
   if (!payload?.items?.length) {
-    warn('Xero-Service', 'Received payload with empty items.', { payload }, req);
+    warn('Xero-Service', 'Received payload with empty items.', { payload }, extractContextFromReq(req));
     return { error: 'No items found in the payload' };
   }
   return { item: payload.items[0] };
@@ -1120,7 +1120,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
   const { workspaceId, boardId } = req.params;
   const payload = req.body;
   if (!payload.items || payload.items.length === 0) {
-    warn('Xero-Service', 'Received payload with empty items.', { payload }, req);
+    warn('Xero-Service', 'Received payload with empty items.', { payload }, extractContextFromReq(req));
     return res.json('No items found in the payload.');
   }
 

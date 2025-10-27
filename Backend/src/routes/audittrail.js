@@ -1,7 +1,7 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import AuditTrail from '../models/AuditTrail.js';
-import { info, error } from '../utils/logger.js';
+import { info, error, extractContextFromReq } from '../utils/logger.js';
 
 const router = express.Router();
 
@@ -11,10 +11,10 @@ router.get('/', authenticateToken, async (req, res) => {
         const workspaceId = req.query.workspaceId?.toString();
         if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
         const auditTrails = await AuditTrail.find({ workspaceId });
-        info('AuditTrail-Service', 'Audit trails fetched successfully', { count: auditTrails.length }, req);
+        info('AuditTrail-Service', 'Audit trails fetched successfully', { count: auditTrails.length }, extractContextFromReq(req));
         res.json(auditTrails);
     } catch (err) {
-        error('AuditTrail-Service', 'Error fetching audit trails', { error: err.message }, req);
+        error('AuditTrail-Service', 'Error fetching audit trails', { error: err.message }, extractContextFromReq(req));
         res.status(500).json({ message: err.message });
     }
 });
@@ -31,10 +31,10 @@ router.post('/', authenticateToken, async (req, res) => {
 
     try {
         const newAuditTrail = await auditTrail.save();
-        info('AuditTrail-Service', 'New Audit trail created', { auditTrailId: newAuditTrail._id }, req);
+        info('AuditTrail-Service', 'New Audit trail created', { auditTrailId: newAuditTrail._id }, extractContextFromReq(req));
         res.status(201).json(newAuditTrail);
     } catch (err) {
-        error('AuditTrail-Service', 'Error creating new Audit trail', { error: err.message }, req);
+        error('AuditTrail-Service', 'Error creating new Audit trail', { error: err.message }, extractContextFromReq(req));
         res.status(400).json({ message: err.message });
     }
 });
@@ -56,10 +56,10 @@ router.put('/:id', authenticateToken, async (req, res) => {
         auditTrail.userIP = req.body.userIP || auditTrail.userIP;
 
         const updatedAuditTrail = await auditTrail.save();
-        info('AuditTrail-Service', 'Audit trail updated', { auditTrailId: updatedAuditTrail._id }, req);
+        info('AuditTrail-Service', 'Audit trail updated', { auditTrailId: updatedAuditTrail._id }, extractContextFromReq(req));
         res.json(updatedAuditTrail);
     } catch (err) {
-        error('AuditTrail-Service', 'Error updating Audit trail', { error: err.message }, req);
+        error('AuditTrail-Service', 'Error updating Audit trail', { error: err.message }, extractContextFromReq(req));
         res.status(400).json({ message: err.message });
     }
 });
