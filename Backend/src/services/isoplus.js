@@ -133,7 +133,7 @@ export async function getFolder(workspaceId, boardId) {
         };
         const params = {
             "limit": "100",
-            "sort_by": "created_at",
+            "sort_by": "id",
             "sort_direction": "desc",
         };
 
