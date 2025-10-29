@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, FileText, Search, Calendar, Filter, CheckCircle, Clock, DollarSign, BarChart3, FileDown, FileSpreadsheet, Receipt, Download, X } from "lucide-react";
+import { ArrowLeft, FileText, Search, Calendar, Filter, CheckCircle, Clock, DollarSign, BarChart3, FileDown, FileSpreadsheet, Receipt, Download, X, Package } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useState, useEffect } from "react";
@@ -14,21 +14,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { ServiceRecord, InvoiceSummary } from "../types";
-import axios from "@/app/utils/axiosConfig";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar as CalendarComponent } from "@/components/ui/calendar";
-import { format } from "date-fns";
-import { DateRange } from "react-day-picker";
 import {
   Pagination,
   PaginationContent,
@@ -38,7 +23,72 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { Input } from "@/components/ui/input";
 import Spinner from "@/components/ui/spin";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import axios from "@/app/utils/axiosConfig";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { format } from "date-fns";
+
+interface ItemValue {
+  object: string;
+  data: any;
+  attribute: {
+    id: string;
+    name: string;
+    type: string;
+  };
+  deleted: boolean;
+}
+
+interface ServiceRecord {
+  id: string;
+  status: "invoiced" | "pending";
+  participant: string;
+  scheduledStart: string | null;
+  worker: string;
+  unit: string;
+  quantity: number;
+  unitPrice: number;
+  totalAmount: number;
+  govSubsidy: number;
+  participantContribution: number;
+  notes: string;
+}
+
+interface InvoiceSummary {
+  totalRecords: number;
+  invoiced: number;
+  pending: number;
+  totalValue: number;
+}
+
+interface DatabaseItem {
+  _id: { $oid: string };
+  itemId: string;
+  data: {
+    id: string;
+    object: string;
+    values: ItemValue[];
+    folder_id: string;
+  };
+  status: string;
+  syncStatus: string;
+  workspaceId: string;
+  boardId: string;
+  createdAt: { $date: string };
+  updatedAt: { $date: string };
+  folderId: string;
+}
+import { DateRange } from "react-day-picker";
 
 export default function InvoiceGenerator() {
   const router = useRouter();
@@ -55,180 +105,127 @@ export default function InvoiceGenerator() {
   });
   const [participantFilter, setParticipantFilter] = useState("");
   const [scheduledDateRange, setScheduledDateRange] = useState<DateRange | undefined>();
-  const [deliveryDateRange, setDeliveryDateRange] = useState<DateRange | undefined>();
+  // We'll use scheduled date range only
   const [statusFilter, setStatusFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
 
-  // Sample data for demonstration - replace with actual API calls
-  const sampleData: ServiceRecord[] = [
-    {
-      id: "1",
-      status: "invoiced",
-      participant: "John Smith",
-      scheduledStart: "2024-01-15T09:00:00",
-      deliveryDate: "2024-01-15T17:00:00",
-      worker: "Alice Johnson",
-      unit: "Hours",
-      quantity: 8,
-      unitPrice: 45.00,
-      totalAmount: 360.00,
-      govSubsidy: 288.00,
-      participantContribution: 72.00,
-      notes: "Personal care assistance"
-    },
-    {
-      id: "2",
-      status: "pending",
-      participant: "Sarah Williams",
-      scheduledStart: "2024-01-20T10:00:00",
-      deliveryDate: "2024-01-20T11:30:00",
-      worker: "Bob Chen",
-      unit: "Item",
-      quantity: 1,
-      unitPrice: 150.00,
-      totalAmount: 150.00,
-      govSubsidy: 120.00,
-      participantContribution: 30.00,
-      notes: "Mobility equipment"
-    },
-    {
-      id: "3",
-      status: "pending",
-      participant: "Michael Brown",
-      scheduledStart: "2024-01-25T14:00:00",
-      deliveryDate: "2024-01-25T20:00:00",
-      worker: "Carol Davis",
-      unit: "Hours",
-      quantity: 6,
-      unitPrice: 42.00,
-      totalAmount: 252.00,
-      govSubsidy: 201.60,
-      participantContribution: 50.40,
-      notes: "Community access support"
-    },
-    {
-      id: "4",
-      status: "pending",
-      participant: "Emma Wilson",
-      scheduledStart: "2024-01-30T08:00:00",
-      deliveryDate: "2024-01-30T09:00:00",
-      worker: "David Lee",
-      unit: "Item",
-      quantity: 2,
-      unitPrice: 75.00,
-      totalAmount: 150.00,
-      govSubsidy: 105.00,
-      participantContribution: 45.00,
-      notes: "Therapeutic supplies"
-    },
-    {
-      id: "5",
-      status: "pending",
-      participant: "James Taylor",
-      scheduledStart: "2024-02-05T11:00:00",
-      deliveryDate: "2024-02-05T15:00:00",
-      worker: "Eva Garcia",
-      unit: "Hours",
-      quantity: 4,
-      unitPrice: 48.00,
-      totalAmount: 192.00,
-      govSubsidy: 153.60,
-      participantContribution: 38.40,
-      notes: "Domestic assistance"
-    },
-    {
-      id: "6",
-      status: "invoiced",
-      participant: "Lisa Anderson",
-      scheduledStart: "2024-02-10T16:00:00",
-      deliveryDate: "2024-02-10T17:00:00",
-      worker: "Frank Miller",
-      unit: "Item",
-      quantity: 1,
-      unitPrice: 200.00,
-      totalAmount: 200.00,
-      govSubsidy: 160.00,
-      participantContribution: 40.00,
-      notes: "Assistive technology"
-    }
-  ];
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Simulate API call
     const fetchData = async () => {
       setLoading(true);
+      setError(null);
       try {
-        // Replace with actual API call
-        // const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/invoices?workspaceId=${id}&boardId=${boardId}`);
-        // setServiceRecords(response.data.records);
+        // Build API URL
+        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}`;
         
-        // Using sample data for now
-        setServiceRecords(sampleData);
+        // Build query parameters
+        const params = new URLSearchParams();
         
-        // Calculate summary - this will be recalculated based on filtered records
-        const totalRecords = sampleData.length;
-        const invoiced = sampleData.filter(record => record.status === 'invoiced').length;
-        const pending = sampleData.filter(record => record.status === 'pending').length;
-        const totalValue = sampleData.reduce((sum, record) => sum + record.totalAmount, 0);
+        // Status filter
+        if (statusFilter !== 'all') {
+          params.append('status', statusFilter);
+        }
         
+        // Participant name filter
+        if (participantFilter) {
+          params.append('participant', participantFilter);
+        }
+        
+        // Date range filter for scheduled dates
+        if (scheduledDateRange?.from) {
+          params.append('startDate', scheduledDateRange.from.toISOString());
+        }
+        if (scheduledDateRange?.to) {
+          params.append('endDate', scheduledDateRange.to.toISOString());
+        }
+
+        // Pagination
+        params.append('page', currentPage.toString());
+        params.append('limit', ITEMS_PER_PAGE.toString());
+
+        params.append('folderName', 'Master Plan,Shift Planning and Reporting');
+        
+        // Fetch items from the backend
+        const response = await axios.get(apiUrl, {
+            params: Object.fromEntries(params),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            }
+          });
+
+        // Validate response format
+        if (!response.data || typeof response.data !== 'object') {
+          throw new Error('Invalid data format received from server');
+        }
+
+        // Extract data and metadata from response
+        const { 
+          items = [], 
+          total = 0, 
+          invoiced = 0, 
+          pending = 0,
+          totalAmount = 0 
+        } = response.data;
+
+        if (!Array.isArray(items)) {
+          throw new Error('Invalid items format received from server');
+        }
+        
+        // No need to transform since backend now sends formatted data
+        const transformedRecords: ServiceRecord[] = items;
+        
+        setServiceRecords(transformedRecords);
+        
+        // Use summary data from API response
         setSummary({
-          totalRecords,
-          invoiced,
-          pending,
-          totalValue
+          totalRecords: total,
+          invoiced: invoiced,
+          pending: pending,
+          totalValue: totalAmount
         });
-      } catch (error) {
-        console.error("Error fetching invoice data:", error);
+      } catch (err: any) {
+        const errorMessage = err.response?.data?.message || err.message || 'An error occurred while fetching data';
+        setError(errorMessage);
+        console.error("Error fetching invoice data:", err);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchData();
-  }, [id, boardId]);
+    if (id && boardId) {
+      fetchData();
+    }
+  }, [
+    id, 
+    boardId, 
+    statusFilter, 
+    participantFilter, 
+    scheduledDateRange, 
+    currentPage, 
+    ITEMS_PER_PAGE
+  ]);
 
-  // Filter service records
-  const filteredRecords = serviceRecords.filter(record => {
-    // Participant filter
-    const matchesParticipant = !participantFilter || 
-      record.participant.toLowerCase().includes(participantFilter.toLowerCase());
-    
-    // Status filter
-    const matchesStatus = statusFilter === "all" || record.status === statusFilter;
-    
-    // Scheduled service date range filter
-    const recordScheduledDate = new Date(record.scheduledStart);
-    const matchesScheduledStart = !scheduledDateRange?.from || recordScheduledDate >= scheduledDateRange.from;
-    const matchesScheduledEnd = !scheduledDateRange?.to || recordScheduledDate <= scheduledDateRange.to;
-    
-    // Service delivery date range filter
-    const recordDeliveryDate = record.deliveryDate ? new Date(record.deliveryDate) : null;
-    const matchesDeliveryStart = !deliveryDateRange?.from || (recordDeliveryDate && recordDeliveryDate >= deliveryDateRange.from);
-    const matchesDeliveryEnd = !deliveryDateRange?.to || (recordDeliveryDate && recordDeliveryDate <= deliveryDateRange.to);
-    
-    return matchesParticipant && matchesStatus && 
-           matchesScheduledStart && matchesScheduledEnd &&
-           matchesDeliveryStart && matchesDeliveryEnd;
-  });
+  // Filter service records - now only for local filtering
+  const filteredRecords = serviceRecords;
 
   // Calculate filtered summary
   const filteredSummary = {
-    totalRecords: filteredRecords.length,
+    totalRecords: summary.totalRecords,
     totalAmount: filteredRecords.reduce((sum, record) => sum + record.totalAmount, 0),
     totalGovSubsidy: filteredRecords.reduce((sum, record) => sum + record.govSubsidy, 0),
     totalParticipantContribution: filteredRecords.reduce((sum, record) => sum + record.participantContribution, 0)
   };
 
   // Pagination
-  const totalPages = Math.ceil(filteredRecords.length / ITEMS_PER_PAGE);
-  const currentItems = filteredRecords.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
-  );
+  const totalPages = Math.ceil(summary.totalRecords / ITEMS_PER_PAGE);
+  const currentItems = serviceRecords; // Use the paginated data directly from the backend
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return '-';
     const date = new Date(dateString);
     return date.toLocaleDateString('en-AU', { 
       day: '2-digit', 
@@ -250,12 +247,11 @@ export default function InvoiceGenerator() {
   // Export handlers
   const handleExportCSV = () => {
     // Prepare CSV data
-    const headers = ['Status', 'Participant', 'Scheduled Start', 'Service Delivery', 'Worker', 'Unit', 'Quantity', 'Unit Price', 'Total Amount', 'Gov Subsidy', 'Participant Contribution', 'Notes'];
+    const headers = ['Status', 'Participant', 'Scheduled Start', 'Worker', 'Unit', 'Quantity', 'Unit Price', 'Total Amount', 'Gov Subsidy', 'Participant Contribution', 'Notes', 'Invoice #'];
     const csvData = filteredRecords.map(record => [
       record.status,
       record.participant,
       formatDate(record.scheduledStart),
-      record.deliveryDate ? formatDate(record.deliveryDate) : '',
       record.worker,
       record.unit,
       record.quantity,
@@ -263,7 +259,8 @@ export default function InvoiceGenerator() {
       record.totalAmount,
       record.govSubsidy,
       record.participantContribution,
-      record.notes
+      record.notes,
+      record.status === 'invoiced' ? `INV-${new Date().getFullYear()}-${String(record.id).padStart(3, '0')}` : '-'
     ]);
 
     const csvContent = [
@@ -409,43 +406,7 @@ export default function InvoiceGenerator() {
                   </Button>
                 )}
 
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="flex-1 justify-start text-left font-normal">
-                      <Calendar className="mr-2 h-4 w-4" />
-                      {deliveryDateRange?.from ? (
-                        deliveryDateRange.to ? (
-                          <>
-                            {format(deliveryDateRange.from, "dd/MM/yyyy")} - {format(deliveryDateRange.to, "dd/MM/yyyy")}
-                          </>
-                        ) : (
-                          format(deliveryDateRange.from, "dd/MM/yyyy")
-                        )
-                      ) : (
-                        "Delivery Date Range"
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <CalendarComponent
-                      mode="range"
-                      selected={deliveryDateRange}
-                      onSelect={setDeliveryDateRange}
-                      numberOfMonths={2}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-                {deliveryDateRange?.from && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setDeliveryDateRange(undefined)}
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
+
               </div>
             </div>
 
@@ -496,39 +457,44 @@ export default function InvoiceGenerator() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>STATUS</TableHead>
-                  <TableHead>PARTICIPANT</TableHead>
-                  <TableHead>SCHEDULED SERVICE DATE</TableHead>
-                  <TableHead>SERVICE DELIVERY DATE</TableHead>
-                  <TableHead>WORKER</TableHead>
-                  <TableHead>UNIT</TableHead>
-                  <TableHead>QUANTITY</TableHead>
-                  <TableHead>UNIT PRICE</TableHead>
-                  <TableHead>TOTAL AMOUNT</TableHead>
-                  <TableHead>GOV SUBSIDY</TableHead>
-                  <TableHead>PARTICIPANT CONTRIBUTION</TableHead>
-                  <TableHead>NOTES</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Participant</TableHead>
+                  <TableHead>Scheduled Start</TableHead>
+                  <TableHead>Worker</TableHead>
+                  <TableHead>Unit</TableHead>
+                  <TableHead>Quantity</TableHead>
+                  <TableHead>Unit Price</TableHead>
+                  <TableHead>Total Amount</TableHead>
+                  <TableHead>Gov Subsidy</TableHead>
+                  <TableHead>Participant Contribution</TableHead>
+                  <TableHead>Notes</TableHead>
+                  <TableHead>Invoice #</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {currentItems.map((record) => (
-                  <TableRow key={record.id}>
+                  <TableRow key={record.id} className={record.status === 'invoiced' ? 'bg-green-50 text-gray-600' : 'hover:bg-blue-50 transition-colors'}>
                     <TableCell>
-                      {record.status === 'invoiced' ? (
-                        <Badge className="bg-green-100 text-green-800 border-green-200">
-                          <CheckCircle className="h-3 w-3 mr-1" />
-                          Invoiced
-                        </Badge>
-                      ) : (
-                        <Badge className="bg-blue-100 text-blue-800 border-blue-200">
-                          <Clock className="h-3 w-3 mr-1" />
-                          Pending
-                        </Badge>
-                      )}
+                      <div className="flex items-center">
+                        {record.status === 'invoiced' ? (
+                          <div className="flex items-center">
+                            <FileText className="w-4 h-4 text-green-600 mr-2" />
+                            <Badge className="bg-green-100 text-green-800">Invoiced</Badge>
+                          </div>
+                        ) : (
+                          <div className="flex items-center">
+                            {record.unit === 'Hours' ? (
+                              <Clock className="w-4 h-4 text-blue-600 mr-2" />
+                            ) : (
+                              <Package className="w-4 h-4 text-purple-600 mr-2" />
+                            )}
+                            <Badge className="bg-blue-100 text-blue-800">Pending</Badge>
+                          </div>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="font-medium">{record.participant}</TableCell>
                     <TableCell className="whitespace-nowrap">{formatDate(record.scheduledStart)}</TableCell>
-                    <TableCell className="whitespace-nowrap">{record.deliveryDate ? formatDate(record.deliveryDate) : '-'}</TableCell>
                     <TableCell>{record.worker}</TableCell>
                     <TableCell>
                       <Badge 
@@ -538,15 +504,18 @@ export default function InvoiceGenerator() {
                         {record.unit}
                       </Badge>
                     </TableCell>
-                    <TableCell>{record.quantity}</TableCell>
+                    <TableCell className="text-center">{record.quantity}</TableCell>
                     <TableCell>{formatCurrency(record.unitPrice)}</TableCell>
-                    <TableCell className="font-bold">{formatCurrency(record.totalAmount)}</TableCell>
+                    <TableCell className="font-semibold">{formatCurrency(record.totalAmount)}</TableCell>
                     <TableCell>{formatCurrency(record.govSubsidy)}</TableCell>
                     <TableCell>{formatCurrency(record.participantContribution)}</TableCell>
-                    <TableCell className="max-w-xs truncate">
-                      <span className="text-muted-foreground">
+                    <TableCell className="max-w-xs truncate" title={record.notes}>
+                      <span className="text-gray-500">
                         {record.notes}
                       </span>
+                    </TableCell>
+                    <TableCell className="font-mono">
+                      {record.status === 'invoiced' ? `INV-${new Date().getFullYear()}-${String(record.id).padStart(3, '0')}` : '-'}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -557,6 +526,11 @@ export default function InvoiceGenerator() {
               <div className="flex flex-col items-center justify-center py-16">
                 Loading service records...
                 <span className="ml-2"><Spinner /></span>
+              </div>
+            ) : error ? (
+              <div className="flex flex-col items-center justify-center py-16">
+                <X className="h-8 w-8 text-destructive mb-2" />
+                <p className="text-destructive">Error: {error}</p>
               </div>
             ) : filteredRecords.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16">
