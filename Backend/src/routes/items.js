@@ -2,7 +2,7 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import Item from '../models/Item.js';
 import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
-import { getFolder } from '../services/isoplus.js';
+import { getFolder, getMember } from '../services/isoplus.js';
 
 const router = express.Router();
 
@@ -42,7 +42,7 @@ const getFolderIds = async (folderName, workspaceId, boardId) => {
 router.get('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
     try {
         const { workspaceId, boardId } = req.params;
-
+        const { members } = await getMember(req.session.Authorization, workspaceId);
         const {
             status = '',
             participant = '',
@@ -61,115 +61,174 @@ router.get('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
             });
         }
 
-        // Build base query
-        const query = {
-            workspaceId,
-            boardId
-        };
-
-        // Add status filter if provided
-        if (status && status !== 'all') {
-            if (!query['data.values']) {
-                query['data.values'] = { $all: [] };
-            }
-            
-            // Handle invoice status
-            const statusCondition = {
-                $elemMatch: {
-                    'attribute.name': 'Invoice Issued and Sent',
-                    'data': status === 'invoiced'
-                }
-            };
-            query['data.values'].$all.push(statusCondition);
-        }
-
-        const folderIds = await getFolderIds(folderName, workspaceId, boardId);
-        if(folderIds && folderIds.length > 0) {
-            query.folderId = { $in: folderIds };
-        }
-
-        if (startDate || endDate) {
-            if (!query['data.values']) {
-                query['data.values'] = { $all: [] };
-            }
-            // Filter for Scheduled Start Date
-            query['data.values'].$all.push({
-                $elemMatch: {
-                    'attribute.name': 'Scheduled Shift Start Date & Time',
-                    'data': startDate ? {
-                        $gte: new Date(startDate)
-                    } : {
-                        $lte: new Date(endDate)
-                    }
-                }
-            });
-            // Filter for Scheduled End Date
-            query['data.values'].$all.push({
-                $elemMatch: {
-                    'attribute.name': 'Scheduled Shift End Date & Time',
-                    'data': endDate ? {
-                        $lte: new Date(endDate)
-                    } : {
-                        $gte: new Date(startDate)
-                    }
-                }
-            });
-        }
-
-        if (deliveryStartDate || deliveryEndDate) {
-            if (!query['data.values']) {
-                query['data.values'] = { $all: [] };
-            }
-            // Filter for Actual Start Date
-            query['data.values'].$all.push({
-                $elemMatch: {
-                    'attribute.name': 'Actual Shift Start Date and Time',
-                    'data': deliveryStartDate ? {
-                        $gte: new Date(deliveryStartDate)
-                    } : {
-                        $lte: new Date(deliveryEndDate)
-                    }
-                }
-            });
-            // Filter for Actual End Date
-            query['data.values'].$all.push({
-                $elemMatch: {
-                    'attribute.name': 'Actual Shift End Date and Time',
-                    'data': deliveryEndDate ? {
-                        $lte: new Date(deliveryEndDate)
-                    } : {
-                        $gte: new Date(deliveryStartDate)
-                    }
-                }
-            });
-        }
-
-        if (participant) {
-            if (!query['data.values']) {
-                query['data.values'] = { $all: [] };
-            }
-            query['data.values'].$all.push({
-                $elemMatch: {
-                    'attribute.name': 'Participant Full Name',
-                    'data': {
-                        $regex: participant,
-                        $options: 'i'  // case-insensitive matching
-                    }
-                }
-            });
-        }
-
         // Calculate pagination
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
-        // Find items matching the criteria
-        const items = await Item.find(query)
-            .sort({ updatedAt: -1 })
-            .skip(skip)
-            .limit(parseInt(limit));
+        // Build aggregation pipeline
+        const pipeline = [];
 
-        // Get total count of matching records
-        const total = await Item.countDocuments(query);
+        // Base match
+        const baseMatch = { workspaceId, boardId };
+
+        const folderIds = await getFolderIds(folderName, workspaceId, boardId);
+        if (folderIds && folderIds.length > 0) {
+            baseMatch.folderId = { $in: folderIds };
+        }
+        pipeline.push({ $match: baseMatch });
+
+        // Extract values from data.values
+        pipeline.push(
+            {
+                $addFields: {
+                    scheduledStartValue: {
+                        $filter: {
+                            input: "$data.values",
+                            as: "value",
+                            cond: { $eq: ["$$value.attribute.name", "Scheduled Shift Start Date & Time"] }
+                        }
+                    },
+                    scheduledEndValue: {
+                        $filter: {
+                            input: "$data.values",
+                            as: "value",
+                            cond: { $eq: ["$$value.attribute.name", "Scheduled Shift End Date & Time"] }
+                        }
+                    },
+                    actualStartValue: {
+                        $filter: {
+                            input: "$data.values",
+                            as: "value",
+                            cond: { $eq: ["$$value.attribute.name", "Actual Shift Start Date and Time"] }
+                        }
+                    },
+                    actualEndValue: {
+                        $filter: {
+                            input: "$data.values",
+                            as: "value",
+                            cond: { $eq: ["$$value.attribute.name", "Actual Shift End Date and Time"] }
+                        }
+                    },
+                    participantValue: {
+                        $filter: {
+                            input: "$data.values",
+                            as: "value",
+                            cond: { $eq: ["$$value.attribute.name", "Participant Full Name"] }
+                        }
+                    },
+                    invoiceIssuedValue: {
+                        $filter: {
+                            input: "$data.values",
+                            as: "value",
+                            cond: { $eq: ["$$value.attribute.name", "Invoice Issued and Sent"] }
+                        }
+                    },
+                    paymentStatusValue: {
+                        $filter: {
+                            input: "$data.values",
+                            as: "value",
+                            cond: { $eq: ["$$value.attribute.name", "Payment Status"] }
+                        }
+                    }
+                }
+            },
+            {
+                $addFields: {
+                    scheduledStartRaw: { $arrayElemAt: ["$scheduledStartValue.data", 0] },
+                    scheduledEndRaw: { $arrayElemAt: ["$scheduledEndValue.data", 0] },
+                    actualStartRaw: { $arrayElemAt: ["$actualStartValue.data", 0] },
+                    actualEndRaw: { $arrayElemAt: ["$actualEndValue.data", 0] },
+                    participantNameRaw: { $arrayElemAt: ["$participantValue.data", 0] },
+                    invoiceIssuedRaw: { $ifNull: [{ $arrayElemAt: ["$invoiceIssuedValue.data", 0] }, false] },
+                    paymentStatusRaw: { $ifNull: [{ $arrayElemAt: ["$paymentStatusValue.data", 0] }, []] }
+                }
+            },
+            {
+                $addFields: {
+                    scheduledStartDate: {
+                        $dateFromString: { dateString: "$scheduledStartRaw", onError: null }
+                    },
+                    scheduledEndDate: {
+                        $dateFromString: { dateString: "$scheduledEndRaw", onError: null }
+                    },
+                    actualStartDate: {
+                        $dateFromString: { dateString: "$actualStartRaw", onError: null }
+                    },
+                    actualEndDate: {
+                        $dateFromString: { dateString: "$actualEndRaw", onError: null }
+                    }
+                }
+            },
+            {
+                $addFields: {
+                    invoicedFlag: {
+                        $or: [
+                            { $toBool: "$invoiceIssuedRaw" },
+                            {
+                                $in: [
+                                    "Paid",
+                                    {
+                                        $map: {
+                                            input: "$paymentStatusRaw",
+                                            as: "p",
+                                            in: "$$p.name"
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            }
+        );
+
+        // Dynamic matches based on filters
+        const andConditions = [];
+
+        if (status && status !== 'all') {
+            andConditions.push(status === 'invoiced' ? { invoicedFlag: true } : { invoicedFlag: { $ne: true } });
+        }
+
+        if (startDate) {
+            andConditions.push({ scheduledStartDate: { $gte: new Date(startDate) } });
+        }
+        if (endDate) {
+            andConditions.push({ scheduledEndDate: { $lte: new Date(endDate) } });
+        }
+
+        if (deliveryStartDate) {
+            andConditions.push({ actualStartDate: { $gte: new Date(deliveryStartDate) } });
+        }
+        if (deliveryEndDate) {
+            andConditions.push({ actualEndDate: { $lte: new Date(deliveryEndDate) } });
+        }
+
+        if (participant) {
+            andConditions.push({ participantNameRaw: { $regex: participant, $options: 'i' } });
+        }
+
+        if (andConditions.length > 0) {
+            pipeline.push({ $match: { $and: andConditions } });
+        }
+
+        // Sort and paginate, with total count
+        pipeline.push(
+            { $sort: { updatedAt: -1 } },
+            {
+                $facet: {
+                    items: [
+                        { $skip: skip },
+                        { $limit: parseInt(limit) }
+                    ],
+                    totalCount: [
+                        { $count: 'count' }
+                    ]
+                }
+            }
+        );
+
+        const aggResult = await Item.aggregate(pipeline);
+        const items = (aggResult[0] && aggResult[0].items) ? aggResult[0].items : [];
+        const total = (aggResult[0] && aggResult[0].totalCount && aggResult[0].totalCount[0]) ? aggResult[0].totalCount[0].count : 0;
 
         // Transform items for frontend display
         const transformedItems = items.map(item => {
@@ -190,6 +249,7 @@ router.get('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
             
             // Get worker information
             const worker = getValue('Worker/Planner')?.toString() || 'N/A';
+            const workerName = members.find(m => m.id == worker)?.name || 'N/A';
             
             // Get unit and quantity
             const unit = getValue('Unit') || 'Hours';
@@ -210,7 +270,7 @@ router.get('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
                 status,
                 participant,
                 scheduledStart,
-                worker,
+                worker: workerName,
                 unit,
                 quantity,
                 unitPrice,

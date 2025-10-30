@@ -37,6 +37,15 @@ import axios from "@/app/utils/axiosConfig";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format } from "date-fns";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 
 interface ItemValue {
   object: string;
@@ -95,7 +104,7 @@ export default function InvoiceGenerator() {
   const pathname = usePathname();
   const id = pathname.split('/')[2];
   const boardId = pathname.split('/')[4];
-  
+
   const [serviceRecords, setServiceRecords] = useState<ServiceRecord[]>([]);
   const [summary, setSummary] = useState<InvoiceSummary>({
     totalRecords: 0,
@@ -103,7 +112,7 @@ export default function InvoiceGenerator() {
     pending: 0,
     totalValue: 0
   });
-  const [participantFilter, setParticipantFilter] = useState("");
+  const [participantFilter, setParticipantFilter] = useState("all");
   const [scheduledDateRange, setScheduledDateRange] = useState<DateRange | undefined>();
   // We'll use scheduled date range only
   const [statusFilter, setStatusFilter] = useState("all");
@@ -113,6 +122,100 @@ export default function InvoiceGenerator() {
 
   const [error, setError] = useState<string | null>(null);
 
+  // Modal state for invoice generation
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [selectedParticipant, setSelectedParticipant] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState("");
+  const [eligibleRecords, setEligibleRecords] = useState<ServiceRecord[]>([]);
+  const [loadingEligible, setLoadingEligible] = useState(false);
+  const [uniqueParticipants, setUniqueParticipants] = useState<string[]>([]);
+
+  // Fetch unique participants for the modal dropdown
+  useEffect(() => {
+    const fetchParticipants = async () => {
+      try {
+        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}`;
+        const params = new URLSearchParams();
+        params.append('folderName', 'Master Plan,Shift Planning and Reporting');
+        params.append('limit', '1000'); // Get all to extract unique participants
+
+        const response = await axios.get(apiUrl, {
+          params: Object.fromEntries(params),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
+        });
+
+        if (response.data?.items) {
+          const participantSet = new Set<string>(
+            response.data.items
+              .map((item: ServiceRecord) => item.participant)
+              .filter((p: string) => p && p.trim() !== '') // Filter out empty/null values
+          );
+          const participants = Array.from(participantSet).sort();
+          setUniqueParticipants(participants as string[]);
+        }
+      } catch (err) {
+        console.error('Error fetching participants:', err);
+      }
+    };
+
+    if (id && boardId) {
+      fetchParticipants();
+    }
+  }, [id, boardId]);
+
+  // Fetch eligible records when participant and month are selected
+  useEffect(() => {
+    const fetchEligibleRecords = async () => {
+      if (!selectedParticipant || !selectedMonth || !showInvoiceModal) {
+        setEligibleRecords([]);
+        return;
+      }
+
+      setLoadingEligible(true);
+      try {
+        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}`;
+        const params = new URLSearchParams();
+
+        params.append('participant', selectedParticipant);
+        params.append('status', 'pending'); // Only pending records
+        params.append('folderName', 'Master Plan,Shift Planning and Reporting');
+        params.append('limit', '1000');
+
+        // Parse selected month (format: "June 2025" or "2025-06")
+        const [monthYear] = selectedMonth.split(' ');
+        const monthDate = new Date(selectedMonth);
+        if (!isNaN(monthDate.getTime())) {
+          const startDate = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+          const endDate = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0, 23, 59, 59);
+          params.append('startDate', startDate.toISOString());
+          params.append('endDate', endDate.toISOString());
+        }
+
+        const response = await axios.get(apiUrl, {
+          params: Object.fromEntries(params),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
+        });
+
+        if (response.data?.items) {
+          setEligibleRecords(response.data.items);
+        }
+      } catch (err) {
+        console.error('Error fetching eligible records:', err);
+        setEligibleRecords([]);
+      } finally {
+        setLoadingEligible(false);
+      }
+    };
+
+    fetchEligibleRecords();
+  }, [selectedParticipant, selectedMonth, showInvoiceModal, id, boardId]);
+
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -120,26 +223,32 @@ export default function InvoiceGenerator() {
       try {
         // Build API URL
         const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}`;
-        
+
         // Build query parameters
         const params = new URLSearchParams();
-        
+
         // Status filter
         if (statusFilter !== 'all') {
           params.append('status', statusFilter);
         }
-        
+
         // Participant name filter
-        if (participantFilter) {
+        if (participantFilter && participantFilter !== 'all') {
           params.append('participant', participantFilter);
         }
-        
+
         // Date range filter for scheduled dates
         if (scheduledDateRange?.from) {
-          params.append('startDate', scheduledDateRange.from.toISOString());
+          const from = new Date(scheduledDateRange.from);
+          from.setHours(0, 0, 0, 0); // start of day local
+          params.append('startDate', from.toISOString());
         }
-        if (scheduledDateRange?.to) {
-          params.append('endDate', scheduledDateRange.to.toISOString());
+        if (scheduledDateRange?.to || scheduledDateRange?.from) {
+          // If only one date picked, use same day end-of-day
+          const toSource = scheduledDateRange?.to || scheduledDateRange?.from;
+          const to = new Date(toSource as Date);
+          to.setHours(23, 59, 59, 999); // end of day local
+          params.append('endDate', to.toISOString());
         }
 
         // Pagination
@@ -147,15 +256,15 @@ export default function InvoiceGenerator() {
         params.append('limit', ITEMS_PER_PAGE.toString());
 
         params.append('folderName', 'Master Plan,Shift Planning and Reporting');
-        
+
         // Fetch items from the backend
         const response = await axios.get(apiUrl, {
-            params: Object.fromEntries(params),
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json'
-            }
-          });
+          params: Object.fromEntries(params),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
+        });
 
         // Validate response format
         if (!response.data || typeof response.data !== 'object') {
@@ -163,23 +272,23 @@ export default function InvoiceGenerator() {
         }
 
         // Extract data and metadata from response
-        const { 
-          items = [], 
-          total = 0, 
-          invoiced = 0, 
+        const {
+          items = [],
+          total = 0,
+          invoiced = 0,
           pending = 0,
-          totalAmount = 0 
+          totalAmount = 0
         } = response.data;
 
         if (!Array.isArray(items)) {
           throw new Error('Invalid items format received from server');
         }
-        
+
         // No need to transform since backend now sends formatted data
         const transformedRecords: ServiceRecord[] = items;
-        
+
         setServiceRecords(transformedRecords);
-        
+
         // Use summary data from API response
         setSummary({
           totalRecords: total,
@@ -200,14 +309,19 @@ export default function InvoiceGenerator() {
       fetchData();
     }
   }, [
-    id, 
-    boardId, 
-    statusFilter, 
-    participantFilter, 
-    scheduledDateRange, 
-    currentPage, 
+    id,
+    boardId,
+    statusFilter,
+    participantFilter,
+    scheduledDateRange,
+    currentPage,
     ITEMS_PER_PAGE
   ]);
+
+  // Whenever filters change, reset to first page for consistent results
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter, participantFilter, scheduledDateRange]);
 
   // Filter service records - now only for local filtering
   const filteredRecords = serviceRecords;
@@ -227,9 +341,9 @@ export default function InvoiceGenerator() {
   const formatDate = (dateString: string | null) => {
     if (!dateString) return '-';
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-AU', { 
-      day: '2-digit', 
-      month: '2-digit', 
+    return date.toLocaleDateString('en-AU', {
+      day: '2-digit',
+      month: '2-digit',
       year: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
@@ -245,50 +359,294 @@ export default function InvoiceGenerator() {
   };
 
   // Export handlers
-  const handleExportCSV = () => {
-    // Prepare CSV data
-    const headers = ['Status', 'Participant', 'Scheduled Start', 'Worker', 'Unit', 'Quantity', 'Unit Price', 'Total Amount', 'Gov Subsidy', 'Participant Contribution', 'Notes', 'Invoice #'];
-    const csvData = filteredRecords.map(record => [
-      record.status,
-      record.participant,
-      formatDate(record.scheduledStart),
-      record.worker,
-      record.unit,
-      record.quantity,
-      record.unitPrice,
-      record.totalAmount,
-      record.govSubsidy,
-      record.participantContribution,
-      record.notes,
-      record.status === 'invoiced' ? `INV-${new Date().getFullYear()}-${String(record.id).padStart(3, '0')}` : '-'
-    ]);
+  const handleExportCSV = async () => {
+    try {
+      setLoading(true);
 
-    const csvContent = [
-      headers.join(','),
-      ...csvData.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
+      // Fetch ALL filtered items (no pagination) for export
+      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}`;
+      const params = new URLSearchParams();
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `service-records-${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      // Apply same filters as the current view
+      if (statusFilter !== 'all') {
+        params.append('status', statusFilter);
+      }
+      if (participantFilter && participantFilter !== 'all') {
+        params.append('participant', participantFilter);
+      }
+      if (scheduledDateRange?.from) {
+        params.append('startDate', scheduledDateRange.from.toISOString());
+      }
+      if (scheduledDateRange?.to) {
+        params.append('endDate', scheduledDateRange.to.toISOString());
+      }
+
+      params.append('folderName', 'Master Plan,Shift Planning and Reporting');
+
+      // Request all items (no pagination limit)
+      params.append('page', '1');
+      params.append('limit', '999999'); // Large number to get all items
+
+      const response = await axios.get(apiUrl, {
+        params: Object.fromEntries(params),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+
+      const allItems: ServiceRecord[] = response.data.items || [];
+
+      if (allItems.length === 0) {
+        alert('No records to export.');
+        setLoading(false);
+        return;
+      }
+
+      // Format according to SaH Payment Statement structure
+      const csvRows: string[] = [];
+
+      // Payment Header Row
+      const paymentDate = new Date();
+      const paymentDateStr = paymentDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      const paymentDateISO = paymentDate.toISOString().split('T')[0];
+      const participantName = (participantFilter && participantFilter !== 'all') ? participantFilter : (allItems[0]?.participant || 'All Participants');
+
+      csvRows.push(
+        `Payment,' 100000000952 ',4060116249,89703,4040000001,${participantName},12345678912,${paymentDateStr},${paymentDateISO}T00:00:00Z,,,,,,,,,,,,,,,,,,,`
+      );
+
+      // Calculate totals
+      const totalAmount = allItems.reduce((sum, item) => sum + item.totalAmount, 0);
+      const totalGovSubsidy = allItems.reduce((sum, item) => sum + item.govSubsidy, 0);
+      const totalParticipantContribution = allItems.reduce((sum, item) => sum + item.participantContribution, 0);
+      const adjustments = 0; // Can be calculated if needed
+
+      // Summary Row
+      csvRows.push(
+        `Summary,0,0,0,${adjustments.toFixed(2)},${totalAmount.toFixed(2)},${(totalAmount + adjustments).toFixed(2)},0,,,,,,,,,,,,,,,,,,,,`
+      );
+
+      // Group items by category for SummaryCategoryItems
+      const categoryTotals: { [key: string]: { code: string; name: string; total: number } } = {};
+
+      allItems.forEach(item => {
+        // Determine category based on service/item type
+        // This is a simplified categorization - adjust based on your actual data structure
+        let categoryCode = 'ON'; // Default to Home support ongoing
+        let categoryName = 'Home support ongoing';
+
+        // You may need to adjust this logic based on your actual data
+        if (item.notes?.toLowerCase().includes('care management')) {
+          categoryCode = 'CM';
+          categoryName = 'Care management';
+        } else if (item.notes?.toLowerCase().includes('restorative')) {
+          categoryCode = 'RC';
+          categoryName = 'Restorative care pathway';
+        } else if (item.notes?.toLowerCase().includes('end of life')) {
+          categoryCode = 'EL';
+          categoryName = 'End of life pathway';
+        }
+
+        if (!categoryTotals[categoryCode]) {
+          categoryTotals[categoryCode] = { code: categoryCode, name: categoryName, total: 0 };
+        }
+        categoryTotals[categoryCode].total += item.totalAmount;
+      });
+
+      // Add SummaryCategoryItems rows
+      const categoryOrder = ['AT', 'AS', 'CM', 'CU', 'EL', 'HC', 'HM', 'ON', 'RC'];
+      const categoryNames: { [key: string]: string } = {
+        'AT': 'Assistive technology',
+        'AS': 'Assistive technology specified needs',
+        'CM': 'Care management',
+        'CU': 'Commonwealth unspent funds',
+        'EL': 'End of life pathway',
+        'HC': 'Home care account',
+        'HM': 'Home modifications',
+        'ON': 'Home support ongoing',
+        'RC': 'Restorative care pathway'
+      };
+
+      categoryOrder.forEach(code => {
+        const total = categoryTotals[code]?.total || 0;
+        csvRows.push(
+          `SummaryCategoryItems,${code},${categoryNames[code]},${total.toFixed(2)},,,,,,,,,,,,,,,,,,,,,,,,`
+        );
+      });
+
+      // Add PaymentItems and PaymentItemBudget rows
+      allItems.forEach((item, index) => {
+        const itemId = `1000${String(index + 1).padStart(6, '0')}`;
+        const invoiceRef = '000001';
+        const phoneNumber = '0413269922'; // Placeholder
+        const firstName = item.participant.split(' ')[0] || '';
+        const lastName = item.participant.split(' ').slice(1).join(' ') || '';
+        const serviceDate = item.scheduledStart ? new Date(item.scheduledStart).toISOString().split('T')[0].replace(/-/g, '') : '20250721';
+
+        const serviceGroup = 'SERG-0001';
+        const serviceGroupName = 'Home Support';
+        const serviceType = 'SERT-0001';
+        const serviceTypeName = 'Domestic assistance';
+        const serviceName = 'SERV-0001';
+        const serviceNameDesc = item.notes || 'General house cleaning';
+        const itemCode = '';
+        const itemName = '';
+
+        const unitMap: { [key: string]: string } = {
+          'Hours': 'hours',
+          'Meal': 'meal',
+          'Item': 'item',
+          'Trip': 'trip',
+          'Voucher': 'voucher',
+          'Bill': 'bill'
+        };
+        const unit = unitMap[item.unit] || 'hours';
+
+        const quantity = item.quantity;
+        const unitPrice = item.unitPrice;
+        const totalAmt = item.totalAmount;
+        const adjustment = 0;
+        const unspent = 0;
+        const adjustment2 = -(totalAmt * 0.16); // Example adjustment
+        const additionalPayment = 0;
+        const netPayment = totalAmt + adjustment2;
+
+        // PaymentItems row
+        csvRows.push(
+          `PaymentItems,${itemId},${invoiceRef},,,${phoneNumber},${firstName},${lastName},${serviceDate},${serviceGroup},${serviceGroupName},${serviceType},${serviceTypeName},${serviceName},${serviceNameDesc},${itemCode},${itemName},,,${quantity},${unitPrice},${unit},${totalAmt.toFixed(2)},${adjustment},${unspent},${adjustment2.toFixed(2)},${additionalPayment},${netPayment.toFixed(2)}`
+        );
+
+        // Determine category for budget allocation
+        let categoryCode = 'ON';
+        if (item.notes?.toLowerCase().includes('care management')) {
+          categoryCode = 'CM';
+        } else if (item.notes?.toLowerCase().includes('restorative')) {
+          categoryCode = 'RC';
+        } else if (item.notes?.toLowerCase().includes('end of life')) {
+          categoryCode = 'EL';
+        }
+
+        // PaymentItemBudget row
+        csvRows.push(
+          `PaymentItemBudget,${categoryCode},${categoryNames[categoryCode] || 'Home support ongoing'},-${totalAmt.toFixed(2)},,,,,,,,,,,,,,,,,,,,,,,,`
+        );
+      });
+
+      // Add Notes row if any
+      csvRows.push(
+        'Notes,GN,SaH payment statement export,,,,,,,,,,,,,,,,,,,,,,,,,,'
+      );
+
+      // Create CSV content
+      const csvContent = csvRows.join('\n');
+
+      // Download CSV
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      const fileName = `SaH_Payment_Statement_${participantName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
+      link.setAttribute('href', url);
+      link.setAttribute('download', fileName);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setLoading(false);
+      alert(`Successfully exported ${allItems.length} records to CSV.`);
+    } catch (err: any) {
+      console.error('Error exporting CSV:', err);
+      alert(`Failed to export CSV: ${err.message}`);
+      setLoading(false);
+    }
   };
 
   const handleExportPDF = () => {
-    // TODO: Implement PDF export functionality
     console.log('Export to PDF');
-    alert('PDF export functionality will be implemented');
+    alert('PDF export will be added after invoice flow.');
   };
 
-  const handleGenerateParticipantTaxInvoice = () => {
-    // TODO: Implement participant tax invoice generation
-    console.log('Generate Participant Tax Invoice');
-    alert('Participant tax invoice generation will be implemented');
+  // Open modal for participant tax invoice
+  const handleOpenInvoiceModal = () => {
+    // Initialize with current filter if available and not "all"
+    if (participantFilter && participantFilter !== 'all') {
+      setSelectedParticipant(participantFilter);
+    } else {
+      setSelectedParticipant('');
+    }
+    // Default to current month
+    const currentDate = new Date();
+    const monthYear = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    setSelectedMonth(monthYear);
+    setShowInvoiceModal(true);
+  };
+
+  // Generate invoice from modal
+  const handleGenerateParticipantTaxInvoice = async () => {
+    try {
+      if (!eligibleRecords.length) {
+        alert('No eligible records to include in the invoice.');
+        return;
+      }
+
+      if (!selectedParticipant) {
+        alert('Please select a participant.');
+        return;
+      }
+
+      if (!selectedMonth) {
+        alert('Please select a month.');
+        return;
+      }
+
+      setLoading(true);
+
+      // Endpoint generates ONE PDF for all selected items
+      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/webhook/${id}/${boardId}/invoiceparticipanttax`;
+
+      const today = new Date();
+      const due = new Date(today);
+      due.setDate(due.getDate() + 14);
+
+      const payload = {
+        items: eligibleRecords, // All eligible records for the selected month
+        participantName: selectedParticipant,
+        invoiceDate: today.toISOString(),
+        dueDate: due.toISOString(),
+        // Optional fields for participant address (can be added later)
+        // participantAddress: '',
+        // participantSuburb: '',
+        // participantState: '',
+        // participantPostcode: ''
+      };
+
+      const resp = await axios.post(apiUrl, payload, {
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+      });
+
+      if (resp.status === 200 && resp.data) {
+        const { invoiceNumber, fileUrl, itemCount } = resp.data;
+        setShowInvoiceModal(false);
+        alert(
+          `✅ Participant Tax Invoice Generated Successfully!\n\n` +
+          `Invoice Number: ${invoiceNumber}\n` +
+          `Items Included: ${itemCount}\n` +
+          `Participant: ${selectedParticipant}\n` +
+          `Month: ${selectedMonth}\n\n` +
+          `The PDF has been generated and attached to all ${itemCount} item(s).`
+        );
+        // Refresh data to show updated invoice numbers
+        window.location.reload();
+      } else {
+        alert('The invoice request was sent, but an unexpected response was received.');
+      }
+    } catch (err: any) {
+      console.error('Error generating participant invoice', err);
+      alert(`❌ Failed to generate invoice:\n\n${err.response?.data?.message || err.message || 'Unknown error occurred'}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -315,25 +673,25 @@ export default function InvoiceGenerator() {
                 </p>
               </div>
               <div className="flex gap-2">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={handleExportCSV}
                   className="gap-2"
                 >
                   <FileSpreadsheet className="h-4 w-4" />
                   Export to CSV
                 </Button>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={handleExportPDF}
                   className="gap-2"
                 >
                   <FileDown className="h-4 w-4" />
                   Export to PDF
                 </Button>
-                <Button 
+                <Button
                   className="gap-2"
-                  onClick={handleGenerateParticipantTaxInvoice}
+                  onClick={handleOpenInvoiceModal}
                 >
                   <Receipt className="h-4 w-4" />
                   Participant Tax Invoice
@@ -344,15 +702,20 @@ export default function InvoiceGenerator() {
             {/* Search and Filters */}
             <div className="flex flex-wrap gap-4 mb-6">
               <div className="flex-1 min-w-[200px]">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                  <Input
-                    placeholder="Search participant..."
-                    value={participantFilter}
-                    onChange={(e) => setParticipantFilter(e.target.value)}
-                    className="pl-9"
-                  />
-                </div>
+                <Select value={participantFilter} onValueChange={setParticipantFilter}>
+                  <SelectTrigger className="w-full">
+                    <Search className="h-4 w-4 mr-2" />
+                    <SelectValue placeholder="Select participant..." />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px] overflow-y-auto">
+                    <SelectItem value="all">All Participants</SelectItem>
+                    {uniqueParticipants.map((participant) => (
+                      <SelectItem key={participant} value={participant}>
+                        {participant}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="flex gap-4">
@@ -472,72 +835,83 @@ export default function InvoiceGenerator() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {currentItems.map((record) => (
-                  <TableRow key={record.id} className={record.status === 'invoiced' ? 'bg-green-50 text-gray-600' : 'hover:bg-blue-50 transition-colors'}>
-                    <TableCell>
-                      <div className="flex items-center">
-                        {record.status === 'invoiced' ? (
-                          <div className="flex items-center">
-                            <FileText className="w-4 h-4 text-green-600 mr-2" />
-                            <Badge className="bg-green-100 text-green-800">Invoiced</Badge>
-                          </div>
-                        ) : (
-                          <div className="flex items-center">
-                            {record.unit === 'Hours' ? (
-                              <Clock className="w-4 h-4 text-blue-600 mr-2" />
-                            ) : (
-                              <Package className="w-4 h-4 text-purple-600 mr-2" />
-                            )}
-                            <Badge className="bg-blue-100 text-blue-800">Pending</Badge>
-                          </div>
-                        )}
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={12} className="h-64 text-center">
+                      <div className="flex flex-col items-center justify-center">
+                        <Spinner />
+                        <p className="mt-4 text-muted-foreground">Loading service records...</p>
                       </div>
                     </TableCell>
-                    <TableCell className="font-medium">{record.participant}</TableCell>
-                    <TableCell className="whitespace-nowrap">{formatDate(record.scheduledStart)}</TableCell>
-                    <TableCell>{record.worker}</TableCell>
-                    <TableCell>
-                      <Badge 
-                        variant="outline" 
-                        className={record.unit === 'Hours' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}
-                      >
-                        {record.unit}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-center">{record.quantity}</TableCell>
-                    <TableCell>{formatCurrency(record.unitPrice)}</TableCell>
-                    <TableCell className="font-semibold">{formatCurrency(record.totalAmount)}</TableCell>
-                    <TableCell>{formatCurrency(record.govSubsidy)}</TableCell>
-                    <TableCell>{formatCurrency(record.participantContribution)}</TableCell>
-                    <TableCell className="max-w-xs truncate" title={record.notes}>
-                      <span className="text-gray-500">
-                        {record.notes}
-                      </span>
-                    </TableCell>
-                    <TableCell className="font-mono">
-                      {record.status === 'invoiced' ? `INV-${new Date().getFullYear()}-${String(record.id).padStart(3, '0')}` : '-'}
+                  </TableRow>
+                ) : error ? (
+                  <TableRow>
+                    <TableCell colSpan={12} className="h-64 text-center">
+                      <div className="flex flex-col items-center justify-center">
+                        <X className="h-8 w-8 text-destructive mb-2" />
+                        <p className="text-destructive">Error: {error}</p>
+                      </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : filteredRecords.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={12} className="h-64 text-center">
+                      <div className="flex flex-col items-center justify-center">
+                        <FileText className="h-8 w-8 text-muted-foreground mb-2" />
+                        <p className="text-muted-foreground">No service records found matching your criteria.</p>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  currentItems.map((record) => (
+                    <TableRow key={record.id} className={record.status === 'invoiced' ? 'bg-green-50 text-gray-600' : 'hover:bg-blue-50 transition-colors'}>
+                      <TableCell>
+                        <div className="flex items-center">
+                          {record.status === 'invoiced' ? (
+                            <div className="flex items-center">
+                              <FileText className="w-4 h-4 text-green-600 mr-2" />
+                              <Badge className="bg-green-100 text-green-800">Invoiced</Badge>
+                            </div>
+                          ) : (
+                            <div className="flex items-center">
+                              {record.unit === 'Hours' ? (
+                                <Clock className="w-4 h-4 text-blue-600 mr-2" />
+                              ) : (
+                                <Package className="w-4 h-4 text-purple-600 mr-2" />
+                              )}
+                              <Badge className="bg-blue-100 text-blue-800">Pending</Badge>
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-medium">{record.participant}</TableCell>
+                      <TableCell className="whitespace-nowrap">{formatDate(record.scheduledStart)}</TableCell>
+                      <TableCell>{record.worker}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={record.unit === 'Hours' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}
+                        >
+                          {record.unit}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">{record.quantity}</TableCell>
+                      <TableCell>{formatCurrency(record.unitPrice)}</TableCell>
+                      <TableCell className="font-semibold">{formatCurrency(record.totalAmount)}</TableCell>
+                      <TableCell>{formatCurrency(record.govSubsidy)}</TableCell>
+                      <TableCell>{formatCurrency(record.participantContribution)}</TableCell>
+                      <TableCell className="max-w-xs truncate" title={record.notes}>
+                        <span className="text-gray-500" dangerouslySetInnerHTML={record.notes ? { __html: record.notes } : { __html: '' }}>
+                        </span>
+                      </TableCell>
+                      <TableCell className="font-mono">
+                        {record.status === 'invoiced' ? `INV-${new Date().getFullYear()}-${String(record.id).padStart(3, '0')}` : '-'}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
-
-            {loading ? (
-              <div className="flex flex-col items-center justify-center py-16">
-                Loading service records...
-                <span className="ml-2"><Spinner /></span>
-              </div>
-            ) : error ? (
-              <div className="flex flex-col items-center justify-center py-16">
-                <X className="h-8 w-8 text-destructive mb-2" />
-                <p className="text-destructive">Error: {error}</p>
-              </div>
-            ) : filteredRecords.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16">
-                <FileText className="h-8 w-8 text-muted-foreground" />
-                <p className="text-gray-500">No service records found matching your criteria.</p>
-              </div>
-            ) : null}
 
             {/* Pagination */}
             <div className="mt-4 flex justify-center">
@@ -585,6 +959,129 @@ export default function InvoiceGenerator() {
             </div>
           </Card>
         </div>
+
+        {/* Invoice Generation Modal */}
+        <Dialog open={showInvoiceModal} onOpenChange={setShowInvoiceModal}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Receipt className="h-5 w-5" />
+                Generate Invoice
+              </DialogTitle>
+              <DialogDescription>
+                Select a participant and month to generate a participant tax invoice
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex flex-row gap-6 py-4 items-end">
+              {/* Participant Selection */}
+              <div className="flex-1 min-w-[250px]">
+                <Label htmlFor="participant" className="flex items-center gap-2 mb-1">
+                  <span className="text-lg">👤</span> Select Participant
+                </Label>
+                <Select value={selectedParticipant} onValueChange={setSelectedParticipant}>
+                  <SelectTrigger id="participant" className="w-full">
+                    <SelectValue placeholder="Select participant..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {uniqueParticipants.map((participant) => (
+                      <SelectItem key={participant} value={participant}>
+                        {participant}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {/* Month Selection */}
+              <div className="flex-1 min-w-[250px]">
+                <Label htmlFor="month" className="flex items-center gap-2 mb-1">
+                  <Calendar className="h-4 w-4" /> Select Month
+                </Label>
+                <Input
+                  id="month"
+                  type="month"
+                  value={selectedMonth ? format(new Date(selectedMonth), 'yyyy-MM') : ''}
+                  onChange={(e) => {
+                    const date = new Date(e.target.value + '-01');
+                    const monthYear = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                    setSelectedMonth(monthYear);
+                  }}
+                  className="w-full"
+                />
+              </div>
+            </div>
+
+            {/* Eligible Records Section */}
+            {selectedParticipant && selectedMonth && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">Eligible Records</h3>
+                  <Badge variant="secondary" className="text-lg px-3 py-1">
+                    <DollarSign className="h-4 w-4 mr-1" />
+                    Total: ${eligibleRecords.reduce((sum, record) => sum + record.participantContribution, 0).toFixed(2)}
+                  </Badge>
+                </div>
+
+                {loadingEligible ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Spinner />
+                    <span className="ml-2">Loading eligible records...</span>
+                  </div>
+                ) : eligibleRecords.length > 0 ? (
+                  <div className="border rounded-lg p-4 max-h-60 overflow-y-auto bg-muted/30">
+                    <div className="space-y-2">
+                      {eligibleRecords.map((record) => (
+                        <div key={record.id} className="flex justify-between items-center text-sm py-2 border-b last:border-0">
+                          <div className="flex-1">
+                            <p className="font-medium">{record.notes || 'Service'}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {record.scheduledStart ? formatDate(record.scheduledStart) : 'N/A'} • {record.quantity} {record.unit}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-semibold">${record.participantContribution.toFixed(2)}</p>
+                            <p className="text-xs text-muted-foreground">Participant</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                    <p>No eligible pending records found for this participant and month.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setShowInvoiceModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleGenerateParticipantTaxInvoice}
+                disabled={!eligibleRecords.length || loading || loadingEligible}
+                className="gap-2"
+              >
+                {loading ? (
+                  <>
+                    <Spinner />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Receipt className="h-4 w-4" />
+                    Generate Invoice
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
