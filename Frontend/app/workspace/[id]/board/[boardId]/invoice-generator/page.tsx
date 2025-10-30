@@ -37,6 +37,7 @@ import axios from "@/app/utils/axiosConfig";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format } from "date-fns";
+import { showSuccessToast, showErrorToast, showInfoToast } from "@/lib/toast-utils";
 import {
   Dialog,
   DialogContent,
@@ -398,7 +399,7 @@ export default function InvoiceGenerator() {
       const allItems: ServiceRecord[] = response.data.items || [];
 
       if (allItems.length === 0) {
-        alert('No records to export.');
+        showErrorToast('No records to export.');
         setLoading(false);
         return;
       }
@@ -554,17 +555,17 @@ export default function InvoiceGenerator() {
       document.body.removeChild(link);
 
       setLoading(false);
-      alert(`Successfully exported ${allItems.length} records to CSV.`);
+      showSuccessToast(`Successfully exported ${allItems.length} records to CSV.`);
     } catch (err: any) {
       console.error('Error exporting CSV:', err);
-      alert(`Failed to export CSV: ${err.message}`);
+      showErrorToast('Failed to export CSV', { description: err.message });
       setLoading(false);
     }
   };
 
   const handleExportPDF = () => {
     console.log('Export to PDF');
-    alert('PDF export will be added after invoice flow.');
+    showInfoToast('PDF export will be added after invoice flow.');
   };
 
   // Open modal for participant tax invoice
@@ -586,17 +587,17 @@ export default function InvoiceGenerator() {
   const handleGenerateParticipantTaxInvoice = async () => {
     try {
       if (!eligibleRecords.length) {
-        alert('No eligible records to include in the invoice.');
+        showErrorToast('No eligible records to include in the invoice.');
         return;
       }
 
       if (!selectedParticipant) {
-        alert('Please select a participant.');
+        showErrorToast('Please select a participant.');
         return;
       }
 
       if (!selectedMonth) {
-        alert('Please select a month.');
+        showErrorToast('Please select a month.');
         return;
       }
 
@@ -610,15 +611,10 @@ export default function InvoiceGenerator() {
       due.setDate(due.getDate() + 14);
 
       const payload = {
-        items: eligibleRecords, // All eligible records for the selected month
+        items: eligibleRecords, 
         participantName: selectedParticipant,
         invoiceDate: today.toISOString(),
-        dueDate: due.toISOString(),
-        // Optional fields for participant address (can be added later)
-        // participantAddress: '',
-        // participantSuburb: '',
-        // participantState: '',
-        // participantPostcode: ''
+        dueDate: due.toISOString()
       };
 
       const resp = await axios.post(apiUrl, payload, {
@@ -628,22 +624,17 @@ export default function InvoiceGenerator() {
       if (resp.status === 200 && resp.data) {
         const { invoiceNumber, fileUrl, itemCount } = resp.data;
         setShowInvoiceModal(false);
-        alert(
-          `✅ Participant Tax Invoice Generated Successfully!\n\n` +
-          `Invoice Number: ${invoiceNumber}\n` +
-          `Items Included: ${itemCount}\n` +
-          `Participant: ${selectedParticipant}\n` +
-          `Month: ${selectedMonth}\n\n` +
-          `The PDF has been generated and attached to all ${itemCount} item(s).`
-        );
+        showSuccessToast('Participant Tax Invoice generated', {
+          description: `Invoice ${invoiceNumber} for ${selectedParticipant} (${itemCount} item${itemCount === 1 ? '' : 's'}) created.`
+        });
         // Refresh data to show updated invoice numbers
         window.location.reload();
       } else {
-        alert('The invoice request was sent, but an unexpected response was received.');
+        showErrorToast('Unexpected response while generating invoice');
       }
     } catch (err: any) {
       console.error('Error generating participant invoice', err);
-      alert(`❌ Failed to generate invoice:\n\n${err.response?.data?.message || err.message || 'Unknown error occurred'}`);
+      showErrorToast('Failed to generate invoice', { description: err.response?.data?.message || err.message || 'Unknown error occurred' });
     } finally {
       setLoading(false);
     }
