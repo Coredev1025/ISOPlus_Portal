@@ -603,7 +603,7 @@ export default function InvoiceGenerator() {
       setLoading(true);
 
       // Endpoint generates ONE PDF for all selected items
-      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/webhook/${id}/${boardId}/invoiceparticipanttax`;
+      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/${id}/${boardId}/invoiceparticipanttax`;
 
       const today = new Date();
       const due = new Date(today);
