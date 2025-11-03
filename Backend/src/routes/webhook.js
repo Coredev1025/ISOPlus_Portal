@@ -1325,6 +1325,10 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
                     const fileUrl = await getS3FileUrl(filename);
+                    for (const item of items) {
+                        setIntegrationMessage(workspaceId, boardId, item.id, "Invoice generated successfully");
+                        setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
+                    }
 
                     // Increment invoice number only once
                     business.documentNumbering.invoice.nextNumber += 1;

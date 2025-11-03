@@ -239,7 +239,7 @@ router.get('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
             // Get status
             const invoiceIssued = getValue('Invoice Issued and Sent') || false;
             const paymentStatus = getValue('Payment Status') || [];
-            const status = invoiceIssued || (Array.isArray(paymentStatus) && paymentStatus.some(p => p.name === 'Paid'))
+            const status = invoiceIssued || (Array.isArray(paymentStatus) && paymentStatus.some(p => p.name.includes('Paid')))
                 ? 'invoiced'
                 : 'pending';
 

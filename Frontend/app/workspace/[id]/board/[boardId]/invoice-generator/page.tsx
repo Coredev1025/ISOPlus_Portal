@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import axios from "@/app/utils/axiosConfig";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
@@ -128,6 +129,7 @@ export default function InvoiceGenerator() {
   const [selectedParticipant, setSelectedParticipant] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("");
   const [eligibleRecords, setEligibleRecords] = useState<ServiceRecord[]>([]);
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [loadingEligible, setLoadingEligible] = useState(false);
   const [uniqueParticipants, setUniqueParticipants] = useState<string[]>([]);
 
@@ -205,6 +207,8 @@ export default function InvoiceGenerator() {
 
         if (response.data?.items) {
           setEligibleRecords(response.data.items);
+          // Auto-select all eligible records by default
+          setSelectedItems(new Set(response.data.items.map((r: ServiceRecord) => r.id)));
         }
       } catch (err) {
         console.error('Error fetching eligible records:', err);
@@ -580,14 +584,35 @@ export default function InvoiceGenerator() {
     const currentDate = new Date();
     const monthYear = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     setSelectedMonth(monthYear);
+    setSelectedItems(new Set()); // Reset selected items
     setShowInvoiceModal(true);
+  };
+
+  // Toggle item selection
+  const handleToggleItem = (itemId: string) => {
+    const newSelected = new Set(selectedItems);
+    if (newSelected.has(itemId)) {
+      newSelected.delete(itemId);
+    } else {
+      newSelected.add(itemId);
+    }
+    setSelectedItems(newSelected);
+  };
+
+  // Select/Deselect all items
+  const handleSelectAll = () => {
+    if (selectedItems.size === eligibleRecords.length) {
+      setSelectedItems(new Set());
+    } else {
+      setSelectedItems(new Set(eligibleRecords.map(r => r.id)));
+    }
   };
 
   // Generate invoice from modal
   const handleGenerateParticipantTaxInvoice = async () => {
     try {
-      if (!eligibleRecords.length) {
-        showErrorToast('No eligible records to include in the invoice.');
+      if (!selectedItems.size) {
+        showErrorToast('Please select at least one item to include in the invoice.');
         return;
       }
 
@@ -601,6 +626,14 @@ export default function InvoiceGenerator() {
         return;
       }
 
+      // Filter to only selected items
+      const selectedRecords = eligibleRecords.filter(record => selectedItems.has(record.id));
+
+      if (!selectedRecords.length) {
+        showErrorToast('No items selected for invoice generation.');
+        return;
+      }
+
       setLoading(true);
 
       // Endpoint generates ONE PDF for all selected items
@@ -611,7 +644,7 @@ export default function InvoiceGenerator() {
       due.setDate(due.getDate() + 14);
 
       const payload = {
-        items: eligibleRecords, 
+        items: selectedRecords, 
         participantName: selectedParticipant,
         invoiceDate: today.toISOString(),
         dueDate: due.toISOString()
@@ -623,6 +656,25 @@ export default function InvoiceGenerator() {
 
       if (resp.status === 200 && resp.data) {
         const { invoiceNumber, fileUrl, itemCount } = resp.data;
+        
+        // Update item statuses in database
+        try {
+          const updateUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/update-status`;
+          await axios.post(updateUrl, {
+            itemIds: Array.from(selectedItems),
+            invoiceNumber: invoiceNumber,
+            status: 'invoiced'
+          }, {
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+          });
+        } catch (updateErr: any) {
+          console.error('Error updating item statuses:', updateErr);
+          // Don't fail the whole operation if status update fails
+          showInfoToast('Invoice generated but status update failed', {
+            description: 'The invoice was created but item statuses could not be updated. Please refresh the page.'
+          });
+        }
+
         setShowInvoiceModal(false);
         showSuccessToast('Participant Tax Invoice generated', {
           description: `Invoice ${invoiceNumber} for ${selectedParticipant} (${itemCount} item${itemCount === 1 ? '' : 's'}) created.`
@@ -952,7 +1004,14 @@ export default function InvoiceGenerator() {
         </div>
 
         {/* Invoice Generation Modal */}
-        <Dialog open={showInvoiceModal} onOpenChange={setShowInvoiceModal}>
+        <Dialog open={showInvoiceModal} onOpenChange={(open) => {
+          setShowInvoiceModal(open);
+          if (!open) {
+            // Reset selections when modal closes
+            setSelectedItems(new Set());
+            setEligibleRecords([]);
+          }
+        }}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -1006,10 +1065,26 @@ export default function InvoiceGenerator() {
             {selectedParticipant && selectedMonth && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold">Eligible Records</h3>
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-lg font-semibold">Eligible Records</h3>
+                    {eligibleRecords.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleSelectAll}
+                        className="h-8 text-xs"
+                      >
+                        {selectedItems.size === eligibleRecords.length ? 'Deselect All' : 'Select All'}
+                      </Button>
+                    )}
+                  </div>
                   <Badge variant="secondary" className="text-lg px-3 py-1">
                     <DollarSign className="h-4 w-4 mr-1" />
-                    Total: ${eligibleRecords.reduce((sum, record) => sum + record.participantContribution, 0).toFixed(2)}
+                    Total: ${eligibleRecords
+                      .filter(r => selectedItems.has(r.id))
+                      .reduce((sum, record) => sum + record.participantContribution, 0).toFixed(2)}
+                    {' '}
+                    ({selectedItems.size} selected)
                   </Badge>
                 </div>
 
@@ -1022,16 +1097,28 @@ export default function InvoiceGenerator() {
                   <div className="border rounded-lg p-4 max-h-60 overflow-y-auto bg-muted/30">
                     <div className="space-y-2">
                       {eligibleRecords.map((record) => (
-                        <div key={record.id} className="flex justify-between items-center text-sm py-2 border-b last:border-0">
-                          <div className="flex-1">
-                            <p className="font-medium">{record.notes || 'Service'}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {record.scheduledStart ? formatDate(record.scheduledStart) : 'N/A'} • {record.quantity} {record.unit}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-semibold">${record.participantContribution.toFixed(2)}</p>
-                            <p className="text-xs text-muted-foreground">Participant</p>
+                        <div 
+                          key={record.id} 
+                          className="flex items-start gap-3 py-2 border-b last:border-0 hover:bg-muted/50 rounded px-2 cursor-pointer"
+                          onClick={() => handleToggleItem(record.id)}
+                        >
+                          <Checkbox
+                            checked={selectedItems.has(record.id)}
+                            onCheckedChange={() => handleToggleItem(record.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="mt-1"
+                          />
+                          <div className="flex-1 flex justify-between items-center">
+                            <div className="flex-1">
+                              <p className="font-medium">{record.notes || 'Service'}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {record.scheduledStart ? formatDate(record.scheduledStart) : 'N/A'} • {record.quantity} {record.unit}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-semibold">${record.participantContribution.toFixed(2)}</p>
+                              <p className="text-xs text-muted-foreground">Participant</p>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -1055,7 +1142,7 @@ export default function InvoiceGenerator() {
               </Button>
               <Button
                 onClick={handleGenerateParticipantTaxInvoice}
-                disabled={!eligibleRecords.length || loading || loadingEligible}
+                disabled={!selectedItems.size || loading || loadingEligible}
                 className="gap-2"
               >
                 {loading ? (
