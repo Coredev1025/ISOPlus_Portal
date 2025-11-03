@@ -2,7 +2,7 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import Item from '../models/Item.js';
 import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
-import { getFolder, getMember } from '../services/isoplus.js';
+import { getReferences, getAttribute, getItemValues, getFolder, getMember } from '../services/isoplus.js';
 
 const router = express.Router();
 
@@ -39,9 +39,9 @@ const getFolderIds = async (folderName, workspaceId, boardId) => {
 }
 
 // Get items for a specific workspace and board
-router.get('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
+router.get('/:workspaceId/:boardId/:type', authenticateToken, async (req, res) => {
     try {
-        const { workspaceId, boardId } = req.params;
+        const { workspaceId, boardId, type } = req.params;
         const { members } = await getMember(req.session.Authorization, workspaceId);
         const {
             status = '',
@@ -342,6 +342,77 @@ router.get('/:workspaceId/:boardId/:itemId', authenticateToken, async (req, res)
             message: err.message
         }, extractContextFromReq(req));
         res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Bulk update item invoice status and number
+router.post('/:workspaceId/:boardId/update-status', authenticateToken, async (req, res) => {
+    try {
+        const { workspaceId, boardId } = req.params;
+        const { itemIds, invoiceNumber, status } = req.body || {};
+
+        if (!workspaceId || !boardId) {
+            return res.status(400).json({ message: 'WorkspaceId and BoardId are required' });
+        }
+
+        if (!Array.isArray(itemIds) || itemIds.length === 0) {
+            return res.status(400).json({ message: 'itemIds must be a non-empty array' });
+        }
+
+        if (!invoiceNumber || typeof invoiceNumber !== 'string') {
+            return res.status(400).json({ message: 'invoiceNumber is required' });
+        }
+
+        // Currently we only support setting to invoiced; accept payload for future-proofing
+        const setInvoiced = status === 'invoiced' || status === true || status === 'true';
+
+        const items = await Item.find({
+            workspaceId,
+            boardId,
+            itemId: { $in: itemIds }
+        });
+
+        if (!items || items.length === 0) {
+            return res.status(404).json({ message: 'No matching items found' });
+        }
+
+        let updatedCount = 0;
+
+        for (const item of items) {
+            const values = (item.data && Array.isArray(item.data.values)) ? item.data.values : [];
+
+            const upsertAttribute = (attributeName, value) => {
+                const existingIdx = values.findIndex(v => v && v.attribute && v.attribute.name === attributeName);
+                if (existingIdx >= 0) {
+                    values[existingIdx].data = value;
+                } else {
+                    values.push({ attribute: { name: attributeName }, data: value });
+                }
+            };
+
+            upsertAttribute('Invoice Issued and Sent', !!setInvoiced);
+            upsertAttribute('Generated Invoice Number', String(invoiceNumber));
+
+            // Persist updated values back
+            if (!item.data) item.data = {};
+            item.data.values = values;
+            item.markModified('data');
+            await item.save();
+            updatedCount += 1;
+        }
+
+        info('Items-Service', 'Updated item statuses', {
+            workspaceId,
+            boardId,
+            updatedCount
+        }, extractContextFromReq(req));
+
+        return res.status(200).json({ message: 'Items updated successfully', updated: updatedCount });
+    } catch (err) {
+        error('Items-Service', 'Failed to update item statuses', {
+            message: err.message
+        }, extractContextFromReq(req));
+        return res.status(500).json({ message: 'Server error' });
     }
 });
 
