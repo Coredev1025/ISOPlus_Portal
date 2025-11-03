@@ -18,6 +18,7 @@ import HealthCheckRouters from './routes/heathcheck.js';
 import ndisRoutes from './routes/ndis.js';
 import ageCareRoutes from './routes/ageCare.js';
 import syncRoutes from './routes/sync.js';
+import itemsRoutes from './routes/items.js';
 import session from 'express-session';
 import MongoStore from 'connect-mongo';
 import './workers/syncWorker.js'; // Initialize sync worker
@@ -69,6 +70,7 @@ app.use('/api/pdf', PdfRouters);
 app.use('/api/care-management-ndis-pricing', ndisRoutes);
 app.use('/api/age-care', ageCareRoutes);
 app.use('/api/sync', syncRoutes);
+app.use('/api/items', itemsRoutes);
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('Connected to MongoDB'))

@@ -66,14 +66,14 @@ async function getLogoData(business) {
 function formatValue(val) {
     const num = Number(val);
     if (!isNaN(num)) {
-      const factor = Math.pow(10, 2);
-      const result = Math.round(num * factor) / factor;
-  
-      return result.toFixed(2);
+        const factor = Math.pow(10, 2);
+        const result = Math.round(num * factor) / factor;
+
+        return result.toFixed(2);
     } else {
-      return val;
+        return val;
     }
-  }
+}
 
 function validateRequestParams(req) {
     const { workspaceId, boardId } = req.params;
@@ -1177,6 +1177,185 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
     } catch (err) {
         error('Webhook-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
         return res.status(200).json({ message: err.message });
+    }
+});
+
+router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => {
+    try {
+        const { workspaceId, boardId } = validateRequestParams(req);
+        const business = await getValidatedBusiness(workspaceId);
+
+        const items = req.body.items || [];
+        
+        if (!items || items.length === 0) {
+            return res.status(400).json({ message: "No items provided for invoice generation." });
+        }
+
+        // Validate all items belong to the workspace/board
+        for (const item of items) {
+            await validateItemBelongsToTenant(workspaceId, boardId, item.id);
+        }
+
+        try {
+            const templatePath = path.join(__dirname, '..', 'assets', 'participantTaxInvoiceAG.json');
+            const templateData = await fs.readFile(templatePath, 'utf8');
+            const template = JSON.parse(templateData);
+
+            const logoBase64 = await getLogoData(business);
+
+            const invoiceNumber = business.documentNumbering.invoice.prefix + business.documentNumbering.invoice.nextNumber;
+
+            // Detect if this is service-record format (from Invoice Generator UI)
+            const isServiceRecord = typeof items[0]?.participant === 'string' || typeof req.body?.participantName === 'string';
+
+            let ordersArr = [];
+            let subTotal = 0;
+            let totalParticipantContribution = 0;
+            const gstLabel = "GST Free";
+            const gst = 0; // percent
+
+            // Get dates from request or use defaults
+            let invoiceDate = req.body?.invoiceDate || new Date().toISOString();
+            let dueDate = req.body?.dueDate || '';
+            
+            if (!dueDate) {
+                const d = new Date(invoiceDate);
+                d.setDate(d.getDate() + 14);
+                dueDate = d.toISOString();
+            }
+
+            // Helper functions for service records
+            const dateFmt = (d) => d ? new Date(d).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+            const toNumber = (v) => typeof v === 'number' ? v : Number(v || 0);
+            const fmt = (v) => formatValue(toNumber(v));
+
+            if (isServiceRecord) {
+                // Process all items and add them to the orders array
+                for (const item of items) {
+                    const rowDate = dateFmt(item.scheduledStart);
+                    const cleanNotes = (item.notes && typeof item.notes === 'string') ? item.notes.replace(/<[^>]*>/g, '') : '';
+                    const description = cleanNotes || (item.worker ? `Service - ${item.worker}` : 'Service');
+                    const unit = item.unit || ' ';
+                    const qty = toNumber(item.quantity);
+                    const unitPrice = toNumber(item.unitPrice);
+                    const totalAmount = toNumber(item.totalAmount);
+                    const participantContribution = toNumber(item.participantContribution);
+                    const govSubsidy = toNumber(item.govSubsidy); // accepted but not rendered as separate column in current template
+
+                    ordersArr.push([
+                        rowDate,
+                        description,
+                        unit,
+                        fmt(qty),
+                        fmt(unitPrice),
+                        gstLabel,
+                        fmt(totalAmount),
+                        fmt(participantContribution)
+                    ]);
+                    
+                    subTotal += totalAmount;
+                    totalParticipantContribution += participantContribution;
+                }
+
+                if (ordersArr.length === 0) {
+                    await Promise.all(items.map(item =>
+                        setIntegrationMessage(workspaceId, boardId, item.id, "There is nothing to invoice!")
+                    ));
+                    return res.status(400).json({ message: "There is nothing to invoice!" });
+                }
+
+                const orders = JSON.stringify(ordersArr);
+                subTotal = formatValue(subTotal);
+                const gstTotal = formatValue(0); // GST Free
+                const total = formatValue(parseFloat(subTotal));
+                const participantContributionTotal = formatValue(totalParticipantContribution);
+
+                // Get participant details from request body or first item
+                const participantName = req.body?.participantName || items[0].participant || ' ';
+                
+                // Map client details to match template
+                const clientDetails = {
+                    Participant: participantName,
+                    Address: req.body?.participantAddress || ' ',
+                    Suburb: req.body?.participantSuburb || ' ',
+                    State: req.body?.participantState || ' ',
+                    Postcode: req.body?.participantPostcode || ' '
+                };
+
+                // Generate the PDF with all items
+                const pdfBytes = await generate({
+                    template: template,
+                    inputs: [
+                        {
+                            logo: logoBase64,
+                            subtotal: subTotal,
+                            totalGST: gstTotal,
+                            total: participantContributionTotal,
+                            clientDetails: JSON.stringify(clientDetails),
+                            invoiceDetails: JSON.stringify({
+                                Date: new Date(invoiceDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+                                "Invoice Number": invoiceNumber
+                            }),
+                            companyName: JSON.stringify({ "Company Name": business.name }),
+                            companyDetails: JSON.stringify({
+                                ABN: business.abn,
+                                "Street Address": business.address.street,
+                                Suburb: business.address.suburb,
+                                State: business.address.state,
+                                Postcode: business.address.postcode,
+                                Country: business.address.country
+                            }),
+                            orders: orders,
+                            "dueDate": new Date(dueDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+                            "Bank Details": JSON.stringify({
+                                "Account Name": business.bankDetails.accountName,
+                                "Bank Name": business.bankDetails.bankName,
+                                BSB: business.bankDetails.bsb,
+                                "Account Number": business.bankDetails.accountNumber,
+                                "invoice Number": invoiceNumber
+                            })
+                        }
+                    ],
+                    plugins: { text, image, line, table, multiVariableText }
+                });
+
+                // Upload the single PDF for all items
+                const filename = `output/${workspaceId}/${boardId}/Participant-invoices/${invoiceNumber + '-ISO+™-' + participantName.replace(/\s+/g, '-')}.pdf`;
+                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+
+                if (uploadResult['$metadata'].httpStatusCode === 200) {
+                    const fileUrl = await getS3FileUrl(filename);
+                    for (const item of items) {
+                        setIntegrationMessage(workspaceId, boardId, item.id, "Invoice generated successfully");
+                        setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
+                    }
+
+                    // Increment invoice number only once
+                    business.documentNumbering.invoice.nextNumber += 1;
+                    await business.save();
+
+                    return res.status(200).json({ 
+                        message: "Participant Tax Invoice generated successfully",
+                        invoiceNumber: invoiceNumber,
+                        fileUrl: fileUrl,
+                        itemCount: items.length
+                    });
+                } else {
+                    throw new Error('Upload of PDF failed, please provide correct information.');
+                }
+            } else {
+                // Legacy monday.com format - not supported for multiple items in single invoice
+                throw new Error('Legacy monday.com format is not supported for multi-item participant invoices. Please use the Invoice Generator UI.');
+            }
+        } catch (err) {
+            // Do not call per-item error responder; log and send a single error response
+            const errorMessage = (err && err.message) ? err.message : 'Server error: An unknown error occurred. Please contact support via ISO+™ Portal.';
+            error('Webhook-Service', 'Server error', { message: errorMessage }, extractContextFromReq(req));
+            return res.status(500).json({ message: errorMessage });
+        }
+    } catch (err) {
+        error('Webhook-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
+        return res.status(500).json({ message: err.message });
     }
 });
 
