@@ -137,7 +137,7 @@ export default function InvoiceGenerator() {
   useEffect(() => {
     const fetchParticipants = async () => {
       try {
-        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}`;
+        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/participantInvoiceTax`;
         const params = new URLSearchParams();
         params.append('folderName', 'Master Plan,Shift Planning and Reporting');
         params.append('limit', '1000'); // Get all to extract unique participants
@@ -179,7 +179,7 @@ export default function InvoiceGenerator() {
 
       setLoadingEligible(true);
       try {
-        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}`;
+        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/participantInvoiceTax`;
         const params = new URLSearchParams();
 
         params.append('participant', selectedParticipant);
@@ -227,7 +227,7 @@ export default function InvoiceGenerator() {
       setError(null);
       try {
         // Build API URL
-        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}`;
+        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/participantInvoiceTax`;
 
         // Build query parameters
         const params = new URLSearchParams();
@@ -369,7 +369,7 @@ export default function InvoiceGenerator() {
       setLoading(true);
 
       // Fetch ALL filtered items (no pagination) for export
-      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}`;
+      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/participantInvoiceTax`;
       const params = new URLSearchParams();
 
       // Apply same filters as the current view
@@ -663,7 +663,8 @@ export default function InvoiceGenerator() {
           await axios.post(updateUrl, {
             itemIds: Array.from(selectedItems),
             invoiceNumber: invoiceNumber,
-            status: 'invoiced'
+            status: 'invoiced',
+            fileUrl
           }, {
             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
           });
@@ -673,6 +674,10 @@ export default function InvoiceGenerator() {
           showInfoToast('Invoice generated but status update failed', {
             description: 'The invoice was created but item statuses could not be updated. Please refresh the page.'
           });
+        }
+
+        if (fileUrl) {
+          window.open(fileUrl, '_blank');
         }
 
         setShowInvoiceModal(false);
@@ -1082,7 +1087,7 @@ export default function InvoiceGenerator() {
                     <DollarSign className="h-4 w-4 mr-1" />
                     Total: ${eligibleRecords
                       .filter(r => selectedItems.has(r.id))
-                      .reduce((sum, record) => sum + record.participantContribution, 0).toFixed(2)}
+                      .reduce((sum, record) => sum + (record.totalAmount || 0), 0).toFixed(2)}
                     {' '}
                     ({selectedItems.size} selected)
                   </Badge>
@@ -1116,8 +1121,8 @@ export default function InvoiceGenerator() {
                               </p>
                             </div>
                             <div className="text-right">
-                              <p className="font-semibold">${record.participantContribution.toFixed(2)}</p>
-                              <p className="text-xs text-muted-foreground">Participant</p>
+                              <p className="font-semibold">${(record.totalAmount || 0).toFixed(2)}</p>
+                              <p className="text-xs text-muted-foreground">Total</p>
                             </div>
                           </div>
                         </div>

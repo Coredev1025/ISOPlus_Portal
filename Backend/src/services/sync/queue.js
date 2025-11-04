@@ -1,14 +1,15 @@
 import { Queue } from 'bullmq';
+import Redis from 'ioredis';
 import { info, error } from '../../utils/logger.js';
 
-// Redis connection configuration
-const redisConnection = {
+// Redis connection configuration for ElastiCache
+// Replace with your ElastiCache Redis endpoint and port
+const redisConnection = new Redis({
   host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT) || 6379,
+  port: parseInt(process.env.REDIS_PORT) || 6379, // Default Redis port
   password: process.env.REDIS_PASSWORD || undefined,
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false
-};
+  maxRetriesPerRequest: null, // Recommended for production
+});
 
 // Create sync queue
 export const syncQueue = new Queue('board-sync', {
@@ -30,8 +31,8 @@ export const syncQueue = new Queue('board-sync', {
 });
 
 info('Sync-Queue', 'BullMQ sync queue initialized', {
-  host: redisConnection.host,
-  port: redisConnection.port
+  host: process.env.REDIS_HOST || 'localhost',
+  port: parseInt(process.env.REDIS_PORT) || 6379
 });
 
 // Queue event listeners
