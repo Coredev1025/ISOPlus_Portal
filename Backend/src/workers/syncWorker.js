@@ -17,16 +17,29 @@ let redisConnection;
 
 if (useCluster) {
   // AWS ElastiCache Serverless uses Redis Cluster mode
-  // TLS must be at cluster level, not in redisOptions
+  // Match the working sample configuration exactly
   redisConnection = new Redis.Cluster(
     [{ host: redisHost, port: redisPort }],
     {
       dnsLookup: (address, callback) => callback(null, address),
-      tls: {}, // AWS ElastiCache Serverless requires TLS (at cluster level)
       redisOptions: {
         ...(process.env.REDIS_PASSWORD && { password: process.env.REDIS_PASSWORD }),
         maxRetriesPerRequest: null, // Recommended for production
+        tls: {}, // AWS ElastiCache Serverless requires TLS
+        connectTimeout: 30000, // 30 seconds for cluster discovery
+        retryStrategy: (times) => {
+          const delay = Math.min(times * 100, 3000);
+          return delay;
+        },
       },
+      clusterRetryStrategy: (times) => {
+        const delay = Math.min(times * 100, 3000);
+        info('Sync-Worker', 'Cluster retry', { times, delay });
+        return delay;
+      },
+      enableOfflineQueue: false, // Disable offline queue for cluster
+      maxRetriesPerRequest: null,
+      lazyConnect: false, // Connect immediately
     }
   );
 } else {
@@ -64,6 +77,28 @@ redisConnection.on('close', () => {
 redisConnection.on('reconnecting', (delay) => {
   info('Sync-Worker', 'Redis reconnecting', { delay });
 });
+
+// Cluster-specific event listeners
+if (useCluster) {
+  redisConnection.on('+node', (node) => {
+    info('Sync-Worker', 'Cluster node added', { node: node.options?.host || node.options?.address });
+  });
+  
+  redisConnection.on('-node', (node) => {
+    warn('Sync-Worker', 'Cluster node removed', { node: node.options?.host || node.options?.address });
+  });
+  
+  redisConnection.on('node error', (err, node) => {
+    error('Sync-Worker', 'Cluster node error', { 
+      error: err.message, 
+      node: node?.options?.host || node?.options?.address 
+    });
+  });
+  
+  redisConnection.on('refresh', () => {
+    info('Sync-Worker', 'Cluster slots refreshed');
+  });
+}
 
 /**
  * Process board validation
