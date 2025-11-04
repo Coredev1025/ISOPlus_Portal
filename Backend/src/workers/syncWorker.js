@@ -1,4 +1,5 @@
 import { Worker } from 'bullmq';
+import Redis from 'ioredis';
 import { getBoard, getFolder, getItem } from '../services/isoplus.js';
 import Board from '../models/Board.js';
 import Item from '../models/Item.js';
@@ -6,14 +7,14 @@ import { validateBoard } from '../services/sync/validator.js';
 import { registerBoardWebhooks } from '../services/webhookService.js';
 import { info, error, warn } from '../utils/logger.js';
 
-// Redis connection configuration
-const redisConnection = {
+// Redis connection configuration for ElastiCache
+// Replace with your ElastiCache Redis endpoint and port
+const redisConnection = new Redis({
   host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT) || 6379,
+  port: parseInt(process.env.REDIS_PORT) || 6379, // Default Redis port
   password: process.env.REDIS_PASSWORD || undefined,
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false
-};
+  maxRetriesPerRequest: null, // Recommended for production
+});
 
 /**
  * Process board validation
