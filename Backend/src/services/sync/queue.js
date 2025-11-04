@@ -1,14 +1,43 @@
 import { Queue } from 'bullmq';
 import Redis from 'ioredis';
-import { info, error } from '../../utils/logger.js';
+import { info, error, warn } from '../../utils/logger.js';
 
-// Redis connection configuration for ElastiCache
-// Replace with your ElastiCache Redis endpoint and port
-const redisConnection = new Redis({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT) || 6379, // Default Redis port
-  ...(process.env.REDIS_PASSWORD && { password: process.env.REDIS_PASSWORD }),
-  maxRetriesPerRequest: null, // Recommended for production
+// Redis connection configuration for ElastiCache Cluster
+// AWS ElastiCache Serverless uses Redis Cluster mode
+const redisHost = process.env.REDIS_HOST || 'localhost';
+const redisPort = parseInt(process.env.REDIS_PORT) || 6379;
+
+const redisConnection = new Redis.Cluster(
+  [{ host: redisHost, port: redisPort }],
+  {
+    dnsLookup: (address, callback) => callback(null, address),
+    redisOptions: {
+      ...(process.env.REDIS_PASSWORD && { password: process.env.REDIS_PASSWORD }),
+      maxRetriesPerRequest: null, // Recommended for production
+      tls: {}, // AWS ElastiCache Serverless requires TLS
+    },
+  }
+);
+
+// Add connection event listeners for debugging
+redisConnection.on('connect', () => {
+  info('Sync-Queue', 'Redis connection established');
+});
+
+redisConnection.on('ready', () => {
+  info('Sync-Queue', 'Redis connection ready');
+});
+
+redisConnection.on('error', (err) => {
+  error('Sync-Queue', 'Redis connection error', { error: err.message, stack: err.stack });
+});
+
+redisConnection.on('close', () => {
+  warn('Sync-Queue', 'Redis connection closed');
+});
+
+redisConnection.on('reconnecting', (delay) => {
+  info('Sync-Queue', 'Redis reconnecting', { delay });
 });
 
 // Create sync queue
