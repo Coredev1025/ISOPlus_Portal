@@ -7,22 +7,42 @@ import { validateBoard } from '../services/sync/validator.js';
 import { registerBoardWebhooks } from '../services/webhookService.js';
 import { info, error, warn } from '../utils/logger.js';
 
-// Redis connection configuration for ElastiCache Cluster
-// AWS ElastiCache Serverless uses Redis Cluster mode
+// Redis connection configuration for ElastiCache
+// Supports both regular Redis and Redis Cluster mode
 const redisHost = process.env.REDIS_HOST || 'localhost';
 const redisPort = parseInt(process.env.REDIS_PORT) || 6379;
+const useCluster = process.env.REDIS_CLUSTER === 'true';
 
-const redisConnection = new Redis.Cluster(
-  [{ host: redisHost, port: redisPort }],
-  {
-    dnsLookup: (address, callback) => callback(null, address),
-    redisOptions: {
-      ...(process.env.REDIS_PASSWORD && { password: process.env.REDIS_PASSWORD }),
-      maxRetriesPerRequest: null, // Recommended for production
-      tls: {}, // AWS ElastiCache Serverless requires TLS
-    },
-  }
-);
+let redisConnection;
+
+if (useCluster) {
+  // AWS ElastiCache Serverless uses Redis Cluster mode
+  // TLS must be at cluster level, not in redisOptions
+  redisConnection = new Redis.Cluster(
+    [{ host: redisHost, port: redisPort }],
+    {
+      dnsLookup: (address, callback) => callback(null, address),
+      tls: {}, // AWS ElastiCache Serverless requires TLS (at cluster level)
+      redisOptions: {
+        ...(process.env.REDIS_PASSWORD && { password: process.env.REDIS_PASSWORD }),
+        maxRetriesPerRequest: null, // Recommended for production
+      },
+    }
+  );
+} else {
+  // Regular Redis connection (for local development or non-cluster Redis)
+  redisConnection = new Redis({
+    host: redisHost,
+    port: redisPort,
+    ...(process.env.REDIS_PASSWORD && { password: process.env.REDIS_PASSWORD }),
+    maxRetriesPerRequest: null, // Recommended for production
+    ...(process.env.REDIS_TLS === 'true' && {
+      tls: {
+        rejectUnauthorized: false
+      }
+    }),
+  });
+}
 
 // Add connection event listeners for debugging
 redisConnection.on('connect', () => {
@@ -517,7 +537,10 @@ async function processJob(job) {
 }
 
 // Create worker
-export const syncWorker = new Worker('board-sync', processJob, {
+// For Redis Cluster, use hash tags to ensure all keys are in the same hash slot
+// Must match the queue name used in queue.js
+const queueName = useCluster ? '{board-sync}' : 'board-sync';
+export const syncWorker = new Worker(queueName, processJob, {
   connection: redisConnection,
   concurrency: 5, // Process up to 5 jobs concurrently
   limiter: {
@@ -551,7 +574,7 @@ syncWorker.on('error', (err) => {
 
 info('Sync-Worker', 'Sync worker initialized and ready', {
   concurrency: 5,
-  queueName: 'board-sync'
+  queueName: queueName
 });
 
 export default syncWorker;
