@@ -7,7 +7,7 @@ import { info, error } from '../../utils/logger.js';
 const redisConnection = new Redis({
   host: process.env.REDIS_HOST || 'localhost',
   port: parseInt(process.env.REDIS_PORT) || 6379, // Default Redis port
-  password: process.env.REDIS_PASSWORD || undefined,
+  ...(process.env.REDIS_PASSWORD && { password: process.env.REDIS_PASSWORD }),
   maxRetriesPerRequest: null, // Recommended for production
 });
 

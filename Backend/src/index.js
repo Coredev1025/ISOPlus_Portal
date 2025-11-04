@@ -22,28 +22,6 @@ import itemsRoutes from './routes/items.js';
 import session from 'express-session';
 import MongoStore from 'connect-mongo';
 import './workers/syncWorker.js'; // Initialize sync worker
-import Redis from "ioredis";
- 
-const client = new Redis.Cluster(
-  [{ host: 'isoplus-portal-dev-redis-lmmlvz.serverless.apse2.cache.amazonaws.com', port: 6379 }],
-  {
-    dnsLookup: (address, callback) => callback(null, address),
-    redisOptions: {
-      tls: {},
-    },
-  });
- 
-(async () => {
-    // Set and assert
-    const setResult = await client.set("key", "value");
-    console.assert(setResult === "OK");
- 
-    // Get and assert
-    const getResult = await client.get("key");
-    console.assert(getResult === "value");
-    // Close the connection
-    client.disconnect();
-})();
 
 dotenv.config();
 
