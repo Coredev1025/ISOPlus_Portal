@@ -381,10 +381,6 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
             let statusColor = '';
             let integrationMsg = '';
 
-            if (!statusColor && hasMultipleInAnyGroup) {
-                statusColor = '#F665E2';
-                integrationMsg = 'Error: Multiple Services within a Group. Please select only one service per column.';
-            }
             if (!statusColor && wraparoundCategoryLabelName && categoryLabelName.includes('Home Support')) {
                 statusColor = '#3578D1';
                 integrationMsg = 'Error: Wraparound is NOT Applicable. The selected service does not support Wraparound according to Aged Care Pricing guidelines.';
