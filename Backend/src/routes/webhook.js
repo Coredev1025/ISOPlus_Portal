@@ -1359,6 +1359,309 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     }
 });
 
+router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
+    try {
+        const { workspaceId, boardId } = req.params;
+        const { statementData, businessDetails } = req.body;
+
+        if (!statementData) {
+            return res.status(400).json({ message: "No statement data provided." });
+        }
+
+        const business = await getValidatedBusiness(workspaceId);
+
+        try {
+            // Use the monthlyStatement.json template
+            const templatePath = path.join(__dirname, '..', 'assets', 'monthlyStatement.json');
+            const templateData = await fs.readFile(templatePath, 'utf8');
+            const template = JSON.parse(templateData);
+
+            const logoBase64 = await getLogoData(business);
+
+            // Helper functions
+            const dateFmt = (d) => {
+                if (!d) return '';
+                try {
+                    return new Date(d).toLocaleString('en-AU', { 
+                        day: '2-digit', 
+                        month: '2-digit', 
+                        year: 'numeric'
+                    });
+                } catch (e) {
+                    return '';
+                }
+            };
+            const toNumber = (v) => {
+                const num = typeof v === 'number' ? v : parseFloat(v || 0);
+                return isNaN(num) ? 0 : num;
+            };
+            const fmt = (v) => formatValue(toNumber(v));
+
+            // Build services table array - matching template structure: Date, Provider, Service, Unit, Quantity, Unit Price, Total Price, Gov. Sub. *, Cont. *
+            let servicesArr = [];
+            
+            if (statementData.services && statementData.services.length > 0) {
+                for (const service of statementData.services) {
+                    const rowDate = dateFmt(service.actualEnd || service.scheduledStart || service.actualStart);
+                    const cleanNotes = (service.notes && typeof service.notes === 'string') ? service.notes.replace(/<[^>]*>/g, '').trim() : '';
+                    const serviceName = service.service || service.taskName || cleanNotes || 'Service';
+                    const provider = service.serviceProvider || business.name || '';
+                    const unit = service.unit || 'Unit';
+                    const qty = toNumber(service.quantity);
+                    const unitPrice = toNumber(service.unitPrice);
+                    const totalAmount = toNumber(service.totalAmount);
+                    const participantContribution = toNumber(service.participantContribution);
+                    const govSubsidy = toNumber(service.govSubsidy);
+
+                    servicesArr.push([
+                        rowDate,
+                        provider.substring(0, 20), // Provider column
+                        serviceName.substring(0, 40), // Service column
+                        unit,
+                        fmt(qty),
+                        `$${fmt(unitPrice)}`,
+                        `$${fmt(totalAmount)}`,
+                        `$${fmt(govSubsidy)}`,
+                        `$${fmt(participantContribution)}`
+                    ]);
+                }
+            }
+
+            // If no services, add a placeholder row
+            if (servicesArr.length === 0) {
+                servicesArr.push([
+                    '',
+                    '',
+                    'No services recorded for this period',
+                    '',
+                    '',
+                    '',
+                    '$0.00',
+                    '$0.00',
+                    '$0.00'
+                ]);
+            }
+
+            // Format summary data
+            const summary = statementData.summary || {};
+            const totalServices = summary.totalServices || 0;
+            const totalHours = toNumber(summary.totalHours).toFixed(1);
+            const totalAmount = fmt(toNumber(summary.totalAmount));
+            const govSubsidy = fmt(toNumber(summary.govSubsidy));
+            const participantContribution = fmt(toNumber(summary.participantContribution));
+
+            // Build budget categories table
+            // Structure: First 3 rows with 3 cells each (HSQ, RCP, EOL), then 3 rows with 4 cells each (ATS, ATO, HMB with committed funds)
+            // Note: Chat mentioned "2 rows with 4 cells" but we have 3 categories (ATS, ATO, HMB), so including all 3
+            let budgetCategoriesArr = [];
+            
+            // Helper to format HSQ title: "Home Support Quarterly Budget X-Y Z"
+            const formatHSQTitle = (category, month, year) => {
+                if (category.code === 'HSQ' && category.quarterStartMonth && category.quarterEndMonth) {
+                    return `Home Support Quarterly Budget ${category.quarterStartMonth}-${category.quarterEndMonth} ${year}`;
+                }
+                return category.name || 'Home Support Quarterly Budget';
+            };
+            
+            if (statementData.budgetCategories && statementData.budgetCategories.length > 0) {
+                // Sort categories to ensure correct order: HSQ, RCP, EOL, ATS, ATO, HMB
+                const categoryOrder = ['HSQ', 'RCP', 'EOL', 'ATS', 'ATO', 'HMB'];
+                const sortedCategories = [...statementData.budgetCategories].sort((a, b) => {
+                    const indexA = categoryOrder.indexOf(a.code || '');
+                    const indexB = categoryOrder.indexOf(b.code || '');
+                    return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
+                });
+                
+                for (const category of sortedCategories) {
+                    const code = category.code || '';
+                    const availableFunds = fmt(toNumber(category.availableFunds));
+                    const expenditure = fmt(toNumber(category.expenditure));
+                    const remainingBudget = fmt(toNumber(category.remainingBudget));
+                    
+                    // Format category name - special handling for HSQ
+                    let categoryName = category.name || '';
+                    if (code === 'HSQ') {
+                        categoryName = formatHSQTitle(category, statementData.year || '', statementData.year || '');
+                    }
+                    
+                    // First 3 rows (HSQ, RCP, EOL) - 3 cells: Name, Available Funds, Expenditure, Remaining Budget
+                    if (code === 'HSQ' || code === 'RCP' || code === 'EOL') {
+                        budgetCategoriesArr.push([
+                            categoryName,
+                            `$${availableFunds}`,
+                            `$${expenditure}`,
+                            `$${remainingBudget}`
+                        ]);
+                    }
+                    // Last 2 rows (ATS, ATO, HMB) - 4 cells: Name, Available Funds, Expenditure, Remaining Budget, Committed Funds
+                    else if (code === 'ATS' || code === 'ATO' || code === 'HMB') {
+                        const committedFunds = fmt(toNumber(category.committedFunds || 0));
+                        budgetCategoriesArr.push([
+                            categoryName,
+                            `$${availableFunds}`,
+                            `$${expenditure}`,
+                            `$${remainingBudget}`,
+                            `$${committedFunds}`
+                        ]);
+                    }
+                }
+            } else {
+                // If no budget categories provided, create placeholder rows for all 6
+                const year = statementData.year || new Date().getFullYear().toString();
+                const month = statementData.monthNumber || '01';
+                
+                // Helper to get quarter months
+                const getQuarterMonths = (monthNum) => {
+                    const m = parseInt(monthNum);
+                    if (m >= 1 && m <= 3) return { start: 'January', end: 'March' };
+                    if (m >= 4 && m <= 6) return { start: 'April', end: 'June' };
+                    if (m >= 7 && m <= 9) return { start: 'July', end: 'September' };
+                    return { start: 'October', end: 'December' };
+                };
+                
+                const quarter = getQuarterMonths(month);
+                
+                // First 3 rows with 3 cells
+                budgetCategoriesArr.push([
+                    `Home Support Quarterly Budget ${quarter.start}-${quarter.end} ${year}`,
+                    '$0.00',
+                    '$0.00',
+                    '$0.00'
+                ]);
+                budgetCategoriesArr.push([
+                    'Restorative Care Pathway Budget',
+                    '$0.00',
+                    '$0.00',
+                    '$0.00'
+                ]);
+                budgetCategoriesArr.push([
+                    'End-of-Life Pathway',
+                    '$0.00',
+                    '$0.00',
+                    '$0.00'
+                ]);
+                
+                // Last 2 rows with 4 cells (including committed funds)
+                budgetCategoriesArr.push([
+                    'Assistive Technology - Short-term Budget',
+                    '$0.00',
+                    '$0.00',
+                    '$0.00',
+                    '$0.00'
+                ]);
+                budgetCategoriesArr.push([
+                    'Assistive Technology - Ongoing Budget',
+                    '$0.00',
+                    '$0.00',
+                    '$0.00',
+                    '$0.00'
+                ]);
+                budgetCategoriesArr.push([
+                    'Home Modification Budget',
+                    '$0.00',
+                    '$0.00',
+                    '$0.00',
+                    '$0.00'
+                ]);
+            }
+
+            // Use business details from request or fall back to database
+            const companyName = businessDetails?.companyName || business.name || 'Service Provider';
+            const phone = businessDetails?.phoneNumber || business.phone || '';
+            const email = businessDetails?.businessEmail || business.email || '';
+            
+            // Extract participant details
+            const participant = statementData.participant || statementData.participantProfile || 'Participant';
+            const participantAddress = statementData.participantAddress || businessDetails?.address || '';
+            const participantSuburb = statementData.participantSuburb || businessDetails?.suburb || '';
+            const participantState = statementData.participantState || businessDetails?.state || '';
+            const participantPostcode = statementData.participantPostcode || businessDetails?.postcode || '';
+            const myAgedCareId = statementData.myAgedCareIdNumber || '';
+            const providerId = statementData.providerId || '';
+
+            // Generate the PDF with correct field mappings
+            const pdfBytes = await generate({
+                template: template,
+                inputs: [
+                    {
+                        // Image field
+                        logo: logoBase64,
+                        
+                        // MultiVariableText fields - field names must match template "name" field
+                        companyName: JSON.stringify({
+                            "Company Name": companyName
+                        }),
+                        Organisation: JSON.stringify({
+                            "Participant": participant,
+                            "My Aged Care ID Number": myAgedCareId,
+                            "Provider ID": providerId,
+                            "Address": participantAddress,
+                            "Suburb": participantSuburb,
+                            "Post Code": participantPostcode,
+                            "State": participantState
+                        }),
+                        Recipient: JSON.stringify({
+                            "Participant": participant,
+                            "Address": participantAddress,
+                            "Suburb": participantSuburb,
+                            "Post Code": participantPostcode
+                        }),
+                        "Text title": JSON.stringify({
+                            "month": statementData.month || '',
+                            "year": statementData.year || ''
+                        }),
+                        "Disclaimer 2a": JSON.stringify({
+                            "Phone Number": phone,
+                            "Business Email": email
+                        }),
+                        
+                        // Table fields - field names must match template "name" field
+                        "Table P6-1": JSON.stringify(servicesArr)
+                        // Note: budgetCategoriesArr is prepared above and can be added to appropriate table fields
+                        // if the template has budget category table fields (e.g., "Summary Table" or other page tables)
+                    }
+                ],
+                plugins: { text, image, line, table, multiVariableText }
+            });
+
+            // Upload the PDF
+            const participantName = participant.replace(/[^a-zA-Z0-9]/g, '-');
+            const monthYear = `${statementData.month || 'Month'}_${statementData.year || 'Year'}`.replace(/\s+/g, '_');
+            const filename = `output/${workspaceId}/${boardId}/monthly-statements/${participantName}_${monthYear}_Statement.pdf`;
+            const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+
+            if (uploadResult['$metadata'].httpStatusCode === 200) {
+                const fileUrl = await getS3FileUrl(filename);
+
+                info('Webhook-Service', 'Monthly statement PDF generated successfully', { 
+                    participant: participant,
+                    month: statementData.month,
+                    year: statementData.year,
+                    servicesCount: servicesArr.length,
+                    fileUrl 
+                }, extractContextFromReq(req));
+
+                // Return the PDF as a blob for direct download
+                res.setHeader('Content-Type', 'application/pdf');
+                res.setHeader('Content-Disposition', `attachment; filename="${participantName}_${monthYear}_Statement.pdf"`);
+                return res.send(Buffer.from(pdfBytes));
+            } else {
+                throw new Error('Upload of PDF failed, please provide correct information.');
+            }
+        } catch (err) {
+            const errorMessage = (err && err.message) ? err.message : 'Server error: An unknown error occurred. Please contact support via ISO+™ Portal.';
+            error('Webhook-Service', 'Error generating monthly statement PDF', { 
+                message: errorMessage,
+                stack: err.stack 
+            }, extractContextFromReq(req));
+            return res.status(500).json({ message: errorMessage, error: err.message });
+        }
+    } catch (err) {
+        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+        return res.status(500).json({ message: err.message });
+    }
+});
+
 router.get('/uploads/:filename', async (req, res) => {
     try {
         const { filename } = req.params;
