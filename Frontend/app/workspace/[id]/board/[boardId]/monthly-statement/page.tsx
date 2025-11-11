@@ -132,6 +132,8 @@ interface MonthlyStatementData {
   monthNumber: string;
   services: ServiceRecord[];
   budgetCategories: BudgetCategory[];
+  budgetItems?: BudgetRecord[];
+  serviceItems?: ServiceRecord[];
   summary: {
     totalServices: number;
     totalHours: number;
@@ -157,6 +159,7 @@ interface BusinessDetails {
   suburb: string;
   state: string;
   postcode: string;
+  companyRegistrationId: string;
 }
 
 const BUDGET_CATEGORY_LABELS: Record<string, string> = {
@@ -198,6 +201,7 @@ export default function MonthlyStatement() {
     suburb: "",
     state: "",
     postcode: "",
+    companyRegistrationId: "",
   });
 
   // Budget data will come from the API response
@@ -231,7 +235,6 @@ export default function MonthlyStatement() {
         const response = await axios.get(
           `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/monthly-statement`,
           {
-            params: { serviceLimit: 1000 },
             headers: {
               'Content-Type': 'application/json',
               'Accept': 'application/json'
@@ -288,6 +291,7 @@ export default function MonthlyStatement() {
             suburb: response.data.address?.suburb || "",
             state: response.data.address?.state || "",
             postcode: response.data.address?.postcode || "",
+            companyRegistrationId: response.data.companyRegistrationId || "",
           });
         }
       } catch (err) {
@@ -729,6 +733,8 @@ export default function MonthlyStatement() {
         monthNumber: effectiveMonthNumber,
         services,
         budgetCategories,
+        budgetItems: data?.budgetItems?.items ?? [],
+        serviceItems: services,
         summary,
         participantAddress: data?.participantAddress,
         participantSuburb: data?.participantSuburb,
@@ -764,7 +770,7 @@ export default function MonthlyStatement() {
       return;
     }
 
-    if (!businessDetails.companyName || !businessDetails.phoneNumber || !businessDetails.businessEmail) {
+    if (!businessDetails.companyName || !businessDetails.companyRegistrationId || !businessDetails.phoneNumber || !businessDetails.businessEmail) {
       showErrorToast(`Please configure business details before ${action === 'generate' ? 'generating' : 'exporting'} PDF`);
       setShowBusinessDialog(true);
       return;
@@ -818,8 +824,8 @@ export default function MonthlyStatement() {
 
   // Save business details
   const handleSaveBusinessDetails = async () => {
-    if (!businessDetails.companyName || !businessDetails.phoneNumber || !businessDetails.businessEmail) {
-      showErrorToast('Please fill in all required fields (Company Name, Phone, Email)');
+    if (!businessDetails.companyName || !businessDetails.phoneNumber || !businessDetails.businessEmail || !businessDetails.companyRegistrationId) {
+      showErrorToast('Please fill in all required fields (Company Name, Registration ID, Phone, Email)');
       return;
     }
 
@@ -836,6 +842,7 @@ export default function MonthlyStatement() {
           suburb: businessDetails.suburb,
           state: businessDetails.state,
           postcode: businessDetails.postcode,
+          companyRegistrationId: businessDetails.companyRegistrationId,
         }
       );
       setShowBusinessDialog(false);
@@ -1021,6 +1028,7 @@ export default function MonthlyStatement() {
                     <div><span className="font-medium">Phone:</span> {businessDetails.phoneNumber}</div>
                     <div><span className="font-medium">Email:</span> {businessDetails.businessEmail}</div>
                     <div><span className="font-medium">Address:</span> {businessDetails.address}</div>
+                    <div className="col-span-2"><span className="font-medium">Registration ID:</span> {businessDetails.companyRegistrationId || "N/A"}</div>
                   </div>
                 </div>
               )}
@@ -1387,6 +1395,16 @@ export default function MonthlyStatement() {
                 value={businessDetails.companyName}
                 onChange={(e) => setBusinessDetails({ ...businessDetails, companyName: e.target.value })}
                 placeholder="Enter company name"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="companyRegistrationId">Company Registration ID *</Label>
+              <Input
+                id="companyRegistrationId"
+                value={businessDetails.companyRegistrationId}
+                onChange={(e) => setBusinessDetails({ ...businessDetails, companyRegistrationId: e.target.value })}
+                placeholder="Enter provider registration ID"
               />
             </div>
 

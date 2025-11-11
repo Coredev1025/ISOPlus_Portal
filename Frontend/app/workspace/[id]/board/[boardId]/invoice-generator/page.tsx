@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, FileText, Search, Calendar, Filter, CheckCircle, Clock, DollarSign, BarChart3, FileDown, FileSpreadsheet, Receipt, Download, X, Package } from "lucide-react";
+import { ArrowLeft, FileText, Search, Calendar, Filter, CheckCircle, Clock, DollarSign, BarChart3, FileSpreadsheet, Receipt, X, Package } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useState, useEffect } from "react";
@@ -49,17 +49,6 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 
-interface ItemValue {
-  object: string;
-  data: any;
-  attribute: {
-    id: string;
-    name: string;
-    type: string;
-  };
-  deleted: boolean;
-}
-
 interface ServiceRecord {
   id: string;
   status: "invoiced" | "pending";
@@ -75,6 +64,7 @@ interface ServiceRecord {
   notes: string;
   service: string;
   serviceCategory: string;
+  invoiceNumber?: string;
 }
 
 interface InvoiceSummary {
@@ -84,24 +74,6 @@ interface InvoiceSummary {
   totalValue: number;
   totalGovSubsidy: number;
   totalParticipantContribution: number;
-}
-
-interface DatabaseItem {
-  _id: { $oid: string };
-  itemId: string;
-  data: {
-    id: string;
-    object: string;
-    values: ItemValue[];
-    folder_id: string;
-  };
-  status: string;
-  syncStatus: string;
-  workspaceId: string;
-  boardId: string;
-  createdAt: { $date: string };
-  updatedAt: { $date: string };
-  folderId: string;
 }
 import { DateRange } from "react-day-picker";
 
@@ -144,11 +116,8 @@ export default function InvoiceGenerator() {
     const fetchParticipants = async () => {
       try {
         const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator`;
-        const params = new URLSearchParams();
-        params.append('limit', '1000'); // Get all to extract unique participants
 
         const response = await axios.get(apiUrl, {
-          params: Object.fromEntries(params),
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
@@ -189,7 +158,6 @@ export default function InvoiceGenerator() {
 
         params.append('participant', selectedParticipant);
         params.append('status', 'pending'); // Only pending records
-        params.append('limit', '1000');
 
         // Parse selected month (format: "June 2025" or "2025-06")
         const [monthYear] = selectedMonth.split(' ');
@@ -373,11 +341,9 @@ export default function InvoiceGenerator() {
     try {
       setLoading(true);
 
-      // Fetch ALL filtered items (no pagination) for export
       const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoiceparticipanttax`;
       const params = new URLSearchParams();
 
-      // Apply same filters as the current view
       if (statusFilter !== 'all') {
         params.append('status', statusFilter);
       }
@@ -385,17 +351,20 @@ export default function InvoiceGenerator() {
         params.append('participant', participantFilter);
       }
       if (scheduledDateRange?.from) {
-        params.append('startDate', scheduledDateRange.from.toISOString());
+        const from = new Date(scheduledDateRange.from);
+        from.setHours(0, 0, 0, 0);
+        params.append('startDate', from.toISOString());
       }
       if (scheduledDateRange?.to) {
-        params.append('endDate', scheduledDateRange.to.toISOString());
+        const to = new Date(scheduledDateRange.to);
+        to.setHours(23, 59, 59, 999);
+        params.append('endDate', to.toISOString());
       }
 
       params.append('folderName', 'Master Plan,Shift Planning and Reporting');
 
-      // Request all items (no pagination limit)
       params.append('page', '1');
-      params.append('limit', '999999'); // Large number to get all items
+      params.append('limit', '999999');
 
       const response = await axios.get(apiUrl, {
         params: Object.fromEntries(params),
@@ -413,149 +382,74 @@ export default function InvoiceGenerator() {
         return;
       }
 
-      // Format according to SaH Payment Statement structure
-      const csvRows: string[] = [];
+      const headers = [
+        'Participant',
+        'Status',
+        'Scheduled Start',
+        'Worker',
+        'Unit',
+        'Quantity',
+        'Unit Price',
+        'Total Amount',
+        'Gov Subsidy',
+        'Participant Contribution',
+        'Service',
+        'Service Category',
+        'Invoice Number',
+        'Notes'
+      ];
 
-      // Payment Header Row
-      const paymentDate = new Date();
-      const paymentDateStr = paymentDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      const paymentDateISO = paymentDate.toISOString().split('T')[0];
-      const participantName = (participantFilter && participantFilter !== 'all') ? participantFilter : (allItems[0]?.participant || 'All Participants');
-
-      csvRows.push(
-        `Payment,' 100000000952 ',4060116249,89703,4040000001,${participantName},12345678912,${paymentDateStr},${paymentDateISO}T00:00:00Z,,,,,,,,,,,,,,,,,,,`
-      );
-
-      // Calculate totals
-      const totalAmount = allItems.reduce((sum, item) => sum + item.totalAmount, 0);
-      const totalGovSubsidy = allItems.reduce((sum, item) => sum + item.govSubsidy, 0);
-      const totalParticipantContribution = allItems.reduce((sum, item) => sum + item.participantContribution, 0);
-      const adjustments = 0; // Can be calculated if needed
-
-      // Summary Row
-      csvRows.push(
-        `Summary,0,0,0,${adjustments.toFixed(2)},${totalAmount.toFixed(2)},${(totalAmount + adjustments).toFixed(2)},0,,,,,,,,,,,,,,,,,,,,`
-      );
-
-      // Group items by category for SummaryCategoryItems
-      const categoryTotals: { [key: string]: { code: string; name: string; total: number } } = {};
-
-      allItems.forEach(item => {
-        // Determine category based on service/item type
-        // This is a simplified categorization - adjust based on your actual data structure
-        let categoryCode = 'ON'; // Default to Home support ongoing
-        let categoryName = 'Home support ongoing';
-
-        // You may need to adjust this logic based on your actual data
-        if (item.notes?.toLowerCase().includes('care management')) {
-          categoryCode = 'CM';
-          categoryName = 'Care management';
-        } else if (item.notes?.toLowerCase().includes('restorative')) {
-          categoryCode = 'RC';
-          categoryName = 'Restorative care pathway';
-        } else if (item.notes?.toLowerCase().includes('end of life')) {
-          categoryCode = 'EL';
-          categoryName = 'End of life pathway';
+      const escapeForCsv = (value: unknown) => {
+        if (value === null || value === undefined) {
+          return '""';
         }
-
-        if (!categoryTotals[categoryCode]) {
-          categoryTotals[categoryCode] = { code: categoryCode, name: categoryName, total: 0 };
-        }
-        categoryTotals[categoryCode].total += item.totalAmount;
-      });
-
-      // Add SummaryCategoryItems rows
-      const categoryOrder = ['AT', 'AS', 'CM', 'CU', 'EL', 'HC', 'HM', 'ON', 'RC'];
-      const categoryNames: { [key: string]: string } = {
-        'AT': 'Assistive technology',
-        'AS': 'Assistive technology specified needs',
-        'CM': 'Care management',
-        'CU': 'Commonwealth unspent funds',
-        'EL': 'End of life pathway',
-        'HC': 'Home care account',
-        'HM': 'Home modifications',
-        'ON': 'Home support ongoing',
-        'RC': 'Restorative care pathway'
+        const stringValue = String(value).replace(/"/g, '""');
+        return `"${stringValue}"`;
       };
 
-      categoryOrder.forEach(code => {
-        const total = categoryTotals[code]?.total || 0;
-        csvRows.push(
-          `SummaryCategoryItems,${code},${categoryNames[code]},${total.toFixed(2)},,,,,,,,,,,,,,,,,,,,,,,,`
-        );
-      });
-
-      // Add PaymentItems and PaymentItemBudget rows
-      allItems.forEach((item, index) => {
-        const itemId = `1000${String(index + 1).padStart(6, '0')}`;
-        const invoiceRef = '000001';
-        const phoneNumber = '0413269922'; // Placeholder
-        const firstName = item.participant.split(' ')[0] || '';
-        const lastName = item.participant.split(' ').slice(1).join(' ') || '';
-        const serviceDate = item.scheduledStart ? new Date(item.scheduledStart).toISOString().split('T')[0].replace(/-/g, '') : '20250721';
-
-        const serviceGroup = 'SERG-0001';
-        const serviceGroupName = 'Home Support';
-        const serviceType = 'SERT-0001';
-        const serviceTypeName = 'Domestic assistance';
-        const serviceName = 'SERV-0001';
-        const serviceNameDesc = item.notes || 'General house cleaning';
-        const itemCode = '';
-        const itemName = '';
-
-        const unitMap: { [key: string]: string } = {
-          'Hours': 'hours',
-          'Meal': 'meal',
-          'Item': 'item',
-          'Trip': 'trip',
-          'Voucher': 'voucher',
-          'Bill': 'bill'
-        };
-        const unit = unitMap[item.unit] || 'hours';
-
-        const quantity = item.quantity;
-        const unitPrice = item.unitPrice;
-        const totalAmt = item.totalAmount;
-        const adjustment = 0;
-        const unspent = 0;
-        const adjustment2 = -(totalAmt * 0.16); // Example adjustment
-        const additionalPayment = 0;
-        const netPayment = totalAmt + adjustment2;
-
-        // PaymentItems row
-        csvRows.push(
-          `PaymentItems,${itemId},${invoiceRef},,,${phoneNumber},${firstName},${lastName},${serviceDate},${serviceGroup},${serviceGroupName},${serviceType},${serviceTypeName},${serviceName},${serviceNameDesc},${itemCode},${itemName},,,${quantity},${unitPrice},${unit},${totalAmt.toFixed(2)},${adjustment},${unspent},${adjustment2.toFixed(2)},${additionalPayment},${netPayment.toFixed(2)}`
-        );
-
-        // Determine category for budget allocation
-        let categoryCode = 'ON';
-        if (item.notes?.toLowerCase().includes('care management')) {
-          categoryCode = 'CM';
-        } else if (item.notes?.toLowerCase().includes('restorative')) {
-          categoryCode = 'RC';
-        } else if (item.notes?.toLowerCase().includes('end of life')) {
-          categoryCode = 'EL';
+      const formatDateForCsv = (dateString: string | null) => {
+        if (!dateString) {
+          return '';
         }
+        const date = new Date(dateString);
+        if (Number.isNaN(date.getTime())) {
+          return '';
+        }
+        return date.toISOString();
+      };
 
-        // PaymentItemBudget row
+      const csvRows: string[] = [headers.join(',')];
+
+      allItems.forEach((item) => {
         csvRows.push(
-          `PaymentItemBudget,${categoryCode},${categoryNames[categoryCode] || 'Home support ongoing'},-${totalAmt.toFixed(2)},,,,,,,,,,,,,,,,,,,,,,,,`
+          [
+            escapeForCsv(item.participant),
+            escapeForCsv(item.status),
+            escapeForCsv(formatDateForCsv(item.scheduledStart)),
+            escapeForCsv(item.worker),
+            escapeForCsv(item.unit),
+            escapeForCsv(item.quantity),
+            escapeForCsv(item.unitPrice),
+            escapeForCsv(item.totalAmount),
+            escapeForCsv(item.govSubsidy),
+            escapeForCsv(item.participantContribution),
+            escapeForCsv(item.service),
+            escapeForCsv(item.serviceCategory),
+            escapeForCsv(item.invoiceNumber || ''),
+            escapeForCsv(item.notes ? item.notes.replace(/<[^>]*>/g, '') : '')
+          ].join(',')
         );
       });
 
-      // Add Notes row if any
-      csvRows.push(
-        'Notes,GN,SaH payment statement export,,,,,,,,,,,,,,,,,,,,,,,,,,'
-      );
-
-      // Create CSV content
       const csvContent = csvRows.join('\n');
 
-      // Download CSV
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
-      const fileName = `SaH_Payment_Statement_${participantName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
+      const participantName = participantFilter && participantFilter !== 'all'
+        ? participantFilter.replace(/\s+/g, '_')
+        : 'all-participants';
+      const fileName = `invoice-records_${participantName}_${new Date().toISOString().split('T')[0]}.csv`;
       link.setAttribute('href', url);
       link.setAttribute('download', fileName);
       link.style.visibility = 'hidden';
@@ -570,11 +464,6 @@ export default function InvoiceGenerator() {
       showErrorToast('Failed to export CSV', { description: err.message });
       setLoading(false);
     }
-  };
-
-  const handleExportPDF = () => {
-    console.log('Export to PDF');
-    showInfoToast('PDF export will be added after invoice flow.');
   };
 
   // Open modal for participant tax invoice
@@ -733,14 +622,6 @@ export default function InvoiceGenerator() {
                 >
                   <FileSpreadsheet className="h-4 w-4" />
                   Export to CSV
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={handleExportPDF}
-                  className="gap-2"
-                >
-                  <FileDown className="h-4 w-4" />
-                  Export to PDF
                 </Button>
                 <Button
                   className="gap-2"
@@ -958,7 +839,7 @@ export default function InvoiceGenerator() {
                         </span>
                       </TableCell>
                       <TableCell className="font-mono">
-                        {record.status === 'invoiced' ? `INV-${new Date().getFullYear()}-${String(record.id).padStart(3, '0')}` : '-'}
+                        {record.invoiceNumber && record.invoiceNumber.trim() !== '' ? record.invoiceNumber : '-'}
                       </TableCell>
                     </TableRow>
                   ))
@@ -1108,7 +989,7 @@ export default function InvoiceGenerator() {
                     <div className="space-y-2">
                       {eligibleRecords.map((record) => (
                         <div 
-                          key={record.id} 
+                          key={record.id}
                           className="flex items-start gap-3 py-2 border-b last:border-0 hover:bg-muted/50 rounded px-2 cursor-pointer"
                           onClick={() => handleToggleItem(record.id)}
                         >
@@ -1120,7 +1001,7 @@ export default function InvoiceGenerator() {
                           />
                           <div className="flex-1 flex justify-between items-center">
                             <div className="flex-1">
-                              <p className="font-medium">{record?.service || record?.notes || 'Service'}</p>
+                              <p className="font-medium">{record?.serviceCategory || record?.service || record?.notes || 'Service'}</p>
                               <p className="text-xs text-muted-foreground">
                                 {record.scheduledStart ? formatDate(record.scheduledStart) : 'N/A'} • {record.quantity} {record.unit}
                               </p>
