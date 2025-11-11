@@ -1914,6 +1914,120 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
     return [participantsProfileValues, homeSupportValues, assistiveTechnologyShortTermValues, assistiveTechnologyOngoingValues, homeModificationValues, healthProfessionalValues, wraparoundValues];
 }
 
+/**
+ * Fetch budget data from participant profile funding streams
+ * Returns budget information for all funding categories
+ */
+export async function getMonthlyStatementBudgetData(workspaceId, boardId, participantProfileItemId) {
+    const budgetData = {
+        homeSupport: null,
+        restorativeCare: null,
+        endOfLife: null,
+        assistiveTechShortTerm: null,
+        assistiveTechOngoing: null,
+        homeModification: null
+    };
+
+    if (!participantProfileItemId) {
+        return budgetData;
+    }
+
+    try {
+        const references = await getReferences(workspaceId, boardId, participantProfileItemId);
+        if (!references || !references.data || references.data.length === 0) {
+            return budgetData;
+        }
+
+        for (const reference of references.data) {
+            const attribute = await getAttribute(workspaceId, boardId, reference.attribute_id);
+            if (!attribute) continue;
+
+            const fundingStreamItem = await getItemValues(workspaceId, boardId, reference.to_item_id);
+            if (!fundingStreamItem || !fundingStreamItem.values) continue;
+
+            const values = fundingStreamItem.values;
+            const getValue = (attrName) => {
+                const val = values.find(v => v.attribute.name === attrName);
+                if (!val) return null;
+                const data = val.data;
+                // Handle date strings
+                if (attrName.includes('Date') && data) {
+                    return data.toString();
+                }
+                // Handle numbers
+                if (typeof data === 'number') return data;
+                if (typeof data === 'string' && data.includes('$')) {
+                    return parseFloat(data.replace(/[^0-9.-]/g, '')) || 0;
+                }
+                return parseFloat(data) || 0;
+            };
+
+            switch (attribute.name) {
+                case 'Home Support (HS)':
+                case 'Home Support':
+                    budgetData.homeSupport = {
+                        totalAvailableBudget: getValue('Total Available Budget for Home Support ($)') || 
+                                           getValue('Remaining Home Support Balance as at the End of the Month ($)') || 0,
+                        remainingBalance: getValue('Remaining Home Support Balance as at the End of the Month ($)') || 0,
+                        fundingEndDate: getValue('Funding End Date') || null
+                    };
+                    break;
+                case 'Restorative Care Pathway':
+                case 'Restorative Care':
+                    budgetData.restorativeCare = {
+                        totalAvailableBudget: getValue('Total Available Budget for Restorative Care ($)') || 0,
+                        remainingBalance: getValue('Remaining Balance for Allocation Period ($)') || 0,
+                        fundingEndDate: getValue('Funding End Date') || null
+                    };
+                    break;
+                case 'End-of-Life Pathway':
+                case 'End-of-Life Care':
+                case 'End of Life':
+                    budgetData.endOfLife = {
+                        totalAvailableBudget: getValue('Total Available Budget for End-of-Life Care ($)') || 0,
+                        remainingBalance: getValue('Remaining Balance for Allocation Period ($)') || 0,
+                        fundingEndDate: getValue('Funding End Date') || null
+                    };
+                    break;
+                case 'Assistive Technology (AT) - Short Term':
+                case 'Assistive Technology - Short-term':
+                    budgetData.assistiveTechShortTerm = {
+                        totalAvailableBudget: getValue('Total Available Budget for Assistive Technology - Short-term ($)') || 0,
+                        remainingBalance: getValue('Remaining AT - Short-term Balance for Allocation Period ($)') || 0,
+                        fundingEndDate: getValue('Funding End Date') || null,
+                        committedFunds: getValue('Committed AT Short-term Funds - to be delivered ($-)') || 0
+                    };
+                    break;
+                case 'Assistive Technology (AT) - Ongoing':
+                case 'Assistive Technology - Ongoing':
+                    budgetData.assistiveTechOngoing = {
+                        totalAvailableBudget: getValue('Total Available Budget for Assistive Technology - Ongoing ($)') || 0,
+                        remainingBalance: getValue('Remaining AT - Ongoing Balance for Allocation Period ($)') || 0,
+                        fundingEndDate: getValue('Funding End Date') || null,
+                        committedFunds: getValue('Committed AT Ongoing Funds - to be delivered ($-)') || 0
+                    };
+                    break;
+                case 'Home Modification (HM)':
+                case 'Home Modification':
+                    budgetData.homeModification = {
+                        totalAvailableBudget: getValue('Total Available Budget for Home Modification ($)') || 0,
+                        remainingBalance: getValue('Remaining HM Balance for Allocation Period ($)') || 0,
+                        fundingEndDate: getValue('Funding End Date') || null,
+                        committedFunds: getValue('Committed HM Funds - to be delivered ($-)') || 0
+                    };
+                    break;
+            }
+        }
+    } catch (err) {
+        error('ISO+™ Service', 'Error fetching budget data', { 
+            message: err.message,
+            participantProfileItemId 
+        });
+    }
+
+    return budgetData;
+}
+
 export async function getAgeCareMasterPlanReferencedItems(workspaceId, boardId, itemId) {
     let servicePlanValues = null, cancellationTypeValues = null, participantProfileValues = null;
 

@@ -73,6 +73,8 @@ interface ServiceRecord {
   govSubsidy: number;
   participantContribution: number;
   notes: string;
+  service: string;
+  serviceCategory: string;
 }
 
 interface InvoiceSummary {
@@ -80,6 +82,8 @@ interface InvoiceSummary {
   invoiced: number;
   pending: number;
   totalValue: number;
+  totalGovSubsidy: number;
+  totalParticipantContribution: number;
 }
 
 interface DatabaseItem {
@@ -112,7 +116,9 @@ export default function InvoiceGenerator() {
     totalRecords: 0,
     invoiced: 0,
     pending: 0,
-    totalValue: 0
+    totalValue: 0,
+    totalGovSubsidy: 0,
+    totalParticipantContribution: 0
   });
   const [participantFilter, setParticipantFilter] = useState("all");
   const [scheduledDateRange, setScheduledDateRange] = useState<DateRange | undefined>();
@@ -137,9 +143,8 @@ export default function InvoiceGenerator() {
   useEffect(() => {
     const fetchParticipants = async () => {
       try {
-        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/participantInvoiceTax`;
+        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator`;
         const params = new URLSearchParams();
-        params.append('folderName', 'Master Plan,Shift Planning and Reporting');
         params.append('limit', '1000'); // Get all to extract unique participants
 
         const response = await axios.get(apiUrl, {
@@ -179,12 +184,11 @@ export default function InvoiceGenerator() {
 
       setLoadingEligible(true);
       try {
-        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/participantInvoiceTax`;
+        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator`;
         const params = new URLSearchParams();
 
         params.append('participant', selectedParticipant);
         params.append('status', 'pending'); // Only pending records
-        params.append('folderName', 'Master Plan,Shift Planning and Reporting');
         params.append('limit', '1000');
 
         // Parse selected month (format: "June 2025" or "2025-06")
@@ -226,8 +230,7 @@ export default function InvoiceGenerator() {
       setLoading(true);
       setError(null);
       try {
-        // Build API URL
-        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/participantInvoiceTax`;
+        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator`;
 
         // Build query parameters
         const params = new URLSearchParams();
@@ -260,8 +263,6 @@ export default function InvoiceGenerator() {
         params.append('page', currentPage.toString());
         params.append('limit', ITEMS_PER_PAGE.toString());
 
-        params.append('folderName', 'Master Plan,Shift Planning and Reporting');
-
         // Fetch items from the backend
         const response = await axios.get(apiUrl, {
           params: Object.fromEntries(params),
@@ -282,7 +283,9 @@ export default function InvoiceGenerator() {
           total = 0,
           invoiced = 0,
           pending = 0,
-          totalAmount = 0
+          totalAmount = 0,
+          totalGovSubsidy = 0,
+          totalParticipantContribution = 0
         } = response.data;
 
         if (!Array.isArray(items)) {
@@ -299,7 +302,9 @@ export default function InvoiceGenerator() {
           totalRecords: total,
           invoiced: invoiced,
           pending: pending,
-          totalValue: totalAmount
+          totalValue: totalAmount,
+          totalGovSubsidy: totalGovSubsidy,
+          totalParticipantContribution: totalParticipantContribution
         });
       } catch (err: any) {
         const errorMessage = err.response?.data?.message || err.message || 'An error occurred while fetching data';
@@ -331,12 +336,12 @@ export default function InvoiceGenerator() {
   // Filter service records - now only for local filtering
   const filteredRecords = serviceRecords;
 
-  // Calculate filtered summary
+  // Use summary data from backend response (already filtered and aggregated)
   const filteredSummary = {
     totalRecords: summary.totalRecords,
-    totalAmount: filteredRecords.reduce((sum, record) => sum + record.totalAmount, 0),
-    totalGovSubsidy: filteredRecords.reduce((sum, record) => sum + record.govSubsidy, 0),
-    totalParticipantContribution: filteredRecords.reduce((sum, record) => sum + record.participantContribution, 0)
+    totalAmount: summary.totalValue,
+    totalGovSubsidy: summary.totalGovSubsidy,
+    totalParticipantContribution: summary.totalParticipantContribution
   };
 
   // Pagination
@@ -369,7 +374,7 @@ export default function InvoiceGenerator() {
       setLoading(true);
 
       // Fetch ALL filtered items (no pagination) for export
-      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/participantInvoiceTax`;
+      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoiceparticipanttax`;
       const params = new URLSearchParams();
 
       // Apply same filters as the current view
@@ -1115,7 +1120,7 @@ export default function InvoiceGenerator() {
                           />
                           <div className="flex-1 flex justify-between items-center">
                             <div className="flex-1">
-                              <p className="font-medium">{record.notes || 'Service'}</p>
+                              <p className="font-medium">{record?.service || record?.notes || 'Service'}</p>
                               <p className="text-xs text-muted-foreground">
                                 {record.scheduledStart ? formatDate(record.scheduledStart) : 'N/A'} • {record.quantity} {record.unit}
                               </p>
