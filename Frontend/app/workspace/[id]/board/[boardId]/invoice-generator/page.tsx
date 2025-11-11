@@ -143,9 +143,8 @@ export default function InvoiceGenerator() {
   useEffect(() => {
     const fetchParticipants = async () => {
       try {
-        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoiceparticipanttax`;
+        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator`;
         const params = new URLSearchParams();
-        params.append('folderName', 'Master Plan,Shift Planning and Reporting');
         params.append('limit', '1000'); // Get all to extract unique participants
 
         const response = await axios.get(apiUrl, {
@@ -185,12 +184,11 @@ export default function InvoiceGenerator() {
 
       setLoadingEligible(true);
       try {
-        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoiceparticipanttax`;
+        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator`;
         const params = new URLSearchParams();
 
         params.append('participant', selectedParticipant);
         params.append('status', 'pending'); // Only pending records
-        params.append('folderName', 'Master Plan,Shift Planning and Reporting');
         params.append('limit', '1000');
 
         // Parse selected month (format: "June 2025" or "2025-06")
@@ -232,8 +230,7 @@ export default function InvoiceGenerator() {
       setLoading(true);
       setError(null);
       try {
-        // Build API URL
-        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoiceparticipanttax`;
+        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator`;
 
         // Build query parameters
         const params = new URLSearchParams();
@@ -265,8 +262,6 @@ export default function InvoiceGenerator() {
         // Pagination
         params.append('page', currentPage.toString());
         params.append('limit', ITEMS_PER_PAGE.toString());
-
-        params.append('folderName', 'Master Plan,Shift Planning and Reporting');
 
         // Fetch items from the backend
         const response = await axios.get(apiUrl, {

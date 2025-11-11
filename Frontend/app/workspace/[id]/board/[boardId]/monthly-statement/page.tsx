@@ -37,14 +37,25 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 
 interface ServiceRecord {
   id: string;
   participant: string;
+  participantName?: string;
   scheduledStart: string | null;
+  scheduledServiceDate?: string | null;
   actualStart: string | null;
   actualEnd: string | null;
+  serviceDeliveryDate?: string | null;
   worker: string;
   unit: string;
   quantity: number;
@@ -62,18 +73,48 @@ interface ServiceRecord {
   committedAtHmForDelivery?: number;
 }
 
+interface BudgetRecord {
+  id: string;
+  categoryCode: string;
+  folderName?: string;
+  participantName?: string;
+  participantProfileId?: string | null;
+  month?: string | null;
+  year?: string | null;
+  quarter?: string | null;
+  fundingStartDate?: string | null;
+  fundingEndDate?: string | null;
+  totalAvailableBudget: number;
+  availableFundStart?: number;
+  quarterlyAdjustment?: number;
+  primarySupplementAmount?: number;
+  carryoverFunding?: number;
+  unspentReturned?: number;
+  commonwealthUnspent?: number;
+  providerUnspent?: number;
+  participantUnspent?: number;
+  previousMonthSpending?: number;
+  deliveredAmount: number;
+  deliveredAmountRaw?: number;
+  adjustmentAmount: number;
+  remainingBalance: number;
+  fundClassification?: string | null;
+  fundAmount?: number;
+  fund?: string;
+  committedFunds?: number;
+  fundingStreamId?: string | null;
+}
+
 interface BudgetCategory {
   name: string;
   code: string;
   availableFunds: number;
-  expenditure: number;
   remainingBudget: number;
-  services: ServiceRecord[];
+  services?: ServiceRecord[];
   fundingEndDate?: string;
   committedFunds?: number;
   quarterStartMonth?: string;
   quarterEndMonth?: string;
-  availableBalanceNextQuarter?: number;
   serviceDeliveredAmount?: number;
   govSubsidyAmount?: number;
   participantContributionAmount?: number;
@@ -118,6 +159,15 @@ interface BusinessDetails {
   postcode: string;
 }
 
+const BUDGET_CATEGORY_LABELS: Record<string, string> = {
+  HSQ: 'Home Support Quarterly Budget',
+  RCP: 'Restorative Care Pathway Budget',
+  EOL: 'End-of-Life Pathway Budget',
+  ATS: 'Assistive Technology - Short-term Budget',
+  ATO: 'Assistive Technology - Ongoing Budget',
+  HMB: 'Home Modification Budget',
+};
+
 export default function MonthlyStatement() {
   const router = useRouter();
   const pathname = usePathname();
@@ -126,7 +176,13 @@ export default function MonthlyStatement() {
   
   const [loading, setLoading] = useState(false);
   const [loadingParticipants, setLoadingParticipants] = useState(false);
+  const [loadingBudgetItems, setLoadingBudgetItems] = useState(false);
+  const [loadingServiceItems, setLoadingServiceItems] = useState(false);
   const [statementData, setStatementData] = useState<MonthlyStatementData | null>(null);
+  const [budgetItems, setBudgetItems] = useState<BudgetRecord[]>([]);
+  const [serviceItems, setServiceItems] = useState<ServiceRecord[]>([]);
+  const [budgetPagination, setBudgetPagination] = useState({ page: 1, limit: 10, total: 0 });
+  const [servicePagination, setServicePagination] = useState({ page: 1, limit: 10, total: 0 });
   const [selectedParticipant, setSelectedParticipant] = useState<string>("");
   const [selectedMonth, setSelectedMonth] = useState<string>("");
   const [selectedYear, setSelectedYear] = useState<string>("");
@@ -172,14 +228,20 @@ export default function MonthlyStatement() {
       
       setLoadingParticipants(true);
       try {
-        const data = await fetchMonthlyStatementItems(id, boardId, {
-          folderName: 'Master Plan,Shift Planning and Reporting',
-          limit: 1000,
-        });
+        const response = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/monthly-statement`,
+          {
+            params: { serviceLimit: 1000 },
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            }
+          }
+        );
 
-        if (data?.items) {
+        if (response.data?.serviceItems?.items) {
           const participantSet = new Set<string>(
-            data.items
+            response.data.serviceItems.items
               .map((item: ServiceRecord) => item.participant)
               .filter((p: string) => p && p.trim() !== '')
           );
@@ -252,6 +314,70 @@ export default function MonthlyStatement() {
     }
   };
 
+  const handleServicePageChange = (page: number) => {
+    if (loadingServiceItems) return;
+    const totalPages = Math.max(1, Math.ceil(servicePagination.total / servicePagination.limit));
+    if (page < 1 || page > totalPages || page === servicePagination.page) return;
+    fetchServiceItems(page, servicePagination.limit);
+  };
+
+  const serviceTotalPages = Math.max(1, Math.ceil((servicePagination.total || 0) / (servicePagination.limit || 1)));
+
+  const fetchServiceItems = async (page: number = 1, limit: number = servicePagination.limit) => {
+    if (!selectedParticipant || !selectedMonth || !selectedYear) {
+      return;
+    }
+
+    setLoadingServiceItems(true);
+    try {
+      const monthNum = parseInt(selectedMonth);
+      const yearNum = parseInt(selectedYear);
+      const monthDate = new Date(yearNum, monthNum - 1, 1);
+      const startDate = startOfMonth(monthDate);
+      const endDate = new Date(endOfMonth(monthDate));
+      endDate.setHours(23, 59, 59, 999);
+
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/monthly-statement`,
+        {
+          params: {
+            participant: selectedParticipant,
+            startDate: startDate.toISOString(),
+            endDate: endDate.toISOString(),
+            month: selectedMonth,
+            year: selectedYear,
+            servicePage: page,
+            serviceLimit: limit,
+          },
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
+        }
+      );
+
+      if (response.data?.serviceItems) {
+        const serviceData = response.data.serviceItems;
+        setServiceItems(serviceData.items as ServiceRecord[]);
+        setServicePagination({
+          page: serviceData.page || page,
+          limit: serviceData.limit || limit,
+          total: serviceData.total || 0,
+        });
+      } else {
+        setServiceItems([]);
+        setServicePagination({ page: 1, limit, total: 0 });
+      }
+    } catch (err) {
+      console.error('Error fetching service items:', err);
+      showErrorToast('Failed to fetch service items');
+      setServiceItems([]);
+      setServicePagination({ page: 1, limit, total: 0 });
+    } finally {
+      setLoadingServiceItems(false);
+    }
+  };
+
   // Categorize services into budget categories using data from API
   const categorizeServices = (
     services: ServiceRecord[], 
@@ -262,20 +388,21 @@ export default function MonthlyStatement() {
     const quarterMonths = getQuarterMonths(monthNumber);
     const defaultFundingEndDate = new Date(parseInt(year), 11, 31).toISOString(); // End of year
     
-    // If budget categories are provided from API, use them and just assign services
+    // If budget categories are provided from API, use them directly (services are already categorized in backend)
     if (budgetCategoriesFromAPI && budgetCategoriesFromAPI.length > 0) {
       // Create a map for quick lookup
       const categoryMap = new Map<string, BudgetCategory>();
       budgetCategoriesFromAPI.forEach(cat => {
-        // Initialize services array while preserving backend-calculated figures
+        // Use the category data from API, ensuring services array exists
         const category: BudgetCategory = {
           ...cat,
-          services: [],
+          services: cat.services || [],
         };
         categoryMap.set(cat.code, category);
       });
 
-      // Categorize each service based on funding source
+      // Optionally categorize services if they need to be assigned to categories
+      // (Backend should already have calculated totals, but we can still assign individual services for display)
       services.forEach(service => {
         const fundingSource = (service.fundingSource || '').toLowerCase();
         const serviceCategory = (service.serviceCategory || '').toLowerCase();
@@ -305,6 +432,9 @@ export default function MonthlyStatement() {
 
         const category = categoryMap.get(categoryCode);
         if (category) {
+          if (!category.services) {
+            category.services = [];
+          }
           category.services.push(service);
         }
       });
@@ -323,7 +453,6 @@ export default function MonthlyStatement() {
         name: `Home Support Quarterly Budget ${quarterMonths.start}-${quarterMonths.end} ${year}`,
         code: "HSQ",
         availableFunds: 0,
-        expenditure: 0,
         remainingBudget: 0,
         services: [],
         quarterStartMonth: quarterMonths.start,
@@ -339,7 +468,6 @@ export default function MonthlyStatement() {
         name: "Restorative Care Pathway Budget",
         code: "RCP",
         availableFunds: 0,
-        expenditure: 0,
         remainingBudget: 0,
         services: [],
         fundingEndDate: defaultFundingEndDate,
@@ -353,7 +481,6 @@ export default function MonthlyStatement() {
         name: "End-of-Life Pathway",
         code: "EOL",
         availableFunds: 0,
-        expenditure: 0,
         remainingBudget: 0,
         services: [],
         fundingEndDate: defaultFundingEndDate,
@@ -367,7 +494,6 @@ export default function MonthlyStatement() {
         name: "Assistive Technology - Short-term Budget",
         code: "ATS",
         availableFunds: 0,
-        expenditure: 0,
         remainingBudget: 0,
         services: [],
         fundingEndDate: defaultFundingEndDate,
@@ -382,7 +508,6 @@ export default function MonthlyStatement() {
         name: "Assistive Technology - Ongoing Budget",
         code: "ATO",
         availableFunds: 0,
-        expenditure: 0,
         remainingBudget: 0,
         services: [],
         fundingEndDate: defaultFundingEndDate,
@@ -397,7 +522,6 @@ export default function MonthlyStatement() {
         name: "Home Modification Budget",
         code: "HMB",
         availableFunds: 0,
-        expenditure: 0,
         remainingBudget: 0,
         services: [],
         fundingEndDate: defaultFundingEndDate,
@@ -409,6 +533,61 @@ export default function MonthlyStatement() {
         serviceCount: 0,
       },
     ];
+  };
+
+  // Fetch budget items from budget folders
+  const fetchBudgetItems = async (page: number = 1, limit: number = 10) => {
+    if (!selectedParticipant || !selectedMonth || !selectedYear) {
+      return;
+    }
+
+    setLoadingBudgetItems(true);
+    try {
+      const monthNum = parseInt(selectedMonth);
+      const yearNum = parseInt(selectedYear);
+      const monthDate = new Date(yearNum, monthNum - 1, 1);
+      const startDate = startOfMonth(monthDate);
+      const endDate = new Date(endOfMonth(monthDate));
+      endDate.setHours(23, 59, 59, 999);
+
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/monthly-statement`,
+        {
+          params: {
+            participant: selectedParticipant,
+            startDate: startDate.toISOString(),
+            endDate: endDate.toISOString(),
+            month: selectedMonth,
+            year: selectedYear,
+            budgetPage: page,
+            budgetLimit: limit
+          },
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
+        }
+      );
+
+      if (response.data?.budgetItems) {
+        setBudgetItems(response.data.budgetItems.items as BudgetRecord[]);
+        setBudgetPagination({
+          page: response.data.budgetItems.page || page,
+          limit: response.data.budgetItems.limit || limit,
+          total: response.data.budgetItems.total || 0
+        });
+      } else {
+        setBudgetItems([]);
+        setBudgetPagination({ page: 1, limit: 10, total: 0 });
+      }
+    } catch (err) {
+      console.error('Error fetching budget items:', err);
+      showErrorToast('Failed to fetch budget items');
+      setBudgetItems([]);
+      setBudgetPagination({ page: 1, limit: 10, total: 0 });
+    } finally {
+      setLoadingBudgetItems(false);
+    }
   };
 
   // Fetch statement data
@@ -441,6 +620,7 @@ export default function MonthlyStatement() {
     }
 
     setLoading(true);
+    setLoadingServiceItems(true);
     try {
       // Calculate date range for selected month using date-fns for better timezone handling
       const monthDate = new Date(yearNum, monthNum - 1, 1);
@@ -450,75 +630,121 @@ export default function MonthlyStatement() {
       }
       const startDate = startOfMonth(monthDate);
       const endDate = new Date(endOfMonth(monthDate));
-      // Ensure endDate includes the full day (23:59:59.999)
       endDate.setHours(23, 59, 59, 999);
 
-      const data = await fetchMonthlyStatementItems(id, boardId, {
-        participant: selectedParticipant,
-        folderName: 'Master Plan,Shift Planning and Reporting',
-        limit: 1000,
-        // deliveryStartDate: startDate.toISOString(),
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
-        // deliveryEndDate: endDate.toISOString(),
-        month: selectedMonth,
-        year: selectedYear,
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/monthly-statement`,
+        {
+          params: {
+            participant: selectedParticipant,
+            startDate: startDate.toISOString(),
+            endDate: endDate.toISOString(),
+            month: selectedMonth,
+            year: selectedYear,
+            budgetPage: budgetPagination.page,
+            budgetLimit: budgetPagination.limit,
+            servicePage: servicePagination.page,
+            serviceLimit: servicePagination.limit
+          },
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
+        }
+      );
+
+      const data = response.data;
+
+      // Handle budget items
+      if (data?.budgetItems) {
+        setBudgetItems(data.budgetItems.items as BudgetRecord[]);
+        setBudgetPagination({
+          page: data.budgetItems.page || budgetPagination.page,
+          limit: data.budgetItems.limit || budgetPagination.limit,
+          total: data.budgetItems.total || 0
+        });
+      } else {
+        setBudgetItems([]);
+      }
+
+      // Handle service items
+      const services: ServiceRecord[] = data?.serviceItems?.items || [];
+      if (data?.serviceItems) {
+        setServiceItems(services);
+        setServicePagination({
+          page: data.serviceItems.page || servicePagination.page,
+          limit: data.serviceItems.limit || servicePagination.limit,
+          total: data.serviceItems.total || 0
+        });
+      } else {
+        setServiceItems([]);
+        setServicePagination({ page: 1, limit: 10, total: 0 });
+      }
+
+      // Derive summary figures (prefer backend-provided values)
+      const fallbackSummary = {
+        totalServices: services.length,
+        totalHours: services.reduce((sum, s) => sum + (s.unit === 'Hour' ? s.quantity : 0), 0),
+        totalAmount: services.reduce((sum, s) => sum + (s.totalAmount || 0), 0),
+        govSubsidy: services.reduce((sum, s) => sum + (s.govSubsidy || 0), 0),
+        participantContribution: services.reduce((sum, s) => sum + (s.participantContribution || 0), 0),
+      };
+
+      const backendSummary = data?.summary;
+      const totalServices = backendSummary?.totalServices ?? fallbackSummary.totalServices;
+      const totalAmount = backendSummary?.totalAmount ?? fallbackSummary.totalAmount;
+
+      const summary = {
+        totalServices,
+        totalHours: backendSummary?.totalHours ?? fallbackSummary.totalHours,
+        totalAmount,
+        govSubsidy: backendSummary?.govSubsidy ?? fallbackSummary.govSubsidy,
+        participantContribution: backendSummary?.participantContribution ?? fallbackSummary.participantContribution,
+        averageServiceCost:
+          backendSummary?.averageServiceCost ??
+          (totalServices > 0 ? totalAmount / totalServices : 0),
+      };
+
+      const effectiveMonthNumber = (data?.monthNumber ?? selectedMonth).toString();
+      const effectiveYear = (data?.year ?? selectedYear).toString();
+      const monthLabel =
+        data?.month ??
+        months.find((m) => m.value === effectiveMonthNumber)?.label ??
+        effectiveMonthNumber;
+      const participantName = data?.participant ?? selectedParticipant;
+      const participantProfile = data?.participantProfile ?? participantName;
+
+      const budgetCategories = categorizeServices(
+        services,
+        data?.budgetCategories,
+        effectiveMonthNumber,
+        effectiveYear
+      );
+
+      setStatementData({
+        participant: participantName,
+        participantProfile,
+        month: monthLabel,
+        year: effectiveYear,
+        monthNumber: effectiveMonthNumber,
+        services,
+        budgetCategories,
+        summary,
+        participantAddress: data?.participantAddress,
+        participantSuburb: data?.participantSuburb,
+        participantState: data?.participantState,
+        participantPostcode: data?.participantPostcode,
+        myAgedCareIdNumber: data?.myAgedCareIdNumber,
+        providerId: data?.providerId,
       });
 
-      if (data?.items) {
-        const services: ServiceRecord[] = data.items;
-        
-        // Calculate summary
-        const totalServices = services.length;
-        const totalHours = services.reduce((sum, s) => sum + (s.unit === 'Hour' ? s.quantity : 0), 0);
-        const totalAmount = services.reduce((sum, s) => sum + (s.totalAmount || 0), 0);
-        const govSubsidy = services.reduce((sum, s) => sum + (s.govSubsidy || 0), 0);
-        const participantContribution = services.reduce((sum, s) => sum + (s.participantContribution || 0), 0);
-        const averageServiceCost = totalServices > 0 ? totalAmount / totalServices : 0;
-
-        const monthLabel = months.find(m => m.value === selectedMonth)?.label || selectedMonth;
-        
-        // Use budget categories from API response, or calculate them
-        // Type guard for budget categories
-        const budgetCategoriesFromAPI = Array.isArray(data.budgetCategories) 
-          ? (data.budgetCategories as BudgetCategory[])
-          : undefined;
-        const budgetCategories = categorizeServices(services, budgetCategoriesFromAPI, selectedMonth, selectedYear);
-
-        // Get participant profile data from API if available
-        const participantProfileData = data.participantProfile || {};
-
-        setStatementData({
-          participant: selectedParticipant,
-          participantProfile: selectedParticipant,
-          month: monthLabel,
-          year: selectedYear,
-          monthNumber: selectedMonth,
-          services,
-          budgetCategories,
-          summary: {
-            totalServices,
-            totalHours,
-            totalAmount,
-            govSubsidy,
-            participantContribution,
-            averageServiceCost,
-          },
-          participantAddress: participantProfileData.address,
-          participantSuburb: participantProfileData.suburb,
-          participantState: participantProfileData.state,
-          participantPostcode: participantProfileData.postcode,
-          myAgedCareIdNumber: participantProfileData.myAgedCareIdNumber,
-          providerId: participantProfileData.providerId,
-        });
-        
-        showSuccessToast('Statement loaded successfully');
-      }
+      showSuccessToast('Statement loaded successfully');
     } catch (err) {
       console.error('Error fetching statement data:', err);
       showErrorToast('Failed to fetch statement data');
     } finally {
       setLoading(false);
+      setLoadingServiceItems(false);
     }
   };
 
@@ -631,9 +857,21 @@ export default function MonthlyStatement() {
   };
 
   // Format date
-  const formatDate = (dateString: string | null) => {
+  const formatDate = (dateString: string | null | undefined) => {
     if (!dateString) return 'N/A';
     try {
+      // Handle date-only strings (YYYY-MM-DD) by adding time component if needed
+      let dateStr = dateString;
+      if (dateStr && !dateStr.includes('T') && !dateStr.includes(' ')) {
+        // It's a date-only string, parse it directly
+        const parts = dateStr.split('-');
+        if (parts.length === 3) {
+          const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+          if (!isNaN(date.getTime())) {
+            return format(date, 'dd/MM/yyyy');
+          }
+        }
+      }
       const date = new Date(dateString);
       if (isNaN(date.getTime())) return 'N/A';
       return format(date, 'dd/MM/yyyy');
@@ -669,7 +907,7 @@ export default function MonthlyStatement() {
 
             {/* Filters */}
             <Card className="p-6 mb-6 shadow-lg print:hidden">
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Participant</label>
                   <Select value={selectedParticipant} onValueChange={setSelectedParticipant} disabled={loadingParticipants}>
@@ -734,16 +972,6 @@ export default function MonthlyStatement() {
                   </Button>
                 </div>
 
-                <div className="flex items-end">
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowBusinessDialog(true)}
-                    className="w-full"
-                  >
-                    <FileText className="h-4 w-4 mr-2" />
-                    Business Details
-                  </Button>
-                </div>
               </div>
             </Card>
           </>
@@ -797,105 +1025,6 @@ export default function MonthlyStatement() {
                 </div>
               )}
             </Card>
-
-            {/* Summary Tiles */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {/* Total Services */}
-              <Card className="p-6 space-y-4 print:break-inside-avoid">
-                <div className="flex items-center justify-between">
-                  <div className="bg-blue-100 dark:bg-blue-900 w-12 h-12 rounded-full flex items-center justify-center">
-                    <Package className="h-6 w-6 text-blue-600 dark:text-blue-300" />
-                  </div>
-                  <Badge variant="outline" className="text-lg font-semibold">
-                    {statementData.summary.totalServices}
-                  </Badge>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Services</p>
-                  <p className="text-2xl font-bold">{statementData.summary.totalServices}</p>
-                </div>
-              </Card>
-
-              {/* Total Hours */}
-              <Card className="p-6 space-y-4 print:break-inside-avoid">
-                <div className="flex items-center justify-between">
-                  <div className="bg-purple-100 dark:bg-purple-900 w-12 h-12 rounded-full flex items-center justify-center">
-                    <Clock className="h-6 w-6 text-purple-600 dark:text-purple-300" />
-                  </div>
-                  <Badge variant="outline" className="text-lg font-semibold">
-                    {statementData.summary.totalHours.toFixed(1)}h
-                  </Badge>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Hours</p>
-                  <p className="text-2xl font-bold">{statementData.summary.totalHours.toFixed(1)}</p>
-                </div>
-              </Card>
-
-              {/* Total Amount */}
-              <Card className="p-6 space-y-4 print:break-inside-avoid">
-                <div className="flex items-center justify-between">
-                  <div className="bg-green-100 dark:bg-green-900 w-12 h-12 rounded-full flex items-center justify-center">
-                    <DollarSign className="h-6 w-6 text-green-600 dark:text-green-300" />
-                  </div>
-                  <Badge variant="outline" className="text-lg font-semibold">
-                    {formatCurrency(statementData.summary.totalAmount)}
-                  </Badge>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Amount</p>
-                  <p className="text-2xl font-bold">{formatCurrency(statementData.summary.totalAmount)}</p>
-                </div>
-              </Card>
-
-              {/* Government Subsidy */}
-              <Card className="p-6 space-y-4 print:break-inside-avoid">
-                <div className="flex items-center justify-between">
-                  <div className="bg-amber-100 dark:bg-amber-900 w-12 h-12 rounded-full flex items-center justify-center">
-                    <TrendingUp className="h-6 w-6 text-amber-600 dark:text-amber-300" />
-                  </div>
-                  <Badge variant="outline" className="text-lg font-semibold">
-                    {formatCurrency(statementData.summary.govSubsidy)}
-                  </Badge>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Government Subsidy</p>
-                  <p className="text-2xl font-bold">{formatCurrency(statementData.summary.govSubsidy)}</p>
-                </div>
-              </Card>
-
-              {/* Participant Contribution */}
-              <Card className="p-6 space-y-4 print:break-inside-avoid">
-                <div className="flex items-center justify-between">
-                  <div className="bg-red-100 dark:bg-red-900 w-12 h-12 rounded-full flex items-center justify-center">
-                    <FileText className="h-6 w-6 text-red-600 dark:text-red-300" />
-                  </div>
-                  <Badge variant="outline" className="text-lg font-semibold">
-                    {formatCurrency(statementData.summary.participantContribution)}
-                  </Badge>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Participant Contribution</p>
-                  <p className="text-2xl font-bold">{formatCurrency(statementData.summary.participantContribution)}</p>
-                </div>
-              </Card>
-
-              {/* Average Service Cost */}
-              <Card className="p-6 space-y-4 print:break-inside-avoid">
-                <div className="flex items-center justify-between">
-                  <div className="bg-teal-100 dark:bg-teal-900 w-12 h-12 rounded-full flex items-center justify-center">
-                    <PieChart className="h-6 w-6 text-teal-600 dark:text-teal-300" />
-                  </div>
-                  <Badge variant="outline" className="text-lg font-semibold">
-                    {formatCurrency(statementData.summary.averageServiceCost)}
-                  </Badge>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Average Service Cost</p>
-                  <p className="text-2xl font-bold">{formatCurrency(statementData.summary.averageServiceCost)}</p>
-                </div>
-              </Card>
-            </div>
 
             {/* Budget Snapshot */}
             <Card className="p-6 shadow-lg print:shadow-none">
@@ -998,156 +1127,188 @@ export default function MonthlyStatement() {
               </div>
             </Card>
 
-            {/* Budget Categories with Tabs */}
+            {/* First Table: Budget Items */}
             <Card className="p-6 shadow-lg print:shadow-none">
-              <h3 className="text-xl font-semibold mb-4">Budget Categories</h3>
-              
-              <Tabs defaultValue="0" className="w-full">
-                <TabsList className="grid w-full grid-cols-3 lg:grid-cols-6">
-                  {statementData.budgetCategories.map((category, index) => (
-                    <TabsTrigger key={index} value={index.toString()} className="text-xs">
-                      {category.code}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-
-                {statementData.budgetCategories.map((category, index) => (
-                  <TabsContent key={index} value={index.toString()} className="mt-4">
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-lg font-semibold">{category.name}</h4>
-                        <Badge variant={category.remainingBudget < 0 ? "destructive" : "default"}>
-                          {formatCurrency(category.remainingBudget)} Remaining
-                        </Badge>
-                      </div>
-
-                      <div className={`grid gap-4 p-4 bg-muted/30 rounded-lg ${(category.code === 'ATS' || category.code === 'ATO' || category.code === 'HMB') ? 'grid-cols-4' : 'grid-cols-3'}`}>
-                        <div>
-                          <p className="text-sm text-muted-foreground">Available Funds</p>
-                          <p className="text-lg font-bold">{formatCurrency(category.availableFunds)}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">Expenditure</p>
-                          <p className="text-lg font-bold text-red-600">{formatCurrency(category.expenditure)}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-muted-foreground">Remaining Budget</p>
-                          <p className={`text-lg font-bold ${category.remainingBudget < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                            {formatCurrency(category.remainingBudget)}
-                          </p>
-                        </div>
-                        {(category.code === 'ATS' || category.code === 'ATO' || category.code === 'HMB') && (
-                          <div>
-                            <p className="text-sm text-muted-foreground">Committed Funds</p>
-                            <p className="text-lg font-bold text-orange-600">{formatCurrency(category.committedFunds || 0)}</p>
-                          </div>
-                        )}
-                      </div>
-
-                      {category.services.length > 0 ? (
-                        <div className="overflow-x-auto">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Date</TableHead>
-                                <TableHead>Service</TableHead>
-                                <TableHead>Provider</TableHead>
-                                <TableHead>Unit</TableHead>
-                                <TableHead className="text-right">Qty</TableHead>
-                                <TableHead className="text-right">Unit Price</TableHead>
-                                <TableHead className="text-right">Total</TableHead>
-                                <TableHead className="text-right">Gov. Subsidy</TableHead>
-                                <TableHead className="text-right">Participant</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {category.services.map((service) => (
-                                <TableRow key={service.id}>
-                                  <TableCell className="whitespace-nowrap">
-                                    {formatDate(service.scheduledStart)}
-                                  </TableCell>
-                                  <TableCell>{service.service || service.taskName || service.notes || 'Service'}</TableCell>
-                                  <TableCell>{service.serviceProvider || service.worker || 'N/A'}</TableCell>
-                                  <TableCell>{service.unit}</TableCell>
-                                  <TableCell className="text-right">{service.quantity}</TableCell>
-                                  <TableCell className="text-right">{formatCurrency(service.unitPrice)}</TableCell>
-                                  <TableCell className="text-right font-medium">{formatCurrency(service.totalAmount)}</TableCell>
-                                  <TableCell className="text-right">{formatCurrency(service.govSubsidy)}</TableCell>
-                                  <TableCell className="text-right">{formatCurrency(service.participantContribution)}</TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      ) : (
-                        <div className="text-center py-8 text-muted-foreground">
-                          <AlertCircle className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                          <p>No services recorded for this budget category</p>
-                        </div>
-                      )}
-                    </div>
-                  </TabsContent>
-                ))}
-              </Tabs>
+              <h3 className="text-xl font-semibold mb-4">Budget Items</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Items from: Home Support Quarterly Budget, Restorative Care Pathway Budget, End-of-Life Pathway Budget, Assistive Technology - Short-term Budget, Assistive Technology - Ongoing Budget, Home Modification Budget
+              </p>
+              <div className="overflow-x-auto">
+                {loadingBudgetItems ? (
+                  <div className="text-center py-8">
+                    <Spinner />
+                  </div>
+                ) : budgetItems.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Funding Stream</TableHead>
+                        <TableHead>Participant</TableHead>
+                        <TableHead>Month</TableHead>
+                        <TableHead>Year</TableHead>
+                        <TableHead>FY Quarter</TableHead>
+                        <TableHead className="text-right">Total Available</TableHead>
+                        <TableHead className="text-right">Delivered (Selected Month)</TableHead>
+                        <TableHead className="text-right">Adjustments</TableHead>
+                        <TableHead className="text-right">Remaining Balance</TableHead>
+                        <TableHead>Funding Start</TableHead>
+                        <TableHead>Funding End</TableHead>
+                        <TableHead>Fund</TableHead>
+                        <TableHead className="text-right">Committed Funds</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {budgetItems.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell className="whitespace-nowrap">
+                            {item.folderName || BUDGET_CATEGORY_LABELS[item.categoryCode] || 'Budget'}
+                          </TableCell>
+                          <TableCell>{item.participantName || 'N/A'}</TableCell>
+                          <TableCell>{item.month || 'N/A'}</TableCell>
+                          <TableCell>{item.year || 'N/A'}</TableCell>
+                          <TableCell>{item.quarter || 'N/A'}</TableCell>
+                          <TableCell className="text-right font-medium">{formatCurrency(item.totalAvailableBudget || 0)}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(item.deliveredAmount || 0)}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(item.adjustmentAmount || 0)}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(item.remainingBalance || 0)}</TableCell>
+                          <TableCell className="whitespace-nowrap">{formatDate(item.fundingStartDate)}</TableCell>
+                          <TableCell className="whitespace-nowrap">{formatDate(item.fundingEndDate)}</TableCell>
+                          <TableCell>{item.fund || 'N/A'}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(item.committedFunds || 0)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <AlertCircle className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                    <p>No budget items found</p>
+                  </div>
+                )}
+              </div>
             </Card>
 
-            {/* All Service Details Table */}
+            {/* Second Table: Master Plan, Shift Planning and Reporting */}
             <Card className="p-6 shadow-lg print:shadow-none">
-              <h3 className="text-xl font-semibold mb-4">All Service Details</h3>
+              <h3 className="text-xl font-semibold mb-4">Service Records</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Items from: Master Plan, Shift Planning and Reporting
+              </p>
               <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Scheduled Date</TableHead>
-                      <TableHead>Delivery Date</TableHead>
-                      <TableHead>Service</TableHead>
-                      <TableHead>Worker</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Funding Source</TableHead>
-                      <TableHead>Unit</TableHead>
-                      <TableHead className="text-right">Qty</TableHead>
-                      <TableHead className="text-right">Unit Price</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                      <TableHead className="text-right">Gov. Subsidy</TableHead>
-                      <TableHead className="text-right">Your Share</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {statementData.services.length > 0 ? (
-                      statementData.services.map((service) => (
+                {loadingServiceItems ? (
+                  <div className="text-center py-8">
+                    <Spinner />
+                  </div>
+                ) : serviceItems.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Participant</TableHead>
+                        <TableHead>Service</TableHead>
+                        <TableHead>Service Provider</TableHead>
+                        <TableHead>Scheduled Service Date</TableHead>
+                        <TableHead>Service Delivery Date</TableHead>
+                        <TableHead>Transaction Status</TableHead>
+                        <TableHead>Committed AT-HM for Delivery</TableHead>
+                        <TableHead>Unit</TableHead>
+                        <TableHead className="text-right">Quantity</TableHead>
+                        <TableHead className="text-right">Unit Price ($)</TableHead>
+                        <TableHead className="text-right">Total Amount</TableHead>
+                        <TableHead className="text-right">Gov Subsidy</TableHead>
+                        <TableHead className="text-right">Participant Contribution</TableHead>
+                        <TableHead>Funding Source</TableHead>
+                        <TableHead>Notes</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {serviceItems.map((service) => (
                         <TableRow key={service.id}>
+                          <TableCell className="whitespace-nowrap">
+                            {service.participant || 'N/A'}
+                          </TableCell>
+                          <TableCell className="max-w-[200px] truncate">
+                            {service.service || service.taskName || service.notes || 'Service'}
+                          </TableCell>
+                          <TableCell>{service.serviceProvider || 'N/A'}</TableCell>
                           <TableCell className="whitespace-nowrap text-xs">
-                            {formatDate(service.scheduledStart)}
+                            {service.scheduledServiceDate ? formatDate(service.scheduledServiceDate) : 'N/A'}
                           </TableCell>
                           <TableCell className="whitespace-nowrap text-xs">
-                            {formatDate(service.actualEnd || service.actualStart)}
+                            {service.serviceDeliveryDate ? formatDate(service.serviceDeliveryDate) : 'N/A'}
                           </TableCell>
-                          <TableCell className="max-w-[200px] truncate">{service.service || service.taskName || service.notes || 'Service'}</TableCell>
-                          <TableCell>{service.worker || 'N/A'}</TableCell>
                           <TableCell>
                             <Badge variant={service.transactionStatus === 'Delivered' ? 'default' : 'secondary'} className="text-xs">
                               {service.transactionStatus || 'Delivered'}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-xs">{service.fundingSource || 'Home Support'}</TableCell>
+                          <TableCell className="text-right">
+                            {service.committedAtHmForDelivery !== undefined ? formatCurrency(service.committedAtHmForDelivery) : 'N/A'}
+                          </TableCell>
                           <TableCell className="text-xs">{service.unit}</TableCell>
                           <TableCell className="text-right">{service.quantity}</TableCell>
                           <TableCell className="text-right">{formatCurrency(service.unitPrice)}</TableCell>
                           <TableCell className="text-right font-medium">{formatCurrency(service.totalAmount)}</TableCell>
                           <TableCell className="text-right">{formatCurrency(service.govSubsidy)}</TableCell>
                           <TableCell className="text-right">{formatCurrency(service.participantContribution)}</TableCell>
+                          <TableCell className="text-xs">{service.fundingSource || 'Home Support'}</TableCell>
+                          <TableCell className="max-w-[200px] truncate text-xs">{service.notes || 'N/A'}</TableCell>
                         </TableRow>
-                      ))
-                    ) : (
-                      <TableRow>
-                        <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
-                          No services found for the selected period
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <AlertCircle className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                    <p>No services found for the selected period</p>
+                  </div>
+                )}
               </div>
+
+              {!loadingServiceItems && serviceItems.length > 0 && (
+                <div className="mt-6">
+                  <Pagination>
+                    <PaginationContent>
+                      <PaginationItem>
+                        <PaginationPrevious
+                          onClick={() => handleServicePageChange(servicePagination.page - 1)}
+                          className={servicePagination.page === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                        />
+                      </PaginationItem>
+
+                      {Array.from({ length: serviceTotalPages }, (_, i) => i + 1)
+                        .filter((page) =>
+                          page === 1 ||
+                          page === serviceTotalPages ||
+                          (page >= servicePagination.page - 1 && page <= servicePagination.page + 1)
+                        )
+                        .map((page, index, arr) => (
+                          <div key={`service-pagination-${page}`} className="flex">
+                            {index > 0 && arr[index - 1] !== page - 1 && (
+                              <PaginationItem>
+                                <PaginationEllipsis />
+                              </PaginationItem>
+                            )}
+                            <PaginationItem>
+                              <PaginationLink
+                                onClick={() => handleServicePageChange(page)}
+                                isActive={servicePagination.page === page}
+                              >
+                                {page}
+                              </PaginationLink>
+                            </PaginationItem>
+                          </div>
+                        ))}
+
+                      <PaginationItem>
+                        <PaginationNext
+                          onClick={() => handleServicePageChange(servicePagination.page + 1)}
+                          className={servicePagination.page === serviceTotalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                        />
+                      </PaginationItem>
+                    </PaginationContent>
+                  </Pagination>
+                </div>
+              )}
             </Card>
 
             {/* Summary Footer */}

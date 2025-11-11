@@ -164,7 +164,7 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
   try {
     const workspaceId = req.body.workspaceId?.toString();
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
-    const { name, phone, email, abn, acn, state, suburb, country, postcode, street, bankAccountName, bankName, bsb, accountNumber, paymentReference, accountsReceivableTerms, accountsPayableTerms } = req.body;
+    const { name, phone, email, abn, acn, companyRegistrationId, state, suburb, country, postcode, street, bankAccountName, bankName, bsb, accountNumber, paymentReference, accountsReceivableTerms, accountsPayableTerms } = req.body;
     const { defaultLogoRemoved, squareLogoRemoved, wideLogoRemoved } = req.body;
 
     let documentNumbering = {};
@@ -187,6 +187,7 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
       email,
       abn,
       acn,
+      companyRegistrationId,
       workspaceId,
       bankDetails: {
         accountName: bankAccountName,
