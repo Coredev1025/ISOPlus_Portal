@@ -165,6 +165,8 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
     const workspaceId = req.body.workspaceId?.toString();
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
     const { name, phone, email, abn, acn, companyRegistrationId, state, suburb, country, postcode, street, bankAccountName, bankName, bsb, accountNumber, paymentReference, accountsReceivableTerms, accountsPayableTerms } = req.body;
+    const files = req.files || {};
+    const parseBoolean = (value) => value === true || value === 'true';
     const { defaultLogoRemoved, squareLogoRemoved, wideLogoRemoved } = req.body;
 
     let documentNumbering = {};
@@ -202,48 +204,48 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
     };
 
     // Handle file uploads to S3
-    if (req.files['defaultLogo']) {
+    if (files['defaultLogo']) {
       if (business?.defaultLogo) {
         await deleteFileFromS3(business.defaultLogo, false);
       }
-      const defaultLogoPath = `logos/${workspaceId}/default-logo${path.extname(req.files['defaultLogo'][0].originalname)}`;
-      await uploadFileToS3(req.files['defaultLogo'][0].buffer, defaultLogoPath, false);
+      const defaultLogoPath = `logos/${workspaceId}/default-logo${path.extname(files['defaultLogo'][0].originalname)}`;
+      await uploadFileToS3(files['defaultLogo'][0].buffer, defaultLogoPath, false);
       updateData.defaultLogo = defaultLogoPath;
     }
 
-    if (req.files['squareLogo']) {
+    if (files['squareLogo']) {
       if (business?.squareLogo) {
         await deleteFileFromS3(business.squareLogo, false);
       }
-      const squareLogoPath = `logos/${workspaceId}/square-logo${path.extname(req.files['squareLogo'][0].originalname)}`;
-      await uploadFileToS3(req.files['squareLogo'][0].buffer, squareLogoPath, false);
-      setLogo(req.session.Authorization, workspaceId, req.files['squareLogo'][0], "form", req);
+      const squareLogoPath = `logos/${workspaceId}/square-logo${path.extname(files['squareLogo'][0].originalname)}`;
+      await uploadFileToS3(files['squareLogo'][0].buffer, squareLogoPath, false);
+      setLogo(req.session.Authorization, workspaceId, files['squareLogo'][0], "form", req);
       updateData.squareLogo = squareLogoPath;
     }
 
-    if (req.files['wideLogo']) {
+    if (files['wideLogo']) {
       if (business?.wideLogo) {
         await deleteFileFromS3(business.wideLogo, false);
       }
-      const wideLogoPath = `logos/${workspaceId}/wide-logo${path.extname(req.files['wideLogo'][0].originalname)}`;
-      await uploadFileToS3(req.files['wideLogo'][0].buffer, wideLogoPath, false);
-      setLogo(req.session.Authorization, workspaceId, req.files['wideLogo'][0], "document", req);
+      const wideLogoPath = `logos/${workspaceId}/wide-logo${path.extname(files['wideLogo'][0].originalname)}`;
+      await uploadFileToS3(files['wideLogo'][0].buffer, wideLogoPath, false);
+      setLogo(req.session.Authorization, workspaceId, files['wideLogo'][0], "document", req);
       updateData.wideLogo = wideLogoPath;
     }
 
-    if (defaultLogoRemoved) {
+    if (parseBoolean(defaultLogoRemoved)) {
       if (business?.defaultLogo) {
         await deleteFileFromS3(business.defaultLogo, false);
       }
       updateData.defaultLogo = null;
     }
-    if (squareLogoRemoved) {
+    if (parseBoolean(squareLogoRemoved)) {
       if (business?.squareLogo) {
         await deleteFileFromS3(business.squareLogo, false);
       }
       updateData.squareLogo = null;
     }
-    if (wideLogoRemoved) {
+    if (parseBoolean(wideLogoRemoved)) {
       if (business?.wideLogo) {
         await deleteFileFromS3(business.wideLogo, false);
       }

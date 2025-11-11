@@ -4,7 +4,6 @@ import Item from '../models/Item.js';
 import Business from '../models/Business.js';
 import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
 import { getItemValues, getFolder, getMember, getMonthlyStatementBudgetData } from '../services/isoplus.js';
-import fs from 'fs';
 
 const router = express.Router();
 
@@ -139,7 +138,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             startDate,
             endDate,
             page = 1,
-            limit = 10
+            limit: limitParam
         } = req.query;
 
         if (!workspaceId || !boardId) {
@@ -149,7 +148,17 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
         }
 
         // Calculate pagination
-        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const hasLimit = limitParam !== undefined && limitParam !== null && limitParam !== '';
+        let limitNumber = hasLimit ? parseInt(limitParam, 10) : null;
+        if (hasLimit && (isNaN(limitNumber) || limitNumber <= 0)) {
+            limitNumber = 10;
+        }
+        const pageNumber = hasLimit
+            ? (parseInt(page, 10) > 0 ? parseInt(page, 10) : 1)
+            : 1;
+        const skip = hasLimit && limitNumber
+            ? (pageNumber - 1) * limitNumber
+            : 0;
 
         // Build aggregation pipeline
         const pipeline = [];
@@ -465,14 +474,18 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
         }
 
         // Sort and paginate, with total count and totals
+        const itemsFacetStages = [];
+        if (hasLimit && limitNumber) {
+            if (skip > 0) {
+                itemsFacetStages.push({ $skip: skip });
+            }
+            itemsFacetStages.push({ $limit: limitNumber });
+        }
         pipeline.push(
             { $sort: { updatedAt: -1 } },
             {
                 $facet: {
-                    items: [
-                        { $skip: skip },
-                        { $limit: parseInt(limit) }
-                    ],
+                    items: itemsFacetStages,
                     totalCount: [
                         { $count: 'count' }
                     ],
@@ -531,12 +544,23 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             const participantContribution = Number(getValue(ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)) || 0;
             const notes = getValue(ATTRIBUTE_NAMES.ADDITIONAL_NOTES) || '';
 
-            // Get service information
+            // Get Service: second section after "-" of Service Plan ID
             const servicePlanId = getValue(ATTRIBUTE_NAMES.SERVICE_PLAN);
             const servicePlan = servicePlanId?.toString() ? await getItemValues(workspaceId, boardId, servicePlanId.toString()) : null;
-            const service = servicePlan && servicePlan.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.SERVICE_PLAN_ID)?.data?.toString().trim() ? servicePlan.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.SERVICE_PLAN_ID)?.data?.toString().trim() : undefined;
-            const serviceCategoryId = servicePlan && servicePlan.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.SERVICE_CATEGORY)?.data?.toString().trim() ? servicePlan.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.SERVICE_CATEGORY)?.data?.toString().trim() : undefined;
-            const serviceCategory = serviceCategoryId && servicePlan.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.SERVICE_CATEGORY)?.attribute?.settings?.labels?.find(l => l.id === serviceCategoryId)?.name || undefined;
+            let service = undefined;
+            if (servicePlan && servicePlan.values) {
+                const servicePlanIdValue = servicePlan.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.SERVICE_PLAN_ID)?.data?.toString().trim();
+                if (servicePlanIdValue && servicePlanIdValue.includes('-')) {
+                    const parts = servicePlanIdValue.split('-');
+                    if (parts.length >= 2) {
+                        service = parts.slice(1).join('-').trim();
+                    }
+                } else if (servicePlanIdValue) {
+                    service = servicePlanIdValue;
+                }
+            }
+            console.log('service', servicePlan.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.SERVICE_PLAN_ID));
+            
             const invoiceNumber = getValue('Generated Invoice Number') || '';
 
             // Get status
@@ -559,7 +583,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 govSubsidy,
                 participantContribution,
                 service,
-                serviceCategory,
+                // serviceCategory,
                 notes,
                 invoiceNumber
             };
@@ -593,9 +617,9 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             month,
             year,
             budgetPage = 1,
-            budgetLimit = 10,
+            budgetLimit: budgetLimitParam,
             servicePage = 1,
-            serviceLimit = 10
+            serviceLimit: serviceLimitParam
         } = req.query;
 
         if (!workspaceId || !boardId) {
@@ -1009,22 +1033,46 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             return matchesParticipant && matchesYear && matchesMonth;
         });
 
-        const budgetPageNumber = parseInt(budgetPage, 10) > 0 ? parseInt(budgetPage, 10) : 1;
-        const budgetLimitNumber = parseInt(budgetLimit, 10) > 0 ? parseInt(budgetLimit, 10) : 10;
-        const budgetSkip = (budgetPageNumber - 1) * budgetLimitNumber;
-        const paginatedBudgetItems = filteredBudgetItems.slice(budgetSkip, budgetSkip + budgetLimitNumber);
+        const hasBudgetLimit = budgetLimitParam !== undefined && budgetLimitParam !== null && budgetLimitParam !== '';
+        let budgetLimitNumber = hasBudgetLimit ? parseInt(budgetLimitParam, 10) : null;
+        if (hasBudgetLimit && (isNaN(budgetLimitNumber) || budgetLimitNumber <= 0)) {
+            budgetLimitNumber = 10;
+        }
+        const budgetPageNumber = hasBudgetLimit
+            ? (parseInt(budgetPage, 10) > 0 ? parseInt(budgetPage, 10) : 1)
+            : 1;
+        const budgetSkip = hasBudgetLimit && budgetLimitNumber
+            ? (budgetPageNumber - 1) * budgetLimitNumber
+            : 0;
+        const paginatedBudgetItems = hasBudgetLimit && budgetLimitNumber
+            ? filteredBudgetItems.slice(budgetSkip, budgetSkip + budgetLimitNumber)
+            : filteredBudgetItems;
 
         // Fetch service items (second table) from Master Plan,Shift Planning and Reporting
         const servicePipeline = await buildPipeline('Master Plan,Shift Planning and Reporting', participant, { startDate, endDate }, {}, 'service');
-        const serviceSkip = (parseInt(servicePage) - 1) * parseInt(serviceLimit);
+        const hasServiceLimit = serviceLimitParam !== undefined && serviceLimitParam !== null && serviceLimitParam !== '';
+        let serviceLimitNumber = hasServiceLimit ? parseInt(serviceLimitParam, 10) : null;
+        if (hasServiceLimit && (isNaN(serviceLimitNumber) || serviceLimitNumber <= 0)) {
+            serviceLimitNumber = 10;
+        }
+        const servicePageNumber = hasServiceLimit
+            ? (parseInt(servicePage, 10) > 0 ? parseInt(servicePage, 10) : 1)
+            : 1;
+        const serviceSkip = hasServiceLimit && serviceLimitNumber
+            ? (servicePageNumber - 1) * serviceLimitNumber
+            : 0;
+        const serviceFacetStages = [];
+        if (hasServiceLimit && serviceLimitNumber) {
+            if (serviceSkip > 0) {
+                serviceFacetStages.push({ $skip: serviceSkip });
+            }
+            serviceFacetStages.push({ $limit: serviceLimitNumber });
+        }
         servicePipeline.push(
             { $sort: { updatedAt: -1 } },
             {
                 $facet: {
-                    items: [
-                        { $skip: serviceSkip },
-                        { $limit: parseInt(serviceLimit) }
-                    ],
+                    items: serviceFacetStages,
                     totalCount: [
                         { $count: 'count' }
                     ]
@@ -1066,6 +1114,9 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const servicePlan = servicePlanId?.toString() ? await getItemValues(workspaceId, boardId, servicePlanId.toString()) : null;
             let service = undefined;
             if (servicePlan && servicePlan.values) {
+
+                console.log('servicePlan', servicePlan.values);
+
                 const servicePlanIdValue = servicePlan.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.SERVICE_PLAN_ID)?.data?.toString().trim();
                 if (servicePlanIdValue && servicePlanIdValue.includes('-')) {
                     const parts = servicePlanIdValue.split('-');
@@ -1081,21 +1132,9 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const worker = getValue(ATTRIBUTE_NAMES.WORKER_PLANNER)?.toString() || 'N/A';
             const workerName = members.find(m => m.id == worker)?.name || 'Removed User';
             const deliveredByRaw = getValue(ATTRIBUTE_NAMES.DELIVERED_BY);
-            const deliveredBy = deliveredByRaw
+            const serviceProvider = deliveredByRaw
                 ? (typeof deliveredByRaw === 'object' ? deliveredByRaw.name : deliveredByRaw.toString())
                 : null;
-            let serviceProvider = workerName;
-            if (deliveredBy && (deliveredBy.toLowerCase().includes(DELIVERED_BY_TYPES.COMPANY_WORKFORCE) || deliveredBy.toLowerCase() === DELIVERED_BY_TYPES.COMPANY_WORKFORCE)) {
-                serviceProvider = businessName || workerName;
-            } else if (deliveredBy && (deliveredBy.toLowerCase().includes(DELIVERED_BY_TYPES.ASSOCIATED_PROVIDERS) || deliveredBy.toLowerCase() === DELIVERED_BY_TYPES.ASSOCIATED_PROVIDERS)) {
-                const associatedProvider = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
-                serviceProvider = associatedProvider
-                    ? (typeof associatedProvider === 'object' ? associatedProvider.name : associatedProvider.toString())
-                    : workerName;
-            } else {
-                serviceProvider = getValue(ATTRIBUTE_NAMES.SERVICE_PROVIDER)?.toString() || workerName;
-            }
-
             // Get dates
             const scheduledStart = getValue(ATTRIBUTE_NAMES.SCHEDULED_START) || null;
             const actualEnd = getValue(ATTRIBUTE_NAMES.ACTUAL_END) || null;
@@ -1285,13 +1324,166 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             serviceItems: {
                 items: transformedServiceItems,
                 total: serviceTotal,
-                page: parseInt(servicePage),
-                limit: parseInt(serviceLimit)
+                page: servicePageNumber,
+                limit: serviceLimitNumber
             },
             budgetCategories
         });
     } catch (err) {
         error('Items-Service', 'Failed to fetch monthly statement data', {
+            message: err.message
+        }, extractContextFromReq(req));
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+router.post('/:workspaceId/:boardId/update-status', authenticateToken, async (req, res) => {
+    try {
+        const { workspaceId, boardId } = req.params;
+        const { itemIds, invoiceNumber, status, fileUrl } = req.body;
+
+        if (!workspaceId || !boardId) {
+            return res.status(400).json({ message: 'WorkspaceId and BoardId are required' });
+        }
+
+        if (!Array.isArray(itemIds) || itemIds.length === 0) {
+            return res.status(400).json({ message: 'itemIds must be a non-empty array' });
+        }
+
+        const normalizedStatus = typeof status === 'string' ? status.toLowerCase() : null;
+        let invoiceIssuedValue;
+        if (normalizedStatus === 'invoiced') {
+            invoiceIssuedValue = true;
+        } else if (normalizedStatus === 'pending' || normalizedStatus === 'not invoiced') {
+            invoiceIssuedValue = false;
+        }
+
+        const results = [];
+
+        for (const itemId of itemIds) {
+            try {
+                const item = await Item.findOne({ workspaceId, boardId, itemId });
+                if (!item) {
+                    results.push({
+                        itemId,
+                        updated: false,
+                        reason: 'ITEM_NOT_FOUND'
+                    });
+                    continue;
+                }
+
+                const values = Array.isArray(item.data?.values) ? item.data.values : [];
+                if (!Array.isArray(values) || values.length === 0) {
+                    results.push({
+                        itemId,
+                        updated: false,
+                        reason: 'NO_VALUES_ON_ITEM'
+                    });
+                    continue;
+                }
+
+                let changed = false;
+                const missingRequiredAttributes = [];
+
+                const updateAttribute = (attributeName, newData, options = { required: true }) => {
+                    const { required } = options;
+                    const index = values.findIndex(v => v?.attribute?.name === attributeName);
+                    if (index === -1) {
+                        if (required) {
+                            missingRequiredAttributes.push(attributeName);
+                        }
+                        return false;
+                    }
+
+                    const currentData = values[index].data;
+                    const nextData = typeof newData === 'function' ? newData(currentData, values[index]) : newData;
+                    if (nextData !== undefined && nextData !== currentData) {
+                        values[index] = { ...values[index], data: nextData };
+                        changed = true;
+                        return true;
+                    }
+                    return false;
+                };
+
+                if (invoiceIssuedValue !== undefined) {
+                    updateAttribute('Invoice Issued and Sent', invoiceIssuedValue);
+                }
+
+                if (invoiceNumber) {
+                    updateAttribute('Generated Invoice Number', invoiceNumber);
+                }
+
+                if (fileUrl) {
+                    const optionalFileAttributes = [
+                        'Invoice File URL',
+                        'Invoice PDF Link',
+                        'Generated Invoice File URL',
+                        'Generated Invoice Link'
+                    ];
+                    const fileAttrUpdated = optionalFileAttributes.some(attr =>
+                        updateAttribute(attr, fileUrl, { required: false })
+                    );
+                    if (!fileAttrUpdated) {
+                        info('Items-Service', 'No matching attribute found for invoice file URL', {
+                            itemId,
+                            workspaceId,
+                            boardId
+                        });
+                    }
+                }
+
+                if (!changed) {
+                    results.push({
+                        itemId,
+                        updated: false,
+                        reason: missingRequiredAttributes.length ? 'MISSING_REQUIRED_ATTRIBUTES' : 'NO_CHANGES_REQUIRED',
+                        missingAttributes: missingRequiredAttributes
+                    });
+                    continue;
+                }
+
+                item.data = { ...item.data, values };
+                item.markModified('data.values');
+                await item.save();
+
+                results.push({
+                    itemId,
+                    updated: true,
+                    missingAttributes: missingRequiredAttributes
+                });
+            } catch (itemErr) {
+                error('Items-Service', 'Failed to update invoice status for item', {
+                    message: itemErr.message,
+                    itemId,
+                    workspaceId,
+                    boardId
+                }, extractContextFromReq(req));
+                results.push({
+                    itemId,
+                    updated: false,
+                    reason: 'UPDATE_FAILED',
+                    error: itemErr.message
+                });
+            }
+        }
+
+        const updatedCount = results.filter(r => r.updated).length;
+        const failedCount = results.length - updatedCount;
+
+        info('Items-Service', 'Invoice statuses updated', {
+            workspaceId,
+            boardId,
+            updatedCount,
+            failedCount
+        }, extractContextFromReq(req));
+
+        res.status(200).json({
+            updatedCount,
+            failedCount,
+            results
+        });
+    } catch (err) {
+        error('Items-Service', 'Failed to update invoice statuses', {
             message: err.message
         }, extractContextFromReq(req));
         res.status(500).json({ message: 'Server error' });
