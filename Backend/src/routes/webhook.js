@@ -1744,14 +1744,23 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
                     const fileUrl = await getS3FileUrl(filename);
-                    for (const item of items) {
-                        setIntegrationMessage(workspaceId, boardId, item.id, "Invoice generated successfully");
-                        setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
-                    }
+                    
+                    // Update integration messages and generated fields for all items
+                    await Promise.all(items.map(async (item) => {
+                        await setIntegrationMessage(workspaceId, boardId, item.id, "Invoice generated successfully");
+                        await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
+                    }));
 
                     // Increment invoice number only once
                     business.documentNumbering.invoice.nextNumber += 1;
                     await business.save();
+
+                    logAuditTrail({
+                        workspaceId,
+                        action: "Generate PDF Participant Tax Invoice",
+                        detail: `Invoice generated successfully, invoice number: ${invoiceNumber}, participant: ${participantName}, items: ${items.length}, fileUrl: ${fileUrl}`,
+                        req
+                    });
 
                     return res.status(200).json({ 
                         message: "Participant Tax Invoice generated successfully",
