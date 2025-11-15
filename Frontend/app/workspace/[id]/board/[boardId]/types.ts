@@ -13,3 +13,26 @@ export interface TimeEntry {
   userName: string;
   notes: string;
 }
+
+export interface ServiceRecord {
+  id: string;
+  status: 'invoiced' | 'pending';
+  participant: string;
+  scheduledStart: string;
+  deliveryDate?: string;
+  worker: string;
+  unit: 'Hours' | 'Item';
+  quantity: number;
+  unitPrice: number;
+  totalAmount: number;
+  govSubsidy: number;
+  participantContribution: number;
+  notes: string;
+}
+
+export interface InvoiceSummary {
+  totalRecords: number;
+  invoiced: number;
+  pending: number;
+  totalValue: number;
+}

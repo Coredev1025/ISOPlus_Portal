@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { warn, info } from '../utils/logger.js';
+import { warn, info, extractContextFromReq } from '../utils/logger.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -30,7 +30,7 @@ export const validateApiKey = (req, res, next) => {
     return res.status(401).json({ message: 'Invalid API key' });
   }
 
-  info('Authentication-Service', 'API key validation successful', {}, req);
+  info('Authentication-Service', 'API key validation successful', {}, extractContextFromReq(req));
   next();
 };
 

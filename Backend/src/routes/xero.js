@@ -1,7 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import Business from '../models/Business.js';
-import { warn, error } from '../utils/logger.js';
+import { warn, error, extractContextFromReq } from '../utils/logger.js';
 import { isEmpty } from '../utils/helpers.js';
 import {
   validateItemBelongsToTenant,
@@ -12,7 +12,7 @@ import {
   setIntegrationMessage,
   setGeneratedField,
   getQuoteNDISReferencedItems,
-  getMasterPlanReferencedItems
+  getNDISMasterPlanReferencedItems
 } from '../services/isoplus.js';
 import {
   configure,
@@ -35,7 +35,7 @@ const router = express.Router();
 
 async function validatePayload(payload, req) {
   if (!payload?.items?.length) {
-    warn('Xero-Service', 'Received payload with empty items.', { payload }, req);
+    warn('Xero-Service', 'Received payload with empty items.', { payload }, extractContextFromReq(req));
     return { error: 'No items found in the payload' };
   }
   return { item: payload.items[0] };
@@ -320,7 +320,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
   try {
     await initializeXeroOperation(workspaceId, boardId, item);
 
-    const [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues] = await getMasterPlanReferencedItems(workspaceId, boardId, item.id);
+    const [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues] = await getNDISMasterPlanReferencedItems(workspaceId, boardId, item.id);
     if (!servicePlanValues) {
       setIntegrationMessage(workspaceId, boardId, item.id, "Master plan information is required. Master plan is missing a master plan reference.");
       throw new Error("Master plan information is required. Master plan is missing a master plan reference.");
@@ -697,9 +697,9 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         : 0;
       let totalCancellationFee = 0;
       const amountValue1 = formatValue(Number(invoiceValues["Cancellation Fee($)"])) || 0;
-      if (servicePlanValues.directSupportShortNoticeCancellations === 'Y') {
+      if (servicePlanValues?.directSupportShortNoticeCancellations === 'Y') {
         // Line 1: Direct Support - Hour based (Cancelled)
-        const baseUnitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) / groupSize || 0;
+        const baseUnitPrice1 = groupSize > 0 ? Number(servicePlanValues?.directSupportUnitPrice) / groupSize : 0;
         const itemName1 = servicePlanValues?.directSupportItemName || '';
         const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
         let qty1 = scheduledShiftDuration;
@@ -740,7 +740,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           totalCancellationFee += Number(amount1);
         }
       }
-      if (servicePlanValues.providerTravelShortNoticeCancellations === 'Y') {
+      if (servicePlanValues?.providerTravelShortNoticeCancellations === 'Y') {
         // Line 3: Provider Travel - Non-Labour Cost
         const baseUnitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) || 0;
         const itemName3 = servicePlanValues?.providerTravelItemName || '';
@@ -772,7 +772,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           totalCancellationFee += Number(amount3);
         }
       }
-      if (servicePlanValues.activityBasedTransportShortNoticeCancellations === 'Y') {
+      if (servicePlanValues?.activityBasedTransportShortNoticeCancellations === 'Y') {
         // Line 4: Activity Based Transport
         const baseUnitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) || 0;
         const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
@@ -804,7 +804,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           totalCancellationFee += Number(amount4);
         }
       }
-      if (servicePlanValues.centreCapitalCostsShortNoticeCancellations === 'Y') {
+      if (servicePlanValues?.centreCapitalCostsShortNoticeCancellations === 'Y') {
         // Line 5: Centre Capital Costs
         const baseUnitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) || 0;
         const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
@@ -1120,7 +1120,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
   const { workspaceId, boardId } = req.params;
   const payload = req.body;
   if (!payload.items || payload.items.length === 0) {
-    warn('Xero-Service', 'Received payload with empty items.', { payload }, req);
+    warn('Xero-Service', 'Received payload with empty items.', { payload }, extractContextFromReq(req));
     return res.json('No items found in the payload.');
   }
 

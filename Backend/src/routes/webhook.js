@@ -1,5 +1,5 @@
 import express from 'express';
-import { info, error } from '../utils/logger.js';
+import { info, error, extractContextFromReq } from '../utils/logger.js';
 import fs from 'fs/promises';
 import { generate } from '@pdfme/generator';
 import { text, table, line, image, multiVariableText } from '@pdfme/schemas';
@@ -19,7 +19,7 @@ import {
     setGeneratedField,
     setPDFLinkAttribute,
     getQuoteNDISReferencedItems,
-    getMasterPlanReferencedItems
+    getNDISMasterPlanReferencedItems
 } from '../services/isoplus.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
 
@@ -38,7 +38,7 @@ async function getValidatedBusiness(workspaceId) {
 async function handlePDFError(err, workspaceId, boardId, itemId, action, req, res) {
     const errorMessage = (err && err.message) ? err.message : 'Server error: An unknown error occurred. Please contact support via ISO+™ Portal.';
     await setIntegrationMessage(workspaceId, boardId, itemId, errorMessage);
-    error('Webhook-Service', 'Server error', { message: errorMessage }, req);
+    error('Webhook-Service', 'Server error', { message: errorMessage }, extractContextFromReq(req));
     logAuditTrail({
         workspaceId,
         action,
@@ -59,6 +59,7 @@ async function getLogoData(business) {
     if (!response.ok) throw new Error('Failed to fetch logo from URL');
 
     const buffer = await response.arrayBuffer();
+    console.log(business.defaultLogo)
     const type = business.defaultLogo.split('.').pop();
     return `data:image/${type};base64,${Buffer.from(buffer).toString('base64')}`;
 }
@@ -66,30 +67,444 @@ async function getLogoData(business) {
 function formatValue(val) {
     const num = Number(val);
     if (!isNaN(num)) {
-      const factor = Math.pow(10, 2);
-      const result = Math.round(num * factor) / factor;
-  
-      return result.toFixed(2);
+        const factor = Math.pow(10, 2);
+        const result = Math.round(num * factor) / factor;
+
+        return result.toFixed(2);
     } else {
-      return val;
+        return val;
     }
-  }
+}
+
+function parseNumberValue(value) {
+    if (value === null || value === undefined) return 0;
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    const stringValue = value.toString();
+    if (!stringValue) return 0;
+    const cleaned = stringValue.replace(/[^0-9.-]/g, '');
+    const parsed = parseFloat(cleaned);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatCurrencyValue(value) {
+    return `$${formatValue(parseNumberValue(value))}`;
+}
+
+function formatDateToAU(value) {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return '';
+    }
+    return new Intl.DateTimeFormat('en-AU', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+    }).format(date);
+}
+
+function initializeBudgetAggregate() {
+    return {
+        availableFundStart: 0,
+        quarterlyAdjustment: 0,
+        primarySupplementAmount: 0,
+        carryoverFunding: 0,
+        unspentReturned: 0,
+        commonwealthUnspent: 0,
+        providerUnspent: 0,
+        participantUnspent: 0,
+        previousMonthSpending: 0,
+        totalAvailableBudget: 0,
+        deliveredAmount: 0,
+        adjustmentAmount: 0,
+        remainingBalance: 0,
+        committedFunds: 0,
+        fundAmount: 0,
+        govSubsidyAmount: 0,
+        participantContributionAmount: 0,
+        fund: '',
+        fundClassification: '',
+        primarySupplementLabel: '',
+        quarterLabel: '',
+        months: new Set(),
+        fundingStartDate: null,
+        fundingEndDate: null
+    };
+}
+
+function calculateBudgetAggregates(items = []) {
+    const aggregates = {};
+
+    items.forEach((item) => {
+        const code = item?.categoryCode || 'HSQ';
+        if (!aggregates[code]) {
+            aggregates[code] = initializeBudgetAggregate();
+        }
+        const aggregate = aggregates[code];
+
+        aggregate.availableFundStart += parseNumberValue(item.availableFundStart);
+        aggregate.quarterlyAdjustment += parseNumberValue(item.quarterlyAdjustment);
+        aggregate.primarySupplementAmount += parseNumberValue(item.primarySupplementAmount);
+        aggregate.carryoverFunding += parseNumberValue(item.carryoverFunding);
+        aggregate.unspentReturned += parseNumberValue(item.unspentReturned);
+        aggregate.commonwealthUnspent += parseNumberValue(item.commonwealthUnspent);
+        aggregate.providerUnspent += parseNumberValue(item.providerUnspent);
+        aggregate.participantUnspent += parseNumberValue(item.participantUnspent);
+        aggregate.previousMonthSpending += parseNumberValue(item.previousMonthSpending);
+        aggregate.totalAvailableBudget += parseNumberValue(item.totalAvailableBudget);
+        aggregate.deliveredAmount += parseNumberValue(item.deliveredAmount);
+        aggregate.adjustmentAmount += parseNumberValue(item.adjustmentAmount);
+        aggregate.remainingBalance += parseNumberValue(item.remainingBalance);
+        aggregate.committedFunds += parseNumberValue(item.committedFunds);
+        aggregate.fundAmount += parseNumberValue(item.fundAmount);
+        aggregate.govSubsidyAmount += parseNumberValue(item.govSubsidyAmount);
+        aggregate.participantContributionAmount += parseNumberValue(item.participantContributionAmount);
+
+        if (!aggregate.primarySupplementLabel) {
+            aggregate.primarySupplementLabel = item.fundClassification || item.fund || '';
+        }
+        if (!aggregate.fund) {
+            aggregate.fund = item.fund || '';
+        }
+        if (!aggregate.quarterLabel && item.quarter) {
+            aggregate.quarterLabel = item.quarter;
+        }
+        if (item.month && item.year && aggregate.months instanceof Set) {
+            aggregate.months.add(`${item.month} ${item.year}`);
+        }
+
+        const startDate = item.fundingStartDate ? new Date(item.fundingStartDate) : null;
+        if (startDate && !Number.isNaN(startDate.getTime())) {
+            if (!aggregate.fundingStartDate || startDate < new Date(aggregate.fundingStartDate)) {
+                aggregate.fundingStartDate = startDate.toISOString();
+            }
+        }
+        const endDate = item.fundingEndDate ? new Date(item.fundingEndDate) : null;
+        if (endDate && !Number.isNaN(endDate.getTime())) {
+            if (!aggregate.fundingEndDate || endDate > new Date(aggregate.fundingEndDate)) {
+                aggregate.fundingEndDate = endDate.toISOString();
+            }
+        }
+    });
+
+    return aggregates;
+}
+
+function getQuarterMetadata(monthNumber, year, fallbackQuarterLabel) {
+    const monthIndex = Number(monthNumber) || 1;
+    const effectiveYear = Number(year) || new Date().getFullYear();
+    const monthNo = ((monthIndex - 1) % 3) + 1;
+    const quarterNumber = Math.floor((monthIndex - 1) / 3) + 1;
+    const firstDay = new Date(Date.UTC(effectiveYear, monthIndex - 1, 1));
+    const lastDay = new Date(Date.UTC(effectiveYear, monthIndex, 0));
+
+    return {
+        monthNo,
+        quarterLabel: fallbackQuarterLabel || `Q${quarterNumber}`,
+        firstDay: formatDateToAU(firstDay),
+        lastDay: formatDateToAU(lastDay)
+    };
+}
+
+const SERVICE_BUCKET_TEMPLATES = {
+    HSQ: { delivered: [], adjustment: [] },
+    RCP: { delivered: [], adjustment: [] },
+    EOL: { delivered: [], adjustment: [] },
+    ATS: { delivered: [], adjustment: [], committed: [] },
+    ATO: { delivered: [], adjustment: [], committed: [] },
+    HMB: { delivered: [], adjustment: [], committed: [] }
+};
+
+function determineFundingCode(service = {}) {
+    const source = (service.fundingSource || '').toString().toLowerCase();
+    if (source.includes('home support')) return 'HSQ';
+    if (source.includes('restorative')) return 'RCP';
+    if (source.includes('end-of-life') || source.includes('end of life')) return 'EOL';
+    if (source.includes('assistive') && source.includes('short')) return 'ATS';
+    if (source.includes('assistive') && source.includes('ongoing')) return 'ATO';
+    if (source.includes('modification')) return 'HMB';
+
+    const category = (service.serviceCategory || '').toString().toLowerCase();
+    if (category.includes('restorative')) return 'RCP';
+    if (category.includes('end-of-life') || category.includes('end of life')) return 'EOL';
+    if (category.includes('short')) return 'ATS';
+    if (category.includes('ongoing')) return 'ATO';
+    if (category.includes('modification')) return 'HMB';
+
+    return 'HSQ';
+}
+
+function createServiceBuckets() {
+    return {
+        HSQ: { delivered: [], adjustment: [] },
+        RCP: { delivered: [], adjustment: [] },
+        EOL: { delivered: [], adjustment: [] },
+        ATS: { delivered: [], adjustment: [], committed: [] },
+        ATO: { delivered: [], adjustment: [], committed: [] },
+        HMB: { delivered: [], adjustment: [], committed: [] }
+    };
+}
+
+function truncateText(text, length) {
+    if (!text) return '';
+    const stringValue = text.toString();
+    return stringValue.length > length ? `${stringValue.substring(0, length)}` : stringValue;
+}
+
+function setCurrencyField(target, fieldName, value) {
+    if (!fieldName) return;
+    target[fieldName] = formatCurrencyValue(value);
+}
+
+function setMultiValueField(target, fieldName, payload) {
+    if (!fieldName || payload === undefined) return;
+    target[fieldName] = JSON.stringify(payload);
+}
+
+function cleanRichText(value) {
+    if (!value) return '';
+    return value.toString().replace(/<[^>]*>/g, '').trim();
+}
+
+function normalizeTableCell(value) {
+    if (value === null || value === undefined) {
+        return '';
+    }
+    if (Array.isArray(value)) {
+        return value.map((entry) => normalizeTableCell(entry)).join(', ');
+    }
+    if (typeof value === 'object' && value !== null) {
+        const normalized = Object.values(value)
+            .map((entry) => normalizeTableCell(entry))
+            .filter((entry) => entry)
+            .join(', ');
+        return normalized || '';
+    }
+    return value.toString();
+}
+
+const SERVICE_TABLE_CONFIG = {
+    HSQ: {
+        delivered: {
+            tableName: 'Table P6-1',
+            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P6-1 ', '$P6-2', '$P6-3'],
+            rowType: 'delivered'
+        },
+        adjustment: {
+            tableName: 'Table P7-1',
+            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P7-1', '$P7-2', '$P7-3'],
+            rowType: 'adjustment'
+        }
+    },
+    RCP: {
+        delivered: {
+            tableName: 'Table P8-1 ',
+            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P8-1 ', '$P8-2', '$P8-3'],
+            rowType: 'delivered'
+        },
+        adjustment: {
+            tableName: 'Table P8-2',
+            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P8-4', '$P8-5', '$P8-6'],
+            rowType: 'adjustment'
+        }
+    },
+    EOL: {
+        delivered: {
+            tableName: 'Table P9-1',
+            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P9-1', '$P9-2', '$P9-3'],
+            rowType: 'delivered'
+        },
+        adjustment: {
+            tableName: 'Table P9-2',
+            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P9-4', '$P9-5', '$P9-6'],
+            rowType: 'adjustment'
+        }
+    },
+    ATS: {
+        delivered: {
+            tableName: 'Table P10-1 ',
+            columns: ['provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P10-1 ', '$P10-3', '$P10-3 '],
+            rowType: 'delivered'
+        },
+        committed: {
+            tableName: 'Table P10-2',
+            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P10-4', '$P10-5', '$P10-6'],
+            rowType: 'committed'
+        },
+        adjustment: {
+            tableName: 'Table P10-3',
+            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P10-7', '$P10-8', '$P10-9'],
+            rowType: 'adjustment'
+        }
+    },
+    ATO: {
+        delivered: {
+            tableName: 'Table P11-1 ',
+            columns: ['provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P11-1', '$P11-3 ', '$P11-3'],
+            rowType: 'delivered'
+        },
+        committed: {
+            tableName: 'Table P11-3 ',
+            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P11-4', '$P11-5', '$P11-6'],
+            rowType: 'committed'
+        },
+        adjustment: {
+            tableName: 'Table P11-2',
+            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P11-7 ', '$P11-8', '$P11-9 1'],
+            rowType: 'adjustment'
+        }
+    },
+    HMB: {
+        delivered: {
+            tableName: 'Table P12-1 ',
+            columns: ['provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P12-1 ', '$P11-3  ', '$P12-3 '],
+            rowType: 'delivered'
+        },
+        committed: {
+            tableName: 'Table P12-3 ',
+            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P12-4 ', '$P11-5 copy', '$P11-6 '],
+            rowType: 'committed'
+        },
+        adjustment: {
+            tableName: 'Table P11-2 copy',
+            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P12-7 ', '$P11-8 copy', '$P11-9 1 copy'],
+            rowType: 'adjustment'
+        }
+    }
+};
+
+const SERVICE_TABLE_TOTAL_ORDER = ['amount', 'gov', 'participant'];
+
+function mapServiceColumnValue(service, column, rowType, business) {
+    switch (column) {
+        case 'date': {
+            if (rowType === 'committed') {
+                return 'To be delivered';
+            }
+            const dateCandidate = service.serviceDeliveryDate || service.actualEnd || service.actualStart || service.scheduledServiceDate || service.scheduledStart;
+            return formatDateToAU(dateCandidate);
+        }
+        case 'provider': {
+            const provider = service.serviceProvider || service.worker || business?.name || '';
+            return truncateText(provider, 20);
+        }
+        case 'service': {
+            const name = service.service || service.taskName || cleanRichText(service.notes) || 'Service';
+            return truncateText(name, 40);
+        }
+        case 'unit':
+            return service.unit || 'Unit';
+        case 'quantity': {
+            const quantity = parseNumberValue(service.quantity);
+            return formatValue(quantity);
+        }
+        case 'unitPrice': {
+            const unitPrice = rowType === 'committed'
+                ? parseNumberValue(service.unitPrice || service.committedAtHmForDelivery)
+                : parseNumberValue(service.unitPrice);
+            return formatCurrencyValue(unitPrice);
+        }
+        case 'totalAmount': {
+            const totalAmount = rowType === 'committed'
+                ? parseNumberValue(service.committedAtHmForDelivery || service.totalAmount)
+                : parseNumberValue(service.totalAmount);
+            return formatCurrencyValue(totalAmount);
+        }
+        case 'govSubsidy': {
+            const gov = rowType === 'committed' ? 0 : parseNumberValue(service.govSubsidy);
+            return formatCurrencyValue(gov);
+        }
+        case 'participantContribution': {
+            const participant = rowType === 'committed' ? 0 : parseNumberValue(service.participantContribution);
+            return formatCurrencyValue(participant);
+        }
+        default:
+            return '';
+    }
+}
+
+function createPlaceholderRow(columns, rowType) {
+    return columns.map((column) => {
+        if (column === 'service') {
+            return rowType === 'committed' ? 'No committed services for this period' : 'No services recorded for this period';
+        }
+        if (column === 'date' && rowType === 'committed') {
+            return 'To be delivered';
+        }
+        if (['totalAmount', 'govSubsidy', 'participantContribution', 'unitPrice'].includes(column)) {
+            return '$0.00';
+        }
+        if (column === 'quantity') {
+            return '0.00';
+        }
+        return '';
+    });
+}
+
+function buildServiceTableRows(services = [], config = {}, business) {
+    const { columns = [], rowType = 'delivered' } = config;
+    const totals = { amount: 0, gov: 0, participant: 0 };
+
+    const rawRows = services.map((service) => {
+        const totalAmount = rowType === 'committed'
+            ? parseNumberValue(service.committedAtHmForDelivery || service.totalAmount)
+            : parseNumberValue(service.totalAmount);
+        const gov = rowType === 'committed' ? 0 : parseNumberValue(service.govSubsidy);
+        const participant = rowType === 'committed' ? 0 : parseNumberValue(service.participantContribution);
+
+        totals.amount += totalAmount;
+        totals.gov += gov;
+        totals.participant += participant;
+
+        return columns.map((column) => mapServiceColumnValue(service, column, rowType, business));
+    });
+
+    const baseRows = rawRows.length > 0 ? rawRows : [createPlaceholderRow(columns, rowType)];
+
+    const rows = baseRows.map((row) =>
+        columns.map((_, colIndex) => normalizeTableCell(row?.[colIndex]))
+    );
+
+    return { rows, totals };
+}
+
+function applyBudgetMapping(templateInputs, aggregate, mappings = []) {
+    mappings.forEach((entry) => {
+        const value = typeof entry.value === 'function' ? entry.value(aggregate) : entry.value;
+        if (entry.type === 'currency') {
+            setCurrencyField(templateInputs, entry.field, value);
+        } else if (entry.type === 'multi') {
+            setMultiValueField(templateInputs, entry.field, value);
+        }
+    });
+}
 
 function validateRequestParams(req) {
     const { workspaceId, boardId } = req.params;
     if (!req.body.items?.length) {
-        error('Webhook-Service', 'Server error', { message: "There are no items." }, req);
+        error('Webhook-Service', 'Server error', { message: "There are no items." }, extractContextFromReq(req));
         throw new Error('No items found in the payload');
     }
     return { workspaceId, boardId };
 }
 
 async function handlePDFSuccess(workspaceId, boardId, itemId, fileUrl, docType, req, res) {
-    if (docType.toLowerCase().includes("ndis")) {
-        await setIntegrationMessage(workspaceId, boardId, itemId, `Your ${docType} has been successfully created.\n`);
-    } else {
-        await setIntegrationMessage(workspaceId, boardId, itemId, `Your ${docType} has been successfully created.\n Click <a href="${fileUrl}">here</a> to download.`);
-    }
+    await setIntegrationMessage(workspaceId, boardId, itemId, `Your ${docType} has been successfully created.\n`);
     await setPDFLinkAttribute(workspaceId, boardId, itemId, fileUrl, docType);
     logAuditTrail({
         workspaceId,
@@ -106,7 +521,7 @@ async function handlePDFSuccess(workspaceId, boardId, itemId, fileUrl, docType, 
         isDeleted: false,
         SignatureStatus: "Unsigned"
     });
-    info('Webhook-Service', `Successfully generating PDF ${docType.toLowerCase()}`, { link: fileUrl }, req);
+    info('Webhook-Service', `Successfully generating PDF ${docType.toLowerCase()}`, { link: fileUrl }, extractContextFromReq(req));
     return res.json({ pdfUrl: fileUrl });
 }
 
@@ -226,7 +641,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
             }
         }));
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message }, req);
+        error('Webhook-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
         return res.status(200).json({ message: err.message });
     }
 });
@@ -330,7 +745,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
             }
         }));
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message }, req);
+        error('Webhook-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
         return res.status(200).json({ message: err.message });
     }
 });
@@ -426,7 +841,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
             }
         }));
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message }, req);
+        error('Webhook-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
         return res.status(200).json({ message: err.message });
     }
 });
@@ -642,7 +1057,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
             }
         }));
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message }, req);
+        error('Webhook-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
         return res.status(200).json({ message: err.message });
     }
 });
@@ -657,7 +1072,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                 await validateItemBelongsToTenant(workspaceId, boardId, item.id);
                 await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
-                const [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues] = await getMasterPlanReferencedItems(workspaceId, boardId, item.id);
+                const [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues] = await getNDISMasterPlanReferencedItems(workspaceId, boardId, item.id);
                 if (!participantProfileValues || !servicePlanValues) {
                     throw new Error("Participant Profile and Service Plan information is required.");
                 }
@@ -972,9 +1387,9 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                         : 0;
                     let totalCancellationFee = 0;
                     const amountValue1 = formatValue(Number(invoiceValues["Cancellation Fee($)"])) || 0;
-                    if (servicePlanValues.directSupportShortNoticeCancellations === 'Y') {
+                    if (servicePlanValues?.directSupportShortNoticeCancellations === 'Y') {
                         // Line 1: Direct Support - Hour based (Cancelled)
-                        const baseUnitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) / groupSize || 0;
+                        const baseUnitPrice1 = groupSize > 0 ? Number(servicePlanValues?.directSupportUnitPrice) / groupSize : 0;
                         const itemName1 = servicePlanValues?.directSupportItemName || '';
                         const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
                         let unitPrice1, amount1;
@@ -1014,7 +1429,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                             totalCancellationFee += Number(amount1);
                         }
                     }
-                    if (servicePlanValues.providerTravelShortNoticeCancellations === 'Y') {
+                    if (servicePlanValues?.providerTravelShortNoticeCancellations === 'Y') {
                         // Line 3: Provider Travel - Non-Labour Cost
                         const baseUnitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) || 0;
                         const itemName3 = servicePlanValues?.providerTravelItemName || '';
@@ -1045,7 +1460,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                             totalCancellationFee += Number(amount3);
                         }
                     }
-                    if (servicePlanValues.activityBasedTransportShortNoticeCancellations === 'Y') {
+                    if (servicePlanValues?.activityBasedTransportShortNoticeCancellations === 'Y') {
                         // Line 4: Activity Based Transport
                         const baseUnitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) || 0;
                         const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
@@ -1075,7 +1490,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                             totalCancellationFee += Number(amount4);
                         }
                     }
-                    if (servicePlanValues.centreCapitalCostsShortNoticeCancellations === 'Y') {
+                    if (servicePlanValues?.centreCapitalCostsShortNoticeCancellations === 'Y') {
                         // Line 5: Centre Capital Costs
                         const baseUnitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) || 0;
                         const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
@@ -1179,8 +1594,525 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             }
         }));
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message }, req);
+        error('Webhook-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
         return res.status(200).json({ message: err.message });
+    }
+});
+
+router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => {
+    try {
+        const { workspaceId, boardId } = validateRequestParams(req);
+        const business = await getValidatedBusiness(workspaceId);
+
+        const items = req.body.items || [];
+        
+        if (!items || items.length === 0) {
+            return res.status(400).json({ message: "No items provided for invoice generation." });
+        }
+
+        // Validate all items belong to the workspace/board
+        for (const item of items) {
+            await validateItemBelongsToTenant(workspaceId, boardId, item.id);
+        }
+
+        try {
+            const templatePath = path.join(__dirname, '..', 'assets', 'participantTaxInvoiceAG.json');
+            const templateData = await fs.readFile(templatePath, 'utf8');
+            const template = JSON.parse(templateData);
+
+            const logoBase64 = await getLogoData(business);
+
+            const invoiceNumber = business.documentNumbering.invoice.prefix + business.documentNumbering.invoice.nextNumber;
+
+            // Detect if this is service-record format (from Invoice Generator UI)
+            const isServiceRecord = typeof items[0]?.participant === 'string' || typeof req.body?.participantName === 'string';
+
+            let ordersArr = [];
+            let subTotal = 0;
+            let totalParticipantContribution = 0;
+            const gstLabel = "GST Free";
+            const gst = 0; // percent
+
+            // Get dates from request or use defaults
+            let invoiceDate = req.body?.invoiceDate || new Date().toISOString();
+            let dueDate = req.body?.dueDate || '';
+            
+            if (!dueDate) {
+                const d = new Date(invoiceDate);
+                d.setDate(d.getDate() + 14);
+                dueDate = d.toISOString();
+            }
+
+            // Helper functions for service records
+            const dateFmt = (d) => d ? new Date(d).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+            const toNumber = (v) => typeof v === 'number' ? v : Number(v || 0);
+            const fmt = (v) => formatValue(toNumber(v));
+
+            if (isServiceRecord) {
+                // Process all items and add them to the orders array
+                for (const item of items) {
+                    const rowDate = dateFmt(item.scheduledStart);
+                    const cleanNotes = (item.notes && typeof item.notes === 'string') ? item.notes.replace(/<[^>]*>/g, '') : '';
+                    const description = cleanNotes || (item.worker ? `Service - ${item.worker}` : 'Service');
+                    const unit = item.unit || ' ';
+                    const qty = toNumber(item.quantity);
+                    const unitPrice = toNumber(item.unitPrice);
+                    const totalAmount = toNumber(item.totalAmount);
+                    const participantContribution = toNumber(item.participantContribution);
+                    const govSubsidy = toNumber(item.govSubsidy); // accepted but not rendered as separate column in current template
+
+                    ordersArr.push([
+                        rowDate,
+                        description,
+                        unit,
+                        fmt(qty),
+                        fmt(unitPrice),
+                        gstLabel,
+                        fmt(totalAmount),
+                        fmt(participantContribution)
+                    ]);
+                    
+                    subTotal += totalAmount;
+                    totalParticipantContribution += participantContribution;
+                }
+
+                if (ordersArr.length === 0) {
+                    await Promise.all(items.map(item =>
+                        setIntegrationMessage(workspaceId, boardId, item.id, "There is nothing to invoice!")
+                    ));
+                    return res.status(400).json({ message: "There is nothing to invoice!" });
+                }
+
+                const orders = JSON.stringify(ordersArr);
+                subTotal = formatValue(subTotal);
+                const gstTotal = formatValue(0); // GST Free
+                const total = formatValue(parseFloat(subTotal));
+                const participantContributionTotal = formatValue(totalParticipantContribution);
+
+                // Get participant details from request body or first item
+                const participantName = req.body?.participantName || items[0].participant || ' ';
+                
+                // Map client details to match template
+                const clientDetails = {
+                    Participant: participantName,
+                    Address: req.body?.participantAddress || ' ',
+                    Suburb: req.body?.participantSuburb || ' ',
+                    State: req.body?.participantState || ' ',
+                    Postcode: req.body?.participantPostcode || ' '
+                };
+
+                // Generate the PDF with all items
+                const pdfBytes = await generate({
+                    template: template,
+                    inputs: [
+                        {
+                            logo: logoBase64,
+                            subtotal: subTotal,
+                            totalGST: gstTotal,
+                            total: participantContributionTotal,
+                            clientDetails: JSON.stringify(clientDetails),
+                            invoiceDetails: JSON.stringify({
+                                Date: new Date(invoiceDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+                                "Invoice Number": invoiceNumber
+                            }),
+                            companyName: JSON.stringify({ "Company Name": business.name }),
+                            companyDetails: JSON.stringify({
+                                ABN: business.abn,
+                                "Street Address": business.address.street,
+                                Suburb: business.address.suburb,
+                                State: business.address.state,
+                                Postcode: business.address.postcode,
+                                Country: business.address.country
+                            }),
+                            orders: orders,
+                            "dueDate": new Date(dueDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+                            "Bank Details": JSON.stringify({
+                                "Account Name": business.bankDetails.accountName,
+                                "Bank Name": business.bankDetails.bankName,
+                                BSB: business.bankDetails.bsb,
+                                "Account Number": business.bankDetails.accountNumber,
+                                "invoice Number": invoiceNumber
+                            })
+                        }
+                    ],
+                    plugins: { text, image, line, table, multiVariableText }
+                });
+
+                // Upload the single PDF for all items
+                const filename = `output/${workspaceId}/${boardId}/Participant-invoices/${invoiceNumber + '-ISO+™-' + participantName.replace(/\s+/g, '-')}.pdf`;
+                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+
+                if (uploadResult['$metadata'].httpStatusCode === 200) {
+                    const fileUrl = await getS3FileUrl(filename);
+                    for (const item of items) {
+                        setIntegrationMessage(workspaceId, boardId, item.id, "Invoice generated successfully");
+                        setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
+                    }
+
+                    // Increment invoice number only once
+                    business.documentNumbering.invoice.nextNumber += 1;
+                    await business.save();
+
+                    return res.status(200).json({ 
+                        message: "Participant Tax Invoice generated successfully",
+                        invoiceNumber: invoiceNumber,
+                        fileUrl: fileUrl,
+                        itemCount: items.length
+                    });
+                } else {
+                    throw new Error('Upload of PDF failed, please provide correct information.');
+                }
+            } else {
+                // Legacy monday.com format - not supported for multiple items in single invoice
+                throw new Error('Legacy monday.com format is not supported for multi-item participant invoices. Please use the Invoice Generator UI.');
+            }
+        } catch (err) {
+            // Do not call per-item error responder; log and send a single error response
+            const errorMessage = (err && err.message) ? err.message : 'Server error: An unknown error occurred. Please contact support via ISO+™ Portal.';
+            error('Webhook-Service', 'Server error', { message: errorMessage }, extractContextFromReq(req));
+            return res.status(500).json({ message: errorMessage });
+        }
+    } catch (err) {
+        error('Webhook-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
+        return res.status(500).json({ message: err.message });
+    }
+});
+
+router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
+    try {
+        const { workspaceId, boardId } = req.params;
+        const { statementData, businessDetails } = req.body;
+
+        if (!statementData) {
+            return res.status(400).json({ message: "No statement data provided." });
+        }
+
+        const business = await getValidatedBusiness(workspaceId);
+
+        try {
+            // Use the monthlyStatement.json template
+            const templatePath = path.join(__dirname, '..', 'assets', 'monthlyStatement.json');
+            const templateData = await fs.readFile(templatePath, 'utf8');
+            const template = JSON.parse(templateData);
+
+            const logoBase64 = await getLogoData(business);
+
+            const safeBusinessDetails = {
+                companyName: businessDetails?.companyName || business.name || 'Service Provider',
+                companyRegistrationId: businessDetails?.companyRegistrationId || business.companyRegistrationId || '',
+                phoneNumber: businessDetails?.phoneNumber || business.phone || '',
+                businessEmail: businessDetails?.businessEmail || business.email || '',
+                address: businessDetails?.address || business.address?.street || '',
+                suburb: businessDetails?.suburb || business.address?.suburb || '',
+                state: businessDetails?.state || business.address?.state || '',
+                postcode: businessDetails?.postcode || business.address?.postcode || ''
+            };
+
+            const services = Array.isArray(statementData.serviceItems) && statementData.serviceItems.length
+                ? statementData.serviceItems
+                : Array.isArray(statementData.services)
+                    ? statementData.services
+                    : [];
+
+            const budgetItems = Array.isArray(statementData.budgetItems) ? statementData.budgetItems : [];
+            const budgetAggregates = calculateBudgetAggregates(budgetItems);
+
+            const monthNumber = statementData.monthNumber || '1';
+            const yearValue = statementData.year || new Date().getFullYear().toString();
+            const firstAggregate = Object.values(budgetAggregates)[0] || {};
+            const quarterLabel = statementData.summary?.quarter || firstAggregate.quarterLabel || '';
+            const quarterMeta = getQuarterMetadata(monthNumber, yearValue, quarterLabel);
+
+            const subtitlePayload = {
+                'Month No.': quarterMeta.monthNo.toString(),
+                'Quarter No': quarterMeta.quarterLabel,
+                'First Day': quarterMeta.firstDay,
+                'Last Day': quarterMeta.lastDay
+            };
+
+            const templateInputs = {};
+            templateInputs.logo = logoBase64;
+
+            setMultiValueField(templateInputs, 'companyName', { 'Company Name': safeBusinessDetails.companyName });
+
+            const participantName = statementData.participant || statementData.participantProfile || 'Participant';
+            const participantAddress = statementData.participantAddress || safeBusinessDetails.address || '';
+            const participantSuburb = statementData.participantSuburb || safeBusinessDetails.suburb || '';
+            const participantState = statementData.participantState || safeBusinessDetails.state || '';
+            const participantPostcode = statementData.participantPostcode || safeBusinessDetails.postcode || '';
+
+            setMultiValueField(templateInputs, 'Organisation', {
+                'Participant': participantName,
+                'My Aged Care ID Number': statementData.myAgedCareIdNumber || '',
+                'Provider ID': statementData.providerId || '',
+                'Address': participantAddress,
+                'Suburb': participantSuburb,
+                'Post Code': participantPostcode,
+                'State': participantState
+            });
+
+            setMultiValueField(templateInputs, 'Recipient', {
+                'Participant': participantName,
+                'Address': participantAddress,
+                'Suburb': participantSuburb,
+                'Post Code': participantPostcode
+            });
+
+            setMultiValueField(templateInputs, 'Text title', {
+                month: statementData.month || '',
+                year: yearValue
+            });
+
+            ['P2 Subtitle', 'P3 Subtitle', 'P4 Subtitle', 'P5 Subtitle'].forEach((field) => {
+                setMultiValueField(templateInputs, field, subtitlePayload);
+            });
+
+            const phoneLine = safeBusinessDetails.companyRegistrationId
+                ? `${safeBusinessDetails.phoneNumber || ''}${safeBusinessDetails.phoneNumber ? ' | ' : ''}Reg ID: ${safeBusinessDetails.companyRegistrationId}`
+                : (safeBusinessDetails.phoneNumber || '');
+
+            setMultiValueField(templateInputs, 'Disclaimer 2a', {
+                'Phone Number': phoneLine.trim(),
+                'Business Email': safeBusinessDetails.businessEmail || ''
+            });
+
+            const homeSupportAggregate = budgetAggregates.HSQ ? { ...budgetAggregates.HSQ } : initializeBudgetAggregate();
+            homeSupportAggregate.primarySupplementLabel = homeSupportAggregate.primarySupplementLabel || homeSupportAggregate.fund || homeSupportAggregate.fundClassification || '';
+
+            applyBudgetMapping(templateInputs, homeSupportAggregate, [
+                { type: 'multi', field: 'P2-3', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
+                { type: 'currency', field: '$P2-1', value: (agg) => agg.availableFundStart },
+                { type: 'currency', field: '$P2-2', value: (agg) => agg.quarterlyAdjustment },
+                { type: 'currency', field: '$P2-3', value: (agg) => agg.primarySupplementAmount },
+                { type: 'currency', field: '$P2-4', value: (agg) => agg.carryoverFunding + agg.unspentReturned },
+                { type: 'currency', field: '$P2-6', value: (agg) => agg.commonwealthUnspent },
+                { type: 'currency', field: '$P2-7', value: (agg) => agg.providerUnspent },
+                { type: 'currency', field: '$P2-8', value: (agg) => agg.participantUnspent },
+                { type: 'currency', field: '$P2-9', value: (agg) => agg.previousMonthSpending },
+                { type: 'currency', field: '$P2-10', value: (agg) => agg.totalAvailableBudget },
+                { type: 'currency', field: '$P2-11', value: (agg) => agg.totalAvailableBudget },
+                { type: 'currency', field: '$P2-12', value: (agg) => agg.deliveredAmount },
+                { type: 'currency', field: '$P2-13', value: (agg) => agg.adjustmentAmount },
+                { type: 'currency', field: '$P2-14', value: (agg) => agg.remainingBalance },
+                { type: 'currency', field: '$P7-4', value: (agg) => agg.carryoverFunding },
+                { type: 'currency', field: '$P7-5', value: (agg) => agg.unspentReturned },
+                { type: 'currency', field: '$P7-6', value: (agg) => agg.carryoverFunding + agg.unspentReturned }
+            ]);
+
+            const restorativeAggregate = budgetAggregates.RCP ? { ...budgetAggregates.RCP } : initializeBudgetAggregate();
+            restorativeAggregate.primarySupplementLabel = restorativeAggregate.primarySupplementLabel || restorativeAggregate.fund || restorativeAggregate.fundClassification || '';
+
+            applyBudgetMapping(templateInputs, restorativeAggregate, [
+                { type: 'multi', field: 'P3-2', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
+                { type: 'currency', field: '$P3-1', value: (agg) => agg.availableFundStart },
+                { type: 'currency', field: '$P3-2', value: (agg) => agg.primarySupplementAmount },
+                { type: 'currency', field: '$P3-3', value: (agg) => agg.commonwealthUnspent },
+                { type: 'currency', field: '$P3-4', value: (agg) => agg.providerUnspent },
+                { type: 'currency', field: '$P3-5', value: (agg) => agg.participantUnspent },
+                { type: 'currency', field: '$P3-6', value: (agg) => agg.previousMonthSpending },
+                { type: 'currency', field: '$P3-7', value: (agg) => agg.totalAvailableBudget },
+                { type: 'currency', field: '$P3-8', value: (agg) => agg.deliveredAmount },
+                { type: 'currency', field: '$P3-9', value: (agg) => agg.adjustmentAmount },
+                { type: 'currency', field: '$P3-10', value: (agg) => agg.remainingBalance },
+                { type: 'multi', field: 'P3 Footer 1', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate) || 'N/A' }) }
+            ]);
+
+            const endOfLifeAggregate = budgetAggregates.EOL ? { ...budgetAggregates.EOL } : initializeBudgetAggregate();
+            endOfLifeAggregate.primarySupplementLabel = endOfLifeAggregate.primarySupplementLabel || endOfLifeAggregate.fund || endOfLifeAggregate.fundClassification || '';
+
+            applyBudgetMapping(templateInputs, endOfLifeAggregate, [
+                { type: 'multi', field: 'P3-12', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
+                { type: 'currency', field: '$P3-11', value: (agg) => agg.availableFundStart },
+                { type: 'currency', field: '$P3-12', value: (agg) => agg.primarySupplementAmount },
+                { type: 'currency', field: '$P3-13', value: (agg) => agg.commonwealthUnspent },
+                { type: 'currency', field: '$P3-14', value: (agg) => agg.providerUnspent },
+                { type: 'currency', field: '$P3-15', value: (agg) => agg.participantUnspent },
+                { type: 'currency', field: '$P3-16', value: (agg) => agg.previousMonthSpending },
+                { type: 'currency', field: '$P3-17', value: (agg) => agg.totalAvailableBudget },
+                { type: 'currency', field: '$P3-18', value: (agg) => agg.deliveredAmount },
+                { type: 'currency', field: '$P3-19', value: (agg) => agg.adjustmentAmount },
+                { type: 'currency', field: '$P3-20', value: (agg) => agg.remainingBalance },
+                { type: 'multi', field: 'P3 Footer 2', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate) || 'N/A' }) }
+            ]);
+
+            const assistiveShortAggregate = budgetAggregates.ATS ? { ...budgetAggregates.ATS } : initializeBudgetAggregate();
+            assistiveShortAggregate.primarySupplementLabel = assistiveShortAggregate.primarySupplementLabel || assistiveShortAggregate.fund || assistiveShortAggregate.fundClassification || '';
+
+            applyBudgetMapping(templateInputs, assistiveShortAggregate, [
+                { type: 'multi', field: 'P4-2', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
+                { type: 'currency', field: '$P4-1 ', value: (agg) => agg.availableFundStart },
+                { type: 'currency', field: '$P4-3', value: (agg) => agg.fundAmount },
+                { type: 'currency', field: '$P4-4', value: (agg) => agg.commonwealthUnspent },
+                { type: 'currency', field: '$P4-5', value: (agg) => agg.providerUnspent },
+                { type: 'currency', field: '$P4-6', value: (agg) => agg.participantUnspent },
+                { type: 'currency', field: '$P4-7', value: (agg) => agg.previousMonthSpending },
+                { type: 'currency', field: '$P4-8', value: (agg) => agg.totalAvailableBudget },
+                { type: 'currency', field: '$P4-9', value: (agg) => agg.deliveredAmount },
+                { type: 'currency', field: '$P4-10', value: (agg) => agg.adjustmentAmount },
+                { type: 'currency', field: '$P4-11', value: (agg) => agg.remainingBalance },
+                { type: 'currency', field: '$P4-12', value: (agg) => agg.committedFunds },
+                { type: 'currency', field: '$P4-13', value: (agg) => agg.remainingBalance },
+                { type: 'multi', field: 'P4 Footer 2', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate) || 'N/A' }) }
+            ]);
+
+            const assistiveOngoingAggregate = budgetAggregates.ATO ? { ...budgetAggregates.ATO } : initializeBudgetAggregate();
+            assistiveOngoingAggregate.primarySupplementLabel = assistiveOngoingAggregate.primarySupplementLabel || assistiveOngoingAggregate.fund || assistiveOngoingAggregate.fundClassification || '';
+
+            applyBudgetMapping(templateInputs, assistiveOngoingAggregate, [
+                { type: 'multi', field: 'P4-15', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
+                { type: 'currency', field: '$P4-14', value: (agg) => agg.availableFundStart },
+                { type: 'currency', field: '$P4-15', value: (agg) => agg.primarySupplementAmount },
+                { type: 'currency', field: '$P4-16', value: (agg) => agg.commonwealthUnspent },
+                { type: 'currency', field: '$P4-17', value: (agg) => agg.providerUnspent },
+                { type: 'currency', field: '$P4-18', value: (agg) => agg.participantUnspent },
+                { type: 'currency', field: '$P4-19', value: (agg) => agg.previousMonthSpending },
+                { type: 'currency', field: '$P4-20', value: (agg) => agg.totalAvailableBudget },
+                { type: 'currency', field: '$P4-21', value: (agg) => agg.deliveredAmount },
+                { type: 'currency', field: '$P4-22', value: (agg) => agg.adjustmentAmount },
+                { type: 'currency', field: '$P4-23', value: (agg) => agg.remainingBalance },
+                { type: 'currency', field: '$P4-24', value: (agg) => agg.committedFunds },
+                { type: 'currency', field: '$P4-25', value: (agg) => agg.remainingBalance },
+                { type: 'multi', field: 'P4 Footer 1', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate) || 'N/A' }) }
+            ]);
+
+            const homeModificationAggregate = budgetAggregates.HMB ? { ...budgetAggregates.HMB } : initializeBudgetAggregate();
+            homeModificationAggregate.primarySupplementLabel = homeModificationAggregate.primarySupplementLabel || homeModificationAggregate.fund || homeModificationAggregate.fundClassification || '';
+
+            applyBudgetMapping(templateInputs, homeModificationAggregate, [
+                { type: 'multi', field: 'P5-', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
+                { type: 'currency', field: '$P5-1', value: (agg) => agg.availableFundStart },
+                { type: 'currency', field: '$P5-2', value: (agg) => agg.primarySupplementAmount },
+                { type: 'currency', field: '$P5-3', value: (agg) => agg.commonwealthUnspent },
+                { type: 'currency', field: '$P5-4', value: (agg) => agg.providerUnspent },
+                { type: 'currency', field: '$P5-5', value: (agg) => agg.participantUnspent },
+                { type: 'currency', field: '$P5-6', value: (agg) => agg.previousMonthSpending },
+                { type: 'currency', field: '$P5-7', value: (agg) => agg.totalAvailableBudget },
+                { type: 'currency', field: '$P5-8', value: (agg) => agg.deliveredAmount },
+                { type: 'currency', field: '$P5-9', value: (agg) => agg.adjustmentAmount },
+                { type: 'currency', field: '$P5-10', value: (agg) => agg.remainingBalance },
+                { type: 'currency', field: '$P5-11', value: (agg) => agg.committedFunds },
+                { type: 'currency', field: '$P5-12', value: (agg) => agg.remainingBalance },
+                { type: 'multi', field: 'P4 Footer 2 copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate) || 'N/A' }) }
+            ]);
+
+            const serviceBuckets = createServiceBuckets();
+            services.forEach((service) => {
+                const code = determineFundingCode(service);
+                const bucket = serviceBuckets[code];
+                if (!bucket) {
+                    return;
+                }
+
+                const status = (service.transactionStatus || '').toString().toLowerCase();
+                const committedAmount = parseNumberValue(service.committedAtHmForDelivery);
+                const hasCommittedBucket = committedAmount > 0 && Array.isArray(bucket.committed);
+
+                if (hasCommittedBucket) {
+                    bucket.committed.push(service);
+                }
+
+                if (status.includes('adjustment') && Array.isArray(bucket.adjustment)) {
+                    bucket.adjustment.push(service);
+                    return;
+                }
+
+                if ((status.includes('delivered') || status.includes('cancelled')) && Array.isArray(bucket.delivered)) {
+                    bucket.delivered.push(service);
+                    return;
+                }
+
+                if (!status && Array.isArray(bucket.delivered) && !hasCommittedBucket) {
+                    bucket.delivered.push(service);
+                }
+            });
+
+            const tableColumnCounts = {};
+
+            Object.entries(SERVICE_TABLE_CONFIG).forEach(([code, tableConfig]) => {
+                const bucket = serviceBuckets[code];
+                if (!bucket) return;
+
+                Object.values(tableConfig).forEach((config) => {
+                    const sourceServices = bucket[config.rowType] || [];
+                    const tableData = buildServiceTableRows(sourceServices, config, business);
+                    templateInputs[config.tableName] = JSON.stringify(tableData.rows);
+                    tableColumnCounts[config.tableName] = config.columns.length;
+
+                    const totalValues = [tableData.totals.amount, tableData.totals.gov, tableData.totals.participant];
+                    config.totals.forEach((fieldName, index) => {
+                        const value = totalValues[Math.min(index, totalValues.length - 1)] || 0;
+                        setCurrencyField(templateInputs, fieldName, value);
+                    });
+                });
+            });
+
+            Object.entries(templateInputs).forEach(([key, value]) => {
+                if (typeof key === 'string' && key.startsWith('Table ') && typeof value === 'string') {
+                    try {
+                        const parsed = JSON.parse(value);
+                        const columnCount = tableColumnCounts[key]
+                            ?? (Array.isArray(parsed) && Array.isArray(parsed[0]) ? parsed[0].length : 0);
+                        const sanitized = Array.isArray(parsed)
+                            ? parsed.map((row) => {
+                                const baseRow = Array.isArray(row) ? row : [];
+                                const padded = [...baseRow];
+                                while (padded.length < columnCount) {
+                                    padded.push('');
+                                }
+                                if (columnCount > 0) {
+                                    padded.length = columnCount;
+                                }
+                                return padded.map((cell) => normalizeTableCell(cell));
+                            })
+                            : [];
+                        templateInputs[key] = JSON.stringify(sanitized);
+                    } catch (e) {
+                        templateInputs[key] = JSON.stringify([]);
+                    }
+                }
+            });
+
+            const pdfBytes = await generate({
+                template,
+                inputs: [templateInputs],
+                plugins: { text, image, line, table, multiVariableText }
+            });
+
+            // Upload the PDF
+            const participantSlug = participantName.replace(/[^a-zA-Z0-9]/g, '-');
+            const monthYear = `${statementData.month || 'Month'}_${yearValue || 'Year'}`.replace(/\s+/g, '_');
+            const filename = `output/${workspaceId}/${boardId}/monthly-statements/${participantSlug}_${monthYear}_Statement.pdf`;
+            const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+
+            if (uploadResult['$metadata'].httpStatusCode === 200) {
+                const fileUrl = await getS3FileUrl(filename);
+
+                info('Webhook-Service', 'Monthly statement PDF generated successfully', { 
+                    participant: participantName,
+                    month: statementData.month,
+                    year: statementData.year,
+                    servicesCount: services.length,
+                    fileUrl 
+                }, extractContextFromReq(req));
+
+                // Return the PDF as a blob for direct download
+                res.setHeader('Content-Type', 'application/pdf');
+                res.setHeader('Content-Disposition', `attachment; filename="${participantSlug}_${monthYear}_Statement.pdf"`);
+                return res.send(Buffer.from(pdfBytes));
+            } else {
+                throw new Error('Upload of PDF failed, please provide correct information.');
+            }
+        } catch (err) {
+            const errorMessage = (err && err.message) ? err.message : 'Server error: An unknown error occurred. Please contact support via ISO+™ Portal.';
+            error('Webhook-Service', 'Error generating monthly statement PDF', { 
+                message: errorMessage,
+                stack: err.stack 
+            }, extractContextFromReq(req));
+            return res.status(500).json({ message: errorMessage, error: err.message });
+        }
+    } catch (err) {
+        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+        return res.status(500).json({ message: err.message });
     }
 });
 
@@ -1197,7 +2129,7 @@ router.get('/uploads/:filename', async (req, res) => {
             throw new Error('Invalid file URL');
         }
     } catch (err) {
-        error('Webhook-Service', 'Error downloading file', { message: err.message }, req);
+        error('Webhook-Service', 'Error downloading file', { message: err.message }, extractContextFromReq(req));
         res.status(404).json({ message: 'File not found in ISO+™ Portal.' });
     }
 });

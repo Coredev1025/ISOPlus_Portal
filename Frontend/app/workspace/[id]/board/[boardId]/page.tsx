@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Clock, Terminal, Download, Filter, MapPin, Search, List, Map, QrCode } from "lucide-react";
+import { ArrowLeft, Clock, Terminal, Download, Filter, MapPin, Search, List, Map, QrCode, FileText, FileBarChart } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useState, useEffect } from "react";
@@ -41,6 +41,17 @@ interface Board {
   name: string;
   label?: string;
 }
+
+type BoardLabel = 'Job Management' | 'Care Management - NDIS - Certification' | 'Care Management - NDIS - Verification' | 'Care Management - SaH' | 'Care Management - SaH - Low Cat' | 'No Label';
+
+const LABEL_COLORS: Record<NonNullable<BoardLabel>, string> = {
+  'Job Management': 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300',
+  'Care Management - NDIS - Certification': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
+  'Care Management - NDIS - Verification': 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300',
+  'Care Management - SaH': 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300',
+  'Care Management - SaH - Low Cat': 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-300',
+  'No Label': 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300',
+};
 
 export default function BoardDetail() {
   const router = useRouter();
@@ -82,6 +93,19 @@ export default function BoardDetail() {
         if (!abortController.signal.aborted) {
           const boardData: Board = boardsResponse.data.board.find((b: any) => b.id == boardId);
           setBoard(boardData);
+          
+          // Store current board and workspace data in session storage
+          const currentBoardData = {
+            boardId: boardId,
+            boardName: boardData?.name || `Board ${boardId}`,
+            boardLabel: boardData?.label || 'No Label',
+            workspaceId: id,
+            workspaceName: workspace?.name || `Workspace ${id}`,
+            timestamp: new Date().toISOString()
+          };
+          
+          sessionStorage.setItem('currentBoard', JSON.stringify(currentBoardData));
+          console.log('Board data stored in session storage:', currentBoardData);
         }
       } catch (error: any) {
         if (error.name != "CanceledError" && error.name != "AbortError") {
@@ -99,7 +123,7 @@ export default function BoardDetail() {
     return () => {
       abortController.abort();
     };
-  }, [])
+  }, [id, boardId, workspace])
 
   // First useEffect for initial data fetching
   useEffect(() => {
@@ -271,11 +295,7 @@ export default function BoardDetail() {
                 <div className="flex items-center gap-2">
                   <p className="text-muted-foreground font-mono text-sm">ID: {board.id}</p>
                   {board.label && board.label !== 'No Label' && (
-                    <Badge variant="outline" className={
-                      board.label === 'Job Management' 
-                        ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300'
-                        : 'bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-300'
-                    }>
+                    <Badge variant="outline" className={LABEL_COLORS[board.label as NonNullable<BoardLabel>]}>
                       {board.label}
                     </Badge>
                   )}
@@ -323,6 +343,44 @@ export default function BoardDetail() {
                     className="w-full"
                   >
                     Generate QR Code
+                  </Button>
+                </div>
+              </Card>
+
+              {/* Invoice Generator Card */}
+              <Card className="p-6 space-y-4 card-hover">
+                <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                  <FileText className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold">Invoice Generator</h2>
+                  <p className="text-muted-foreground mb-4 text-sm">
+                    Generate professional service invoices
+                  </p>
+                  <Button
+                    onClick={() => router.push(`/workspace/${id}/board/${board.id}/invoice-generator`)}
+                    className="w-full"
+                  >
+                    Generate Invoice
+                  </Button>
+                </div>
+              </Card>
+
+              {/* Monthly Statement Card */}
+              <Card className="p-6 space-y-4 card-hover">
+                <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                  <FileBarChart className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold">Monthly Statement</h2>
+                  <p className="text-muted-foreground mb-4 text-sm">
+                    View detailed monthly service statements
+                  </p>
+                  <Button
+                    onClick={() => router.push(`/workspace/${id}/board/${board.id}/monthly-statement`)}
+                    className="w-full"
+                  >
+                    View Statement
                   </Button>
                 </div>
               </Card>

@@ -2,7 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import { authenticateToken } from '../middleware/auth.js';
 import Business from '../models/Business.js';
-import { info, error, warn } from '../utils/logger.js';
+import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import AuditTrail from '../models/AuditTrail.js';
@@ -60,7 +60,7 @@ const validateBusinessProfile = (req, res, next) => {
     }
   }
   if (errors.length > 0) {
-    warn('Business-Service', 'Validation failed', { errors: errors }, req);
+    warn('Business-Service', 'Validation failed', { errors: errors }, extractContextFromReq(req));
     return res.status(400).json({
       status: 'error',
       errors: errors
@@ -97,7 +97,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
     const business = await Business.findOne({ workspaceId });
     if (!business) {
-      warn('Business-Service', 'Business profile not found', {}, req);
+      warn('Business-Service', 'Business profile not found', {}, extractContextFromReq(req));
       return res.status(404).json({ message: 'Business profile not found' });
     }
     if (business.defaultLogo) {
@@ -110,10 +110,10 @@ router.get('/profile', authenticateToken, async (req, res) => {
       business.wideLogo = await getS3FileUrl(business.wideLogo, 3600, false);
     }
 
-    info('Business-Service', 'Fetching Business profile data successfully', { businessName: business.name }, req);
+    info('Business-Service', 'Fetching Business profile data successfully', { businessName: business.name }, extractContextFromReq(req));
     res.json(business);
   } catch (err) {
-    error('Business-Service', 'Server error', { message: err.message }, req);
+    error('Business-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -146,7 +146,7 @@ router.get('/logo', authenticateToken, async (req, res) => {
       workspaceId, 
       logoKey, 
       logoPath 
-    }, req);
+    }, extractContextFromReq(req));
 
     res.json({ logoUrl });
 
@@ -155,7 +155,7 @@ router.get('/logo', authenticateToken, async (req, res) => {
       error: err.message,
       workspaceId: req.query.workspaceId,
       logoKey: req.query.logoKey
-    }, req);
+    }, extractContextFromReq(req));
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -164,7 +164,9 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
   try {
     const workspaceId = req.body.workspaceId?.toString();
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
-    const { name, phone, email, abn, acn, state, suburb, country, postcode, street, bankAccountName, bankName, bsb, accountNumber, paymentReference, accountsReceivableTerms, accountsPayableTerms } = req.body;
+    const { name, phone, email, abn, acn, companyRegistrationId, state, suburb, country, postcode, street, bankAccountName, bankName, bsb, accountNumber, paymentReference, accountsReceivableTerms, accountsPayableTerms } = req.body;
+    const files = req.files || {};
+    const parseBoolean = (value) => value === true || value === 'true';
     const { defaultLogoRemoved, squareLogoRemoved, wideLogoRemoved } = req.body;
 
     let documentNumbering = {};
@@ -187,6 +189,7 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
       email,
       abn,
       acn,
+      companyRegistrationId,
       workspaceId,
       bankDetails: {
         accountName: bankAccountName,
@@ -201,48 +204,48 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
     };
 
     // Handle file uploads to S3
-    if (req.files['defaultLogo']) {
+    if (files['defaultLogo']) {
       if (business?.defaultLogo) {
         await deleteFileFromS3(business.defaultLogo, false);
       }
-      const defaultLogoPath = `logos/${workspaceId}/default-logo${path.extname(req.files['defaultLogo'][0].originalname)}`;
-      await uploadFileToS3(req.files['defaultLogo'][0].buffer, defaultLogoPath, false);
+      const defaultLogoPath = `logos/${workspaceId}/default-logo${path.extname(files['defaultLogo'][0].originalname)}`;
+      await uploadFileToS3(files['defaultLogo'][0].buffer, defaultLogoPath, false);
       updateData.defaultLogo = defaultLogoPath;
     }
 
-    if (req.files['squareLogo']) {
+    if (files['squareLogo']) {
       if (business?.squareLogo) {
         await deleteFileFromS3(business.squareLogo, false);
       }
-      const squareLogoPath = `logos/${workspaceId}/square-logo${path.extname(req.files['squareLogo'][0].originalname)}`;
-      await uploadFileToS3(req.files['squareLogo'][0].buffer, squareLogoPath, false);
-      setLogo(req.session.Authorization, workspaceId, req.files['squareLogo'][0], "form", req);
+      const squareLogoPath = `logos/${workspaceId}/square-logo${path.extname(files['squareLogo'][0].originalname)}`;
+      await uploadFileToS3(files['squareLogo'][0].buffer, squareLogoPath, false);
+      setLogo(req.session.Authorization, workspaceId, files['squareLogo'][0], "form", req);
       updateData.squareLogo = squareLogoPath;
     }
 
-    if (req.files['wideLogo']) {
+    if (files['wideLogo']) {
       if (business?.wideLogo) {
         await deleteFileFromS3(business.wideLogo, false);
       }
-      const wideLogoPath = `logos/${workspaceId}/wide-logo${path.extname(req.files['wideLogo'][0].originalname)}`;
-      await uploadFileToS3(req.files['wideLogo'][0].buffer, wideLogoPath, false);
-      setLogo(req.session.Authorization, workspaceId, req.files['wideLogo'][0], "document", req);
+      const wideLogoPath = `logos/${workspaceId}/wide-logo${path.extname(files['wideLogo'][0].originalname)}`;
+      await uploadFileToS3(files['wideLogo'][0].buffer, wideLogoPath, false);
+      setLogo(req.session.Authorization, workspaceId, files['wideLogo'][0], "document", req);
       updateData.wideLogo = wideLogoPath;
     }
 
-    if (defaultLogoRemoved) {
+    if (parseBoolean(defaultLogoRemoved)) {
       if (business?.defaultLogo) {
         await deleteFileFromS3(business.defaultLogo, false);
       }
       updateData.defaultLogo = null;
     }
-    if (squareLogoRemoved) {
+    if (parseBoolean(squareLogoRemoved)) {
       if (business?.squareLogo) {
         await deleteFileFromS3(business.squareLogo, false);
       }
       updateData.squareLogo = null;
     }
-    if (wideLogoRemoved) {
+    if (parseBoolean(wideLogoRemoved)) {
       if (business?.wideLogo) {
         await deleteFileFromS3(business.wideLogo, false);
       }
@@ -255,18 +258,18 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
         updateData,
         { new: true }
       );
-      info('Business-Service', 'Business profile updated', { businessName: business.name }, req);
+      info('Business-Service', 'Business profile updated', { businessName: business.name }, extractContextFromReq(req));
       AuditTrail.insertOne({ workspaceId, action: 'Updated Business profile', detail: `Changed Business profile from "${JSON.stringify(business)}" to "${JSON.stringify(updateData)}"`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
     } else {
       business = new Business(updateData);
       await business.save();
-      info('Business-Service', 'New Business profile created', { businessName: business.name }, req);
+      info('Business-Service', 'New Business profile created', { businessName: business.name }, extractContextFromReq(req));
       AuditTrail.insertOne({ workspaceId, action: 'Created new Business profile', detail: `Resourse ID: ${business._id}`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
     }
 
     res.status(200).json(business);
   } catch (err) {
-    error('Business-Service', 'Server error', { message: err.message }, req);
+    error('Business-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -299,7 +302,7 @@ router.get('/qr-logo', async (req, res) => {
     info('Business-Service', 'Logo retrieved successfully', { 
       workspaceId, 
       logoPath 
-    }, req);
+    }, extractContextFromReq(req));
 
     // Set appropriate headers for image response
     const fileExtension = logoPath.split('.').pop().toLowerCase();
@@ -313,7 +316,7 @@ router.get('/qr-logo', async (req, res) => {
     error('Business-Service', 'Error retrieving logo', { 
       error: err.message,
       workspaceId: req.query.workspaceId
-    }, req);
+    }, extractContextFromReq(req));
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -354,10 +357,10 @@ router.post('/xero/connect', authenticateToken, async (req, res) => {
       await business.save();
     }
 
-    info('Business-Service', 'Xero integration connected', { businessId: business._id }, req);
+    info('Business-Service', 'Xero integration connected', { businessId: business._id }, extractContextFromReq(req));
     res.json({ success: true });
   } catch (err) {
-    error('Business-Service', 'Server error during Xero connection', { message: err.message }, req);
+    error('Business-Service', 'Server error during Xero connection', { message: err.message }, extractContextFromReq(req));
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -369,7 +372,7 @@ router.post('/xero/disconnect', authenticateToken, async (req, res) => {
 
     const business = await Business.findOne({ workspaceId });
     if (!business) {
-      warn('Business-Service', 'Business not found', { workspaceId }, req);
+      warn('Business-Service', 'Business not found', { workspaceId }, extractContextFromReq(req));
       return res.status(404).json({ message: 'Business not found' });
     }
 
@@ -382,10 +385,10 @@ router.post('/xero/disconnect', authenticateToken, async (req, res) => {
     business.xeroOrganization = null;
 
     await business.save();
-    info('Business-Service', 'Xero integration disconnected', { businessId: business._id }, req);
+    info('Business-Service', 'Xero integration disconnected', { businessId: business._id }, extractContextFromReq(req));
     res.json({ success: true });
   } catch (err) {
-    error('Business-Service', 'Server error during Xero disconnection', { message: err.message }, req);
+    error('Business-Service', 'Server error during Xero disconnection', { message: err.message }, extractContextFromReq(req));
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -397,12 +400,12 @@ router.post('/xero/update-organization', authenticateToken, async (req, res) => 
 
     const business = await Business.findOne({ workspaceId });
     if (!business) {
-      warn('Business-Service', 'Business not found', { workspaceId }, req);
+      warn('Business-Service', 'Business not found', { workspaceId }, extractContextFromReq(req));
       return res.status(404).json({ message: 'Business not found' });
     }
 
     if (!business.xeroIntegrated) {
-      warn('Business-Service', 'Xero integration not found', { workspaceId }, req);
+      warn('Business-Service', 'Xero integration not found', { workspaceId }, extractContextFromReq(req));
       return res.status(400).json({ message: 'Xero integration not found' });
     }
 
@@ -411,15 +414,15 @@ router.post('/xero/update-organization', authenticateToken, async (req, res) => 
     if (updatedOrganization) {
       business.xeroOrganization = updatedOrganization;
       await business.save();
-      info('Business-Service', 'Xero organization info updated', { businessId: business._id }, req);
+      info('Business-Service', 'Xero organization info updated', { businessId: business._id }, extractContextFromReq(req));
       AuditTrail.insertOne({ workspaceId, action: 'Updated Xero organization info', detail: `Updated Xero organization info to "${JSON.stringify(updatedOrganization)}"`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
       res.json({ success: true, organization: updatedOrganization });
     } else {
-      error('Business-Service', 'Failed to update Xero organization info', { workspaceId }, req);
+      error('Business-Service', 'Failed to update Xero organization info', { workspaceId }, extractContextFromReq(req));
       res.status(500).json({ message: 'Failed to update Xero organization info' });
     }
   } catch (err) {
-    error('Business-Service', 'Server error during Xero organization update', { message: err.message }, req);
+    error('Business-Service', 'Server error during Xero organization update', { message: err.message }, extractContextFromReq(req));
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -427,11 +430,11 @@ router.post('/xero/update-organization', authenticateToken, async (req, res) => 
 router.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      warn('Business-Service', 'File upload failed', { message: 'File size too large. Maximum size is 10MB' }, req);
+      warn('Business-Service', 'File upload failed', { message: 'File size too large. Maximum size is 10MB' }, extractContextFromReq(req));
       return res.status(400).json({ status: 'error', message: 'File size too large. Maximum size is 10MB' });
     }
   }
-  error('Business-Service', 'File upload failed', { message: err.message || 'An unknown error occurred' }, req);
+  error('Business-Service', 'File upload failed', { message: err.message || 'An unknown error occurred' }, extractContextFromReq(req));
   res.status(500).json({ status: 'error', message: err.message || 'An unknown error occurred' });
 });
 

@@ -275,6 +275,7 @@ export default function ConfigureBusinessPage() {
     name: "",
     phone: "",
     email: "",
+    companyRegistrationId: "",
     street: "",
     country: "",
     suburb: "",
@@ -311,6 +312,7 @@ export default function ConfigureBusinessPage() {
             name: data.name || "",
             phone: data.phone || "",
             email: data.email || "",
+            companyRegistrationId: data.companyRegistrationId || "",
             street: data.address?.street || "",
             country: data.address?.country || "",
             suburb: data.address?.suburb || "",
@@ -708,6 +710,18 @@ export default function ConfigureBusinessPage() {
                       />
                     </div>
                     <div className="space-y-2">
+                      <Label htmlFor="companyRegistrationId">Company Registration ID</Label>
+                      <Input
+                        id="companyRegistrationId"
+                        placeholder="NDIS of Aged Care Provider ID"
+                        value={formData.companyRegistrationId}
+                        onChange={handleInputChange}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
                       <Label htmlFor="phone">Phone Number</Label>
                       <Input
                         id="phone"
@@ -716,17 +730,16 @@ export default function ConfigureBusinessPage() {
                         onChange={handleInputChange}
                       />
                     </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Business Email</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="Enter business email"
-                      value={formData.email}
-                      onChange={handleInputChange}
-                    />
+                    <div className="space-y-2">
+                      <Label htmlFor="email">Business Email</Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        placeholder="Enter business email"
+                        value={formData.email}
+                        onChange={handleInputChange}
+                      />
+                    </div>
                   </div>
                 </div>
 

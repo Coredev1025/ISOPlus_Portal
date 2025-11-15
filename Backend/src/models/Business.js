@@ -46,6 +46,9 @@ const businessSchema = new mongoose.Schema({
   acn: {
     type: String
   },
+  companyRegistrationId: {
+    type: String
+  },
   xeroIntegrated: {
     type: Boolean,
     default: false

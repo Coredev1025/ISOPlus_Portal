@@ -29,13 +29,70 @@ import { useAppContext } from "../context";
 import { PaginationNext, PaginationPrevious, PaginationItem, PaginationLink } from "@/components/ui/pagination";
 import { showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
 
+interface ItemValue {
+  attributeId: string;
+  attributeName: string;
+  attributeType: string;
+  data: any;
+}
+
+interface LogMetadata {
+  source?: string;
+  ip?: string;
+  email?: string;
+  userId?: string;
+  userRole?: string;
+  timestamp?: string;
+  level?: string;
+  message?: string;
+  errorType?: string;
+  attributeId?: string;
+  diagnosticInfo?: {
+    attributeIdValid?: boolean;
+    attributeIdFormat?: boolean;
+    hasStatusCode?: boolean;
+    hasResponseData?: boolean;
+    hasRequestPayload?: boolean;
+    timestamp?: string;
+  };
+  apiContext?: {
+    statusCode?: number;
+    responseData?: any;
+    requestPayload?: any;
+    errorDetails?: any;
+  };
+  requestContext?: {
+    method?: string;
+    url?: string;
+    userAgent?: string;
+    referer?: string;
+    workspaceId?: string;
+    boardId?: string;
+  };
+  stackTrace?: string;
+  operationType?: string;
+  operation?: string;
+  success?: boolean;
+  requestId?: string;
+  itemValues?: ItemValue[];
+  uploadDetails?: {
+    uploadId?: string;
+    fileName?: string;
+    fileSize?: number;
+    mimeType?: string;
+  };
+  [key: string]: any;
+}
+
 interface Log {
   id: string;
   timestamp: string;
   level: string;
   message: string;
   source: string;
-  details: Object;
+  details: {
+    metadata: LogMetadata;
+  };
 };
 
 // Mock data for audit trail
@@ -507,6 +564,328 @@ function GlobalApplicationLogs() {
                             {JSON.stringify(log.details, null, 2)}
                           </pre>
                         </div>
+                        
+                        {/* Enhanced diagnostic information display */}
+                        {log.details?.metadata && (
+                          <div className="space-y-3">
+                            {/* Error Type Classification */}
+                            {log.details.metadata.errorType && (
+                              <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                                <h5 className="text-sm font-semibold text-red-800 mb-1">Error Type</h5>
+                                <span className="text-sm text-red-700 bg-red-100 px-2 py-1 rounded">
+                                  {log.details.metadata.errorType}
+                                </span>
+                              </div>
+                            )}
+                            
+                            {/* Attribute Error Details */}
+                            {log.details.metadata.errorType === 'ATTRIBUTE_RECOGNITION_ERROR' && (
+                              <div className="p-3 bg-orange-50 border border-orange-200 rounded-md">
+                                <h5 className="text-sm font-semibold text-orange-800 mb-2">Attribute Error Details</h5>
+                                <div className="space-y-2 text-sm">
+                                  <div>
+                                    <span className="font-medium">Attribute ID:</span>
+                                    <code className="ml-2 bg-orange-100 px-2 py-1 rounded text-orange-800">
+                                      {log.details.metadata.attributeId || 'N/A'}
+                                    </code>
+                                  </div>
+                                  {log.details.metadata.diagnosticInfo && (
+                                    <div>
+                                      <span className="font-medium">Validation:</span>
+                                      <div className="ml-2 space-y-1">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-xs">Valid Format:</span>
+                                          <span className={`text-xs px-2 py-1 rounded ${
+                                            log.details.metadata.diagnosticInfo.attributeIdFormat 
+                                              ? 'bg-green-100 text-green-800' 
+                                              : 'bg-red-100 text-red-800'
+                                          }`}>
+                                            {log.details.metadata.diagnosticInfo.attributeIdFormat ? 'Yes' : 'No'}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-xs">Has Value:</span>
+                                          <span className={`text-xs px-2 py-1 rounded ${
+                                            log.details.metadata.diagnosticInfo.attributeIdValid 
+                                              ? 'bg-green-100 text-green-800' 
+                                              : 'bg-red-100 text-red-800'
+                                          }`}>
+                                            {log.details.metadata.diagnosticInfo.attributeIdValid ? 'Yes' : 'No'}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* API Error Details */}
+                            {log.details.metadata.errorType === 'API_ERROR' && (
+                              <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
+                                <h5 className="text-sm font-semibold text-blue-800 mb-2">API Error Details</h5>
+                                <div className="space-y-2 text-sm">
+                                  {log.details.metadata.apiContext?.statusCode && (
+                                    <div>
+                                      <span className="font-medium">Status Code:</span>
+                                      <span className="ml-2 bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                        {log.details.metadata.apiContext.statusCode}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {log.details.metadata.apiContext?.errorDetails && (
+                                    <div>
+                                      <span className="font-medium">Error Details:</span>
+                                      <div className="mt-1 bg-blue-100 p-2 rounded text-blue-800">
+                                        {typeof log.details.metadata.apiContext.errorDetails === 'string' 
+                                          ? log.details.metadata.apiContext.errorDetails
+                                          : JSON.stringify(log.details.metadata.apiContext.errorDetails, null, 2)
+                                        }
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* Request Context */}
+                            {log.details.metadata.requestContext && (
+                              <div className="p-3 bg-gray-50 border border-gray-200 rounded-md">
+                                <h5 className="text-sm font-semibold text-gray-800 mb-2">Request Context</h5>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                                  {log.details.metadata.requestContext.workspaceId && (
+                                    <div>
+                                      <span className="font-medium">Workspace ID:</span>
+                                      <code className="ml-2 bg-gray-100 px-2 py-1 rounded text-gray-800">
+                                        {log.details.metadata.requestContext.workspaceId}
+                                      </code>
+                                    </div>
+                                  )}
+                                  {log.details.metadata.requestContext.boardId && (
+                                    <div>
+                                      <span className="font-medium">Board ID:</span>
+                                      <code className="ml-2 bg-gray-100 px-2 py-1 rounded text-gray-800">
+                                        {log.details.metadata.requestContext.boardId}
+                                      </code>
+                                    </div>
+                                  )}
+                                  {log.details.metadata.requestContext.method && (
+                                    <div>
+                                      <span className="font-medium">Method:</span>
+                                      <span className="ml-2 bg-gray-100 px-2 py-1 rounded text-gray-800">
+                                        {log.details.metadata.requestContext.method}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {log.details.metadata.requestContext.url && (
+                                    <div>
+                                      <span className="font-medium">URL:</span>
+                                      <code className="ml-2 bg-gray-100 px-2 py-1 rounded text-gray-800 text-xs">
+                                        {log.details.metadata.requestContext.url}
+                                      </code>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* Operation Context */}
+                            {log.details.metadata.requestId && (
+                              <div className="p-3 bg-purple-50 border border-purple-200 rounded-md">
+                                <h5 className="text-sm font-semibold text-purple-800 mb-2">Operation Context</h5>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                                  <div>
+                                    <span className="font-medium">Request ID:</span>
+                                    <code className="ml-2 bg-purple-100 px-2 py-1 rounded text-purple-800">
+                                      {log.details.metadata.requestId}
+                                    </code>
+                                  </div>
+                                  {log.details.metadata.operation && (
+                                    <div>
+                                      <span className="font-medium">Operation:</span>
+                                      <span className="ml-2 bg-purple-100 px-2 py-1 rounded text-purple-800">
+                                        {log.details.metadata.operation}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {log.details.metadata.operationType && (
+                                    <div>
+                                      <span className="font-medium">Operation Type:</span>
+                                      <span className="ml-2 bg-purple-100 px-2 py-1 rounded text-purple-800">
+                                        {log.details.metadata.operationType}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {log.details.metadata.success !== undefined && (
+                                    <div>
+                                      <span className="font-medium">Success:</span>
+                                      <span className={`ml-2 px-2 py-1 rounded ${
+                                        log.details.metadata.success 
+                                          ? 'bg-green-100 text-green-800' 
+                                          : 'bg-red-100 text-red-800'
+                                      }`}>
+                                        {log.details.metadata.success ? 'Yes' : 'No'}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* Board and View Details */}
+                            {(log.details.metadata.boardId || log.details.metadata.viewId || log.details.metadata.itemId) && (
+                              <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-md">
+                                <h5 className="text-sm font-semibold text-indigo-800 mb-2">Board & View Details</h5>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                                  {log.details.metadata.boardId && (
+                                    <div>
+                                      <span className="font-medium">Board ID:</span>
+                                      <code className="ml-2 bg-indigo-100 px-2 py-1 rounded text-indigo-800">
+                                        {log.details.metadata.boardId}
+                                      </code>
+                                    </div>
+                                  )}
+                                  {log.details.metadata.boardName && (
+                                    <div>
+                                      <span className="font-medium">Board Name:</span>
+                                      <span className="ml-2 bg-indigo-100 px-2 py-1 rounded text-indigo-800">
+                                        {log.details.metadata.boardName}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {log.details.metadata.viewId && (
+                                    <div>
+                                      <span className="font-medium">View ID:</span>
+                                      <code className="ml-2 bg-indigo-100 px-2 py-1 rounded text-indigo-800">
+                                        {log.details.metadata.viewId}
+                                      </code>
+                                    </div>
+                                  )}
+                                  {log.details.metadata.viewName && (
+                                    <div>
+                                      <span className="font-medium">View Name:</span>
+                                      <span className="ml-2 bg-indigo-100 px-2 py-1 rounded text-indigo-800">
+                                        {log.details.metadata.viewName}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {log.details.metadata.viewType && (
+                                    <div>
+                                      <span className="font-medium">View Type:</span>
+                                      <span className="ml-2 bg-indigo-100 px-2 py-1 rounded text-indigo-800">
+                                        {log.details.metadata.viewType}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {log.details.metadata.folderId && (
+                                    <div>
+                                      <span className="font-medium">Folder ID:</span>
+                                      <code className="ml-2 bg-indigo-100 px-2 py-1 rounded text-indigo-800">
+                                        {log.details.metadata.folderId}
+                                      </code>
+                                    </div>
+                                  )}
+                                  {log.details.metadata.itemId && (
+                                    <div>
+                                      <span className="font-medium">Item ID:</span>
+                                      <code className="ml-2 bg-indigo-100 px-2 py-1 rounded text-indigo-800">
+                                        {log.details.metadata.itemId}
+                                      </code>
+                                    </div>
+                                  )}
+                                  {log.details.metadata.itemName && (
+                                    <div>
+                                      <span className="font-medium">Item Name:</span>
+                                      <span className="ml-2 bg-indigo-100 px-2 py-1 rounded text-indigo-800">
+                                        {log.details.metadata.itemName}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* Upload Details */}
+                            {log.details.metadata.uploadDetails && (
+                              <div className="p-3 bg-teal-50 border border-teal-200 rounded-md">
+                                <h5 className="text-sm font-semibold text-teal-800 mb-2">Upload Details</h5>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                                  {log.details.metadata.uploadDetails.uploadId && (
+                                    <div>
+                                      <span className="font-medium">Upload ID:</span>
+                                      <code className="ml-2 bg-teal-100 px-2 py-1 rounded text-teal-800">
+                                        {log.details.metadata.uploadDetails.uploadId}
+                                      </code>
+                                    </div>
+                                  )}
+                                  {log.details.metadata.uploadDetails.fileName && (
+                                    <div>
+                                      <span className="font-medium">File Name:</span>
+                                      <span className="ml-2 bg-teal-100 px-2 py-1 rounded text-teal-800">
+                                        {log.details.metadata.uploadDetails.fileName}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {log.details.metadata.uploadDetails.fileSize && (
+                                    <div>
+                                      <span className="font-medium">File Size:</span>
+                                      <span className="ml-2 bg-teal-100 px-2 py-1 rounded text-teal-800">
+                                        {log.details.metadata.uploadDetails.fileSize} bytes
+                                      </span>
+                                    </div>
+                                  )}
+                                  {log.details.metadata.uploadDetails.mimeType && (
+                                    <div>
+                                      <span className="font-medium">MIME Type:</span>
+                                      <span className="ml-2 bg-teal-100 px-2 py-1 rounded text-teal-800">
+                                        {log.details.metadata.uploadDetails.mimeType}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* Item Values */}
+                            {log.details.metadata.itemValues && log.details.metadata.itemValues.length > 0 && (
+                              <div className="p-3 bg-amber-50 border border-amber-200 rounded-md">
+                                <h5 className="text-sm font-semibold text-amber-800 mb-2">Item Values</h5>
+                                <div className="space-y-2">
+                                  {log.details.metadata.itemValues.map((itemValue: ItemValue, index: number) => (
+                                    <div key={index} className="bg-amber-100 p-2 rounded text-sm">
+                                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                        <div>
+                                          <span className="font-medium">Attribute ID:</span>
+                                          <code className="ml-2 bg-amber-200 px-1 py-0.5 rounded text-xs">
+                                            {itemValue.attributeId}
+                                          </code>
+                                        </div>
+                                        <div>
+                                          <span className="font-medium">Name:</span>
+                                          <span className="ml-2">{itemValue.attributeName}</span>
+                                        </div>
+                                        <div>
+                                          <span className="font-medium">Type:</span>
+                                          <span className="ml-2">{itemValue.attributeType}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* Stack Trace */}
+                            {log.details.metadata.stackTrace && (
+                              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                                <h5 className="text-sm font-semibold text-yellow-800 mb-2">Stack Trace</h5>
+                                <pre className="text-xs bg-yellow-100 p-2 rounded overflow-x-auto text-yellow-800">
+                                  {log.details.metadata.stackTrace}
+                                </pre>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

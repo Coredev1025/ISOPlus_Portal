@@ -1,7 +1,7 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { getFolder, getItem, putTimeTracking } from '../services/isoplus.js';
-import { info, error, warn } from '../utils/logger.js';
+import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
 
 const router = express.Router();
 

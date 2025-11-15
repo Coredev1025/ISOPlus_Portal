@@ -1,7 +1,7 @@
 import axios from "axios";
 import Board from '../models/Board.js';
 import FormData from 'form-data';
-import { info, warn, error } from '../utils/logger.js';
+import { info, warn, error, logAttributeError, logApiError, logOperationStart, logOperationEnd, extractContextFromReq } from '../utils/logger.js';
 
 export async function getWorkspace(authorization, userEmail = null) {
     try {
@@ -133,7 +133,7 @@ export async function getFolder(workspaceId, boardId) {
         };
         const params = {
             "limit": "100",
-            "sort_by": "created_at",
+            "sort_by": "id",
             "sort_direction": "desc",
         };
 
@@ -292,7 +292,7 @@ export async function getViewsById(authorization, workspaceId, boardId, viewId) 
 export async function setIntegrationMessage(workspaceId, boardId, itemId, message) {
     try {
         const board = await Board.findOne({ boardId: boardId.toString() });
-        if(!board.attribute.id) {
+        if (!board.attribute.id) {
             throw new Error("Internal message attribute not found in board configuration");
         }
         await axios.put(
@@ -772,8 +772,84 @@ export async function getBoardAttributes(workspaceId, boardId) {
     }
 }
 
-export async function setLogo(authorization, workspaceId, logo, type, req) {
+// Function to validate board attributes before logo processing
+async function validateBoardAttributes(workspaceId, boardId, viewId, coverAttributeId, req) {
     try {
+        info('ISO+™ Service', 'Validating board attributes', { 
+            workspaceId, 
+            boardId, 
+            viewId, 
+            coverAttributeId 
+        }, req);
+        
+        // Get board attributes to validate the cover attribute exists
+        const attributesResponse = await axios.get(
+            `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/attributes`,
+            {
+                headers: {
+                    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+                    "Accept": "application/json",
+                    "X-API-Version": "2025-02-26.morava",
+                }
+            }
+        );
+        
+        if (attributesResponse.status === 200) {
+            const attributes = attributesResponse.data.attributes || [];
+            const coverAttribute = attributes.find(attr => attr.id === coverAttributeId);
+            
+            if (!coverAttribute) {
+                warn('ISO+™ Service', 'Cover attribute not found in board attributes', {
+                    workspaceId,
+                    boardId,
+                    viewId,
+                    coverAttributeId,
+                    availableAttributes: attributes.map(attr => ({ id: attr.id, name: attr.name, type: attr.type }))
+                }, req);
+                return false;
+            }
+            
+            info('ISO+™ Service', 'Cover attribute validation successful', {
+                workspaceId,
+                boardId,
+                viewId,
+                coverAttributeId,
+                attributeName: coverAttribute.name,
+                attributeType: coverAttribute.type
+            }, req);
+            return true;
+        }
+        
+        return false;
+    } catch (err) {
+        error('ISO+™ Service', 'Error validating board attributes', {
+            workspaceId,
+            boardId,
+            viewId,
+            coverAttributeId,
+            error: err.message,
+            statusCode: err.response?.status
+        }, req);
+        return false;
+    }
+}
+
+export async function setLogo(authorization, workspaceId, logo, type, req) {
+    const requestId = req?.headers?.['x-request-id'] || `logo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const operationContext = { 
+        workspaceId, 
+        logoType: type, 
+        requestId,
+        logoFileName: logo?.originalname,
+        logoSize: logo?.size,
+        logoMimeType: logo?.mimetype
+    };
+    
+    logOperationStart('ISO+™ Service', 'setLogo', operationContext, req);
+    
+    try {
+        // Log workspace validation
+        info('ISO+™ Service', 'Validating workspace access', { workspaceId, requestId }, extractContextFromReq(req));
         const boards = await getBoard(authorization, workspaceId);
         const body = new FormData();
         body.append('file', logo.buffer, logo.originalname);
@@ -791,17 +867,62 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
         );
 
         if (uploadImageURL.status == 201 && boards.status === 200 && boards.board?.length > 0) {
+            info('ISO+™ Service', 'Logo uploaded successfully, processing boards', { 
+                workspaceId, 
+                requestId, 
+                uploadId: uploadImageURL.data.id,
+                boardCount: boards.board.length,
+                boards: boards.board.map(b => ({ id: b.id, name: b.name }))
+            }, req);
+            
             for (const boardItem of boards.board) {
+                info('ISO+™ Service', 'Processing board for logo update', { 
+                    workspaceId, 
+                    requestId, 
+                    boardId: boardItem.id, 
+                    boardName: boardItem.name,
+                    boardDescription: boardItem.description 
+                }, req);
                 const response = await getAllViews(authorization, workspaceId, boardItem.id);
                 if (response.status !== 200) {
-                    warn(`ISO+™ Service`, `Failed to fetch views for board ${boardItem.id}`, { response }, req);
+                    warn(`ISO+™ Service`, `Failed to fetch views for board ${boardItem.id}`, { 
+                        workspaceId, 
+                        requestId, 
+                        boardId: boardItem.id, 
+                        responseStatus: response.status,
+                        responseData: response.data 
+                    }, req);
                     continue;
                 }
+                
+                info('ISO+™ Service', 'Views fetched successfully', { 
+                    workspaceId, 
+                    requestId, 
+                    boardId: boardItem.id, 
+                    totalViews: response.views?.length || 0,
+                    viewTypes: response.views?.map(v => ({ id: v.id, name: v.name, type: v.type })) || []
+                }, req);
+                
                 const views = response.views.filter(item => item.type.toLowerCase() === type);
                 if (!views || views.length === 0) {
-                    warn(`ISO+™ Service`, `No views found for board ${boardItem.id}`, { response }, req);
+                    warn(`ISO+™ Service`, `No views found for board ${boardItem.id}`, { 
+                        workspaceId, 
+                        requestId, 
+                        boardId: boardItem.id, 
+                        requestedType: type,
+                        availableTypes: response.views?.map(v => v.type) || [],
+                        allViews: response.views?.map(v => ({ id: v.id, name: v.name, type: v.type })) || []
+                    }, req);
                     continue;
                 }
+                
+                info('ISO+™ Service', `Found ${views.length} ${type} views for processing`, { 
+                    workspaceId, 
+                    requestId, 
+                    boardId: boardItem.id, 
+                    viewCount: views.length,
+                    views: views.map(v => ({ id: v.id, name: v.name, type: v.type }))
+                }, req);
                 if (type == "form") {
                     for (const viewItem of views) {
                         const updateView = {
@@ -830,16 +951,96 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                     }
                 } else if (type == "document") {
                     for (const viewItem of views) {
+                        info('ISO+™ Service', 'Processing document view for logo update', { 
+                            workspaceId, 
+                            requestId, 
+                            boardId: boardItem.id, 
+                            viewId: viewItem.id,
+                            viewName: viewItem.name,
+                            viewType: viewItem.type,
+                            folderId: viewItem.folder_id,
+                            settings: viewItem.settings
+                        }, req);
+                        
                         const coverAttributeid = viewItem.settings.editorCoverAttributeId;
                         if (!coverAttributeid) {
-                            warn(`ISO+™ Service`, `No cover attribute id found for view ${viewItem.id}`, { viewItem }, req);
+                            warn(`ISO+™ Service`, `No cover attribute id found for view ${viewItem.id}`, { 
+                                workspaceId, 
+                                requestId, 
+                                boardId: boardItem.id, 
+                                viewId: viewItem.id,
+                                viewName: viewItem.name,
+                                viewSettings: viewItem.settings,
+                                availableSettings: Object.keys(viewItem.settings || {})
+                            }, req);
                             continue;
                         }
+                        
+                        info('ISO+™ Service', 'Cover attribute found, validating before processing', { 
+                            workspaceId, 
+                            requestId, 
+                            boardId: boardItem.id, 
+                            viewId: viewItem.id,
+                            coverAttributeId: coverAttributeid
+                        }, req);
+                        
+                        // Validate the cover attribute exists in the board
+                        const isValidAttribute = await validateBoardAttributes(workspaceId, boardItem.id, viewItem.id, coverAttributeid, req);
+                        if (!isValidAttribute) {
+                            warn('ISO+™ Service', 'Skipping view due to invalid cover attribute', {
+                                workspaceId,
+                                requestId,
+                                boardId: boardItem.id,
+                                viewId: viewItem.id,
+                                coverAttributeId: coverAttributeid
+                            }, req);
+                            continue;
+                        }
+                        
+                        info('ISO+™ Service', 'Cover attribute validated, fetching items', { 
+                            workspaceId, 
+                            requestId, 
+                            boardId: boardItem.id, 
+                            viewId: viewItem.id,
+                            coverAttributeId: coverAttributeid
+                        }, req);
                         const items = await getItem(workspaceId, boardItem.id, viewItem.folder_id);
                         if (items.status == 200 && items.item && items.item.length > 0) {
+                            info('ISO+™ Service', 'Items fetched successfully for document view', { 
+                                workspaceId, 
+                                requestId, 
+                                boardId: boardItem.id, 
+                                viewId: viewItem.id,
+                                itemCount: items.item.length,
+                                items: items.item.map(i => ({ id: i.id, name: i.name }))
+                            }, req);
+                            
                             for (const item of items.item) {
+                                info('ISO+™ Service', 'Processing item for logo update', { 
+                                    workspaceId, 
+                                    requestId, 
+                                    boardId: boardItem.id, 
+                                    viewId: viewItem.id,
+                                    itemId: item.id,
+                                    itemName: item.name
+                                }, req);
+                                
                                 const itemValues = await getItemValues(workspaceId, boardItem.id, item.id);
                                 if (itemValues) {
+                                    info('ISO+™ Service', 'Item values fetched, looking for cover attribute', { 
+                                        workspaceId, 
+                                        requestId, 
+                                        boardId: boardItem.id, 
+                                        viewId: viewItem.id,
+                                        itemId: item.id,
+                                        coverAttributeId: coverAttributeid,
+                                        availableAttributes: itemValues.values?.map(v => ({ 
+                                            id: v.attribute.id, 
+                                            name: v.attribute.name, 
+                                            type: v.attribute.type 
+                                        })) || []
+                                    }, req);
+                                    
                                     let doc = itemValues.values.find(v => v.attribute.id == coverAttributeid);
                                     if (doc) {
                                         doc.data.push({ id: uploadImageURL.data.id });
@@ -865,7 +1066,59 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                                             }
                                         }
                                     } catch (err) {
-                                        error('ISO+™ Service', 'Error updating item for document logo:', err.response?.data || err.message);
+                                        const errorContext = {
+                                            workspaceId,
+                                            boardId: boardItem.id,
+                                            boardName: boardItem.name,
+                                            itemId: item.id,
+                                            itemName: item.name,
+                                            viewId: viewItem.id,
+                                            viewName: viewItem.name,
+                                            viewType: viewItem.type,
+                                            folderId: viewItem.folder_id,
+                                            coverAttributeId: coverAttributeid,
+                                            requestId,
+                                            errorDetails: err.response?.data || err.message,
+                                            statusCode: err.response?.status,
+                                            requestPayload: {
+                                                values: [{
+                                                    data: uploadImageURL.data.id,
+                                                    attribute_id: coverAttributeid
+                                                }]
+                                            },
+                                            stackTrace: err.stack,
+                                            itemValues: itemValues?.values?.map(v => ({
+                                                attributeId: v.attribute.id,
+                                                attributeName: v.attribute.name,
+                                                attributeType: v.attribute.type,
+                                                data: v.data
+                                            })) || [],
+                                            viewSettings: viewItem.settings,
+                                            uploadDetails: {
+                                                uploadId: uploadImageURL.data.id,
+                                                fileName: logo?.originalname,
+                                                fileSize: logo?.size,
+                                                mimeType: logo?.mimetype
+                                            }
+                                        };
+                                        
+                                        // Use specialized logging for attribute errors
+                                        if (err.response?.data && err.response.data.includes('Attribute(s) not recognized')) {
+                                            logAttributeError(
+                                                'ISO+™ Service', 
+                                                'Error updating item for document logo: Attribute not recognized', 
+                                                coverAttributeid, 
+                                                errorContext, 
+                                                req
+                                            );
+                                        } else {
+                                            logApiError(
+                                                'ISO+™ Service', 
+                                                'Error updating item for document logo:', 
+                                                errorContext, 
+                                                req
+                                            );
+                                        }
                                     }
                                     await new Promise(resolve => setTimeout(resolve, 2000));
                                 }
@@ -880,7 +1133,23 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                                 });
                                 info('ISO+™ Service', `Logo set successfully for view: ${viewItem.id}`);
                             } catch (err) {
-                                error('ISO+™ Service', 'Error setting logo for view:', err.response?.data || err.message);
+                                const errorContext = {
+                                    workspaceId,
+                                    boardId: boardItem.id,
+                                    boardName: boardItem.name,
+                                    viewId: viewItem.id,
+                                    viewName: viewItem.name,
+                                    viewType: viewItem.type,
+                                    folderId: viewItem.folder_id,
+                                    requestId,
+                                    errorDetails: err.response?.data || err.message,
+                                    statusCode: err.response?.status,
+                                    requestPayload: viewItem,
+                                    stackTrace: err.stack,
+                                    viewSettings: viewItem.settings,
+                                    editorItems: viewItem.settings?.editorItems || {}
+                                };
+                                error('ISO+™ Service', 'Error setting logo for view:', errorContext, extractContextFromReq(req));
                             }
                         }
                         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -890,8 +1159,19 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
         } else {
             throw new Error("Failed to fetch boards");
         }
+        
+        logOperationEnd('ISO+™ Service', 'setLogo', { workspaceId, logoType: type, success: true }, req);
     } catch (err) {
-        error('ISO+™ Service', 'Error setting form logo:', err?.response?.data || err?.message || err);
+        const errorContext = {
+            workspaceId,
+            logoType: type,
+            errorDetails: err?.response?.data || err?.message || err,
+            statusCode: err?.response?.status,
+            stackTrace: err?.stack,
+            operation: 'setLogo'
+        };
+        error('ISO+™ Service', 'Error setting form logo:', errorContext, extractContextFromReq(req));
+        logOperationEnd('ISO+™ Service', 'setLogo', { workspaceId, logoType: type, success: false, error: err.message }, req);
         return null;
     }
 }
@@ -979,7 +1259,7 @@ export async function getQuoteNDISReferencedItems(workspaceId, boardId, itemId) 
         'Very Remote': 'Very Remote($)',
         '': 'ACT($)'
     }
-    let serviceAreaValues = null, directSupportValues = null, providerTravelValues = null, activityBasedTransportValues = null, centreCapitalCostsValues = null, providerTravelLabourTravelTime=null;
+    let serviceAreaValues = null, directSupportValues = null, providerTravelValues = null, activityBasedTransportValues = null, centreCapitalCostsValues = null, providerTravelLabourTravelTime = null;
 
     const referenceResponse = await getReferences(workspaceId, boardId, itemId);
     if (!referenceResponse) return [null, null];
@@ -1134,7 +1414,7 @@ export async function getQuoteNDISReferencedItems(workspaceId, boardId, itemId) 
     return [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues, providerTravelLabourTravelTime];
 }
 
-export async function getParticipantsServicePlanReferencedItems(workspaceId, boardId, itemId) {
+export async function getNDISParticipantsServicePlanReferencedItems(workspaceId, boardId, itemId) {
     const ServiceAreaMap = {
         'Non-Remote (ACT)': 'ACT($)',
         'Non-Remote (NSW)': 'NSW($)',
@@ -1159,7 +1439,7 @@ export async function getParticipantsServicePlanReferencedItems(workspaceId, boa
         if (!attribute) continue;
 
         switch (attribute.name) {
-            case 'Service Area': 
+            case 'Service Area':
                 {
                     const serviceValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
                     if (serviceValues) {
@@ -1200,7 +1480,7 @@ export async function getParticipantsServicePlanReferencedItems(workspaceId, boa
                             "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
                             "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
                             "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
-                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations").data.toString(),
+                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations")?.data?.toString() || 'NA',
                         };
                     }
                     break;
@@ -1229,7 +1509,7 @@ export async function getParticipantsServicePlanReferencedItems(workspaceId, boa
                             "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
                             "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
                             "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
-                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations").data.toString(),
+                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations")?.data?.toString() || 'NA',
                         };
                     }
                     break;
@@ -1258,7 +1538,7 @@ export async function getParticipantsServicePlanReferencedItems(workspaceId, boa
                             "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
                             "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
                             "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
-                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations").data.toString(),
+                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations")?.data?.toString() || 'NA',
                         };
                     }
                     break;
@@ -1287,7 +1567,7 @@ export async function getParticipantsServicePlanReferencedItems(workspaceId, boa
                             "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
                             "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
                             "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
-                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations").data.toString(),
+                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations")?.data?.toString() || 'NA',
                         };
                     }
                     break;
@@ -1298,7 +1578,7 @@ export async function getParticipantsServicePlanReferencedItems(workspaceId, boa
     return [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues];
 }
 
-export async function getMasterPlanReferencedItems(workspaceId, boardId, itemId) {
+export async function getNDISMasterPlanReferencedItems(workspaceId, boardId, itemId) {
     let servicePlanValues = null, cancellationTypeValues = null, fundValues = null, participantProfileValues = null, participationTypeValues = null;
 
     const referenceResponse = await getReferences(workspaceId, boardId, itemId);
@@ -1314,7 +1594,7 @@ export async function getMasterPlanReferencedItems(workspaceId, boardId, itemId)
                 {
                     const servicePlan = await getItemValues(workspaceId, boardId, reference.to_item_id);
                     if (servicePlan) {
-                        const [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = await getParticipantsServicePlanReferencedItems(workspaceId, boardId, reference.to_item_id);
+                        const [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = await getNDISParticipantsServicePlanReferencedItems(workspaceId, boardId, reference.to_item_id);
                         const values = servicePlan.values;
                         let
                             directSupportUnit = null,
@@ -1467,6 +1747,352 @@ export async function getMasterPlanReferencedItems(workspaceId, boardId, itemId)
 
     return [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues, participationTypeValues];
 }
+
+export async function getAgeCareParticipantsServicePlanReferencedItems(workspaceId, boardId, itemId) {
+    let participantsProfileValues = null, homeSupportValues = null, assistiveTechnologyShortTermValues = null, assistiveTechnologyOngoingValues = null, homeModificationValues = null, healthProfessionalValues = null, wraparoundValues = null;
+
+    const referenceResponse = await getReferences(workspaceId, boardId, itemId);
+    if (!referenceResponse) return [null, null];
+
+    for (const reference of referenceResponse.data) {
+        const attribute = await getAttribute(workspaceId, boardId, reference.attribute_id);
+        if (!attribute) continue;
+        switch (attribute.name) {
+            case 'Participant Profile':
+                {
+                    const participantsProfile = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (participantsProfile) {
+                        const values = participantsProfile.values;
+                        if (!values.some(v => v.attribute.name === "Full Name/Preferred Name")) {
+                            throw new Error("Full Name/Preferred Name is required");
+                        }
+
+                        participantsProfileValues = {
+                            id: participantsProfile.id,
+                            fullName: values.find(v => v.attribute.name === "Full Name/Preferred Name").data.toString() || '',
+                            firstName: values.find(v => v.attribute.name === "First Name").data.toString() || '',
+                            lastName: values.find(v => v.attribute.name === "Last Name").data.toString() || '',
+                            email: values.find(v => v.attribute.name === "Email").data.toString() || '',
+                            phone: values.find(v => v.attribute.name === "Primary Phone Number").data.toString() || '',
+                            address: values.find(v => v.attribute.name === "Address").data.toString() || '',
+                            suburb: values.find(v => v.attribute.name === "Suburb").data.toString() || '',
+                            state: values.find(v => v.attribute.name === "State").data.toString() || '',
+                            postcode: values.find(v => v.attribute.name === "Postcode").data.toString() || '',
+                            billingContact: values.find(v => v.attribute.name === "Billing Contact").data.toString() || '',
+                            billingAddress: values.find(v => v.attribute.name === "Billing Address").data.toString() || '',
+                        };
+                    }
+                    break;
+                }
+            case 'Home Support (HS)':
+                {
+                    const homeSupport = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (homeSupport) {
+                        const values = homeSupport.values;
+                        if (!values.some(v => v.attribute.name === "Service")) {
+                            throw new Error("Service is required");
+                        }
+
+                        homeSupportValues = {
+                            id: homeSupport.id,
+                            service: values.find(v => v.attribute.name === "Service").data.toString() || '',
+                            serviceType: values.find(v => v.attribute.name === "Service Type").data.toString() || '',
+                            unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
+                            unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
+                            participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                            wraparound: values.find(v => v.attribute.name === "Wraparound")?.data?.toString() || '',
+                        }
+                    }
+                    break;
+                }
+            case 'Assistive Technology (AT) - Short Term':
+                {
+                    const assistiveTechnologyShortTerm = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (assistiveTechnologyShortTerm) {
+                        const values = assistiveTechnologyShortTerm.values;
+                        if (!values.some(v => v.attribute.name === "Service")) {
+                            throw new Error("Service is required");
+                        }
+
+                        assistiveTechnologyShortTermValues = {
+                            id: assistiveTechnologyShortTerm.id,
+                            service: values.find(v => v.attribute.name === "Service").data.toString() || '',
+                            serviceType: values.find(v => v.attribute.name === "Service Type").data.toString() || '',
+                            unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
+                            unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
+                            participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                            wraparound: values.find(v => v.attribute.name === "Wraparound")?.data?.toString() || '',
+                        }
+                    }
+                    break;
+                }
+            case 'Assistive Technology (AT) - Ongoing':
+                {
+                    const assistiveTechnologyOngoing = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (assistiveTechnologyOngoing) {
+                        const values = assistiveTechnologyOngoing.values;
+                        if (!values.some(v => v.attribute.name === "Service")) {
+                            throw new Error("Service is required");
+                        }
+
+                        assistiveTechnologyOngoingValues = {
+                            id: assistiveTechnologyOngoing.id,
+                            service: values.find(v => v.attribute.name === "Service").data.toString() || '',
+                            serviceType: values.find(v => v.attribute.name === "Service Type").data.toString() || '',
+                            unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
+                            unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
+                            participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                            wraparound: values.find(v => v.attribute.name === "Wraparound")?.data?.toString() || '',
+                        }
+                    }
+                    break;
+                }
+            case 'Home Modification (HM)':
+                {
+                    const homeModification = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (homeModification) {
+                        const values = homeModification.values;
+                        if (!values.some(v => v.attribute.name === "Service")) {
+                            throw new Error("Service is required");
+                        }
+
+                        homeModificationValues = {
+                            id: homeModification.id,
+                            service: values.find(v => v.attribute.name === "Service").data.toString() || '',
+                            serviceType: values.find(v => v.attribute.name === "Service Type").data.toString() || '',
+                            unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
+                            unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
+                            participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                            wraparound: values.find(v => v.attribute.name === "Wraparound")?.data?.toString() || '',
+                        }
+                    }
+                    break;
+                }
+            case 'Health Professional':
+                {
+                    const healthProfessional = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (healthProfessional) {
+                        const values = healthProfessional.values;
+                        if (!values.some(v => v.attribute.name === "Service")) {
+                            throw new Error("Service is required");
+                        }
+
+                        healthProfessionalValues = {
+                            id: healthProfessional.id,
+                            service: values.find(v => v.attribute.name === "Service").data.toString() || '',
+                            serviceType: values.find(v => v.attribute.name === "Service Type").data.toString() || '',
+                            unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
+                            unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
+                            participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                            wraparound: values.find(v => v.attribute.name === "Wraparound")?.data?.toString() || '',
+                        }
+                    }
+                    break;
+                }
+            case 'Wraparound':
+                {
+                    const wraparound = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (wraparound) {
+                        const values = wraparound.values;
+                        if (!values.some(v => v.attribute.name === "Wraparound Description")) {
+                            throw new Error("Wraparound Description is required");
+                        }
+
+                        wraparoundValues = {
+                            id: wraparound.id,
+                            wraparoundDescription: values.find(v => v.attribute.name === "Wraparound Description").data.toString() || '',
+                            unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
+                            unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
+                            participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
+                        }
+                    }
+                    break;
+                }
+        }
+    }
+
+    return [participantsProfileValues, homeSupportValues, assistiveTechnologyShortTermValues, assistiveTechnologyOngoingValues, homeModificationValues, healthProfessionalValues, wraparoundValues];
+}
+
+/**
+ * Fetch budget data from participant profile funding streams
+ * Returns budget information for all funding categories
+ */
+export async function getMonthlyStatementBudgetData(workspaceId, boardId, participantProfileItemId) {
+    const budgetData = {
+        homeSupport: null,
+        restorativeCare: null,
+        endOfLife: null,
+        assistiveTechShortTerm: null,
+        assistiveTechOngoing: null,
+        homeModification: null
+    };
+
+    if (!participantProfileItemId) {
+        return budgetData;
+    }
+
+    try {
+        const references = await getReferences(workspaceId, boardId, participantProfileItemId);
+        if (!references || !references.data || references.data.length === 0) {
+            return budgetData;
+        }
+
+        for (const reference of references.data) {
+            const attribute = await getAttribute(workspaceId, boardId, reference.attribute_id);
+            if (!attribute) continue;
+
+            const fundingStreamItem = await getItemValues(workspaceId, boardId, reference.to_item_id);
+            if (!fundingStreamItem || !fundingStreamItem.values) continue;
+
+            const values = fundingStreamItem.values;
+            const getValue = (attrName) => {
+                const val = values.find(v => v.attribute.name === attrName);
+                if (!val) return null;
+                const data = val.data;
+                // Handle date strings
+                if (attrName.includes('Date') && data) {
+                    return data.toString();
+                }
+                // Handle numbers
+                if (typeof data === 'number') return data;
+                if (typeof data === 'string' && data.includes('$')) {
+                    return parseFloat(data.replace(/[^0-9.-]/g, '')) || 0;
+                }
+                return parseFloat(data) || 0;
+            };
+
+            switch (attribute.name) {
+                case 'Home Support (HS)':
+                case 'Home Support':
+                    budgetData.homeSupport = {
+                        totalAvailableBudget: getValue('Total Available Budget for Home Support ($)') || 
+                                           getValue('Remaining Home Support Balance as at the End of the Month ($)') || 0,
+                        remainingBalance: getValue('Remaining Home Support Balance as at the End of the Month ($)') || 0,
+                        fundingEndDate: getValue('Funding End Date') || null
+                    };
+                    break;
+                case 'Restorative Care Pathway':
+                case 'Restorative Care':
+                    budgetData.restorativeCare = {
+                        totalAvailableBudget: getValue('Total Available Budget for Restorative Care ($)') || 0,
+                        remainingBalance: getValue('Remaining Balance for Allocation Period ($)') || 0,
+                        fundingEndDate: getValue('Funding End Date') || null
+                    };
+                    break;
+                case 'End-of-Life Pathway':
+                case 'End-of-Life Care':
+                case 'End of Life':
+                    budgetData.endOfLife = {
+                        totalAvailableBudget: getValue('Total Available Budget for End-of-Life Care ($)') || 0,
+                        remainingBalance: getValue('Remaining Balance for Allocation Period ($)') || 0,
+                        fundingEndDate: getValue('Funding End Date') || null
+                    };
+                    break;
+                case 'Assistive Technology (AT) - Short Term':
+                case 'Assistive Technology - Short-term':
+                    budgetData.assistiveTechShortTerm = {
+                        totalAvailableBudget: getValue('Total Available Budget for Assistive Technology - Short-term ($)') || 0,
+                        remainingBalance: getValue('Remaining AT - Short-term Balance for Allocation Period ($)') || 0,
+                        fundingEndDate: getValue('Funding End Date') || null,
+                        committedFunds: getValue('Committed AT Short-term Funds - to be delivered ($-)') || 0
+                    };
+                    break;
+                case 'Assistive Technology (AT) - Ongoing':
+                case 'Assistive Technology - Ongoing':
+                    budgetData.assistiveTechOngoing = {
+                        totalAvailableBudget: getValue('Total Available Budget for Assistive Technology - Ongoing ($)') || 0,
+                        remainingBalance: getValue('Remaining AT - Ongoing Balance for Allocation Period ($)') || 0,
+                        fundingEndDate: getValue('Funding End Date') || null,
+                        committedFunds: getValue('Committed AT Ongoing Funds - to be delivered ($-)') || 0
+                    };
+                    break;
+                case 'Home Modification (HM)':
+                case 'Home Modification':
+                    budgetData.homeModification = {
+                        totalAvailableBudget: getValue('Total Available Budget for Home Modification ($)') || 0,
+                        remainingBalance: getValue('Remaining HM Balance for Allocation Period ($)') || 0,
+                        fundingEndDate: getValue('Funding End Date') || null,
+                        committedFunds: getValue('Committed HM Funds - to be delivered ($-)') || 0
+                    };
+                    break;
+            }
+        }
+    } catch (err) {
+        error('ISO+™ Service', 'Error fetching budget data', { 
+            message: err.message,
+            participantProfileItemId 
+        });
+    }
+
+    return budgetData;
+}
+
+export async function getAgeCareMasterPlanReferencedItems(workspaceId, boardId, itemId) {
+    let servicePlanValues = null, cancellationTypeValues = null, participantProfileValues = null;
+
+    const referenceResponse = await getReferences(workspaceId, boardId, itemId);
+    if (!referenceResponse) return [null, null];
+
+    for (const reference of referenceResponse.data) {
+
+        const attribute = await getAttribute(workspaceId, boardId, reference.attribute_id);
+        if (!attribute) continue;
+
+        switch (attribute.name) {
+            case 'Service Plan':
+                {
+                    const servicePlan = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (servicePlan) {
+                        const values = servicePlan.values;
+                        servicePlanValues = {
+                            unit: values.find(v => v.attribute.name === "Unit").data.toString(),
+                            unitPrice: values.find(v => v.attribute.name === "Agreed Unit Price ($)").data.toString().replace('$', '') || '0',
+                            participantContribution: values.find(v => v.attribute.name === "Participant Contribution (%)").data.toString() || '',
+                        }
+                    }
+                    break;
+                }
+            case 'Cancellation Type':
+                {
+                    const cancellationType = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (cancellationType) {
+                        const values = cancellationType.values;
+                        cancellationTypeValues = {
+                            definition: values.find(v => v.attribute.name === "Definition").data.toString(),
+                            billableToClient: values.find(v => v.attribute.name === "Billable to Client %").data.toString(),
+                            payableToWorker: values.find(v => v.attribute.name === "Payable to Worker %").data.toString(),
+                        }
+                    }
+                    break;
+                }
+            case 'Participant Profile':
+                {
+                    const participantProfile = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (participantProfile) {
+                        const values = participantProfile.values;
+                        participantProfileValues = {
+                            fullName: values.find(v => v.attribute.name === "Full Name/Preferred Name").data.toString() || '',
+                            firstName: values.find(v => v.attribute.name === "First Name").data.toString() || '',
+                            lastName: values.find(v => v.attribute.name === "Last Name").data.toString() || '',
+                            email: values.find(v => v.attribute.name === "Email").data.toString() || '',
+                            phone: values.find(v => v.attribute.name === "Primary Phone Number").data.toString() || '',
+                            address: values.find(v => v.attribute.name === "Address").data.toString() || '',
+                            suburb: values.find(v => v.attribute.name === "Suburb").data.toString() || '',
+                            state: values.find(v => v.attribute.name === "State").data.toString() || '',
+                            postcode: values.find(v => v.attribute.name === "Postcode").data.toString() || '',
+                            billingContact: values.find(v => v.attribute.name === "Billing Contact").data.toString() || '',
+                            billingAddress: values.find(v => v.attribute.name === "Billing Address").data.toString() || '',
+                        };
+                    }
+                    break;
+                }
+        }
+    }
+
+    return [servicePlanValues, cancellationTypeValues, participantProfileValues];
+}
+
 
 export const getAutomation = async (workspaceId, boardId, authorization) => {
     try {
