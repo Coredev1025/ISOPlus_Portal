@@ -48,12 +48,31 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { DateRange } from "react-day-picker";
+
+const TRANSACTION_STATUS_FILTERS = [
+  { value: "all", label: "All Transaction Status" },
+  { value: "Delivered", label: "Delivered - To be claimed and invoiced." },
+  { value: "Cancelled", label: "Cancelled - To be claimed and invoiced if applicable." },
+  { value: "Adjustment (Refund)", label: "Adjustment (Refund) - To be claimed and invoiced." },
+  { value: "Adjustment (Charge)", label: "Adjustment (Charge) - To be claimed and invoiced." }
+];
+
+const PAYMENT_STATUS_FILTERS = [
+  { value: "all", label: "All Payment Status" },
+  { value: "Gov Claim Submited", label: "Gov Claim Submited" },
+  { value: "Gov Claim Paid", label: "Gov Claim Paid" },
+  { value: "Participant Invoiced", label: "Participant Invoiced" },
+  { value: "Participant Paid", label: "Participant Paid" }
+];
 
 interface ServiceRecord {
   id: string;
   status: "invoiced" | "pending";
   participant: string;
   scheduledStart: string | null;
+  scheduledServiceDate?: string | null;
+  serviceDeliveryDate?: string | null;
   worker: string;
   unit: string;
   quantity: number;
@@ -65,6 +84,10 @@ interface ServiceRecord {
   service: string;
   serviceCategory: string;
   invoiceNumber?: string;
+  transactionStatus?: string;
+  paymentStatus?: string;
+  fundingSource?: string;
+  fileUrl?: string;
 }
 
 interface InvoiceSummary {
@@ -75,7 +98,6 @@ interface InvoiceSummary {
   totalGovSubsidy: number;
   totalParticipantContribution: number;
 }
-import { DateRange } from "react-day-picker";
 
 export default function InvoiceGenerator() {
   const router = useRouter();
@@ -93,8 +115,10 @@ export default function InvoiceGenerator() {
     totalParticipantContribution: 0
   });
   const [participantFilter, setParticipantFilter] = useState("all");
-  const [scheduledDateRange, setScheduledDateRange] = useState<DateRange | undefined>();
-  // We'll use scheduled date range only
+  const [scheduledServiceDateRange, setScheduledServiceDateRange] = useState<DateRange | undefined>();
+  const [serviceDeliveryDateRange, setServiceDeliveryDateRange] = useState<DateRange | undefined>();
+  const [transactionStatusFilter, setTransactionStatusFilter] = useState("all");
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -104,11 +128,15 @@ export default function InvoiceGenerator() {
 
   // Modal state for invoice generation
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
-  const [selectedParticipant, setSelectedParticipant] = useState("");
-  const [selectedMonth, setSelectedMonth] = useState("");
   const [eligibleRecords, setEligibleRecords] = useState<ServiceRecord[]>([]);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [loadingEligible, setLoadingEligible] = useState(false);
+  const [invoiceDate, setInvoiceDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [dueDate, setDueDate] = useState<string>(() => {
+    const date = new Date();
+    date.setDate(date.getDate() + 14);
+    return date.toISOString().split('T')[0];
+  });
   const [uniqueParticipants, setUniqueParticipants] = useState<string[]>([]);
 
   // Fetch unique participants for the modal dropdown
@@ -143,10 +171,10 @@ export default function InvoiceGenerator() {
     }
   }, [id, boardId]);
 
-  // Fetch eligible records when participant and month are selected
+  // Fetch eligible records when modal opens - use current filters
   useEffect(() => {
     const fetchEligibleRecords = async () => {
-      if (!selectedParticipant || !selectedMonth || !showInvoiceModal) {
+      if (!showInvoiceModal) {
         setEligibleRecords([]);
         return;
       }
@@ -156,18 +184,47 @@ export default function InvoiceGenerator() {
         const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator`;
         const params = new URLSearchParams();
 
-        params.append('participant', selectedParticipant);
+        // Use current filters from main page
         params.append('status', 'pending'); // Only pending records
-
-        // Parse selected month (format: "June 2025" or "2025-06")
-        const [monthYear] = selectedMonth.split(' ');
-        const monthDate = new Date(selectedMonth);
-        if (!isNaN(monthDate.getTime())) {
-          const startDate = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
-          const endDate = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0, 23, 59, 59);
-          params.append('startDate', startDate.toISOString());
-          params.append('endDate', endDate.toISOString());
+        
+        if (participantFilter && participantFilter !== 'all') {
+          params.append('participant', participantFilter);
         }
+        
+        if (scheduledServiceDateRange?.from) {
+          const from = new Date(scheduledServiceDateRange.from);
+          from.setHours(0, 0, 0, 0);
+          params.append('startDate', from.toISOString());
+        }
+        if (scheduledServiceDateRange?.to || scheduledServiceDateRange?.from) {
+          const toSource = scheduledServiceDateRange?.to || scheduledServiceDateRange?.from;
+          const to = new Date(toSource as Date);
+          to.setHours(23, 59, 59, 999);
+          params.append('endDate', to.toISOString());
+        }
+
+        if (serviceDeliveryDateRange?.from) {
+          const from = new Date(serviceDeliveryDateRange.from);
+          from.setHours(0, 0, 0, 0);
+          params.append('serviceDeliveryStart', from.toISOString());
+        }
+        if (serviceDeliveryDateRange?.to || serviceDeliveryDateRange?.from) {
+          const toSource = serviceDeliveryDateRange?.to || serviceDeliveryDateRange?.from;
+          const to = new Date(toSource as Date);
+          to.setHours(23, 59, 59, 999);
+          params.append('serviceDeliveryEnd', to.toISOString());
+        }
+
+        if (transactionStatusFilter !== 'all') {
+          params.append('transactionStatus', transactionStatusFilter);
+        }
+
+        if (paymentStatusFilter !== 'all') {
+          params.append('paymentStatus', paymentStatusFilter);
+        }
+
+        params.append('page', '1');
+        params.append('limit', '999999');
 
         const response = await axios.get(apiUrl, {
           params: Object.fromEntries(params),
@@ -191,7 +248,7 @@ export default function InvoiceGenerator() {
     };
 
     fetchEligibleRecords();
-  }, [selectedParticipant, selectedMonth, showInvoiceModal, id, boardId]);
+  }, [showInvoiceModal, id, boardId, participantFilter, scheduledServiceDateRange, serviceDeliveryDateRange, transactionStatusFilter, paymentStatusFilter]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -213,18 +270,38 @@ export default function InvoiceGenerator() {
           params.append('participant', participantFilter);
         }
 
-        // Date range filter for scheduled dates
-        if (scheduledDateRange?.from) {
-          const from = new Date(scheduledDateRange.from);
+        if (transactionStatusFilter !== 'all') {
+          params.append('transactionStatus', transactionStatusFilter);
+        }
+
+        if (paymentStatusFilter !== 'all') {
+          params.append('paymentStatus', paymentStatusFilter);
+        }
+
+        // Date range filter for scheduled service dates
+        if (scheduledServiceDateRange?.from) {
+          const from = new Date(scheduledServiceDateRange.from);
           from.setHours(0, 0, 0, 0); // start of day local
           params.append('startDate', from.toISOString());
         }
-        if (scheduledDateRange?.to || scheduledDateRange?.from) {
+        if (scheduledServiceDateRange?.to || scheduledServiceDateRange?.from) {
           // If only one date picked, use same day end-of-day
-          const toSource = scheduledDateRange?.to || scheduledDateRange?.from;
+          const toSource = scheduledServiceDateRange?.to || scheduledServiceDateRange?.from;
           const to = new Date(toSource as Date);
           to.setHours(23, 59, 59, 999); // end of day local
           params.append('endDate', to.toISOString());
+        }
+
+        if (serviceDeliveryDateRange?.from) {
+          const from = new Date(serviceDeliveryDateRange.from);
+          from.setHours(0, 0, 0, 0);
+          params.append('serviceDeliveryStart', from.toISOString());
+        }
+        if (serviceDeliveryDateRange?.to || serviceDeliveryDateRange?.from) {
+          const toSource = serviceDeliveryDateRange?.to || serviceDeliveryDateRange?.from;
+          const to = new Date(toSource as Date);
+          to.setHours(23, 59, 59, 999);
+          params.append('serviceDeliveryEnd', to.toISOString());
         }
 
         // Pagination
@@ -291,7 +368,10 @@ export default function InvoiceGenerator() {
     boardId,
     statusFilter,
     participantFilter,
-    scheduledDateRange,
+    scheduledServiceDateRange,
+    serviceDeliveryDateRange,
+    transactionStatusFilter,
+    paymentStatusFilter,
     currentPage,
     ITEMS_PER_PAGE
   ]);
@@ -299,22 +379,7 @@ export default function InvoiceGenerator() {
   // Whenever filters change, reset to first page for consistent results
   useEffect(() => {
     setCurrentPage(1);
-  }, [statusFilter, participantFilter, scheduledDateRange]);
-
-  // Filter service records - now only for local filtering
-  const filteredRecords = serviceRecords;
-
-  // Use summary data from backend response (already filtered and aggregated)
-  const filteredSummary = {
-    totalRecords: summary.totalRecords,
-    totalAmount: summary.totalValue,
-    totalGovSubsidy: summary.totalGovSubsidy,
-    totalParticipantContribution: summary.totalParticipantContribution
-  };
-
-  // Pagination
-  const totalPages = Math.ceil(summary.totalRecords / ITEMS_PER_PAGE);
-  const currentItems = serviceRecords; // Use the paginated data directly from the backend
+  }, [statusFilter, participantFilter, scheduledServiceDateRange, serviceDeliveryDateRange, transactionStatusFilter, paymentStatusFilter]);
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return '-';
@@ -336,12 +401,90 @@ export default function InvoiceGenerator() {
     }).format(amount);
   };
 
+  const isWithinRange = (dateString: string | null | undefined, range: DateRange | undefined) => {
+    if (!range?.from && !range?.to) {
+      return true;
+    }
+    if (!dateString) {
+      return false;
+    }
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) {
+      return false;
+    }
+    if (range.from) {
+      const from = new Date(range.from);
+      from.setHours(0, 0, 0, 0);
+      if (date < from) {
+        return false;
+      }
+    }
+    const toSource = range.to || range.from;
+    if (toSource) {
+      const to = new Date(toSource);
+      to.setHours(23, 59, 59, 999);
+      if (date > to) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  // Filter service records - apply client-side filters for transaction status and payment status
+  const filteredRecords = serviceRecords.filter(record => {
+    if (!isWithinRange(record.scheduledStart, scheduledServiceDateRange)) {
+      return false;
+    }
+    if (!isWithinRange(record.serviceDeliveryDate, serviceDeliveryDateRange)) {
+      return false;
+    }
+    if (transactionStatusFilter !== 'all') {
+      try {
+        const pattern = new RegExp(transactionStatusFilter, 'i');
+        const recordStatus = record.transactionStatus || '';
+        if (!pattern.test(recordStatus)) {
+          return false;
+        }
+      } catch (err) {
+        return false;
+      }
+    }
+    if (paymentStatusFilter !== 'all') {
+      try {
+        // For payment status, check if any of the comma-separated values match
+        const pattern = new RegExp(paymentStatusFilter, 'i');
+        const recordStatus = record.paymentStatus || '';
+        // Split by comma and check each value
+        const statusValues = recordStatus.split(',').map(s => s.trim());
+        const matches = statusValues.some(status => pattern.test(status));
+        if (!matches) {
+          return false;
+        }
+      } catch (err) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  // Use summary data from backend response (already filtered and aggregated)
+  const filteredSummary = {
+    totalRecords: summary.totalRecords,
+    totalAmount: summary.totalValue,
+    totalGovSubsidy: summary.totalGovSubsidy,
+    totalParticipantContribution: summary.totalParticipantContribution
+  };
+
+  // Pagination
+  const totalPages = Math.ceil(summary.totalRecords / ITEMS_PER_PAGE);
+  const currentItems = serviceRecords; // Use the paginated data directly from the backend
+
   // Export handlers
   const handleExportCSV = async () => {
     try {
       setLoading(true);
 
-      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoiceparticipanttax`;
+      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator`;
       const params = new URLSearchParams();
 
       if (statusFilter !== 'all') {
@@ -350,15 +493,34 @@ export default function InvoiceGenerator() {
       if (participantFilter && participantFilter !== 'all') {
         params.append('participant', participantFilter);
       }
-      if (scheduledDateRange?.from) {
-        const from = new Date(scheduledDateRange.from);
+      if (scheduledServiceDateRange?.from) {
+        const from = new Date(scheduledServiceDateRange.from);
         from.setHours(0, 0, 0, 0);
         params.append('startDate', from.toISOString());
       }
-      if (scheduledDateRange?.to) {
-        const to = new Date(scheduledDateRange.to);
+      if (scheduledServiceDateRange?.to) {
+        const to = new Date(scheduledServiceDateRange.to);
         to.setHours(23, 59, 59, 999);
         params.append('endDate', to.toISOString());
+      }
+
+      if (serviceDeliveryDateRange?.from) {
+        const from = new Date(serviceDeliveryDateRange.from);
+        from.setHours(0, 0, 0, 0);
+        params.append('serviceDeliveryStart', from.toISOString());
+      }
+      if (serviceDeliveryDateRange?.to) {
+        const to = new Date(serviceDeliveryDateRange.to);
+        to.setHours(23, 59, 59, 999);
+        params.append('serviceDeliveryEnd', to.toISOString());
+      }
+
+      if (transactionStatusFilter !== 'all') {
+        params.append('transactionStatus', transactionStatusFilter);
+      }
+
+      if (paymentStatusFilter !== 'all') {
+        params.append('paymentStatus', paymentStatusFilter);
       }
 
       params.append('folderName', 'Master Plan,Shift Planning and Reporting');
@@ -384,30 +546,33 @@ export default function InvoiceGenerator() {
 
       const headers = [
         'Participant',
-        'Status',
-        'Scheduled Start',
-        'Worker',
+        'Service',
+        'Service Provider',
+        'Scheduled Service Date',
+        'Service Delivery Date',
+        'Transaction Status',
+        'Committed AT-HM for Delivery',
         'Unit',
         'Quantity',
-        'Unit Price',
-        'Total Amount',
-        'Gov Subsidy',
-        'Participant Contribution',
-        'Service',
-        'Service Category',
-        'Invoice Number',
-        'Notes'
+        'Unit Price ($)',
+        'Total Amount ($)',
+        'Gov Subsidy ($)',
+        'Participant Contribution ($)',
+        'Funding Source',
+        'Notes',
+        'Payment Status',
+        'Invoice Number'
       ];
 
       const escapeForCsv = (value: unknown) => {
-        if (value === null || value === undefined) {
-          return '""';
+        if (value === null || value === undefined || value === '') {
+          return '';
         }
         const stringValue = String(value).replace(/"/g, '""');
         return `"${stringValue}"`;
       };
 
-      const formatDateForCsv = (dateString: string | null) => {
+      const formatDateForCsv = (dateString: string | null | undefined) => {
         if (!dateString) {
           return '';
         }
@@ -415,7 +580,7 @@ export default function InvoiceGenerator() {
         if (Number.isNaN(date.getTime())) {
           return '';
         }
-        return date.toISOString();
+        return date.toISOString().split('T')[0];
       };
 
       const csvRows: string[] = [headers.join(',')];
@@ -424,19 +589,22 @@ export default function InvoiceGenerator() {
         csvRows.push(
           [
             escapeForCsv(item.participant),
-            escapeForCsv(item.status),
-            escapeForCsv(formatDateForCsv(item.scheduledStart)),
-            escapeForCsv(item.worker),
+            escapeForCsv(item.service || ''),
+            escapeForCsv(item.worker || ''),
+            escapeForCsv(formatDateForCsv(item.scheduledServiceDate || item.scheduledStart)),
+            escapeForCsv(formatDateForCsv(item.serviceDeliveryDate)),
+            escapeForCsv(item.transactionStatus || ''),
+            escapeForCsv(''), // Committed AT-HM for Delivery - not available in current data
             escapeForCsv(item.unit),
             escapeForCsv(item.quantity),
             escapeForCsv(item.unitPrice),
             escapeForCsv(item.totalAmount),
             escapeForCsv(item.govSubsidy),
             escapeForCsv(item.participantContribution),
-            escapeForCsv(item.service),
-            escapeForCsv(item.serviceCategory),
-            escapeForCsv(item.invoiceNumber || ''),
-            escapeForCsv(item.notes ? item.notes.replace(/<[^>]*>/g, '') : '')
+            escapeForCsv(item.fundingSource || ''),
+            escapeForCsv(item.notes ? item.notes.replace(/<[^>]*>/g, '') : ''),
+            escapeForCsv(item.paymentStatus || ''),
+            escapeForCsv(item.invoiceNumber || '')
           ].join(',')
         );
       });
@@ -446,10 +614,19 @@ export default function InvoiceGenerator() {
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
-      const participantName = participantFilter && participantFilter !== 'all'
-        ? participantFilter.replace(/\s+/g, '_')
-        : 'all-participants';
-      const fileName = `invoice-records_${participantName}_${new Date().toISOString().split('T')[0]}.csv`;
+      
+      // Generate CSV filename following the format: External Reference Identifier
+      // Format: BulkInvoice_YYYYMMDD_HHMMSS_<participant_identifier>.csv
+      const now = new Date();
+      const dateStr = now.toISOString().split('T')[0].replace(/-/g, ''); // YYYYMMDD
+      const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, ''); // HHMMSS
+      const participantIdentifier = participantFilter && participantFilter !== 'all'
+        ? participantFilter.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '')
+        : 'AllParticipants';
+      
+      // CSV filename serves as External Reference Identifier
+      const fileName = `BulkInvoice_${dateStr}_${timeStr}_${participantIdentifier}.csv`;
+      
       link.setAttribute('href', url);
       link.setAttribute('download', fileName);
       link.style.visibility = 'hidden';
@@ -468,17 +645,12 @@ export default function InvoiceGenerator() {
 
   // Open modal for participant tax invoice
   const handleOpenInvoiceModal = () => {
-    // Initialize with current filter if available and not "all"
-    if (participantFilter && participantFilter !== 'all') {
-      setSelectedParticipant(participantFilter);
-    } else {
-      setSelectedParticipant('');
-    }
-    // Default to current month
-    const currentDate = new Date();
-    const monthYear = currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    setSelectedMonth(monthYear);
     setSelectedItems(new Set()); // Reset selected items
+    // Set default dates
+    setInvoiceDate(new Date().toISOString().split('T')[0]);
+    const due = new Date();
+    due.setDate(due.getDate() + 14);
+    setDueDate(due.toISOString().split('T')[0]);
     setShowInvoiceModal(true);
   };
 
@@ -502,21 +674,21 @@ export default function InvoiceGenerator() {
     }
   };
 
-  // Generate invoice from modal
-  const handleGenerateParticipantTaxInvoice = async () => {
+  // Generate PDF invoice from modal
+  const handleGeneratePDFInvoice = async () => {
     try {
       if (!selectedItems.size) {
         showErrorToast('Please select at least one item to include in the invoice.');
         return;
       }
 
-      if (!selectedParticipant) {
-        showErrorToast('Please select a participant.');
+      if (!invoiceDate) {
+        showErrorToast('Please enter an invoice date.');
         return;
       }
 
-      if (!selectedMonth) {
-        showErrorToast('Please select a month.');
+      if (!dueDate) {
+        showErrorToast('Please enter a due date.');
         return;
       }
 
@@ -528,20 +700,19 @@ export default function InvoiceGenerator() {
         return;
       }
 
+      // Get participant name from first record
+      const participantName = selectedRecords[0]?.participant || '';
+
       setLoading(true);
 
       // Endpoint generates ONE PDF for all selected items
       const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/${id}/${boardId}/invoiceparticipanttax`;
 
-      const today = new Date();
-      const due = new Date(today);
-      due.setDate(due.getDate() + 14);
-
       const payload = {
         items: selectedRecords, 
-        participantName: selectedParticipant,
-        invoiceDate: today.toISOString(),
-        dueDate: due.toISOString()
+        participantName: participantName,
+        invoiceDate: new Date(invoiceDate).toISOString(),
+        dueDate: new Date(dueDate).toISOString()
       };
 
       const resp = await axios.post(apiUrl, payload, {
@@ -576,7 +747,7 @@ export default function InvoiceGenerator() {
 
         setShowInvoiceModal(false);
         showSuccessToast('Participant Tax Invoice generated', {
-          description: `Invoice ${invoiceNumber} for ${selectedParticipant} (${itemCount} item${itemCount === 1 ? '' : 's'}) created.`
+          description: `Invoice ${invoiceNumber} for ${participantName} (${itemCount} item${itemCount === 1 ? '' : 's'}) created.`
         });
         // Refresh data to show updated invoice numbers
         window.location.reload();
@@ -589,6 +760,12 @@ export default function InvoiceGenerator() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Generate Xero invoice from modal
+  const handleGenerateXeroInvoice = async () => {
+    showErrorToast('Xero invoice generation is not yet implemented');
+    // TODO: Implement Xero invoice generation
   };
 
   return (
@@ -635,11 +812,11 @@ export default function InvoiceGenerator() {
 
             {/* Search and Filters */}
             <div className="flex flex-wrap gap-4 mb-6">
-              <div className="flex-1 min-w-[200px]">
+              <div className="min-w-[180px] max-w-[200px]">
                 <Select value={participantFilter} onValueChange={setParticipantFilter}>
                   <SelectTrigger className="w-full">
                     <Search className="h-4 w-4 mr-2" />
-                    <SelectValue placeholder="Select participant..." />
+                    <SelectValue placeholder="Participant" />
                   </SelectTrigger>
                   <SelectContent className="max-h-[300px] overflow-y-auto">
                     <SelectItem value="all">All Participants</SelectItem>
@@ -652,59 +829,109 @@ export default function InvoiceGenerator() {
                 </Select>
               </div>
 
-              <div className="flex gap-4">
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="flex-1">
-                    <Filter className="h-4 w-4 mr-2" />
-                    <SelectValue placeholder="Filter by status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Records</SelectItem>
-                    <SelectItem value="invoiced">Invoiced</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="flex-1 justify-start text-left font-normal">
-                      <Calendar className="mr-2 h-4 w-4" />
-                      {scheduledDateRange?.from ? (
-                        scheduledDateRange.to ? (
-                          <>
-                            {format(scheduledDateRange.from, "dd/MM/yyyy")} - {format(scheduledDateRange.to, "dd/MM/yyyy")}
-                          </>
-                        ) : (
-                          format(scheduledDateRange.from, "dd/MM/yyyy")
-                        )
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="min-w-[180px] max-w-[200px] justify-start text-left font-normal">
+                    <Calendar className="mr-2 h-4 w-4" />
+                    {scheduledServiceDateRange?.from ? (
+                      scheduledServiceDateRange.to ? (
+                        <>
+                          {format(scheduledServiceDateRange.from, "dd/MM/yyyy")} - {format(scheduledServiceDateRange.to, "dd/MM/yyyy")}
+                        </>
                       ) : (
-                        "Scheduled Date Range"
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <CalendarComponent
-                      mode="range"
-                      selected={scheduledDateRange}
-                      onSelect={setScheduledDateRange}
-                      numberOfMonths={2}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-                {scheduledDateRange?.from && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setScheduledDateRange(undefined)}
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="h-4 w-4" />
+                        format(scheduledServiceDateRange.from, "dd/MM/yyyy")
+                      )
+                    ) : (
+                      "Scheduled Service Date"
+                    )}
                   </Button>
-                )}
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarComponent
+                    mode="range"
+                    selected={scheduledServiceDateRange}
+                    onSelect={setScheduledServiceDateRange}
+                    numberOfMonths={2}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+              {scheduledServiceDateRange?.from && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setScheduledServiceDateRange(undefined)}
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
 
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="min-w-[180px] max-w-[200px] justify-start text-left font-normal">
+                    <Calendar className="mr-2 h-4 w-4" />
+                    {serviceDeliveryDateRange?.from ? (
+                      serviceDeliveryDateRange.to ? (
+                        <>
+                          {format(serviceDeliveryDateRange.from, "dd/MM/yyyy")} - {format(serviceDeliveryDateRange.to, "dd/MM/yyyy")}
+                        </>
+                      ) : (
+                        format(serviceDeliveryDateRange.from, "dd/MM/yyyy")
+                      )
+                    ) : (
+                      "Service Delivery Date"
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarComponent
+                    mode="range"
+                    selected={serviceDeliveryDateRange}
+                    onSelect={setServiceDeliveryDateRange}
+                    numberOfMonths={2}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+              {serviceDeliveryDateRange?.from && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setServiceDeliveryDateRange(undefined)}
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
 
-              </div>
+              <Select value={transactionStatusFilter} onValueChange={setTransactionStatusFilter}>
+                <SelectTrigger className="min-w-[180px] max-w-[200px]">
+                  <Filter className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="Transaction Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {TRANSACTION_STATUS_FILTERS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
+                <SelectTrigger className="min-w-[180px] max-w-[200px]">
+                  <Filter className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="Payment Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_STATUS_FILTERS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Summary Cards - Under Filter Section */}
@@ -743,35 +970,50 @@ export default function InvoiceGenerator() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Total Participant Contribution</p>
-                    <p className="text-2xl font-bold text-purple-600">{formatCurrency(filteredSummary.totalParticipantContribution)}</p>
+                    <p className="text-2xl font-bold text-purple-600">
+                      {filteredSummary.totalAmount > 0 
+                        ? ((filteredSummary.totalParticipantContribution / filteredSummary.totalAmount) * 100).toFixed(2)
+                        : '0.00'}%
+                    </p>
                   </div>
                   <DollarSign className="h-8 w-8 text-purple-600" />
                 </div>
               </Card>
             </div>
 
+            {/* Service Records Title */}
+            <div className="mb-4">
+              <h2 className="text-xl font-semibold">Service Records</h2>
+            </div>
+
             {/* Service Records Table */}
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Participant</TableHead>
-                  <TableHead>Scheduled Start</TableHead>
-                  <TableHead>Worker</TableHead>
-                  <TableHead>Unit</TableHead>
-                  <TableHead>Quantity</TableHead>
-                  <TableHead>Unit Price</TableHead>
-                  <TableHead>Total Amount</TableHead>
-                  <TableHead>Gov Subsidy</TableHead>
-                  <TableHead>Participant Contribution</TableHead>
-                  <TableHead>Notes</TableHead>
-                  <TableHead>Invoice #</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {loading ? (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={12} className="h-64 text-center">
+                    <TableHead>Participant</TableHead>
+                    <TableHead>Service</TableHead>
+                    <TableHead>Service Provider</TableHead>
+                    <TableHead>Scheduled Service Date</TableHead>
+                    <TableHead>Service Delivery Date</TableHead>
+                    <TableHead>Transaction Status</TableHead>
+                    <TableHead>Committed AT-HM for Delivery</TableHead>
+                    <TableHead>Unit</TableHead>
+                    <TableHead>Quantity</TableHead>
+                    <TableHead>Unit Price ($)</TableHead>
+                    <TableHead>Total Amount ($)</TableHead>
+                    <TableHead>Gov Subsidy ($)</TableHead>
+                    <TableHead>Participant Contribution ($)</TableHead>
+                    <TableHead>Funding Source</TableHead>
+                    <TableHead>Notes</TableHead>
+                    <TableHead>Payment Status</TableHead>
+                    <TableHead>Invoice #</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={17} className="h-64 text-center">
                       <div className="flex flex-col items-center justify-center">
                         <Spinner />
                         <p className="mt-4 text-muted-foreground">Loading service records...</p>
@@ -780,7 +1022,7 @@ export default function InvoiceGenerator() {
                   </TableRow>
                 ) : error ? (
                   <TableRow>
-                    <TableCell colSpan={12} className="h-64 text-center">
+                    <TableCell colSpan={17} className="h-64 text-center">
                       <div className="flex flex-col items-center justify-center">
                         <X className="h-8 w-8 text-destructive mb-2" />
                         <p className="text-destructive">Error: {error}</p>
@@ -789,7 +1031,7 @@ export default function InvoiceGenerator() {
                   </TableRow>
                 ) : filteredRecords.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={12} className="h-64 text-center">
+                    <TableCell colSpan={17} className="h-64 text-center">
                       <div className="flex flex-col items-center justify-center">
                         <FileText className="h-8 w-8 text-muted-foreground mb-2" />
                         <p className="text-muted-foreground">No service records found matching your criteria.</p>
@@ -799,28 +1041,17 @@ export default function InvoiceGenerator() {
                 ) : (
                   currentItems.map((record) => (
                     <TableRow key={record.id} className={record.status === 'invoiced' ? 'bg-green-50 text-gray-600' : 'hover:bg-blue-50 transition-colors'}>
-                      <TableCell>
-                        <div className="flex items-center">
-                          {record.status === 'invoiced' ? (
-                            <div className="flex items-center">
-                              <FileText className="w-4 h-4 text-green-600 mr-2" />
-                              <Badge className="bg-green-100 text-green-800">Invoiced</Badge>
-                            </div>
-                          ) : (
-                            <div className="flex items-center">
-                              {record.unit === 'Hours' ? (
-                                <Clock className="w-4 h-4 text-blue-600 mr-2" />
-                              ) : (
-                                <Package className="w-4 h-4 text-purple-600 mr-2" />
-                              )}
-                              <Badge className="bg-blue-100 text-blue-800">Pending</Badge>
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
                       <TableCell className="font-medium">{record.participant}</TableCell>
-                      <TableCell className="whitespace-nowrap">{formatDate(record.scheduledStart)}</TableCell>
+                      <TableCell>{record.service || '-'}</TableCell>
                       <TableCell>{record.worker}</TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {record.scheduledServiceDate || (record.scheduledStart ? formatDate(record.scheduledStart).split(' ')[0] : '-')}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {record.serviceDeliveryDate || '-'}
+                      </TableCell>
+                      <TableCell>{record.transactionStatus || '-'}</TableCell>
+                      <TableCell>-</TableCell>
                       <TableCell>
                         <Badge
                           variant="outline"
@@ -834,18 +1065,29 @@ export default function InvoiceGenerator() {
                       <TableCell className="font-semibold">{formatCurrency(record.totalAmount)}</TableCell>
                       <TableCell>{formatCurrency(record.govSubsidy)}</TableCell>
                       <TableCell>{formatCurrency(record.participantContribution)}</TableCell>
+                      <TableCell>{record.fundingSource || '-'}</TableCell>
                       <TableCell className="max-w-xs truncate" title={record.notes}>
                         <span className="text-gray-500" dangerouslySetInnerHTML={record.notes ? { __html: record.notes } : { __html: '' }}>
                         </span>
                       </TableCell>
+                      <TableCell>{record.paymentStatus || '-'}</TableCell>
                       <TableCell className="font-mono">
-                        {record.invoiceNumber && record.invoiceNumber.trim() !== '' ? record.invoiceNumber : '-'}
+                        {record.invoiceNumber && record.invoiceNumber.trim() !== '' ? (
+                          record.fileUrl ? (
+                            <a href={record.fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                              {record.invoiceNumber}
+                            </a>
+                          ) : (
+                            record.invoiceNumber
+                          )
+                        ) : '-'}
                       </TableCell>
                     </TableRow>
                   ))
                 )}
-              </TableBody>
-            </Table>
+                </TableBody>
+              </Table>
+            </div>
 
             {/* Pagination */}
             <div className="mt-4 flex justify-center">
@@ -910,50 +1152,41 @@ export default function InvoiceGenerator() {
                 Generate Invoice
               </DialogTitle>
               <DialogDescription>
-                Select a participant and month to generate a participant tax invoice
+                Select items and enter invoice details to generate a participant tax invoice
               </DialogDescription>
             </DialogHeader>
 
             <div className="flex flex-row gap-6 py-4 items-end">
-              {/* Participant Selection */}
-              <div className="flex-1 min-w-[250px]">
-                <Label htmlFor="participant" className="flex items-center gap-2 mb-1">
-                  <span className="text-lg">👤</span> Select Participant
-                </Label>
-                <Select value={selectedParticipant} onValueChange={setSelectedParticipant}>
-                  <SelectTrigger id="participant" className="w-full">
-                    <SelectValue placeholder="Select participant..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {uniqueParticipants.map((participant) => (
-                      <SelectItem key={participant} value={participant}>
-                        {participant}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              {/* Month Selection */}
-              <div className="flex-1 min-w-[250px]">
-                <Label htmlFor="month" className="flex items-center gap-2 mb-1">
-                  <Calendar className="h-4 w-4" /> Select Month
+              {/* Invoice Date */}
+              <div className="flex-1 min-w-[200px]">
+                <Label htmlFor="invoiceDate" className="flex items-center gap-2 mb-1">
+                  <Calendar className="h-4 w-4" /> Invoice Date
                 </Label>
                 <Input
-                  id="month"
-                  type="month"
-                  value={selectedMonth ? format(new Date(selectedMonth), 'yyyy-MM') : ''}
-                  onChange={(e) => {
-                    const date = new Date(e.target.value + '-01');
-                    const monthYear = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-                    setSelectedMonth(monthYear);
-                  }}
+                  id="invoiceDate"
+                  type="date"
+                  value={invoiceDate}
+                  onChange={(e) => setInvoiceDate(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+              {/* Due Date */}
+              <div className="flex-1 min-w-[200px]">
+                <Label htmlFor="dueDate" className="flex items-center gap-2 mb-1">
+                  <Calendar className="h-4 w-4" /> Due Date
+                </Label>
+                <Input
+                  id="dueDate"
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
                   className="w-full"
                 />
               </div>
             </div>
 
             {/* Eligible Records Section */}
-            {selectedParticipant && selectedMonth && (
+            {showInvoiceModal && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -1032,7 +1265,7 @@ export default function InvoiceGenerator() {
                 Cancel
               </Button>
               <Button
-                onClick={handleGenerateParticipantTaxInvoice}
+                onClick={handleGeneratePDFInvoice}
                 disabled={!selectedItems.size || loading || loadingEligible}
                 className="gap-2"
               >
@@ -1044,9 +1277,18 @@ export default function InvoiceGenerator() {
                 ) : (
                   <>
                     <Receipt className="h-4 w-4" />
-                    Generate Invoice
+                    Generate PDF Invoice
                   </>
                 )}
+              </Button>
+              <Button
+                onClick={handleGenerateXeroInvoice}
+                disabled={!selectedItems.size || loading || loadingEligible}
+                variant="secondary"
+                className="gap-2"
+              >
+                <FileText className="h-4 w-4" />
+                Generate Xero Invoice
               </Button>
             </DialogFooter>
           </DialogContent>
