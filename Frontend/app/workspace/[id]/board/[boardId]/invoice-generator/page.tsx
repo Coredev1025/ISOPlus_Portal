@@ -184,8 +184,8 @@ export default function InvoiceGenerator() {
         const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator`;
         const params = new URLSearchParams();
 
-        // Use current filters from main page
-        params.append('status', 'pending'); // Only pending records
+        // Use current filters from main page - fetch ALL records (including invoiced)
+        params.append('status', 'all'); // Get all records, not just pending
         
         if (participantFilter && participantFilter !== 'all') {
           params.append('participant', participantFilter);
@@ -236,11 +236,22 @@ export default function InvoiceGenerator() {
 
         if (response.data?.items) {
           setEligibleRecords(response.data.items);
-          // Auto-select all eligible records by default
+          // Auto-select all eligible records by default (including invoiced ones)
           setSelectedItems(new Set(response.data.items.map((r: ServiceRecord) => r.id)));
+          
+          if (response.data.items.length > 0) {
+            showInfoToast(`Loaded ${response.data.items.length} eligible record${response.data.items.length === 1 ? '' : 's'}`, {
+              description: 'All records (including invoiced) are shown. You can select which ones to include in the invoice.'
+            });
+          }
+        } else {
+          showInfoToast('No eligible records found', {
+            description: 'No records match your current filters.'
+          });
         }
       } catch (err) {
         console.error('Error fetching eligible records:', err);
+        showErrorToast('Failed to fetch eligible records', { description: err instanceof Error ? err.message : 'Unknown error' });
         setEligibleRecords([]);
       } finally {
         setLoadingEligible(false);
@@ -652,6 +663,9 @@ export default function InvoiceGenerator() {
     due.setDate(due.getDate() + 14);
     setDueDate(due.toISOString().split('T')[0]);
     setShowInvoiceModal(true);
+    showInfoToast('Loading eligible records...', {
+      description: 'Fetching all records (including invoiced) that match your filters.'
+    });
   };
 
   // Toggle item selection
@@ -764,8 +778,89 @@ export default function InvoiceGenerator() {
 
   // Generate Xero invoice from modal
   const handleGenerateXeroInvoice = async () => {
-    showErrorToast('Xero invoice generation is not yet implemented');
-    // TODO: Implement Xero invoice generation
+    try {
+      if (!selectedItems.size) {
+        showErrorToast('Please select at least one item to include in the invoice.');
+        return;
+      }
+
+      if (!invoiceDate) {
+        showErrorToast('Please enter an invoice date.');
+        return;
+      }
+
+      if (!dueDate) {
+        showErrorToast('Please enter a due date.');
+        return;
+      }
+
+      // Filter to only selected items
+      const selectedRecords = eligibleRecords.filter(record => selectedItems.has(record.id));
+
+      if (!selectedRecords.length) {
+        showErrorToast('No items selected for invoice generation.');
+        return;
+      }
+
+      // Get participant name from first record
+      const participantName = selectedRecords[0]?.participant || '';
+
+      setLoading(true);
+
+      // Endpoint generates ONE Xero invoice for all selected items
+      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/${id}/${boardId}/invoiceparticipanttax`;
+
+      const payload = {
+        items: selectedRecords, 
+        participantName: participantName,
+        invoiceDate: new Date(invoiceDate).toISOString(),
+        dueDate: new Date(dueDate).toISOString()
+      };
+
+      const resp = await axios.post(apiUrl, payload, {
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+      });
+
+      if (resp.status === 200 && resp.data) {
+        const { invoiceNumber, invoiceUrl, itemCount } = resp.data;
+        
+        // Update item statuses in database (mark as invoiced)
+        try {
+          const updateUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/update-status`;
+          await axios.post(updateUrl, {
+            itemIds: Array.from(selectedItems),
+            invoiceNumber: invoiceNumber,
+            status: 'invoiced'
+          }, {
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+          });
+        } catch (updateErr: any) {
+          console.error('Error updating item statuses:', updateErr);
+          // Don't fail the whole operation if status update fails
+          showInfoToast('Xero invoice created but status update failed', {
+            description: 'The invoice was created in Xero but item statuses could not be updated. Please refresh the page.'
+          });
+        }
+
+        if (invoiceUrl) {
+          window.open(invoiceUrl, '_blank');
+        }
+
+        setShowInvoiceModal(false);
+        showSuccessToast('Xero Participant Tax Invoice generated', {
+          description: `Invoice ${invoiceNumber} for ${participantName} (${itemCount} item${itemCount === 1 ? '' : 's'}) created in Xero.`
+        });
+        // Refresh data to show updated invoice numbers
+        window.location.reload();
+      } else {
+        showErrorToast('Unexpected response while generating Xero invoice');
+      }
+    } catch (err: any) {
+      console.error('Error generating Xero invoice', err);
+      showErrorToast('Failed to generate Xero invoice', { description: err.response?.data?.message || err.message || 'Unknown error occurred' });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -1223,7 +1318,9 @@ export default function InvoiceGenerator() {
                       {eligibleRecords.map((record) => (
                         <div 
                           key={record.id}
-                          className="flex items-start gap-3 py-2 border-b last:border-0 hover:bg-muted/50 rounded px-2 cursor-pointer"
+                          className={`flex items-start gap-3 py-2 border-b last:border-0 hover:bg-muted/50 rounded px-2 cursor-pointer ${
+                            record.status === 'invoiced' ? 'bg-green-50/50 border-l-4 border-l-green-500' : ''
+                          }`}
                           onClick={() => handleToggleItem(record.id)}
                         >
                           <Checkbox
@@ -1234,7 +1331,20 @@ export default function InvoiceGenerator() {
                           />
                           <div className="flex-1 flex justify-between items-center">
                             <div className="flex-1">
-                              <p className="font-medium">{record?.serviceCategory || record?.service || record?.notes || 'Service'}</p>
+                              <div className="flex items-center gap-2">
+                                <p className="font-medium">{record?.serviceCategory || record?.service || record?.notes || 'Service'}</p>
+                                {record.status === 'invoiced' && (
+                                  <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300 text-xs">
+                                    <CheckCircle className="h-3 w-3 mr-1" />
+                                    Invoiced
+                                  </Badge>
+                                )}
+                                {record.invoiceNumber && (
+                                  <Badge variant="outline" className="text-xs">
+                                    #{record.invoiceNumber}
+                                  </Badge>
+                                )}
+                              </div>
                               <p className="text-xs text-muted-foreground">
                                 {record.scheduledStart ? formatDate(record.scheduledStart) : 'N/A'} • {record.quantity} {record.unit}
                               </p>
@@ -1251,7 +1361,7 @@ export default function InvoiceGenerator() {
                 ) : (
                   <div className="text-center py-8 text-muted-foreground">
                     <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    <p>No eligible pending records found for this participant and month.</p>
+                    <p>No eligible records found matching your filters.</p>
                   </div>
                 )}
               </div>
@@ -1266,7 +1376,7 @@ export default function InvoiceGenerator() {
               </Button>
               <Button
                 onClick={handleGeneratePDFInvoice}
-                disabled={!selectedItems.size || loading || loadingEligible}
+                disabled={!selectedItems.size}
                 className="gap-2"
               >
                 {loading ? (
@@ -1283,12 +1393,21 @@ export default function InvoiceGenerator() {
               </Button>
               <Button
                 onClick={handleGenerateXeroInvoice}
-                disabled={!selectedItems.size || loading || loadingEligible}
+                disabled={!selectedItems.size}
                 variant="secondary"
                 className="gap-2"
               >
-                <FileText className="h-4 w-4" />
-                Generate Xero Invoice
+                {loading ? (
+                  <>
+                    <Spinner />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <FileText className="h-4 w-4" />
+                    Generate Xero Invoice
+                  </>
+                )}
               </Button>
             </DialogFooter>
           </DialogContent>

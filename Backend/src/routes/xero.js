@@ -1490,4 +1490,180 @@ router.post('/refresh', async (req, res) => {
   }
 });
 
+router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => {
+  const { workspaceId, boardId } = req.params;
+  const items = req.body.items || [];
+  const participantName = req.body?.participantName || '';
+  const invoiceDate = req.body?.invoiceDate || new Date().toISOString();
+  const dueDate = req.body?.dueDate || '';
+
+  if (!items || items.length === 0) {
+    return res.status(400).json({ message: "No items provided for invoice generation." });
+  }
+
+  if (!participantName && (!items[0]?.participant)) {
+    return res.status(400).json({ message: "Participant name is required." });
+  }
+
+  try {
+    const business = await Business.findOne({ workspaceId: workspaceId.toString() });
+    if (!business) {
+      throw new Error('Business not found');
+    }
+
+    await configure();
+    await ensureAuthenticated(workspaceId);
+
+    // Validate all items belong to the workspace/board
+    for (const item of items) {
+      await validateItemBelongsToTenant(workspaceId, boardId, item.id);
+    }
+
+    // Get participant name
+    const effectiveParticipantName = participantName || items[0].participant || '';
+
+    // Try to find or create contact in Xero
+    // For participant tax invoices, we'll use the participant name as the contact name
+    // If email is available in request body, use it; otherwise try to find by name
+    let contact = null;
+    const participantEmail = req.body?.participantEmail || '';
+    
+    if (participantEmail) {
+      contact = await getContactByEmail(participantEmail);
+    }
+
+    // If contact not found by email, try to create one with available information
+    if (!contact) {
+      await setIntegrationMessage(workspaceId, boardId, items[0].id, "The contact does not exist in Xero, creating...");
+      
+      // Parse participant name into first and last name
+      const nameParts = effectiveParticipantName.trim().split(/\s+/);
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+
+      contact = await createOrUpdateContact({
+        name: effectiveParticipantName,
+        firstName: firstName,
+        lastName: lastName || firstName, // Use firstName as lastName if not provided
+        phones: participantEmail ? [] : [{ phoneType: 'DEFAULT', phoneNumber: req.body?.participantPhone || '' }],
+        addresses: [
+          {
+            addressType: 'POBOX',
+            addressLine1: req.body?.participantAddress || ' ',
+            city: req.body?.participantSuburb || ' ',
+            region: req.body?.participantState || ' ',
+            postalCode: (req.body?.participantPostcode || ' ').toString()
+          },
+          {
+            addressType: 'STREET',
+            addressLine1: req.body?.participantAddress || ' ',
+            city: req.body?.participantSuburb || ' ',
+            region: req.body?.participantState || ' ',
+            postalCode: (req.body?.participantPostcode || ' ').toString()
+          }
+        ],
+        emailAddress: participantEmail || undefined
+      });
+    }
+
+    // Calculate due date if not provided
+    let effectiveDueDate = dueDate;
+    if (!effectiveDueDate) {
+      const d = new Date(invoiceDate);
+      d.setDate(d.getDate() + 14);
+      effectiveDueDate = d.toISOString();
+    }
+
+    // Build line items from service records
+    const lineItems = [];
+    const gstType = "EXEMPTOUTPUT"; // GST Free for participant tax invoices
+    let totalAmount = 0;
+
+    for (const item of items) {
+      const description = (item.notes && typeof item.notes === 'string') 
+        ? item.notes.replace(/<[^>]*>/g, '').trim() 
+        : (item.service || item.worker ? `Service - ${item.worker || item.service}` : 'Service');
+      
+      const quantity = typeof item.quantity === 'number' ? item.quantity : Number(item.quantity || 0);
+      const unitPrice = typeof item.unitPrice === 'number' ? item.unitPrice : Number(item.unitPrice || 0);
+      const totalItemAmount = typeof item.totalAmount === 'number' ? item.totalAmount : Number(item.totalAmount || 0);
+
+      // Use participant contribution if available, otherwise use total amount
+      const lineAmount = typeof item.participantContribution === 'number' && item.participantContribution > 0
+        ? item.participantContribution
+        : totalItemAmount;
+
+      if (lineAmount > 0) {
+        // Calculate unit price: if quantity > 0, divide line amount by quantity; otherwise use the unitPrice from item
+        const calculatedUnitPrice = quantity > 0 ? lineAmount / quantity : (unitPrice > 0 ? unitPrice : lineAmount);
+        
+        lineItems.push({
+          description: description || 'Service',
+          quantity: formatValue(quantity || 1),
+          unitAmount: formatValue(calculatedUnitPrice),
+          taxType: gstType
+        });
+        totalAmount += lineAmount;
+      }
+    }
+
+    if (lineItems.length === 0) {
+      await Promise.all(items.map(item =>
+        setIntegrationMessage(workspaceId, boardId, item.id, "There is nothing to invoice!")
+      ));
+      return res.status(400).json({ message: "There is nothing to invoice!" });
+    }
+
+    // Create invoice in Xero
+    const invoice = {
+      type: 'ACCREC',
+      contact: { contactID: contact.contactID },
+      reference: `Participant Tax Invoice - ${effectiveParticipantName}`,
+      lineItems: lineItems,
+      date: invoiceDate,
+      dueDate: effectiveDueDate,
+      status: "DRAFT"
+    };
+
+    const createdInvoice = await createInvoice(invoice);
+
+    // Update integration messages for all items
+    await Promise.all(items.map(async (item) => {
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Your participant tax invoice has been created successfully in Xero.");
+      await setGeneratedField(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`);
+    }));
+
+    logAuditTrail({
+      workspaceId,
+      action: "Create Xero Participant Tax Invoice",
+      detail: `Invoice created successfully, invoice number: ${createdInvoice.invoiceNumber}, participant: ${effectiveParticipantName}, items: ${items.length}`,
+      req
+    });
+
+    res.status(200).json({
+      message: "Participant Tax Invoice generated successfully in Xero",
+      invoiceNumber: createdInvoice.invoiceNumber,
+      invoiceId: createdInvoice.invoiceID,
+      invoiceUrl: createdInvoice.url,
+      itemCount: items.length,
+      participantName: effectiveParticipantName
+    });
+  } catch (err) {
+    const errorMessage = (err && err.message) ? err.message : 'Server error: An unknown error occurred. Please contact support via ISO+™ Portal.';
+    error('Xero-Service', 'Error creating participant tax invoice in Xero', { 
+      message: errorMessage,
+      workspaceId,
+      boardId,
+      itemCount: items.length
+    }, extractContextFromReq(req));
+    
+    // Update integration messages for all items
+    await Promise.all(items.map(async (item) => {
+      await setIntegrationMessage(workspaceId, boardId, item.id, `Error: ${errorMessage}`);
+    }));
+
+    return res.status(500).json({ message: errorMessage });
+  }
+});
+
 export default router;
