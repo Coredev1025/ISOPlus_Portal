@@ -2104,10 +2104,11 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                     fileUrl 
                 }, extractContextFromReq(req));
 
-                // Return the PDF as a blob for direct download
-                res.setHeader('Content-Type', 'application/pdf');
-                res.setHeader('Content-Disposition', `attachment; filename="${participantSlug}_${monthYear}_Statement.pdf"`);
-                return res.send(Buffer.from(pdfBytes));
+                return res.status(200).json({
+                    message: 'Monthly statement PDF generated successfully',
+                    fileUrl,
+                    filename: `${participantSlug}_${monthYear}_Statement.pdf`
+                });
             } else {
                 throw new Error('Upload of PDF failed, please provide correct information.');
             }

@@ -1377,14 +1377,15 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
 
                 // Add filters
                 const andConditions = [];
+                const dateFieldName = type === 'service' ? 'actualEndDate' : 'scheduledStartDate';
                 if (participantFilter) {
                     andConditions.push({ participantNameRaw: { $regex: participantFilter, $options: 'i' } });
                 }
                 if (dateFilter && dateFilter.startDate) {
-                    andConditions.push({ scheduledStartDate: { $gte: new Date(dateFilter.startDate) } });
+                    andConditions.push({ [dateFieldName]: { $gte: new Date(dateFilter.startDate) } });
                 }
                 if (dateFilter && dateFilter.endDate) {
-                    andConditions.push({ scheduledStartDate: { $lte: new Date(dateFilter.endDate) } });
+                    andConditions.push({ [dateFieldName]: { $lte: new Date(dateFilter.endDate) } });
                 }
                 if (andConditions.length > 0) {
                     pipeline.push({ $match: { $and: andConditions } });
