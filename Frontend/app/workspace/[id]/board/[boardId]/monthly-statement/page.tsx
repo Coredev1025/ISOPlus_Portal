@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Printer, Calendar, DollarSign, Clock, Package, User, FileText, TrendingUp, PieChart, Download, AlertCircle, FileCheck } from "lucide-react";
+import { ArrowLeft, Calendar, User, FileText, AlertCircle, FileCheck, FileSpreadsheet } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useState, useEffect } from "react";
@@ -203,6 +203,8 @@ export default function MonthlyStatement() {
     postcode: "",
     companyRegistrationId: "",
   });
+  const [exportingSection, setExportingSection] = useState<null | 'budget-csv' | 'budget-pdf' | 'service-csv' | 'service-pdf'>(null);
+
 
   // Budget data will come from the API response
 
@@ -316,6 +318,63 @@ export default function MonthlyStatement() {
     } else {
       return { start: "October", end: "December" };
     }
+  };
+
+  const getSelectedMonthDateRange = () => {
+    if (!selectedMonth || !selectedYear) {
+      return null;
+    }
+
+    const monthNum = parseInt(selectedMonth, 10);
+    const yearNum = parseInt(selectedYear, 10);
+
+    if (Number.isNaN(monthNum) || Number.isNaN(yearNum)) {
+      return null;
+    }
+
+    const monthDate = new Date(yearNum, monthNum - 1, 1);
+    const startDate = startOfMonth(monthDate);
+    const endDate = new Date(endOfMonth(monthDate));
+    endDate.setHours(23, 59, 59, 999);
+
+    return {
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+    };
+  };
+
+  const sanitizeForFileName = (value: string) =>
+    value.replace(/[^\w.-]+/g, "_");
+
+  const escapeForCsv = (value: unknown) => {
+    if (value === null || value === undefined) {
+      return '""';
+    }
+    const stringValue = String(value).replace(/"/g, '""');
+    return `"${stringValue}"`;
+  };
+
+  const downloadCsv = (content: string, filename: string) => {
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  };
+
+  const formatDateForCsv = (dateString: string | null | undefined) => {
+    if (!dateString) {
+      return '';
+    }
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) {
+      return dateString;
+    }
+    return format(date, 'dd/MM/yyyy');
   };
 
   const handleServicePageChange = (page: number) => {
@@ -754,26 +813,17 @@ export default function MonthlyStatement() {
     }
   };
 
-  // Handle print
-  const handlePrint = () => {
-    setIsPrintMode(true);
-    setTimeout(() => {
-      window.print();
-      setTimeout(() => setIsPrintMode(false), 100);
-    }, 100);
-  };
-
   // Handle PDF generation/export (consolidated function)
   const handlePDFAction = async (action: 'generate' | 'export' = 'generate') => {
     if (!statementData) {
       showErrorToast('Please load a statement first');
-      return;
+      return null;
     }
 
     if (!businessDetails.companyName || !businessDetails.companyRegistrationId || !businessDetails.phoneNumber || !businessDetails.businessEmail) {
       showErrorToast(`Please configure business details before ${action === 'generate' ? 'generating' : 'exporting'} PDF`);
       setShowBusinessDialog(true);
-      return;
+      return null;
     }
 
     try {
@@ -785,42 +835,227 @@ export default function MonthlyStatement() {
         {
           statementData,
           businessDetails,
-        },
-        {
-          responseType: 'blob',
         }
       );
 
-      // Download the PDF
-      const blob = new Blob([response.data], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Monthly_Statement_${statementData.participant}_${statementData.month}_${statementData.year}.pdf`;
-      link.click();
-      window.URL.revokeObjectURL(url);
-
-      showSuccessToast(
-        action === 'generate' 
-          ? 'Monthly statement PDF generated successfully'
-          : 'PDF exported successfully'
-      );
+      const fileUrl = response.data?.fileUrl;
+      if (fileUrl) {
+        window.open(fileUrl, '_blank', 'noopener,noreferrer');
+        showSuccessToast(
+          action === 'generate' 
+            ? 'Monthly statement PDF generated successfully'
+            : 'PDF exported successfully'
+        );
+        return fileUrl;
+      } else {
+        showErrorToast('Failed to retrieve PDF link from server.');
+        return null;
+      }
     } catch (err) {
       console.error(`Error ${action === 'generate' ? 'generating' : 'exporting'} PDF:`, err);
-      if (action === 'export') {
-        showErrorToast('Failed to export PDF. Using print as fallback.');
-        handlePrint();
-      } else {
-        showErrorToast('Failed to generate PDF. Please try again.');
-      }
+      showErrorToast('Failed to generate PDF. Please try again.');
+      return null;
     } finally {
       setLoading(false);
     }
   };
 
-  // Alias functions for backward compatibility
-  const handleGeneratePDF = () => handlePDFAction('generate');
-  const handleExportPDF = () => handlePDFAction('export');
+  const handleBudgetExportCSV = async () => {
+    if (!statementData) {
+      showErrorToast('Please load a statement before exporting.');
+      return;
+    }
+
+    const dateRange = getSelectedMonthDateRange();
+    if (!dateRange) {
+      showErrorToast('Please choose a valid month and year before exporting.');
+      return;
+    }
+
+    try {
+      setExportingSection('budget-csv');
+      const response = await fetchMonthlyStatementItems(id, boardId, {
+        participant: selectedParticipant,
+        month: selectedMonth,
+        year: selectedYear,
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate,
+        budgetPage: 1,
+        budgetLimit: 5000,
+      });
+
+      const items: BudgetRecord[] = response?.budgetItems?.items || [];
+      if (!items.length) {
+        showErrorToast('No budget items to export.');
+        return;
+      }
+
+      const headers = [
+        'Funding Stream',
+        'Participant',
+        'Month',
+        'Year',
+        'FY Quarter',
+        'Total Available',
+        'Delivered (Selected Month)',
+        'Adjustments',
+        'Remaining Balance',
+        'Funding Start',
+        'Funding End',
+        'Fund',
+        'Committed Funds'
+      ];
+
+      const rows = items.map((item) => [
+        item.folderName || BUDGET_CATEGORY_LABELS[item.categoryCode] || 'Budget',
+        item.participantName || statementData.participant || 'N/A',
+        item.month || '',
+        item.year || '',
+        item.quarter || '',
+        Number(item.totalAvailableBudget ?? 0).toFixed(2),
+        Number(item.deliveredAmount ?? 0).toFixed(2),
+        Number(item.adjustmentAmount ?? 0).toFixed(2),
+        Number(item.remainingBalance ?? 0).toFixed(2),
+        formatDateForCsv(item.fundingStartDate),
+        formatDateForCsv(item.fundingEndDate),
+        item.fund || item.fundClassification || '',
+        Number(item.committedFunds ?? 0).toFixed(2),
+      ]);
+
+      const csvContent = [headers, ...rows]
+        .map((row) => row.map(escapeForCsv).join(','))
+        .join('\n');
+
+      const participantSlug = sanitizeForFileName(statementData.participant || 'participant');
+      const monthSlug = sanitizeForFileName(statementData.monthNumber || selectedMonth || '01');
+      const filename = `Individualised_Budgets_${participantSlug}_${statementData.year}_${monthSlug}.csv`;
+      downloadCsv(csvContent, filename);
+      showSuccessToast(`Exported ${items.length} budget item${items.length === 1 ? '' : 's'} to CSV.`);
+    } catch (err: any) {
+      console.error('Error exporting budget items:', err);
+      showErrorToast('Failed to export budget items', { description: err?.message || 'Unknown error' });
+    } finally {
+      setExportingSection(null);
+    }
+  };
+
+  const handleServiceExportCSV = async () => {
+    if (!statementData) {
+      showErrorToast('Please load a statement before exporting.');
+      return;
+    }
+
+    const dateRange = getSelectedMonthDateRange();
+    if (!dateRange) {
+      showErrorToast('Please choose a valid month and year before exporting.');
+      return;
+    }
+
+    try {
+      setExportingSection('service-csv');
+      const response = await fetchMonthlyStatementItems(id, boardId, {
+        participant: selectedParticipant,
+        month: selectedMonth,
+        year: selectedYear,
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate,
+        servicePage: 1,
+        serviceLimit: 5000,
+      });
+
+      const items: ServiceRecord[] = response?.serviceItems?.items || [];
+      if (!items.length) {
+        showErrorToast('No service records to export.');
+        return;
+      }
+
+      const headers = [
+        'Participant',
+        'Service',
+        'Service Provider',
+        'Scheduled Service Date',
+        'Actual Service Date',
+        'Transaction Status',
+        'Committed AT-HM for Delivery',
+        'Unit',
+        'Quantity',
+        'Unit Price (AUD)',
+        'Total Amount (AUD)',
+        'Gov Subsidy (AUD)',
+        'Participant Contribution (AUD)',
+        'Funding Source',
+        'Notes'
+      ];
+
+      const rows = items.map((service) => [
+        service.participant || '',
+        service.service || service.taskName || '',
+        service.serviceProvider || '',
+        formatDateForCsv(service.scheduledServiceDate),
+        formatDateForCsv(service.serviceDeliveryDate),
+        service.transactionStatus || '',
+        Number(service.committedAtHmForDelivery ?? 0).toFixed(2),
+        service.unit || '',
+        service.quantity ?? 0,
+        Number(service.unitPrice ?? 0).toFixed(2),
+        Number(service.totalAmount ?? 0).toFixed(2),
+        Number(service.govSubsidy ?? 0).toFixed(2),
+        Number(service.participantContribution ?? 0).toFixed(2),
+        service.fundingSource || '',
+        (service.notes || '').replace(/[\r\n]+/g, ' '),
+      ]);
+
+      const csvContent = [headers, ...rows]
+        .map((row) => row.map(escapeForCsv).join(','))
+        .join('\n');
+
+      const participantSlug = sanitizeForFileName(statementData.participant || 'participant');
+      const monthSlug = sanitizeForFileName(statementData.monthNumber || selectedMonth || '01');
+      const filename = `Service_Records_${participantSlug}_${statementData.year}_${monthSlug}.csv`;
+      downloadCsv(csvContent, filename);
+      showSuccessToast(`Exported ${items.length} service record${items.length === 1 ? '' : 's'} to CSV.`);
+    } catch (err: any) {
+      console.error('Error exporting service records:', err);
+      showErrorToast('Failed to export service records', { description: err?.message || 'Unknown error' });
+    } finally {
+      setExportingSection(null);
+    }
+  };
+
+  const handleServicePdfAndCsv = async () => {
+    if (!statementData) {
+      showErrorToast('Please load a statement before exporting.');
+      return;
+    }
+
+    try {
+      setExportingSection('service-pdf');
+      const pdfUrl = await handlePDFAction('generate');
+      setExportingSection(null);
+      if (pdfUrl) {
+        await handleServiceExportCSV();
+      } else {
+        showErrorToast('PDF generation failed. CSV export skipped.');
+      }
+    } catch (err) {
+      console.error('Error exporting service PDF/CSV:', err);
+      setExportingSection(null);
+    }
+  };
+
+  const handleBudgetExportPDF = async () => {
+    if (!statementData) {
+      showErrorToast('Please load a statement before exporting.');
+      return;
+    }
+
+    try {
+      setExportingSection('budget-pdf');
+      await handlePDFAction('export');
+    } finally {
+      setExportingSection(null);
+    }
+  };
 
   // Save business details
   const handleSaveBusinessDetails = async () => {
@@ -904,7 +1139,7 @@ export default function MonthlyStatement() {
 
             {/* Header */}
             <div className="mb-8">
-              <h1 className="text-3xl font-bold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/80">
+              <h1 className="text-3xl font-bold mb-2 text-black">
                 Monthly Statement Generator
               </h1>
               <p className="text-muted-foreground">
@@ -1005,18 +1240,7 @@ export default function MonthlyStatement() {
                     </div>
                   </div>
                 </div>
-                {!isPrintMode && (
-                  <div className="flex gap-2">
-                    <Button onClick={handleExportPDF} variant="outline" className="gap-2 print:hidden">
-                      <Download className="h-4 w-4" />
-                      Export to PDF
-                    </Button>
-                    <Button onClick={handleGeneratePDF} className="gap-2 print:hidden bg-red-600 hover:bg-red-700">
-                      <FileCheck className="h-4 w-4" />
-                      Generate Monthly Statement PDF
-                    </Button>
-                  </div>
-                )}
+                {/* Button intentionally removed per request */}
               </div>
 
               {/* Business Details Display */}
@@ -1135,7 +1359,7 @@ export default function MonthlyStatement() {
               </div>
             </Card>
 
-            {/* First Table: Budget Items */}
+            {/* Individualised Budgets */}
             <Card className="p-6 shadow-lg print:shadow-none">
               <h3 className="text-xl font-semibold mb-4">Budget Items</h3>
               <p className="text-sm text-muted-foreground mb-4">
@@ -1196,12 +1420,36 @@ export default function MonthlyStatement() {
               </div>
             </Card>
 
-            {/* Second Table: Master Plan, Shift Planning and Reporting */}
+            {/* Service Records */}
             <Card className="p-6 shadow-lg print:shadow-none">
-              <h3 className="text-xl font-semibold mb-4">Service Records</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Items from: Master Plan, Shift Planning and Reporting
-              </p>
+              <div className="flex flex-col gap-2 mb-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h3 className="text-xl font-semibold">Service Records</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Items from: Master Plan, Shift Planning and Reporting
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    className="gap-2"
+                    onClick={handleServiceExportCSV}
+                    disabled={exportingSection === 'service-csv' || !statementData}
+                  >
+                    <FileSpreadsheet className="h-4 w-4" />
+                    Export to CSV
+                  </Button>
+                  <Button
+                    className="gap-2"
+                    variant="secondary"
+                    onClick={handleServicePdfAndCsv}
+                    disabled={!statementData || exportingSection === 'service-pdf' || exportingSection === 'service-csv'}
+                  >
+                    <FileText className="h-4 w-4" />
+                    Export to PDF
+                  </Button>
+                </div>
+              </div>
               <div className="overflow-x-auto">
                 {loadingServiceItems ? (
                   <div className="text-center py-8">

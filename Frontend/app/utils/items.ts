@@ -9,6 +9,10 @@ export interface MonthlyStatementQuery {
   limit?: number | string;
   folderName?: string;
   page?: number | string;
+  budgetPage?: number | string;
+  budgetLimit?: number | string;
+  servicePage?: number | string;
+  serviceLimit?: number | string;
   month?: string;
   year?: string;
   endpoint?: string;
@@ -20,7 +24,7 @@ export async function fetchMonthlyStatementItems(
   query: MonthlyStatementQuery = {}
 ) {
   // Use new unified endpoint if specified, otherwise use legacy endpoint
-  const endpoint = query.endpoint || 'monthlyStatement';
+  const endpoint = query.endpoint || 'monthly-statement';
   const { endpoint: _, ...params } = query; // Remove endpoint from params
   
   const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${workspaceId}/${boardId}/${endpoint}`;
