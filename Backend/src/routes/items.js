@@ -869,6 +869,8 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             const servicePlanId = getValue(ATTRIBUTE_NAMES.SERVICE_PLAN);
             const servicePlan = servicePlanId?.toString() ? await getItemValues(workspaceId, boardId, servicePlanId.toString()) : null;
             let service = undefined;
+            let serviceIdentifier = undefined; // For CSV export: Service ID / Item ID from Aged Care Pricing
+            let servicePlanName = undefined; // For CSV export: to check if contains "Wraparound"
             if (servicePlan && servicePlan.values) {
                 const servicePlanIdValue = servicePlan.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.SERVICE_PLAN_ID)?.data?.toString().trim();
                 if (servicePlanIdValue && typeof servicePlanIdValue === 'string' && servicePlanIdValue.includes('-')) {
@@ -879,9 +881,134 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 } else if (servicePlanIdValue && typeof servicePlanIdValue === 'string') {
                     service = servicePlanIdValue;
                 }
+                
+                // Get Service Identifier from Service ID / Item ID attribute (from Aged Care Pricing folders)
+                const serviceIdItemId = servicePlan.values.find(v => 
+                    v.attribute.name === 'Service ID / Item ID' || 
+                    v.attribute.name === 'Service ID' ||
+                    v.attribute.name === 'Item ID'
+                )?.data;
+                if (serviceIdItemId) {
+                    serviceIdentifier = typeof serviceIdItemId === 'string' ? serviceIdItemId : String(serviceIdItemId);
+                    // Remove "/" and anything after it
+                    if (serviceIdentifier.includes('/')) {
+                        serviceIdentifier = serviceIdentifier.split('/')[0].trim();
+                    }
+                }
+                
+                // Get Service Plan name to check for "Wraparound"
+                const servicePlanNameValue = servicePlan.values.find(v => 
+                    v.attribute.name === 'Name' || 
+                    v.attribute.name === 'Service Plan Name' ||
+                    v.attribute.name === 'Title'
+                )?.data;
+                if (servicePlanNameValue) {
+                    servicePlanName = typeof servicePlanNameValue === 'string' ? servicePlanNameValue : String(servicePlanNameValue);
+                }
             }
             
             const invoiceNumber = getValue('Generated Invoice Number') || '';
+            
+            // Get Care Recipient Identifier (My Aged Care ID Number from Participant Profile/Intake)
+            let careRecipientIdentifier = undefined;
+            const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
+            if (participantProfileValue) {
+                try {
+                    const participantProfileId = Array.isArray(participantProfileValue) 
+                        ? participantProfileValue[0] 
+                        : (typeof participantProfileValue === 'object' ? participantProfileValue.id : participantProfileValue);
+                    if (participantProfileId) {
+                        const participantProfile = await getItemValues(workspaceId, boardId, participantProfileId.toString());
+                        if (participantProfile && participantProfile.values) {
+                            const myAgedCareId = participantProfile.values.find(v => 
+                                v.attribute.name === ATTRIBUTE_NAMES.MY_AGED_CARE_ID || 
+                                v.attribute.name === ATTRIBUTE_NAMES.MY_AGED_CARE_ID_ALT
+                            )?.data;
+                            if (myAgedCareId) {
+                                careRecipientIdentifier = typeof myAgedCareId === 'string' ? myAgedCareId : String(myAgedCareId);
+                            }
+                        }
+                    }
+                } catch (err) {
+                    warn('Items-Service', 'Failed to fetch My Aged Care ID from participant profile', {
+                        error: err.message
+                    }, extractContextFromReq(req));
+                }
+            }
+            
+            // Get Delivered By value
+            const deliveredBy = getValue(ATTRIBUTE_NAMES.DELIVERED_BY);
+            const deliveredByString = deliveredBy 
+                ? (typeof deliveredBy === 'object' ? deliveredBy.name : String(deliveredBy))
+                : undefined;
+            
+            // Get Item ID, Item, Wraparound Item ID, Wraparound Description
+            const itemId = getValue('Item ID') || undefined;
+            const itemName = getValue('Item') || undefined;
+            const wraparoundItemId = getValue('Wraparound Item ID') || undefined;
+            const wraparoundDescription = getValue('Wraparound Description') || undefined;
+            
+            // Get Prescribed Item
+            const prescribedItem = getValue('Prescribed Item');
+            const prescribedItemValue = prescribedItem === true || prescribedItem === 'true' || prescribedItem === 'Y' ? 'Y' : 'N';
+            
+            // Get Item Purchased Method
+            const itemPurchasedMethod = getValue('Item Purchased Method');
+            const itemPurchasedMethodString = itemPurchasedMethod 
+                ? (typeof itemPurchasedMethod === 'object' ? itemPurchasedMethod.name : String(itemPurchasedMethod))
+                : undefined;
+            
+            // Get Associated Provider and Associated Provider Invoice No
+            const associatedProvider = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
+            const associatedProviderString = associatedProvider 
+                ? (typeof associatedProvider === 'object' ? associatedProvider.name : String(associatedProvider))
+                : undefined;
+            const associatedProviderInvoiceNo = getValue('Associated Provider Invoice No. (if applicable)') || 
+                                               getValue('Associated Provider Invoice No') || 
+                                               undefined;
+            
+            // Get Health Professional Type Code and Health Professional Type Other
+            // These come from the Health Professional Pricing folder of the selected Health Professional Service
+            // The Health Professional Service is in the "Health Professional" Reference attribute of the Participant Service Plan
+            let healthProfessionalTypeCode = undefined;
+            let healthProfessionalTypeOther = undefined;
+            if (servicePlan && servicePlan.values) {
+                const healthProfessionalValue = servicePlan.values.find(v => 
+                    v.attribute.name === 'Health Professional' ||
+                    v.attribute.name === 'Health Professional Service'
+                )?.data;
+                if (healthProfessionalValue) {
+                    try {
+                        const healthProfessionalId = Array.isArray(healthProfessionalValue) 
+                            ? healthProfessionalValue[0] 
+                            : (typeof healthProfessionalValue === 'object' ? healthProfessionalValue.id : healthProfessionalValue);
+                        if (healthProfessionalId) {
+                            const healthProfessionalService = await getItemValues(workspaceId, boardId, healthProfessionalId.toString());
+                            if (healthProfessionalService && healthProfessionalService.values) {
+                                // Get Health Professional Type Code from Health Professional Pricing folder
+                                const hpTypeCode = healthProfessionalService.values.find(v => 
+                                    v.attribute.name === 'Health Professional Type Code'
+                                )?.data;
+                                if (hpTypeCode) {
+                                    healthProfessionalTypeCode = typeof hpTypeCode === 'string' ? hpTypeCode : String(hpTypeCode);
+                                }
+                                
+                                // Get Health Professional Type Other (free text if "Other" is selected)
+                                const hpTypeOther = healthProfessionalService.values.find(v => 
+                                    v.attribute.name === 'Health Professional Type Other'
+                                )?.data;
+                                if (hpTypeOther) {
+                                    healthProfessionalTypeOther = typeof hpTypeOther === 'string' ? hpTypeOther : String(hpTypeOther);
+                                }
+                            }
+                        }
+                    } catch (err) {
+                        warn('Items-Service', 'Failed to fetch Health Professional information', {
+                            error: err.message
+                        }, extractContextFromReq(req));
+                    }
+                }
+            }
 
             // Get file URL from various possible attribute names
             const fileUrl = getValue('Invoice File URL') || 
@@ -1084,7 +1211,22 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 transactionStatus,
                 paymentStatus: paymentStatusFormatted,
                 fundingSource,
-                fileUrl
+                fileUrl,
+                // CSV export fields
+                careRecipientIdentifier,
+                serviceIdentifier,
+                deliveredBy: deliveredByString,
+                servicePlan: servicePlanName,
+                itemId,
+                item: itemName,
+                wraparoundItemId,
+                wraparoundDescription,
+                prescribedItem: prescribedItemValue,
+                itemPurchasedMethod: itemPurchasedMethodString,
+                associatedProvider: associatedProviderString,
+                associatedProviderInvoiceNo,
+                healthProfessionalTypeCode,
+                healthProfessionalTypeOther
             };
         }));
 

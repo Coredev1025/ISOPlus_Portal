@@ -88,6 +88,22 @@ interface ServiceRecord {
   paymentStatus?: string;
   fundingSource?: string;
   fileUrl?: string;
+  itemFirstPayment?: boolean | string;
+  // CSV export fields
+  careRecipientIdentifier?: string;
+  serviceIdentifier?: string;
+  deliveredBy?: string;
+  itemId?: string;
+  item?: string;
+  servicePlan?: string;
+  wraparoundItemId?: string;
+  wraparoundDescription?: string;
+  prescribedItem?: boolean | string;
+  itemPurchasedMethod?: string;
+  associatedProvider?: string;
+  associatedProviderInvoiceNo?: string;
+  healthProfessionalTypeCode?: string;
+  healthProfessionalTypeOther?: string;
 }
 
 interface InvoiceSummary {
@@ -555,24 +571,23 @@ export default function InvoiceGenerator() {
         return;
       }
 
+      // CSV headers based on ISO+ specifications
       const headers = [
-        'Participant',
-        'Service',
-        'Service Provider',
-        'Scheduled Service Date',
-        'Service Delivery Date',
-        'Transaction Status',
-        'Committed AT-HM for Delivery',
-        'Unit',
-        'Quantity',
-        'Unit Price ($)',
-        'Total Amount ($)',
-        'Gov Subsidy ($)',
-        'Participant Contribution ($)',
-        'Funding Source',
-        'Notes',
-        'Payment Status',
-        'Invoice Number'
+        'Invoice Number',
+        'Care Recipient Identifier',
+        'Service Identifier',
+        'Delivered By Third Party',
+        'Item or Wraparound',
+        'Item Description Code',
+        'Item Description',
+        'Wraparound Description Code',
+        'Wraparound Description',
+        'Prescribed Item',
+        'Purchased Method Type',
+        'Loaned by Organisation Name',
+        'Loaned By Invoice Number',
+        'Health Professional Type Code',
+        'Health Professional Type Other'
       ];
 
       const escapeForCsv = (value: unknown) => {
@@ -594,28 +609,127 @@ export default function InvoiceGenerator() {
         return date.toISOString().split('T')[0];
       };
 
-      const csvRows: string[] = [headers.join(',')];
+      const csvRows: string[] = [];
 
       allItems.forEach((item) => {
+        // 1. Invoice Number - from {Generated Invoice Number}
+        const invoiceNumber = item.invoiceNumber || '';
+
+        // 2. Care Recipient Identifier - from {My Aged Care ID Number} (From Intake)
+        const careRecipientIdentifier = item.careRecipientIdentifier || '';
+
+        // 3. Service Identifier - from {Service ID / Item ID} attribute of Aged Care Pricing folders
+        // Do not add the "/" and any content after that
+        let serviceIdentifier = item.serviceIdentifier || '';
+        if (serviceIdentifier && serviceIdentifier.includes('/')) {
+          serviceIdentifier = serviceIdentifier.split('/')[0].trim();
+        }
+
+        // 4. Delivered By Third Party
+        // true if {Delivered by} attribute is Associated Providers
+        // false if {Delivered by} attribute is Company Workforce
+        let deliveredByThirdParty = '';
+        if (item.deliveredBy) {
+          const deliveredByLower = String(item.deliveredBy).toLowerCase();
+          if (deliveredByLower.includes('associated provider') || deliveredByLower.includes('associated providers')) {
+            deliveredByThirdParty = 'true';
+          } else if (deliveredByLower.includes('company workforce') || deliveredByLower.includes('workforce')) {
+            deliveredByThirdParty = 'false';
+          }
+        }
+
+        // 5. Item or Wraparound
+        // Item: if {Unit} is Item
+        // Wraparound: if the {Service Plan} attribute contains Wraparound
+        let itemOrWraparound = '';
+        if (item.unit && item.unit.toLowerCase() === 'item') {
+          itemOrWraparound = 'Item';
+        } else if (item.servicePlan && String(item.servicePlan).toLowerCase().includes('wraparound')) {
+          itemOrWraparound = 'Wraparound';
+        }
+
+        // 6. Item Description Code
+        // If Item is selected, {Item ID} attribute
+        // If Wraparound is selected, BLANK
+        const itemDescriptionCode = (itemOrWraparound === 'Item' && item.itemId) ? item.itemId : '';
+
+        // 7. Item Description
+        // If Item is selected, {Item} attribute
+        // If Wraparound is selected, BLANK
+        const itemDescription = (itemOrWraparound === 'Item' && item.item) ? item.item : '';
+
+        // 8. Wraparound Description Code
+        // If Item is selected, BLANK
+        // If Wraparound is selected, the {Wraparound Item ID} attribute
+        const wraparoundDescriptionCode = (itemOrWraparound === 'Wraparound' && item.wraparoundItemId) ? item.wraparoundItemId : '';
+
+        // 9. Wraparound Description
+        // If Item is selected, BLANK
+        // If Wraparound is selected, the {Wraparound Description} attribute
+        const wraparoundDescription = (itemOrWraparound === 'Wraparound' && item.wraparoundDescription) ? item.wraparoundDescription : '';
+
+        // 10. Prescribed Item
+        // Y: if ticked
+        // N: Otherwise
+        const prescribedItemValue = item.prescribedItem;
+        let prescribedItem = 'N';
+        if (prescribedItemValue === true) {
+          prescribedItem = 'Y';
+        } else if (typeof prescribedItemValue === 'string') {
+          const valueLower = prescribedItemValue.toLowerCase();
+          if (valueLower === 'true' || prescribedItemValue === 'Y') {
+            prescribedItem = 'Y';
+          }
+        }
+
+        // 11. Purchased Method Type
+        // If Purchased, PURCHASED
+        // If Loaned, LOANED
+        let purchasedMethodType = '';
+        if (item.itemPurchasedMethod) {
+          const methodLower = String(item.itemPurchasedMethod).toLowerCase();
+          if (methodLower.includes('purchased')) {
+            purchasedMethodType = 'PURCHASED';
+          } else if (methodLower.includes('loaned')) {
+            purchasedMethodType = 'LOANED';
+          }
+        }
+
+        // 12. Loaned by Organisation Name
+        // If LOANED is selected, {Associated Provider (If Applicable)}
+        // Otherwise, BLANK
+        const loanedByOrganisationName = (purchasedMethodType === 'LOANED' && item.associatedProvider) ? item.associatedProvider : '';
+
+        // 13. Loaned By Invoice Number
+        // If LOANED is selected, {Associated Provider Invoice No. (if applicable)}
+        // Otherwise, BLANK
+        const loanedByInvoiceNumber = (purchasedMethodType === 'LOANED' && item.associatedProviderInvoiceNo) ? item.associatedProviderInvoiceNo : '';
+
+        // 14. Health Professional Type Code
+        // From the Health Professional Pricing folder of the selected Health Professional Service
+        const healthProfessionalTypeCode = item.healthProfessionalTypeCode || '';
+
+        // 15. Health Professional Type Other
+        // A free text if the selected Health Professional Service includes Other
+        const healthProfessionalTypeOther = item.healthProfessionalTypeOther || '';
+
         csvRows.push(
           [
-            escapeForCsv(item.participant),
-            escapeForCsv(item.service || ''),
-            escapeForCsv(item.worker || ''),
-            escapeForCsv(formatDateForCsv(item.scheduledServiceDate || item.scheduledStart)),
-            escapeForCsv(formatDateForCsv(item.serviceDeliveryDate)),
-            escapeForCsv(item.transactionStatus || ''),
-            escapeForCsv(''), // Committed AT-HM for Delivery - not available in current data
-            escapeForCsv(item.unit),
-            escapeForCsv(item.quantity),
-            escapeForCsv(item.unitPrice),
-            escapeForCsv(item.totalAmount),
-            escapeForCsv(item.govSubsidy),
-            escapeForCsv(item.participantContribution),
-            escapeForCsv(item.fundingSource || ''),
-            escapeForCsv(item.notes ? item.notes.replace(/<[^>]*>/g, '') : ''),
-            escapeForCsv(item.paymentStatus || ''),
-            escapeForCsv(item.invoiceNumber || '')
+            escapeForCsv(invoiceNumber), // Invoice Number
+            escapeForCsv(careRecipientIdentifier), // Care Recipient Identifier
+            escapeForCsv(serviceIdentifier), // Service Identifier
+            escapeForCsv(deliveredByThirdParty), // Delivered By Third Party
+            escapeForCsv(itemOrWraparound), // Item or Wraparound
+            escapeForCsv(itemDescriptionCode), // Item Description Code
+            escapeForCsv(itemDescription), // Item Description
+            escapeForCsv(wraparoundDescriptionCode), // Wraparound Description Code
+            escapeForCsv(wraparoundDescription), // Wraparound Description
+            escapeForCsv(prescribedItem), // Prescribed Item
+            escapeForCsv(purchasedMethodType), // Purchased Method Type
+            escapeForCsv(loanedByOrganisationName), // Loaned by Organisation Name
+            escapeForCsv(loanedByInvoiceNumber), // Loaned By Invoice Number
+            escapeForCsv(healthProfessionalTypeCode), // Health Professional Type Code
+            escapeForCsv(healthProfessionalTypeOther) // Health Professional Type Other
           ].join(',')
         );
       });
@@ -638,12 +752,17 @@ export default function InvoiceGenerator() {
       // CSV filename serves as External Reference Identifier
       const fileName = `BulkInvoice_${dateStr}_${timeStr}_${participantIdentifier}.csv`;
       
-      link.setAttribute('href', url);
-      link.setAttribute('download', fileName);
-      link.style.visibility = 'hidden';
+      link.href = url;
+      link.download = fileName;
+      link.style.display = 'none';
       document.body.appendChild(link);
       link.click();
-      document.body.removeChild(link);
+      
+      // Clean up
+      setTimeout(() => {
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 100);
 
       setLoading(false);
       showSuccessToast(`Successfully exported ${allItems.length} records to CSV.`);
@@ -756,7 +875,31 @@ export default function InvoiceGenerator() {
         }
 
         if (fileUrl) {
-          window.open(fileUrl, '_blank');
+          // Download the PDF file instead of opening in new tab
+          try {
+            const pdfResponse = await fetch(fileUrl);
+            const pdfBlob = await pdfResponse.blob();
+            const pdfUrl = URL.createObjectURL(pdfBlob);
+            const link = document.createElement('a');
+            link.href = pdfUrl;
+            link.download = `Invoice_${invoiceNumber}_${participantName.replace(/\s+/g, '_')}.pdf`;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            
+            // Clean up
+            setTimeout(() => {
+              document.body.removeChild(link);
+              URL.revokeObjectURL(pdfUrl);
+            }, 100);
+          } catch (downloadErr: any) {
+            console.error('Error downloading PDF:', downloadErr);
+            // Fallback to opening in new tab if download fails
+            window.open(fileUrl, '_blank');
+            showInfoToast('PDF opened in new tab', {
+              description: 'Download failed, opened PDF in new tab instead.'
+            });
+          }
         }
 
         setShowInvoiceModal(false);
@@ -1086,29 +1229,21 @@ export default function InvoiceGenerator() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>Payment Status</TableHead>
                     <TableHead>Participant</TableHead>
                     <TableHead>Service</TableHead>
-                    <TableHead>Service Provider</TableHead>
                     <TableHead>Scheduled Service Date</TableHead>
-                    <TableHead>Service Delivery Date</TableHead>
-                    <TableHead>Transaction Status</TableHead>
-                    <TableHead>Committed AT-HM for Delivery</TableHead>
-                    <TableHead>Unit</TableHead>
-                    <TableHead>Quantity</TableHead>
-                    <TableHead>Unit Price ($)</TableHead>
                     <TableHead>Total Amount ($)</TableHead>
                     <TableHead>Gov Subsidy ($)</TableHead>
                     <TableHead>Participant Contribution ($)</TableHead>
-                    <TableHead>Funding Source</TableHead>
                     <TableHead>Notes</TableHead>
-                    <TableHead>Payment Status</TableHead>
-                    <TableHead>Invoice #</TableHead>
+                    <TableHead>Item First Payment</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={17} className="h-64 text-center">
+                      <TableCell colSpan={9} className="h-64 text-center">
                       <div className="flex flex-col items-center justify-center">
                         <Spinner />
                         <p className="mt-4 text-muted-foreground">Loading service records...</p>
@@ -1117,7 +1252,7 @@ export default function InvoiceGenerator() {
                   </TableRow>
                 ) : error ? (
                   <TableRow>
-                    <TableCell colSpan={17} className="h-64 text-center">
+                    <TableCell colSpan={9} className="h-64 text-center">
                       <div className="flex flex-col items-center justify-center">
                         <X className="h-8 w-8 text-destructive mb-2" />
                         <p className="text-destructive">Error: {error}</p>
@@ -1126,7 +1261,7 @@ export default function InvoiceGenerator() {
                   </TableRow>
                 ) : filteredRecords.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={17} className="h-64 text-center">
+                    <TableCell colSpan={9} className="h-64 text-center">
                       <div className="flex flex-col items-center justify-center">
                         <FileText className="h-8 w-8 text-muted-foreground mb-2" />
                         <p className="text-muted-foreground">No service records found matching your criteria.</p>
@@ -1136,46 +1271,21 @@ export default function InvoiceGenerator() {
                 ) : (
                   currentItems.map((record) => (
                     <TableRow key={record.id} className={record.status === 'invoiced' ? 'bg-green-50 text-gray-600' : 'hover:bg-blue-50 transition-colors'}>
+                      <TableCell>{record.paymentStatus || '-'}</TableCell>
                       <TableCell className="font-medium">{record.participant}</TableCell>
                       <TableCell>{record.service || '-'}</TableCell>
-                      <TableCell>{record.worker}</TableCell>
                       <TableCell className="whitespace-nowrap">
                         {record.scheduledServiceDate || (record.scheduledStart ? formatDate(record.scheduledStart).split(' ')[0] : '-')}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {record.serviceDeliveryDate || '-'}
-                      </TableCell>
-                      <TableCell>{record.transactionStatus || '-'}</TableCell>
-                      <TableCell>-</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={record.unit === 'Hours' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}
-                        >
-                          {record.unit}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-center">{record.quantity}</TableCell>
-                      <TableCell>{formatCurrency(record.unitPrice)}</TableCell>
                       <TableCell className="font-semibold">{formatCurrency(record.totalAmount)}</TableCell>
                       <TableCell>{formatCurrency(record.govSubsidy)}</TableCell>
                       <TableCell>{formatCurrency(record.participantContribution)}</TableCell>
-                      <TableCell>{record.fundingSource || '-'}</TableCell>
                       <TableCell className="max-w-xs truncate" title={record.notes}>
                         <span className="text-gray-500" dangerouslySetInnerHTML={record.notes ? { __html: record.notes } : { __html: '' }}>
                         </span>
                       </TableCell>
-                      <TableCell>{record.paymentStatus || '-'}</TableCell>
-                      <TableCell className="font-mono">
-                        {record.invoiceNumber && record.invoiceNumber.trim() !== '' ? (
-                          record.fileUrl ? (
-                            <a href={record.fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                              {record.invoiceNumber}
-                            </a>
-                          ) : (
-                            record.invoiceNumber
-                          )
-                        ) : '-'}
+                      <TableCell>
+                        {record.itemFirstPayment === true || record.itemFirstPayment === 'true' || record.itemFirstPayment === 'Y' ? 'Y' : 'N'}
                       </TableCell>
                     </TableRow>
                   ))
