@@ -79,12 +79,14 @@ const FUNDING_SOURCE_TYPES = {
 
 const BUDGET_CATEGORY_CONFIG = [
     { code: 'HSQ', folderName: FUNDING_SOURCE_TYPES.HOME_SUPPORT, profileKey: 'homeSupport' },
-    { code: 'RCP', folderName: FUNDING_SOURCE_TYPES.RESTORATIVE_CARE, profileKey: 'restorativeCare' },
-    { code: 'EOL', folderName: FUNDING_SOURCE_TYPES.END_OF_LIFE, profileKey: 'endOfLife' },
     { code: 'ATS', folderName: FUNDING_SOURCE_TYPES.ASSISTIVE_TECH_SHORT, profileKey: 'assistiveTechShortTerm' },
     { code: 'ATO', folderName: FUNDING_SOURCE_TYPES.ASSISTIVE_TECH_ONGOING, profileKey: 'assistiveTechOngoing' },
-    { code: 'HMB', folderName: FUNDING_SOURCE_TYPES.HOME_MODIFICATION, profileKey: 'homeModification' }
+    { code: 'HMB', folderName: FUNDING_SOURCE_TYPES.HOME_MODIFICATION, profileKey: 'homeModification' },
+    { code: 'RCP', folderName: FUNDING_SOURCE_TYPES.RESTORATIVE_CARE, profileKey: 'restorativeCare' },
+    { code: 'EOL', folderName: FUNDING_SOURCE_TYPES.END_OF_LIFE, profileKey: 'endOfLife' }
 ];
+
+const BUDGET_CATEGORY_ORDER = BUDGET_CATEGORY_CONFIG.map(config => config.code);
 
 const DELIVERED_BY_TYPES = {
     COMPANY_WORKFORCE: 'company workforce',
@@ -1270,10 +1272,9 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         }
 
         // Fetch business name once for all items
-        let businessName = null;
+        let businessProfile = null;
         try {
-            const business = await Business.findOne({ workspaceId: workspaceId.toString() });
-            businessName = business?.name || null;
+            businessProfile = await Business.findOne({ workspaceId: workspaceId.toString() });
         } catch (err) {
             warn('Items-Service', 'Failed to fetch business name', {
                 message: err.message,
@@ -1548,6 +1549,34 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             return config ? config.code : 'HSQ';
         };
 
+        const determineCategoryCodeForService = (service = {}) => {
+            const normalize = (value) => (value || '').toString().toLowerCase();
+            const fundingSource = normalize(service.fundingSource);
+            const serviceName = normalize(service.service);
+            const notes = normalize(service.notes);
+            const haystack = `${fundingSource} ${serviceName} ${notes}`;
+
+            if (haystack.includes('restorative care')) {
+                return 'RCP';
+            }
+            if (haystack.includes('end-of-life') || haystack.includes('end of life')) {
+                return 'EOL';
+            }
+            if (haystack.includes('assistive') && haystack.includes('short')) {
+                return 'ATS';
+            }
+            if (haystack.includes('assistive') && haystack.includes('ongoing')) {
+                return 'ATO';
+            }
+            if (haystack.includes('modification')) {
+                return 'HMB';
+            }
+            if (haystack.includes('home support') || haystack.includes('hsq')) {
+                return 'HSQ';
+            }
+            return 'HSQ';
+        };
+
         const transformBudgetItem = async (item) => {
             const categoryCode = determineCategoryCodeForBudget(item);
             const folderName = folderIdToName.get(item.folderId) || '';
@@ -1598,7 +1627,14 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const committedATOngoing = getNumberFromItem(item, ATTRIBUTE_NAMES.COMMITTED_AT_ONGOING);
             const committedHM = getNumberFromItem(item, ATTRIBUTE_NAMES.COMMITTED_HOME_MODIFICATION);
 
-            const committedFunds = committedATShort + committedATOngoing + committedHM;
+            let committedFunds = 0;
+            if (categoryCode === 'ATS') {
+                committedFunds = committedATShort;
+            } else if (categoryCode === 'ATO') {
+                committedFunds = committedATOngoing;
+            } else if (categoryCode === 'HMB') {
+                committedFunds = committedHM;
+            }
 
             return {
                 id: item.itemId,
@@ -1673,6 +1709,20 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 : true;
 
             return matchesParticipant && matchesYear && matchesMonth;
+        });
+
+        const getCategoryOrderIndex = (code) => {
+            const normalizedCode = (code || 'HSQ').toString();
+            const idx = BUDGET_CATEGORY_ORDER.indexOf(normalizedCode);
+            return idx === -1 ? BUDGET_CATEGORY_ORDER.length : idx;
+        };
+
+        filteredBudgetItems.sort((a, b) => {
+            const orderDiff = getCategoryOrderIndex(a.categoryCode) - getCategoryOrderIndex(b.categoryCode);
+            if (orderDiff !== 0) {
+                return orderDiff;
+            }
+            return (a.folderName || '').localeCompare(b.folderName || '');
         });
 
         const hasBudgetLimit = budgetLimitParam !== undefined && budgetLimitParam !== null && budgetLimitParam !== '';
@@ -1828,25 +1878,72 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             };
         }));
 
+        const budgetCategoryAggregates = {};
+        const createBudgetAggregate = () => ({
+            availableFunds: 0,
+            remainingBudget: 0,
+            serviceDeliveredAmount: 0,
+            adjustmentAmount: 0,
+            govSubsidyAmount: 0,
+            participantContributionAmount: 0,
+            committedFunds: 0,
+            serviceCount: 0,
+            fundingStartDate: null,
+            fundingEndDate: null,
+            months: new Set(),
+            availableFundStart: 0,
+            quarterlyAdjustment: 0,
+            primarySupplementAmount: 0,
+            carryoverFunding: 0,
+            unspentReturned: 0,
+            commonwealthUnspent: 0,
+            providerUnspent: 0,
+            participantUnspent: 0,
+            previousMonthSpending: 0,
+            fundAmount: 0,
+            shouldDisplay: false
+        });
+
+        transformedServiceItems.forEach(service => {
+            const code = determineCategoryCodeForService(service);
+            if (!budgetCategoryAggregates[code]) {
+                budgetCategoryAggregates[code] = createBudgetAggregate();
+            }
+            const aggregate = budgetCategoryAggregates[code];
+            aggregate.govSubsidyAmount += Number(service.govSubsidy) || 0;
+            aggregate.participantContributionAmount += Number(service.participantContribution) || 0;
+            aggregate.serviceCount += 1;
+        });
+
+        const summaryTotals = transformedServiceItems.reduce((acc, service) => {
+            const quantity = Number(service.quantity) || 0;
+            const totalAmount = Number(service.totalAmount) || 0;
+            const gov = Number(service.govSubsidy) || 0;
+            const participantContribution = Number(service.participantContribution) || 0;
+            const unit = (service.unit || '').toString().toLowerCase();
+            const hours = unit.includes('hour') ? quantity : 0;
+            return {
+                totalServices: acc.totalServices + 1,
+                totalHours: acc.totalHours + hours,
+                totalAmount: acc.totalAmount + totalAmount,
+                govSubsidy: acc.govSubsidy + gov,
+                participantContribution: acc.participantContribution + participantContribution
+            };
+        }, { totalServices: 0, totalHours: 0, totalAmount: 0, govSubsidy: 0, participantContribution: 0 });
+
+        const summary = {
+            ...summaryTotals,
+            averageServiceCost: summaryTotals.totalServices > 0
+                ? summaryTotals.totalAmount / summaryTotals.totalServices
+                : 0
+        };
+
         const budgetTotal = filteredBudgetItems.length;
 
-        const budgetCategoryAggregates = {};
         filteredBudgetItems.forEach(item => {
             const code = item.categoryCode || 'HSQ';
             if (!budgetCategoryAggregates[code]) {
-                budgetCategoryAggregates[code] = {
-                    availableFunds: 0,
-                    remainingBudget: 0,
-                    serviceDeliveredAmount: 0,
-                    adjustmentAmount: 0,
-                    govSubsidyAmount: 0,
-                    participantContributionAmount: 0,
-                    committedFunds: 0,
-                    serviceCount: 0,
-                    fundingStartDate: null,
-                    fundingEndDate: null,
-                    months: new Set()
-                };
+                budgetCategoryAggregates[code] = createBudgetAggregate();
             }
 
             const aggregate = budgetCategoryAggregates[code];
@@ -1857,7 +1954,16 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             aggregate.govSubsidyAmount += item.govSubsidyAmount || 0;
             aggregate.participantContributionAmount += item.participantContributionAmount || 0;
             aggregate.committedFunds += item.committedFunds || 0;
-            aggregate.serviceCount += 1;
+            aggregate.availableFundStart += item.availableFundStart || 0;
+            aggregate.quarterlyAdjustment += item.quarterlyAdjustment || 0;
+            aggregate.primarySupplementAmount += item.primarySupplementAmount || 0;
+            aggregate.carryoverFunding += item.carryoverFunding || 0;
+            aggregate.unspentReturned += item.unspentReturned || 0;
+            aggregate.commonwealthUnspent += item.commonwealthUnspent || 0;
+            aggregate.providerUnspent += item.providerUnspent || 0;
+            aggregate.participantUnspent += item.participantUnspent || 0;
+            aggregate.previousMonthSpending += item.previousMonthSpending || 0;
+            aggregate.fundAmount += item.fundAmount || 0;
 
             if (item.fundingStartDate) {
                 if (!aggregate.fundingStartDate || new Date(item.fundingStartDate) < new Date(aggregate.fundingStartDate)) {
@@ -1884,6 +1990,16 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             if (aggregate.fundingStartDate || aggregate.fundingEndDate) {
                 aggregate.availableBalanceRangeLabel = [aggregate.fundingStartDate, aggregate.fundingEndDate].filter(Boolean).join(' - ');
             }
+            const visibilityFields = [
+                aggregate.availableFunds,
+                aggregate.remainingBudget,
+                aggregate.serviceDeliveredAmount,
+                aggregate.adjustmentAmount,
+                aggregate.committedFunds,
+                aggregate.previousMonthSpending,
+                aggregate.fundAmount
+            ];
+            aggregate.shouldDisplay = visibilityFields.some(value => Math.abs(value || 0) > 0.009);
             delete aggregate.months;
         });
 
@@ -1903,6 +2019,56 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                     participantProfileId = profileValue.toString();
                 }
             }
+        }
+
+        const extractProfileString = (value) => {
+            if (value === null || value === undefined) {
+                return '';
+            }
+            if (typeof value === 'object' && value.name) {
+                return value.name;
+            }
+            return value.toString ? value.toString() : '';
+        };
+
+        let participantProfileValues = null;
+        let participantFullName = typeof participant === 'string' ? participant : '';
+        let participantAddress = '';
+        let participantSuburb = '';
+        let participantState = '';
+        let participantPostcode = '';
+        let myAgedCareIdNumber = '';
+        let providerIdFromProfile = '';
+
+        if (participantProfileId) {
+            participantProfileValues = await fetchItemValuesCached(participantProfileId);
+        }
+
+        if (participantProfileValues?.values) {
+            const getProfileValue = (attributeName) => {
+                const entry = participantProfileValues.values.find(v => v.attribute.name === attributeName);
+                if (!entry || entry.data === null || entry.data === undefined) {
+                    return '';
+                }
+                if (Array.isArray(entry.data) && entry.data.length > 0) {
+                    return extractProfileString(entry.data[0]);
+                }
+                return extractProfileString(entry.data);
+            };
+
+            participantFullName = getProfileValue(ATTRIBUTE_NAMES.FULL_NAME) ||
+                getProfileValue(ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) ||
+                participantFullName;
+            participantAddress = getProfileValue(ATTRIBUTE_NAMES.ADDRESS) || participantAddress;
+            participantSuburb = getProfileValue(ATTRIBUTE_NAMES.SUBURB) || participantSuburb;
+            participantState = getProfileValue(ATTRIBUTE_NAMES.STATE) || participantState;
+            participantPostcode = getProfileValue(ATTRIBUTE_NAMES.POSTCODE) ||
+                getProfileValue(ATTRIBUTE_NAMES.POST_CODE) ||
+                participantPostcode;
+            myAgedCareIdNumber = getProfileValue(ATTRIBUTE_NAMES.MY_AGED_CARE_ID) ||
+                getProfileValue(ATTRIBUTE_NAMES.MY_AGED_CARE_ID_ALT) ||
+                myAgedCareIdNumber;
+            providerIdFromProfile = getProfileValue(ATTRIBUTE_NAMES.PROVIDER_ID) || providerIdFromProfile;
         }
 
         let budgetDataFromProfile = null;
@@ -1926,13 +2092,13 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         };
 
         const monthNum = parseInt(month, 10) || 1;
-        const yearStr = year || new Date().getFullYear().toString();
+        const yearStr = (year || new Date().getFullYear().toString()).toString();
         const quarterMonths = getQuarterMonths(monthNum);
         const defaultFundingEndDate = new Date(parseInt(yearStr, 10), 11, 31).toISOString();
 
         const budgetCategories = BUDGET_CATEGORY_CONFIG.map(config => {
             const profileData = budgetDataFromProfile?.[config.profileKey] || {};
-            const budgetAggregate = budgetCategoryAggregates[config.code] || {};
+            const budgetAggregate = budgetCategoryAggregates[config.code] || createBudgetAggregate();
 
             const categoryName = config.code === 'HSQ'
                 ? `Home Support Quarterly Budget ${quarterMonths.start} ~ ${quarterMonths.end} ${yearStr}`
@@ -1953,9 +2119,28 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 quarterStartMonth: config.code === 'HSQ' ? quarterMonths.start : undefined,
                 quarterEndMonth: config.code === 'HSQ' ? quarterMonths.end : undefined,
                 availableBalanceRangeLabel: budgetAggregate.availableBalanceRangeLabel || undefined,
-                expenditurePeriodLabel: budgetAggregate.expenditurePeriodLabel || undefined
+                expenditurePeriodLabel: budgetAggregate.expenditurePeriodLabel || undefined,
+                availableFundStart: budgetAggregate.availableFundStart || profileData.availableFundStart || 0,
+                quarterlyAdjustment: budgetAggregate.quarterlyAdjustment || profileData.quarterlyAdjustment || 0,
+                primarySupplementAmount: budgetAggregate.primarySupplementAmount || profileData.primarySupplementAmount || 0,
+                carryoverFunding: budgetAggregate.carryoverFunding || profileData.carryoverFunding || 0,
+                unspentReturned: budgetAggregate.unspentReturned || profileData.unspentReturned || 0,
+                commonwealthUnspent: budgetAggregate.commonwealthUnspent || profileData.commonwealthUnspent || 0,
+                providerUnspent: budgetAggregate.providerUnspent || profileData.providerUnspent || 0,
+                participantUnspent: budgetAggregate.participantUnspent || profileData.participantUnspent || 0,
+                previousMonthSpending: budgetAggregate.previousMonthSpending || profileData.previousMonthSpending || 0,
+                fundAmount: budgetAggregate.fundAmount || profileData.fundAmount || 0,
+                shouldDisplay: Boolean(budgetAggregate.shouldDisplay)
             };
         });
+
+        const providerIdValue = providerIdFromProfile || businessProfile?.companyRegistrationId || null;
+        const monthLabelForResponse = targetMonthLabel ||
+            (normalizedMonth && monthLabelLookup[normalizedMonth]) ||
+            normalizedMonth ||
+            '';
+        const monthNumberForResponse = normalizedMonth || (typeof month === 'string' ? month : '');
+        const participantNameForResponse = participantFullName || (typeof participant === 'string' ? participant : '');
 
         res.status(200).json({
             budgetItems: {
@@ -1970,7 +2155,19 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 page: servicePageNumber,
                 limit: serviceLimitNumber
             },
-            budgetCategories
+            budgetCategories,
+            participant: participantNameForResponse,
+            participantProfile: participantNameForResponse,
+            participantAddress,
+            participantSuburb,
+            participantState,
+            participantPostcode,
+            myAgedCareIdNumber,
+            providerId: providerIdValue,
+            month: monthLabelForResponse,
+            monthNumber: monthNumberForResponse,
+            year: yearStr,
+            summary
         });
     } catch (err) {
         error('Items-Service', 'Failed to fetch monthly statement data', {

@@ -22,7 +22,7 @@ export default function AccessDenied() {
 
           <h1 className="text-3xl font-bold text-destructive mb-2">Access Denied</h1>
           <p className="text-muted-foreground mb-6">
-            You don't have permission to access this resource. Please contact your administrator if you believe this is a mistake.
+            You don&apos;t have permission to access this resource. Please contact your administrator if you believe this is a mistake.
           </p>
 
           <Button
