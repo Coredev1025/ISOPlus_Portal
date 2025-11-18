@@ -1821,9 +1821,23 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const worker = getValue(ATTRIBUTE_NAMES.WORKER_PLANNER)?.toString() || 'N/A';
             const workerName = members.find(m => m.id == worker)?.name || 'Removed User';
             const deliveredByRaw = getValue(ATTRIBUTE_NAMES.DELIVERED_BY);
-            const serviceProvider = deliveredByRaw
+            const deliveredBy = deliveredByRaw
                 ? (typeof deliveredByRaw === 'object' ? deliveredByRaw.name : deliveredByRaw.toString())
                 : null;
+            const associatedProviderRaw = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
+            const associatedProvider = associatedProviderRaw
+                ? (typeof associatedProviderRaw === 'object' ? associatedProviderRaw.name : associatedProviderRaw.toString())
+                : null;
+            
+            // Determine service provider based on deliveredBy
+            let serviceProvider = null;
+            if (deliveredBy && deliveredBy.toLowerCase().includes('company')) {
+                // Use company name from business configuration
+                serviceProvider = businessProfile?.name || null;
+            } else if (deliveredBy && deliveredBy.toLowerCase().includes('associated')) {
+                // Use associated provider
+                serviceProvider = associatedProvider;
+            }
             // Get dates
             const scheduledStart = getValue(ATTRIBUTE_NAMES.SCHEDULED_START) || null;
             const actualEnd = getValue(ATTRIBUTE_NAMES.ACTUAL_END) || null;
@@ -1849,12 +1863,92 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const totalAmount = Number(getValue(ATTRIBUTE_NAMES.TOTAL_AMOUNT)) || 0;
             const govSubsidy = Number(getValue(ATTRIBUTE_NAMES.GOV_SUBSIDY)) || 0;
             const participantContribution = Number(getValue(ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)) || 0;
+            
+            // Get Funding Source - it's a reference type, need to fetch referenced items
+            const fetchFundingSourceName = async (refItemId, timeoutMs = 5000) => {
+                if (!refItemId || typeof refItemId !== 'string' || refItemId.trim() === '') {
+                    return null;
+                }
+                
+                try {
+                    // Create a timeout promise
+                    const timeoutPromise = new Promise((_, reject) => {
+                        setTimeout(() => reject(new Error('Timeout')), timeoutMs);
+                    });
+                    
+                    // Race between the API call and timeout
+                    const refItem = await Promise.race([
+                        getItemValues(workspaceId, boardId, refItemId.toString()),
+                        timeoutPromise
+                    ]);
+                    
+                    if (refItem && refItem.values) {
+                        // Try to find a name attribute (could be "Name", "Title", "Funding Source Name", etc.)
+                        const nameValue = refItem.values.find(v => 
+                            v.attribute.name === 'Name' || 
+                            v.attribute.name === 'Title' ||
+                            v.attribute.name === 'Funding Source Name' ||
+                            v.attribute.name === 'Full Name'
+                        );
+                        if (nameValue && nameValue.data) {
+                            return typeof nameValue.data === 'object' && nameValue.data.name 
+                                ? nameValue.data.name 
+                                : String(nameValue.data);
+                        }
+                        // Fallback: use the first text attribute
+                        const textValue = refItem.values.find(v => 
+                            v.attribute.type === 'text' && v.data
+                        );
+                        if (textValue && textValue.data) {
+                            return String(textValue.data);
+                        }
+                    }
+                    return null;
+                } catch (err) {
+                    // Silently fail - don't log every timeout to avoid spam
+                    if (err.message !== 'Timeout') {
+                        warn('Items-Service', 'Failed to fetch funding source item', {
+                            refId: refItemId,
+                            error: err.message
+                        }, extractContextFromReq(req));
+                    }
+                    return null;
+                }
+            };
+            
+            let fundingSource = 'Home Support';
             const fundingSourceRaw = getValue(ATTRIBUTE_NAMES.FUNDING_SOURCE);
-            const fundingSource = fundingSourceRaw
-                ? (typeof fundingSourceRaw === 'object'
-                    ? (fundingSourceRaw.name || fundingSourceRaw.toString())
-                    : fundingSourceRaw.toString())
-                : 'Home Support';
+            if (fundingSourceRaw) {
+                const fundingSourceData = fundingSourceRaw;
+                if (Array.isArray(fundingSourceData) && fundingSourceData.length > 0) {
+                    // Fetch all referenced items and get their names
+                    // Use Promise.allSettled to prevent one failure from stopping all
+                    const fundingSourceResults = await Promise.allSettled(
+                        fundingSourceData.map(async (refId) => {
+                            const refItemId = typeof refId === 'object' ? refId.id || refId : refId;
+                            if (!refItemId) return null;
+                            return await fetchFundingSourceName(refItemId.toString());
+                        })
+                    );
+                    const fundingSourceNames = fundingSourceResults
+                        .filter(result => result.status === 'fulfilled' && result.value)
+                        .map(result => result.value);
+                    fundingSource = fundingSourceNames.length > 0 ? fundingSourceNames.join(', ') : 'Home Support';
+                } else if (fundingSourceData) {
+                    // Single reference
+                    const refItemId = typeof fundingSourceData === 'object' 
+                        ? (fundingSourceData.id || fundingSourceData.name || fundingSourceData)
+                        : fundingSourceData;
+                    if (refItemId) {
+                        const refIdStr = typeof refItemId === 'object' && refItemId.id 
+                            ? refItemId.id.toString() 
+                            : refItemId.toString();
+                        const fetchedName = await fetchFundingSourceName(refIdStr);
+                        fundingSource = fetchedName || 'Home Support';
+                    }
+                }
+            }
+            
             const notes = getValue(ATTRIBUTE_NAMES.ADDITIONAL_NOTES) || '';
 
             return {
@@ -1862,6 +1956,8 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 participant: participantName,
                 service,
                 serviceProvider,
+                deliveredBy: deliveredBy || null,
+                associatedProvider: associatedProvider || null,
                 scheduledServiceDate,
                 serviceDeliveryDate,
                 transactionStatus,
