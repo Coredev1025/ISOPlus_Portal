@@ -183,7 +183,8 @@ export async function registerBoardWebhooks(authorization, workspaceId, boardId)
   
     const events = [
       'item.updated',
-      'item.finalized'
+      'item.finalized',
+      'value.updated'
     ];
 
     info('Webhook-Service', 'Attempting hook registration', {
