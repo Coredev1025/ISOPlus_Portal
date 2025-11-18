@@ -235,7 +235,7 @@ export default function MonthlyStatement() {
     postcode: "",
     companyRegistrationId: "",
   });
-  const [exportingSection, setExportingSection] = useState<null | 'budget-csv' | 'budget-pdf' | 'service-csv' | 'service-pdf' | 'statement-pdf'>(null);
+  const [exportingSection, setExportingSection] = useState<null | 'budget-csv' | 'service-csv' | 'statement-pdf'>(null);
 
 
   // Budget data will come from the API response
@@ -475,9 +475,9 @@ export default function MonthlyStatement() {
 
   // Categorize services into budget categories using data from API
   const categorizeServices = (
-    services: ServiceRecord[], 
+    services: ServiceRecord[],
     budgetCategoriesFromAPI: BudgetCategory[] | undefined,
-    monthNumber: string, 
+    monthNumber: string,
     year: string
   ): BudgetCategory[] => {
     const quarterMonths = getQuarterMonths(monthNumber);
@@ -508,20 +508,20 @@ export default function MonthlyStatement() {
 
         if (fundingSource.includes('restorative care') || serviceCategory.includes('restorative')) {
           categoryCode = 'RCP';
-        } else if (fundingSource.includes('end-of-life') || fundingSource.includes('end of life') || 
-                   notes.includes('end of life') || taskName.includes('end of life')) {
+        } else if (fundingSource.includes('end-of-life') || fundingSource.includes('end of life') ||
+          notes.includes('end of life') || taskName.includes('end of life')) {
           categoryCode = 'EOL';
         } else if ((fundingSource.includes('assistive') && fundingSource.includes('short')) ||
-                   (notes.includes('assistive') && notes.includes('short'))) {
+          (notes.includes('assistive') && notes.includes('short'))) {
           categoryCode = 'ATS';
         } else if ((fundingSource.includes('assistive') && fundingSource.includes('ongoing')) ||
-                   (notes.includes('assistive') && notes.includes('ongoing'))) {
+          (notes.includes('assistive') && notes.includes('ongoing'))) {
           categoryCode = 'ATO';
         } else if (fundingSource.includes('modification') || fundingSource.includes('home modification') ||
-                   notes.includes('modification') || taskName.includes('modification')) {
+          notes.includes('modification') || taskName.includes('modification')) {
           categoryCode = 'HMB';
-        } else if (fundingSource.includes('home support') || fundingSource.includes('hs') || 
-                   serviceCategory.includes('home support')) {
+        } else if (fundingSource.includes('home support') || fundingSource.includes('hs') ||
+          serviceCategory.includes('home support')) {
           categoryCode = 'HSQ';
         }
 
@@ -875,7 +875,7 @@ export default function MonthlyStatement() {
       if (fileUrl) {
         window.open(fileUrl, '_blank', 'noopener,noreferrer');
         showSuccessToast(
-          action === 'generate' 
+          action === 'generate'
             ? 'Monthly statement PDF generated successfully'
             : 'PDF exported successfully'
         );
@@ -972,6 +972,7 @@ export default function MonthlyStatement() {
     }
   };
 
+
   const handleServiceExportCSV = async () => {
     if (!statementData) {
       showErrorToast('Please load a statement before exporting.');
@@ -1046,45 +1047,10 @@ export default function MonthlyStatement() {
       const monthSlug = sanitizeForFileName(statementData.monthNumber || selectedMonth || '01');
       const filename = `Service_Records_${participantSlug}_${statementData.year}_${monthSlug}.csv`;
       downloadCsv(csvContent, filename);
-      showSuccessToast(`Exported ${items.length} service record${items.length === 1 ? '' : 's'} to CSV.`);
+      showSuccessToast(`Service records CSV exported successfully. ${items.length} record${items.length === 1 ? '' : 's'} exported.`);
     } catch (err: any) {
       console.error('Error exporting service records:', err);
       showErrorToast('Failed to export service records', { description: err?.message || 'Unknown error' });
-    } finally {
-      setExportingSection(null);
-    }
-  };
-
-  const handleServicePdfAndCsv = async () => {
-    if (!statementData) {
-      showErrorToast('Please load a statement before exporting.');
-      return;
-    }
-
-    try {
-      setExportingSection('service-pdf');
-      const pdfUrl = await handlePDFAction('generate');
-      setExportingSection(null);
-      if (pdfUrl) {
-        await handleServiceExportCSV();
-      } else {
-        showErrorToast('PDF generation failed. CSV export skipped.');
-      }
-    } catch (err) {
-      console.error('Error exporting service PDF/CSV:', err);
-      setExportingSection(null);
-    }
-  };
-
-  const handleBudgetExportPDF = async () => {
-    if (!statementData) {
-      showErrorToast('Please load a statement before exporting.');
-      return;
-    }
-
-    try {
-      setExportingSection('budget-pdf');
-      await handlePDFAction('export');
     } finally {
       setExportingSection(null);
     }
@@ -1510,7 +1476,16 @@ export default function MonthlyStatement() {
                     </div>
                   </div>
                 </div>
-                {/* Button intentionally removed per request */}
+                <div className="print:hidden">
+                  <Button
+                    className="gap-2"
+                    onClick={handleSaHMonthlyStatement}
+                    disabled={!statementData || exportingSection === 'statement-pdf' || loading}
+                  >
+                    <FileCheck className="h-4 w-4" />
+                    SaH Monthly Statement
+                  </Button>
+                </div>
               </div>
 
               {/* Business Details Display */}
@@ -1527,34 +1502,6 @@ export default function MonthlyStatement() {
                 </div>
               )}
 
-              <div className="mt-6 flex flex-wrap gap-2 print:hidden">
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  onClick={handleBudgetExportCSV}
-                  disabled={!statementData || exportingSection === 'budget-csv'}
-                >
-                  <FileSpreadsheet className="h-4 w-4" />
-                  Export to CSV
-                </Button>
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  onClick={handleBudgetExportPDF}
-                  disabled={!statementData || exportingSection === 'budget-pdf'}
-                >
-                  <FileText className="h-4 w-4" />
-                  Export to PDF
-                </Button>
-                <Button
-                  className="gap-2"
-                  onClick={handleSaHMonthlyStatement}
-                  disabled={!statementData || exportingSection === 'statement-pdf' || loading}
-                >
-                  <FileCheck className="h-4 w-4" />
-                  SaH Monthly Statement
-                </Button>
-              </div>
 
               {statementData && (
                 <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
@@ -1597,8 +1544,8 @@ export default function MonthlyStatement() {
                           <h4 className="text-base font-semibold leading-tight">{chart.title}</h4>
                         </div>
                         {(chart.serviceCount ?? 0) > 0 && (
-                          <Badge 
-                            variant="secondary" 
+                          <Badge
+                            variant="secondary"
                             className="text-[11px] px-2 py-1 font-medium"
                           >
                             {(chart.serviceCount ?? 0).toLocaleString()} services
@@ -1650,125 +1597,27 @@ export default function MonthlyStatement() {
               </Card>
             )}
 
-            {/* Budget Snapshot */}
-            <Card className="p-6 shadow-lg print:shadow-none">
-              <div className="flex items-start justify-between mb-6">
-                <div>
-                  <h3 className="text-xl font-semibold mb-2">Individualised Budgets</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Ordered as per Support at Home monthly statement: Home Support, Assistive Technology (Short-term, Ongoing), Home Modification, Restorative Care Pathway, End-of-Life Pathway.
-                  </p>
-                </div>
-              </div>
-              {visibleBudgetCategories.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {visibleBudgetCategories.map((category) => (
-                  <div
-                    key={category.code}
-                    className="rounded-lg border border-border/60 bg-card p-5 space-y-4 shadow-sm hover:shadow-md transition-shadow"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <h4 className="text-base font-semibold leading-tight mb-1.5">{category.name}</h4>
-                        {category.availableBalanceRangeLabel && (
-                          <p className="text-xs text-muted-foreground leading-relaxed">
-                            Available balance period: <span className="font-medium text-foreground">{category.availableBalanceRangeLabel}</span>
-                          </p>
-                        )}
-                      </div>
-                      <Badge 
-                        variant="secondary" 
-                        className="text-[11px] px-2.5 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 font-medium shrink-0"
-                      >
-                        {(category.serviceCount ?? 0).toLocaleString()} services
-                      </Badge>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 pt-2">
-                      <div className="space-y-1.5">
-                        <p className="text-[10px] uppercase text-muted-foreground tracking-wider font-medium">Available Funds</p>
-                        <p className="text-base font-semibold text-foreground">
-                          {formatCurrency(category.availableFunds || 0)}
-                        </p>
-                      </div>
-                      <div className="space-y-1.5">
-                        <p className="text-[10px] uppercase text-muted-foreground tracking-wider font-medium">Remaining Budget</p>
-                        <p className={`text-base font-semibold ${
-                          (category.remainingBudget || 0) < 0 
-                            ? 'text-red-600 dark:text-red-400' 
-                            : 'text-foreground'
-                        }`}>
-                          {formatCurrency(category.remainingBudget || 0)}
-                        </p>
-                      </div>
-                    </div>
-
-                    {category.fundingEndDate && (
-                      <div className="text-xs text-muted-foreground pt-1">
-                        Funding end date: <span className="font-medium text-foreground">{formatDate(category.fundingEndDate)}</span>
-                      </div>
-                    )}
-
-                    {['ATS', 'ATO', 'HMB'].includes(category.code) && category.committedFunds !== undefined && (
-                      <div className="text-xs text-muted-foreground pt-1">
-                        Committed funds: <span className="font-medium text-foreground">{formatCurrency(category.committedFunds || 0)}</span>
-                      </div>
-                    )}
-
-                    <div className="border-t border-border/50 pt-4 space-y-3">
-                      <div className="space-y-1.5">
-                        <p className="text-[10px] uppercase text-muted-foreground tracking-wider font-medium">
-                          Services Delivered ({category.expenditurePeriodLabel || 'Selected Month'})
-                        </p>
-                        <p className="text-base font-semibold text-foreground">
-                          {formatCurrency(category.serviceDeliveredAmount || 0)}
-                        </p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4 pt-1">
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Government Subsidy</p>
-                          <p className="text-sm font-medium text-foreground">
-                            {formatCurrency(category.govSubsidyAmount || 0)}
-                          </p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Participant Contribution</p>
-                          <p className="text-sm font-medium text-foreground">
-                            {formatCurrency(category.participantContributionAmount || 0)}
-                          </p>
-                        </div>
-                      </div>
-                      {category.adjustmentAmount && category.adjustmentAmount !== 0 ? (
-                        <div className="space-y-1 pt-1">
-                          <p className="text-xs text-muted-foreground">Adjustments from previous months</p>
-                          <p className="text-sm font-medium text-foreground">
-                            {formatCurrency(category.adjustmentAmount)}
-                          </p>
-                        </div>
-                      ) : null}
-                      {category.previousMonthSpending && category.previousMonthSpending !== 0 ? (
-                        <div className="space-y-1 pt-1">
-                          <p className="text-xs text-muted-foreground">Spending from previous months</p>
-                          <p className="text-sm font-medium text-foreground">
-                            {formatCurrency(category.previousMonthSpending)}
-                          </p>
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              ) : (
-                <div className="text-sm text-muted-foreground">No budget categories with non-zero activity for the selected filters.</div>
-              )}
-            </Card>
-
             {/* Individualised Budgets */}
             <Card className="p-6 shadow-lg print:shadow-none">
-              <h3 className="text-xl font-semibold mb-4">Budget Items</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Items from: Home Support Quarterly Budget, Restorative Care Pathway Budget, End-of-Life Pathway Budget, Assistive Technology - Short-term Budget, Assistive Technology - Ongoing Budget, Home Modification Budget
-              </p>
+              <div className="flex flex-col gap-2 mb-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h3 className="text-xl font-semibold">Budget Items</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Items from: Home Support Quarterly Budget, Restorative Care Pathway Budget, End-of-Life Pathway Budget, Assistive Technology - Short-term Budget, Assistive Technology - Ongoing Budget, Home Modification Budget
+                  </p>
+                </div>
+                <div className="print:hidden">
+                  <Button
+                    variant="outline"
+                    className="gap-2"
+                    onClick={handleBudgetExportCSV}
+                    disabled={!statementData || exportingSection === 'budget-csv'}
+                  >
+                    <FileSpreadsheet className="h-4 w-4" />
+                    Export to CSV
+                  </Button>
+                </div>
+              </div>
               <div className="overflow-x-auto">
                 {loadingBudgetItems ? (
                   <div className="text-center py-8">
@@ -1833,24 +1682,15 @@ export default function MonthlyStatement() {
                     Items from: Master Plan, Shift Planning and Reporting
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="print:hidden">
                   <Button
                     variant="outline"
                     className="gap-2"
                     onClick={handleServiceExportCSV}
-                    disabled={exportingSection === 'service-csv' || !statementData}
+                    disabled={!statementData || exportingSection === 'service-csv'}
                   >
                     <FileSpreadsheet className="h-4 w-4" />
                     Export to CSV
-                  </Button>
-                  <Button
-                    className="gap-2"
-                    variant="secondary"
-                    onClick={handleServicePdfAndCsv}
-                    disabled={!statementData || exportingSection === 'service-pdf' || exportingSection === 'service-csv'}
-                  >
-                    <FileText className="h-4 w-4" />
-                    Export to PDF
                   </Button>
                 </div>
               </div>

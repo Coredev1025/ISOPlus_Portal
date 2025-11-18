@@ -15,9 +15,9 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.758.0",
     "@aws-sdk/s3-request-presigner": "^3.758.0",
-    "@pdfme/common": "^5.3.12",
-    "@pdfme/generator": "^5.3.12",
-    "@pdfme/schemas": "^5.3.12",
+    "@pdfme/common": "^5.4.7",
+    "@pdfme/generator": "^5.4.7",
+    "@pdfme/schemas": "^5.4.7",
     "aws-sdk": "^2.1692.0",
     "axios": "^1.8.2",
     "bcryptjs": "^2.4.3",
