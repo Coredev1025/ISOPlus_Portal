@@ -341,7 +341,7 @@ export default function XeroIntegrationPage() {
                       </div>
                       <p className="text-sm text-yellow-700">
                         Your Xero account is connected, but organization information is not available. 
-                        Click "Get Organization Info" to retrieve your organization details.
+                        Click &quot;Get Organization Info&quot; to retrieve your organization details.
                       </p>
                     </div>
                   </div>

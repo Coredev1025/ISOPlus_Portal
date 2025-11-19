@@ -21,60 +21,49 @@ function formatValue(val) {
 
 const checkServiceClaimingConditions = async (workspaceId, boardId, itemId, itemsValues, servicePlanValues) => {
     try {
-        const actualShiftEndDate = itemsValues['Actual Shift End Date'];
+        const actualShiftEndDate = itemsValues['Actual Shift End Date & Time'];
         const transactionStatus = itemsValues['Transaction Status'];
         const committedATHM = itemsValues['Committed AT-HM for Delivery'];
         const unit = servicePlanValues.unit;
 
         const isBlank = (value) => !value || value.toString().trim() === '';
 
-        if (!isBlank(actualShiftEndDate) &&
-            transactionStatus?.includes('Delivered - To be claimed and Invoiced')) {
-            return { success: true };
-        }
-
-        if (isBlank(actualShiftEndDate) &&
-            transactionStatus?.includes('Delivered - To be claimed and Invoiced')) {
-            return { success: true };
-        }
-
-        if (isBlank(actualShiftEndDate) &&
-            transactionStatus?.includes('Cancelled - To be claimed and Invoiced if applicable')) {
-            return { success: true };
-        }
-
-        if (transactionStatus?.includes('Adjustment (Charge)') ||
-            transactionStatus?.includes('Adjustment (Refund)')) {
-            return { success: true };
-        }
-
-        if (committedATHM && isBlank(transactionStatus)) {
-            return { success: true };
-        }
-
         let errorMessage = 'ERROR: Invalid transaction status or missing required fields. ';
 
-        if (transactionStatus?.includes('Delivered - To be claimed and Invoiced')) {
-            if (!isBlank(actualShiftEndDate)) {
-                errorMessage += 'For Delivered status with Actual Shift End Date: ';
-                if (unit && unit.toLowerCase().includes('item')) {
-                    errorMessage += 'Non-time-based item should ignore date and actual duration for quantity calculation.';
-                } else {
-                    errorMessage += 'Time-based item should use shift end date to calculate quantity.';
-                }
-            } else {
-                errorMessage += 'For Delivered status without Actual Shift End Date: Non-time-based case requires quantity data.';
-            }
-        } else if (transactionStatus?.includes('Cancelled - To be claimed and Invoiced if applicable')) {
-            errorMessage += 'For Cancelled status: Actual Shift End Date should be blank. Cancellation percentage should be applied.';
-        } else if (!committedATHM || !isBlank(transactionStatus)) {
-            errorMessage += 'For Committed AT-HM: Transaction Status should be blank. Item will be shown in Monthly Statement for Scheduled Start Date.';
-        } else {
-            errorMessage += 'Please ensure the transaction status and related fields are correctly filled according to the service claiming conditions.';
+        if (transactionStatus?.includes('Delivered - To be claimed and Invoiced') && isBlank(actualShiftEndDate)) {
+            errorMessage += 'For Delivered status without Actual Shift End Date: Actual Shift End Date cannot be left blank.';
+            await setIntegrationMessage(workspaceId, boardId, itemId, errorMessage);
+            return { success: false, error: errorMessage };
         }
 
-        await setIntegrationMessage(workspaceId, boardId, itemId, errorMessage);
-        return { success: false, error: errorMessage };
+        // For Cancelled status, Actual Shift End Date should be blank
+        if (transactionStatus?.includes('Cancelled - To be claimed and Invoiced if applicable') && !isBlank(actualShiftEndDate)) {
+            errorMessage += 'For Cancelled status: Actual Shift End Date should be blank. Cancellation percentage should be applied.';
+            await setIntegrationMessage(workspaceId, boardId, itemId, errorMessage);
+            return { success: false, error: errorMessage };
+        }
+
+        // For Committed AT-HM: Transaction Status should be blank
+        if (committedATHM && !isBlank(transactionStatus)) {
+            errorMessage += 'For Committed AT-HM: Transaction Status should be blank. Item will be shown in Monthly Statement for Scheduled Start Date.';
+            await setIntegrationMessage(workspaceId, boardId, itemId, errorMessage);
+            return { success: false, error: errorMessage };
+        }
+
+        // For Committed AT-HM: Actual Shift End Date should also be blank
+        if (committedATHM && !isBlank(actualShiftEndDate)) {
+            errorMessage += 'For Committed AT-HM: Actual Shift End Date should be blank. Item will be shown in Monthly Statement for Scheduled Start Date.';
+            await setIntegrationMessage(workspaceId, boardId, itemId, errorMessage);
+            return { success: false, error: errorMessage };
+        }
+
+        if (!committedATHM && isBlank(transactionStatus)) {
+            errorMessage += 'Transaction Status is required when Committed AT-HM for Delivery is not ticked.';
+            await setIntegrationMessage(workspaceId, boardId, itemId, errorMessage);
+            return { success: false, error: errorMessage };
+        }
+
+        return { success: true };
     } catch (error) {
         console.error('Error in checkServiceClaimingConditions:', error);
         await setIntegrationMessage(workspaceId, boardId, itemId,
@@ -546,37 +535,60 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
             return { error: checkServiceClaimingConditionsResult.error };
         }
 
+        const getAttributeId = (attributeName) => {
+            const attribute = itemValuesWithAttributeId.find(v => v.attribute?.name === attributeName);
+            return attribute?.attribute?.id;
+        };
+
         if (servicePlanValues.unit != ' ' && servicePlanValues.unit != null && servicePlanValues.unit != undefined) {
-            updatevariables.push({
-                data: servicePlanValues.unit,
-                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
-            });
+            const unitAttributeId = getAttributeId("Unit");
+            if (unitAttributeId) {
+                updatevariables.push({
+                    data: servicePlanValues.unit,
+                    attribute_id: unitAttributeId
+                });
+            }
         }
         if (quantity >= 0) {
-            updatevariables.push({
-                data: quantity,
-                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Quantity").attribute.id
-            });
+            const quantityAttributeId = getAttributeId("Quantity");
+            if (quantityAttributeId) {
+                updatevariables.push({
+                    data: quantity,
+                    attribute_id: quantityAttributeId
+                });
+            }
         }
         if (servicePlanValues.unitPrice >= 0) {
+            const unitPriceAttributeId = getAttributeId("Unit Price ($)");
+            if (unitPriceAttributeId) {
+                updatevariables.push({
+                    data: servicePlanValues.unitPrice,
+                    attribute_id: unitPriceAttributeId
+                });
+            }
+        }
+        const totalAmountAttributeId = getAttributeId("Total Amount ($)");
+        if (totalAmountAttributeId) {
             updatevariables.push({
-                data: servicePlanValues.unitPrice,
-                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit Price ($)").attribute.id
+                data: totalAmount,
+                attribute_id: totalAmountAttributeId
             });
         }
-        updatevariables.push({
-            data: totalAmount,
-            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Total Amount ($)").attribute.id
-        });
-        updatevariables.push({
-            data: governmentSubsidy,
-            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Government Subsidy ($)").attribute.id
-        });
-        if (participantContribution > 0) {
+        const governmentSubsidyAttributeId = getAttributeId("Government Subsidy ($)");
+        if (governmentSubsidyAttributeId) {
             updatevariables.push({
-                data: participantContribution,
-                attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution ($)").attribute.id
+                data: governmentSubsidy,
+                attribute_id: governmentSubsidyAttributeId
             });
+        }
+        if (participantContribution > 0) {
+            const participantContributionAttributeId = getAttributeId("Participant Contribution ($)");
+            if (participantContributionAttributeId) {
+                updatevariables.push({
+                    data: participantContribution,
+                    attribute_id: participantContributionAttributeId
+                });
+            }
         }
 
         if (updatevariables.length > 0) {

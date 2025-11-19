@@ -2,10 +2,10 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Printer, Calendar, DollarSign, Clock, Package, User, FileText, TrendingUp, PieChart, Download, AlertCircle, FileCheck } from "lucide-react";
+import { ArrowLeft, Calendar, User, FileText, AlertCircle, FileCheck, FileSpreadsheet } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Table,
   TableBody,
@@ -27,6 +27,8 @@ import { fetchMonthlyStatementItems } from "@/app/utils/items";
 import { format, startOfMonth, endOfMonth, isValid, parse } from "date-fns";
 import Spinner from "@/components/ui/spin";
 import { showSuccessToast, showErrorToast } from "@/lib/toast-utils";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
+import { Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from "recharts";
 import {
   Dialog,
   DialogContent,
@@ -122,6 +124,17 @@ interface BudgetCategory {
   serviceCount?: number;
   availableBalanceRangeLabel?: string;
   expenditurePeriodLabel?: string;
+  availableFundStart?: number;
+  quarterlyAdjustment?: number;
+  primarySupplementAmount?: number;
+  carryoverFunding?: number;
+  unspentReturned?: number;
+  commonwealthUnspent?: number;
+  providerUnspent?: number;
+  participantUnspent?: number;
+  previousMonthSpending?: number;
+  fundAmount?: number;
+  shouldDisplay?: boolean;
 }
 
 interface MonthlyStatementData {
@@ -160,6 +173,25 @@ interface BusinessDetails {
   state: string;
   postcode: string;
   companyRegistrationId: string;
+}
+
+interface ChartBarDatum {
+  name: string;
+  label: string;
+  shortLabel: string;
+  value: number;
+  color: string;
+}
+
+interface ChartCardConfig {
+  code: string;
+  title: string;
+  subtitle: string;
+  data: ChartBarDatum[];
+  metrics: { label: string; value: number }[];
+  chartConfig: ChartConfig;
+  serviceCount?: number;
+  hasData: boolean;
 }
 
 const BUDGET_CATEGORY_LABELS: Record<string, string> = {
@@ -203,6 +235,8 @@ export default function MonthlyStatement() {
     postcode: "",
     companyRegistrationId: "",
   });
+  const [exportingSection, setExportingSection] = useState<null | 'budget-csv' | 'service-csv' | 'statement-pdf'>(null);
+
 
   // Budget data will come from the API response
 
@@ -271,7 +305,7 @@ export default function MonthlyStatement() {
     if (!selectedYear) {
       setSelectedYear(now.getFullYear().toString());
     }
-  }, []);
+  }, [selectedMonth, selectedYear]);
 
   // Load business details
   useEffect(() => {
@@ -316,6 +350,63 @@ export default function MonthlyStatement() {
     } else {
       return { start: "October", end: "December" };
     }
+  };
+
+  const getSelectedMonthDateRange = () => {
+    if (!selectedMonth || !selectedYear) {
+      return null;
+    }
+
+    const monthNum = parseInt(selectedMonth, 10);
+    const yearNum = parseInt(selectedYear, 10);
+
+    if (Number.isNaN(monthNum) || Number.isNaN(yearNum)) {
+      return null;
+    }
+
+    const monthDate = new Date(yearNum, monthNum - 1, 1);
+    const startDate = startOfMonth(monthDate);
+    const endDate = new Date(endOfMonth(monthDate));
+    endDate.setHours(23, 59, 59, 999);
+
+    return {
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+    };
+  };
+
+  const sanitizeForFileName = (value: string) =>
+    value.replace(/[^\w.-]+/g, "_");
+
+  const escapeForCsv = (value: unknown) => {
+    if (value === null || value === undefined) {
+      return '""';
+    }
+    const stringValue = String(value).replace(/"/g, '""');
+    return `"${stringValue}"`;
+  };
+
+  const downloadCsv = (content: string, filename: string) => {
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  };
+
+  const formatDateForCsv = (dateString: string | null | undefined) => {
+    if (!dateString) {
+      return '';
+    }
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) {
+      return dateString;
+    }
+    return format(date, 'dd/MM/yyyy');
   };
 
   const handleServicePageChange = (page: number) => {
@@ -384,9 +475,9 @@ export default function MonthlyStatement() {
 
   // Categorize services into budget categories using data from API
   const categorizeServices = (
-    services: ServiceRecord[], 
+    services: ServiceRecord[],
     budgetCategoriesFromAPI: BudgetCategory[] | undefined,
-    monthNumber: string, 
+    monthNumber: string,
     year: string
   ): BudgetCategory[] => {
     const quarterMonths = getQuarterMonths(monthNumber);
@@ -417,20 +508,20 @@ export default function MonthlyStatement() {
 
         if (fundingSource.includes('restorative care') || serviceCategory.includes('restorative')) {
           categoryCode = 'RCP';
-        } else if (fundingSource.includes('end-of-life') || fundingSource.includes('end of life') || 
-                   notes.includes('end of life') || taskName.includes('end of life')) {
+        } else if (fundingSource.includes('end-of-life') || fundingSource.includes('end of life') ||
+          notes.includes('end of life') || taskName.includes('end of life')) {
           categoryCode = 'EOL';
         } else if ((fundingSource.includes('assistive') && fundingSource.includes('short')) ||
-                   (notes.includes('assistive') && notes.includes('short'))) {
+          (notes.includes('assistive') && notes.includes('short'))) {
           categoryCode = 'ATS';
         } else if ((fundingSource.includes('assistive') && fundingSource.includes('ongoing')) ||
-                   (notes.includes('assistive') && notes.includes('ongoing'))) {
+          (notes.includes('assistive') && notes.includes('ongoing'))) {
           categoryCode = 'ATO';
         } else if (fundingSource.includes('modification') || fundingSource.includes('home modification') ||
-                   notes.includes('modification') || taskName.includes('modification')) {
+          notes.includes('modification') || taskName.includes('modification')) {
           categoryCode = 'HMB';
-        } else if (fundingSource.includes('home support') || fundingSource.includes('hs') || 
-                   serviceCategory.includes('home support')) {
+        } else if (fundingSource.includes('home support') || fundingSource.includes('hs') ||
+          serviceCategory.includes('home support')) {
           categoryCode = 'HSQ';
         }
 
@@ -444,7 +535,7 @@ export default function MonthlyStatement() {
       });
 
       // Return categories in the correct order
-      const categoryOrder = ['HSQ', 'RCP', 'EOL', 'ATS', 'ATO', 'HMB'];
+      const categoryOrder = ['HSQ', 'ATS', 'ATO', 'HMB', 'RCP', 'EOL'];
       return categoryOrder
         .map(code => categoryMap.get(code))
         .filter((cat): cat is BudgetCategory => cat !== undefined);
@@ -709,7 +800,7 @@ export default function MonthlyStatement() {
           (totalServices > 0 ? totalAmount / totalServices : 0),
       };
 
-      const effectiveMonthNumber = (data?.monthNumber ?? selectedMonth).toString();
+      const effectiveMonthNumber = (data?.monthNumber ?? selectedMonth ?? '01').toString().padStart(2, '0');
       const effectiveYear = (data?.year ?? selectedYear).toString();
       const monthLabel =
         data?.month ??
@@ -717,6 +808,7 @@ export default function MonthlyStatement() {
         effectiveMonthNumber;
       const participantName = data?.participant ?? selectedParticipant;
       const participantProfile = data?.participantProfile ?? participantName;
+      const providerIdValue = data?.providerId || businessDetails.companyRegistrationId || '';
 
       const budgetCategories = categorizeServices(
         services,
@@ -736,12 +828,12 @@ export default function MonthlyStatement() {
         budgetItems: data?.budgetItems?.items ?? [],
         serviceItems: services,
         summary,
-        participantAddress: data?.participantAddress,
-        participantSuburb: data?.participantSuburb,
-        participantState: data?.participantState,
-        participantPostcode: data?.participantPostcode,
-        myAgedCareIdNumber: data?.myAgedCareIdNumber,
-        providerId: data?.providerId,
+        participantAddress: data?.participantAddress ?? '',
+        participantSuburb: data?.participantSuburb ?? '',
+        participantState: data?.participantState ?? '',
+        participantPostcode: data?.participantPostcode ?? '',
+        myAgedCareIdNumber: data?.myAgedCareIdNumber ?? '',
+        providerId: providerIdValue,
       });
 
       showSuccessToast('Statement loaded successfully');
@@ -754,26 +846,17 @@ export default function MonthlyStatement() {
     }
   };
 
-  // Handle print
-  const handlePrint = () => {
-    setIsPrintMode(true);
-    setTimeout(() => {
-      window.print();
-      setTimeout(() => setIsPrintMode(false), 100);
-    }, 100);
-  };
-
   // Handle PDF generation/export (consolidated function)
   const handlePDFAction = async (action: 'generate' | 'export' = 'generate') => {
     if (!statementData) {
       showErrorToast('Please load a statement first');
-      return;
+      return null;
     }
 
     if (!businessDetails.companyName || !businessDetails.companyRegistrationId || !businessDetails.phoneNumber || !businessDetails.businessEmail) {
       showErrorToast(`Please configure business details before ${action === 'generate' ? 'generating' : 'exporting'} PDF`);
       setShowBusinessDialog(true);
-      return;
+      return null;
     }
 
     try {
@@ -785,42 +868,206 @@ export default function MonthlyStatement() {
         {
           statementData,
           businessDetails,
-        },
-        {
-          responseType: 'blob',
         }
       );
 
-      // Download the PDF
-      const blob = new Blob([response.data], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Monthly_Statement_${statementData.participant}_${statementData.month}_${statementData.year}.pdf`;
-      link.click();
-      window.URL.revokeObjectURL(url);
-
-      showSuccessToast(
-        action === 'generate' 
-          ? 'Monthly statement PDF generated successfully'
-          : 'PDF exported successfully'
-      );
+      const fileUrl = response.data?.fileUrl;
+      if (fileUrl) {
+        window.open(fileUrl, '_blank', 'noopener,noreferrer');
+        showSuccessToast(
+          action === 'generate'
+            ? 'Monthly statement PDF generated successfully'
+            : 'PDF exported successfully'
+        );
+        return fileUrl;
+      } else {
+        showErrorToast('Failed to retrieve PDF link from server.');
+        return null;
+      }
     } catch (err) {
       console.error(`Error ${action === 'generate' ? 'generating' : 'exporting'} PDF:`, err);
-      if (action === 'export') {
-        showErrorToast('Failed to export PDF. Using print as fallback.');
-        handlePrint();
-      } else {
-        showErrorToast('Failed to generate PDF. Please try again.');
-      }
+      showErrorToast('Failed to generate PDF. Please try again.');
+      return null;
     } finally {
       setLoading(false);
     }
   };
 
-  // Alias functions for backward compatibility
-  const handleGeneratePDF = () => handlePDFAction('generate');
-  const handleExportPDF = () => handlePDFAction('export');
+  const handleBudgetExportCSV = async () => {
+    if (!statementData) {
+      showErrorToast('Please load a statement before exporting.');
+      return;
+    }
+
+    const dateRange = getSelectedMonthDateRange();
+    if (!dateRange) {
+      showErrorToast('Please choose a valid month and year before exporting.');
+      return;
+    }
+
+    try {
+      setExportingSection('budget-csv');
+      const response = await fetchMonthlyStatementItems(id, boardId, {
+        participant: selectedParticipant,
+        month: selectedMonth,
+        year: selectedYear,
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate,
+        budgetPage: 1,
+        budgetLimit: 5000,
+      });
+
+      const items: BudgetRecord[] = response?.budgetItems?.items || [];
+      if (!items.length) {
+        showErrorToast('No budget items to export.');
+        return;
+      }
+
+      const headers = [
+        'Funding Stream',
+        'Participant',
+        'Month',
+        'Year',
+        'FY Quarter',
+        'Total Available',
+        'Delivered (Selected Month)',
+        'Adjustments',
+        'Remaining Balance',
+        'Funding Start',
+        'Funding End',
+        'Fund',
+        'Committed Funds'
+      ];
+
+      const rows = items.map((item) => [
+        item.folderName || BUDGET_CATEGORY_LABELS[item.categoryCode] || 'Budget',
+        item.participantName || statementData.participant || 'N/A',
+        item.month || '',
+        item.year || '',
+        item.quarter || '',
+        Number(item.totalAvailableBudget ?? 0).toFixed(2),
+        Number(item.deliveredAmount ?? 0).toFixed(2),
+        Number(item.adjustmentAmount ?? 0).toFixed(2),
+        Number(item.remainingBalance ?? 0).toFixed(2),
+        formatDateForCsv(item.fundingStartDate),
+        formatDateForCsv(item.fundingEndDate),
+        item.fund || item.fundClassification || '',
+        Number(item.committedFunds ?? 0).toFixed(2),
+      ]);
+
+      const csvContent = [headers, ...rows]
+        .map((row) => row.map(escapeForCsv).join(','))
+        .join('\n');
+
+      const participantSlug = sanitizeForFileName(statementData.participant || 'participant');
+      const monthSlug = sanitizeForFileName(statementData.monthNumber || selectedMonth || '01');
+      const filename = `Individualised_Budgets_${participantSlug}_${statementData.year}_${monthSlug}.csv`;
+      downloadCsv(csvContent, filename);
+      showSuccessToast(`Exported ${items.length} budget item${items.length === 1 ? '' : 's'} to CSV.`);
+    } catch (err: any) {
+      console.error('Error exporting budget items:', err);
+      showErrorToast('Failed to export budget items', { description: err?.message || 'Unknown error' });
+    } finally {
+      setExportingSection(null);
+    }
+  };
+
+
+  const handleServiceExportCSV = async () => {
+    if (!statementData) {
+      showErrorToast('Please load a statement before exporting.');
+      return;
+    }
+
+    const dateRange = getSelectedMonthDateRange();
+    if (!dateRange) {
+      showErrorToast('Please choose a valid month and year before exporting.');
+      return;
+    }
+
+    try {
+      setExportingSection('service-csv');
+      const response = await fetchMonthlyStatementItems(id, boardId, {
+        participant: selectedParticipant,
+        month: selectedMonth,
+        year: selectedYear,
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate,
+        servicePage: 1,
+        serviceLimit: 5000,
+      });
+
+      const items: ServiceRecord[] = response?.serviceItems?.items || [];
+      if (!items.length) {
+        showErrorToast('No service records to export.');
+        return;
+      }
+
+      const headers = [
+        'Participant',
+        'Service',
+        'Service Provider',
+        'Scheduled Service Date',
+        'Actual Service Date',
+        'Transaction Status',
+        'Committed AT-HM for Delivery',
+        'Unit',
+        'Quantity',
+        'Unit Price (AUD)',
+        'Total Amount (AUD)',
+        'Gov Subsidy (AUD)',
+        'Participant Contribution (AUD)',
+        'Funding Source',
+        'Notes'
+      ];
+
+      const rows = items.map((service) => [
+        service.participant || '',
+        service.service || service.taskName || '',
+        service.serviceProvider || '',
+        formatDateForCsv(service.scheduledServiceDate),
+        formatDateForCsv(service.serviceDeliveryDate),
+        service.transactionStatus || '',
+        Number(service.committedAtHmForDelivery ?? 0).toFixed(2),
+        service.unit || '',
+        service.quantity ?? 0,
+        Number(service.unitPrice ?? 0).toFixed(2),
+        Number(service.totalAmount ?? 0).toFixed(2),
+        Number(service.govSubsidy ?? 0).toFixed(2),
+        Number(service.participantContribution ?? 0).toFixed(2),
+        service.fundingSource || '',
+        (service.notes || '').replace(/[\r\n]+/g, ' '),
+      ]);
+
+      const csvContent = [headers, ...rows]
+        .map((row) => row.map(escapeForCsv).join(','))
+        .join('\n');
+
+      const participantSlug = sanitizeForFileName(statementData.participant || 'participant');
+      const monthSlug = sanitizeForFileName(statementData.monthNumber || selectedMonth || '01');
+      const filename = `Service_Records_${participantSlug}_${statementData.year}_${monthSlug}.csv`;
+      downloadCsv(csvContent, filename);
+      showSuccessToast(`Service records CSV exported successfully. ${items.length} record${items.length === 1 ? '' : 's'} exported.`);
+    } catch (err: any) {
+      console.error('Error exporting service records:', err);
+      showErrorToast('Failed to export service records', { description: err?.message || 'Unknown error' });
+    } finally {
+      setExportingSection(null);
+    }
+  };
+
+  const handleSaHMonthlyStatement = async () => {
+    if (!statementData) {
+      showErrorToast('Please load a statement before generating.');
+      return;
+    }
+    try {
+      setExportingSection('statement-pdf');
+      await handlePDFAction('generate');
+    } finally {
+      setExportingSection(null);
+    }
+  };
 
   // Save business details
   const handleSaveBusinessDetails = async () => {
@@ -856,11 +1103,12 @@ export default function MonthlyStatement() {
   };
 
   // Format currency
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (amount?: number | null) => {
+    const value = typeof amount === 'number' && Number.isFinite(amount) ? amount : 0;
     return new Intl.NumberFormat('en-AU', {
       style: 'currency',
       currency: 'AUD',
-    }).format(amount);
+    }).format(value);
   };
 
   // Format date
@@ -887,6 +1135,229 @@ export default function MonthlyStatement() {
     }
   };
 
+  const formatAxisCurrency = (value: number) => {
+    if (!Number.isFinite(value)) return '$0';
+    const sign = value < 0 ? '-' : '';
+    const abs = Math.abs(value);
+    if (abs >= 1_000_000) {
+      return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
+    }
+    if (abs >= 1_000) {
+      return `${sign}$${(abs / 1_000).toFixed(1)}k`;
+    }
+    return `${sign}$${abs.toFixed(0)}`;
+  };
+
+  const toNumber = (value: unknown): number => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string' && value.trim() !== '') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    return 0;
+  };
+
+  const positive = (value: unknown): number => Math.max(0, toNumber(value));
+
+  const chartConfigs = useMemo(() => {
+    if (!statementData?.budgetCategories?.length) {
+      return [];
+    }
+
+    const charts: ChartCardConfig[] = [];
+    const categoryLookup = new Map<string, BudgetCategory>();
+    statementData.budgetCategories.forEach((cat) => {
+      categoryLookup.set(cat.code, cat);
+    });
+
+    const normalizedMonthNumber = statementData.monthNumber?.padStart(2, '0') || '01';
+    const monthIndex = months.findIndex((monthOption) => monthOption.value === normalizedMonthNumber);
+    const nextMonthLabel = monthIndex >= 0
+      ? months[(monthIndex + 1) % months.length].label
+      : statementData.month;
+    const selectedMonthLabel = statementData.month || months[monthIndex]?.label || 'Selected month';
+
+    const getPreviousSpendingValue = (category?: BudgetCategory) => {
+      if (!category) return 0;
+      if (category.previousMonthSpending && category.previousMonthSpending !== 0) {
+        return positive(category.previousMonthSpending);
+      }
+      const derived = toNumber(category.fundAmount) - toNumber(category.availableFundStart);
+      return derived > 0 ? derived : 0;
+    };
+
+    const pushChartConfig = (chart: Omit<ChartCardConfig, 'chartConfig' | 'hasData'>) => {
+      const chartData = chart.data.map((datum) => ({
+        ...datum,
+        value: toNumber(datum.value)
+      }));
+      const chartConfig: ChartConfig = chartData.reduce((acc, datum) => {
+        acc[datum.name] = { label: datum.label, color: datum.color };
+        return acc;
+      }, {} as ChartConfig);
+
+      const hasData = chartData.some((datum) => Math.abs(datum.value) > 0.0001);
+
+      charts.push({ ...chart, data: chartData, chartConfig, hasData });
+    };
+
+    const getQuarterRange = () => {
+      const monthNum = parseInt(normalizedMonthNumber, 10) || 1;
+      if (monthNum >= 1 && monthNum <= 3) {
+        return { start: 'January', end: 'March' };
+      }
+      if (monthNum >= 4 && monthNum <= 6) {
+        return { start: 'April', end: 'June' };
+      }
+      if (monthNum >= 7 && monthNum <= 9) {
+        return { start: 'July', end: 'September' };
+      }
+      return { start: 'October', end: 'December' };
+    };
+
+    const defaultQuarterRange = getQuarterRange();
+
+    const homeSupport = categoryLookup.get('HSQ') ?? ({ code: 'HSQ' } as BudgetCategory);
+    {
+      const available = positive(homeSupport.availableFunds);
+      const remaining = positive(homeSupport.remainingBudget);
+      const expenditure = Math.max(0, available - remaining);
+      const quarterStart = homeSupport.quarterStartMonth ?? defaultQuarterRange.start;
+      const quarterEnd = homeSupport.quarterEndMonth ?? defaultQuarterRange.end;
+      const balanceLabel = quarterEnd
+        ? (nextMonthLabel === quarterEnd ? 'Next quarter' : `${nextMonthLabel} - ${quarterEnd}`)
+        : nextMonthLabel;
+
+      pushChartConfig({
+        code: 'HSQ',
+        subtitle: 'Quarterly Budget',
+        title: `Home Support ${quarterStart} - ${quarterEnd} ${statementData.year}`,
+        data: [
+          {
+            name: 'hsq-expenditure',
+            label: `${selectedMonthLabel} expenditure`,
+            shortLabel: 'Expenditure',
+            value: expenditure,
+            color: '#dc2626'
+          },
+          {
+            name: 'hsq-balance',
+            label: `Available balance ${balanceLabel}`,
+            shortLabel: 'Balance',
+            value: remaining,
+            color: '#2563eb'
+          }
+        ],
+        metrics: [
+          { label: 'Available funds', value: available },
+          { label: 'Remaining budget', value: remaining },
+        ],
+        serviceCount: homeSupport.serviceCount
+      });
+    }
+
+    const addAssistiveOrModificationChart = (code: 'ATS' | 'ATO' | 'HMB', title: string) => {
+      const category = categoryLookup.get(code) ?? ({ code } as BudgetCategory);
+      const available = positive(category.availableFunds);
+      const remaining = positive(category.remainingBudget);
+      const expenditure = Math.max(0, available - remaining);
+      const committed = positive(category.committedFunds);
+
+      pushChartConfig({
+        code,
+        subtitle: title,
+        title: `${title} (${statementData.year})`,
+        data: [
+          {
+            name: `${code}-expenditure`,
+            label: `${selectedMonthLabel} expenditure`,
+            shortLabel: 'Expenditure',
+            value: expenditure,
+            color: '#dc2626'
+          },
+          {
+            name: `${code}-committed`,
+            label: 'Committed funds',
+            shortLabel: 'Committed',
+            value: committed,
+            color: '#16a34a'
+          },
+          {
+            name: `${code}-balance`,
+            label: `Remaining budget ${formatDate(category.fundingEndDate)}`,
+            shortLabel: 'Balance',
+            value: remaining,
+            color: '#2563eb'
+          }
+        ],
+        metrics: [
+          { label: 'Available funds', value: available },
+          { label: 'Remaining budget', value: remaining },
+        ],
+        serviceCount: category.serviceCount
+      });
+    };
+
+    addAssistiveOrModificationChart('ATS', 'Assistive Technology - Short-term');
+    addAssistiveOrModificationChart('ATO', 'Assistive Technology - Ongoing');
+    addAssistiveOrModificationChart('HMB', 'Home Modification Budget');
+
+    const addRestorativeChart = (code: 'RCP' | 'EOL', title: string) => {
+      const category = categoryLookup.get(code) ?? ({ code } as BudgetCategory);
+      const previousSpending = getPreviousSpendingValue(category);
+      const available = positive(category.availableFunds);
+      const totalAvailable = positive(category.availableFunds);
+      const remaining = positive(category.remainingBudget);
+      const expenditure = Math.max(0, available - remaining);
+
+      pushChartConfig({
+        code,
+        subtitle: title,
+        title: `${title} (${statementData.year})`,
+        data: [
+          {
+            name: `${code}-previous`,
+            label: 'Spending from previous months',
+            shortLabel: 'Prev. spend',
+            value: previousSpending,
+            color: '#7c3aed'
+          },
+          {
+            name: `${code}-expenditure`,
+            label: `${selectedMonthLabel} expenditure`,
+            shortLabel: 'Expenditure',
+            value: expenditure,
+            color: '#dc2626'
+          },
+          {
+            name: `${code}-balance`,
+            label: `Remaining budget ${formatDate(category.fundingEndDate)}`,
+            shortLabel: 'Balance',
+            value: totalAvailable,
+            color: '#2563eb'
+          }
+        ],
+        metrics: [
+          { label: 'Available funds', value: totalAvailable },
+          { label: 'Remaining balance', value: remaining },
+        ],
+        serviceCount: category.serviceCount
+      });
+    };
+
+    addRestorativeChart('RCP', 'Restorative Care Pathway Budget');
+    addRestorativeChart('EOL', 'End-of-Life Pathway Budget');
+
+    return charts;
+  }, [statementData]);
+
+  const visibleBudgetCategories = useMemo(() => {
+    if (!statementData) return [];
+    return statementData.budgetCategories.filter((category) => category.shouldDisplay !== false);
+  }, [statementData]);
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -904,7 +1375,7 @@ export default function MonthlyStatement() {
 
             {/* Header */}
             <div className="mb-8">
-              <h1 className="text-3xl font-bold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary/80">
+              <h1 className="text-3xl font-bold mb-2 text-black">
                 Monthly Statement Generator
               </h1>
               <p className="text-muted-foreground">
@@ -1005,18 +1476,16 @@ export default function MonthlyStatement() {
                     </div>
                   </div>
                 </div>
-                {!isPrintMode && (
-                  <div className="flex gap-2">
-                    <Button onClick={handleExportPDF} variant="outline" className="gap-2 print:hidden">
-                      <Download className="h-4 w-4" />
-                      Export to PDF
-                    </Button>
-                    <Button onClick={handleGeneratePDF} className="gap-2 print:hidden bg-red-600 hover:bg-red-700">
-                      <FileCheck className="h-4 w-4" />
-                      Generate Monthly Statement PDF
-                    </Button>
-                  </div>
-                )}
+                <div className="print:hidden">
+                  <Button
+                    className="gap-2"
+                    onClick={handleSaHMonthlyStatement}
+                    disabled={!statementData || exportingSection === 'statement-pdf' || loading}
+                  >
+                    <FileCheck className="h-4 w-4" />
+                    SaH Monthly Statement
+                  </Button>
+                </div>
               </div>
 
               {/* Business Details Display */}
@@ -1032,115 +1501,123 @@ export default function MonthlyStatement() {
                   </div>
                 </div>
               )}
+
+
+              {statementData && (
+                <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                  <div className="space-y-1">
+                    <p className="text-muted-foreground text-xs uppercase tracking-wide">Participant Address</p>
+                    <p className="font-medium text-foreground">{statementData.participantAddress || 'Not provided'}</p>
+                    <p className="text-muted-foreground">
+                      {[statementData.participantSuburb, statementData.participantState, statementData.participantPostcode]
+                        .filter(Boolean)
+                        .join(', ') || '—'}
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-muted-foreground text-xs uppercase tracking-wide">Identifiers</p>
+                    <p className="font-medium">My Aged Care ID</p>
+                    <p className="text-muted-foreground">{statementData.myAgedCareIdNumber || 'Not provided'}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-muted-foreground text-xs uppercase tracking-wide">Provider ID</p>
+                    <p className="font-medium text-foreground">{statementData.providerId || 'Not provided'}</p>
+                  </div>
+                </div>
+              )}
             </Card>
 
-            {/* Budget Snapshot */}
-            <Card className="p-6 shadow-lg print:shadow-none">
-              <div className="flex items-start justify-between mb-6">
-                <div>
-                  <h3 className="text-xl font-semibold mb-2">Budget Snapshot</h3>
+            {chartConfigs.length > 0 && (
+              <Card className="p-6 shadow-lg print:shadow-none">
+                <div className="mb-6">
+                  <h3 className="text-xl font-semibold">Budget Mini Charts</h3>
                   <p className="text-sm text-muted-foreground">
-                    Converted from Support at Home monthly statement funding charts into tabular insights for each budget stream.
+                    Visual summaries for each funding stream showing the ordered Support at Home layout.
                   </p>
                 </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {statementData.budgetCategories.map((category) => (
-                  <div
-                    key={category.code}
-                    className="rounded-lg border border-border/60 bg-card p-5 space-y-4 shadow-sm hover:shadow-md transition-shadow"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <h4 className="text-base font-semibold leading-tight mb-1.5">{category.name}</h4>
-                        {category.availableBalanceRangeLabel && (
-                          <p className="text-xs text-muted-foreground leading-relaxed">
-                            Available balance period: <span className="font-medium text-foreground">{category.availableBalanceRangeLabel}</span>
-                          </p>
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  {chartConfigs.map((chart) => (
+                    <div key={chart.code} className="rounded-lg border border-border/60 bg-card p-5 space-y-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs uppercase text-muted-foreground tracking-wide">{chart.subtitle}</p>
+                          <h4 className="text-base font-semibold leading-tight">{chart.title}</h4>
+                        </div>
+                        {(chart.serviceCount ?? 0) > 0 && (
+                          <Badge
+                            variant="secondary"
+                            className="text-[11px] px-2 py-1 font-medium"
+                          >
+                            {(chart.serviceCount ?? 0).toLocaleString()} services
+                          </Badge>
                         )}
                       </div>
-                      <Badge 
-                        variant="secondary" 
-                        className="text-[11px] px-2.5 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 font-medium shrink-0"
-                      >
-                        {(category.serviceCount ?? 0).toLocaleString()} services
-                      </Badge>
-                    </div>
 
-                    <div className="grid grid-cols-2 gap-4 pt-2">
-                      <div className="space-y-1.5">
-                        <p className="text-[10px] uppercase text-muted-foreground tracking-wider font-medium">Available Funds</p>
-                        <p className="text-base font-semibold text-foreground">
-                          {formatCurrency(category.availableFunds || 0)}
+                      <ChartContainer config={chart.chartConfig} className="h-56">
+                        <BarChart data={chart.data} margin={{ left: 0, right: 0, top: 10 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                          <XAxis dataKey="shortLabel" axisLine={false} tickLine={false} />
+                          <YAxis tickFormatter={formatAxisCurrency} axisLine={false} tickLine={false} />
+                          <ChartTooltip
+                            content={
+                              <ChartTooltipContent
+                                formatter={(value, name, item) => [
+                                  formatCurrency(typeof value === 'number' ? value : Number(value)),
+                                  (item?.payload as ChartBarDatum)?.label || name,
+                                ]}
+                              />
+                            }
+                          />
+                          <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={42}>
+                            {chart.data.map((entry) => (
+                              <Cell key={`${chart.code}-${entry.name}`} fill={`var(--color-${entry.name})`} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ChartContainer>
+                      {!chart.hasData && (
+                        <p className="text-xs text-muted-foreground text-center">
+                          No data available for this period.
                         </p>
-                      </div>
-                      <div className="space-y-1.5">
-                        <p className="text-[10px] uppercase text-muted-foreground tracking-wider font-medium">Remaining Budget</p>
-                        <p className={`text-base font-semibold ${
-                          (category.remainingBudget || 0) < 0 
-                            ? 'text-red-600 dark:text-red-400' 
-                            : 'text-foreground'
-                        }`}>
-                          {formatCurrency(category.remainingBudget || 0)}
-                        </p>
-                      </div>
-                    </div>
+                      )}
 
-                    {category.fundingEndDate && (
-                      <div className="text-xs text-muted-foreground pt-1">
-                        Funding end date: <span className="font-medium text-foreground">{formatDate(category.fundingEndDate)}</span>
-                      </div>
-                    )}
-
-                    {['ATS', 'ATO', 'HMB'].includes(category.code) && category.committedFunds !== undefined && (
-                      <div className="text-xs text-muted-foreground pt-1">
-                        Committed funds: <span className="font-medium text-foreground">{formatCurrency(category.committedFunds || 0)}</span>
-                      </div>
-                    )}
-
-                    <div className="border-t border-border/50 pt-4 space-y-3">
-                      <div className="space-y-1.5">
-                        <p className="text-[10px] uppercase text-muted-foreground tracking-wider font-medium">
-                          Services Delivered ({category.expenditurePeriodLabel || 'Selected Month'})
-                        </p>
-                        <p className="text-base font-semibold text-foreground">
-                          {formatCurrency(category.serviceDeliveredAmount || 0)}
-                        </p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4 pt-1">
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Government Subsidy</p>
-                          <p className="text-sm font-medium text-foreground">
-                            {formatCurrency(category.govSubsidyAmount || 0)}
-                          </p>
+                      {chart.metrics.length > 0 && (
+                        <div className="grid grid-cols-2 gap-3">
+                          {chart.metrics.map((metric) => (
+                            <div key={`${chart.code}-${metric.label}`}>
+                              <p className="text-xs text-muted-foreground">{metric.label}</p>
+                              <p className="text-sm font-semibold text-foreground">{formatCurrency(metric.value)}</p>
+                            </div>
+                          ))}
                         </div>
-                        <div className="space-y-1">
-                          <p className="text-xs text-muted-foreground">Participant Contribution</p>
-                          <p className="text-sm font-medium text-foreground">
-                            {formatCurrency(category.participantContributionAmount || 0)}
-                          </p>
-                        </div>
-                      </div>
-                      {category.adjustmentAmount && category.adjustmentAmount !== 0 ? (
-                        <div className="space-y-1 pt-1">
-                          <p className="text-xs text-muted-foreground">Adjustments from previous months</p>
-                          <p className="text-sm font-medium text-foreground">
-                            {formatCurrency(category.adjustmentAmount)}
-                          </p>
-                        </div>
-                      ) : null}
+                      )}
                     </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
+                  ))}
+                </div>
+              </Card>
+            )}
 
-            {/* First Table: Budget Items */}
+            {/* Individualised Budgets */}
             <Card className="p-6 shadow-lg print:shadow-none">
-              <h3 className="text-xl font-semibold mb-4">Budget Items</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Items from: Home Support Quarterly Budget, Restorative Care Pathway Budget, End-of-Life Pathway Budget, Assistive Technology - Short-term Budget, Assistive Technology - Ongoing Budget, Home Modification Budget
-              </p>
+              <div className="flex flex-col gap-2 mb-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h3 className="text-xl font-semibold">Budget Items</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Items from: Home Support Quarterly Budget, Restorative Care Pathway Budget, End-of-Life Pathway Budget, Assistive Technology - Short-term Budget, Assistive Technology - Ongoing Budget, Home Modification Budget
+                  </p>
+                </div>
+                <div className="print:hidden">
+                  <Button
+                    variant="outline"
+                    className="gap-2"
+                    onClick={handleBudgetExportCSV}
+                    disabled={!statementData || exportingSection === 'budget-csv'}
+                  >
+                    <FileSpreadsheet className="h-4 w-4" />
+                    Export to CSV
+                  </Button>
+                </div>
+              </div>
               <div className="overflow-x-auto">
                 {loadingBudgetItems ? (
                   <div className="text-center py-8">
@@ -1196,12 +1673,27 @@ export default function MonthlyStatement() {
               </div>
             </Card>
 
-            {/* Second Table: Master Plan, Shift Planning and Reporting */}
+            {/* Service Records */}
             <Card className="p-6 shadow-lg print:shadow-none">
-              <h3 className="text-xl font-semibold mb-4">Service Records</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Items from: Master Plan, Shift Planning and Reporting
-              </p>
+              <div className="flex flex-col gap-2 mb-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h3 className="text-xl font-semibold">Service Records</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Items from: Master Plan, Shift Planning and Reporting
+                  </p>
+                </div>
+                <div className="print:hidden">
+                  <Button
+                    variant="outline"
+                    className="gap-2"
+                    onClick={handleServiceExportCSV}
+                    disabled={!statementData || exportingSection === 'service-csv'}
+                  >
+                    <FileSpreadsheet className="h-4 w-4" />
+                    Export to CSV
+                  </Button>
+                </div>
+              </div>
               <div className="overflow-x-auto">
                 {loadingServiceItems ? (
                   <div className="text-center py-8">
@@ -1342,6 +1834,27 @@ export default function MonthlyStatement() {
                 </div>
               </div>
 
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Government Subsidy</p>
+                  <p className="text-lg font-semibold">
+                    {formatCurrency(statementData.summary.govSubsidy)}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Participant Contribution</p>
+                  <p className="text-lg font-semibold">
+                    {formatCurrency(statementData.summary.participantContribution)}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Average Service Cost</p>
+                  <p className="text-lg font-semibold">
+                    {formatCurrency(statementData.summary.averageServiceCost)}
+                  </p>
+                </div>
+              </div>
+
               {/* Important Notes */}
               <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
                 <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
@@ -1351,6 +1864,7 @@ export default function MonthlyStatement() {
                 <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
                   <li>This statement shows all services delivered during the selected month.</li>
                   <li>Budget amounts are indicative and may vary based on your care plan.</li>
+                  <li>Funding streams with zero balances are hidden automatically.</li>
                   <li>For queries or concerns, please contact your service provider.</li>
                   <li>Keep this statement for your records.</li>
                 </ul>
