@@ -243,6 +243,7 @@ export async function getAllViews(authorization, workspaceId, boardId) {
             "Authorization": authorization,
             "Content-Type": "application/json",
             "Accept": "application/json",
+            "X-API-Version": "2025-02-26.morava",
         };
         const params = {
             "limit": "100",
@@ -795,7 +796,11 @@ async function validateBoardAttributes(workspaceId, boardId, viewId, coverAttrib
         );
         
         if (attributesResponse.status === 200) {
-            const attributes = attributesResponse.data.attributes || [];
+            const attributes = Array.isArray(attributesResponse.data?.data)
+                ? attributesResponse.data.data
+                : Array.isArray(attributesResponse.data?.attributes)
+                    ? attributesResponse.data.attributes
+                    : [];
             const coverAttribute = attributes.find(attr => attr.id === coverAttributeId);
             
             if (!coverAttribute) {
@@ -1042,13 +1047,15 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                                     }, req);
                                     
                                     let doc = itemValues.values.find(v => v.attribute.id == coverAttributeid);
+                                    const coverData = [{ id: uploadImageURL.data.id }];
                                     if (doc) {
-                                        doc.data.push({ id: uploadImageURL.data.id });
+                                        doc.data = coverData;
                                     } else {
-                                        doc = { data: [{ id: uploadImageURL.data.id }], attribute: { id: coverAttributeid } };
+                                        doc = { data: coverData, attribute: { id: coverAttributeid } };
                                     }
                                     try {
-                                        await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardItem.id}/items/${item.id}`,
+                                        const itemUpdateResponse = await axios.put(
+                                            `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardItem.id}/items/${item.id}`,
                                             { values: [{ data: doc.data, attribute_id: doc.attribute.id }] },
                                             {
                                                 headers: {
@@ -1058,7 +1065,13 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                                                 }
                                             }
                                         );
-                                        if (response.status === 200) {
+                                        if (!viewItem.settings) {
+                                            viewItem.settings = {};
+                                        }
+                                        if (!viewItem.settings.editorItems) {
+                                            viewItem.settings.editorItems = {};
+                                        }
+                                        if (itemUpdateResponse.status === 200) {
                                             if (item.id in viewItem.settings.editorItems) {
                                                 viewItem.settings.editorItems[item.id].cover = uploadImageURL.data.id;
                                             } else {
