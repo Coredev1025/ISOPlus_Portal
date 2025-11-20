@@ -2,10 +2,10 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, FileText, Search, Calendar, Filter, CheckCircle, Clock, DollarSign, BarChart3, FileSpreadsheet, Receipt, X, Package } from "lucide-react";
+import { ArrowLeft, FileText, Search, Calendar, Filter, CheckCircle, DollarSign, BarChart3, FileSpreadsheet, Receipt, X, RefreshCcw, Percent, ArrowLeftCircle, ArrowRightCircle, Download, Clock, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef, ReactNode } from "react";
 import {
   Table,
   TableBody,
@@ -37,7 +37,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import axios from "@/app/utils/axiosConfig";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import { showSuccessToast, showErrorToast, showInfoToast } from "@/lib/toast-utils";
 import {
   Dialog,
@@ -49,13 +49,14 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { DateRange } from "react-day-picker";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const TRANSACTION_STATUS_FILTERS = [
-  { value: "all", label: "All Transaction Status" },
-  { value: "Delivered", label: "Delivered - To be claimed and invoiced." },
-  { value: "Cancelled", label: "Cancelled - To be claimed and invoiced if applicable." },
-  { value: "Adjustment (Refund)", label: "Adjustment (Refund) - To be claimed and invoiced." },
-  { value: "Adjustment (Charge)", label: "Adjustment (Charge) - To be claimed and invoiced." }
+  { value: "all", label: "All Transaction Status", isoValue: "" },
+  { value: "delivered", label: "Delivered", description: "To be claimed and invoiced.", isoValue: "Delivered - To be claimed and invoiced." },
+  { value: "cancelled", label: "Cancelled", description: "To be claimed and invoiced if applicable.", isoValue: "Cancelled - To be claimed and invoiced if applicable." },
+  { value: "adjustment-refund", label: "Adjustment (Refund)", description: "To be claimed and invoiced.", isoValue: "Adjustment (Refund) - To be claimed and invoiced." },
+  { value: "adjustment-charge", label: "Adjustment (Charge)", description: "To be claimed and invoiced.", isoValue: "Adjustment (Charge) - To be claimed and invoiced." }
 ];
 
 const PAYMENT_STATUS_FILTERS = [
@@ -65,6 +66,21 @@ const PAYMENT_STATUS_FILTERS = [
   { value: "Participant Invoiced", label: "Participant Invoiced" },
   { value: "Participant Paid", label: "Participant Paid" }
 ];
+
+const FUNDING_SOURCE_CODE_MAP: Record<string, string> = {
+  "Home Support(HS) Quarterly": "ON",
+  "Home Support Care Management": "CM",
+  "Restorative Care Pathway": "RC",
+  "Assistive Technology - Short-term": "AT",
+  "Assistive Technology - Short Term": "AT",
+  "Assistive Technology - Short term": "AT",
+  "End-of-Life Pathway": "EL",
+  "Assistive Technology": "AT",
+  "Assistive Technology - Ongoing (Specified needs - Assistance Dogs)": "AS",
+  "Home Modification": "HM",
+  "Primary Supplements": "PS",
+  "Unspent Home Care Package (HCP) Funds": "HCP"
+};
 
 interface ServiceRecord {
   id: string;
@@ -115,6 +131,13 @@ interface InvoiceSummary {
   totalParticipantContribution: number;
 }
 
+type TableColumn = {
+  key: string;
+  label: string;
+  className?: string;
+  render: (record: ServiceRecord) => ReactNode;
+};
+
 export default function InvoiceGenerator() {
   const router = useRouter();
   const pathname = usePathname();
@@ -136,11 +159,19 @@ export default function InvoiceGenerator() {
   const [transactionStatusFilter, setTransactionStatusFilter] = useState("all");
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [sortBy, setSortBy] = useState<"scheduledServiceDate" | "serviceDeliveryDate">("scheduledServiceDate");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
 
   const [error, setError] = useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  const tableContainerRef = useRef<HTMLDivElement | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
 
   // Modal state for invoice generation
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
@@ -154,6 +185,10 @@ export default function InvoiceGenerator() {
     return date.toISOString().split('T')[0];
   });
   const [uniqueParticipants, setUniqueParticipants] = useState<string[]>([]);
+
+  const handleManualRefresh = useCallback(() => {
+    setRefreshKey(prev => prev + 1);
+  }, []);
 
   // Fetch unique participants for the modal dropdown
   useEffect(() => {
@@ -231,13 +266,17 @@ export default function InvoiceGenerator() {
           params.append('serviceDeliveryEnd', to.toISOString());
         }
 
-        if (transactionStatusFilter !== 'all') {
-          params.append('transactionStatus', transactionStatusFilter);
+        const transactionStatusParam = getTransactionStatusSearchValue(transactionStatusFilter);
+        if (transactionStatusParam) {
+          params.append('transactionStatus', transactionStatusParam);
         }
 
         if (paymentStatusFilter !== 'all') {
           params.append('paymentStatus', paymentStatusFilter);
         }
+
+        params.append('sortBy', sortBy);
+        params.append('sortOrder', sortOrder);
 
         params.append('page', '1');
         params.append('limit', '999999');
@@ -275,7 +314,7 @@ export default function InvoiceGenerator() {
     };
 
     fetchEligibleRecords();
-  }, [showInvoiceModal, id, boardId, participantFilter, scheduledServiceDateRange, serviceDeliveryDateRange, transactionStatusFilter, paymentStatusFilter]);
+  }, [showInvoiceModal, id, boardId, participantFilter, scheduledServiceDateRange, serviceDeliveryDateRange, transactionStatusFilter, paymentStatusFilter, sortBy, sortOrder, refreshKey]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -297,8 +336,9 @@ export default function InvoiceGenerator() {
           params.append('participant', participantFilter);
         }
 
-        if (transactionStatusFilter !== 'all') {
-          params.append('transactionStatus', transactionStatusFilter);
+        const transactionStatusParam = getTransactionStatusSearchValue(transactionStatusFilter);
+        if (transactionStatusParam) {
+          params.append('transactionStatus', transactionStatusParam);
         }
 
         if (paymentStatusFilter !== 'all') {
@@ -330,6 +370,9 @@ export default function InvoiceGenerator() {
           to.setHours(23, 59, 59, 999);
           params.append('serviceDeliveryEnd', to.toISOString());
         }
+
+        params.append('sortBy', sortBy);
+        params.append('sortOrder', sortOrder);
 
         // Pagination
         params.append('page', currentPage.toString());
@@ -378,6 +421,7 @@ export default function InvoiceGenerator() {
           totalGovSubsidy: totalGovSubsidy,
           totalParticipantContribution: totalParticipantContribution
         });
+        setLastSyncedAt(new Date());
       } catch (err: any) {
         const errorMessage = err.response?.data?.message || err.message || 'An error occurred while fetching data';
         setError(errorMessage);
@@ -399,14 +443,51 @@ export default function InvoiceGenerator() {
     serviceDeliveryDateRange,
     transactionStatusFilter,
     paymentStatusFilter,
+    sortBy,
+    sortOrder,
     currentPage,
-    ITEMS_PER_PAGE
+    ITEMS_PER_PAGE,
+    refreshKey
   ]);
 
   // Whenever filters change, reset to first page for consistent results
   useEffect(() => {
     setCurrentPage(1);
-  }, [statusFilter, participantFilter, scheduledServiceDateRange, serviceDeliveryDateRange, transactionStatusFilter, paymentStatusFilter]);
+  }, [statusFilter, participantFilter, scheduledServiceDateRange, serviceDeliveryDateRange, transactionStatusFilter, paymentStatusFilter, sortBy, sortOrder]);
+
+  const handleHorizontalScroll = useCallback((direction: 'left' | 'right') => {
+    if (!tableContainerRef.current) {
+      return;
+    }
+    const offset = direction === 'left' ? -480 : 480;
+    tableContainerRef.current.scrollBy({
+      left: offset,
+      behavior: 'smooth'
+    });
+  }, []);
+
+  useEffect(() => {
+    const container = tableContainerRef.current;
+    if (!container) {
+      setCanScrollLeft(false);
+      setCanScrollRight(false);
+      return;
+    }
+
+    const updateScrollIndicators = () => {
+      setCanScrollLeft(container.scrollLeft > 0);
+      setCanScrollRight(container.scrollLeft + container.clientWidth < container.scrollWidth - 1);
+    };
+
+    updateScrollIndicators();
+    container.addEventListener('scroll', updateScrollIndicators);
+    window.addEventListener('resize', updateScrollIndicators);
+
+    return () => {
+      container.removeEventListener('scroll', updateScrollIndicators);
+      window.removeEventListener('resize', updateScrollIndicators);
+    };
+  }, [serviceRecords]);
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return '-';
@@ -425,74 +506,123 @@ export default function InvoiceGenerator() {
     return new Intl.NumberFormat('en-AU', {
       style: 'currency',
       currency: 'AUD'
-    }).format(amount);
+    }).format(amount || 0);
   };
 
-  const isWithinRange = (dateString: string | null | undefined, range: DateRange | undefined) => {
-    if (!range?.from && !range?.to) {
-      return true;
+  const formatDisplayDate = (dateString: string | null | undefined) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return '-';
+    return date.toLocaleDateString('en-AU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  };
+
+  const stripHtml = (value?: string) => {
+    if (!value) return '';
+    return value.replace(/<[^>]*>/g, '').trim();
+  };
+
+  const getDeliveredByThirdParty = (deliveredBy?: string) => {
+    if (!deliveredBy) return '';
+    const value = deliveredBy.toLowerCase();
+    if (value.includes('associated provider')) {
+      return 'true';
     }
+    if (value.includes('company workforce')) {
+      return 'false';
+    }
+    return '';
+  };
+
+  const getItemOrWraparound = (record: ServiceRecord) => {
+    if (record.unit && record.unit.toLowerCase() === 'item') {
+      return 'Item';
+    }
+    if (record.servicePlan && record.servicePlan.toLowerCase().includes('wraparound')) {
+      return 'Wraparound';
+    }
+    return '';
+  };
+
+  const getFundingSourceCode = (fundingSource?: string, servicePlanName?: string) => {
+    if (fundingSource) {
+      const match = Object.entries(FUNDING_SOURCE_CODE_MAP).find(([key]) =>
+        fundingSource.toLowerCase().includes(key.toLowerCase())
+      );
+      if (match) {
+        return match[1];
+      }
+    }
+
+    if (servicePlanName) {
+      const cleaned = servicePlanName
+        .split(' ')
+        .map(word => word[0])
+        .join('')
+        .replace(/[^A-Z]/gi, '')
+        .toUpperCase();
+      if (cleaned) {
+        return cleaned.slice(0, 4);
+      }
+    }
+
+    return fundingSource ? fundingSource.substring(0, 4).toUpperCase() : '';
+  };
+
+const getTransactionStatusSearchValue = (filterValue: string) => {
+  return TRANSACTION_STATUS_FILTERS.find(option => option.value === filterValue)?.isoValue || '';
+};
+
+  const getPurchasedMethodType = (value?: string) => {
+    if (!value) return '';
+    const methodLower = value.toLowerCase();
+    if (methodLower.includes('loan')) return 'LOANED';
+    if (methodLower.includes('purchase')) return 'PURCHASED';
+    return '';
+  };
+
+const getItemFirstPaymentDisplay = (value?: string | boolean) => {
+  if (typeof value === 'boolean') {
+    return value ? 'Y' : 'N';
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['y', 'yes', 'true'].includes(normalized)) {
+      return 'Y';
+    }
+    if (['n', 'no', 'false'].includes(normalized)) {
+      return 'N';
+    }
+    return value.toUpperCase();
+  }
+  return 'N';
+};
+
+  const formatDateForCsv = (dateString: string | null | undefined) => {
     if (!dateString) {
-      return false;
+      return '';
     }
     const date = new Date(dateString);
     if (Number.isNaN(date.getTime())) {
-      return false;
+      return '';
     }
-    if (range.from) {
-      const from = new Date(range.from);
-      from.setHours(0, 0, 0, 0);
-      if (date < from) {
-        return false;
-      }
-    }
-    const toSource = range.to || range.from;
-    if (toSource) {
-      const to = new Date(toSource);
-      to.setHours(23, 59, 59, 999);
-      if (date > to) {
-        return false;
-      }
-    }
-    return true;
+    return date.toISOString().split('T')[0];
   };
 
-  // Filter service records - apply client-side filters for transaction status and payment status
-  const filteredRecords = serviceRecords.filter(record => {
-    if (!isWithinRange(record.scheduledStart, scheduledServiceDateRange)) {
-      return false;
+  const formatNumberForCsv = (value: number | string | undefined | null) => {
+    if (value === null || value === undefined || value === '') {
+      return '';
     }
-    if (!isWithinRange(record.serviceDeliveryDate, serviceDeliveryDateRange)) {
-      return false;
+    const numeric = typeof value === 'number' ? value : Number(value);
+    if (Number.isNaN(numeric)) {
+      return '';
     }
-    if (transactionStatusFilter !== 'all') {
-      try {
-        const pattern = new RegExp(transactionStatusFilter, 'i');
-        const recordStatus = record.transactionStatus || '';
-        if (!pattern.test(recordStatus)) {
-          return false;
-        }
-      } catch (err) {
-        return false;
-      }
-    }
-    if (paymentStatusFilter !== 'all') {
-      try {
-        // For payment status, check if any of the comma-separated values match
-        const pattern = new RegExp(paymentStatusFilter, 'i');
-        const recordStatus = record.paymentStatus || '';
-        // Split by comma and check each value
-        const statusValues = recordStatus.split(',').map(s => s.trim());
-        const matches = statusValues.some(status => pattern.test(status));
-        if (!matches) {
-          return false;
-        }
-      } catch (err) {
-        return false;
-      }
-    }
-    return true;
-  });
+    return numeric.toFixed(2);
+  };
+
 
   // Use summary data from backend response (already filtered and aggregated)
   const filteredSummary = {
@@ -505,6 +635,227 @@ export default function InvoiceGenerator() {
   // Pagination
   const totalPages = Math.ceil(summary.totalRecords / ITEMS_PER_PAGE);
   const currentItems = serviceRecords; // Use the paginated data directly from the backend
+
+  const tableColumns: TableColumn[] = [
+    {
+      key: 'paymentStatus',
+      label: 'Payment Status',
+      className: 'min-w-[180px]',
+      render: (record) => record.paymentStatus || '-'
+    },
+    {
+      key: 'invoiceNumber',
+      label: 'Invoice Number',
+      className: 'min-w-[220px]',
+      render: (record) => (
+        <div className="flex items-center gap-2">
+          <span className="font-medium">{record.invoiceNumber || '-'}</span>
+          {record.fileUrl && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={(e) => {
+                e.stopPropagation();
+                window.open(record.fileUrl, '_blank');
+              }}
+            >
+              <Download className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      )
+    },
+    {
+      key: 'careRecipientIdentifier',
+      label: 'Care Recipient Identifier',
+      className: 'min-w-[200px]',
+      render: (record) => record.careRecipientIdentifier || '-'
+    },
+    {
+      key: 'participant',
+      label: 'Participant',
+      className: 'min-w-[200px]',
+      render: (record) => record.participant || '-'
+    },
+    {
+      key: 'service',
+      label: 'Service',
+      className: 'min-w-[220px]',
+      render: (record) => record.service || '-'
+    },
+    {
+      key: 'serviceIdentifier',
+      label: 'Service Identifier',
+      className: 'min-w-[180px]',
+      render: (record) => record.serviceIdentifier || '-'
+    },
+    {
+      key: 'scheduledServiceDate',
+      label: 'Scheduled Service Date',
+      className: 'min-w-[180px]',
+      render: (record) => formatDisplayDate(record.scheduledServiceDate || record.scheduledStart)
+    },
+    {
+      key: 'serviceDeliveryDate',
+      label: 'Delivery Date',
+      className: 'min-w-[180px]',
+      render: (record) => formatDisplayDate(record.serviceDeliveryDate)
+    },
+    {
+      key: 'unit',
+      label: 'Unit Type',
+      className: 'min-w-[140px]',
+      render: (record) => record.unit || '-'
+    },
+    {
+      key: 'quantity',
+      label: 'Quantity',
+      className: 'min-w-[120px]',
+      render: (record) => (typeof record.quantity === 'number' ? record.quantity : record.quantity ?? '-')
+    },
+    {
+      key: 'unitPrice',
+      label: 'Price Per Unit',
+      className: 'min-w-[150px]',
+      render: (record) => formatCurrency(record.unitPrice)
+    },
+    {
+      key: 'totalAmount',
+      label: 'Total Amount',
+      className: 'min-w-[150px]',
+      render: (record) => formatCurrency(record.totalAmount)
+    },
+    {
+      key: 'govSubsidy',
+      label: 'Gov Subsidy',
+      className: 'min-w-[150px]',
+      render: (record) => formatCurrency(record.govSubsidy)
+    },
+    {
+      key: 'participantContribution',
+      label: 'Participant Contribution',
+      className: 'min-w-[190px]',
+      render: (record) => formatCurrency(record.participantContribution)
+    },
+    {
+      key: 'fundingSource',
+      label: 'Funding Source',
+      className: 'min-w-[200px]',
+      render: (record) => {
+        const code = getFundingSourceCode(record.fundingSource, record.servicePlan);
+        return (
+          <div className="flex flex-col gap-1">
+            <span>{record.fundingSource || '-'}</span>
+            {code && <Badge variant="outline" className="w-fit text-xs">{code}</Badge>}
+          </div>
+        );
+      }
+    },
+    {
+      key: 'notes',
+      label: 'Notes',
+      className: 'min-w-[220px]',
+      render: (record) => {
+        const cleanNotes = stripHtml(record.notes);
+        return cleanNotes ? (
+          <span title={cleanNotes} className="block max-h-12 overflow-hidden text-sm text-muted-foreground">
+            {cleanNotes}
+          </span>
+        ) : '-';
+      }
+    },
+    {
+      key: 'deliveredByThirdParty',
+      label: 'Delivered By a Third Party',
+      className: 'min-w-[200px]',
+      render: (record) => {
+        const delivered = getDeliveredByThirdParty(record.deliveredBy);
+        return delivered ? delivered.toUpperCase() : '-';
+      }
+    },
+    {
+      key: 'itemOrWraparound',
+      label: 'Item or Wraparound',
+      className: 'min-w-[180px]',
+      render: (record) => getItemOrWraparound(record) || '-'
+    },
+    {
+      key: 'itemDescriptionCode',
+      label: 'Item Description Code',
+      className: 'min-w-[190px]',
+      render: (record) => {
+        const value = getItemOrWraparound(record) === 'Item' ? record.itemId : '';
+        return value || '-';
+      }
+    },
+    {
+      key: 'itemDescription',
+      label: 'Item Description',
+      className: 'min-w-[200px]',
+      render: (record) => (getItemOrWraparound(record) === 'Item' ? record.item : '') || '-'
+    },
+    {
+      key: 'wraparoundDescriptionCode',
+      label: 'Wraparound Description Code',
+      className: 'min-w-[220px]',
+      render: (record) => (getItemOrWraparound(record) === 'Wraparound' ? record.wraparoundItemId : '') || '-'
+    },
+    {
+      key: 'wraparoundDescription',
+      label: 'Wraparound Description',
+      className: 'min-w-[220px]',
+      render: (record) => (getItemOrWraparound(record) === 'Wraparound' ? record.wraparoundDescription : '') || '-'
+    },
+    {
+      key: 'prescribedItem',
+      label: 'Prescribed Item',
+      className: 'min-w-[150px]',
+      render: (record) => record.prescribedItem || 'N'
+    },
+    {
+      key: 'purchasedMethodType',
+      label: 'Purchased Method Type',
+      className: 'min-w-[200px]',
+      render: (record) => getPurchasedMethodType(record.itemPurchasedMethod || '') || '-'
+    },
+    {
+      key: 'loanedByOrganisationName',
+      label: 'Loaned by Organisation Name',
+      className: 'min-w-[220px]',
+      render: (record) => {
+        const method = getPurchasedMethodType(record.itemPurchasedMethod || '');
+        return method === 'LOANED' ? (record.associatedProvider || '-') : '-';
+      }
+    },
+    {
+      key: 'loanedByInvoiceNumber',
+      label: 'Loaned By Invoice Number',
+      className: 'min-w-[220px]',
+      render: (record) => {
+        const method = getPurchasedMethodType(record.itemPurchasedMethod || '');
+        return method === 'LOANED' ? (record.associatedProviderInvoiceNo || '-') : '-';
+      }
+    },
+    {
+      key: 'healthProfessionalTypeCode',
+      label: 'Health Professional Type Code',
+      className: 'min-w-[240px]',
+      render: (record) => record.healthProfessionalTypeCode || '-'
+    },
+    {
+      key: 'healthProfessionalTypeOther',
+      label: 'Health Professional Type Other',
+      className: 'min-w-[240px]',
+      render: (record) => record.healthProfessionalTypeOther || '-'
+    },
+    {
+      key: 'itemFirstPayment',
+      label: 'Item First Payment',
+      className: 'min-w-[180px]',
+      render: (record) => getItemFirstPaymentDisplay(record.itemFirstPayment)
+    }
+  ];
 
   // Export handlers
   const handleExportCSV = async () => {
@@ -542,13 +893,17 @@ export default function InvoiceGenerator() {
         params.append('serviceDeliveryEnd', to.toISOString());
       }
 
-      if (transactionStatusFilter !== 'all') {
-        params.append('transactionStatus', transactionStatusFilter);
+      const transactionStatusParam = getTransactionStatusSearchValue(transactionStatusFilter);
+      if (transactionStatusParam) {
+        params.append('transactionStatus', transactionStatusParam);
       }
 
       if (paymentStatusFilter !== 'all') {
         params.append('paymentStatus', paymentStatusFilter);
       }
+
+      params.append('sortBy', sortBy);
+      params.append('sortOrder', sortOrder);
 
       params.append('folderName', 'Master Plan,Shift Planning and Reporting');
 
@@ -571,12 +926,32 @@ export default function InvoiceGenerator() {
         return;
       }
 
-      // CSV headers based on ISO+ specifications
-      const headers = [
-        'Invoice Number',
+      const escapeForCsv = (value: unknown) => {
+        if (value === null || value === undefined || value === '') {
+          return '';
+        }
+        const stringValue = String(value).replace(/"/g, '""');
+        return `"${stringValue}"`;
+      };
+
+      const csvHeaders = [
+        'Payment Status',
+        'Item External Reference Identifier',
         'Care Recipient Identifier',
+        'Participant',
+        'Service',
         'Service Identifier',
-        'Delivered By Third Party',
+        'Scheduled Service Date',
+        'Delivery Date',
+        'Unit Type',
+        'Quantity',
+        'Price Per Unit',
+        'Total Amount',
+        'Gov Subsidy',
+        'Participant Contribution',
+        'Funding Source',
+        'Notes',
+        'Delivered By a Third Party',
         'Item or Wraparound',
         'Item Description Code',
         'Item Description',
@@ -587,149 +962,69 @@ export default function InvoiceGenerator() {
         'Loaned by Organisation Name',
         'Loaned By Invoice Number',
         'Health Professional Type Code',
-        'Health Professional Type Other'
+        'Health Professional Type Other',
+        'Item First Payment'
       ];
-
-      const escapeForCsv = (value: unknown) => {
-        if (value === null || value === undefined || value === '') {
-          return '';
-        }
-        const stringValue = String(value).replace(/"/g, '""');
-        return `"${stringValue}"`;
-      };
-
-      const formatDateForCsv = (dateString: string | null | undefined) => {
-        if (!dateString) {
-          return '';
-        }
-        const date = new Date(dateString);
-        if (Number.isNaN(date.getTime())) {
-          return '';
-        }
-        return date.toISOString().split('T')[0];
-      };
 
       const csvRows: string[] = [];
 
       allItems.forEach((item) => {
-        // 1. Invoice Number - from {Generated Invoice Number}
         const invoiceNumber = item.invoiceNumber || '';
-
-        // 2. Care Recipient Identifier - from {My Aged Care ID Number} (From Intake)
         const careRecipientIdentifier = item.careRecipientIdentifier || '';
-
-        // 3. Service Identifier - from {Service ID / Item ID} attribute of Aged Care Pricing folders
-        // Do not add the "/" and any content after that
         let serviceIdentifier = item.serviceIdentifier || '';
-        if (serviceIdentifier && serviceIdentifier.includes('/')) {
+        if (serviceIdentifier.includes('/')) {
           serviceIdentifier = serviceIdentifier.split('/')[0].trim();
         }
 
-        // 4. Delivered By Third Party
-        // true if {Delivered by} attribute is Associated Providers
-        // false if {Delivered by} attribute is Company Workforce
-        let deliveredByThirdParty = '';
-        if (item.deliveredBy) {
-          const deliveredByLower = String(item.deliveredBy).toLowerCase();
-          if (deliveredByLower.includes('associated provider') || deliveredByLower.includes('associated providers')) {
-            deliveredByThirdParty = 'true';
-          } else if (deliveredByLower.includes('company workforce') || deliveredByLower.includes('workforce')) {
-            deliveredByThirdParty = 'false';
-          }
-        }
-
-        // 5. Item or Wraparound
-        // Item: if {Unit} is Item
-        // Wraparound: if the {Service Plan} attribute contains Wraparound
-        let itemOrWraparound = '';
-        if (item.unit && item.unit.toLowerCase() === 'item') {
-          itemOrWraparound = 'Item';
-        } else if (item.servicePlan && String(item.servicePlan).toLowerCase().includes('wraparound')) {
-          itemOrWraparound = 'Wraparound';
-        }
-
-        // 6. Item Description Code
-        // If Item is selected, {Item ID} attribute
-        // If Wraparound is selected, BLANK
+        const deliveredByThirdParty = getDeliveredByThirdParty(item.deliveredBy);
+        const itemOrWraparound = getItemOrWraparound(item);
         const itemDescriptionCode = (itemOrWraparound === 'Item' && item.itemId) ? item.itemId : '';
-
-        // 7. Item Description
-        // If Item is selected, {Item} attribute
-        // If Wraparound is selected, BLANK
         const itemDescription = (itemOrWraparound === 'Item' && item.item) ? item.item : '';
-
-        // 8. Wraparound Description Code
-        // If Item is selected, BLANK
-        // If Wraparound is selected, the {Wraparound Item ID} attribute
         const wraparoundDescriptionCode = (itemOrWraparound === 'Wraparound' && item.wraparoundItemId) ? item.wraparoundItemId : '';
-
-        // 9. Wraparound Description
-        // If Item is selected, BLANK
-        // If Wraparound is selected, the {Wraparound Description} attribute
         const wraparoundDescription = (itemOrWraparound === 'Wraparound' && item.wraparoundDescription) ? item.wraparoundDescription : '';
-
-        // 10. Prescribed Item
-        // Y: if ticked
-        // N: Otherwise
-        const prescribedItemValue = item.prescribedItem;
-        let prescribedItem = 'N';
-        if (prescribedItemValue === true) {
-          prescribedItem = 'Y';
-        } else if (typeof prescribedItemValue === 'string') {
-          const valueLower = prescribedItemValue.toLowerCase();
-          if (valueLower === 'true' || prescribedItemValue === 'Y') {
-            prescribedItem = 'Y';
-          }
-        }
-
-        // 11. Purchased Method Type
-        // If Purchased, PURCHASED
-        // If Loaned, LOANED
-        let purchasedMethodType = '';
-        if (item.itemPurchasedMethod) {
-          const methodLower = String(item.itemPurchasedMethod).toLowerCase();
-          if (methodLower.includes('purchased')) {
-            purchasedMethodType = 'PURCHASED';
-          } else if (methodLower.includes('loaned')) {
-            purchasedMethodType = 'LOANED';
-          }
-        }
-
-        // 12. Loaned by Organisation Name
-        // If LOANED is selected, {Associated Provider (If Applicable)}
-        // Otherwise, BLANK
-        const loanedByOrganisationName = (purchasedMethodType === 'LOANED' && item.associatedProvider) ? item.associatedProvider : '';
-
-        // 13. Loaned By Invoice Number
-        // If LOANED is selected, {Associated Provider Invoice No. (if applicable)}
-        // Otherwise, BLANK
-        const loanedByInvoiceNumber = (purchasedMethodType === 'LOANED' && item.associatedProviderInvoiceNo) ? item.associatedProviderInvoiceNo : '';
-
-        // 14. Health Professional Type Code
-        // From the Health Professional Pricing folder of the selected Health Professional Service
+        const prescribedItem = item.prescribedItem === 'Y' ? 'Y' : 'N';
+        const purchasedMethodType = getPurchasedMethodType(item.itemPurchasedMethod);
+        const loanedByOrganisationName = purchasedMethodType === 'LOANED' ? (item.associatedProvider || '') : '';
+        const loanedByInvoiceNumber = purchasedMethodType === 'LOANED' ? (item.associatedProviderInvoiceNo || '') : '';
         const healthProfessionalTypeCode = item.healthProfessionalTypeCode || '';
-
-        // 15. Health Professional Type Other
-        // A free text if the selected Health Professional Service includes Other
         const healthProfessionalTypeOther = item.healthProfessionalTypeOther || '';
+        const fundingSourceCode = getFundingSourceCode(item.fundingSource, item.servicePlan);
+        const itemFirstPayment = getItemFirstPaymentDisplay(item.itemFirstPayment);
+        const scheduledDateCsv = formatDateForCsv(item.scheduledServiceDate || item.scheduledStart);
+        const serviceDeliveryDateCsv = formatDateForCsv(item.serviceDeliveryDate);
+        const cleanedNotes = stripHtml(item.notes);
 
         csvRows.push(
           [
-            escapeForCsv(invoiceNumber), // Invoice Number
-            escapeForCsv(careRecipientIdentifier), // Care Recipient Identifier
-            escapeForCsv(serviceIdentifier), // Service Identifier
-            escapeForCsv(deliveredByThirdParty), // Delivered By Third Party
-            escapeForCsv(itemOrWraparound), // Item or Wraparound
-            escapeForCsv(itemDescriptionCode), // Item Description Code
-            escapeForCsv(itemDescription), // Item Description
-            escapeForCsv(wraparoundDescriptionCode), // Wraparound Description Code
-            escapeForCsv(wraparoundDescription), // Wraparound Description
-            escapeForCsv(prescribedItem), // Prescribed Item
-            escapeForCsv(purchasedMethodType), // Purchased Method Type
-            escapeForCsv(loanedByOrganisationName), // Loaned by Organisation Name
-            escapeForCsv(loanedByInvoiceNumber), // Loaned By Invoice Number
-            escapeForCsv(healthProfessionalTypeCode), // Health Professional Type Code
-            escapeForCsv(healthProfessionalTypeOther) // Health Professional Type Other
+            escapeForCsv(item.paymentStatus || ''),
+            escapeForCsv(invoiceNumber),
+            escapeForCsv(careRecipientIdentifier),
+            escapeForCsv(item.participant || ''),
+            escapeForCsv(item.service || ''),
+            escapeForCsv(serviceIdentifier),
+            escapeForCsv(scheduledDateCsv),
+            escapeForCsv(serviceDeliveryDateCsv),
+            escapeForCsv(item.unit || ''),
+            escapeForCsv(item.quantity ?? ''),
+            escapeForCsv(formatNumberForCsv(item.unitPrice)),
+            escapeForCsv(formatNumberForCsv(item.totalAmount)),
+            escapeForCsv(formatNumberForCsv(item.govSubsidy)),
+            escapeForCsv(formatNumberForCsv(item.participantContribution)),
+            escapeForCsv(fundingSourceCode),
+            escapeForCsv(cleanedNotes),
+            escapeForCsv(deliveredByThirdParty),
+            escapeForCsv(itemOrWraparound),
+            escapeForCsv(itemDescriptionCode),
+            escapeForCsv(itemDescription),
+            escapeForCsv(wraparoundDescriptionCode),
+            escapeForCsv(wraparoundDescription),
+            escapeForCsv(prescribedItem),
+            escapeForCsv(purchasedMethodType),
+            escapeForCsv(loanedByOrganisationName),
+            escapeForCsv(loanedByInvoiceNumber),
+            escapeForCsv(healthProfessionalTypeCode),
+            escapeForCsv(healthProfessionalTypeOther),
+            escapeForCsv(itemFirstPayment)
           ].join(',')
         );
       });
@@ -743,14 +1038,12 @@ export default function InvoiceGenerator() {
       // Generate CSV filename following the format: External Reference Identifier
       // Format: BulkInvoice_YYYYMMDD_HHMMSS_<participant_identifier>.csv
       const now = new Date();
-      const dateStr = now.toISOString().split('T')[0].replace(/-/g, ''); // YYYYMMDD
-      const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, ''); // HHMMSS
-      const participantIdentifier = participantFilter && participantFilter !== 'all'
+      const participantSegment = participantFilter && participantFilter !== 'all'
         ? participantFilter.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '')
         : 'AllParticipants';
-      
-      // CSV filename serves as External Reference Identifier
-      const fileName = `BulkInvoice_${dateStr}_${timeStr}_${participantIdentifier}.csv`;
+      const invoiceDateSegment = now.toISOString().split('T')[0];
+      const sanitizedParticipantSegment = participantSegment || 'AllParticipants';
+      const fileName = `Extinvoice01-INVOICE-${sanitizedParticipantSegment}-${invoiceDateSegment}.csv`;
       
       link.href = url;
       link.download = fileName;
@@ -770,6 +1063,36 @@ export default function InvoiceGenerator() {
       console.error('Error exporting CSV:', err);
       showErrorToast('Failed to export CSV', { description: err.message });
       setLoading(false);
+    }
+  };
+
+  const handleManualSync = async () => {
+    if (!id || !boardId) {
+      showErrorToast('Workspace or board missing', { description: 'Please navigate back and select a workspace again.' });
+      return;
+    }
+
+    try {
+      setIsManualSyncing(true);
+      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/sync/board/manual`;
+      const response = await axios.post(apiUrl, { workspaceId: id, boardId }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+
+      const description = response.data?.message || 'Manual sync triggered successfully.';
+      showSuccessToast('ISO+ sync started', {
+        description: `${description} It may take a few minutes—refresh to see new records.`
+      });
+    } catch (err: any) {
+      console.error('Error triggering manual sync:', err);
+      showErrorToast('Failed to trigger ISO+ sync', {
+        description: err.response?.data?.message || err.message || 'Unknown error'
+      });
+    } finally {
+      setIsManualSyncing(false);
     }
   };
 
@@ -907,7 +1230,7 @@ export default function InvoiceGenerator() {
           description: `Invoice ${invoiceNumber} for ${participantName} (${itemCount} item${itemCount === 1 ? '' : 's'}) created.`
         });
         // Refresh data to show updated invoice numbers
-        window.location.reload();
+        handleManualRefresh();
       } else {
         showErrorToast('Unexpected response while generating invoice');
       }
@@ -994,7 +1317,7 @@ export default function InvoiceGenerator() {
           description: `Invoice ${invoiceNumber} for ${participantName} (${itemCount} item${itemCount === 1 ? '' : 's'}) created in Xero.`
         });
         // Refresh data to show updated invoice numbers
-        window.location.reload();
+        handleManualRefresh();
       } else {
         showErrorToast('Unexpected response while generating Xero invoice');
       }
@@ -1022,14 +1345,61 @@ export default function InvoiceGenerator() {
         <div className="space-y-6">
           <Card className="p-6">
             {/* Header with Export Buttons */}
-            <div className="flex items-center justify-between mb-6">
-              <div>
+            <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+              <div className="space-y-2">
                 <h1 className="text-2xl font-bold">Invoice Generator</h1>
                 <p className="text-muted-foreground">
                   Manage delivered service records, submit claims and generate participant tax invoices.
                 </p>
+                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                  <Clock className="h-4 w-4" />
+                  {lastSyncedAt ? (
+                    <span>Last refreshed {formatDistanceToNow(lastSyncedAt, { addSuffix: true })}</span>
+                  ) : (
+                    <span>Not refreshed yet</span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Use Refresh to reload the latest cached ISO+ data. Trigger Sync when you&apos;ve updated ISO+ and need those changes pulled in.
+                </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={handleManualRefresh}
+                  disabled={loading}
+                >
+                  <RefreshCcw className="h-4 w-4" />
+                  Refresh Data
+                </Button>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="secondary"
+                        className="gap-2"
+                        onClick={handleManualSync}
+                        disabled={isManualSyncing}
+                      >
+                        {isManualSyncing ? (
+                          <>
+                            <Spinner className="h-4 w-4" />
+                            Syncing...
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCcw className="h-4 w-4" />
+                            Sync from ISO+
+                          </>
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      Trigger a manual ISO+ sync. We&apos;ll fetch the latest data from the portal in the background.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
                 <Button
                   variant="outline"
                   onClick={handleExportCSV}
@@ -1047,14 +1417,19 @@ export default function InvoiceGenerator() {
                 </Button>
               </div>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Transaction filter labels (Delivered, Cancelled, Adjustment) automatically match their equivalent ISO+ values such as &quot;Delivered - To be claimed and invoiced.&quot;
+            </p>
 
             {/* Search and Filters */}
-            <div className="flex flex-wrap gap-4 mb-6">
-              <div className="min-w-[180px] max-w-[200px]">
+            <div className="flex flex-nowrap gap-4 mb-6 overflow-x-auto pb-2">
+              <div className="min-w-[120px] max-w-[200px] flex-shrink-0">
                 <Select value={participantFilter} onValueChange={setParticipantFilter}>
                   <SelectTrigger className="w-full">
-                    <Search className="h-4 w-4 mr-2" />
-                    <SelectValue placeholder="Participant" />
+                    <div className="flex items-center gap-2 min-w-0 w-full">
+                      <Search className="h-4 w-4 flex-shrink-0" />
+                      <SelectValue placeholder="Participant" className="truncate" />
+                    </div>
                   </SelectTrigger>
                   <SelectContent className="max-h-[300px] overflow-y-auto">
                     <SelectItem value="all">All Participants</SelectItem>
@@ -1069,19 +1444,23 @@ export default function InvoiceGenerator() {
 
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="min-w-[180px] max-w-[200px] justify-start text-left font-normal">
-                    <Calendar className="mr-2 h-4 w-4" />
-                    {scheduledServiceDateRange?.from ? (
-                      scheduledServiceDateRange.to ? (
-                        <>
-                          {format(scheduledServiceDateRange.from, "dd/MM/yyyy")} - {format(scheduledServiceDateRange.to, "dd/MM/yyyy")}
-                        </>
-                      ) : (
-                        format(scheduledServiceDateRange.from, "dd/MM/yyyy")
-                      )
-                    ) : (
-                      "Scheduled Service Date"
-                    )}
+                  <Button variant="outline" className="min-w-[120px] max-w-[200px] justify-start text-left font-normal flex-shrink-0">
+                    <div className="flex items-center gap-2 min-w-0 w-full">
+                      <Calendar className="h-4 w-4 flex-shrink-0" />
+                      <span className="truncate">
+                        {scheduledServiceDateRange?.from ? (
+                          scheduledServiceDateRange.to ? (
+                            <>
+                              {format(scheduledServiceDateRange.from, "dd/MM/yyyy")} - {format(scheduledServiceDateRange.to, "dd/MM/yyyy")}
+                            </>
+                          ) : (
+                            format(scheduledServiceDateRange.from, "dd/MM/yyyy")
+                          )
+                        ) : (
+                          "Scheduled Service Date"
+                        )}
+                      </span>
+                    </div>
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
@@ -1107,19 +1486,23 @@ export default function InvoiceGenerator() {
 
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="min-w-[180px] max-w-[200px] justify-start text-left font-normal">
-                    <Calendar className="mr-2 h-4 w-4" />
-                    {serviceDeliveryDateRange?.from ? (
-                      serviceDeliveryDateRange.to ? (
-                        <>
-                          {format(serviceDeliveryDateRange.from, "dd/MM/yyyy")} - {format(serviceDeliveryDateRange.to, "dd/MM/yyyy")}
-                        </>
-                      ) : (
-                        format(serviceDeliveryDateRange.from, "dd/MM/yyyy")
-                      )
-                    ) : (
-                      "Service Delivery Date"
-                    )}
+                  <Button variant="outline" className="min-w-[120px] max-w-[200px] justify-start text-left font-normal flex-shrink-0">
+                    <div className="flex items-center gap-2 min-w-0 w-full">
+                      <Calendar className="h-4 w-4 flex-shrink-0" />
+                      <span className="truncate">
+                        {serviceDeliveryDateRange?.from ? (
+                          serviceDeliveryDateRange.to ? (
+                            <>
+                              {format(serviceDeliveryDateRange.from, "dd/MM/yyyy")} - {format(serviceDeliveryDateRange.to, "dd/MM/yyyy")}
+                            </>
+                          ) : (
+                            format(serviceDeliveryDateRange.from, "dd/MM/yyyy")
+                          )
+                        ) : (
+                          "Service Delivery Date"
+                        )}
+                      </span>
+                    </div>
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
@@ -1144,9 +1527,11 @@ export default function InvoiceGenerator() {
               )}
 
               <Select value={transactionStatusFilter} onValueChange={setTransactionStatusFilter}>
-                <SelectTrigger className="min-w-[180px] max-w-[200px]">
-                  <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue placeholder="Transaction Status" />
+                <SelectTrigger className="min-w-[120px] max-w-[200px] flex-shrink-0">
+                  <div className="flex items-center gap-2 min-w-0 w-full">
+                    <Filter className="h-4 w-4 flex-shrink-0" />
+                    <SelectValue placeholder="Transaction Status" className="truncate" />
+                  </div>
                 </SelectTrigger>
                 <SelectContent>
                   {TRANSACTION_STATUS_FILTERS.map((option) => (
@@ -1158,9 +1543,11 @@ export default function InvoiceGenerator() {
               </Select>
 
               <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
-                <SelectTrigger className="min-w-[180px] max-w-[200px]">
-                  <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue placeholder="Payment Status" />
+                <SelectTrigger className="min-w-[120px] max-w-[200px] flex-shrink-0">
+                  <div className="flex items-center gap-2 min-w-0 w-full">
+                    <Filter className="h-4 w-4 flex-shrink-0" />
+                    <SelectValue placeholder="Payment Status" className="truncate" />
+                  </div>
                 </SelectTrigger>
                 <SelectContent>
                   {PAYMENT_STATUS_FILTERS.map((option) => (
@@ -1170,6 +1557,7 @@ export default function InvoiceGenerator() {
                   ))}
                 </SelectContent>
               </Select>
+
             </div>
 
             {/* Summary Cards - Under Filter Section */}
@@ -1214,7 +1602,7 @@ export default function InvoiceGenerator() {
                         : '0.00'}%
                     </p>
                   </div>
-                  <DollarSign className="h-8 w-8 text-purple-600" />
+                  <Percent className="h-8 w-8 text-purple-600" />
                 </div>
               </Card>
             </div>
@@ -1225,73 +1613,120 @@ export default function InvoiceGenerator() {
             </div>
 
             {/* Service Records Table */}
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Payment Status</TableHead>
-                    <TableHead>Participant</TableHead>
-                    <TableHead>Service</TableHead>
-                    <TableHead>Scheduled Service Date</TableHead>
-                    <TableHead>Total Amount ($)</TableHead>
-                    <TableHead>Gov Subsidy ($)</TableHead>
-                    <TableHead>Participant Contribution ($)</TableHead>
-                    <TableHead>Notes</TableHead>
-                    <TableHead>Item First Payment</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {loading ? (
+            <div className="relative">
+              {canScrollLeft && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="absolute left-2 top-1/2 z-10 flex -translate-y-1/2 shadow-md bg-background/95"
+                  onClick={() => handleHorizontalScroll('left')}
+                  aria-label="Scroll table left"
+                >
+                  <ArrowLeftCircle className="h-5 w-5" />
+                </Button>
+              )}
+              {canScrollRight && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="absolute right-2 top-1/2 z-10 flex -translate-y-1/2 shadow-md bg-background/95"
+                  onClick={() => handleHorizontalScroll('right')}
+                  aria-label="Scroll table right"
+                >
+                  <ArrowRightCircle className="h-5 w-5" />
+                </Button>
+              )}
+              <div ref={tableContainerRef} className="overflow-x-auto rounded-lg border">
+                <Table className="min-w-[2400px]">
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={9} className="h-64 text-center">
-                      <div className="flex flex-col items-center justify-center">
-                        <Spinner />
-                        <p className="mt-4 text-muted-foreground">Loading service records...</p>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : error ? (
-                  <TableRow>
-                    <TableCell colSpan={9} className="h-64 text-center">
-                      <div className="flex flex-col items-center justify-center">
-                        <X className="h-8 w-8 text-destructive mb-2" />
-                        <p className="text-destructive">Error: {error}</p>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : filteredRecords.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={9} className="h-64 text-center">
-                      <div className="flex flex-col items-center justify-center">
-                        <FileText className="h-8 w-8 text-muted-foreground mb-2" />
-                        <p className="text-muted-foreground">No service records found matching your criteria.</p>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  currentItems.map((record) => (
-                    <TableRow key={record.id} className={record.status === 'invoiced' ? 'bg-green-50 text-gray-600' : 'hover:bg-blue-50 transition-colors'}>
-                      <TableCell>{record.paymentStatus || '-'}</TableCell>
-                      <TableCell className="font-medium">{record.participant}</TableCell>
-                      <TableCell>{record.service || '-'}</TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {record.scheduledServiceDate || (record.scheduledStart ? formatDate(record.scheduledStart).split(' ')[0] : '-')}
-                      </TableCell>
-                      <TableCell className="font-semibold">{formatCurrency(record.totalAmount)}</TableCell>
-                      <TableCell>{formatCurrency(record.govSubsidy)}</TableCell>
-                      <TableCell>{formatCurrency(record.participantContribution)}</TableCell>
-                      <TableCell className="max-w-xs truncate" title={record.notes}>
-                        <span className="text-gray-500" dangerouslySetInnerHTML={record.notes ? { __html: record.notes } : { __html: '' }}>
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        {record.itemFirstPayment === true || record.itemFirstPayment === 'true' || record.itemFirstPayment === 'Y' ? 'Y' : 'N'}
-                      </TableCell>
+                      {tableColumns.map((column) => {
+                        const isSortable = column.key === 'scheduledServiceDate' || column.key === 'serviceDeliveryDate';
+                        const isActiveSort = sortBy === column.key;
+                        
+                        return (
+                          <TableHead 
+                            key={column.key} 
+                            className={`${column.className ?? ''} whitespace-nowrap ${isSortable ? 'cursor-pointer hover:bg-muted/50' : ''} ${isActiveSort ? 'text-primary font-semibold' : ''}`}
+                            onClick={isSortable ? () => {
+                              if (isActiveSort) {
+                                // Toggle sort order if clicking the same column
+                                setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                              } else {
+                                // Set new sort column and default to ascending
+                                setSortBy(column.key as "scheduledServiceDate" | "serviceDeliveryDate");
+                                setSortOrder('asc');
+                              }
+                            } : undefined}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className={isActiveSort ? 'text-primary' : ''}>{column.label}</span>
+                              {isSortable && (
+                                <span className="inline-flex items-center justify-center w-4 h-4 flex-shrink-0">
+                                  {isActiveSort ? (
+                                    sortOrder === 'asc' ? (
+                                      <ArrowUp className="h-4 w-4 text-primary" />
+                                    ) : (
+                                      <ArrowDown className="h-4 w-4 text-primary" />
+                                    )
+                                  ) : (
+                                    <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+                                  )}
+                                </span>
+                              )}
+                            </div>
+                          </TableHead>
+                        );
+                      })}
                     </TableRow>
-                  ))
-                )}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {loading ? (
+                      <TableRow>
+                        <TableCell colSpan={tableColumns.length} className="h-64 text-center">
+                          <div className="flex flex-col items-center justify-center">
+                            <Spinner />
+                            <p className="mt-4 text-muted-foreground">Loading service records...</p>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : error ? (
+                      <TableRow>
+                        <TableCell colSpan={tableColumns.length} className="h-64 text-center">
+                          <div className="flex flex-col items-center justify-center">
+                            <X className="h-8 w-8 text-destructive mb-2" />
+                            <p className="text-destructive">Error: {error}</p>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : currentItems.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={tableColumns.length} className="h-64 text-center">
+                          <div className="flex flex-col items-center justify-center">
+                            <FileText className="h-8 w-8 text-muted-foreground mb-2" />
+                            <p className="text-muted-foreground">No service records found matching your criteria.</p>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      currentItems.map((record) => (
+                        <TableRow
+                          key={record.id}
+                          className={record.status === 'invoiced' ? 'bg-green-50 text-gray-600' : 'hover:bg-blue-50 transition-colors'}
+                        >
+                          {tableColumns.map((column) => (
+                            <TableCell key={`${record.id}-${column.key}`} className={column.className}>
+                              {column.render(record)}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
 
             {/* Pagination */}
