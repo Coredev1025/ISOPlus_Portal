@@ -804,14 +804,28 @@ async function validateBoardAttributes(workspaceId, boardId, viewId, coverAttrib
             const coverAttribute = attributes.find(attr => attr.id === coverAttributeId);
             
             if (!coverAttribute) {
-                warn('ISO+™ Service', 'Cover attribute not found in board attributes', {
+                const fallbackAttribute = findFallbackCoverAttribute(attributes);
+                if (fallbackAttribute) {
+                    warn('ISO+™ Service', 'Cover attribute not found; assigning fallback attribute', {
+                        workspaceId,
+                        boardId,
+                        viewId,
+                        requestedCoverAttributeId: coverAttributeId,
+                        fallbackAttributeId: fallbackAttribute.id,
+                        fallbackAttributeName: fallbackAttribute.name,
+                        fallbackAttributeType: fallbackAttribute.type
+                    }, req);
+                    return { status: 'fallback', attribute: fallbackAttribute };
+                }
+
+                warn('ISO+™ Service', 'Cover attribute not found and no fallback available', {
                     workspaceId,
                     boardId,
                     viewId,
                     coverAttributeId,
                     availableAttributes: attributes.map(attr => ({ id: attr.id, name: attr.name, type: attr.type }))
                 }, req);
-                return false;
+                return { status: 'missing', attribute: null };
             }
             
             info('ISO+™ Service', 'Cover attribute validation successful', {
@@ -822,10 +836,10 @@ async function validateBoardAttributes(workspaceId, boardId, viewId, coverAttrib
                 attributeName: coverAttribute.name,
                 attributeType: coverAttribute.type
             }, req);
-            return true;
+            return { status: 'valid', attribute: coverAttribute };
         }
         
-        return false;
+        return { status: 'error', attribute: null };
     } catch (err) {
         error('ISO+™ Service', 'Error validating board attributes', {
             workspaceId,
@@ -835,8 +849,41 @@ async function validateBoardAttributes(workspaceId, boardId, viewId, coverAttrib
             error: err.message,
             statusCode: err.response?.status
         }, req);
-        return false;
+        return { status: 'error', attribute: null };
     }
+}
+
+function findFallbackCoverAttribute(attributes = []) {
+    if (!Array.isArray(attributes) || attributes.length === 0) {
+        return null;
+    }
+
+    const preferredTypes = [
+        'file',
+        'files',
+        'image',
+        'images',
+        'attachment',
+        'attachments',
+        'media',
+        'media_file',
+        'file_upload'
+    ];
+
+    const normalize = value => (typeof value === 'string' ? value.toLowerCase() : '');
+    const hasPreferredType = attribute => {
+        const typeMatches = preferredTypes.includes(normalize(attribute?.type));
+        const fieldTypeMatches = preferredTypes.includes(normalize(attribute?.field_type));
+        return typeMatches || fieldTypeMatches;
+    };
+
+    let fallbackAttribute = attributes.find(hasPreferredType);
+    if (fallbackAttribute) {
+        return fallbackAttribute;
+    }
+
+    fallbackAttribute = attributes.find(attr => normalize(attr?.name).includes('cover'));
+    return fallbackAttribute || null;
 }
 
 export async function setLogo(authorization, workspaceId, logo, type, req) {
@@ -967,9 +1014,9 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                             settings: viewItem.settings
                         }, req);
                         
-                        const coverAttributeid = viewItem.settings.editorCoverAttributeId;
+                        let coverAttributeid = viewItem.settings?.editorCoverAttributeId;
                         if (!coverAttributeid) {
-                            warn(`ISO+™ Service`, `No cover attribute id found for view ${viewItem.id}`, { 
+                            warn(`ISO+™ Service`, `No cover attribute id found for view ${viewItem.id}; attempting fallback`, { 
                                 workspaceId, 
                                 requestId, 
                                 boardId: boardItem.id, 
@@ -978,7 +1025,6 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                                 viewSettings: viewItem.settings,
                                 availableSettings: Object.keys(viewItem.settings || {})
                             }, req);
-                            continue;
                         }
                         
                         info('ISO+™ Service', 'Cover attribute found, validating before processing', { 
@@ -990,8 +1036,9 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                         }, req);
                         
                         // Validate the cover attribute exists in the board
-                        const isValidAttribute = await validateBoardAttributes(workspaceId, boardItem.id, viewItem.id, coverAttributeid, req);
-                        if (!isValidAttribute) {
+                        const attributeValidation = await validateBoardAttributes(workspaceId, boardItem.id, viewItem.id, coverAttributeid, req);
+                        const resolvedCoverAttributeId = attributeValidation?.attribute?.id;
+                        if (!resolvedCoverAttributeId) {
                             warn('ISO+™ Service', 'Skipping view due to invalid cover attribute', {
                                 workspaceId,
                                 requestId,
@@ -1001,8 +1048,27 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                             }, req);
                             continue;
                         }
+
+                        if (!coverAttributeid || coverAttributeid !== resolvedCoverAttributeId) {
+                            const previousCoverAttributeId = coverAttributeid;
+                            viewItem.settings = viewItem.settings || {};
+                            viewItem.settings.editorCoverAttributeId = resolvedCoverAttributeId;
+                            coverAttributeid = resolvedCoverAttributeId;
+                            
+                            info('ISO+™ Service', 'Assigned fallback cover attribute for view', {
+                                workspaceId,
+                                requestId,
+                                boardId: boardItem.id,
+                                viewId: viewItem.id,
+                                previousCoverAttributeId,
+                                newCoverAttributeId: resolvedCoverAttributeId,
+                                assignmentStatus: attributeValidation?.status
+                            }, req);
+                        } else {
+                            coverAttributeid = resolvedCoverAttributeId;
+                        }
                         
-                        info('ISO+™ Service', 'Cover attribute validated, fetching items', { 
+                        info('ISO+™ Service', 'Cover attribute ready, fetching items', { 
                             workspaceId, 
                             requestId, 
                             boardId: boardItem.id, 
