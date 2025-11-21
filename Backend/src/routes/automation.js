@@ -24,7 +24,7 @@ router.post('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
                 automationId = uuidv4();
                 existingAutomationIndex = existingAutomation.findIndex(automation => automation.id === automationId);
             }
-        } 
+        }
         const response = await axios.put(`https://app.isoplus.online/api/${workspaceId}/automations/${automationId}`, {
             ...automation,
             id: automationId
@@ -66,15 +66,21 @@ router.put('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
                         const match = updatedUrl.match(urlPattern);
                         
                         if (match) {
-                            const backendUrl = match[1];
-                            const apiPath = match[2];
-                            const currentWorkspaceId = match[3];
-                            const currentBoardId = match[4];
-                            
-                            updatedUrl = updatedUrl.replace(
-                                new RegExp(`${backendUrl}/api/${apiPath}/${currentWorkspaceId}/${currentBoardId}`),
-                                `${process.env.BACKEND_URL.replace('https://', '')}/api/${apiPath}/${workspaceId}/${boardId}`
-                            );
+                            if (process.env.BACKEND_URL) {
+                                const backendUrl = match[1];
+                                const apiPath = match[2];
+                                const currentWorkspaceId = match[3];
+                                const currentBoardId = match[4];
+
+                                const backendUrlWithoutProtocol = process.env.BACKEND_URL.replace(/^https?:\/\//, '');
+
+                                updatedUrl = updatedUrl.replace(
+                                    new RegExp(`${backendUrl}/api/${apiPath}/${currentWorkspaceId}/${currentBoardId}`),
+                                    `${backendUrlWithoutProtocol}/api/${apiPath}/${workspaceId}/${boardId}`
+                                );
+                            } else {
+                                warn('Automation-Service', 'BACKEND_URL not found in your environment variables', { workspaceId, boardId, automationId: updatedAutomation.id }, extractContextFromReq(req));
+                            }
                         }
                         
                         return {
@@ -97,7 +103,7 @@ router.put('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
                 } else {
                     error('Automation-Service', 'Failed to update Automation', { workspaceId, boardId, automationId: updatedAutomation.id }, extractContextFromReq(req));
                 }
-            } 
+            }
         }
         res.status(200).json(updatedAutomations);
     } catch (err) {
