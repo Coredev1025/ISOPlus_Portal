@@ -1,5 +1,5 @@
 import express from 'express';
-import { info, error, extractContextFromReq } from '../utils/logger.js';
+import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
 import fs from 'fs/promises';
 import { generate } from '@pdfme/generator';
 import { text, table, line, image, multiVariableText } from '@pdfme/schemas';
@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import Business from '../models/Business.js';
 import PDFLink from '../models/PDFLink.js';
+import Item from '../models/Item.js';
 import { getS3FileUrl, uploadFileToS3 } from '../utils/uploadS3.js';
 import { isEmpty } from '../utils/helpers.js';
 import {
@@ -19,13 +20,46 @@ import {
     setGeneratedField,
     setPDFLinkAttribute,
     getQuoteNDISReferencedItems,
-    getNDISMasterPlanReferencedItems
+    getNDISMasterPlanReferencedItems,
+    getItemValues
 } from '../services/isoplus.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const router = express.Router();
+
+// Attribute names constants (matching items.js)
+const ATTRIBUTE_NAMES = {
+    SCHEDULED_START: 'Scheduled Shift Start Date & Time',
+    ACTUAL_START: 'Actual Shift Start Date & Time',
+    ACTUAL_END: 'Actual Shift End Date & Time',
+    PARTICIPANT_FULL_NAME: 'Participant Full Name',
+    WORKER_PLANNER: 'Worker/Planner',
+    DELIVERED_BY: 'Delivered by',
+    ASSOCIATED_PROVIDER: 'Associated Provider (If Applicable)',
+    SERVICE_PROVIDER: 'Service Provider',
+    UNIT: 'Unit',
+    QUANTITY: 'Quantity',
+    UNIT_PRICE: 'Unit Price ($)',
+    TOTAL_AMOUNT: 'Total Amount ($)',
+    GOV_SUBSIDY: 'Government Subsidy ($)',
+    PARTICIPANT_CONTRIBUTION: 'Participant Contribution ($)',
+    SERVICE_PLAN: 'Service Plan',
+    SERVICE_PLAN_ID: 'Service Plan ID',
+    SERVICE_CATEGORY: 'Service Category',
+    TASK_NAME: 'Task Name',
+    ADDITIONAL_NOTES: 'Additional Notes',
+    TRANSACTION_STATUS: 'Transaction Status',
+    FUNDING_SOURCE: 'Funding Source',
+    PARTICIPANT_PROFILE: 'Participant Profile',
+    FULL_NAME: 'Full Name/Preferred Name',
+    ADDRESS: 'Address',
+    SUBURB: 'Suburb',
+    POSTCODE: 'Postcode',
+    POST_CODE: 'Post Code',
+    STATE: 'State'
+};
 
 async function getValidatedBusiness(workspaceId) {
     const business = await Business.findOne({ workspaceId: workspaceId.toString() });
@@ -1604,15 +1638,21 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         const { workspaceId, boardId } = validateRequestParams(req);
         const business = await getValidatedBusiness(workspaceId);
 
-        const items = req.body.items || [];
+        const itemIds = req.body.items?.map(item => item.id || item) || req.body.itemIds || [];
         
-        if (!items || items.length === 0) {
+        if (!itemIds || itemIds.length === 0) {
             return res.status(400).json({ message: "No items provided for invoice generation." });
         }
 
-        // Validate all items belong to the workspace/board
-        for (const item of items) {
-            await validateItemBelongsToTenant(workspaceId, boardId, item.id);
+        // Validate all items belong to the workspace/board and fetch from database
+        const dbItems = [];
+        for (const itemId of itemIds) {
+            await validateItemBelongsToTenant(workspaceId, boardId, itemId);
+            const dbItem = await Item.findOne({ workspaceId, boardId, itemId: itemId.toString() });
+            if (!dbItem) {
+                throw new Error(`Item ${itemId} not found`);
+            }
+            dbItems.push(dbItem);
         }
 
         try {
@@ -1624,14 +1664,9 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 
             const invoiceNumber = business.documentNumbering.invoice.prefix + business.documentNumbering.invoice.nextNumber;
 
-            // Detect if this is service-record format (from Invoice Generator UI)
-            const isServiceRecord = typeof items[0]?.participant === 'string' || typeof req.body?.participantName === 'string';
-
             let ordersArr = [];
-            let subTotal = 0;
             let totalParticipantContribution = 0;
             const gstLabel = "GST Free";
-            const gst = 0; // percent
 
             // Get dates from request or use defaults
             let invoiceDate = req.body?.invoiceDate || new Date().toISOString();
@@ -1643,137 +1678,272 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                 dueDate = d.toISOString();
             }
 
-            // Helper functions for service records
+            // Helper functions
             const dateFmt = (d) => d ? new Date(d).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
             const toNumber = (v) => typeof v === 'number' ? v : Number(v || 0);
             const fmt = (v) => formatValue(toNumber(v));
 
-            if (isServiceRecord) {
-                // Process all items and add them to the orders array
-                for (const item of items) {
-                    const rowDate = dateFmt(item.scheduledStart);
-                    const cleanNotes = (item.notes && typeof item.notes === 'string') ? item.notes.replace(/<[^>]*>/g, '') : '';
-                    const description = cleanNotes || (item.worker ? `Service - ${item.worker}` : 'Service');
-                    const unit = item.unit || ' ';
-                    const qty = toNumber(item.quantity);
-                    const unitPrice = toNumber(item.unitPrice);
-                    const totalAmount = toNumber(item.totalAmount);
-                    const participantContribution = toNumber(item.participantContribution);
-                    const govSubsidy = toNumber(item.govSubsidy); // accepted but not rendered as separate column in current template
+            // Fetch participant profile details from first item (following items.js pattern)
+            let participantName = ' ';
+            let participantAddress = ' ';
+            let participantSuburb = ' ';
+            let participantState = ' ';
+            let participantPostcode = ' ';
 
-                    ordersArr.push([
-                        rowDate,
-                        description,
-                        unit,
-                        fmt(qty),
-                        fmt(unitPrice),
-                        gstLabel,
-                        fmt(totalAmount),
-                        fmt(participantContribution)
-                    ]);
-                    
-                    subTotal += totalAmount;
-                    totalParticipantContribution += participantContribution;
-                }
-
-                if (ordersArr.length === 0) {
-                    await Promise.all(items.map(item =>
-                        setIntegrationMessage(workspaceId, boardId, item.id, "There is nothing to invoice!")
-                    ));
-                    return res.status(400).json({ message: "There is nothing to invoice!" });
-                }
-
-                const orders = JSON.stringify(ordersArr);
-                subTotal = formatValue(subTotal);
-                const gstTotal = formatValue(0); // GST Free
-                const total = formatValue(parseFloat(subTotal));
-                const participantContributionTotal = formatValue(totalParticipantContribution);
-
-                // Get participant details from request body or first item
-                const participantName = req.body?.participantName || items[0].participant || ' ';
-                
-                // Map client details to match template
-                const clientDetails = {
-                    Participant: participantName,
-                    Address: req.body?.participantAddress || ' ',
-                    Suburb: req.body?.participantSuburb || ' ',
-                    State: req.body?.participantState || ' ',
-                    Postcode: req.body?.participantPostcode || ' '
+            if (dbItems.length > 0) {
+                const firstItem = dbItems[0];
+                const getValue = (attributeName) => {
+                    return firstItem.data.values.find(v => v.attribute.name === attributeName)?.data;
                 };
 
-                // Generate the PDF with all items
-                const pdfBytes = await generate({
-                    template: template,
-                    inputs: [
-                        {
-                            logo: logoBase64,
-                            subtotal: subTotal,
-                            totalGST: gstTotal,
-                            total: participantContributionTotal,
-                            clientDetails: JSON.stringify(clientDetails),
-                            invoiceDetails: JSON.stringify({
-                                Date: new Date(invoiceDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-                                "Invoice Number": invoiceNumber
-                            }),
-                            companyName: JSON.stringify({ "Company Name": business.name }),
-                            companyDetails: JSON.stringify({
-                                ABN: business.abn,
-                                "Street Address": business.address.street,
-                                Suburb: business.address.suburb,
-                                State: business.address.state,
-                                Postcode: business.address.postcode,
-                                Country: business.address.country
-                            }),
-                            orders: orders,
-                            "dueDate": new Date(dueDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-                            "Bank Details": JSON.stringify({
-                                "Account Name": business.bankDetails.accountName,
-                                "Bank Name": business.bankDetails.bankName,
-                                BSB: business.bankDetails.bsb,
-                                "Account Number": business.bankDetails.accountNumber,
-                                "invoice Number": invoiceNumber
-                            })
+                // Get Participant Profile reference
+                const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
+                if (participantProfileValue) {
+                    try {
+                        const participantProfileId = Array.isArray(participantProfileValue) 
+                            ? participantProfileValue[0] 
+                            : (typeof participantProfileValue === 'object' ? participantProfileValue.id : participantProfileValue);
+                        
+                        if (participantProfileId) {
+                            const participantProfile = await getItemValues(workspaceId, boardId, participantProfileId.toString());
+                            if (participantProfile && participantProfile.values) {
+                                const getProfileValue = (attributeName) => {
+                                    const entry = participantProfile.values.find(v => v.attribute.name === attributeName);
+                                    if (!entry || entry.data === null || entry.data === undefined) {
+                                        return '';
+                                    }
+                                    if (Array.isArray(entry.data) && entry.data.length > 0) {
+                                        return typeof entry.data[0] === 'object' && entry.data[0].name 
+                                            ? entry.data[0].name 
+                                            : String(entry.data[0]);
+                                    }
+                                    return typeof entry.data === 'object' && entry.data.name 
+                                        ? entry.data.name 
+                                        : String(entry.data);
+                                };
+
+                                participantName = getProfileValue(ATTRIBUTE_NAMES.FULL_NAME) || ' ';
+                                participantAddress = getProfileValue(ATTRIBUTE_NAMES.ADDRESS) || ' ';
+                                participantSuburb = getProfileValue(ATTRIBUTE_NAMES.SUBURB) || ' ';
+                                participantState = getProfileValue(ATTRIBUTE_NAMES.STATE) || ' ';
+                                participantPostcode = getProfileValue(ATTRIBUTE_NAMES.POSTCODE) || getProfileValue(ATTRIBUTE_NAMES.POST_CODE) || ' ';
+                            }
                         }
-                    ],
-                    plugins: { text, image, line, table, multiVariableText }
+                    } catch (err) {
+                        warn('Webhook-Service', 'Failed to fetch participant profile details', { 
+                            error: err.message,
+                            itemId: firstItem.itemId 
+                        }, extractContextFromReq(req));
+                    }
+                }
+            }
+
+            // Process all items and add them to the orders array (following items.js pattern)
+            for (const dbItem of dbItems) {
+                const getValue = (attributeName) => {
+                    return dbItem.data.values.find(v => v.attribute.name === attributeName)?.data;
+                };
+
+                // Get Transaction Status and format it (following items.js pattern)
+                const transactionStatusValue = dbItem.data.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.TRANSACTION_STATUS);
+                let transactionStatus = '';
+                if (transactionStatusValue) {
+                    const transactionStatusData = transactionStatusValue.data;
+                    const labels = transactionStatusValue.attribute?.settings?.labels || [];
+                    
+                    if (Array.isArray(transactionStatusData) && transactionStatusData.length > 0) {
+                        transactionStatus = transactionStatusData.map(id => {
+                            const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
+                            return label ? label.name : (typeof id === 'object' ? id.name : String(id));
+                        }).join(', ');
+                    } else if (transactionStatusData) {
+                        if (typeof transactionStatusData === 'object' && transactionStatusData.id) {
+                            const label = labels.find(l => l.id === transactionStatusData.id);
+                            transactionStatus = label ? label.name : (transactionStatusData.name || String(transactionStatusData.id));
+                        } else if (typeof transactionStatusData === 'string') {
+                            const label = labels.find(l => l.id === transactionStatusData);
+                            transactionStatus = label ? label.name : transactionStatusData;
+                        } else {
+                            transactionStatus = String(transactionStatusData);
+                        }
+                    }
+                }
+
+                // Date: If Transaction Status is "Delivered", use Actual Shift End Date & Time, otherwise Scheduled Shift Start Date & Time
+                let rowDate = '';
+                const isDelivered = transactionStatus && transactionStatus.toLowerCase().includes('delivered');
+                
+                if (isDelivered) {
+                    const actualEnd = getValue(ATTRIBUTE_NAMES.ACTUAL_END);
+                    if (actualEnd) {
+                        rowDate = dateFmt(actualEnd);
+                    }
+                }
+                
+                if (!rowDate) {
+                    const scheduledStart = getValue(ATTRIBUTE_NAMES.SCHEDULED_START);
+                    if (scheduledStart) {
+                        rowDate = dateFmt(scheduledStart);
+                    }
+                }
+
+                // Description: Second section after "-" of Service Plan ID (following items.js pattern)
+                let description = '';
+                const servicePlanId = getValue(ATTRIBUTE_NAMES.SERVICE_PLAN);
+                if (servicePlanId) {
+                    try {
+                        const servicePlan = await getItemValues(workspaceId, boardId, servicePlanId.toString());
+                        if (servicePlan && servicePlan.values) {
+                            const servicePlanIdValue = servicePlan.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.SERVICE_PLAN_ID)?.data?.toString().trim();
+                            if (servicePlanIdValue && typeof servicePlanIdValue === 'string' && servicePlanIdValue.includes(' - ')) {
+                                const parts = servicePlanIdValue.split(' - ');
+                                description = parts[1].trim();
+                            } else if (servicePlanIdValue && typeof servicePlanIdValue === 'string') {
+                                description = servicePlanIdValue;
+                            }
+                        }
+                    } catch (err) {
+                        warn('Webhook-Service', 'Failed to fetch service plan', {
+                            error: err.message,
+                            itemId: dbItem.itemId
+                        }, extractContextFromReq(req));
+                    }
+                }
+                
+                if (!description) {
+                    description = 'Service';
+                }
+
+                // For Adjustment transactions, append Additional Notes
+                const isAdjustment = transactionStatus && (
+                    transactionStatus.toLowerCase().includes('adjustment') || 
+                    transactionStatus.toLowerCase().includes('charge') ||
+                    transactionStatus.toLowerCase().includes('refund')
+                );
+                if (isAdjustment) {
+                    const notes = getValue(ATTRIBUTE_NAMES.ADDITIONAL_NOTES);
+                    if (notes) {
+                        const cleanNotes = (typeof notes === 'string') ? notes.replace(/<[^>]*>/g, '').trim() : '';
+                        if (cleanNotes) {
+                            description = `${description} - ${cleanNotes}`;
+                        }
+                    }
+                }
+
+                // Get other fields (following items.js pattern)
+                const unit = getValue(ATTRIBUTE_NAMES.UNIT) || ' ';
+                const quantity = Number(getValue(ATTRIBUTE_NAMES.QUANTITY)) || 0;
+                const unitPrice = Number(getValue(ATTRIBUTE_NAMES.UNIT_PRICE)) || 0;
+                const totalAmount = Number(getValue(ATTRIBUTE_NAMES.TOTAL_AMOUNT)) || 0;
+                const participantContribution = Number(getValue(ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)) || 0;
+
+                ordersArr.push([
+                    rowDate,
+                    description,
+                    unit,
+                    fmt(quantity),
+                    formatCurrencyValue(unitPrice), // $ {Unit Price ($)}
+                    gstLabel,
+                    formatCurrencyValue(totalAmount), // $ {Total Amount ($)}
+                    formatCurrencyValue(participantContribution) // {Participant Contribution ($)}
+                ]);
+                
+                // Subtotal uses Participant Contribution, not Total Amount
+                totalParticipantContribution += participantContribution;
+            }
+
+            if (ordersArr.length === 0) {
+                await Promise.all(dbItems.map(item =>
+                    setIntegrationMessage(workspaceId, boardId, item.itemId, "There is nothing to invoice!")
+                ));
+                return res.status(400).json({ message: "There is nothing to invoice!" });
+            }
+
+            const orders = JSON.stringify(ordersArr);
+            // Subtotal: Same as NDIS, but for Participant Contribution column
+            const participantContributionTotal = formatValue(totalParticipantContribution);
+            const gstTotal = formatValue(0); // Total GST: $ 0.00
+            // Total AUD: Same as subtotal (participant contribution total)
+            const totalAUD = participantContributionTotal;
+
+            // Map client details to match template
+            const clientDetails = {
+                Participant: participantName,
+                Address: participantAddress,
+                Suburb: participantSuburb,
+                State: participantState,
+                Postcode: participantPostcode
+            };
+
+            // Generate the PDF with all items
+            const pdfBytes = await generate({
+                template: template,
+                inputs: [
+                    {
+                        logo: logoBase64,
+                        subtotal: formatCurrencyValue(totalParticipantContribution), // Subtotal: Participant Contribution total
+                        totalGST: formatCurrencyValue(0), // Total GST: $ 0.00
+                        total: formatCurrencyValue(totalParticipantContribution), // Total AUD: Same as subtotal
+                        clientDetails: JSON.stringify(clientDetails),
+                        invoiceDetails: JSON.stringify({
+                            Date: new Date(invoiceDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+                            "Invoice Number": invoiceNumber
+                        }),
+                        companyName: JSON.stringify({ "Company Name": business.name }),
+                        companyDetails: JSON.stringify({
+                            ABN: business.abn,
+                            "Street Address": business.address.street,
+                            Suburb: business.address.suburb,
+                            State: business.address.state,
+                            Postcode: business.address.postcode,
+                            Country: business.address.country
+                        }),
+                        orders: orders,
+                        "dueDate": new Date(dueDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+                        "Bank Details": JSON.stringify({
+                            "Account Name": business.bankDetails.accountName,
+                            "Bank Name": business.bankDetails.bankName,
+                            BSB: business.bankDetails.bsb,
+                            "Account Number": business.bankDetails.accountNumber,
+                            "invoice Number": invoiceNumber
+                        })
+                    }
+                ],
+                plugins: { text, image, line, table, multiVariableText }
+            });
+
+            // Upload the single PDF for all items
+            const filename = `output/${workspaceId}/${boardId}/Participant-invoices/${invoiceNumber + '-ISO+™-' + participantName.replace(/\s+/g, '-')}.pdf`;
+            const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+
+            if (uploadResult['$metadata'].httpStatusCode === 200) {
+                const fileUrl = await getS3FileUrl(filename);
+                
+                // Update integration messages and generated fields for all items
+                await Promise.all(dbItems.map(async (item) => {
+                    await setIntegrationMessage(workspaceId, boardId, item.itemId, "Invoice generated successfully");
+                    await setGeneratedField(workspaceId, boardId, item.itemId, `${invoiceNumber} (ISO+™)`);
+                }));
+
+                // Increment invoice number only once
+                business.documentNumbering.invoice.nextNumber += 1;
+                await business.save();
+
+                logAuditTrail({
+                    workspaceId,
+                    action: "Generate PDF Participant Tax Invoice",
+                    detail: `Invoice generated successfully, invoice number: ${invoiceNumber}, participant: ${participantName}, items: ${dbItems.length}, fileUrl: ${fileUrl}`,
+                    req
                 });
 
-                // Upload the single PDF for all items
-                const filename = `output/${workspaceId}/${boardId}/Participant-invoices/${invoiceNumber + '-ISO+™-' + participantName.replace(/\s+/g, '-')}.pdf`;
-                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
-
-                if (uploadResult['$metadata'].httpStatusCode === 200) {
-                    const fileUrl = await getS3FileUrl(filename);
-                    
-                    // Update integration messages and generated fields for all items
-                    await Promise.all(items.map(async (item) => {
-                        await setIntegrationMessage(workspaceId, boardId, item.id, "Invoice generated successfully");
-                        await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
-                    }));
-
-                    // Increment invoice number only once
-                    business.documentNumbering.invoice.nextNumber += 1;
-                    await business.save();
-
-                    logAuditTrail({
-                        workspaceId,
-                        action: "Generate PDF Participant Tax Invoice",
-                        detail: `Invoice generated successfully, invoice number: ${invoiceNumber}, participant: ${participantName}, items: ${items.length}, fileUrl: ${fileUrl}`,
-                        req
-                    });
-
-                    return res.status(200).json({ 
-                        message: "Participant Tax Invoice generated successfully",
-                        invoiceNumber: invoiceNumber,
-                        fileUrl: fileUrl,
-                        itemCount: items.length
-                    });
-                } else {
-                    throw new Error('Upload of PDF failed, please provide correct information.');
-                }
+                return res.status(200).json({ 
+                    message: "Participant Tax Invoice generated successfully",
+                    invoiceNumber: invoiceNumber,
+                    fileUrl: fileUrl,
+                    itemCount: dbItems.length
+                });
             } else {
-                // Legacy monday.com format - not supported for multiple items in single invoice
-                throw new Error('Legacy monday.com format is not supported for multi-item participant invoices. Please use the Invoice Generator UI.');
+                throw new Error('Upload of PDF failed, please provide correct information.');
             }
         } catch (err) {
             // Do not call per-item error responder; log and send a single error response

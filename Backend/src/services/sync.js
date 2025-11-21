@@ -313,15 +313,31 @@ export async function triggerManualSync(authorization, workspaceId, boardId) {
       };
     }
 
-    if (['board_validation', 'data_backlog_sync', 'manual_triggered_sync'].includes(board.syncStatus)) {
-      return {
-        success: false,
-        message: `Sync already in progress (current status: ${board.syncStatus})`,
-        boardId,
-        syncStatus: board.syncStatus
-      };
+    if (board.syncJobId && ['board_validation', 'data_backlog_sync', 'manual_triggered_sync'].includes(board.syncStatus)) {
+      try {
+        const existingJob = await syncQueue.getJob(board.syncJobId);
+        if (existingJob) {
+          const jobState = await existingJob.getState();
+          // Only cancel if job is still waiting or active (not already completed/failed)
+          if (['waiting', 'active', 'delayed'].includes(jobState)) {
+            await existingJob.remove();
+            info('Sync-Service', 'Cancelled existing sync job to allow manual sync', { 
+              boardId, 
+              previousJobId: board.syncJobId,
+              previousStatus: board.syncStatus
+            });
+          }
+        }
+      } catch (jobErr) {
+        warn('Sync-Service', 'Failed to cancel existing job (continuing with new sync)', { 
+          boardId, 
+          jobId: board.syncJobId,
+          error: jobErr.message 
+        });
+      }
     }
 
+    // Create new manual sync job
     const job = await syncQueue.add('manual_sync', {
       jobType: 'manual_triggered_sync',
       authorization,
