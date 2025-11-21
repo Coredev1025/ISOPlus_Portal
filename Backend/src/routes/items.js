@@ -184,7 +184,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             ? (pageNumber - 1) * limitNumber
             : 0;
 
-        // Build aggregation pipeline
+        // Build aggregation pipeline - OPTIMIZED VERSION
         const pipeline = [];
 
         // Base match - only from Master Plan,Shift Planning and Reporting
@@ -195,333 +195,201 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
         }
         pipeline.push({ $match: baseMatch });
 
-        // Use the same aggregation pipeline structure
-        pipeline.push(
-            {
-                $addFields: {
-                    scheduledStartValue: {
-                        $filter: {
-                            input: "$data.values",
-                            as: "value",
-                            cond: { $eq: ["$$value.attribute.name", ATTRIBUTE_NAMES.SCHEDULED_START] }
+        // Optimized: Combine multiple $addFields stages into fewer stages
+        // Extract all values in a single pass and convert in the same stage
+        pipeline.push({
+            $addFields: {
+                // Extract values using $arrayElemAt with $filter - more efficient than multiple separate filters
+                scheduledStartVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", ATTRIBUTE_NAMES.SCHEDULED_START] } } }, 0] },
+                participantVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", "Participant Full Name"] } } }, 0] },
+                invoiceIssuedVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", "Invoice Issued and Sent"] } } }, 0] },
+                paymentStatusVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", "Payment Status"] } } }, 0] },
+                transactionStatusVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", ATTRIBUTE_NAMES.TRANSACTION_STATUS] } } }, 0] },
+                totalAmountVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", ATTRIBUTE_NAMES.TOTAL_AMOUNT] } } }, 0] },
+                govSubsidyVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", ATTRIBUTE_NAMES.GOV_SUBSIDY] } } }, 0] },
+                participantContributionVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION] } } }, 0] },
+                actualEndVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", ATTRIBUTE_NAMES.ACTUAL_END] } } }, 0] }
+            }
+        });
+
+        // Optimized: Extract raw values, convert dates, and convert numbers in a single stage
+        pipeline.push({
+            $addFields: {
+                // Extract raw data values
+                scheduledStartRaw: { $ifNull: ["$scheduledStartVal.data", null] },
+                participantNameRaw: { $ifNull: ["$participantVal.data", null] },
+                invoiceIssuedRaw: { $ifNull: [{ $ifNull: ["$invoiceIssuedVal.data", false] }, false] },
+                paymentStatusRaw: { $ifNull: [{ $ifNull: ["$paymentStatusVal.data", []] }, []] },
+                paymentStatusAttribute: { $ifNull: ["$paymentStatusVal.attribute", null] },
+                transactionStatusRaw: { $ifNull: ["$transactionStatusVal.data", null] },
+                transactionStatusAttribute: { $ifNull: ["$transactionStatusVal.attribute", null] },
+                totalAmountRaw: {
+                    $cond: {
+                        if: { $ne: ["$totalAmountVal", null] },
+                        then: { $ifNull: ["$totalAmountVal.data", 0] },
+                        else: 0
+                    }
+                },
+                govSubsidyRaw: {
+                    $cond: {
+                        if: { $ne: ["$govSubsidyVal", null] },
+                        then: { $ifNull: ["$govSubsidyVal.data", 0] },
+                        else: 0
+                    }
+                },
+                participantContributionRaw: {
+                    $cond: {
+                        if: { $ne: ["$participantContributionVal", null] },
+                        then: { $ifNull: ["$participantContributionVal.data", 0] },
+                        else: 0
+                    }
+                },
+                actualEndRaw: { $ifNull: ["$actualEndVal.data", null] },
+                // Convert dates immediately
+                scheduledStartDate: {
+                    $dateFromString: {
+                        dateString: { $ifNull: ["$scheduledStartVal.data", null] },
+                        onError: null
+                    }
+                },
+                actualEndDate: {
+                    $dateFromString: {
+                        dateString: { $ifNull: ["$actualEndVal.data", null] },
+                        onError: null
+                    }
+                },
+                // Calculate invoiced flag
+                invoicedFlag: {
+                    $or: [
+                        { $toBool: { $ifNull: [{ $ifNull: ["$invoiceIssuedVal.data", false] }, false] } },
+                        {
+                            $in: [
+                                "Paid",
+                                {
+                                    $map: {
+                                        input: { $ifNull: [{ $ifNull: ["$paymentStatusVal.data", []] }, []] },
+                                        as: "p",
+                                        in: "$$p.name"
+                                    }
+                                }
+                            ]
                         }
-                    },
-                    participantValue: {
-                        $filter: {
-                            input: "$data.values",
-                            as: "value",
-                            cond: { $eq: ["$$value.attribute.name", "Participant Full Name"] }
-                        }
-                    },
-                    invoiceIssuedValue: {
-                        $filter: {
-                            input: "$data.values",
-                            as: "value",
-                            cond: { $eq: ["$$value.attribute.name", "Invoice Issued and Sent"] }
-                        }
-                    },
-                    paymentStatusValue: {
-                        $filter: {
-                            input: "$data.values",
-                            as: "value",
-                            cond: { $eq: ["$$value.attribute.name", "Payment Status"] }
-                        }
-                    },
-                    transactionStatusValue: {
-                        $filter: {
-                            input: "$data.values",
-                            as: "value",
-                            cond: { $eq: ["$$value.attribute.name", ATTRIBUTE_NAMES.TRANSACTION_STATUS] }
-                        }
-                    },
-                    totalAmountValue: {
-                        $filter: {
-                            input: "$data.values",
-                            as: "value",
-                            cond: { $eq: ["$$value.attribute.name", ATTRIBUTE_NAMES.TOTAL_AMOUNT] }
-                        }
-                    },
-                    govSubsidyValue: {
-                        $filter: {
-                            input: "$data.values",
-                            as: "value",
-                            cond: { $eq: ["$$value.attribute.name", ATTRIBUTE_NAMES.GOV_SUBSIDY] }
-                        }
-                    },
-                    participantContributionValue: {
-                        $filter: {
-                            input: "$data.values",
-                            as: "value",
-                            cond: { $eq: ["$$value.attribute.name", ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION] }
-                        }
-                    },
-                    actualEndValue: {
-                        $filter: {
-                            input: "$data.values",
-                            as: "value",
-                            cond: { $eq: ["$$value.attribute.name", ATTRIBUTE_NAMES.ACTUAL_END] }
+                    ]
+                },
+                // Convert numbers with optimized inline expression
+                totalAmountNum: {
+                    $let: {
+                        vars: {
+                            raw: {
+                                $cond: {
+                                    if: { $ne: ["$totalAmountVal", null] },
+                                    then: { $ifNull: ["$totalAmountVal.data", 0] },
+                                    else: 0
+                                }
+                            },
+                            valType: { $type: { $cond: { if: { $ne: ["$totalAmountVal", null] }, then: { $ifNull: ["$totalAmountVal.data", 0] }, else: 0 } } },
+                            numMatch: {
+                                $regexFind: {
+                                    input: { $convert: { input: { $cond: { if: { $ne: ["$totalAmountVal", null] }, then: { $ifNull: ["$totalAmountVal.data", "0"] }, else: "0" } }, to: "string", onError: "0", onNull: "0" } },
+                                    regex: "-?\\d+(?:\\.\\d+)?"
+                                }
+                            }
+                        },
+                        in: {
+                            $cond: {
+                                if: { $in: ["$$valType", ["int", "long", "double", "decimal128"]] },
+                                then: { $ifNull: ["$$raw", 0] },
+                                else: {
+                                    $cond: {
+                                        if: { $ne: ["$$numMatch", null] },
+                                        then: { $convert: { input: "$$numMatch.match", to: "double", onError: 0, onNull: 0 } },
+                                        else: 0
+                                    }
+                                }
+                            }
                         }
                     }
-                }
-            },
-            {
-                $addFields: {
-                    scheduledStartRaw: {
-                        $let: {
-                            vars: { firstVal: { $arrayElemAt: ["$scheduledStartValue", 0] } },
-                            in: { $ifNull: ["$$firstVal.data", null] }
-                        }
-                    },
-                    participantNameRaw: {
-                        $let: {
-                            vars: { firstVal: { $arrayElemAt: ["$participantValue", 0] } },
-                            in: { $ifNull: ["$$firstVal.data", null] }
-                        }
-                    },
-                    invoiceIssuedRaw: {
-                        $let: {
-                            vars: { firstVal: { $arrayElemAt: ["$invoiceIssuedValue", 0] } },
-                            in: { $ifNull: [{ $ifNull: ["$$firstVal.data", false] }, false] }
-                        }
-                    },
-                    paymentStatusRaw: {
-                        $let: {
-                            vars: { firstVal: { $arrayElemAt: ["$paymentStatusValue", 0] } },
-                            in: { $ifNull: [{ $ifNull: ["$$firstVal.data", []] }, []] }
-                        }
-                    },
-                    paymentStatusAttribute: {
-                        $let: {
-                            vars: { firstVal: { $arrayElemAt: ["$paymentStatusValue", 0] } },
-                            in: { $ifNull: ["$$firstVal.attribute", null] }
-                        }
-                    },
-                    transactionStatusRaw: {
-                        $let: {
-                            vars: { firstVal: { $arrayElemAt: ["$transactionStatusValue", 0] } },
-                            in: { $ifNull: ["$$firstVal.data", null] }
-                        }
-                    },
-                    transactionStatusAttribute: {
-                        $let: {
-                            vars: { firstVal: { $arrayElemAt: ["$transactionStatusValue", 0] } },
-                            in: { $ifNull: ["$$firstVal.attribute", null] }
-                        }
-                    },
-                    totalAmountRaw: {
-                        $let: {
-                            vars: {
-                                firstVal: { $arrayElemAt: ["$totalAmountValue", 0] }
-                            },
-                            in: {
+                },
+                govSubsidyNum: {
+                    $let: {
+                        vars: {
+                            raw: {
                                 $cond: {
-                                    if: { $ne: ["$$firstVal", null] },
-                                    then: {
-                                        $cond: {
-                                            if: { $ne: ["$$firstVal.data", null] },
-                                            then: "$$firstVal.data",
-                                            else: 0
-                                        }
-                                    },
+                                    if: { $ne: ["$govSubsidyVal", null] },
+                                    then: { $ifNull: ["$govSubsidyVal.data", 0] },
                                     else: 0
                                 }
-                            }
-                        }
-                    },
-                    govSubsidyRaw: {
-                        $let: {
-                            vars: {
-                                firstVal: { $arrayElemAt: ["$govSubsidyValue", 0] }
                             },
-                            in: {
-                                $cond: {
-                                    if: { $ne: ["$$firstVal", null] },
-                                    then: {
-                                        $cond: {
-                                            if: { $ne: ["$$firstVal.data", null] },
-                                            then: "$$firstVal.data",
-                                            else: 0
-                                        }
-                                    },
-                                    else: 0
+                            valType: { $type: { $cond: { if: { $ne: ["$govSubsidyVal", null] }, then: { $ifNull: ["$govSubsidyVal.data", 0] }, else: 0 } } },
+                            numMatch: {
+                                $regexFind: {
+                                    input: { $convert: { input: { $cond: { if: { $ne: ["$govSubsidyVal", null] }, then: { $ifNull: ["$govSubsidyVal.data", "0"] }, else: "0" } }, to: "string", onError: "0", onNull: "0" } },
+                                    regex: "-?\\d+(?:\\.\\d+)?"
                                 }
                             }
-                        }
-                    },
-                    participantContributionRaw: {
-                        $let: {
-                            vars: {
-                                firstVal: { $arrayElemAt: ["$participantContributionValue", 0] }
-                            },
-                            in: {
-                                $cond: {
-                                    if: { $ne: ["$$firstVal", null] },
-                                    then: {
-                                        $cond: {
-                                            if: { $ne: ["$$firstVal.data", null] },
-                                            then: "$$firstVal.data",
-                                            else: 0
-                                        }
-                                    },
-                                    else: 0
+                        },
+                        in: {
+                            $cond: {
+                                if: { $in: ["$$valType", ["int", "long", "double", "decimal128"]] },
+                                then: { $ifNull: ["$$raw", 0] },
+                                else: {
+                                    $cond: {
+                                        if: { $ne: ["$$numMatch", null] },
+                                        then: { $convert: { input: "$$numMatch.match", to: "double", onError: 0, onNull: 0 } },
+                                        else: 0
+                                    }
                                 }
                             }
-                        }
-                    },
-                    actualEndRaw: {
-                        $let: {
-                            vars: { firstVal: { $arrayElemAt: ["$actualEndValue", 0] } },
-                            in: { $ifNull: ["$$firstVal.data", null] }
                         }
                     }
-                }
-            },
-            {
-                $addFields: {
-                    scheduledStartDate: {
-                        $dateFromString: { dateString: "$scheduledStartRaw", onError: null }
-                    },
-                    actualEndDate: {
-                        $dateFromString: { dateString: "$actualEndRaw", onError: null }
-                    },
-                    invoicedFlag: {
-                        $or: [
-                            { $toBool: "$invoiceIssuedRaw" },
-                            {
-                                $in: [
-                                    "Paid",
-                                    {
-                                        $map: {
-                                            input: "$paymentStatusRaw",
-                                            as: "p",
-                                            in: "$$p.name"
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    totalAmountNum: {
-                        $cond: {
-                            if: {
-                                $in: [
-                                    { $type: "$totalAmountRaw" },
-                                    ["int", "long", "double", "decimal128"]
-                                ]
+                },
+                participantContributionNum: {
+                    $let: {
+                        vars: {
+                            raw: {
+                                $cond: {
+                                    if: { $ne: ["$participantContributionVal", null] },
+                                    then: { $ifNull: ["$participantContributionVal.data", 0] },
+                                    else: 0
+                                }
                             },
-                            then: { $ifNull: ["$totalAmountRaw", 0] },
-                            else: {
-                                $let: {
-                                    vars: {
-                                        match: {
-                                            $regexFind: {
-                                                input: { $ifNull: ["$totalAmountRaw", "0"] },
-                                                regex: "-?\\d+(?:\\.\\d+)?"
-                                            }
-                                        }
-                                    },
-                                    in: {
-                                        $cond: {
-                                            if: { $ne: ["$$match", null] },
-                                            then: {
-                                                $convert: {
-                                                    input: "$$match.match",
-                                                    to: "double",
-                                                    onError: 0,
-                                                    onNull: 0
-                                                }
-                                            },
-                                            else: 0
-                                        }
-                                    }
+                            valType: { $type: { $cond: { if: { $ne: ["$participantContributionVal", null] }, then: { $ifNull: ["$participantContributionVal.data", 0] }, else: 0 } } },
+                            numMatch: {
+                                $regexFind: {
+                                    input: { $convert: { input: { $cond: { if: { $ne: ["$participantContributionVal", null] }, then: { $ifNull: ["$participantContributionVal.data", "0"] }, else: "0" } }, to: "string", onError: "0", onNull: "0" } },
+                                    regex: "-?\\d+(?:\\.\\d+)?"
                                 }
                             }
-                        }
-                    },
-                    govSubsidyNum: {
-                        $cond: {
-                            if: {
-                                $in: [
-                                    { $type: "$govSubsidyRaw" },
-                                    ["int", "long", "double", "decimal128"]
-                                ]
-                            },
-                            then: { $ifNull: ["$govSubsidyRaw", 0] },
-                            else: {
-                                $let: {
-                                    vars: {
-                                        match: {
-                                            $regexFind: {
-                                                input: { $ifNull: ["$govSubsidyRaw", "0"] },
-                                                regex: "-?\\d+(?:\\.\\d+)?"
-                                            }
-                                        }
-                                    },
-                                    in: {
-                                        $cond: {
-                                            if: { $ne: ["$$match", null] },
-                                            then: {
-                                                $convert: {
-                                                    input: "$$match.match",
-                                                    to: "double",
-                                                    onError: 0,
-                                                    onNull: 0
-                                                }
-                                            },
-                                            else: 0
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    participantContributionNum: {
-                        $cond: {
-                            if: {
-                                $in: [
-                                    { $type: "$participantContributionRaw" },
-                                    ["int", "long", "double", "decimal128"]
-                                ]
-                            },
-                            then: { $ifNull: ["$participantContributionRaw", 0] },
-                            else: {
-                                $let: {
-                                    vars: {
-                                        match: {
-                                            $regexFind: {
-                                                input: { $ifNull: ["$participantContributionRaw", "0"] },
-                                                regex: "-?\\d+(?:\\.\\d+)?"
-                                            }
-                                        }
-                                    },
-                                    in: {
-                                        $cond: {
-                                            if: { $ne: ["$$match", null] },
-                                            then: {
-                                                $convert: {
-                                                    input: "$$match.match",
-                                                    to: "double",
-                                                    onError: 0,
-                                                    onNull: 0
-                                                }
-                                            },
-                                            else: 0
-                                        }
+                        },
+                        in: {
+                            $cond: {
+                                if: { $in: ["$$valType", ["int", "long", "double", "decimal128"]] },
+                                then: { $ifNull: ["$$raw", 0] },
+                                else: {
+                                    $cond: {
+                                        if: { $ne: ["$$numMatch", null] },
+                                        then: { $convert: { input: "$$numMatch.match", to: "double", onError: 0, onNull: 0 } },
+                                        else: 0
                                     }
                                 }
                             }
                         }
                     }
                 }
-            },
-            {
-                // Convert label IDs to label names for transaction status and payment status
+            }
+        });
+
+        // Only convert label names if needed for filtering (conditional stage)
+        const needsTransactionStatusConversion = transactionStatusFilter && transactionStatusFilter !== 'all';
+        const needsPaymentStatusConversion = paymentStatusFilter && paymentStatusFilter !== 'all';
+
+        if (needsTransactionStatusConversion || needsPaymentStatusConversion) {
+            pipeline.push({
                 $addFields: {
-                    transactionStatusNames: {
+                    transactionStatusNames: needsTransactionStatusConversion ? {
                         $cond: [
                             { $eq: [{ $type: "$transactionStatusRaw" }, "array"] },
                             {
-                                // Map array of label IDs to label names
                                 $map: {
                                     input: "$transactionStatusRaw",
                                     as: "labelId",
@@ -550,7 +418,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                                 $cond: [
                                     { $eq: [{ $type: "$transactionStatusRaw" }, "object"] },
                                     {
-                                        // If it's an object with id, look it up
                                         $let: {
                                             vars: {
                                                 label: {
@@ -570,7 +437,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                                         }
                                     },
                                     {
-                                        // If it's a string (label ID), look it up
                                         $let: {
                                             vars: {
                                                 label: {
@@ -592,12 +458,11 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                                 ]
                             }
                         ]
-                    },
-                    paymentStatusNames: {
+                    } : null,
+                    paymentStatusNames: needsPaymentStatusConversion ? {
                         $cond: [
                             { $eq: [{ $type: "$paymentStatusRaw" }, "array"] },
                             {
-                                // Map array of label IDs to label names
                                 $map: {
                                     input: "$paymentStatusRaw",
                                     as: "labelId",
@@ -626,7 +491,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                                 $cond: [
                                     { $eq: [{ $type: "$paymentStatusRaw" }, "object"] },
                                     {
-                                        // If it's an object with id, look it up
                                         $let: {
                                             vars: {
                                                 label: {
@@ -649,10 +513,10 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                                 ]
                             }
                         ]
-                    }
+                    } : null
                 }
-            }
-        );
+            });
+        }
 
         // Dynamic matches based on filters
         const andConditions = [];
