@@ -72,11 +72,9 @@ const FUNDING_SOURCE_CODE_MAP: Record<string, string> = {
   "Home Support Care Management": "CM",
   "Restorative Care Pathway": "RC",
   "Assistive Technology - Short-term": "AT",
-  "Assistive Technology - Short Term": "AT",
-  "Assistive Technology - Short term": "AT",
   "End-of-Life Pathway": "EL",
   "Assistive Technology": "AT",
-  "Assistive Technology - Ongoing (Specified needs - Assistance Dogs)": "AS",
+  "Assistive Technology - Ongoing": "AS",
   "Home Modification": "HM",
   "Primary Supplements": "PS",
   "Unspent Home Care Package (HCP) Funds": "HCP"
@@ -111,15 +109,21 @@ interface ServiceRecord {
   deliveredBy?: string;
   itemId?: string;
   item?: string;
+  itemOrWraparound?: string;
+  itemDescriptionCode?: string;
+  itemDescription?: string;
   servicePlan?: string;
   wraparoundItemId?: string;
   wraparoundDescription?: string;
+  wraparoundDescriptionCode?: string;
   prescribedItem?: boolean | string;
   itemPurchasedMethod?: string;
   associatedProvider?: string;
   associatedProviderInvoiceNo?: string;
+  loanedByOrganisationName?: string;
   healthProfessionalTypeCode?: string;
   healthProfessionalTypeOther?: string;
+  deliveredByThirdParty?: string;
 }
 
 interface InvoiceSummary {
@@ -162,6 +166,7 @@ export default function InvoiceGenerator() {
   const [sortBy, setSortBy] = useState<"scheduledServiceDate" | "serviceDeliveryDate">("scheduledServiceDate");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [loading, setLoading] = useState(true);
+  const [exportingCSV, setExportingCSV] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
 
@@ -547,27 +552,18 @@ export default function InvoiceGenerator() {
     return '';
   };
 
-  const getFundingSourceCode = (fundingSource?: string, servicePlanName?: string) => {
+  const getFundingSourceCode = (fundingSource?: string) => {
     if (fundingSource) {
       const match = Object.entries(FUNDING_SOURCE_CODE_MAP).find(([key]) =>
         fundingSource.toLowerCase().includes(key.toLowerCase())
       );
       if (match) {
         return match[1];
+      } else {
+        return '';
       }
     }
 
-    if (servicePlanName) {
-      const cleaned = servicePlanName
-        .split(' ')
-        .map(word => word[0])
-        .join('')
-        .replace(/[^A-Z]/gi, '')
-        .toUpperCase();
-      if (cleaned) {
-        return cleaned.slice(0, 4);
-      }
-    }
 
     return fundingSource ? fundingSource.substring(0, 4).toUpperCase() : '';
   };
@@ -644,35 +640,6 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
       render: (record) => record.paymentStatus || '-'
     },
     {
-      key: 'invoiceNumber',
-      label: 'Invoice Number',
-      className: 'min-w-[220px]',
-      render: (record) => (
-        <div className="flex items-center gap-2">
-          <span className="font-medium">{record.invoiceNumber || '-'}</span>
-          {record.fileUrl && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={(e) => {
-                e.stopPropagation();
-                window.open(record.fileUrl, '_blank');
-              }}
-            >
-              <Download className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
-      )
-    },
-    {
-      key: 'careRecipientIdentifier',
-      label: 'Care Recipient Identifier',
-      className: 'min-w-[200px]',
-      render: (record) => record.careRecipientIdentifier || '-'
-    },
-    {
       key: 'participant',
       label: 'Participant',
       className: 'min-w-[200px]',
@@ -685,12 +652,6 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
       render: (record) => record.service || '-'
     },
     {
-      key: 'serviceIdentifier',
-      label: 'Service Identifier',
-      className: 'min-w-[180px]',
-      render: (record) => record.serviceIdentifier || '-'
-    },
-    {
       key: 'scheduledServiceDate',
       label: 'Scheduled Service Date',
       className: 'min-w-[180px]',
@@ -698,13 +659,13 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
     },
     {
       key: 'serviceDeliveryDate',
-      label: 'Delivery Date',
+      label: 'Service Delivery Date',
       className: 'min-w-[180px]',
       render: (record) => formatDisplayDate(record.serviceDeliveryDate)
     },
     {
       key: 'unit',
-      label: 'Unit Type',
+      label: 'Unit',
       className: 'min-w-[140px]',
       render: (record) => record.unit || '-'
     },
@@ -716,7 +677,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
     },
     {
       key: 'unitPrice',
-      label: 'Price Per Unit',
+      label: 'Unit Price ($)',
       className: 'min-w-[150px]',
       render: (record) => formatCurrency(record.unitPrice)
     },
@@ -742,15 +703,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
       key: 'fundingSource',
       label: 'Funding Source',
       className: 'min-w-[200px]',
-      render: (record) => {
-        const code = getFundingSourceCode(record.fundingSource, record.servicePlan);
-        return (
-          <div className="flex flex-col gap-1">
-            <span>{record.fundingSource || '-'}</span>
-            {code && <Badge variant="outline" className="w-fit text-xs">{code}</Badge>}
-          </div>
-        );
-      }
+      render: (record) => record.fundingSource || '-'
     },
     {
       key: 'notes',
@@ -764,103 +717,13 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
           </span>
         ) : '-';
       }
-    },
-    {
-      key: 'deliveredByThirdParty',
-      label: 'Delivered By a Third Party',
-      className: 'min-w-[200px]',
-      render: (record) => {
-        const delivered = getDeliveredByThirdParty(record.deliveredBy);
-        return delivered ? delivered.toUpperCase() : '-';
-      }
-    },
-    {
-      key: 'itemOrWraparound',
-      label: 'Item or Wraparound',
-      className: 'min-w-[180px]',
-      render: (record) => getItemOrWraparound(record) || '-'
-    },
-    {
-      key: 'itemDescriptionCode',
-      label: 'Item Description Code',
-      className: 'min-w-[190px]',
-      render: (record) => {
-        const value = getItemOrWraparound(record) === 'Item' ? record.itemId : '';
-        return value || '-';
-      }
-    },
-    {
-      key: 'itemDescription',
-      label: 'Item Description',
-      className: 'min-w-[200px]',
-      render: (record) => (getItemOrWraparound(record) === 'Item' ? record.item : '') || '-'
-    },
-    {
-      key: 'wraparoundDescriptionCode',
-      label: 'Wraparound Description Code',
-      className: 'min-w-[220px]',
-      render: (record) => (getItemOrWraparound(record) === 'Wraparound' ? record.wraparoundItemId : '') || '-'
-    },
-    {
-      key: 'wraparoundDescription',
-      label: 'Wraparound Description',
-      className: 'min-w-[220px]',
-      render: (record) => (getItemOrWraparound(record) === 'Wraparound' ? record.wraparoundDescription : '') || '-'
-    },
-    {
-      key: 'prescribedItem',
-      label: 'Prescribed Item',
-      className: 'min-w-[150px]',
-      render: (record) => record.prescribedItem || 'N'
-    },
-    {
-      key: 'purchasedMethodType',
-      label: 'Purchased Method Type',
-      className: 'min-w-[200px]',
-      render: (record) => getPurchasedMethodType(record.itemPurchasedMethod || '') || '-'
-    },
-    {
-      key: 'loanedByOrganisationName',
-      label: 'Loaned by Organisation Name',
-      className: 'min-w-[220px]',
-      render: (record) => {
-        const method = getPurchasedMethodType(record.itemPurchasedMethod || '');
-        return method === 'LOANED' ? (record.associatedProvider || '-') : '-';
-      }
-    },
-    {
-      key: 'loanedByInvoiceNumber',
-      label: 'Loaned By Invoice Number',
-      className: 'min-w-[220px]',
-      render: (record) => {
-        const method = getPurchasedMethodType(record.itemPurchasedMethod || '');
-        return method === 'LOANED' ? (record.associatedProviderInvoiceNo || '-') : '-';
-      }
-    },
-    {
-      key: 'healthProfessionalTypeCode',
-      label: 'Health Professional Type Code',
-      className: 'min-w-[240px]',
-      render: (record) => record.healthProfessionalTypeCode || '-'
-    },
-    {
-      key: 'healthProfessionalTypeOther',
-      label: 'Health Professional Type Other',
-      className: 'min-w-[240px]',
-      render: (record) => record.healthProfessionalTypeOther || '-'
-    },
-    {
-      key: 'itemFirstPayment',
-      label: 'Item First Payment',
-      className: 'min-w-[180px]',
-      render: (record) => getItemFirstPaymentDisplay(record.itemFirstPayment)
     }
   ];
 
   // Export handlers
   const handleExportCSV = async () => {
     try {
-      setLoading(true);
+      setExportingCSV(true);
 
       const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator`;
       const params = new URLSearchParams();
@@ -922,7 +785,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
 
       if (allItems.length === 0) {
         showErrorToast('No records to export.');
-        setLoading(false);
+        setExportingCSV(false);
         return;
       }
 
@@ -935,23 +798,15 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
       };
 
       const csvHeaders = [
-        'Payment Status',
-        'Item External Reference Identifier',
+        'Invoice Number',
         'Care Recipient Identifier',
-        'Participant',
-        'Service',
         'Service Identifier',
-        'Scheduled Service Date',
-        'Delivery Date',
-        'Unit Type',
+        'Service Delivery Date',
+        'Unit',
         'Quantity',
-        'Price Per Unit',
-        'Total Amount',
-        'Gov Subsidy',
-        'Participant Contribution',
+        'Unit Price ($)',
         'Funding Source',
-        'Notes',
-        'Delivered By a Third Party',
+        'Delivered By Third Party',
         'Item or Wraparound',
         'Item Description Code',
         'Item Description',
@@ -962,8 +817,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
         'Loaned by Organisation Name',
         'Loaned By Invoice Number',
         'Health Professional Type Code',
-        'Health Professional Type Other',
-        'Item First Payment'
+        'Health Professional Type Other'
       ];
 
       const csvRows: string[] = [];
@@ -988,30 +842,20 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
         const loanedByInvoiceNumber = purchasedMethodType === 'LOANED' ? (item.associatedProviderInvoiceNo || '') : '';
         const healthProfessionalTypeCode = item.healthProfessionalTypeCode || '';
         const healthProfessionalTypeOther = item.healthProfessionalTypeOther || '';
-        const fundingSourceCode = getFundingSourceCode(item.fundingSource, item.servicePlan);
-        const itemFirstPayment = getItemFirstPaymentDisplay(item.itemFirstPayment);
-        const scheduledDateCsv = formatDateForCsv(item.scheduledServiceDate || item.scheduledStart);
         const serviceDeliveryDateCsv = formatDateForCsv(item.serviceDeliveryDate);
-        const cleanedNotes = stripHtml(item.notes);
+        // Get funding source code - try multiple sources
+        const fundingSourceCode = getFundingSourceCode(item.fundingSource);
 
         csvRows.push(
           [
-            escapeForCsv(item.paymentStatus || ''),
             escapeForCsv(invoiceNumber),
             escapeForCsv(careRecipientIdentifier),
-            escapeForCsv(item.participant || ''),
-            escapeForCsv(item.service || ''),
             escapeForCsv(serviceIdentifier),
-            escapeForCsv(scheduledDateCsv),
             escapeForCsv(serviceDeliveryDateCsv),
             escapeForCsv(item.unit || ''),
             escapeForCsv(item.quantity ?? ''),
             escapeForCsv(formatNumberForCsv(item.unitPrice)),
-            escapeForCsv(formatNumberForCsv(item.totalAmount)),
-            escapeForCsv(formatNumberForCsv(item.govSubsidy)),
-            escapeForCsv(formatNumberForCsv(item.participantContribution)),
-            escapeForCsv(fundingSourceCode),
-            escapeForCsv(cleanedNotes),
+            escapeForCsv(fundingSourceCode || ''),
             escapeForCsv(deliveredByThirdParty),
             escapeForCsv(itemOrWraparound),
             escapeForCsv(itemDescriptionCode),
@@ -1023,8 +867,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
             escapeForCsv(loanedByOrganisationName),
             escapeForCsv(loanedByInvoiceNumber),
             escapeForCsv(healthProfessionalTypeCode),
-            escapeForCsv(healthProfessionalTypeOther),
-            escapeForCsv(itemFirstPayment)
+            escapeForCsv(healthProfessionalTypeOther)
           ].join(',')
         );
       });
@@ -1057,12 +900,12 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
         URL.revokeObjectURL(url);
       }, 100);
 
-      setLoading(false);
+      setExportingCSV(false);
       showSuccessToast(`Successfully exported ${allItems.length} records to CSV.`);
     } catch (err: any) {
       console.error('Error exporting CSV:', err);
       showErrorToast('Failed to export CSV', { description: err.message });
-      setLoading(false);
+      setExportingCSV(false);
     }
   };
 
@@ -1082,14 +925,26 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
         }
       });
 
-      const description = response.data?.message || 'Manual sync triggered successfully.';
-      showSuccessToast('ISO+ sync started', {
-        description: `${description} It may take a few minutes—refresh to see new records.`
-      });
+      if (response.data?.success) {
+        const description = response.data?.message || 'Manual sync triggered successfully.';
+        showSuccessToast('Manual sync queued', {
+          description: `${description} The sync job has been added to the queue and will start processing shortly. It may take a few minutes—refresh to see new records.`
+        });
+        
+        // Optionally refresh data after a short delay to show updated status
+        setTimeout(() => {
+          setRefreshKey(prev => prev + 1);
+        }, 2000);
+      } else {
+        showErrorToast('Sync not started', {
+          description: response.data?.message || 'Sync could not be started. It may already be in progress.'
+        });
+      }
     } catch (err: any) {
       console.error('Error triggering manual sync:', err);
-      showErrorToast('Failed to trigger ISO+ sync', {
-        description: err.response?.data?.message || err.message || 'Unknown error'
+      const errorMessage = err.response?.data?.message || err.message || 'Unknown error';
+      showErrorToast('Failed to trigger manual sync', {
+        description: errorMessage
       });
     } finally {
       setIsManualSyncing(false);
@@ -1404,6 +1259,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
                   variant="outline"
                   onClick={handleExportCSV}
                   className="gap-2"
+                  disabled={exportingCSV}
                 >
                   <FileSpreadsheet className="h-4 w-4" />
                   Export to CSV
