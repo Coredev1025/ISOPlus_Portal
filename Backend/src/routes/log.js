@@ -13,6 +13,13 @@ const logSchema = new mongoose.Schema({
     metadata: Object,
 });
 
+// Create TTL index on timestamp field (default: 90 days, configurable via LOG_TTL_DAYS env var)
+// TTL index automatically deletes documents older than the specified time
+const ttlDays = parseInt(process.env.LOG_TTL_DAYS) || 7; // Default to 90 days
+const ttlSeconds = ttlDays * 24 * 60 * 60; // Convert days to seconds
+
+logSchema.index({ timestamp: 1 }, { expireAfterSeconds: ttlSeconds });
+
 // Create a model from the schema
 const Log = mongoose.model('Log', logSchema);
 

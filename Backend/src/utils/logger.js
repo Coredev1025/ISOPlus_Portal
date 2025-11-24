@@ -115,8 +115,6 @@ const logger = winston.createLogger({
       },
       collection: 'logs',
       format: json(),
-      capped: true,
-      cappedSize: 10000000, 
       tryReconnect: true,
       metaKey: 'metadata'
     })
