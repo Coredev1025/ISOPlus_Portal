@@ -12,7 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import Spinner from "@/components/ui/spin";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import axios from "@/app/utils/axiosConfig";
 import { Search, History, Terminal, Download, Filter, AlertTriangle, AlertCircle, Info, Bug, XCircle, RollerCoaster } from "lucide-react";
 import { Header } from "@/components/ui/header";
@@ -391,7 +391,8 @@ function GlobalAuditTrail() {
 }
 
 function GlobalApplicationLogs() {
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
@@ -399,6 +400,18 @@ function GlobalApplicationLogs() {
   const [logs, setLogs] = useState<Log[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [logsPerPage, setLogsPerPage] = useState(10);
+  const [totalLogs, setTotalLogs] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [knownSources, setKnownSources] = useState<string[]>([]);
+  const hasLoadedOnce = useRef(false);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchInput);
+    }, 400);
+
+    return () => clearTimeout(handler);
+  }, [searchInput]);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -406,27 +419,66 @@ function GlobalApplicationLogs() {
     const fetchLogs = async () => {
       setLoading(true);
       try {
+        const params: Record<string, string | number> = {
+          page: currentPage,
+          limit: logsPerPage,
+        };
+
+        if (debouncedSearch) {
+          params.search = debouncedSearch;
+        }
+        if (levelFilter !== "all") {
+          params.level = levelFilter;
+        }
+        if (sourceFilter !== "all") {
+          params.source = sourceFilter;
+        }
+
         const response = await axios.get(
           `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/log`,
           {
+            params,
             signal: abortController.signal,
             withCredentials: true,
           }
         );
-        const formattedLogs = response.data.map((item: any, i: number) => ({
-          id: `log-${i + 1}`,
+
+        const { items, total, page, totalPages: apiTotalPages } = response.data;
+
+        const formattedLogs: Log[] = items.map((item: any, i: number) => ({
+          id: item._id || `log-${(page - 1) * logsPerPage + i + 1}`,
           timestamp: item.timestamp,
-          level: item.level.toUpperCase(),
+          level: (item.level || '').toUpperCase(),
           message: item.message,
-          source: item.metadata.source,
+          source: item.metadata?.source || 'Unknown',
           details: {
             metadata: {
-              ...item.metadata
+              ...(item.metadata || {})
             }
           }
         }));
+
         setLogs(formattedLogs);
-        showFetchSuccessToast("Application logs");
+        setTotalLogs(total);
+        setTotalPages(apiTotalPages || Math.ceil(total / logsPerPage) || 1);
+
+        if (page !== currentPage) {
+          setCurrentPage(page);
+        }
+
+        setKnownSources((prev) => {
+          const combined = new Set(prev);
+          formattedLogs
+            .map((log) => log.source)
+            .filter((source): source is string => Boolean(source))
+            .forEach((source) => combined.add(source));
+          return Array.from(combined);
+        });
+
+        if (!hasLoadedOnce.current) {
+          showFetchSuccessToast("Application logs");
+          hasLoadedOnce.current = true;
+        }
       } catch (error: any) {
         if (error.name !== "CanceledError" && error.name !== "AbortError") {
           console.error("Error fetching logs:", error);
@@ -442,30 +494,31 @@ function GlobalApplicationLogs() {
       abortController.abort();
       setLoading(false);
     };
-  }, []);
+  }, [currentPage, logsPerPage, debouncedSearch, levelFilter, sourceFilter]);
 
-  useEffect(() => {
+  const uniqueSources = knownSources.length
+    ? knownSources
+    : Array.from(new Set(logs.map(log => log.source).filter(Boolean)));
+
+  const handleSearchChange = (value: string) => {
+    setSearchInput(value);
     setCurrentPage(1);
-  }, [searchQuery, levelFilter, sourceFilter, logsPerPage]);
+  };
 
-  const uniqueSources = (logs || []).map(log => log.source).filter((value, index, self) => self.indexOf(value) === index);
+  const handleLevelFilterChange = (value: string) => {
+    setLevelFilter(value);
+    setCurrentPage(1);
+  };
 
-  const filteredLogs = (logs || []).filter(log => {
-    const matchesSearch =
-      log.message.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.source.toLowerCase().includes(searchQuery.toLowerCase());
+  const handleSourceFilterChange = (value: string) => {
+    setSourceFilter(value);
+    setCurrentPage(1);
+  };
 
-    const matchesLevel = levelFilter === "all" || log.level === levelFilter;
-    const matchesSource = sourceFilter === "all" || log.source === sourceFilter;
-
-    return matchesSearch && matchesLevel && matchesSource;
-  });
-
-  const totalLogs = filteredLogs.length;
-  const totalPages = Math.ceil(totalLogs / logsPerPage);
-  const paginatedLogs = filteredLogs
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-    .slice((currentPage - 1) * logsPerPage, currentPage * logsPerPage);
+  const handleLogsPerPageChange = (value: number) => {
+    setLogsPerPage(value);
+    setCurrentPage(1);
+  };
 
   return (
     <Card className="p-6">
@@ -488,15 +541,15 @@ function GlobalApplicationLogs() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
             <Input
               placeholder="Search logs..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={searchInput}
+              onChange={(e) => handleSearchChange(e.target.value)}
               className="pl-9"
             />
           </div>
         </div>
 
         <div className="flex gap-4">
-          <Select value={levelFilter} onValueChange={setLevelFilter}>
+          <Select value={levelFilter} onValueChange={handleLevelFilterChange}>
             <SelectTrigger className="w-[160px]">
               <Filter className="h-4 w-4 mr-2" />
               <SelectValue placeholder="Log level" />
@@ -509,7 +562,7 @@ function GlobalApplicationLogs() {
             </SelectContent>
           </Select>
 
-          <Select value={sourceFilter} onValueChange={setSourceFilter}>
+          <Select value={sourceFilter} onValueChange={handleSourceFilterChange}>
             <SelectTrigger className="w-[200px]">
               <Filter className="h-4 w-4 mr-2" />
               <SelectValue placeholder="Source" />
@@ -533,7 +586,7 @@ function GlobalApplicationLogs() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {paginatedLogs
+          {logs
             .map((log) => (
               <React.Fragment key={log.id as string}>
                 <TableRow
@@ -544,8 +597,8 @@ function GlobalApplicationLogs() {
                     {new Date(log.timestamp as string).toLocaleString("en-AU")}
                   </TableCell>
                   <TableCell>
-                    <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${LOG_LEVEL_COLORS[log.level as LogLevel]}`}>
-                      {LOG_LEVEL_ICONS[log.level as LogLevel]}
+                    <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${LOG_LEVEL_COLORS[log.level as LogLevel] || ''}`}>
+                      {LOG_LEVEL_ICONS[log.level as LogLevel] || LOG_LEVEL_ICONS.INFO}
                       {log.level}
                     </span>
                   </TableCell>
@@ -901,7 +954,7 @@ function GlobalApplicationLogs() {
           <span className="ml-2"><Spinner /></span>
         </div>
         :
-        paginatedLogs.length === 0 && (
+        logs.length === 0 && !isLoading && (
           <div className="text-center py-8 text-muted-foreground">
             No logs found matching your search.
           </div>
@@ -913,7 +966,7 @@ function GlobalApplicationLogs() {
           <select
             className="border rounded px-2 py-1 text-sm"
             value={logsPerPage}
-            onChange={e => setLogsPerPage(Number(e.target.value))}
+            onChange={e => handleLogsPerPageChange(Number(e.target.value))}
           >
             {[5, 10, 20, 50, 100].map(size => (
               <option key={size} value={size}>{size}</option>
