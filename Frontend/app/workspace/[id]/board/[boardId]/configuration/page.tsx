@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Settings, Wand2 } from "lucide-react";
+import { ArrowLeft, Settings, Wand2, Loader2 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useEffect, useState } from "react";
@@ -108,6 +108,7 @@ export default function ConfigurationPage() {
   const [selectedPdfAttribute, setSelectedPdfAttribute] = useState<string>("");
   const [boardLabel, setBoardLabel] = useState<BoardLabel>('No Label');
   const [isoAttributes, setIsoAttributes] = useState<ISOAttribute[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
   const [suggestionDialog, setSuggestionDialog] = useState<{
     isOpen: boolean;
     suggestion: BoardLabel;
@@ -244,6 +245,7 @@ export default function ConfigurationPage() {
   };
 
   const handleSaveConfiguration = async () => {
+    setIsSaving(true);
     try {
       const attr = isoAttributes.find(item => item.id == selectedAttribute);
       const pdfAttr = isoAttributes.find(item => item.id == selectedPdfAttribute);
@@ -262,16 +264,22 @@ export default function ConfigurationPage() {
       showSaveErrorToast("board configuration", error.response?.data?.message || "Failed to save board configuration");
     }
     if (updateAutomation) {
-      const automationResponse = await axios.put(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/automation/${id}/${boardId}`,
-        {}
-      );
-      if (automationResponse.status === 200) {
-        showUpdateSuccessToast("Portal automation");
-      } else {
-        showUpdateErrorToast("Portal automation", automationResponse.data?.message || "Failed to update portal automation");
+      try {
+        const automationResponse = await axios.put(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/automation/${id}/${boardId}`,
+          {}
+        );
+        if (automationResponse.status === 200) {
+          showUpdateSuccessToast("Portal automation");
+        } else {
+          showUpdateErrorToast("Portal automation", automationResponse.data?.message || "Failed to update portal automation");
+        }
+      } catch (error: any) {
+        console.error("Error updating automation:", error);
+        showUpdateErrorToast("Portal automation", error.response?.data?.message || "Failed to update portal automation");
       }
     }
+    setIsSaving(false);
   };
 
   return (
@@ -481,8 +489,16 @@ export default function ConfigurationPage() {
                   onClick={handleSaveConfiguration}
                   className="w-full"
                   size="lg"
+                  disabled={isSaving}
                 >
-                  Save Configuration
+                  {isSaving ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Saving...
+                    </span>
+                  ) : (
+                    "Save Configuration"
+                  )}
                 </Button>
               </div>
             </div>

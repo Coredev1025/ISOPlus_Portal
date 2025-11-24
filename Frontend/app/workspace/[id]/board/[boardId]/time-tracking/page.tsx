@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Clock } from "lucide-react";
+import { ArrowLeft, Clock, Loader2 } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState, useCallback } from "react";
 import { Header } from "@/components/ui/header";
@@ -23,6 +23,7 @@ export default function TimeTrackingPage() {
   const pathname = usePathname();
   const [boards, setBoards] = useState<Board[]>([]);
   const [timeTrackingEnabled, setTimeTrackingEnabled] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const { workspaces } = useAppContext();
   const id = pathname.split("/")[2];
   const boardId = pathname.split("/")[4];
@@ -84,10 +85,18 @@ export default function TimeTrackingPage() {
     return null;
   }
 
-  const handleSaveSettings = () => {
-    // Save settings
-    toast.success("Time tracking settings saved successfully");
-    router.push(`/workspace/${id}/board/${boardId}`);
+  const handleSaveSettings = async () => {
+    setIsSaving(true);
+    try {
+      // Save settings
+      toast.success("Time tracking settings saved successfully");
+      router.push(`/workspace/${id}/board/${boardId}`);
+    } catch (error: any) {
+      console.error("Error saving time tracking settings:", error);
+      toast.error("Failed to save time tracking settings");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -136,8 +145,16 @@ export default function TimeTrackingPage() {
                 <Button 
                   className="w-full"
                   onClick={handleSaveSettings}
+                  disabled={isSaving}
                 >
-                  Save Settings
+                  {isSaving ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Saving...
+                    </span>
+                  ) : (
+                    "Save Settings"
+                  )}
                 </Button>
               </div>
             </div>
