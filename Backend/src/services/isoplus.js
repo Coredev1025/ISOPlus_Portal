@@ -773,6 +773,56 @@ export async function getBoardAttributes(workspaceId, boardId) {
     }
 }
 
+// Helper function to safely extract error message from various error formats
+function getErrorMessage(err) {
+    if (!err) return 'Unknown error';
+    
+    // Handle axios errors with response
+    if (err.response?.data) {
+        const data = err.response.data;
+        if (typeof data === 'string') {
+            return data;
+        } else if (typeof data === 'object') {
+            // Try to extract message from common error response formats
+            if (data.message) return String(data.message);
+            if (data.error) return String(data.error);
+            if (data.errors && Array.isArray(data.errors)) {
+                return data.errors.map(e => typeof e === 'string' ? e : e.message || JSON.stringify(e)).join(', ');
+            }
+            // Fallback to JSON stringification
+            try {
+                return JSON.stringify(data);
+            } catch {
+                return String(data);
+            }
+        }
+        return String(data);
+    }
+    
+    // Handle network errors, timeouts, etc.
+    if (err.code === 'ECONNABORTED') return 'Request timeout';
+    if (err.code === 'ENOTFOUND') return 'DNS lookup failed';
+    if (err.code === 'ECONNREFUSED') return 'Connection refused';
+    if (err.code === 'ETIMEDOUT') return 'Connection timed out';
+    
+    // Handle standard Error objects
+    if (err.message) return err.message;
+    
+    // Last resort
+    try {
+        return String(err);
+    } catch {
+        return 'Unknown error occurred';
+    }
+}
+
+// Helper function to safely check if error message contains a specific string
+function errorMessageIncludes(err, searchString) {
+    if (!err || !searchString) return false;
+    const errorMsg = getErrorMessage(err);
+    return typeof errorMsg === 'string' && errorMsg.includes(searchString);
+}
+
 // Function to validate board attributes before logo processing
 async function validateBoardAttributes(workspaceId, boardId, viewId, coverAttributeId, req) {
     try {
@@ -900,23 +950,84 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
     logOperationStart('ISO+™ Service', 'setLogo', operationContext, req);
     
     try {
+        // Validate input parameters
+        if (!authorization) {
+            throw new Error('Authorization token is required');
+        }
+        if (!workspaceId) {
+            throw new Error('Workspace ID is required');
+        }
+        if (!logo) {
+            throw new Error('Logo file is required');
+        }
+        if (!logo.buffer) {
+            throw new Error('Logo buffer is required');
+        }
+        if (!logo.originalname) {
+            throw new Error('Logo filename is required');
+        }
+        if (!type || (type !== 'form' && type !== 'document')) {
+            throw new Error('Logo type must be either "form" or "document"');
+        }
+        
         // Log workspace validation
         info('ISO+™ Service', 'Validating workspace access', { workspaceId, requestId }, extractContextFromReq(req));
         const boards = await getBoard(authorization, workspaceId);
+        
+        if (!boards || boards.status !== 200) {
+            throw new Error(`Failed to fetch boards: ${getErrorMessage(boards?.error || { message: 'Unknown error' })}`);
+        }
+        
         const body = new FormData();
         body.append('file', logo.buffer, logo.originalname);
 
-        const uploadImageURL = await axios.post(
-            `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/attachments/file`,
-            body,
-            {
-                headers: {
-                    "Authorization": authorization,
-                    ...body.getHeaders(),
-                    "Accept": "application/json",
-                },
+        let uploadImageURL;
+        try {
+            uploadImageURL = await axios.post(
+                `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/attachments/file`,
+                body,
+                {
+                    headers: {
+                        "Authorization": authorization,
+                        ...body.getHeaders(),
+                        "Accept": "application/json",
+                    },
+                }
+            );
+        } catch (err) {
+            const uploadErrorContext = {
+                workspaceId,
+                requestId,
+                errorDetails: getErrorMessage(err),
+                statusCode: err.response?.status,
+                stackTrace: err.stack,
+                logoFileName: logo?.originalname,
+                logoSize: logo?.size,
+                logoMimeType: logo?.mimetype
+            };
+            
+            if (errorMessageIncludes(err, 'unauthorized') || err.response?.status === 401) {
+                error('ISO+™ Service', 'Error uploading logo: Unauthorized', uploadErrorContext, extractContextFromReq(req));
+            } else if (errorMessageIncludes(err, 'forbidden') || err.response?.status === 403) {
+                error('ISO+™ Service', 'Error uploading logo: Forbidden', uploadErrorContext, extractContextFromReq(req));
+            } else if (errorMessageIncludes(err, 'timeout') || err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
+                error('ISO+™ Service', 'Error uploading logo: Request timeout', uploadErrorContext, extractContextFromReq(req));
+            } else {
+                error('ISO+™ Service', 'Error uploading logo file:', uploadErrorContext, extractContextFromReq(req));
             }
-        );
+            throw err;
+        }
+
+        // Validate upload response
+        if (!uploadImageURL || uploadImageURL.status !== 201) {
+            throw new Error(`Logo upload failed with status ${uploadImageURL?.status || 'unknown'}`);
+        }
+        if (!uploadImageURL.data || !uploadImageURL.data.id) {
+            throw new Error('Logo upload response missing required data (id)');
+        }
+        if (!uploadImageURL.data.link && type === 'form') {
+            throw new Error('Logo upload response missing required data (link) for form type');
+        }
 
         if (uploadImageURL.status == 201 && boards.status === 200 && boards.board?.length > 0) {
             info('ISO+™ Service', 'Logo uploaded successfully, processing boards', { 
@@ -935,14 +1046,38 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                     boardName: boardItem.name,
                     boardDescription: boardItem.description 
                 }, req);
-                const response = await getAllViews(authorization, workspaceId, boardItem.id);
-                if (response.status !== 200) {
+                
+                let response;
+                try {
+                    response = await getAllViews(authorization, workspaceId, boardItem.id);
+                } catch (err) {
+                    const viewsErrorContext = {
+                        workspaceId,
+                        requestId,
+                        boardId: boardItem.id,
+                        boardName: boardItem.name,
+                        errorDetails: getErrorMessage(err),
+                        statusCode: err.response?.status,
+                        stackTrace: err.stack
+                    };
+                    
+                    if (errorMessageIncludes(err, 'timeout') || err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
+                        warn('ISO+™ Service', `Request timeout when fetching views for board ${boardItem.id}`, viewsErrorContext, req);
+                    } else if (errorMessageIncludes(err, 'network') || err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED') {
+                        warn('ISO+™ Service', `Network error when fetching views for board ${boardItem.id}`, viewsErrorContext, req);
+                    } else {
+                        warn('ISO+™ Service', `Failed to fetch views for board ${boardItem.id}`, viewsErrorContext, req);
+                    }
+                    continue;
+                }
+                
+                if (!response || response.status !== 200) {
                     warn(`ISO+™ Service`, `Failed to fetch views for board ${boardItem.id}`, { 
                         workspaceId, 
                         requestId, 
                         boardId: boardItem.id, 
-                        responseStatus: response.status,
-                        responseData: response.data 
+                        responseStatus: response?.status,
+                        responseData: response?.data 
                     }, req);
                     continue;
                 }
@@ -997,7 +1132,30 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                             });
                             info('ISO+™ Service', `Logo set successfully for view: ${viewItem.id}`);
                         } catch (err) {
-                            error('ISO+™ Service', `Error setting logo for view: ${err.response?.data || err.message}`);
+                            const errorContext = {
+                                workspaceId,
+                                boardId: boardItem.id,
+                                boardName: boardItem.name,
+                                viewId: viewItem.id,
+                                viewName: viewItem.name,
+                                viewType: viewItem.type,
+                                requestId,
+                                errorDetails: getErrorMessage(err),
+                                statusCode: err.response?.status,
+                                stackTrace: err.stack,
+                                requestPayload: updateView
+                            };
+                            
+                            // Check for specific error types
+                            if (errorMessageIncludes(err, 'not found') || err.response?.status === 404) {
+                                logApiError('ISO+™ Service', 'View not found when setting form logo:', errorContext, req);
+                            } else if (errorMessageIncludes(err, 'unauthorized') || err.response?.status === 401) {
+                                logApiError('ISO+™ Service', 'Unauthorized when setting form logo:', errorContext, req);
+                            } else if (errorMessageIncludes(err, 'forbidden') || err.response?.status === 403) {
+                                logApiError('ISO+™ Service', 'Forbidden when setting form logo:', errorContext, req);
+                            } else {
+                                logApiError('ISO+™ Service', 'Error setting form logo for view:', errorContext, req);
+                            }
                         }
                         await new Promise(resolve => setTimeout(resolve, 2000));
                     }
@@ -1075,7 +1233,33 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                             viewId: viewItem.id,
                             coverAttributeId: coverAttributeid
                         }, req);
-                        const items = await getItem(workspaceId, boardItem.id, viewItem.folder_id);
+                        
+                        let items;
+                        try {
+                            items = await getItem(workspaceId, boardItem.id, viewItem.folder_id);
+                        } catch (err) {
+                            const itemsErrorContext = {
+                                workspaceId,
+                                requestId,
+                                boardId: boardItem.id,
+                                viewId: viewItem.id,
+                                folderId: viewItem.folder_id,
+                                coverAttributeId: coverAttributeid,
+                                errorDetails: getErrorMessage(err),
+                                statusCode: err.response?.status,
+                                stackTrace: err.stack
+                            };
+                            
+                            if (errorMessageIncludes(err, 'timeout') || err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
+                                warn('ISO+™ Service', 'Request timeout when fetching items for document view', itemsErrorContext, req);
+                            } else if (errorMessageIncludes(err, 'network') || err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED') {
+                                warn('ISO+™ Service', 'Network error when fetching items for document view', itemsErrorContext, req);
+                            } else {
+                                warn('ISO+™ Service', 'Error fetching items for document view', itemsErrorContext, req);
+                            }
+                            continue;
+                        }
+                        
                         if (items.status == 200 && items.item && items.item.length > 0) {
                             info('ISO+™ Service', 'Items fetched successfully for document view', { 
                                 workspaceId, 
@@ -1096,7 +1280,33 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                                     itemName: item.name
                                 }, req);
                                 
-                                const itemValues = await getItemValues(workspaceId, boardItem.id, item.id);
+                                let itemValues;
+                                try {
+                                    itemValues = await getItemValues(workspaceId, boardItem.id, item.id);
+                                } catch (err) {
+                                    const itemValuesErrorContext = {
+                                        workspaceId,
+                                        requestId,
+                                        boardId: boardItem.id,
+                                        viewId: viewItem.id,
+                                        itemId: item.id,
+                                        itemName: item.name,
+                                        coverAttributeId: coverAttributeid,
+                                        errorDetails: getErrorMessage(err),
+                                        statusCode: err.response?.status,
+                                        stackTrace: err.stack
+                                    };
+                                    
+                                    if (errorMessageIncludes(err, 'timeout') || err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
+                                        warn('ISO+™ Service', 'Request timeout when fetching item values', itemValuesErrorContext, req);
+                                    } else if (errorMessageIncludes(err, 'network') || err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED') {
+                                        warn('ISO+™ Service', 'Network error when fetching item values', itemValuesErrorContext, req);
+                                    } else {
+                                        warn('ISO+™ Service', 'Error fetching item values', itemValuesErrorContext, req);
+                                    }
+                                    continue;
+                                }
+                                
                                 if (itemValues) {
                                     info('ISO+™ Service', 'Item values fetched, looking for cover attribute', { 
                                         workspaceId, 
@@ -1157,24 +1367,24 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                                             folderId: viewItem.folder_id,
                                             coverAttributeId: coverAttributeid,
                                             requestId,
-                                            errorDetails: err.response?.data || err.message,
+                                            errorDetails: getErrorMessage(err),
                                             statusCode: err.response?.status,
                                             requestPayload: {
                                                 values: [{
-                                                    data: uploadImageURL.data.id,
+                                                    data: uploadImageURL?.data?.id,
                                                     attribute_id: coverAttributeid
                                                 }]
                                             },
                                             stackTrace: err.stack,
                                             itemValues: itemValues?.values?.map(v => ({
-                                                attributeId: v.attribute.id,
-                                                attributeName: v.attribute.name,
-                                                attributeType: v.attribute.type,
+                                                attributeId: v.attribute?.id,
+                                                attributeName: v.attribute?.name,
+                                                attributeType: v.attribute?.type,
                                                 data: v.data
                                             })) || [],
                                             viewSettings: viewItem.settings,
                                             uploadDetails: {
-                                                uploadId: uploadImageURL.data.id,
+                                                uploadId: uploadImageURL?.data?.id,
                                                 fileName: logo?.originalname,
                                                 fileSize: logo?.size,
                                                 mimeType: logo?.mimetype
@@ -1182,11 +1392,39 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                                         };
                                         
                                         // Use specialized logging for attribute errors
-                                        if (err.response?.data && err.response.data.includes('Attribute(s) not recognized')) {
+                                        if (errorMessageIncludes(err, 'Attribute(s) not recognized')) {
                                             logAttributeError(
                                                 'ISO+™ Service', 
                                                 'Error updating item for document logo: Attribute not recognized', 
                                                 coverAttributeid, 
+                                                errorContext, 
+                                                req
+                                            );
+                                        } else if (errorMessageIncludes(err, 'not found') || err.response?.status === 404) {
+                                            logApiError(
+                                                'ISO+™ Service', 
+                                                'Error updating item for document logo: Item or attribute not found', 
+                                                errorContext, 
+                                                req
+                                            );
+                                        } else if (errorMessageIncludes(err, 'unauthorized') || err.response?.status === 401) {
+                                            logApiError(
+                                                'ISO+™ Service', 
+                                                'Error updating item for document logo: Unauthorized', 
+                                                errorContext, 
+                                                req
+                                            );
+                                        } else if (errorMessageIncludes(err, 'forbidden') || err.response?.status === 403) {
+                                            logApiError(
+                                                'ISO+™ Service', 
+                                                'Error updating item for document logo: Forbidden', 
+                                                errorContext, 
+                                                req
+                                            );
+                                        } else if (errorMessageIncludes(err, 'timeout') || err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
+                                            logApiError(
+                                                'ISO+™ Service', 
+                                                'Error updating item for document logo: Request timeout', 
                                                 errorContext, 
                                                 req
                                             );
@@ -1221,14 +1459,26 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                                     viewType: viewItem.type,
                                     folderId: viewItem.folder_id,
                                     requestId,
-                                    errorDetails: err.response?.data || err.message,
+                                    errorDetails: getErrorMessage(err),
                                     statusCode: err.response?.status,
                                     requestPayload: viewItem,
                                     stackTrace: err.stack,
                                     viewSettings: viewItem.settings,
                                     editorItems: viewItem.settings?.editorItems || {}
                                 };
-                                error('ISO+™ Service', 'Error setting logo for view:', errorContext, extractContextFromReq(req));
+                                
+                                // Check for specific error types
+                                if (errorMessageIncludes(err, 'not found') || err.response?.status === 404) {
+                                    logApiError('ISO+™ Service', 'View not found when setting document logo:', errorContext, req);
+                                } else if (errorMessageIncludes(err, 'unauthorized') || err.response?.status === 401) {
+                                    logApiError('ISO+™ Service', 'Unauthorized when setting document logo:', errorContext, req);
+                                } else if (errorMessageIncludes(err, 'forbidden') || err.response?.status === 403) {
+                                    logApiError('ISO+™ Service', 'Forbidden when setting document logo:', errorContext, req);
+                                } else if (errorMessageIncludes(err, 'timeout') || err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
+                                    logApiError('ISO+™ Service', 'Request timeout when setting document logo:', errorContext, req);
+                                } else {
+                                    logApiError('ISO+™ Service', 'Error setting document logo for view:', errorContext, req);
+                                }
                             }
                         }
                         await new Promise(resolve => setTimeout(resolve, 2000));
@@ -1244,13 +1494,39 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
         const errorContext = {
             workspaceId,
             logoType: type,
-            errorDetails: err?.response?.data || err?.message || err,
+            requestId,
+            errorDetails: getErrorMessage(err),
             statusCode: err?.response?.status,
             stackTrace: err?.stack,
-            operation: 'setLogo'
+            operation: 'setLogo',
+            logoFileName: logo?.originalname,
+            logoSize: logo?.size,
+            logoMimeType: logo?.mimetype
         };
-        error('ISO+™ Service', 'Error setting form logo:', errorContext, extractContextFromReq(req));
-        logOperationEnd('ISO+™ Service', 'setLogo', { workspaceId, logoType: type, success: false, error: err.message }, req);
+        
+        // Categorize and log different error types
+        if (errorMessageIncludes(err, 'required') || errorMessageIncludes(err, 'missing')) {
+            error('ISO+™ Service', 'Error setting logo: Missing required parameter', errorContext, extractContextFromReq(req));
+        } else if (errorMessageIncludes(err, 'unauthorized') || err?.response?.status === 401) {
+            error('ISO+™ Service', 'Error setting logo: Unauthorized', errorContext, extractContextFromReq(req));
+        } else if (errorMessageIncludes(err, 'forbidden') || err?.response?.status === 403) {
+            error('ISO+™ Service', 'Error setting logo: Forbidden', errorContext, extractContextFromReq(req));
+        } else if (errorMessageIncludes(err, 'timeout') || err?.code === 'ECONNABORTED' || err?.code === 'ETIMEDOUT') {
+            error('ISO+™ Service', 'Error setting logo: Request timeout', errorContext, extractContextFromReq(req));
+        } else if (errorMessageIncludes(err, 'network') || err?.code === 'ENOTFOUND' || err?.code === 'ECONNREFUSED') {
+            error('ISO+™ Service', 'Error setting logo: Network error', errorContext, extractContextFromReq(req));
+        } else if (errorMessageIncludes(err, 'Failed to fetch boards')) {
+            error('ISO+™ Service', 'Error setting logo: Failed to fetch boards', errorContext, extractContextFromReq(req));
+        } else {
+            error('ISO+™ Service', 'Error setting logo:', errorContext, extractContextFromReq(req));
+        }
+        
+        logOperationEnd('ISO+™ Service', 'setLogo', { 
+            workspaceId, 
+            logoType: type, 
+            success: false, 
+            error: getErrorMessage(err) 
+        }, req);
         return null;
     }
 }
