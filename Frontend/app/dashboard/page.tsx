@@ -399,7 +399,7 @@ function GlobalApplicationLogs() {
   const [isLoading, setLoading] = useState(false);
   const [logs, setLogs] = useState<Log[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
-  const [logsPerPage, setLogsPerPage] = useState(10);
+  const [logsPerPage, setLogsPerPage] = useState(20);
   const [totalLogs, setTotalLogs] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [knownSources, setKnownSources] = useState<string[]>([]);
@@ -968,7 +968,7 @@ function GlobalApplicationLogs() {
             value={logsPerPage}
             onChange={e => handleLogsPerPageChange(Number(e.target.value))}
           >
-            {[5, 10, 20, 50, 100].map(size => (
+            {[20, 50, 100].map(size => (
               <option key={size} value={size}>{size}</option>
             ))}
           </select>
