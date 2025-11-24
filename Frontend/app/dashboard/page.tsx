@@ -586,8 +586,23 @@ function GlobalApplicationLogs() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {logs
-            .map((log) => (
+          {isLoading ? (
+            <TableRow>
+              <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
+                <div className="inline-flex items-center gap-2">
+                  <Spinner className="h-4 w-4" />
+                  Loading logs...
+                </div>
+              </TableCell>
+            </TableRow>
+          ) : (logs.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
+                No logs found matching your search.
+              </TableCell>
+            </TableRow>
+          ) : (
+            logs.map((log) => (
               <React.Fragment key={log.id as string}>
                 <TableRow
                   className="cursor-pointer hover:bg-muted/50"
@@ -944,22 +959,10 @@ function GlobalApplicationLogs() {
                   </TableRow>
                 )}
               </React.Fragment>
-            ))}
+            ))
+          ))}
         </TableBody>
       </Table>
-
-      {isLoading ?
-        <div className="text-center py-8 text-muted-foreground">
-          Loading logs...
-          <span className="ml-2"><Spinner /></span>
-        </div>
-        :
-        logs.length === 0 && !isLoading && (
-          <div className="text-center py-8 text-muted-foreground">
-            No logs found matching your search.
-          </div>
-        )}
-
       <div className="flex flex-col md:flex-row items-center justify-between gap-4 mt-6">
         <div className="flex items-center gap-2">
           <span>Rows per page:</span>
