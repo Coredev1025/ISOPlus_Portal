@@ -65,7 +65,15 @@ const ATTRIBUTE_NAMES = {
     REMAINING_HOME_SUPPORT_BALANCE: 'Remaining Home Support Balance as at the End of the Month ($)',
     COMMITTED_AT_SHORT_TERM: 'Committed AT Short-term Funds - to be delivered ($-)',
     COMMITTED_AT_ONGOING: 'Committed AT Ongoing Funds - to be delivered ($-)',
-    COMMITTED_HOME_MODIFICATION: 'Committed HM Funds - to be delivered ($-)'
+    COMMITTED_HOME_MODIFICATION: 'Committed HM Funds - to be delivered ($-)',
+    ITEM_OR_WRAPAROUND: 'Item or Wraparound',
+    ITEM_DESCRIPTION_CODE: 'Item Description Code',
+    ITEM_DESCRIPTION: 'Item Description',
+    WRAPAROUND_DESCRIPTION_CODE: 'Wraparound Description Code',
+    DELIVERED_BY_THIRD_PARTY: 'Delivered By Third Party',
+    LOANED_BY_ORGANISATION_NAME: 'Loaned by Organisation Name',
+    PAYMENT_STATUS: 'Payment Status',
+    INVOICE_NUMBER: 'Generated Invoice Number'
 };
 
 const FUNDING_SOURCE_TYPES = {
@@ -144,7 +152,9 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             transactionStatus: transactionStatusFilter = '',
             paymentStatus: paymentStatusFilter = '',
             page = 1,
-            limit: limitParam
+            limit: limitParam,
+            sortBy = 'scheduledServiceDate',
+            sortOrder = 'asc'
         } = req.query;
 
         if (!workspaceId || !boardId) {
@@ -174,7 +184,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             ? (pageNumber - 1) * limitNumber
             : 0;
 
-        // Build aggregation pipeline
+        // Build aggregation pipeline - OPTIMIZED VERSION
         const pipeline = [];
 
         // Base match - only from Master Plan,Shift Planning and Reporting
@@ -185,333 +195,201 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
         }
         pipeline.push({ $match: baseMatch });
 
-        // Use the same aggregation pipeline structure
-        pipeline.push(
-            {
-                $addFields: {
-                    scheduledStartValue: {
-                        $filter: {
-                            input: "$data.values",
-                            as: "value",
-                            cond: { $eq: ["$$value.attribute.name", ATTRIBUTE_NAMES.SCHEDULED_START] }
+        // Optimized: Combine multiple $addFields stages into fewer stages
+        // Extract all values in a single pass and convert in the same stage
+        pipeline.push({
+            $addFields: {
+                // Extract values using $arrayElemAt with $filter - more efficient than multiple separate filters
+                scheduledStartVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", ATTRIBUTE_NAMES.SCHEDULED_START] } } }, 0] },
+                participantVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", "Participant Full Name"] } } }, 0] },
+                invoiceIssuedVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", "Invoice Issued and Sent"] } } }, 0] },
+                paymentStatusVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", "Payment Status"] } } }, 0] },
+                transactionStatusVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", ATTRIBUTE_NAMES.TRANSACTION_STATUS] } } }, 0] },
+                totalAmountVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", ATTRIBUTE_NAMES.TOTAL_AMOUNT] } } }, 0] },
+                govSubsidyVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", ATTRIBUTE_NAMES.GOV_SUBSIDY] } } }, 0] },
+                participantContributionVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION] } } }, 0] },
+                actualEndVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", ATTRIBUTE_NAMES.ACTUAL_END] } } }, 0] }
+            }
+        });
+
+        // Optimized: Extract raw values, convert dates, and convert numbers in a single stage
+        pipeline.push({
+            $addFields: {
+                // Extract raw data values
+                scheduledStartRaw: { $ifNull: ["$scheduledStartVal.data", null] },
+                participantNameRaw: { $ifNull: ["$participantVal.data", null] },
+                invoiceIssuedRaw: { $ifNull: [{ $ifNull: ["$invoiceIssuedVal.data", false] }, false] },
+                paymentStatusRaw: { $ifNull: [{ $ifNull: ["$paymentStatusVal.data", []] }, []] },
+                paymentStatusAttribute: { $ifNull: ["$paymentStatusVal.attribute", null] },
+                transactionStatusRaw: { $ifNull: ["$transactionStatusVal.data", null] },
+                transactionStatusAttribute: { $ifNull: ["$transactionStatusVal.attribute", null] },
+                totalAmountRaw: {
+                    $cond: {
+                        if: { $ne: ["$totalAmountVal", null] },
+                        then: { $ifNull: ["$totalAmountVal.data", 0] },
+                        else: 0
+                    }
+                },
+                govSubsidyRaw: {
+                    $cond: {
+                        if: { $ne: ["$govSubsidyVal", null] },
+                        then: { $ifNull: ["$govSubsidyVal.data", 0] },
+                        else: 0
+                    }
+                },
+                participantContributionRaw: {
+                    $cond: {
+                        if: { $ne: ["$participantContributionVal", null] },
+                        then: { $ifNull: ["$participantContributionVal.data", 0] },
+                        else: 0
+                    }
+                },
+                actualEndRaw: { $ifNull: ["$actualEndVal.data", null] },
+                // Convert dates immediately
+                scheduledStartDate: {
+                    $dateFromString: {
+                        dateString: { $ifNull: ["$scheduledStartVal.data", null] },
+                        onError: null
+                    }
+                },
+                actualEndDate: {
+                    $dateFromString: {
+                        dateString: { $ifNull: ["$actualEndVal.data", null] },
+                        onError: null
+                    }
+                },
+                // Calculate invoiced flag
+                invoicedFlag: {
+                    $or: [
+                        { $toBool: { $ifNull: [{ $ifNull: ["$invoiceIssuedVal.data", false] }, false] } },
+                        {
+                            $in: [
+                                "Paid",
+                                {
+                                    $map: {
+                                        input: { $ifNull: [{ $ifNull: ["$paymentStatusVal.data", []] }, []] },
+                                        as: "p",
+                                        in: "$$p.name"
+                                    }
+                                }
+                            ]
                         }
-                    },
-                    participantValue: {
-                        $filter: {
-                            input: "$data.values",
-                            as: "value",
-                            cond: { $eq: ["$$value.attribute.name", "Participant Full Name"] }
-                        }
-                    },
-                    invoiceIssuedValue: {
-                        $filter: {
-                            input: "$data.values",
-                            as: "value",
-                            cond: { $eq: ["$$value.attribute.name", "Invoice Issued and Sent"] }
-                        }
-                    },
-                    paymentStatusValue: {
-                        $filter: {
-                            input: "$data.values",
-                            as: "value",
-                            cond: { $eq: ["$$value.attribute.name", "Payment Status"] }
-                        }
-                    },
-                    transactionStatusValue: {
-                        $filter: {
-                            input: "$data.values",
-                            as: "value",
-                            cond: { $eq: ["$$value.attribute.name", ATTRIBUTE_NAMES.TRANSACTION_STATUS] }
-                        }
-                    },
-                    totalAmountValue: {
-                        $filter: {
-                            input: "$data.values",
-                            as: "value",
-                            cond: { $eq: ["$$value.attribute.name", ATTRIBUTE_NAMES.TOTAL_AMOUNT] }
-                        }
-                    },
-                    govSubsidyValue: {
-                        $filter: {
-                            input: "$data.values",
-                            as: "value",
-                            cond: { $eq: ["$$value.attribute.name", ATTRIBUTE_NAMES.GOV_SUBSIDY] }
-                        }
-                    },
-                    participantContributionValue: {
-                        $filter: {
-                            input: "$data.values",
-                            as: "value",
-                            cond: { $eq: ["$$value.attribute.name", ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION] }
-                        }
-                    },
-                    actualEndValue: {
-                        $filter: {
-                            input: "$data.values",
-                            as: "value",
-                            cond: { $eq: ["$$value.attribute.name", ATTRIBUTE_NAMES.ACTUAL_END] }
+                    ]
+                },
+                // Convert numbers with optimized inline expression
+                totalAmountNum: {
+                    $let: {
+                        vars: {
+                            raw: {
+                                $cond: {
+                                    if: { $ne: ["$totalAmountVal", null] },
+                                    then: { $ifNull: ["$totalAmountVal.data", 0] },
+                                    else: 0
+                                }
+                            },
+                            valType: { $type: { $cond: { if: { $ne: ["$totalAmountVal", null] }, then: { $ifNull: ["$totalAmountVal.data", 0] }, else: 0 } } },
+                            numMatch: {
+                                $regexFind: {
+                                    input: { $convert: { input: { $cond: { if: { $ne: ["$totalAmountVal", null] }, then: { $ifNull: ["$totalAmountVal.data", "0"] }, else: "0" } }, to: "string", onError: "0", onNull: "0" } },
+                                    regex: "-?\\d+(?:\\.\\d+)?"
+                                }
+                            }
+                        },
+                        in: {
+                            $cond: {
+                                if: { $in: ["$$valType", ["int", "long", "double", "decimal128"]] },
+                                then: { $ifNull: ["$$raw", 0] },
+                                else: {
+                                    $cond: {
+                                        if: { $ne: ["$$numMatch", null] },
+                                        then: { $convert: { input: "$$numMatch.match", to: "double", onError: 0, onNull: 0 } },
+                                        else: 0
+                                    }
+                                }
+                            }
                         }
                     }
-                }
-            },
-            {
-                $addFields: {
-                    scheduledStartRaw: {
-                        $let: {
-                            vars: { firstVal: { $arrayElemAt: ["$scheduledStartValue", 0] } },
-                            in: { $ifNull: ["$$firstVal.data", null] }
-                        }
-                    },
-                    participantNameRaw: {
-                        $let: {
-                            vars: { firstVal: { $arrayElemAt: ["$participantValue", 0] } },
-                            in: { $ifNull: ["$$firstVal.data", null] }
-                        }
-                    },
-                    invoiceIssuedRaw: {
-                        $let: {
-                            vars: { firstVal: { $arrayElemAt: ["$invoiceIssuedValue", 0] } },
-                            in: { $ifNull: [{ $ifNull: ["$$firstVal.data", false] }, false] }
-                        }
-                    },
-                    paymentStatusRaw: {
-                        $let: {
-                            vars: { firstVal: { $arrayElemAt: ["$paymentStatusValue", 0] } },
-                            in: { $ifNull: [{ $ifNull: ["$$firstVal.data", []] }, []] }
-                        }
-                    },
-                    paymentStatusAttribute: {
-                        $let: {
-                            vars: { firstVal: { $arrayElemAt: ["$paymentStatusValue", 0] } },
-                            in: { $ifNull: ["$$firstVal.attribute", null] }
-                        }
-                    },
-                    transactionStatusRaw: {
-                        $let: {
-                            vars: { firstVal: { $arrayElemAt: ["$transactionStatusValue", 0] } },
-                            in: { $ifNull: ["$$firstVal.data", null] }
-                        }
-                    },
-                    transactionStatusAttribute: {
-                        $let: {
-                            vars: { firstVal: { $arrayElemAt: ["$transactionStatusValue", 0] } },
-                            in: { $ifNull: ["$$firstVal.attribute", null] }
-                        }
-                    },
-                    totalAmountRaw: {
-                        $let: {
-                            vars: {
-                                firstVal: { $arrayElemAt: ["$totalAmountValue", 0] }
-                            },
-                            in: {
+                },
+                govSubsidyNum: {
+                    $let: {
+                        vars: {
+                            raw: {
                                 $cond: {
-                                    if: { $ne: ["$$firstVal", null] },
-                                    then: {
-                                        $cond: {
-                                            if: { $ne: ["$$firstVal.data", null] },
-                                            then: "$$firstVal.data",
-                                            else: 0
-                                        }
-                                    },
+                                    if: { $ne: ["$govSubsidyVal", null] },
+                                    then: { $ifNull: ["$govSubsidyVal.data", 0] },
                                     else: 0
                                 }
-                            }
-                        }
-                    },
-                    govSubsidyRaw: {
-                        $let: {
-                            vars: {
-                                firstVal: { $arrayElemAt: ["$govSubsidyValue", 0] }
                             },
-                            in: {
-                                $cond: {
-                                    if: { $ne: ["$$firstVal", null] },
-                                    then: {
-                                        $cond: {
-                                            if: { $ne: ["$$firstVal.data", null] },
-                                            then: "$$firstVal.data",
-                                            else: 0
-                                        }
-                                    },
-                                    else: 0
+                            valType: { $type: { $cond: { if: { $ne: ["$govSubsidyVal", null] }, then: { $ifNull: ["$govSubsidyVal.data", 0] }, else: 0 } } },
+                            numMatch: {
+                                $regexFind: {
+                                    input: { $convert: { input: { $cond: { if: { $ne: ["$govSubsidyVal", null] }, then: { $ifNull: ["$govSubsidyVal.data", "0"] }, else: "0" } }, to: "string", onError: "0", onNull: "0" } },
+                                    regex: "-?\\d+(?:\\.\\d+)?"
                                 }
                             }
-                        }
-                    },
-                    participantContributionRaw: {
-                        $let: {
-                            vars: {
-                                firstVal: { $arrayElemAt: ["$participantContributionValue", 0] }
-                            },
-                            in: {
-                                $cond: {
-                                    if: { $ne: ["$$firstVal", null] },
-                                    then: {
-                                        $cond: {
-                                            if: { $ne: ["$$firstVal.data", null] },
-                                            then: "$$firstVal.data",
-                                            else: 0
-                                        }
-                                    },
-                                    else: 0
+                        },
+                        in: {
+                            $cond: {
+                                if: { $in: ["$$valType", ["int", "long", "double", "decimal128"]] },
+                                then: { $ifNull: ["$$raw", 0] },
+                                else: {
+                                    $cond: {
+                                        if: { $ne: ["$$numMatch", null] },
+                                        then: { $convert: { input: "$$numMatch.match", to: "double", onError: 0, onNull: 0 } },
+                                        else: 0
+                                    }
                                 }
                             }
-                        }
-                    },
-                    actualEndRaw: {
-                        $let: {
-                            vars: { firstVal: { $arrayElemAt: ["$actualEndValue", 0] } },
-                            in: { $ifNull: ["$$firstVal.data", null] }
                         }
                     }
-                }
-            },
-            {
-                $addFields: {
-                    scheduledStartDate: {
-                        $dateFromString: { dateString: "$scheduledStartRaw", onError: null }
-                    },
-                    actualEndDate: {
-                        $dateFromString: { dateString: "$actualEndRaw", onError: null }
-                    },
-                    invoicedFlag: {
-                        $or: [
-                            { $toBool: "$invoiceIssuedRaw" },
-                            {
-                                $in: [
-                                    "Paid",
-                                    {
-                                        $map: {
-                                            input: "$paymentStatusRaw",
-                                            as: "p",
-                                            in: "$$p.name"
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    totalAmountNum: {
-                        $cond: {
-                            if: {
-                                $in: [
-                                    { $type: "$totalAmountRaw" },
-                                    ["int", "long", "double", "decimal128"]
-                                ]
+                },
+                participantContributionNum: {
+                    $let: {
+                        vars: {
+                            raw: {
+                                $cond: {
+                                    if: { $ne: ["$participantContributionVal", null] },
+                                    then: { $ifNull: ["$participantContributionVal.data", 0] },
+                                    else: 0
+                                }
                             },
-                            then: { $ifNull: ["$totalAmountRaw", 0] },
-                            else: {
-                                $let: {
-                                    vars: {
-                                        match: {
-                                            $regexFind: {
-                                                input: { $ifNull: ["$totalAmountRaw", "0"] },
-                                                regex: "-?\\d+(?:\\.\\d+)?"
-                                            }
-                                        }
-                                    },
-                                    in: {
-                                        $cond: {
-                                            if: { $ne: ["$$match", null] },
-                                            then: {
-                                                $convert: {
-                                                    input: "$$match.match",
-                                                    to: "double",
-                                                    onError: 0,
-                                                    onNull: 0
-                                                }
-                                            },
-                                            else: 0
-                                        }
-                                    }
+                            valType: { $type: { $cond: { if: { $ne: ["$participantContributionVal", null] }, then: { $ifNull: ["$participantContributionVal.data", 0] }, else: 0 } } },
+                            numMatch: {
+                                $regexFind: {
+                                    input: { $convert: { input: { $cond: { if: { $ne: ["$participantContributionVal", null] }, then: { $ifNull: ["$participantContributionVal.data", "0"] }, else: "0" } }, to: "string", onError: "0", onNull: "0" } },
+                                    regex: "-?\\d+(?:\\.\\d+)?"
                                 }
                             }
-                        }
-                    },
-                    govSubsidyNum: {
-                        $cond: {
-                            if: {
-                                $in: [
-                                    { $type: "$govSubsidyRaw" },
-                                    ["int", "long", "double", "decimal128"]
-                                ]
-                            },
-                            then: { $ifNull: ["$govSubsidyRaw", 0] },
-                            else: {
-                                $let: {
-                                    vars: {
-                                        match: {
-                                            $regexFind: {
-                                                input: { $ifNull: ["$govSubsidyRaw", "0"] },
-                                                regex: "-?\\d+(?:\\.\\d+)?"
-                                            }
-                                        }
-                                    },
-                                    in: {
-                                        $cond: {
-                                            if: { $ne: ["$$match", null] },
-                                            then: {
-                                                $convert: {
-                                                    input: "$$match.match",
-                                                    to: "double",
-                                                    onError: 0,
-                                                    onNull: 0
-                                                }
-                                            },
-                                            else: 0
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    participantContributionNum: {
-                        $cond: {
-                            if: {
-                                $in: [
-                                    { $type: "$participantContributionRaw" },
-                                    ["int", "long", "double", "decimal128"]
-                                ]
-                            },
-                            then: { $ifNull: ["$participantContributionRaw", 0] },
-                            else: {
-                                $let: {
-                                    vars: {
-                                        match: {
-                                            $regexFind: {
-                                                input: { $ifNull: ["$participantContributionRaw", "0"] },
-                                                regex: "-?\\d+(?:\\.\\d+)?"
-                                            }
-                                        }
-                                    },
-                                    in: {
-                                        $cond: {
-                                            if: { $ne: ["$$match", null] },
-                                            then: {
-                                                $convert: {
-                                                    input: "$$match.match",
-                                                    to: "double",
-                                                    onError: 0,
-                                                    onNull: 0
-                                                }
-                                            },
-                                            else: 0
-                                        }
+                        },
+                        in: {
+                            $cond: {
+                                if: { $in: ["$$valType", ["int", "long", "double", "decimal128"]] },
+                                then: { $ifNull: ["$$raw", 0] },
+                                else: {
+                                    $cond: {
+                                        if: { $ne: ["$$numMatch", null] },
+                                        then: { $convert: { input: "$$numMatch.match", to: "double", onError: 0, onNull: 0 } },
+                                        else: 0
                                     }
                                 }
                             }
                         }
                     }
                 }
-            },
-            {
-                // Convert label IDs to label names for transaction status and payment status
+            }
+        });
+
+        // Only convert label names if needed for filtering (conditional stage)
+        const needsTransactionStatusConversion = transactionStatusFilter && transactionStatusFilter !== 'all';
+        const needsPaymentStatusConversion = paymentStatusFilter && paymentStatusFilter !== 'all';
+
+        if (needsTransactionStatusConversion || needsPaymentStatusConversion) {
+            pipeline.push({
                 $addFields: {
-                    transactionStatusNames: {
+                    transactionStatusNames: needsTransactionStatusConversion ? {
                         $cond: [
                             { $eq: [{ $type: "$transactionStatusRaw" }, "array"] },
                             {
-                                // Map array of label IDs to label names
                                 $map: {
                                     input: "$transactionStatusRaw",
                                     as: "labelId",
@@ -540,7 +418,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                                 $cond: [
                                     { $eq: [{ $type: "$transactionStatusRaw" }, "object"] },
                                     {
-                                        // If it's an object with id, look it up
                                         $let: {
                                             vars: {
                                                 label: {
@@ -560,7 +437,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                                         }
                                     },
                                     {
-                                        // If it's a string (label ID), look it up
                                         $let: {
                                             vars: {
                                                 label: {
@@ -582,12 +458,11 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                                 ]
                             }
                         ]
-                    },
-                    paymentStatusNames: {
+                    } : null,
+                    paymentStatusNames: needsPaymentStatusConversion ? {
                         $cond: [
                             { $eq: [{ $type: "$paymentStatusRaw" }, "array"] },
                             {
-                                // Map array of label IDs to label names
                                 $map: {
                                     input: "$paymentStatusRaw",
                                     as: "labelId",
@@ -616,7 +491,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                                 $cond: [
                                     { $eq: [{ $type: "$paymentStatusRaw" }, "object"] },
                                     {
-                                        // If it's an object with id, look it up
                                         $let: {
                                             vars: {
                                                 label: {
@@ -639,10 +513,10 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                                 ]
                             }
                         ]
-                    }
+                    } : null
                 }
-            }
-        );
+            });
+        }
 
         // Dynamic matches based on filters
         const andConditions = [];
@@ -790,8 +664,21 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             itemsFacetStages.push({ $match: {} });
         }
         
+        const sortFieldMap = {
+            scheduledServiceDate: 'scheduledStartDate',
+            serviceDeliveryDate: 'actualEndDate',
+            updatedAt: 'updatedAt'
+        };
+        const selectedSortField = sortFieldMap[sortBy] || 'scheduledStartDate';
+        const selectedSortOrder = sortOrder === 'desc' ? -1 : 1;
+        const sortStage = {};
+        sortStage[selectedSortField] = selectedSortOrder;
+        if (selectedSortField !== 'updatedAt') {
+            sortStage['updatedAt'] = -1;
+        }
+
         pipeline.push(
-            { $sort: { updatedAt: -1 } },
+            { $sort: sortStage },
             {
                 $facet: {
                     items: itemsFacetStages,
@@ -824,7 +711,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
         let aggResult;
         try {
-            aggResult = await Item.aggregate(pipeline);
+            aggResult = await Item.aggregate(pipeline, { allowDiskUse: true });
         } catch (aggErr) {
             error('Items-Service', 'Aggregation pipeline error', {
                 message: aggErr.message,
@@ -909,7 +796,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 }
             }
             
-            const invoiceNumber = getValue('Generated Invoice Number') || '';
+            const invoiceNumber = getValue(ATTRIBUTE_NAMES.INVOICE_NUMBER) || getValue('Generated Invoice Number') || '';
             
             // Get Care Recipient Identifier (My Aged Care ID Number from Participant Profile/Intake)
             let careRecipientIdentifier = undefined;
@@ -950,9 +837,43 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             const wraparoundItemId = getValue('Wraparound Item ID') || undefined;
             const wraparoundDescription = getValue('Wraparound Description') || undefined;
             
+            // Get Item or Wraparound - determine based on whether wraparound fields exist
+            const itemOrWraparoundRaw = getValue(ATTRIBUTE_NAMES.ITEM_OR_WRAPAROUND);
+            let itemOrWraparound = undefined;
+            if (itemOrWraparoundRaw) {
+                itemOrWraparound = typeof itemOrWraparoundRaw === 'object' ? itemOrWraparoundRaw.name : String(itemOrWraparoundRaw);
+            } else if (wraparoundItemId || wraparoundDescription) {
+                // If wraparound fields exist, it's a wraparound
+                itemOrWraparound = 'Wraparound';
+            } else if (itemId || itemName) {
+                // If item fields exist, it's an item
+                itemOrWraparound = 'Item';
+            }
+            
+            // Get Item Description Code
+            const itemDescriptionCode = getValue(ATTRIBUTE_NAMES.ITEM_DESCRIPTION_CODE) || undefined;
+            
+            // Get Item Description (fallback to Item if not found)
+            const itemDescription = getValue(ATTRIBUTE_NAMES.ITEM_DESCRIPTION) || itemName || undefined;
+            
+            // Get Wraparound Description Code
+            const wraparoundDescriptionCode = getValue(ATTRIBUTE_NAMES.WRAPAROUND_DESCRIPTION_CODE) || undefined;
+            
             // Get Prescribed Item
             const prescribedItem = getValue('Prescribed Item');
             const prescribedItemValue = prescribedItem === true || prescribedItem === 'true' || prescribedItem === 'Y' ? 'Y' : 'N';
+
+            // Get Item First Payment flag
+            const itemFirstPaymentRaw = getValue('Item First Payment');
+            let itemFirstPaymentValue = undefined;
+            if (typeof itemFirstPaymentRaw === 'boolean') {
+                itemFirstPaymentValue = itemFirstPaymentRaw ? 'Y' : 'N';
+            } else if (typeof itemFirstPaymentRaw === 'string') {
+                const normalized = itemFirstPaymentRaw.trim().toLowerCase();
+                itemFirstPaymentValue = (normalized === 'true' || normalized === 'y' || normalized === 'yes') ? 'Y' : 'N';
+            } else if (itemFirstPaymentRaw !== undefined && itemFirstPaymentRaw !== null) {
+                itemFirstPaymentValue = String(itemFirstPaymentRaw).trim().toLowerCase() === 'y' ? 'Y' : 'N';
+            }
             
             // Get Item Purchased Method
             const itemPurchasedMethod = getValue('Item Purchased Method');
@@ -968,6 +889,25 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             const associatedProviderInvoiceNo = getValue('Associated Provider Invoice No. (if applicable)') || 
                                                getValue('Associated Provider Invoice No') || 
                                                undefined;
+            
+            // Get Loaned by Organisation Name (may be same as Associated Provider, but check separately)
+            const loanedByOrganisationName = getValue(ATTRIBUTE_NAMES.LOANED_BY_ORGANISATION_NAME) || 
+                                           associatedProviderString || 
+                                           undefined;
+            
+            // Get Delivered By Third Party
+            const deliveredByThirdPartyRaw = getValue(ATTRIBUTE_NAMES.DELIVERED_BY_THIRD_PARTY);
+            let deliveredByThirdParty = undefined;
+            if (deliveredByThirdPartyRaw !== undefined && deliveredByThirdPartyRaw !== null) {
+                if (typeof deliveredByThirdPartyRaw === 'boolean') {
+                    deliveredByThirdParty = deliveredByThirdPartyRaw ? 'Y' : 'N';
+                } else if (typeof deliveredByThirdPartyRaw === 'string') {
+                    const normalized = deliveredByThirdPartyRaw.trim().toLowerCase();
+                    deliveredByThirdParty = (normalized === 'true' || normalized === 'y' || normalized === 'yes') ? 'Y' : 'N';
+                } else {
+                    deliveredByThirdParty = String(deliveredByThirdPartyRaw).trim().toLowerCase() === 'y' ? 'Y' : 'N';
+                }
+            }
             
             // Get Health Professional Type Code and Health Professional Type Other
             // These come from the Health Professional Pricing folder of the selected Health Professional Service
@@ -1086,7 +1026,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             }
 
             // Format payment status - need to look up label names from attribute settings
-            const paymentStatusValue = item.data.values.find(v => v.attribute.name === 'Payment Status');
+            const paymentStatusValue = item.data.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.PAYMENT_STATUS || v.attribute.name === 'Payment Status');
             let paymentStatusFormatted = undefined;
             if (paymentStatusValue) {
                 const paymentStatusData = paymentStatusValue.data;
@@ -1113,56 +1053,91 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             }
 
             // Get Funding Source - it's a reference type, need to fetch referenced items
-            // Use a helper function with timeout to prevent 504 errors
-            const fetchFundingSourceName = async (refItemId, timeoutMs = 5000) => {
+            // Use a helper function with retry logic and timeout to handle race conditions
+            const fetchFundingSourceName = async (refItemId, timeoutMs = 8000, maxRetries = 3) => {
                 if (!refItemId || typeof refItemId !== 'string' || refItemId.trim() === '') {
                     return null;
                 }
                 
-                try {
-                    // Create a timeout promise
-                    const timeoutPromise = new Promise((_, reject) => {
-                        setTimeout(() => reject(new Error('Timeout')), timeoutMs);
-                    });
-                    
-                    // Race between the API call and timeout
-                    const refItem = await Promise.race([
-                        getItemValues(workspaceId, boardId, refItemId.toString()),
-                        timeoutPromise
-                    ]);
-                    
-                    if (refItem && refItem.values) {
-                        // Try to find a name attribute (could be "Name", "Title", "Funding Source Name", etc.)
-                        const nameValue = refItem.values.find(v => 
-                            v.attribute.name === 'Name' || 
-                            v.attribute.name === 'Title' ||
-                            v.attribute.name === 'Funding Source Name' ||
-                            v.attribute.name === 'Full Name'
-                        );
-                        if (nameValue && nameValue.data) {
-                            return typeof nameValue.data === 'object' && nameValue.data.name 
-                                ? nameValue.data.name 
-                                : String(nameValue.data);
+                let lastError = null;
+                
+                // Retry logic with exponential backoff
+                for (let attempt = 0; attempt < maxRetries; attempt++) {
+                    try {
+                        // Add a small delay between retries (exponential backoff)
+                        if (attempt > 0) {
+                            const delayMs = Math.min(200 * Math.pow(2, attempt - 1), 1000); // Max 1 second delay
+                            await new Promise(resolve => setTimeout(resolve, delayMs));
                         }
-                        // Fallback: use the first text attribute
-                        const textValue = refItem.values.find(v => 
-                            v.attribute.type === 'text' && v.data
-                        );
-                        if (textValue && textValue.data) {
-                            return String(textValue.data);
+                        
+                        // Create a timeout promise
+                        const timeoutPromise = new Promise((_, reject) => {
+                            setTimeout(() => reject(new Error('Timeout')), timeoutMs);
+                        });
+                        
+                        // Race between the API call and timeout
+                        const refItem = await Promise.race([
+                            getItemValues(workspaceId, boardId, refItemId.toString()),
+                            timeoutPromise
+                        ]);
+                        
+                        if (refItem && refItem.values) {
+                            // Try to find a name attribute (could be "Name", "Title", "Funding Source Name", etc.)
+                            const nameValue = refItem.values.find(v => 
+                                v.attribute.name === 'Name' || 
+                                v.attribute.name === 'Title' ||
+                                v.attribute.name === 'Funding Source Name' ||
+                                v.attribute.name === 'Full Name'
+                            );
+                            if (nameValue && nameValue.data) {
+                                const name = typeof nameValue.data === 'object' && nameValue.data.name 
+                                    ? nameValue.data.name 
+                                    : String(nameValue.data);
+                                // Only return if we got a valid non-empty name
+                                if (name && name.trim() !== '') {
+                                    return name;
+                                }
+                            }
+                            // Fallback: use the first text attribute
+                            const textValue = refItem.values.find(v => 
+                                v.attribute.type === 'text' && v.data
+                            );
+                            if (textValue && textValue.data) {
+                                const text = String(textValue.data);
+                                // Only return if we got a valid non-empty text
+                                if (text && text.trim() !== '') {
+                                    return text;
+                                }
+                            }
+                        }
+                        
+                        // If we got here but no valid data, it might be that the item exists but data isn't ready yet
+                        // Continue to retry if we have attempts left
+                        if (attempt < maxRetries - 1) {
+                            continue;
+                        }
+                        
+                        return null;
+                    } catch (err) {
+                        lastError = err;
+                        // If it's not a timeout and we have retries left, continue
+                        if (err.message !== 'Timeout' && attempt < maxRetries - 1) {
+                            continue;
+                        }
+                        // On last attempt or timeout, log the error
+                        if (attempt === maxRetries - 1) {
+                            if (err.message !== 'Timeout') {
+                                warn('Items-Service', 'Failed to fetch funding source item after retries', {
+                                    refId: refItemId,
+                                    error: err.message,
+                                    attempts: maxRetries
+                                }, extractContextFromReq(req));
+                            }
                         }
                     }
-                    return null;
-                } catch (err) {
-                    // Silently fail - don't log every timeout to avoid spam
-                    if (err.message !== 'Timeout') {
-                        warn('Items-Service', 'Failed to fetch funding source item', {
-                            refId: refItemId,
-                            error: err.message
-                        }, extractContextFromReq(req));
-                    }
-                    return null;
                 }
+                
+                return null;
             };
             
             let fundingSource = undefined;
@@ -1221,14 +1196,21 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 servicePlan: servicePlanName,
                 itemId,
                 item: itemName,
+                itemOrWraparound,
+                itemDescriptionCode,
+                itemDescription,
                 wraparoundItemId,
                 wraparoundDescription,
+                wraparoundDescriptionCode,
                 prescribedItem: prescribedItemValue,
                 itemPurchasedMethod: itemPurchasedMethodString,
                 associatedProvider: associatedProviderString,
                 associatedProviderInvoiceNo,
+                loanedByOrganisationName,
                 healthProfessionalTypeCode,
-                healthProfessionalTypeOther
+                healthProfessionalTypeOther,
+                itemFirstPayment: itemFirstPaymentValue,
+                deliveredByThirdParty
             };
         }));
 
@@ -1415,7 +1397,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
 
         const budgetPipelineForTotals = await buildPipeline(budgetFolderNames, participantIntakeIds[0] ? participantIntakeIds[0] : null, {}, { folderList }, 'budget');
         budgetPipelineForTotals.push({ $sort: { updatedAt: -1 } });
-        const allBudgetItemsResult = await Item.aggregate(budgetPipelineForTotals);
+        const allBudgetItemsResult = await Item.aggregate(budgetPipelineForTotals, { allowDiskUse: true });
         const allBudgetItems = Array.isArray(allBudgetItemsResult) ? allBudgetItemsResult : [];
 
         const parseNumberValue = (rawValue) => {
@@ -1772,7 +1754,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             }
         );
 
-        const serviceAggResult = await Item.aggregate(servicePipeline);
+        const serviceAggResult = await Item.aggregate(servicePipeline, { allowDiskUse: true });
 
         const serviceItems = (serviceAggResult[0] && serviceAggResult[0].items) ? serviceAggResult[0].items : [];
         const serviceTotal = (serviceAggResult[0] && serviceAggResult[0].totalCount && serviceAggResult[0].totalCount[0]) ? serviceAggResult[0].totalCount[0].count : 0;
@@ -1821,23 +1803,9 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const worker = getValue(ATTRIBUTE_NAMES.WORKER_PLANNER)?.toString() || 'N/A';
             const workerName = members.find(m => m.id == worker)?.name || 'Removed User';
             const deliveredByRaw = getValue(ATTRIBUTE_NAMES.DELIVERED_BY);
-            const deliveredBy = deliveredByRaw
+            const serviceProvider = deliveredByRaw
                 ? (typeof deliveredByRaw === 'object' ? deliveredByRaw.name : deliveredByRaw.toString())
                 : null;
-            const associatedProviderRaw = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
-            const associatedProvider = associatedProviderRaw
-                ? (typeof associatedProviderRaw === 'object' ? associatedProviderRaw.name : associatedProviderRaw.toString())
-                : null;
-            
-            // Determine service provider based on deliveredBy
-            let serviceProvider = null;
-            if (deliveredBy && deliveredBy.toLowerCase().includes('company')) {
-                // Use company name from business configuration
-                serviceProvider = businessProfile?.name || null;
-            } else if (deliveredBy && deliveredBy.toLowerCase().includes('associated')) {
-                // Use associated provider
-                serviceProvider = associatedProvider;
-            }
             // Get dates
             const scheduledStart = getValue(ATTRIBUTE_NAMES.SCHEDULED_START) || null;
             const actualEnd = getValue(ATTRIBUTE_NAMES.ACTUAL_END) || null;
@@ -1863,104 +1831,201 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const totalAmount = Number(getValue(ATTRIBUTE_NAMES.TOTAL_AMOUNT)) || 0;
             const govSubsidy = Number(getValue(ATTRIBUTE_NAMES.GOV_SUBSIDY)) || 0;
             const participantContribution = Number(getValue(ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)) || 0;
-            
-            // Get Funding Source - it's a reference type, need to fetch referenced items
-            const fetchFundingSourceName = async (refItemId, timeoutMs = 5000) => {
-                if (!refItemId || typeof refItemId !== 'string' || refItemId.trim() === '') {
-                    return null;
-                }
-                
-                try {
-                    // Create a timeout promise
-                    const timeoutPromise = new Promise((_, reject) => {
-                        setTimeout(() => reject(new Error('Timeout')), timeoutMs);
-                    });
-                    
-                    // Race between the API call and timeout
-                    const refItem = await Promise.race([
-                        getItemValues(workspaceId, boardId, refItemId.toString()),
-                        timeoutPromise
-                    ]);
-                    
-                    if (refItem && refItem.values) {
-                        // Try to find a name attribute (could be "Name", "Title", "Funding Source Name", etc.)
-                        const nameValue = refItem.values.find(v => 
-                            v.attribute.name === 'Name' || 
-                            v.attribute.name === 'Title' ||
-                            v.attribute.name === 'Funding Source Name' ||
-                            v.attribute.name === 'Full Name'
-                        );
-                        if (nameValue && nameValue.data) {
-                            return typeof nameValue.data === 'object' && nameValue.data.name 
-                                ? nameValue.data.name 
-                                : String(nameValue.data);
-                        }
-                        // Fallback: use the first text attribute
-                        const textValue = refItem.values.find(v => 
-                            v.attribute.type === 'text' && v.data
-                        );
-                        if (textValue && textValue.data) {
-                            return String(textValue.data);
-                        }
-                    }
-                    return null;
-                } catch (err) {
-                    // Silently fail - don't log every timeout to avoid spam
-                    if (err.message !== 'Timeout') {
-                        warn('Items-Service', 'Failed to fetch funding source item', {
-                            refId: refItemId,
-                            error: err.message
-                        }, extractContextFromReq(req));
-                    }
-                    return null;
-                }
-            };
-            
-            let fundingSource = 'Home Support';
             const fundingSourceRaw = getValue(ATTRIBUTE_NAMES.FUNDING_SOURCE);
-            if (fundingSourceRaw) {
-                const fundingSourceData = fundingSourceRaw;
-                if (Array.isArray(fundingSourceData) && fundingSourceData.length > 0) {
-                    // Fetch all referenced items and get their names
-                    // Use Promise.allSettled to prevent one failure from stopping all
-                    const fundingSourceResults = await Promise.allSettled(
-                        fundingSourceData.map(async (refId) => {
-                            const refItemId = typeof refId === 'object' ? refId.id || refId : refId;
-                            if (!refItemId) return null;
-                            return await fetchFundingSourceName(refItemId.toString());
-                        })
-                    );
-                    const fundingSourceNames = fundingSourceResults
-                        .filter(result => result.status === 'fulfilled' && result.value)
-                        .map(result => result.value);
-                    fundingSource = fundingSourceNames.length > 0 ? fundingSourceNames.join(', ') : 'Home Support';
-                } else if (fundingSourceData) {
-                    // Single reference
-                    const refItemId = typeof fundingSourceData === 'object' 
-                        ? (fundingSourceData.id || fundingSourceData.name || fundingSourceData)
-                        : fundingSourceData;
-                    if (refItemId) {
-                        const refIdStr = typeof refItemId === 'object' && refItemId.id 
-                            ? refItemId.id.toString() 
-                            : refItemId.toString();
-                        const fetchedName = await fetchFundingSourceName(refIdStr);
-                        fundingSource = fetchedName || 'Home Support';
+            const fundingSource = fundingSourceRaw
+                ? (typeof fundingSourceRaw === 'object'
+                    ? (fundingSourceRaw.name || fundingSourceRaw.toString())
+                    : fundingSourceRaw.toString())
+                : 'Home Support';
+            const notes = getValue(ATTRIBUTE_NAMES.ADDITIONAL_NOTES) || '';
+            
+            // Get Care Recipient Identifier (My Aged Care ID Number from Participant Profile)
+            let careRecipientIdentifier = undefined;
+            if (participantProfileId) {
+                try {
+                    const participantProfile = await fetchItemValuesCached(participantProfileId.toString());
+                    if (participantProfile && participantProfile.values) {
+                        const myAgedCareId = participantProfile.values.find(v => 
+                            v.attribute.name === ATTRIBUTE_NAMES.MY_AGED_CARE_ID || 
+                            v.attribute.name === ATTRIBUTE_NAMES.MY_AGED_CARE_ID_ALT
+                        )?.data;
+                        if (myAgedCareId) {
+                            careRecipientIdentifier = typeof myAgedCareId === 'string' ? myAgedCareId : String(myAgedCareId);
+                        }
+                    }
+                } catch (err) {
+                    // Silently fail
+                }
+            }
+            
+            // Get Service Identifier from Service Plan
+            let serviceIdentifier = undefined;
+            if (servicePlan && servicePlan.values) {
+                const serviceIdItemId = servicePlan.values.find(v => 
+                    v.attribute.name === 'Service ID / Item ID' || 
+                    v.attribute.name === 'Service ID' ||
+                    v.attribute.name === 'Item ID'
+                )?.data;
+                if (serviceIdItemId) {
+                    serviceIdentifier = typeof serviceIdItemId === 'string' ? serviceIdItemId : String(serviceIdItemId);
+                    // Remove "/" and anything after it
+                    if (serviceIdentifier.includes('/')) {
+                        serviceIdentifier = serviceIdentifier.split('/')[0].trim();
                     }
                 }
             }
             
-            const notes = getValue(ATTRIBUTE_NAMES.ADDITIONAL_NOTES) || '';
+            // Get Payment Status
+            const paymentStatusValue = item.data.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.PAYMENT_STATUS || v.attribute.name === 'Payment Status');
+            let paymentStatusFormatted = undefined;
+            if (paymentStatusValue) {
+                const paymentStatusData = paymentStatusValue.data;
+                const labels = paymentStatusValue.attribute?.settings?.labels || [];
+                
+                if (Array.isArray(paymentStatusData) && paymentStatusData.length > 0) {
+                    paymentStatusFormatted = paymentStatusData.map(id => {
+                        const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
+                        return label ? label.name : (typeof id === 'object' ? id.name : String(id));
+                    }).filter(s => s).join(', ');
+                } else if (paymentStatusData) {
+                    if (typeof paymentStatusData === 'object' && paymentStatusData.id) {
+                        const label = labels.find(l => l.id === paymentStatusData.id);
+                        paymentStatusFormatted = label ? label.name : (paymentStatusData.name || String(paymentStatusData.id));
+                    } else if (typeof paymentStatusData === 'string') {
+                        const label = labels.find(l => l.id === paymentStatusData);
+                        paymentStatusFormatted = label ? label.name : paymentStatusData;
+                    } else {
+                        paymentStatusFormatted = String(paymentStatusData);
+                    }
+                }
+            }
+            
+            // Get Invoice Number
+            const invoiceNumber = getValue(ATTRIBUTE_NAMES.INVOICE_NUMBER) || getValue('Generated Invoice Number') || '';
+            
+            // Get Item ID, Item, Wraparound Item ID, Wraparound Description
+            const itemId = getValue('Item ID') || undefined;
+            const itemName = getValue('Item') || undefined;
+            const wraparoundItemId = getValue('Wraparound Item ID') || undefined;
+            const wraparoundDescription = getValue('Wraparound Description') || undefined;
+            
+            // Get Item or Wraparound
+            const itemOrWraparoundRaw = getValue(ATTRIBUTE_NAMES.ITEM_OR_WRAPAROUND);
+            let itemOrWraparound = undefined;
+            if (itemOrWraparoundRaw) {
+                itemOrWraparound = typeof itemOrWraparoundRaw === 'object' ? itemOrWraparoundRaw.name : String(itemOrWraparoundRaw);
+            } else if (wraparoundItemId || wraparoundDescription) {
+                itemOrWraparound = 'Wraparound';
+            } else if (itemId || itemName) {
+                itemOrWraparound = 'Item';
+            }
+            
+            // Get Item Description Code
+            const itemDescriptionCode = getValue(ATTRIBUTE_NAMES.ITEM_DESCRIPTION_CODE) || undefined;
+            
+            // Get Item Description
+            const itemDescription = getValue(ATTRIBUTE_NAMES.ITEM_DESCRIPTION) || itemName || undefined;
+            
+            // Get Wraparound Description Code
+            const wraparoundDescriptionCode = getValue(ATTRIBUTE_NAMES.WRAPAROUND_DESCRIPTION_CODE) || undefined;
+            
+            // Get Prescribed Item
+            const prescribedItem = getValue('Prescribed Item');
+            const prescribedItemValue = prescribedItem === true || prescribedItem === 'true' || prescribedItem === 'Y' ? 'Y' : 'N';
+            
+            // Get Item Purchased Method
+            const itemPurchasedMethod = getValue('Item Purchased Method');
+            const itemPurchasedMethodString = itemPurchasedMethod 
+                ? (typeof itemPurchasedMethod === 'object' ? itemPurchasedMethod.name : String(itemPurchasedMethod))
+                : undefined;
+            
+            // Get Associated Provider and Associated Provider Invoice No
+            const associatedProvider = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
+            const associatedProviderString = associatedProvider 
+                ? (typeof associatedProvider === 'object' ? associatedProvider.name : String(associatedProvider))
+                : undefined;
+            const associatedProviderInvoiceNo = getValue('Associated Provider Invoice No. (if applicable)') || 
+                                               getValue('Associated Provider Invoice No') || 
+                                               undefined;
+            
+            // Get Loaned by Organisation Name
+            const loanedByOrganisationName = getValue(ATTRIBUTE_NAMES.LOANED_BY_ORGANISATION_NAME) || 
+                                           associatedProviderString || 
+                                           undefined;
+            
+            // Get Health Professional Type Code and Health Professional Type Other
+            let healthProfessionalTypeCode = undefined;
+            let healthProfessionalTypeOther = undefined;
+            if (servicePlan && servicePlan.values) {
+                const healthProfessionalValue = servicePlan.values.find(v => 
+                    v.attribute.name === 'Health Professional' ||
+                    v.attribute.name === 'Health Professional Service'
+                )?.data;
+                if (healthProfessionalValue) {
+                    try {
+                        const healthProfessionalId = Array.isArray(healthProfessionalValue) 
+                            ? healthProfessionalValue[0] 
+                            : (typeof healthProfessionalValue === 'object' ? healthProfessionalValue.id : healthProfessionalValue);
+                        if (healthProfessionalId) {
+                            const healthProfessionalService = await fetchItemValuesCached(healthProfessionalId.toString());
+                            if (healthProfessionalService && healthProfessionalService.values) {
+                                const hpTypeCode = healthProfessionalService.values.find(v => 
+                                    v.attribute.name === 'Health Professional Type Code'
+                                )?.data;
+                                if (hpTypeCode) {
+                                    healthProfessionalTypeCode = typeof hpTypeCode === 'string' ? hpTypeCode : String(hpTypeCode);
+                                }
+                                
+                                const hpTypeOther = healthProfessionalService.values.find(v => 
+                                    v.attribute.name === 'Health Professional Type Other'
+                                )?.data;
+                                if (hpTypeOther) {
+                                    healthProfessionalTypeOther = typeof hpTypeOther === 'string' ? hpTypeOther : String(hpTypeOther);
+                                }
+                            }
+                        }
+                    } catch (err) {
+                        // Silently fail
+                    }
+                }
+            }
+            
+            // Get Item First Payment flag
+            const itemFirstPaymentRaw = getValue('Item First Payment');
+            let itemFirstPaymentValue = undefined;
+            if (typeof itemFirstPaymentRaw === 'boolean') {
+                itemFirstPaymentValue = itemFirstPaymentRaw ? 'Y' : 'N';
+            } else if (typeof itemFirstPaymentRaw === 'string') {
+                const normalized = itemFirstPaymentRaw.trim().toLowerCase();
+                itemFirstPaymentValue = (normalized === 'true' || normalized === 'y' || normalized === 'yes') ? 'Y' : 'N';
+            } else if (itemFirstPaymentRaw !== undefined && itemFirstPaymentRaw !== null) {
+                itemFirstPaymentValue = String(itemFirstPaymentRaw).trim().toLowerCase() === 'y' ? 'Y' : 'N';
+            }
+            
+            // Get Delivered By Third Party
+            const deliveredByThirdPartyRaw = getValue(ATTRIBUTE_NAMES.DELIVERED_BY_THIRD_PARTY);
+            let deliveredByThirdParty = undefined;
+            if (deliveredByThirdPartyRaw !== undefined && deliveredByThirdPartyRaw !== null) {
+                if (typeof deliveredByThirdPartyRaw === 'boolean') {
+                    deliveredByThirdParty = deliveredByThirdPartyRaw ? 'Y' : 'N';
+                } else if (typeof deliveredByThirdPartyRaw === 'string') {
+                    const normalized = deliveredByThirdPartyRaw.trim().toLowerCase();
+                    deliveredByThirdParty = (normalized === 'true' || normalized === 'y' || normalized === 'yes') ? 'Y' : 'N';
+                } else {
+                    deliveredByThirdParty = String(deliveredByThirdPartyRaw).trim().toLowerCase() === 'y' ? 'Y' : 'N';
+                }
+            }
 
             return {
                 id: item.itemId,
                 participant: participantName,
                 service,
+                serviceIdentifier,
                 serviceProvider,
-                deliveredBy: deliveredBy || null,
-                associatedProvider: associatedProvider || null,
                 scheduledServiceDate,
                 serviceDeliveryDate,
                 transactionStatus,
+                paymentStatus: paymentStatusFormatted,
                 committedAtHmForDelivery,
                 unit,
                 quantity,
@@ -1970,7 +2035,26 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 participantContribution,
                 fundingSource,
                 notes,
-                participantProfileId: participantProfileId ? participantProfileId.toString() : null
+                participantProfileId: participantProfileId ? participantProfileId.toString() : null,
+                careRecipientIdentifier,
+                invoiceNumber,
+                itemId,
+                item: itemName,
+                itemOrWraparound,
+                itemDescriptionCode,
+                itemDescription,
+                wraparoundItemId,
+                wraparoundDescription,
+                wraparoundDescriptionCode,
+                prescribedItem: prescribedItemValue,
+                itemPurchasedMethod: itemPurchasedMethodString,
+                associatedProvider: associatedProviderString,
+                associatedProviderInvoiceNo,
+                loanedByOrganisationName,
+                healthProfessionalTypeCode,
+                healthProfessionalTypeOther,
+                itemFirstPayment: itemFirstPaymentValue,
+                deliveredByThirdParty
             };
         }));
 
