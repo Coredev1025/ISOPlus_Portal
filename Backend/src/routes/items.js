@@ -266,10 +266,30 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                             $in: [
                                 "Paid",
                                 {
-                                    $map: {
-                                        input: { $ifNull: [{ $ifNull: ["$paymentStatusVal.data", []] }, []] },
-                                        as: "p",
-                                        in: "$$p.name"
+                                    $let: {
+                                        vars: {
+                                            paymentData: { $ifNull: ["$paymentStatusVal.data", []] },
+                                            paymentDataType: { $type: { $ifNull: ["$paymentStatusVal.data", []] } }
+                                        },
+                                        in: {
+                                            $map: {
+                                                input: {
+                                                    $cond: {
+                                                        if: { $eq: ["$$paymentDataType", "array"] },
+                                                        then: "$$paymentData",
+                                                        else: {
+                                                            $cond: {
+                                                                if: { $eq: ["$$paymentDataType", "object"] },
+                                                                then: ["$$paymentData"],
+                                                                else: []
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                as: "p",
+                                                in: "$$p.name"
+                                            }
+                                        }
                                     }
                                 }
                             ]
