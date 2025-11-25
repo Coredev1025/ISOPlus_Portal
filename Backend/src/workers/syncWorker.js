@@ -311,6 +311,7 @@ async function processDataBacklogSync(job) {
                   boardId: boardId,
                   folderId: folder.id.toString(),
                   itemId: itemIdStr,
+                  isoPlusItemId: itemIdStr,
                   data: item,
                   updatedAt: new Date()
                 },
