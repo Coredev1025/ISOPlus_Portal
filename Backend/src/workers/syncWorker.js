@@ -301,14 +301,16 @@ async function processDataBacklogSync(job) {
         // Save each item
         for (const item of items) {
           try {
+            const itemIdStr = item.id.toString();
+            
             const result = await Item.findOneAndUpdate(
-              { itemId: item.id.toString() },
+              { itemId: itemIdStr },
               {
                 $set: {
                   workspaceId: workspaceId,
                   boardId: boardId,
                   folderId: folder.id.toString(),
-                  itemId: item.id.toString(),
+                  itemId: itemIdStr,
                   data: item,
                   updatedAt: new Date()
                 },
