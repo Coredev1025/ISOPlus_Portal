@@ -18,6 +18,10 @@ const itemSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
+  isoPlusItemId: {
+    type: String,
+    default: null
+  },
   data: {
     type: Object,
     default: {}
@@ -35,6 +39,11 @@ const itemSchema = new mongoose.Schema({
 // Update the updatedAt field before saving
 itemSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
+  // Always set isoPlusItemId to itemId to satisfy the unique index constraint
+  // Note: We always use itemId for queries and comparisons, isoPlusItemId is only for the index
+  if (this.itemId) {
+    this.isoPlusItemId = this.itemId;
+  }
   next();
 });
 
