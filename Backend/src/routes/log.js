@@ -36,7 +36,9 @@ router.get('/', authenticateToken, async (req, res) => {
             limit = '50',
             search = '',
             level = '',
-            source = ''
+            source = '',
+            sortBy = 'timestamp',
+            sortOrder = 'desc'
         } = req.query;
 
         const pageNumber = Math.max(parseInt(page, 10) || 1, 1);
@@ -61,13 +63,21 @@ router.get('/', authenticateToken, async (req, res) => {
             ];
         }
 
+        // Build sort object for query (outside of aggregate)
+        const sortField = sortBy === 'timestamp' ? 'timestamp' : 
+                         sortBy === 'level' ? 'level' : 
+                         sortBy === 'message' ? 'message' : 'timestamp'; // Default to timestamp
+        
+        const sortDirection = sortOrder === 'asc' ? 1 : -1; // Default to desc (newest first)
+        const sortObject = { [sortField]: sortDirection };
+
         const [total, logs] = await Promise.all([
             Log.countDocuments(query),
-            Log.aggregate([
-                { $match: query },
-                { $skip: skip },
-                { $limit: limitNumber }
-            ], { allowDiskUse: true })
+            Log.find(query)
+                .sort(sortObject)
+                .skip(skip)
+                .limit(limitNumber)
+                .lean() // Use lean() for better performance
         ]);
 
         info('Log-Service', 'Logs fetched successfully', {

@@ -7,7 +7,7 @@ export async function enableBoardSync(authorization, workspaceId, boardId) {
   try {
     info('Sync-Service', 'Enabling sync for board', { workspaceId, boardId });
     
-    const board = await Board.findOne({ boardId });
+    const board = await Board.findOne({ boardId }).select('syncStatus').lean();
     
     if (board && ['sync_enabled', 'board_validation', 'board_valid', 'data_backlog_sync', 'realtime_sync', 'manual_triggered_sync'].includes(board.syncStatus)) {
       return {
@@ -83,7 +83,7 @@ export async function disableBoardSync(boardId, authorization = null) {
   try {
     info('Sync-Service', 'Disabling sync for board', { boardId });
     
-    const board = await Board.findOne({ boardId });
+    const board = await Board.findOne({ boardId }).select('syncJobId hookId workspaceId').lean();
     
     if (!board) {
       throw new Error('Board not found');
@@ -183,7 +183,7 @@ export async function retrySyncAfterFailure(authorization, workspaceId, boardId)
   try {
     info('Sync-Service', 'Retrying sync after failure', { workspaceId, boardId });
     
-    const board = await Board.findOne({ boardId });
+    const board = await Board.findOne({ boardId }).select('syncData syncStatus label syncStats').lean();
     
     if (!board) {
       throw new Error('Board not found');
@@ -299,7 +299,7 @@ export async function triggerManualSync(authorization, workspaceId, boardId) {
   try {
     info('Sync-Service', 'Triggering manual sync for board', { workspaceId, boardId });
     
-    const board = await Board.findOne({ boardId });
+    const board = await Board.findOne({ boardId }).select('syncData syncStatus syncJobId').lean();
     
     if (!board) {
       throw new Error('Board not found');
@@ -394,7 +394,7 @@ export async function cancelBoardSync(boardId, authorization = null) {
   try {
     info('Sync-Service', 'Cancelling sync for board', { boardId });
     
-    const board = await Board.findOne({ boardId });
+    const board = await Board.findOne({ boardId }).select('syncJobId hookId workspaceId').lean();
     
     if (!board) {
       throw new Error('Board not found');
@@ -551,7 +551,9 @@ export async function enableWorkspaceSync(authorization, workspaceId) {
     
     const boards = await Board.find({ 
       syncStatus: { $in: ['disabled', 'sync_stopped', 'sync_cancelled', 'failed'] }
-    });
+    })
+      .select('boardId name')
+      .lean();
 
     if (boards.length === 0) {
       return {
@@ -620,7 +622,7 @@ export async function enableWorkspaceSync(authorization, workspaceId) {
 
 export async function getBoardSyncStatus(boardId) {
   try {
-    const board = await Board.findOne({ boardId });
+    const board = await Board.findOne({ boardId }).select('boardId name syncData syncStatus lastSyncedAt lastSyncError validationErrors syncStats syncJobId').lean();
     
     if (!board) {
       throw new Error('Board not found');

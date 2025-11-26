@@ -87,7 +87,9 @@ router.post('/isoplus', async (req, res) => {
  */
 async function fetchOrCreateItem(itemId, boardId = null, workspaceId = null) {
   // First check if item exists in database
-  let item = await Item.findOne({ itemId: itemId });
+  let item = await Item.findOne({ itemId: itemId })
+    .select('boardId workspaceId')
+    .lean();
   if (item) {
     return { item, boardId: item.boardId, workspaceId: item.workspaceId };
   }
@@ -99,7 +101,9 @@ async function fetchOrCreateItem(itemId, boardId = null, workspaceId = null) {
 
   // If we don't have boardId/workspaceId, search through all boards with sync enabled
   if (!foundBoardId || !foundWorkspaceId) {
-    const boards = await Board.find({ syncData: true });
+    const boards = await Board.find({ syncData: true })
+      .select('workspaceId boardId')
+      .lean();
     
     for (const board of boards) {
       if (board.workspaceId && board.boardId) {
@@ -172,7 +176,7 @@ async function fetchOrCreateItem(itemId, boardId = null, workspaceId = null) {
   } catch (err) {
     if (err?.code === 11000) {
       // Another process inserted the item concurrently; fetch the existing record
-      item = await Item.findOne({ itemId });
+      item = await Item.findOne({ itemId }).lean();
       if (!item) {
         throw err;
       }
@@ -460,7 +464,9 @@ async function handleItemDeleted(payload) {
 
     // If not in payload, try to get from existing item
     if (!boardId) {
-      const item = await Item.findOne({ itemId: itemId });
+      const item = await Item.findOne({ itemId: itemId })
+        .select('boardId')
+        .lean();
       if (item) {
         boardId = item.boardId;
       }

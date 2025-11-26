@@ -259,7 +259,7 @@ export default function MonthlyStatement() {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => (currentYear - i).toString());
 
-  // Fetch unique participants
+  // Fetch unique participants using dedicated endpoint
   useEffect(() => {
     const fetchParticipants = async () => {
       if (!id || !boardId) return;
@@ -267,7 +267,7 @@ export default function MonthlyStatement() {
       setLoadingParticipants(true);
       try {
         const response = await axios.get(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/monthly-statement`,
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/monthly-statement/participants`,
           {
             headers: {
               'Content-Type': 'application/json',
@@ -276,13 +276,8 @@ export default function MonthlyStatement() {
           }
         );
 
-        if (response.data?.serviceItems?.items) {
-          const participantSet = new Set<string>(
-            response.data.serviceItems.items
-              .map((item: ServiceRecord) => item.participant)
-              .filter((p: string) => p && p.trim() !== '')
-          );
-          const participants = Array.from(participantSet).sort();
+        if (response.data?.participants) {
+          const participants = response.data.participants.filter((p: string) => p && p.trim() !== '');
           setUniqueParticipants(participants as string[]);
         }
       } catch (err) {

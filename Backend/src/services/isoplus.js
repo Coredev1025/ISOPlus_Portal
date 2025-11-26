@@ -320,8 +320,10 @@ export async function getViewsById(authorization, workspaceId, boardId, viewId) 
 
 export async function setIntegrationMessage(workspaceId, boardId, itemId, message) {
     try {
-        const board = await Board.findOne({ boardId: boardId.toString() });
-        if (!board.attribute.id) {
+        const board = await Board.findOne({ boardId: boardId.toString() })
+            .select('attribute')
+            .lean();
+        if (!board || !board.attribute || !board.attribute.id) {
             throw new Error("Internal message attribute not found in board configuration");
         }
         await axios.put(
@@ -1616,7 +1618,9 @@ export async function setGeneratedField(workspaceId, boardId, itemId, message) {
 export async function setPDFLinkAttribute(workspaceId, boardId, itemId, pdfUrl, docType) {
     try {
         // Get the board to find the PDF attribute ID
-        const board = await Board.findOne({ boardId: boardId.toString() });
+        const board = await Board.findOne({ boardId: boardId.toString() })
+            .select('pdfAttribute')
+            .lean();
         if (!board || !board.pdfAttribute || !board.pdfAttribute.id) {
             error('ISO+™ Service', 'PDF attribute not found in board configuration', { boardId, workspaceId });
             return false;

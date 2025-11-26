@@ -95,7 +95,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
   try {
     const workspaceId = req.query.workspaceId?.toString();
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
-    const business = await Business.findOne({ workspaceId });
+    const business = await Business.findOne({ workspaceId }).lean();
     if (!business) {
       warn('Business-Service', 'Business profile not found', {}, extractContextFromReq(req));
       return res.status(404).json({ message: 'Business profile not found' });
@@ -127,7 +127,7 @@ router.get('/logo', authenticateToken, async (req, res) => {
       return res.status(400).json({ message: 'workspaceId and logoKey are required' });
     }
 
-    const business = await Business.findOne({ workspaceId: workspaceId.toString() });
+    const business = await Business.findOne({ workspaceId: workspaceId.toString() }).lean();
     if (!business) {
       return res.status(404).json({ message: 'Business not found' });
     }
