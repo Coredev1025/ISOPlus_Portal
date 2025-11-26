@@ -3,58 +3,192 @@ import Board from '../models/Board.js';
 import FormData from 'form-data';
 import { info, warn, error, logAttributeError, logApiError, logOperationStart, logOperationEnd, extractContextFromReq } from '../utils/logger.js';
 
+const DEFAULT_ITEM_PAGE_SIZE = parseInt(process.env.ISOPLUS_ITEM_PAGE_SIZE || '100', 10);
+const DEFAULT_PAGE_DELAY_MS = parseInt(process.env.ISOPLUS_PAGE_DELAY_MS || '0', 10);
+const DEFAULT_COLLECTION_PAGE_SIZE = parseInt(process.env.ISOPLUS_COLLECTION_PAGE_SIZE || '100', 10);
+const LOGO_ITEMS_PAGE_SIZE = parseInt(process.env.LOGO_ITEMS_PAGE_SIZE || '50', 10);
+
+const sleep = (ms = 0) => new Promise(resolve => setTimeout(resolve, ms));
+const withAfterParam = (params, after) => (after ? { ...params, after } : params);
+
+function createPaginator(fetchPage, options = {}) {
+    const pageDelayMs = options.pageDelayMs ?? DEFAULT_PAGE_DELAY_MS;
+    const selectData = options.selectData || ((response) => response.data?.data || []);
+    const selectHasMore = options.selectHasMore || ((response) => Boolean(response.data?.has_more));
+    const selectAfter = options.selectAfter || ((response) => response.data?.after);
+
+    let after = null;
+    let hasMore = true;
+
+    return {
+        async next() {
+            if (!hasMore) {
+                return { value: undefined, done: true };
+            }
+
+            const response = await fetchPage(after);
+            const batch = selectData(response) || [];
+            hasMore = selectHasMore(response);
+            after = selectAfter(response);
+
+            if (hasMore && pageDelayMs > 0) {
+                await sleep(pageDelayMs);
+            }
+
+            return { value: batch, done: false };
+        },
+        [Symbol.asyncIterator]() {
+            return this;
+        }
+    };
+}
+
+async function collectPaginated(iterator) {
+    const results = [];
+    while (true) {
+        const { value, done } = await iterator.next();
+        if (done) {
+            break;
+        }
+        if (Array.isArray(value)) {
+            results.push(...value);
+        }
+    }
+    return results;
+}
+
+function iterateWorkspaces(authorization, options = {}) {
+    const url = "https://app.isoplus.online/api/v2/workspaces";
+    const headers = {
+        "Authorization": authorization,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    };
+    const baseParams = {
+        "limit": String(options.limit || DEFAULT_COLLECTION_PAGE_SIZE),
+        "sort_by": "created_at",
+        "sort_direction": "desc",
+    };
+
+    return createPaginator(
+        (after) => axios.get(url, { headers, params: withAfterParam(baseParams, after) }),
+        { pageDelayMs: options.pageDelayMs }
+    );
+}
+
+function iterateBoards(authorization, workspaceId, options = {}) {
+    const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards`;
+    const headers = {
+        "Authorization": authorization,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    };
+    const baseParams = {
+        "limit": String(options.limit || DEFAULT_COLLECTION_PAGE_SIZE),
+        "sort_by": "created_at",
+        "sort_direction": "desc",
+    };
+
+    return createPaginator(
+        (after) => axios.get(url, { headers, params: withAfterParam(baseParams, after) }),
+        { pageDelayMs: options.pageDelayMs }
+    );
+}
+
+function iterateFolders(workspaceId, boardId, options = {}) {
+    const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/folders/`;
+    const headers = {
+        "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-API-Version": "2025-02-26.morava",
+    };
+    const baseParams = {
+        "limit": String(options.limit || DEFAULT_COLLECTION_PAGE_SIZE),
+        "sort_by": "id",
+        "sort_direction": "desc",
+    };
+
+    return createPaginator(
+        (after) => axios.get(url, { headers, params: withAfterParam(baseParams, after) }),
+        { pageDelayMs: options.pageDelayMs }
+    );
+}
+
+function iterateMembers(authorization, workspaceId, options = {}) {
+    const membersUrl = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/members`;
+    const membersHeaders = {
+        "Authorization": authorization,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-API-Version": "2025-02-26.morava",
+    };
+    const baseParams = {
+        "limit": String(options.limit || 10),
+        "sort_by": "created_at",
+        "sort_direction": "desc",
+    };
+
+    return createPaginator(
+        (after) => axios.get(membersUrl, { headers: membersHeaders, params: withAfterParam(baseParams, after) }),
+        { pageDelayMs: options.pageDelayMs }
+    );
+}
+
+function iterateViews(authorization, workspaceId, boardId, options = {}) {
+    const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/views`;
+    const headers = {
+        "Authorization": authorization,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-API-Version": "2025-02-26.morava",
+    };
+    const baseParams = {
+        "limit": String(options.limit || DEFAULT_COLLECTION_PAGE_SIZE),
+        "sort_by": "created_at",
+        "sort_direction": "desc",
+    };
+
+    return createPaginator(
+        (after) => axios.get(url, { headers, params: withAfterParam(baseParams, after) }),
+        { pageDelayMs: options.pageDelayMs }
+    );
+}
+
 export async function getWorkspace(authorization, userEmail = null) {
     try {
-        const url = "https://app.isoplus.online/api/v2/workspaces";
-        const headers = {
-            "Authorization": authorization,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        };
-        const params = {
-            "limit": "100",
-            "sort_by": "created_at",
-            "sort_direction": "desc",
-        };
+        const normalizedEmail = userEmail ? userEmail.toLowerCase() : null;
+        const workspaceIterator = iterateWorkspaces(authorization);
+        const workspaceResults = [];
 
-        let workspace = [];
-        const result = await axios.get(url, { headers, params });
+        while (true) {
+            const { value: workspacePage, done } = await workspaceIterator.next();
+            if (done) {
+                break;
+            }
 
-        if (result.status === 200) {
-            workspace = workspace.concat(result.data.data);
-            let has_more = result.data.has_more, after = result.data.after;
+            for (const item of workspacePage) {
+                const board = await getBoard(authorization, item.id);
+                const member = await getMember(authorization, item.id);
+                let userRole = "restricted_member";
 
-            while (has_more) {
-                const response = await axios.get(url, { headers, params: { ...params, after } });
-                if (response.status === 200) {
-                    workspace = workspace.concat(response.data.data);
-                    has_more = response.data.has_more;
-                    after = response.data.after;
-                } else {
-                    has_more = false;
+                if (member.status === 200 && normalizedEmail) {
+                    userRole = member.members.find(
+                        (m) => m.email && m.email.toLowerCase() === normalizedEmail
+                    )?.role || userRole;
                 }
+
+                workspaceResults.push({
+                    id: item.id,
+                    name: item.name,
+                    label: item.label,
+                    board: board.board,
+                    user_role: userRole
+                });
             }
         }
 
-        workspace = await Promise.all(workspace.map(async (item) => {
-            const board = await getBoard(authorization, item.id);
-            const member = await getMember(authorization, item.id);
-            let userRole = null;
-            if (member.status === 200) {
-                userRole = member.members.find(m => m.email && m.email.toLowerCase() === userEmail.toLowerCase())?.role;
-            } else {
-                userRole = "restricted_member";
-            }
-            return {
-                id: item.id,
-                name: item.name,
-                label: item.label,
-                board: board.board,
-                user_role: userRole
-            }
-        }));
-
-        return { workspace: workspace, status: 200 };
+        return { workspace: workspaceResults, status: 200 };
     } catch (err) {
         return { message: err.message, status: 500 };
     }
@@ -86,37 +220,8 @@ export async function getMyWorkspace(authorization) {
 
 export async function getBoard(authorization, workspaceId) {
     try {
-        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards`;
-        const headers = {
-            "Authorization": authorization,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        };
-        const params = {
-            "limit": "100",
-            "sort_by": "created_at",
-            "sort_direction": "desc",
-        };
-
-        let board = [];
-        const result = await axios.get(url, { headers, params });
-
-        if (result.status === 200) {
-            board = board.concat(result.data.data);
-            let has_more = result.data.has_more, after = result.data.after;
-
-            while (has_more) {
-                const response = await axios.get(url, { headers, params: { ...params, after } });
-                if (response.status === 200) {
-                    board = board.concat(response.data.data);
-                    has_more = response.data.has_more;
-                    after = response.data.after;
-                } else {
-                    has_more = false;
-                }
-            }
-        }
-        return { board: board, status: 200 };
+        const boards = await collectPaginated(iterateBoards(authorization, workspaceId));
+        return { board: boards, status: 200 };
     } catch (err) {
         return { message: err.message, status: 500 };
     }
@@ -124,79 +229,54 @@ export async function getBoard(authorization, workspaceId) {
 
 export async function getFolder(workspaceId, boardId) {
     try {
-        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/folders/`;
-        const headers = {
-            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-API-Version": "2025-02-26.morava",
-        };
-        const params = {
-            "limit": "100",
-            "sort_by": "id",
-            "sort_direction": "desc",
-        };
-
-        let folder = [];
-        const result = await axios.get(url, { headers, params });
-
-        if (result.status === 200) {
-            folder = folder.concat(result.data.data);
-            let has_more = result.data.has_more, after = result.data.after;
-
-            while (has_more) {
-                const response = await axios.get(url, { headers, params: { ...params, after } });
-                if (response.status === 200) {
-                    folder = folder.concat(response.data.data);
-                    has_more = response.data.has_more;
-                    after = response.data.after;
-                } else {
-                    has_more = false;
-                }
-            }
-        }
-        return { folder: folder, status: 200 };
+        const folders = await collectPaginated(iterateFolders(workspaceId, boardId));
+        return { folder: folders, status: 200 };
     } catch (err) {
         return { message: err.message, status: 500 };
     }
 }
 
+async function buildItemRequest(workspaceId, boardId, folderId, limit, after) {
+    const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/`;
+    const headers = {
+        "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "X-API-Version": "2025-02-26.morava",
+    };
+    const params = {
+        "limit": String(limit),
+        "sort_by": "created_at",
+        "sort_direction": "desc",
+        "expand[0]": "values.attribute",
+        "folder_id": folderId,
+    };
+    return { url, headers, params: withAfterParam(params, after) };
+}
+
+export function iterateBoardItems(workspaceId, boardId, folderId, options = {}) {
+    const limit = options.limit || DEFAULT_ITEM_PAGE_SIZE;
+    return createPaginator(
+        async (after) => {
+            const requestConfig = await buildItemRequest(workspaceId, boardId, folderId, limit, after);
+            return axios.get(requestConfig.url, { headers: requestConfig.headers, params: requestConfig.params });
+        },
+        { pageDelayMs: options.pageDelayMs }
+    );
+}
+
 export async function getItem(workspaceId, boardId, folderId) {
     try {
-        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/`;
-        const headers = {
-            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-API-Version": "2025-02-26.morava",
-        };
-        const params = {
-            "limit": "100",
-            "sort_by": "created_at",
-            "sort_direction": "desc",
-            "expand[0]": "values.attribute",
-            "folder_id": folderId,
-        };
-
-        let item = [];
-        const result = await axios.get(url, { headers, params });
-
-        if (result.status === 200) {
-            item = item.concat(result.data.data);
-            let has_more = result.data.has_more, after = result.data.after;
-
-            while (has_more) {
-                const response = await axios.get(url, { headers, params: { ...params, after } });
-                if (response.status === 200) {
-                    item = item.concat(response.data.data);
-                    has_more = response.data.has_more;
-                    after = response.data.after;
-                } else {
-                    has_more = false;
-                }
+        const items = [];
+        const iterator = iterateBoardItems(workspaceId, boardId, folderId);
+        while (true) {
+            const { value, done } = await iterator.next();
+            if (done) {
+                break;
             }
+            items.push(...value);
         }
-        return { item: item, status: 200 };
+        return { item: items, status: 200 };
     } catch (err) {
         return { message: err.message, status: 500 };
     }
@@ -204,32 +284,7 @@ export async function getItem(workspaceId, boardId, folderId) {
 
 export async function getMember(authorization, workspaceId) {
     try {
-        const membersUrl = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/members`;
-        const membersHeaders = {
-            "Authorization": authorization,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-API-Version": "2025-02-26.morava",
-        };
-        const membersParams = {
-            "limit": "10",
-            "sort_by": "created_at",
-            "sort_direction": "desc",
-        };
-        let members = [];
-        let has_more = true;
-        let after = undefined;
-        while (has_more) {
-            const paramsWithAfter = after ? { ...membersParams, after } : membersParams;
-            const membersRes = await axios.get(membersUrl, { headers: membersHeaders, params: paramsWithAfter });
-            if (membersRes.status === 200 && Array.isArray(membersRes.data.data)) {
-                members = members.concat(membersRes.data.data);
-                has_more = membersRes.data.has_more;
-                after = membersRes.data.after;
-            } else {
-                has_more = false;
-            }
-        }
+        const members = await collectPaginated(iterateMembers(authorization, workspaceId));
         return { members: members, status: 200 };
     } catch (err) {
         return { message: err.message, status: 500 };
@@ -238,34 +293,7 @@ export async function getMember(authorization, workspaceId) {
 
 export async function getAllViews(authorization, workspaceId, boardId) {
     try {
-        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/views`;
-        const headers = {
-            "Authorization": authorization,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-API-Version": "2025-02-26.morava",
-        };
-        const params = {
-            "limit": "100",
-            "sort_by": "created_at",
-            "sort_direction": "desc",
-            "sort_by": "id",
-        };
-
-        let views = [];
-        let has_more = true;
-        let after = null;
-
-        while (has_more) {
-            const result = await axios.get(url, { headers, params: { ...params, after } });
-            if (result.status === 200) {
-                views = views.concat(result.data.data);
-                has_more = result.data.has_more;
-                after = result.data.after;
-            } else {
-                has_more = false;
-            }
-        }
+        const views = await collectPaginated(iterateViews(authorization, workspaceId, boardId));
         return { views: views, status: 200 };
     } catch (err) {
         return { message: err.message, status: 500 };
@@ -1234,9 +1262,205 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                             coverAttributeId: coverAttributeid
                         }, req);
                         
-                        let items;
+                        let totalItemsProcessed = 0;
+                        let pageNumber = 0;
                         try {
-                            items = await getItem(workspaceId, boardItem.id, viewItem.folder_id);
+                            const itemIterator = iterateBoardItems(
+                                workspaceId,
+                                boardItem.id,
+                                viewItem.folder_id,
+                                { limit: LOGO_ITEMS_PAGE_SIZE }
+                            );
+                            while (true) {
+                                const { value: itemsPage, done } = await itemIterator.next();
+                                if (done) {
+                                    break;
+                                }
+                                pageNumber += 1;
+                                totalItemsProcessed += itemsPage.length;
+                                info('ISO+™ Service', 'Items page fetched successfully for document view', { 
+                                    workspaceId, 
+                                    requestId, 
+                                    boardId: boardItem.id, 
+                                    viewId: viewItem.id,
+                                    pageNumber,
+                                    pageSize: itemsPage.length,
+                                    totalItemsProcessed
+                                }, req);
+                                
+                                for (const item of itemsPage) {
+                                    info('ISO+™ Service', 'Processing item for logo update', { 
+                                        workspaceId, 
+                                        requestId, 
+                                        boardId: boardItem.id, 
+                                        viewId: viewItem.id,
+                                        itemId: item.id,
+                                        itemName: item.name
+                                    }, req);
+                                    
+                                    let itemValues;
+                                    try {
+                                        itemValues = await getItemValues(workspaceId, boardItem.id, item.id);
+                                    } catch (err) {
+                                        const itemValuesErrorContext = {
+                                            workspaceId,
+                                            requestId,
+                                            boardId: boardItem.id,
+                                            viewId: viewItem.id,
+                                            itemId: item.id,
+                                            itemName: item.name,
+                                            coverAttributeId: coverAttributeid,
+                                            errorDetails: getErrorMessage(err),
+                                            statusCode: err.response?.status,
+                                            stackTrace: err.stack
+                                        };
+                                        
+                                        if (errorMessageIncludes(err, 'timeout') || err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
+                                            warn('ISO+™ Service', 'Request timeout when fetching item values', itemValuesErrorContext, req);
+                                        } else if (errorMessageIncludes(err, 'network') || err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED') {
+                                            warn('ISO+™ Service', 'Network error when fetching item values', itemValuesErrorContext, req);
+                                        } else {
+                                            warn('ISO+™ Service', 'Error fetching item values', itemValuesErrorContext, req);
+                                        }
+                                        continue;
+                                    }
+                                    
+                                    if (itemValues) {
+                                        info('ISO+™ Service', 'Item values fetched, looking for cover attribute', { 
+                                            workspaceId, 
+                                            requestId, 
+                                            boardId: boardItem.id, 
+                                            viewId: viewItem.id,
+                                            itemId: item.id,
+                                            coverAttributeId: coverAttributeid,
+                                            availableAttributes: itemValues.values?.map(v => ({ 
+                                                id: v.attribute.id, 
+                                                name: v.attribute.name, 
+                                                type: v.attribute.type 
+                                            })) || []
+                                        }, req);
+                                        
+                                        let doc = itemValues.values.find(v => v.attribute.id == coverAttributeid);
+                                        const coverData = [{ id: uploadImageURL.data.id }];
+                                        if (doc) {
+                                            doc.data = coverData;
+                                        } else {
+                                            doc = { data: coverData, attribute: { id: coverAttributeid } };
+                                        }
+                                        try {
+                                            const itemUpdateResponse = await axios.put(
+                                                `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardItem.id}/items/${item.id}`,
+                                                { values: [{ data: doc.data, attribute_id: doc.attribute.id }] },
+                                                {
+                                                    headers: {
+                                                        "Authorization": authorization,
+                                                        "Content-Type": "application/json",
+                                                        "Accept": "application/json"
+                                                    }
+                                                }
+                                            );
+                                            if (!viewItem.settings) {
+                                                viewItem.settings = {};
+                                            }
+                                            if (!viewItem.settings.editorItems) {
+                                                viewItem.settings.editorItems = {};
+                                            }
+                                            if (itemUpdateResponse.status === 200) {
+                                                if (item.id in viewItem.settings.editorItems) {
+                                                    viewItem.settings.editorItems[item.id].cover = uploadImageURL.data.id;
+                                                } else {
+                                                    viewItem.settings.editorItems[item.id] = { cover: uploadImageURL.data.id };
+                                                }
+                                            }
+                                        } catch (err) {
+                                            const errorContext = {
+                                                workspaceId,
+                                                boardId: boardItem.id,
+                                                boardName: boardItem.name,
+                                                itemId: item.id,
+                                                itemName: item.name,
+                                                viewId: viewItem.id,
+                                                viewName: viewItem.name,
+                                                viewType: viewItem.type,
+                                                folderId: viewItem.folder_id,
+                                                coverAttributeId: coverAttributeid,
+                                                requestId,
+                                                errorDetails: getErrorMessage(err),
+                                                statusCode: err.response?.status,
+                                                requestPayload: {
+                                                    values: [{
+                                                        data: uploadImageURL?.data?.id,
+                                                        attribute_id: coverAttributeid
+                                                    }]
+                                                },
+                                                stackTrace: err.stack,
+                                                itemValues: itemValues?.values?.map(v => ({
+                                                    attributeId: v.attribute?.id,
+                                                    attributeName: v.attribute?.name,
+                                                    attributeType: v.attribute?.type,
+                                                    data: v.data
+                                                })) || [],
+                                                viewSettings: viewItem.settings,
+                                                uploadDetails: {
+                                                    uploadId: uploadImageURL?.data?.id,
+                                                    fileName: logo?.originalname,
+                                                    fileSize: logo?.size,
+                                                    mimeType: logo?.mimetype
+                                                }
+                                            };
+                                            
+                                            // Use specialized logging for attribute errors
+                                            if (errorMessageIncludes(err, 'Attribute(s) not recognized')) {
+                                                logAttributeError(
+                                                    'ISO+™ Service', 
+                                                    'Error updating item for document logo: Attribute not recognized', 
+                                                    coverAttributeid, 
+                                                    errorContext, 
+                                                    req
+                                                );
+                                            } else if (errorMessageIncludes(err, 'not found') || err.response?.status === 404) {
+                                                logApiError(
+                                                    'ISO+™ Service', 
+                                                    'Error updating item for document logo: Item or attribute not found', 
+                                                    errorContext, 
+                                                    req
+                                                );
+                                            } else if (errorMessageIncludes(err, 'unauthorized') || err.response?.status === 401) {
+                                                logApiError(
+                                                    'ISO+™ Service', 
+                                                    'Error updating item for document logo: Unauthorized', 
+                                                    errorContext, 
+                                                    req
+                                                );
+                                            } else if (errorMessageIncludes(err, 'forbidden') || err.response?.status === 403) {
+                                                logApiError(
+                                                    'ISO+™ Service', 
+                                                    'Error updating item for document logo: Forbidden', 
+                                                    errorContext, 
+                                                    req
+                                                );
+                                            } else if (errorMessageIncludes(err, 'timeout') || err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
+                                                logApiError(
+                                                    'ISO+™ Service', 
+                                                    'Error updating item for document logo: Request timeout', 
+                                                    errorContext, 
+                                                    req
+                                                );
+                                            } else {
+                                                logApiError(
+                                                    'ISO+™ Service', 
+                                                    'Error updating item for document logo:', 
+                                                    errorContext, 
+                                                    req
+                                                );
+                                            }
+                                        }
+                                        await sleep(2000);
+                                    }
+                                }
+
+                                await sleep(2000);
+                            }
                         } catch (err) {
                             const itemsErrorContext = {
                                 workspaceId,
@@ -1260,228 +1484,56 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
                             continue;
                         }
                         
-                        if (items.status == 200 && items.item && items.item.length > 0) {
-                            info('ISO+™ Service', 'Items fetched successfully for document view', { 
+                        if (totalItemsProcessed === 0) {
+                            warn('ISO+™ Service', 'No items found for document view', { 
                                 workspaceId, 
                                 requestId, 
                                 boardId: boardItem.id, 
                                 viewId: viewItem.id,
-                                itemCount: items.item.length,
-                                items: items.item.map(i => ({ id: i.id, name: i.name }))
+                                folderId: viewItem.folder_id
                             }, req);
+                        }
+                        try {
+                            await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardItem.id}/views/${viewItem.id}`, viewItem, {
+                                headers: {
+                                    "Authorization": authorization,
+                                    "Content-Type": "application/json",
+                                    "Accept": "application/json"
+                                }
+                            });
+                            info('ISO+™ Service', `Logo set successfully for view: ${viewItem.id}`);
+                        } catch (err) {
+                            const errorContext = {
+                                workspaceId,
+                                boardId: boardItem.id,
+                                boardName: boardItem.name,
+                                viewId: viewItem.id,
+                                viewName: viewItem.name,
+                                viewType: viewItem.type,
+                                folderId: viewItem.folder_id,
+                                requestId,
+                                errorDetails: getErrorMessage(err),
+                                statusCode: err.response?.status,
+                                requestPayload: viewItem,
+                                stackTrace: err.stack,
+                                viewSettings: viewItem.settings,
+                                editorItems: viewItem.settings?.editorItems || {}
+                            };
                             
-                            for (const item of items.item) {
-                                info('ISO+™ Service', 'Processing item for logo update', { 
-                                    workspaceId, 
-                                    requestId, 
-                                    boardId: boardItem.id, 
-                                    viewId: viewItem.id,
-                                    itemId: item.id,
-                                    itemName: item.name
-                                }, req);
-                                
-                                let itemValues;
-                                try {
-                                    itemValues = await getItemValues(workspaceId, boardItem.id, item.id);
-                                } catch (err) {
-                                    const itemValuesErrorContext = {
-                                        workspaceId,
-                                        requestId,
-                                        boardId: boardItem.id,
-                                        viewId: viewItem.id,
-                                        itemId: item.id,
-                                        itemName: item.name,
-                                        coverAttributeId: coverAttributeid,
-                                        errorDetails: getErrorMessage(err),
-                                        statusCode: err.response?.status,
-                                        stackTrace: err.stack
-                                    };
-                                    
-                                    if (errorMessageIncludes(err, 'timeout') || err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
-                                        warn('ISO+™ Service', 'Request timeout when fetching item values', itemValuesErrorContext, req);
-                                    } else if (errorMessageIncludes(err, 'network') || err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED') {
-                                        warn('ISO+™ Service', 'Network error when fetching item values', itemValuesErrorContext, req);
-                                    } else {
-                                        warn('ISO+™ Service', 'Error fetching item values', itemValuesErrorContext, req);
-                                    }
-                                    continue;
-                                }
-                                
-                                if (itemValues) {
-                                    info('ISO+™ Service', 'Item values fetched, looking for cover attribute', { 
-                                        workspaceId, 
-                                        requestId, 
-                                        boardId: boardItem.id, 
-                                        viewId: viewItem.id,
-                                        itemId: item.id,
-                                        coverAttributeId: coverAttributeid,
-                                        availableAttributes: itemValues.values?.map(v => ({ 
-                                            id: v.attribute.id, 
-                                            name: v.attribute.name, 
-                                            type: v.attribute.type 
-                                        })) || []
-                                    }, req);
-                                    
-                                    let doc = itemValues.values.find(v => v.attribute.id == coverAttributeid);
-                                    const coverData = [{ id: uploadImageURL.data.id }];
-                                    if (doc) {
-                                        doc.data = coverData;
-                                    } else {
-                                        doc = { data: coverData, attribute: { id: coverAttributeid } };
-                                    }
-                                    try {
-                                        const itemUpdateResponse = await axios.put(
-                                            `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardItem.id}/items/${item.id}`,
-                                            { values: [{ data: doc.data, attribute_id: doc.attribute.id }] },
-                                            {
-                                                headers: {
-                                                    "Authorization": authorization,
-                                                    "Content-Type": "application/json",
-                                                    "Accept": "application/json"
-                                                }
-                                            }
-                                        );
-                                        if (!viewItem.settings) {
-                                            viewItem.settings = {};
-                                        }
-                                        if (!viewItem.settings.editorItems) {
-                                            viewItem.settings.editorItems = {};
-                                        }
-                                        if (itemUpdateResponse.status === 200) {
-                                            if (item.id in viewItem.settings.editorItems) {
-                                                viewItem.settings.editorItems[item.id].cover = uploadImageURL.data.id;
-                                            } else {
-                                                viewItem.settings.editorItems[item.id] = { cover: uploadImageURL.data.id };
-                                            }
-                                        }
-                                    } catch (err) {
-                                        const errorContext = {
-                                            workspaceId,
-                                            boardId: boardItem.id,
-                                            boardName: boardItem.name,
-                                            itemId: item.id,
-                                            itemName: item.name,
-                                            viewId: viewItem.id,
-                                            viewName: viewItem.name,
-                                            viewType: viewItem.type,
-                                            folderId: viewItem.folder_id,
-                                            coverAttributeId: coverAttributeid,
-                                            requestId,
-                                            errorDetails: getErrorMessage(err),
-                                            statusCode: err.response?.status,
-                                            requestPayload: {
-                                                values: [{
-                                                    data: uploadImageURL?.data?.id,
-                                                    attribute_id: coverAttributeid
-                                                }]
-                                            },
-                                            stackTrace: err.stack,
-                                            itemValues: itemValues?.values?.map(v => ({
-                                                attributeId: v.attribute?.id,
-                                                attributeName: v.attribute?.name,
-                                                attributeType: v.attribute?.type,
-                                                data: v.data
-                                            })) || [],
-                                            viewSettings: viewItem.settings,
-                                            uploadDetails: {
-                                                uploadId: uploadImageURL?.data?.id,
-                                                fileName: logo?.originalname,
-                                                fileSize: logo?.size,
-                                                mimeType: logo?.mimetype
-                                            }
-                                        };
-                                        
-                                        // Use specialized logging for attribute errors
-                                        if (errorMessageIncludes(err, 'Attribute(s) not recognized')) {
-                                            logAttributeError(
-                                                'ISO+™ Service', 
-                                                'Error updating item for document logo: Attribute not recognized', 
-                                                coverAttributeid, 
-                                                errorContext, 
-                                                req
-                                            );
-                                        } else if (errorMessageIncludes(err, 'not found') || err.response?.status === 404) {
-                                            logApiError(
-                                                'ISO+™ Service', 
-                                                'Error updating item for document logo: Item or attribute not found', 
-                                                errorContext, 
-                                                req
-                                            );
-                                        } else if (errorMessageIncludes(err, 'unauthorized') || err.response?.status === 401) {
-                                            logApiError(
-                                                'ISO+™ Service', 
-                                                'Error updating item for document logo: Unauthorized', 
-                                                errorContext, 
-                                                req
-                                            );
-                                        } else if (errorMessageIncludes(err, 'forbidden') || err.response?.status === 403) {
-                                            logApiError(
-                                                'ISO+™ Service', 
-                                                'Error updating item for document logo: Forbidden', 
-                                                errorContext, 
-                                                req
-                                            );
-                                        } else if (errorMessageIncludes(err, 'timeout') || err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
-                                            logApiError(
-                                                'ISO+™ Service', 
-                                                'Error updating item for document logo: Request timeout', 
-                                                errorContext, 
-                                                req
-                                            );
-                                        } else {
-                                            logApiError(
-                                                'ISO+™ Service', 
-                                                'Error updating item for document logo:', 
-                                                errorContext, 
-                                                req
-                                            );
-                                        }
-                                    }
-                                    await new Promise(resolve => setTimeout(resolve, 2000));
-                                }
-                            }
-                            try {
-                                await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardItem.id}/views/${viewItem.id}`, viewItem, {
-                                    headers: {
-                                        "Authorization": authorization,
-                                        "Content-Type": "application/json",
-                                        "Accept": "application/json"
-                                    }
-                                });
-                                info('ISO+™ Service', `Logo set successfully for view: ${viewItem.id}`);
-                            } catch (err) {
-                                const errorContext = {
-                                    workspaceId,
-                                    boardId: boardItem.id,
-                                    boardName: boardItem.name,
-                                    viewId: viewItem.id,
-                                    viewName: viewItem.name,
-                                    viewType: viewItem.type,
-                                    folderId: viewItem.folder_id,
-                                    requestId,
-                                    errorDetails: getErrorMessage(err),
-                                    statusCode: err.response?.status,
-                                    requestPayload: viewItem,
-                                    stackTrace: err.stack,
-                                    viewSettings: viewItem.settings,
-                                    editorItems: viewItem.settings?.editorItems || {}
-                                };
-                                
-                                // Check for specific error types
-                                if (errorMessageIncludes(err, 'not found') || err.response?.status === 404) {
-                                    logApiError('ISO+™ Service', 'View not found when setting document logo:', errorContext, req);
-                                } else if (errorMessageIncludes(err, 'unauthorized') || err.response?.status === 401) {
-                                    logApiError('ISO+™ Service', 'Unauthorized when setting document logo:', errorContext, req);
-                                } else if (errorMessageIncludes(err, 'forbidden') || err.response?.status === 403) {
-                                    logApiError('ISO+™ Service', 'Forbidden when setting document logo:', errorContext, req);
-                                } else if (errorMessageIncludes(err, 'timeout') || err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
-                                    logApiError('ISO+™ Service', 'Request timeout when setting document logo:', errorContext, req);
-                                } else {
-                                    logApiError('ISO+™ Service', 'Error setting document logo for view:', errorContext, req);
-                                }
+                            // Check for specific error types
+                            if (errorMessageIncludes(err, 'not found') || err.response?.status === 404) {
+                                logApiError('ISO+™ Service', 'View not found when setting document logo:', errorContext, req);
+                            } else if (errorMessageIncludes(err, 'unauthorized') || err.response?.status === 401) {
+                                logApiError('ISO+™ Service', 'Unauthorized when setting document logo:', errorContext, req);
+                            } else if (errorMessageIncludes(err, 'forbidden') || err.response?.status === 403) {
+                                logApiError('ISO+™ Service', 'Forbidden when setting document logo:', errorContext, req);
+                            } else if (errorMessageIncludes(err, 'timeout') || err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
+                                logApiError('ISO+™ Service', 'Request timeout when setting document logo:', errorContext, req);
+                            } else {
+                                logApiError('ISO+™ Service', 'Error setting document logo for view:', errorContext, req);
                             }
                         }
-                        await new Promise(resolve => setTimeout(resolve, 2000));
+                        await sleep(2000);
                     }
                 }
             }

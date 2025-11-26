@@ -49,9 +49,18 @@ const ATTRIBUTE_NAMES = {
     PRIMARY_SUPPLEMENT_AMOUNT: 'Primary Supplement ($)',
     CARRYOVER_FUNDING: 'Carryover Funding from the Previous Quarter ($)',
     UNSPENT_BUDGET_RETURNED: 'Unspent Budget at the End of the Quarter – Returned ($-)',
-    COMMONWEALTH_UNSPENT_FUNDS: 'Commonwealth-held HCP Unspent Funds ($)',
-    PROVIDER_UNSPENT_FUNDS: 'Provider-held HCP Unspent Funds ($)',
-    PARTICIPANT_UNSPENT_FUNDS: 'Participant Portion HCP Unspent Funds ($)',
+    COMMONWEALTH_UNSPENT_FUNDS: [
+        'Unspent HCP Funds - Commonwealth Portion (Provider-held) ($)',
+        'Commonwealth-held HCP Unspent Funds ($)'
+    ],
+    PROVIDER_UNSPENT_FUNDS: [
+        'Commonwealth-held HCP Unspent Funds (Notional Home Care Account) ($)',
+        'Provider-held HCP Unspent Funds ($)'
+    ],
+    PARTICIPANT_UNSPENT_FUNDS: [
+        'Unspent HCP Funds - Participant Portion (Provider-held) ($)',
+        'Participant Portion HCP Unspent Funds ($)'
+    ],
     PREVIOUS_MONTH_SPENDING: 'Spending from Previous Month(s) within same Quarter ($)',
     MONTH_LABEL: 'Month',
     FUNDING_START_DATE: 'Funding Start Date',
@@ -1436,8 +1445,30 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             return 0;
         };
 
+        const normalizeAttributeNames = (attributeName) => {
+            if (Array.isArray(attributeName)) {
+                return attributeName
+                    .filter((name) => typeof name === 'string' && name.trim() !== '');
+            }
+            if (typeof attributeName === 'string' && attributeName.trim() !== '') {
+                return [attributeName];
+            }
+            return [];
+        };
+
         const getAttributeEntry = (item, attributeName) => {
-            return item?.data?.values?.find(v => v.attribute.name === attributeName) || null;
+            const candidateNames = normalizeAttributeNames(attributeName);
+            const values = item?.data?.values;
+            if (!values || candidateNames.length === 0) {
+                return null;
+            }
+            for (const name of candidateNames) {
+                const entry = values.find(v => v.attribute.name === name);
+                if (entry) {
+                    return entry;
+                }
+            }
+            return null;
         };
 
         const getNumberFromItem = (item, attributeName) => {
@@ -2334,7 +2365,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             };
         });
 
-        const providerIdValue = providerIdFromProfile || businessProfile?.companyRegistrationId || null;
+        const providerIdValue = businessProfile?.companyRegistrationId || providerIdFromProfile || null;
         const monthLabelForResponse = targetMonthLabel ||
             (normalizedMonth && monthLabelLookup[normalizedMonth]) ||
             normalizedMonth ||

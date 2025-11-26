@@ -147,18 +147,46 @@ async function fetchOrCreateItem(itemId, boardId = null, workspaceId = null) {
     return null;
   }
 
-  item = new Item({
-    workspaceId: foundWorkspaceId,
-    boardId: foundBoardId,
-    folderId: folderId.toString(),
-    itemId: itemId,
-    data: itemData,
-    createdAt: new Date(),
-    updatedAt: new Date()
-  });
+  // Use findOneAndUpdate with upsert to atomically create or update
+  // This prevents duplicate key errors from race conditions
+  const now = new Date();
+  try {
+    item = await Item.findOneAndUpdate(
+      { itemId: itemId },
+      {
+        $set: {
+          workspaceId: foundWorkspaceId,
+          boardId: foundBoardId,
+          folderId: folderId.toString(),
+          itemId: itemId,
+          isoPlusItemId: itemId,
+          data: itemData,
+          updatedAt: now
+        },
+        $setOnInsert: {
+          createdAt: now
+        }
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+  } catch (err) {
+    if (err?.code === 11000) {
+      // Another process inserted the item concurrently; fetch the existing record
+      item = await Item.findOne({ itemId });
+      if (!item) {
+        throw err;
+      }
+      info('Webhook-Handler', 'Item already existed, reused existing record after duplicate key', {
+        itemId,
+        boardId: item.boardId,
+        workspaceId: item.workspaceId
+      });
+    } else {
+      throw err;
+    }
+  }
 
-  await item.save();
-  info('Webhook-Handler', 'Created new item from API', { 
+  info('Webhook-Handler', 'Created or updated item from API', { 
     itemId, 
     boardId: foundBoardId, 
     workspaceId: foundWorkspaceId, 
