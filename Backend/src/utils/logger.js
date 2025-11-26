@@ -43,6 +43,30 @@ const logCache = new Map();
 const CACHE_TTL = parseInt(process.env.LOG_DEDUP_TTL) || 5000; // 5 seconds TTL for duplicate detection
 const ENABLE_DEDUP = process.env.ENABLE_LOG_DEDUP !== 'false'; // Enable by default, can be disabled with env var
 
+// Memory optimization settings for MongoDB storage
+const MAX_STRING_LENGTH = parseInt(process.env.LOG_MAX_STRING_LENGTH) || 500; // Max length for strings (stack traces, messages)
+const MAX_OBJECT_DEPTH = parseInt(process.env.LOG_MAX_OBJECT_DEPTH) || 3; // Max depth for nested objects
+const MAX_ARRAY_LENGTH = parseInt(process.env.LOG_MAX_ARRAY_LENGTH) || 10; // Max array length
+const MAX_METADATA_SIZE = parseInt(process.env.LOG_MAX_METADATA_SIZE) || 50000; // Max size in bytes for metadata (50KB)
+const MAX_STACK_LENGTH = parseInt(process.env.LOG_MAX_STACK_LENGTH) || 1000; // Max length for stack traces
+
+// Fields to exclude from MongoDB storage (to save memory)
+const EXCLUDED_FIELDS = new Set([
+  'data', // Often contains large objects
+  'result', // Can contain large result sets
+  'response', // Can contain large API responses
+  'request', // Can contain large request payloads
+  'body', // Request body can be large
+  'payload', // Can be large
+  'items', // Can be large arrays
+  'files', // File data is too large
+  'buffer', // Binary data
+  'stream', // Stream objects
+  'socket', // Socket objects
+  'req', // Full request object
+  'res', // Full response object
+]);
+
 // Function to generate a unique key for log deduplication
 function generateLogKey(level, source, message, meta, context) {
   const ip = context?.ip || 'N/A';
@@ -84,6 +108,117 @@ function isDuplicateLog(level, source, message, meta, context) {
   return false;
 }
 
+/**
+ * Truncate string to max length, adding ellipsis if truncated
+ */
+function truncateString(str, maxLength) {
+  if (typeof str !== 'string') return str;
+  if (str.length <= maxLength) return str;
+  return str.substring(0, maxLength - 3) + '...';
+}
+
+/**
+ * Get approximate size of an object in bytes
+ */
+function getObjectSize(obj) {
+  try {
+    return JSON.stringify(obj).length;
+  } catch (e) {
+    return 0;
+  }
+}
+
+/**
+ * Sanitize metadata to reduce memory usage before storing in MongoDB
+ * This function filters out large objects, truncates long strings, and limits depth
+ */
+function sanitizeMetadataForStorage(obj, depth = 0, path = '') {
+  // Limit depth to prevent deep recursion
+  if (depth > MAX_OBJECT_DEPTH) {
+    return '[Max depth reached]';
+  }
+
+  // Handle null/undefined
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+
+  // Handle primitives
+  if (typeof obj !== 'object') {
+    if (typeof obj === 'string') {
+      // Special handling for stack traces
+      if (path.includes('stack') || path.includes('Stack')) {
+        return truncateString(obj, MAX_STACK_LENGTH);
+      }
+      return truncateString(obj, MAX_STRING_LENGTH);
+    }
+    return obj;
+  }
+
+  // Handle arrays
+  if (Array.isArray(obj)) {
+    if (obj.length > MAX_ARRAY_LENGTH) {
+      const truncated = obj.slice(0, MAX_ARRAY_LENGTH);
+      return [
+        ...truncated.map((item, idx) => 
+          sanitizeMetadataForStorage(item, depth + 1, `${path}[${idx}]`)
+        ),
+        `[${obj.length - MAX_ARRAY_LENGTH} more items...]`
+      ];
+    }
+    return obj.map((item, idx) => 
+      sanitizeMetadataForStorage(item, depth + 1, `${path}[${idx}]`)
+    );
+  }
+
+  // Handle objects
+  const sanitized = {};
+  let currentSize = 0;
+
+  for (const [key, value] of Object.entries(obj)) {
+    // Skip excluded fields that are known to be large
+    if (EXCLUDED_FIELDS.has(key.toLowerCase())) {
+      sanitized[key] = '[Excluded - too large]';
+      continue;
+    }
+
+    // Skip functions, buffers, streams, and other non-serializable objects
+    if (typeof value === 'function' || 
+        value instanceof Buffer || 
+        (value && typeof value === 'object' && value.constructor && 
+         (value.constructor.name === 'Stream' || value.constructor.name === 'Socket'))) {
+      sanitized[key] = `[${value.constructor?.name || 'Non-serializable'}]`;
+      continue;
+    }
+
+    // Recursively sanitize nested objects
+    const sanitizedValue = sanitizeMetadataForStorage(value, depth + 1, `${path}.${key}`);
+    
+    // Estimate size of this field
+    const fieldSize = getObjectSize({ [key]: sanitizedValue });
+    
+    // If adding this field would exceed max size, stop adding more fields
+    if (currentSize + fieldSize > MAX_METADATA_SIZE) {
+      sanitized['_truncated'] = '[Metadata size limit reached]';
+      break;
+    }
+
+    sanitized[key] = sanitizedValue;
+    currentSize += fieldSize;
+  }
+
+  return sanitized;
+}
+
+// Custom format for MongoDB that sanitizes metadata
+const mongoSanitizeFormat = winston.format((info) => {
+  // Sanitize metadata before storing in MongoDB
+  if (info.metadata) {
+    info.metadata = sanitizeMetadataForStorage(info.metadata);
+  }
+  return info;
+});
+
 const logger = winston.createLogger({
   levels,
   format: winston.format.combine(
@@ -114,9 +249,15 @@ const logger = winston.createLogger({
         useUnifiedTopology: true
       },
       collection: 'logs',
-      format: json(),
+      format: winston.format.combine(
+        mongoSanitizeFormat(),
+        json()
+      ),
       tryReconnect: true,
-      metaKey: 'metadata'
+      metaKey: 'metadata',
+      // Add options to reduce memory usage
+      capped: false, // Set to true if you want capped collection (limits size)
+      expireAfterSeconds: parseInt(process.env.LOG_TTL_DAYS) ? parseInt(process.env.LOG_TTL_DAYS) * 24 * 60 * 60 : undefined // Auto-delete old logs
     })
   ]
 });
@@ -152,27 +293,62 @@ const log = (level, source, message, meta = {}, context = {}) => {
     }
   }
 
-  // Enhanced metadata structure for better diagnostics
+  // Filter out large/unnecessary fields from meta before processing
+  const filteredMeta = {};
+  for (const [key, value] of Object.entries(meta)) {
+    // Skip excluded fields
+    if (EXCLUDED_FIELDS.has(key.toLowerCase())) {
+      continue;
+    }
+    
+    // Skip very large objects/arrays
+    if (typeof value === 'object' && value !== null) {
+      const size = getObjectSize(value);
+      if (size > MAX_METADATA_SIZE / 2) {
+        // If a single field is too large, replace with summary
+        if (Array.isArray(value)) {
+          filteredMeta[key] = `[Array with ${value.length} items - too large to store]`;
+        } else {
+          filteredMeta[key] = '[Object too large to store]';
+        }
+        continue;
+      }
+    }
+    
+    filteredMeta[key] = value;
+  }
+
+  // Enhanced metadata structure for better diagnostics (only essential fields)
+  // Note: Don't include 'message' or 'level' here - winston stores these at the top level
+  // Don't include 'timestamp' either - winston adds its own timestamp
   const enhancedMeta = {
     source,
     ip,
     email,
     userId,
     userRole,
-    timestamp: new Date().toISOString(),
-    level,
-    message,
-    ...meta,
-    // Add request context if available
+    ...filteredMeta,
+    // Add request context if available (only essential fields)
     requestContext: context.method ? {
       method: context.method,
-      url: context.url,
-      userAgent: context.userAgent,
-      referer: context.referer,
+      url: truncateString(context.url || '', 200), // Truncate long URLs
       workspaceId: context.workspaceId || meta.workspaceId,
-      boardId: context.boardId || meta.boardId
+      boardId: context.boardId || meta.boardId,
+      requestId: context.requestId
+      // Exclude userAgent and referer to save space (can be added back if needed)
     } : {}
   };
+
+  // Sanitize error messages and stack traces in metadata
+  if (enhancedMeta.error && typeof enhancedMeta.error === 'string') {
+    enhancedMeta.error = truncateString(enhancedMeta.error, MAX_STRING_LENGTH);
+  }
+  if (enhancedMeta.stack && typeof enhancedMeta.stack === 'string') {
+    enhancedMeta.stack = truncateString(enhancedMeta.stack, MAX_STACK_LENGTH);
+  }
+  if (enhancedMeta.stackTrace && typeof enhancedMeta.stackTrace === 'string') {
+    enhancedMeta.stackTrace = truncateString(enhancedMeta.stackTrace, MAX_STACK_LENGTH);
+  }
 
   logger.log(level, message, enhancedMeta);
 };
