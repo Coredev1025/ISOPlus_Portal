@@ -892,19 +892,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
         
         pipeline.push({ $project: projectFields });
 
-        // Sort and paginate, with total count and totals
-        // Build items facet stages
-        const itemsFacetStages = [];
-        if (applyPagination && limitNumber) {
-            if (skip > 0) {
-                itemsFacetStages.push({ $skip: skip });
-            }
-            itemsFacetStages.push({ $limit: limitNumber });
-        } else {
-            // When no pagination, use empty match to return all items (MongoDB requires at least one stage)
-            itemsFacetStages.push({ $match: {} });
-        }
-        
+        // Define sort stage for items pipeline
         const sortFieldMap = {
             scheduledServiceDate: 'scheduledStartDate',
             serviceDeliveryDate: 'actualEndDate',
@@ -918,47 +906,66 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             sortStage['updatedAt'] = -1;
         }
 
-        pipeline.push(
-            { $sort: sortStage },
-            {
-                $facet: {
-                    items: itemsFacetStages,
-                    totalCount: [
-                        { $count: 'count' }
-                    ],
-                    totals: [
-                        {
-                            $group: {
-                                _id: null,
-                                totalAmount: { $sum: "$totalAmountNum" },
-                                totalGovSubsidy: { $sum: "$govSubsidyNum" },
-                                totalParticipantContribution: { $sum: "$participantContributionNum" },
-                                invoicedCount: {
-                                    $sum: {
-                                        $cond: [{ $eq: ["$invoicedFlag", true] }, 1, 0]
-                                    }
-                                },
-                                pendingCount: {
-                                    $sum: {
-                                        $cond: [{ $eq: ["$invoicedFlag", true] }, 0, 1]
-                                    }
+        // Split the aggregation into two parts to avoid memory issues:
+        // 1. Get totals and count (no sorting needed)
+        // 2. Get sorted items (with pagination)
+        // This prevents MongoDB from trying to sort all documents in memory
+        
+        // First, get totals and count without sorting
+        const totalsPipeline = [...pipeline];
+        totalsPipeline.push({
+            $facet: {
+                totalCount: [
+                    { $count: 'count' }
+                ],
+                totals: [
+                    {
+                        $group: {
+                            _id: null,
+                            totalAmount: { $sum: "$totalAmountNum" },
+                            totalGovSubsidy: { $sum: "$govSubsidyNum" },
+                            totalParticipantContribution: { $sum: "$participantContributionNum" },
+                            invoicedCount: {
+                                $sum: {
+                                    $cond: [{ $eq: ["$invoicedFlag", true] }, 1, 0]
+                                }
+                            },
+                            pendingCount: {
+                                $sum: {
+                                    $cond: [{ $eq: ["$invoicedFlag", true] }, 0, 1]
                                 }
                             }
                         }
-                    ]
-                }
+                    }
+                ]
             }
-        );
+        });
+
+        // Second, get sorted items with pagination
+        const itemsPipeline = [...pipeline];
+        itemsPipeline.push({ $sort: sortStage });
+        if (applyPagination && limitNumber) {
+            if (skip > 0) {
+                itemsPipeline.push({ $skip: skip });
+            }
+            itemsPipeline.push({ $limit: limitNumber });
+        }
 
         let aggResult;
+        let totalsResult;
         try {
+            // Execute both pipelines in parallel
             // Use allowDiskUse to handle large datasets on memory-constrained servers
-            // batchSize helps control memory usage during aggregation
-            aggResult = await Item.aggregate(pipeline, { 
+            const aggregationOptions = { 
                 allowDiskUse: true,
                 batchSize: 1000, // Process in smaller batches to reduce memory pressure
                 maxTimeMS: 300000 // 5 minute timeout to prevent hanging
-            });
+            };
+            
+            [totalsResult, aggResult] = await Promise.all([
+                Item.aggregate(totalsPipeline, aggregationOptions),
+                Item.aggregate(itemsPipeline, aggregationOptions)
+            ]);
         } catch (aggErr) {
             error('Items-Service', 'Aggregation pipeline error', {
                 message: aggErr.message,
@@ -973,11 +980,11 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             });
         }
         
-        const items = (aggResult[0] && aggResult[0].items) ? aggResult[0].items : [];
-        const total = (aggResult[0] && aggResult[0].totalCount && aggResult[0].totalCount[0]) ? aggResult[0].totalCount[0].count : 0;
+        const items = Array.isArray(aggResult) ? aggResult : [];
+        const total = (totalsResult[0] && totalsResult[0].totalCount && totalsResult[0].totalCount[0]) ? totalsResult[0].totalCount[0].count : 0;
 
         // Get totals from aggregation
-        const totalsData = (aggResult[0] && aggResult[0].totals && aggResult[0].totals[0]) ? aggResult[0].totals[0] : {
+        const totalsData = (totalsResult[0] && totalsResult[0].totals && totalsResult[0].totals[0]) ? totalsResult[0].totals[0] : {
             totalAmount: 0,
             totalGovSubsidy: 0,
             totalParticipantContribution: 0,
