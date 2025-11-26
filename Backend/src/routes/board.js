@@ -13,7 +13,7 @@ router.post('/', authenticateToken, async (req, res) => {
     try {
         const boardId = req.body.id?.toString();
         if (!boardId) return res.status(400).json({ message: 'Invalid boardId' });
-        const existingBoard = await Board.findOne({ boardId });
+        const existingBoard = await Board.findOne({ boardId }).lean();
         if (existingBoard) {
             warn('Board-Service', 'Board already exsit', { boardId: req.body.boardId }, extractContextFromReq(req));
             res.status(200).json({ board: existingBoard });
@@ -40,7 +40,7 @@ router.get('/', authenticateToken, async (req, res) => {
     try {
         const boardId = req.query.id?.toString();
         if (!boardId) return res.status(400).json({ message: 'Invalid boardId' });
-        const existingBoard = await Board.findOne({ boardId });
+        const existingBoard = await Board.findOne({ boardId }).lean();
 
         if (existingBoard) {
             info('Board-Service', 'Successfully fetching board detail data', { boardId: req.query.id }, extractContextFromReq(req));
@@ -62,7 +62,7 @@ router.put('/', authenticateToken, async (req, res) => {
         if (!boardId || !workspaceId) return res.status(400).json({ message: 'Invalid boardId or workspaceId' });
         
         // Get current board state to check if syncData is changing
-        const existingBoard = await Board.findOne({ boardId });
+        const existingBoard = await Board.findOne({ boardId }).select('syncData').lean();
         const wasSyncEnabled = existingBoard?.syncData || false;
         const willSyncBeEnabled = req.body.syncData === true || req.body.syncData === 'true';
         
@@ -122,7 +122,7 @@ router.put('/', authenticateToken, async (req, res) => {
                 return res.status(500).json({ 
                     message: 'Board updated but sync enablement failed', 
                     error: syncErr.message,
-                    board: await Board.findOne({ boardId })
+                    board: await Board.findOne({ boardId }).lean()
                 });
             }
         }
@@ -158,7 +158,7 @@ router.put('/', authenticateToken, async (req, res) => {
             }
         }
         
-        const updatedBoard = await Board.findOne({ boardId });
+        const updatedBoard = await Board.findOne({ boardId }).lean();
         
         info('Board-Service', 'Board updated', { 
             boardId: req.body.boardId, 

@@ -10,9 +10,40 @@ router.get('/', authenticateToken, async (req, res) => {
     try {
         const workspaceId = req.query.workspaceId?.toString();
         if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
-        const auditTrails = await AuditTrail.find({ workspaceId });
-        info('AuditTrail-Service', 'Audit trails fetched successfully', { count: auditTrails.length }, extractContextFromReq(req));
-        res.json(auditTrails);
+        
+        // Add pagination to reduce memory usage
+        const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+        const skip = (page - 1) * limit;
+        
+        // Add sorting (default: newest first)
+        const sortBy = req.query.sortBy || 'createdAt';
+        const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
+        const sort = { [sortBy]: sortOrder };
+        
+        const [total, auditTrails] = await Promise.all([
+            AuditTrail.countDocuments({ workspaceId }),
+            AuditTrail.find({ workspaceId })
+                .sort(sort)
+                .skip(skip)
+                .limit(limit)
+                .lean() // Use lean() for better performance
+        ]);
+        
+        info('AuditTrail-Service', 'Audit trails fetched successfully', { 
+            count: auditTrails.length, 
+            total,
+            page,
+            limit 
+        }, extractContextFromReq(req));
+        
+        res.json({
+            items: auditTrails,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit) || 1
+        });
     } catch (err) {
         error('AuditTrail-Service', 'Error fetching audit trails', { error: err.message }, extractContextFromReq(req));
         res.status(500).json({ message: err.message });

@@ -195,11 +195,11 @@ export default function InvoiceGenerator() {
     setRefreshKey(prev => prev + 1);
   }, []);
 
-  // Fetch unique participants for the modal dropdown
+  // Fetch unique participants for the modal dropdown using dedicated endpoint
   useEffect(() => {
     const fetchParticipants = async () => {
       try {
-        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator`;
+        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator/participants`;
 
         const response = await axios.get(apiUrl, {
           headers: {
@@ -208,13 +208,8 @@ export default function InvoiceGenerator() {
           }
         });
 
-        if (response.data?.items) {
-          const participantSet = new Set<string>(
-            response.data.items
-              .map((item: ServiceRecord) => item.participant)
-              .filter((p: string) => p && p.trim() !== '') // Filter out empty/null values
-          );
-          const participants = Array.from(participantSet).sort();
+        if (response.data?.participants) {
+          const participants = response.data.participants.filter((p: string) => p && p.trim() !== '');
           setUniqueParticipants(participants as string[]);
         }
       } catch (err) {
@@ -283,8 +278,10 @@ export default function InvoiceGenerator() {
         params.append('sortBy', sortBy);
         params.append('sortOrder', sortOrder);
 
+        // Use reasonable limit for eligible records (max 1000 to prevent memory issues)
+        // If more records exist, user can use filters to narrow down
         params.append('page', '1');
-        params.append('limit', '999999');
+        params.append('limit', '1000');
 
         const response = await axios.get(apiUrl, {
           params: Object.fromEntries(params),
@@ -295,14 +292,23 @@ export default function InvoiceGenerator() {
         });
 
         if (response.data?.items) {
-          setEligibleRecords(response.data.items);
-          // Auto-select all eligible records by default (including invoiced ones)
-          setSelectedItems(new Set(response.data.items.map((r: ServiceRecord) => r.id)));
+          const items = response.data.items;
+          const total = response.data.total || 0;
           
-          if (response.data.items.length > 0) {
-            showInfoToast(`Loaded ${response.data.items.length} eligible record${response.data.items.length === 1 ? '' : 's'}`, {
-              description: 'All records (including invoiced) are shown. You can select which ones to include in the invoice.'
-            });
+          setEligibleRecords(items);
+          // Auto-select all eligible records by default (including invoiced ones)
+          setSelectedItems(new Set(items.map((r: ServiceRecord) => r.id)));
+          
+          if (items.length > 0) {
+            if (total > items.length) {
+              showInfoToast(`Loaded ${items.length} of ${total} eligible records`, {
+                description: 'Showing first 1000 records. Use filters to narrow down if needed.'
+              });
+            } else {
+              showInfoToast(`Loaded ${items.length} eligible record${items.length === 1 ? '' : 's'}`, {
+                description: 'All records (including invoiced) are shown. You can select which ones to include in the invoice.'
+              });
+            }
           }
         } else {
           showInfoToast('No eligible records found', {
@@ -770,10 +776,12 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
 
       params.append('folderName', 'Master Plan,Shift Planning and Reporting');
 
+      // For CSV export, fetch in batches to avoid memory issues
+      // Start with first batch to check total count
       params.append('page', '1');
-      params.append('limit', '999999');
+      params.append('limit', '1000'); // Reasonable batch size
 
-      const response = await axios.get(apiUrl, {
+      const firstResponse = await axios.get(apiUrl, {
         params: Object.fromEntries(params),
         headers: {
           'Content-Type': 'application/json',
@@ -781,10 +789,43 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
         }
       });
 
-      const allItems: ServiceRecord[] = response.data.items || [];
+      const total = firstResponse.data.total || 0;
+      let allItems: ServiceRecord[] = firstResponse.data.items || [];
 
       if (allItems.length === 0) {
         showErrorToast('No records to export.');
+        setExportingCSV(false);
+        return;
+      }
+
+      // If there are more items, fetch them in batches (max 5000 for CSV export)
+      const MAX_EXPORT_ITEMS = 5000;
+      if (total > allItems.length && total <= MAX_EXPORT_ITEMS) {
+        const remainingPages = Math.ceil((total - allItems.length) / 1000);
+        const batchPromises = [];
+        
+        for (let page = 2; page <= remainingPages + 1 && allItems.length < MAX_EXPORT_ITEMS; page++) {
+          const batchParams = new URLSearchParams(params);
+          batchParams.set('page', page.toString());
+          batchPromises.push(
+            axios.get(apiUrl, {
+              params: Object.fromEntries(batchParams),
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+              }
+            })
+          );
+        }
+
+        const batchResponses = await Promise.all(batchPromises);
+        batchResponses.forEach(response => {
+          if (response.data?.items) {
+            allItems = [...allItems, ...response.data.items];
+          }
+        });
+      } else if (total > MAX_EXPORT_ITEMS) {
+        showErrorToast(`Too many records to export (${total}). Please use filters to reduce the number of records. Maximum export limit is ${MAX_EXPORT_ITEMS} records.`);
         setExportingCSV(false);
         return;
       }

@@ -62,7 +62,7 @@ const ATTRIBUTE_NAMES = {
 };
 
 async function getValidatedBusiness(workspaceId) {
-    const business = await Business.findOne({ workspaceId: workspaceId.toString() });
+    const business = await Business.findOne({ workspaceId: workspaceId.toString() }).lean();
     if (!business) {
         throw new Error('Business not found');
     }
@@ -1686,7 +1686,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         const dbItems = [];
         for (const itemId of itemIds) {
             await validateItemBelongsToTenant(workspaceId, boardId, itemId);
-            const dbItem = await Item.findOne({ workspaceId, boardId, itemId: itemId.toString() });
+            const dbItem = await Item.findOne({ workspaceId, boardId, itemId: itemId.toString() }).lean();
             if (!dbItem) {
                 throw new Error(`Item ${itemId} not found`);
             }

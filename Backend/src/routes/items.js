@@ -147,6 +147,186 @@ const getFolderIds = async (folderName, workspaceId, boardId, providedFolders = 
     }
 }
 
+router.get('/:workspaceId/:boardId/invoice-generator/participants', authenticateToken, async (req, res) => {
+    try {
+        const { workspaceId, boardId } = req.params;
+        
+        if (!workspaceId || !boardId) {
+            return res.status(400).json({
+                message: 'WorkspaceId and boardId are required'
+            });
+        }
+
+        // Build aggregation pipeline to get distinct participant names
+        const pipeline = [];
+
+        // Base match - only from Master Plan,Shift Planning and Reporting
+        const baseMatch = { workspaceId, boardId };
+        const folderIds = await getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
+        if (folderIds && folderIds.length > 0) {
+            baseMatch.folderId = { $in: folderIds };
+        }
+        pipeline.push({ $match: baseMatch });
+
+        // Extract participant name
+        pipeline.push({
+            $addFields: {
+                participantVal: { 
+                    $arrayElemAt: [{ 
+                        $filter: { 
+                            input: "$data.values", 
+                            as: "v", 
+                            cond: { $eq: ["$$v.attribute.name", "Participant Full Name"] } 
+                        } 
+                    }, 0] 
+                }
+            }
+        });
+
+        pipeline.push({
+            $addFields: {
+                participantName: { $ifNull: ["$participantVal.data", null] }
+            }
+        });
+
+        // Filter out null/empty participant names
+        pipeline.push({
+            $match: {
+                participantName: { $ne: null, $ne: "", $exists: true }
+            }
+        });
+
+        // Group by participant name to get distinct values
+        pipeline.push({
+            $group: {
+                _id: "$participantName"
+            }
+        });
+
+        // Project to clean format
+        pipeline.push({
+            $project: {
+                _id: 0,
+                participant: "$_id"
+            }
+        });
+
+        // Sort alphabetically
+        pipeline.push({
+            $sort: { participant: 1 }
+        });
+
+        const result = await Item.aggregate(pipeline, { 
+            allowDiskUse: true,
+            batchSize: 1000,
+            maxTimeMS: 30000 // 30 second timeout
+        });
+
+        const participants = result.map(item => item.participant).filter(p => p && p.trim() !== '');
+
+        res.status(200).json({
+            participants: participants
+        });
+    } catch (err) {
+        error('Items-Service', 'Failed to fetch invoice generator participants', {
+            message: err.message,
+            workspaceId,
+            boardId
+        }, extractContextFromReq(req));
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+router.get('/:workspaceId/:boardId/monthly-statement/participants', authenticateToken, async (req, res) => {
+    try {
+        const { workspaceId, boardId } = req.params;
+        
+        if (!workspaceId || !boardId) {
+            return res.status(400).json({
+                message: 'WorkspaceId and boardId are required'
+            });
+        }
+
+        // Build aggregation pipeline to get distinct participant names
+        const pipeline = [];
+
+        // Base match - only from Master Plan,Shift Planning and Reporting
+        const baseMatch = { workspaceId, boardId };
+        const folderIds = await getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
+        if (folderIds && folderIds.length > 0) {
+            baseMatch.folderId = { $in: folderIds };
+        }
+        pipeline.push({ $match: baseMatch });
+
+        // Extract participant name
+        pipeline.push({
+            $addFields: {
+                participantVal: { 
+                    $arrayElemAt: [{ 
+                        $filter: { 
+                            input: "$data.values", 
+                            as: "v", 
+                            cond: { $eq: ["$$v.attribute.name", ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME] } 
+                        } 
+                    }, 0] 
+                }
+            }
+        });
+
+        pipeline.push({
+            $addFields: {
+                participantName: { $ifNull: ["$participantVal.data", null] }
+            }
+        });
+
+        // Filter out null/empty participant names
+        pipeline.push({
+            $match: {
+                participantName: { $ne: null, $ne: "", $exists: true }
+            }
+        });
+
+        // Group by participant name to get distinct values
+        pipeline.push({
+            $group: {
+                _id: "$participantName"
+            }
+        });
+
+        // Project to clean format
+        pipeline.push({
+            $project: {
+                _id: 0,
+                participant: "$_id"
+            }
+        });
+
+        // Sort alphabetically
+        pipeline.push({
+            $sort: { participant: 1 }
+        });
+
+        const result = await Item.aggregate(pipeline, { 
+            allowDiskUse: true,
+            batchSize: 1000,
+            maxTimeMS: 30000 // 30 second timeout
+        });
+
+        const participants = result.map(item => item.participant).filter(p => p && p.trim() !== '');
+
+        res.status(200).json({
+            participants: participants
+        });
+    } catch (err) {
+        error('Items-Service', 'Failed to fetch monthly statement participants', {
+            message: err.message,
+            workspaceId,
+            boardId
+        }, extractContextFromReq(req));
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
 router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async (req, res) => {
     try {
         const { workspaceId, boardId } = req.params;
@@ -680,6 +860,38 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             pipeline.push({ $match: { $and: andConditions } });
         }
 
+        // Project only necessary fields to reduce memory usage
+        // This significantly reduces the data size before sorting and faceting
+        const projectFields = {
+            // Keep original item data for transformation
+            _id: 1,
+            itemId: 1,
+            workspaceId: 1,
+            boardId: 1,
+            folderId: 1,
+            data: 1, // Needed for transformation
+            updatedAt: 1,
+            createdAt: 1,
+            // Keep computed fields for sorting and calculations
+            scheduledStartDate: 1,
+            actualEndDate: 1,
+            participantNameRaw: 1,
+            invoicedFlag: 1,
+            totalAmountNum: 1,
+            govSubsidyNum: 1,
+            participantContributionNum: 1
+        };
+        
+        // Conditionally include status fields if they were computed
+        if (needsTransactionStatusConversion) {
+            projectFields.transactionStatusNames = 1;
+        }
+        if (needsPaymentStatusConversion) {
+            projectFields.paymentStatusNames = 1;
+        }
+        
+        pipeline.push({ $project: projectFields });
+
         // Sort and paginate, with total count and totals
         // Build items facet stages
         const itemsFacetStages = [];
@@ -740,12 +952,20 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
         let aggResult;
         try {
-            aggResult = await Item.aggregate(pipeline, { allowDiskUse: true });
+            // Use allowDiskUse to handle large datasets on memory-constrained servers
+            // batchSize helps control memory usage during aggregation
+            aggResult = await Item.aggregate(pipeline, { 
+                allowDiskUse: true,
+                batchSize: 1000, // Process in smaller batches to reduce memory pressure
+                maxTimeMS: 300000 // 5 minute timeout to prevent hanging
+            });
         } catch (aggErr) {
             error('Items-Service', 'Aggregation pipeline error', {
                 message: aggErr.message,
                 stack: aggErr.stack,
-                pipeline: JSON.stringify(pipeline, null, 2)
+                workspaceId,
+                boardId,
+                pipelineLength: pipeline.length
             }, extractContextFromReq(req));
             return res.status(500).json({ 
                 message: 'Error fetching invoice generator data',
@@ -1285,7 +1505,10 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         // Fetch business name once for all items
         let businessProfile = null;
         try {
-            businessProfile = await Business.findOne({ workspaceId: workspaceId.toString() });
+            // Only select name field to reduce memory usage
+            businessProfile = await Business.findOne({ workspaceId: workspaceId.toString() })
+                .select('name')
+                .lean();
         } catch (err) {
             warn('Items-Service', 'Failed to fetch business name', {
                 message: err.message,
@@ -1420,13 +1643,39 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         let participantIntakeIds = [];
         const participantIntakeFolderIds = await getFolderIds('Participants Intake', workspaceId, boardId);
         if (participantIntakeFolderIds && participantIntakeFolderIds.length > 0) {
+            // Only select itemId and data.values to reduce memory usage
             const participantIntakeItems = await Item.find({ workspaceId: workspaceId, boardId: boardId, folderId: { $in: participantIntakeFolderIds } })
+                .select('itemId data.values')
+                .lean();
             participantIntakeIds = participantIntakeItems.map(item => item.data.values.find(v => v.attribute.name.includes(ATTRIBUTE_NAMES.FULL_NAME))?.data == participant ? item.itemId : null).filter(id => id !== null);
         }
 
         const budgetPipelineForTotals = await buildPipeline(budgetFolderNames, participantIntakeIds[0] ? participantIntakeIds[0] : null, {}, { folderList }, 'budget');
         budgetPipelineForTotals.push({ $sort: { updatedAt: -1 } });
-        const allBudgetItemsResult = await Item.aggregate(budgetPipelineForTotals, { allowDiskUse: true });
+        
+        let allBudgetItemsResult;
+        try {
+            // Use allowDiskUse to handle large datasets on memory-constrained servers
+            // batchSize helps control memory usage during aggregation
+            allBudgetItemsResult = await Item.aggregate(budgetPipelineForTotals, { 
+                allowDiskUse: true,
+                batchSize: 1000, // Process in smaller batches to reduce memory pressure
+                maxTimeMS: 300000 // 5 minute timeout to prevent hanging
+            });
+        } catch (aggErr) {
+            error('Items-Service', 'Budget aggregation pipeline error', {
+                message: aggErr.message,
+                stack: aggErr.stack,
+                workspaceId,
+                boardId,
+                pipelineLength: budgetPipelineForTotals.length
+            }, extractContextFromReq(req));
+            return res.status(500).json({ 
+                message: 'Error fetching budget items for monthly statement',
+                error: aggErr.message 
+            });
+        }
+        
         const allBudgetItems = Array.isArray(allBudgetItemsResult) ? allBudgetItemsResult : [];
 
         const parseNumberValue = (rawValue) => {
@@ -1805,7 +2054,28 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             }
         );
 
-        const serviceAggResult = await Item.aggregate(servicePipeline, { allowDiskUse: true });
+        let serviceAggResult;
+        try {
+            // Use allowDiskUse to handle large datasets on memory-constrained servers
+            // batchSize helps control memory usage during aggregation
+            serviceAggResult = await Item.aggregate(servicePipeline, { 
+                allowDiskUse: true,
+                batchSize: 1000, // Process in smaller batches to reduce memory pressure
+                maxTimeMS: 300000 // 5 minute timeout to prevent hanging
+            });
+        } catch (aggErr) {
+            error('Items-Service', 'Service aggregation pipeline error', {
+                message: aggErr.message,
+                stack: aggErr.stack,
+                workspaceId,
+                boardId,
+                pipelineLength: servicePipeline.length
+            }, extractContextFromReq(req));
+            return res.status(500).json({ 
+                message: 'Error fetching service items for monthly statement',
+                error: aggErr.message 
+            });
+        }
 
         const serviceItems = (serviceAggResult[0] && serviceAggResult[0].items) ? serviceAggResult[0].items : [];
         const serviceTotal = (serviceAggResult[0] && serviceAggResult[0].totalCount && serviceAggResult[0].totalCount[0]) ? serviceAggResult[0].totalCount[0].count : 0;
@@ -2433,7 +2703,7 @@ router.post('/:workspaceId/:boardId/update-status', authenticateToken, async (re
 
         for (const itemId of itemIds) {
             try {
-                const item = await Item.findOne({ workspaceId, boardId, itemId });
+                const item = await Item.findOne({ workspaceId, boardId, itemId }).lean();
                 if (!item) {
                     results.push({
                         itemId,
@@ -2575,7 +2845,7 @@ router.get('/:workspaceId/:boardId/:itemId', authenticateToken, async (req, res)
             itemId,
             workspaceId,
             boardId
-        });
+        }).lean();
 
         if (!item) {
             warn('Items-Service', 'Item not found', {
