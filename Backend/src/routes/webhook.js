@@ -321,13 +321,13 @@ const SERVICE_TABLE_CONFIG = {
     HSQ: {
         delivered: {
             tableName: 'Table P6-1',
-            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P6-1 ', '$P6-2', '$P6-3'],
             rowType: 'delivered'
         },
         adjustment: {
             tableName: 'Table P7-1',
-            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P7-1', '$P7-2', '$P7-3'],
             rowType: 'adjustment'
         }
@@ -335,13 +335,13 @@ const SERVICE_TABLE_CONFIG = {
     RCP: {
         delivered: {
             tableName: 'Table P8-1 ',
-            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P8-1 ', '$P8-2', '$P8-3'],
             rowType: 'delivered'
         },
         adjustment: {
             tableName: 'Table P8-2',
-            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P8-4', '$P8-5', '$P8-6'],
             rowType: 'adjustment'
         }
@@ -349,13 +349,13 @@ const SERVICE_TABLE_CONFIG = {
     EOL: {
         delivered: {
             tableName: 'Table P9-1',
-            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P9-1', '$P9-2', '$P9-3'],
             rowType: 'delivered'
         },
         adjustment: {
             tableName: 'Table P9-2',
-            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P9-4', '$P9-5', '$P9-6'],
             rowType: 'adjustment'
         }
@@ -363,19 +363,19 @@ const SERVICE_TABLE_CONFIG = {
     ATS: {
         delivered: {
             tableName: 'Table P10-1 ',
-            columns: ['provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P10-1 ', '$P10-3', '$P10-3 '],
             rowType: 'delivered'
         },
         committed: {
             tableName: 'Table P10-2',
-            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P10-4', '$P10-5', '$P10-6'],
             rowType: 'committed'
         },
         adjustment: {
             tableName: 'Table P10-3',
-            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P10-7', '$P10-8', '$P10-9'],
             rowType: 'adjustment'
         }
@@ -383,19 +383,19 @@ const SERVICE_TABLE_CONFIG = {
     ATO: {
         delivered: {
             tableName: 'Table P11-1 ',
-            columns: ['provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P11-1', '$P11-3 ', '$P11-3'],
             rowType: 'delivered'
         },
         committed: {
             tableName: 'Table P11-3 ',
-            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P11-4', '$P11-5', '$P11-6'],
             rowType: 'committed'
         },
         adjustment: {
             tableName: 'Table P11-2',
-            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P11-7 ', '$P11-8', '$P11-9 1'],
             rowType: 'adjustment'
         }
@@ -403,19 +403,19 @@ const SERVICE_TABLE_CONFIG = {
     HMB: {
         delivered: {
             tableName: 'Table P12-1 ',
-            columns: ['provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P12-1 ', '$P11-3  ', '$P12-3 '],
             rowType: 'delivered'
         },
         committed: {
             tableName: 'Table P12-3 ',
-            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P12-4 ', '$P11-5 copy', '$P11-6 '],
             rowType: 'committed'
         },
         adjustment: {
             tableName: 'Table P11-2 copy',
-            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P12-7 ', '$P11-8 copy', '$P11-9 1 copy'],
             rowType: 'adjustment'
         }
@@ -424,22 +424,60 @@ const SERVICE_TABLE_CONFIG = {
 
 const SERVICE_TABLE_TOTAL_ORDER = ['amount', 'gov', 'participant'];
 
+function normalizeStatus(value) {
+    if (!value) return '';
+    if (typeof value === 'string') {
+        return value.toLowerCase();
+    }
+    if (typeof value === 'object' && value !== null) {
+        return (value.name || value.toString()).toLowerCase();
+    }
+    return value.toString().toLowerCase();
+}
+
+function resolveServiceProviderName(service = {}, business) {
+    const deliveredByRaw = service.serviceProvider || service.deliveredBy;
+    const deliveredBy = deliveredByRaw ? deliveredByRaw.toString().toLowerCase() : '';
+    if (deliveredBy.includes('associated')) {
+        return service.associatedProvider || service.loanedByOrganisationName || '';
+    }
+    if (deliveredBy.includes('company workforce')) {
+        return business?.name || '';
+    }
+    return '';
+}
+
+function resolveServiceDateValue(service = {}, rowType = 'delivered') {
+    if (rowType === 'committed') {
+        return 'To be delivered';
+    }
+    const status = normalizeStatus(service.transactionStatus);
+    if (status.includes('cancelled')) {
+        return formatDateToAU(service.scheduledServiceDate || service.scheduledStart || service.scheduledShiftStart);
+    }
+    return formatDateToAU(
+        service.serviceDeliveryDate ||
+        service.actualEnd ||
+        service.actualStart ||
+        service.scheduledServiceDate ||
+        service.scheduledStart
+    );
+}
+
 function mapServiceColumnValue(service, column, rowType, business) {
     switch (column) {
         case 'date': {
-            if (rowType === 'committed') {
-                return 'To be delivered';
-            }
-            const dateCandidate = service.serviceDeliveryDate || service.actualEnd || service.actualStart || service.scheduledServiceDate || service.scheduledStart;
-            return formatDateToAU(dateCandidate);
+            return resolveServiceDateValue(service, rowType);
         }
         case 'provider': {
-            const provider = service.serviceProvider || service.worker || business?.name || '';
+            const provider = resolveServiceProviderName(service, business) || service.worker || business?.name || '';
             return truncateText(provider, 20);
         }
         case 'service': {
             const name = service.service || service.taskName || cleanRichText(service.notes) || 'Service';
-            return truncateText(name, 40);
+            const providerName = resolveServiceProviderName(service, business);
+            const enrichedName = providerName ? `${name}, by ${providerName}` : name;
+            return truncateText(enrichedName, 60);
         }
         case 'unit':
             return service.unit || 'Unit';
@@ -2185,22 +2223,26 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 const status = (service.transactionStatus || '').toString().toLowerCase();
                 const committedAmount = parseNumberValue(service.committedAtHmForDelivery);
                 const hasCommittedBucket = committedAmount > 0 && Array.isArray(bucket.committed);
+                const isAdjustment = status.includes('adjustment') && Array.isArray(bucket.adjustment);
+                const isDelivered = (status.includes('delivered') || status.includes('cancelled')) && Array.isArray(bucket.delivered);
+                const canRecordDelivery = Array.isArray(bucket.delivered);
 
-                if (hasCommittedBucket) {
-                    bucket.committed.push(service);
-                }
-
-                if (status.includes('adjustment') && Array.isArray(bucket.adjustment)) {
+                if (isAdjustment) {
                     bucket.adjustment.push(service);
                     return;
                 }
 
-                if ((status.includes('delivered') || status.includes('cancelled')) && Array.isArray(bucket.delivered)) {
+                if (isDelivered) {
                     bucket.delivered.push(service);
                     return;
                 }
 
-                if (!status && Array.isArray(bucket.delivered) && !hasCommittedBucket) {
+                if (hasCommittedBucket && Array.isArray(bucket.committed)) {
+                    bucket.committed.push(service);
+                    return;
+                }
+
+                if (!status && canRecordDelivery) {
                     bucket.delivered.push(service);
                 }
             });
