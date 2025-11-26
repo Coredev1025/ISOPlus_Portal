@@ -1,6 +1,6 @@
 import { Worker } from 'bullmq';
 import Redis from 'ioredis';
-import { getBoard, getFolder, getItem } from '../services/isoplus.js';
+import { getBoard, getFolder, getItem, iterateBoardItems } from '../services/isoplus.js';
 import Board from '../models/Board.js';
 import Item from '../models/Item.js';
 import { validateBoard } from '../services/sync/validator.js';
@@ -277,67 +277,86 @@ async function processDataBacklogSync(job) {
           folderName: folder.name 
         });
 
-        const itemsResponse = await getItem(workspaceId, boardId, folder.id.toString());
-        
-        if (itemsResponse.status !== 200) {
-          warn('Sync-Worker', 'Failed to fetch items for folder', { 
+        let folderItemsProcessed = 0;
+        let pageIndex = 0;
+        try {
+          const itemIterator = iterateBoardItems(workspaceId, boardId, folder.id.toString());
+          while (true) {
+            const { value: itemsPage, done } = await itemIterator.next();
+            if (done) {
+              break;
+            }
+            pageIndex += 1;
+            folderItemsProcessed += itemsPage.length;
+            info('Sync-Worker', 'Processing items page for folder', {
+              jobId: job.id,
+              workspaceId,
+              boardId,
+              folderId: folder.id,
+              pageIndex,
+              pageSize: itemsPage.length,
+              itemsProcessed: folderItemsProcessed
+            });
+
+            for (const item of itemsPage) {
+              try {
+                const itemIdStr = item.id.toString();
+                
+                const result = await Item.findOneAndUpdate(
+                  { itemId: itemIdStr },
+                  {
+                    $set: {
+                      workspaceId: workspaceId,
+                      boardId: boardId,
+                      folderId: folder.id.toString(),
+                      itemId: itemIdStr,
+                      isoPlusItemId: itemIdStr,
+                      data: item,
+                      updatedAt: new Date()
+                    },
+                    $setOnInsert: {
+                      createdAt: new Date()
+                    }
+                  },
+                  { upsert: true, new: true }
+                );
+
+                totalItemsSynced++;
+                if (result.createdAt.getTime() === result.updatedAt.getTime()) {
+                  totalItemsCreated++;
+                } else {
+                  totalItemsUpdated++;
+                }
+              } catch (itemErr) {
+                error('Sync-Worker', 'Failed to save item', { 
+                  jobId: job.id,
+                  workspaceId, 
+                  boardId, 
+                  folderId: folder.id,
+                  itemId: item.id,
+                  error: itemErr.message 
+                });
+              }
+            }
+          }
+        } catch (itemsErr) {
+          warn('Sync-Worker', 'Failed to fetch items for folder', {
             jobId: job.id,
-            workspaceId, 
-            boardId, 
-            folderId: folder.id 
+            workspaceId,
+            boardId,
+            folderId: folder.id,
+            error: itemsErr.message
           });
           continue;
         }
 
-        const items = itemsResponse.item || [];
-        info('Sync-Worker', 'Found items in folder', { 
-          jobId: job.id,
-          workspaceId, 
-          boardId, 
-          folderId: folder.id,
-          itemCount: items.length 
-        });
-
-        // Save each item
-        for (const item of items) {
-          try {
-            const itemIdStr = item.id.toString();
-            
-            const result = await Item.findOneAndUpdate(
-              { itemId: itemIdStr },
-              {
-                $set: {
-                  workspaceId: workspaceId,
-                  boardId: boardId,
-                  folderId: folder.id.toString(),
-                  itemId: itemIdStr,
-                  isoPlusItemId: itemIdStr,
-                  data: item,
-                  updatedAt: new Date()
-                },
-                $setOnInsert: {
-                  createdAt: new Date()
-                }
-              },
-              { upsert: true, new: true }
-            );
-
-            totalItemsSynced++;
-            if (result.createdAt.getTime() === result.updatedAt.getTime()) {
-              totalItemsCreated++;
-            } else {
-              totalItemsUpdated++;
-            }
-          } catch (itemErr) {
-            error('Sync-Worker', 'Failed to save item', { 
-              jobId: job.id,
-              workspaceId, 
-              boardId, 
-              folderId: folder.id,
-              itemId: item.id,
-              error: itemErr.message 
-            });
-          }
+        if (folderItemsProcessed === 0) {
+          info('Sync-Worker', 'No items found for folder', {
+            jobId: job.id,
+            workspaceId,
+            boardId,
+            folderId: folder.id
+          });
         }
       } catch (folderErr) {
         error('Sync-Worker', 'Failed to process folder', { 
