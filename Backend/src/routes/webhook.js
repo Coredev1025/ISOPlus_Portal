@@ -62,7 +62,7 @@ const ATTRIBUTE_NAMES = {
 };
 
 async function getValidatedBusiness(workspaceId) {
-    const business = await Business.findOne({ workspaceId: workspaceId.toString() }).lean();
+    const business = await Business.findOne({ workspaceId: workspaceId.toString() });
     if (!business) {
         throw new Error('Business not found');
     }

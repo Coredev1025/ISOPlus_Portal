@@ -373,425 +373,205 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             ? (pageNumber - 1) * limitNumber
             : 0;
 
-        // Build aggregation pipeline - OPTIMIZED VERSION
-        const pipeline = [];
-
-        // Base match - only from Master Plan,Shift Planning and Reporting
-        const baseMatch = { workspaceId, boardId };
+        // STABLE VERSION: Use find() instead of aggregate() for better stability
+        // Base query - only from Master Plan,Shift Planning and Reporting
+        const baseQuery = { workspaceId, boardId };
         const folderIds = await getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
         if (folderIds && folderIds.length > 0) {
-            baseMatch.folderId = { $in: folderIds };
+            baseQuery.folderId = { $in: folderIds };
         }
-        pipeline.push({ $match: baseMatch });
 
-        // Optimized: Combine multiple $addFields stages into fewer stages
-        // Extract all values in a single pass and convert in the same stage
-        pipeline.push({
-            $addFields: {
-                // Extract values using $arrayElemAt with $filter - more efficient than multiple separate filters
-                scheduledStartVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", ATTRIBUTE_NAMES.SCHEDULED_START] } } }, 0] },
-                participantVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", "Participant Full Name"] } } }, 0] },
-                invoiceIssuedVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", "Invoice Issued and Sent"] } } }, 0] },
-                paymentStatusVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", "Payment Status"] } } }, 0] },
-                transactionStatusVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", ATTRIBUTE_NAMES.TRANSACTION_STATUS] } } }, 0] },
-                totalAmountVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", ATTRIBUTE_NAMES.TOTAL_AMOUNT] } } }, 0] },
-                govSubsidyVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", ATTRIBUTE_NAMES.GOV_SUBSIDY] } } }, 0] },
-                participantContributionVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION] } } }, 0] },
-                actualEndVal: { $arrayElemAt: [{ $filter: { input: "$data.values", as: "v", cond: { $eq: ["$$v.attribute.name", ATTRIBUTE_NAMES.ACTUAL_END] } } }, 0] }
-            }
-        });
-
-        // Optimized: Extract raw values, convert dates, and convert numbers in a single stage
-        pipeline.push({
-            $addFields: {
-                // Extract raw data values
-                scheduledStartRaw: { $ifNull: ["$scheduledStartVal.data", null] },
-                participantNameRaw: { $ifNull: ["$participantVal.data", null] },
-                invoiceIssuedRaw: { $ifNull: [{ $ifNull: ["$invoiceIssuedVal.data", false] }, false] },
-                paymentStatusRaw: { $ifNull: [{ $ifNull: ["$paymentStatusVal.data", []] }, []] },
-                paymentStatusAttribute: { $ifNull: ["$paymentStatusVal.attribute", null] },
-                transactionStatusRaw: { $ifNull: ["$transactionStatusVal.data", null] },
-                transactionStatusAttribute: { $ifNull: ["$transactionStatusVal.attribute", null] },
-                totalAmountRaw: {
-                    $cond: {
-                        if: { $ne: ["$totalAmountVal", null] },
-                        then: { $ifNull: ["$totalAmountVal.data", 0] },
-                        else: 0
-                    }
-                },
-                govSubsidyRaw: {
-                    $cond: {
-                        if: { $ne: ["$govSubsidyVal", null] },
-                        then: { $ifNull: ["$govSubsidyVal.data", 0] },
-                        else: 0
-                    }
-                },
-                participantContributionRaw: {
-                    $cond: {
-                        if: { $ne: ["$participantContributionVal", null] },
-                        then: { $ifNull: ["$participantContributionVal.data", 0] },
-                        else: 0
-                    }
-                },
-                actualEndRaw: { $ifNull: ["$actualEndVal.data", null] },
-                // Convert dates immediately
-                scheduledStartDate: {
-                    $dateFromString: {
-                        dateString: { $ifNull: ["$scheduledStartVal.data", null] },
-                        onError: null
-                    }
-                },
-                actualEndDate: {
-                    $dateFromString: {
-                        dateString: { $ifNull: ["$actualEndVal.data", null] },
-                        onError: null
-                    }
-                },
-                // Calculate invoiced flag
-                invoicedFlag: {
-                    $or: [
-                        { $toBool: { $ifNull: [{ $ifNull: ["$invoiceIssuedVal.data", false] }, false] } },
-                        {
-                            $in: [
-                                "Paid",
-                                {
-                                    $let: {
-                                        vars: {
-                                            paymentData: { $ifNull: ["$paymentStatusVal.data", []] },
-                                            paymentDataType: { $type: { $ifNull: ["$paymentStatusVal.data", []] } }
-                                        },
-                                        in: {
-                                            $map: {
-                                                input: {
-                                                    $cond: {
-                                                        if: { $eq: ["$$paymentDataType", "array"] },
-                                                        then: "$$paymentData",
-                                                        else: {
-                                                            $cond: {
-                                                                if: { $eq: ["$$paymentDataType", "object"] },
-                                                                then: ["$$paymentData"],
-                                                                else: []
-                                                            }
-                                                        }
-                                                    }
-                                                },
-                                                as: "p",
-                                                in: "$$p.name"
-                                            }
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    ]
-                },
-                // Convert numbers with optimized inline expression
-                totalAmountNum: {
-                    $let: {
-                        vars: {
-                            raw: {
-                                $cond: {
-                                    if: { $ne: ["$totalAmountVal", null] },
-                                    then: { $ifNull: ["$totalAmountVal.data", 0] },
-                                    else: 0
-                                }
-                            },
-                            valType: { $type: { $cond: { if: { $ne: ["$totalAmountVal", null] }, then: { $ifNull: ["$totalAmountVal.data", 0] }, else: 0 } } },
-                            numMatch: {
-                                $regexFind: {
-                                    input: { $convert: { input: { $cond: { if: { $ne: ["$totalAmountVal", null] }, then: { $ifNull: ["$totalAmountVal.data", "0"] }, else: "0" } }, to: "string", onError: "0", onNull: "0" } },
-                                    regex: "-?\\d+(?:\\.\\d+)?"
-                                }
-                            }
-                        },
-                        in: {
-                            $cond: {
-                                if: { $in: ["$$valType", ["int", "long", "double", "decimal128"]] },
-                                then: { $ifNull: ["$$raw", 0] },
-                                else: {
-                                    $cond: {
-                                        if: { $ne: ["$$numMatch", null] },
-                                        then: { $convert: { input: "$$numMatch.match", to: "double", onError: 0, onNull: 0 } },
-                                        else: 0
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                govSubsidyNum: {
-                    $let: {
-                        vars: {
-                            raw: {
-                                $cond: {
-                                    if: { $ne: ["$govSubsidyVal", null] },
-                                    then: { $ifNull: ["$govSubsidyVal.data", 0] },
-                                    else: 0
-                                }
-                            },
-                            valType: { $type: { $cond: { if: { $ne: ["$govSubsidyVal", null] }, then: { $ifNull: ["$govSubsidyVal.data", 0] }, else: 0 } } },
-                            numMatch: {
-                                $regexFind: {
-                                    input: { $convert: { input: { $cond: { if: { $ne: ["$govSubsidyVal", null] }, then: { $ifNull: ["$govSubsidyVal.data", "0"] }, else: "0" } }, to: "string", onError: "0", onNull: "0" } },
-                                    regex: "-?\\d+(?:\\.\\d+)?"
-                                }
-                            }
-                        },
-                        in: {
-                            $cond: {
-                                if: { $in: ["$$valType", ["int", "long", "double", "decimal128"]] },
-                                then: { $ifNull: ["$$raw", 0] },
-                                else: {
-                                    $cond: {
-                                        if: { $ne: ["$$numMatch", null] },
-                                        then: { $convert: { input: "$$numMatch.match", to: "double", onError: 0, onNull: 0 } },
-                                        else: 0
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                participantContributionNum: {
-                    $let: {
-                        vars: {
-                            raw: {
-                                $cond: {
-                                    if: { $ne: ["$participantContributionVal", null] },
-                                    then: { $ifNull: ["$participantContributionVal.data", 0] },
-                                    else: 0
-                                }
-                            },
-                            valType: { $type: { $cond: { if: { $ne: ["$participantContributionVal", null] }, then: { $ifNull: ["$participantContributionVal.data", 0] }, else: 0 } } },
-                            numMatch: {
-                                $regexFind: {
-                                    input: { $convert: { input: { $cond: { if: { $ne: ["$participantContributionVal", null] }, then: { $ifNull: ["$participantContributionVal.data", "0"] }, else: "0" } }, to: "string", onError: "0", onNull: "0" } },
-                                    regex: "-?\\d+(?:\\.\\d+)?"
-                                }
-                            }
-                        },
-                        in: {
-                            $cond: {
-                                if: { $in: ["$$valType", ["int", "long", "double", "decimal128"]] },
-                                then: { $ifNull: ["$$raw", 0] },
-                                else: {
-                                    $cond: {
-                                        if: { $ne: ["$$numMatch", null] },
-                                        then: { $convert: { input: "$$numMatch.match", to: "double", onError: 0, onNull: 0 } },
-                                        else: 0
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        // Only convert label names if needed for filtering (conditional stage)
-        const needsTransactionStatusConversion = transactionStatusFilter && transactionStatusFilter !== 'all';
-        const needsPaymentStatusConversion = paymentStatusFilter && paymentStatusFilter !== 'all';
-
-        if (needsTransactionStatusConversion || needsPaymentStatusConversion) {
-            pipeline.push({
-                $addFields: {
-                    transactionStatusNames: needsTransactionStatusConversion ? {
-                        $cond: [
-                            { $eq: [{ $type: "$transactionStatusRaw" }, "array"] },
-                            {
-                                $map: {
-                                    input: "$transactionStatusRaw",
-                                    as: "labelId",
-                                    in: {
-                                        $let: {
-                                            vars: {
-                                                label: {
-                                                    $arrayElemAt: [
-                                                        {
-                                                            $filter: {
-                                                                input: { $ifNull: ["$transactionStatusAttribute.settings.labels", []] },
-                                                                as: "l",
-                                                                cond: { $eq: ["$$l.id", "$$labelId"] }
-                                                            }
-                                                        },
-                                                        0
-                                                    ]
-                                                }
-                                            },
-                                            in: { $ifNull: ["$$label.name", "$$labelId"] }
-                                        }
-                                    }
-                                }
-                            },
-                            {
-                                $cond: [
-                                    { $eq: [{ $type: "$transactionStatusRaw" }, "object"] },
-                                    {
-                                        $let: {
-                                            vars: {
-                                                label: {
-                                                    $arrayElemAt: [
-                                                        {
-                                                            $filter: {
-                                                                input: { $ifNull: ["$transactionStatusAttribute.settings.labels", []] },
-                                                                as: "l",
-                                                                cond: { $eq: ["$$l.id", "$transactionStatusRaw.id"] }
-                                                            }
-                                                        },
-                                                        0
-                                                    ]
-                                                }
-                                            },
-                                            in: { $ifNull: ["$$label.name", { $ifNull: ["$transactionStatusRaw.name", ""] }] }
-                                        }
-                                    },
-                                    {
-                                        $let: {
-                                            vars: {
-                                                label: {
-                                                    $arrayElemAt: [
-                                                        {
-                                                            $filter: {
-                                                                input: { $ifNull: ["$transactionStatusAttribute.settings.labels", []] },
-                                                                as: "l",
-                                                                cond: { $eq: ["$$l.id", "$transactionStatusRaw"] }
-                                                            }
-                                                        },
-                                                        0
-                                                    ]
-                                                }
-                                            },
-                                            in: { $ifNull: ["$$label.name", { $convert: { input: "$transactionStatusRaw", to: "string", onError: "", onNull: "" } }] }
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    } : null,
-                    paymentStatusNames: needsPaymentStatusConversion ? {
-                        $cond: [
-                            { $eq: [{ $type: "$paymentStatusRaw" }, "array"] },
-                            {
-                                $map: {
-                                    input: "$paymentStatusRaw",
-                                    as: "labelId",
-                                    in: {
-                                        $let: {
-                                            vars: {
-                                                label: {
-                                                    $arrayElemAt: [
-                                                        {
-                                                            $filter: {
-                                                                input: { $ifNull: ["$paymentStatusAttribute.settings.labels", []] },
-                                                                as: "l",
-                                                                cond: { $eq: ["$$l.id", "$$labelId"] }
-                                                            }
-                                                        },
-                                                        0
-                                                    ]
-                                                }
-                                            },
-                                            in: { $ifNull: ["$$label.name", "$$labelId"] }
-                                        }
-                                    }
-                                }
-                            },
-                            {
-                                $cond: [
-                                    { $eq: [{ $type: "$paymentStatusRaw" }, "object"] },
-                                    {
-                                        $let: {
-                                            vars: {
-                                                label: {
-                                                    $arrayElemAt: [
-                                                        {
-                                                            $filter: {
-                                                                input: { $ifNull: ["$paymentStatusAttribute.settings.labels", []] },
-                                                                as: "l",
-                                                                cond: { $eq: ["$$l.id", "$paymentStatusRaw.id"] }
-                                                            }
-                                                        },
-                                                        0
-                                                    ]
-                                                }
-                                            },
-                                            in: { $ifNull: ["$$label.name", { $ifNull: ["$paymentStatusRaw.name", ""] }] }
-                                        }
-                                    },
-                                    ""
-                                ]
-                            }
-                        ]
-                    } : null
-                }
+        // Fetch all items matching base criteria using stable find() query
+        let allItems;
+        try {
+            allItems = await Item.find(baseQuery).lean();
+        } catch (dbErr) {
+            error('Items-Service', 'Database query error', {
+                message: dbErr.message,
+                stack: dbErr.stack,
+                workspaceId,
+                boardId
+            }, extractContextFromReq(req));
+            return res.status(500).json({ 
+                message: 'Error fetching invoice generator data',
+                error: dbErr.message 
             });
         }
 
-        // Dynamic matches based on filters
-        const andConditions = [];
+        // Helper function to extract value from item data
+        const getValueFromItem = (item, attributeName) => {
+            if (!item.data || !item.data.values) return null;
+            const valueObj = item.data.values.find(v => v.attribute && v.attribute.name === attributeName);
+            return valueObj ? valueObj.data : null;
+        };
+
+        // Helper function to parse number from value
+        const parseNumber = (value) => {
+            if (value === null || value === undefined) return 0;
+            if (typeof value === 'number') return value;
+            if (typeof value === 'string') {
+                const match = value.match(/-?\d+(?:\.\d+)?/);
+                return match ? parseFloat(match[0]) : 0;
+            }
+            return 0;
+        };
+
+        // Helper function to parse date from value
+        const parseDate = (value) => {
+            if (!value) return null;
+            if (value instanceof Date) return value;
+            if (typeof value === 'string') {
+                const date = new Date(value);
+                return isNaN(date.getTime()) ? null : date;
+            }
+            return null;
+        };
+
+        // Helper function to check if item is invoiced
+        const isInvoiced = (item) => {
+            const invoiceIssued = getValueFromItem(item, 'Invoice Issued and Sent');
+            if (invoiceIssued === true || invoiceIssued === 'true' || invoiceIssued === 'Y') {
+                return true;
+            }
+            
+            const paymentStatusValue = item.data.values.find(v => 
+                v.attribute && (v.attribute.name === 'Payment Status' || v.attribute.name === ATTRIBUTE_NAMES.PAYMENT_STATUS)
+            );
+            if (paymentStatusValue) {
+                const paymentStatusData = paymentStatusValue.data;
+                const labels = paymentStatusValue.attribute?.settings?.labels || [];
+                
+                if (Array.isArray(paymentStatusData) && paymentStatusData.length > 0) {
+                    return paymentStatusData.some(id => {
+                        const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
+                        const labelName = label ? label.name : (typeof id === 'object' ? id.name : String(id));
+                        return labelName && labelName.includes('Paid');
+                    });
+                } else if (paymentStatusData) {
+                    let labelName = '';
+                    if (typeof paymentStatusData === 'object' && paymentStatusData.id) {
+                        const label = labels.find(l => l.id === paymentStatusData.id);
+                        labelName = label ? label.name : (paymentStatusData.name || String(paymentStatusData.id));
+                    } else if (typeof paymentStatusData === 'string') {
+                        const label = labels.find(l => l.id === paymentStatusData);
+                        labelName = label ? label.name : paymentStatusData;
+                    } else {
+                        labelName = String(paymentStatusData);
+                    }
+                    return labelName.includes('Paid');
+                }
+            }
+            return false;
+        };
+
+        // Helper function to get label names from status value
+        const getLabelNames = (item, attributeName) => {
+            const statusValue = item.data.values.find(v => 
+                v.attribute && v.attribute.name === attributeName
+            );
+            if (!statusValue) return [];
+            
+            const statusData = statusValue.data;
+            const labels = statusValue.attribute?.settings?.labels || [];
+            
+            if (Array.isArray(statusData) && statusData.length > 0) {
+                return statusData.map(id => {
+                    const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
+                    return label ? label.name : (typeof id === 'object' ? id.name : String(id));
+                });
+            } else if (statusData) {
+                if (typeof statusData === 'object' && statusData.id) {
+                    const label = labels.find(l => l.id === statusData.id);
+                    return [label ? label.name : (statusData.name || String(statusData.id))];
+                } else if (typeof statusData === 'string') {
+                    const label = labels.find(l => l.id === statusData);
+                    return [label ? label.name : statusData];
+                } else {
+                    return [String(statusData)];
+                }
+            }
+            return [];
+        };
+
+        // Process and filter items in JavaScript (more stable than aggregation)
+        const processedItems = allItems.map(item => {
+            const scheduledStart = getValueFromItem(item, ATTRIBUTE_NAMES.SCHEDULED_START);
+            const actualEnd = getValueFromItem(item, ATTRIBUTE_NAMES.ACTUAL_END);
+            const participantName = getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
+            
+            return {
+                item,
+                scheduledStartDate: parseDate(scheduledStart),
+                actualEndDate: parseDate(actualEnd),
+                participantName: String(participantName),
+                invoicedFlag: isInvoiced(item),
+                totalAmountNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.TOTAL_AMOUNT)),
+                govSubsidyNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.GOV_SUBSIDY)),
+                participantContributionNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)),
+                transactionStatusNames: getLabelNames(item, ATTRIBUTE_NAMES.TRANSACTION_STATUS),
+                paymentStatusNames: getLabelNames(item, ATTRIBUTE_NAMES.PAYMENT_STATUS || 'Payment Status')
+            };
+        });
+
+        // Apply filters in JavaScript
+        let filteredItems = processedItems;
 
         if (status && status !== 'all') {
-            andConditions.push(status === 'invoiced' ? { invoicedFlag: true } : { invoicedFlag: { $ne: true } });
+            filteredItems = filteredItems.filter(p => 
+                status === 'invoiced' ? p.invoicedFlag : !p.invoicedFlag
+            );
         }
 
         if (startDate) {
-            andConditions.push({ scheduledStartDate: { $gte: new Date(startDate) } });
+            const startDateObj = new Date(startDate);
+            filteredItems = filteredItems.filter(p => 
+                p.scheduledStartDate && p.scheduledStartDate >= startDateObj
+            );
         }
+
         if (endDate) {
-            andConditions.push({ scheduledStartDate: { $lte: new Date(endDate) } });
+            const endDateObj = new Date(endDate);
+            filteredItems = filteredItems.filter(p => 
+                p.scheduledStartDate && p.scheduledStartDate <= endDateObj
+            );
         }
 
         if (serviceDeliveryStart) {
-            andConditions.push({ actualEndDate: { $gte: new Date(serviceDeliveryStart) } });
+            const serviceDeliveryStartObj = new Date(serviceDeliveryStart);
+            filteredItems = filteredItems.filter(p => 
+                p.actualEndDate && p.actualEndDate >= serviceDeliveryStartObj
+            );
         }
+
         if (serviceDeliveryEnd) {
-            andConditions.push({ actualEndDate: { $lte: new Date(serviceDeliveryEnd) } });
+            const serviceDeliveryEndObj = new Date(serviceDeliveryEnd);
+            filteredItems = filteredItems.filter(p => 
+                p.actualEndDate && p.actualEndDate <= serviceDeliveryEndObj
+            );
         }
 
         if (participant) {
-            andConditions.push({ participantNameRaw: { $regex: participant, $options: 'i' } });
+            try {
+                const participantRegex = new RegExp(participant, 'i');
+                filteredItems = filteredItems.filter(p => 
+                    participantRegex.test(p.participantName)
+                );
+            } catch (regexErr) {
+                warn('Items-Service', 'Invalid participant regex pattern', {
+                    pattern: participant,
+                    error: regexErr.message
+                }, extractContextFromReq(req));
+            }
         }
 
         if (transactionStatusFilter && transactionStatusFilter !== 'all') {
-            // Validate regex pattern to prevent errors
             try {
-                new RegExp(transactionStatusFilter);
-                // Use the converted label names array
-                andConditions.push({
-                    $expr: {
-                        $cond: [
-                            { $eq: [{ $type: "$transactionStatusNames" }, "array"] },
-                            {
-                                // If array, check if any label name matches
-                                $gt: [
-                                    {
-                                        $size: {
-                                            $filter: {
-                                                input: "$transactionStatusNames",
-                                                as: "tsName",
-                                                cond: {
-                                                    $regexMatch: {
-                                                        input: { $convert: { input: "$$tsName", to: "string", onError: "", onNull: "" } },
-                                                        regex: transactionStatusFilter,
-                                                        options: 'i'
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    },
-                                    0
-                                ]
-                            },
-                            {
-                                // If not array (single value), check directly
-                                $regexMatch: {
-                                    input: { $convert: { input: "$transactionStatusNames", to: "string", onError: "", onNull: "" } },
-                                    regex: transactionStatusFilter,
-                                    options: 'i'
-                                }
-                            }
-                        ]
+                const transactionStatusRegex = new RegExp(transactionStatusFilter, 'i');
+                filteredItems = filteredItems.filter(p => {
+                    if (Array.isArray(p.transactionStatusNames)) {
+                        return p.transactionStatusNames.some(name => transactionStatusRegex.test(String(name)));
                     }
+                    return transactionStatusRegex.test(String(p.transactionStatusNames));
                 });
             } catch (regexErr) {
                 warn('Items-Service', 'Invalid transaction status regex pattern', {
@@ -802,51 +582,13 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
         }
 
         if (paymentStatusFilter && paymentStatusFilter !== 'all') {
-            // Validate regex pattern to prevent errors
             try {
-                new RegExp(paymentStatusFilter);
-                // Use the converted label names array
-                andConditions.push({
-                    $expr: {
-                        $cond: [
-                            { $eq: [{ $type: "$paymentStatusNames" }, "array"] },
-                            {
-                                // If array, check if any label name matches
-                                $gt: [
-                                    {
-                                        $size: {
-                                            $filter: {
-                                                input: "$paymentStatusNames",
-                                                as: "psName",
-                                                cond: {
-                                                    $regexMatch: {
-                                                        input: { $convert: { input: "$$psName", to: "string", onError: "", onNull: "" } },
-                                                        regex: paymentStatusFilter,
-                                                        options: 'i'
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    },
-                                    0
-                                ]
-                            },
-                            {
-                                // If not array (single value or empty), check directly
-                                $cond: [
-                                    { $ne: ["$paymentStatusNames", ""] },
-                                    {
-                                        $regexMatch: {
-                                            input: { $convert: { input: "$paymentStatusNames", to: "string", onError: "", onNull: "" } },
-                                            regex: paymentStatusFilter,
-                                            options: 'i'
-                                        }
-                                    },
-                                    false // Empty payment status doesn't match any filter
-                                ]
-                            }
-                        ]
+                const paymentStatusRegex = new RegExp(paymentStatusFilter, 'i');
+                filteredItems = filteredItems.filter(p => {
+                    if (Array.isArray(p.paymentStatusNames)) {
+                        return p.paymentStatusNames.some(name => paymentStatusRegex.test(String(name)));
                     }
+                    return paymentStatusRegex.test(String(p.paymentStatusNames));
                 });
             } catch (regexErr) {
                 warn('Items-Service', 'Invalid payment status regex pattern', {
@@ -856,135 +598,8 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             }
         }
 
-        if (andConditions.length > 0) {
-            pipeline.push({ $match: { $and: andConditions } });
-        }
-
-        // Project only necessary fields to reduce memory usage
-        // This significantly reduces the data size before sorting and faceting
-        const projectFields = {
-            // Keep original item data for transformation
-            _id: 1,
-            itemId: 1,
-            workspaceId: 1,
-            boardId: 1,
-            folderId: 1,
-            data: 1, // Needed for transformation
-            updatedAt: 1,
-            createdAt: 1,
-            // Keep computed fields for sorting and calculations
-            scheduledStartDate: 1,
-            actualEndDate: 1,
-            participantNameRaw: 1,
-            invoicedFlag: 1,
-            totalAmountNum: 1,
-            govSubsidyNum: 1,
-            participantContributionNum: 1
-        };
-        
-        // Conditionally include status fields if they were computed
-        if (needsTransactionStatusConversion) {
-            projectFields.transactionStatusNames = 1;
-        }
-        if (needsPaymentStatusConversion) {
-            projectFields.paymentStatusNames = 1;
-        }
-        
-        pipeline.push({ $project: projectFields });
-
-        // Define sort stage for items pipeline
-        const sortFieldMap = {
-            scheduledServiceDate: 'scheduledStartDate',
-            serviceDeliveryDate: 'actualEndDate',
-            updatedAt: 'updatedAt'
-        };
-        const selectedSortField = sortFieldMap[sortBy] || 'scheduledStartDate';
-        const selectedSortOrder = sortOrder === 'desc' ? -1 : 1;
-        const sortStage = {};
-        sortStage[selectedSortField] = selectedSortOrder;
-        if (selectedSortField !== 'updatedAt') {
-            sortStage['updatedAt'] = -1;
-        }
-
-        // Split the aggregation into two parts to avoid memory issues:
-        // 1. Get totals and count (no sorting needed)
-        // 2. Get sorted items (with pagination)
-        // This prevents MongoDB from trying to sort all documents in memory
-        
-        // First, get totals and count without sorting
-        const totalsPipeline = [...pipeline];
-        totalsPipeline.push({
-            $facet: {
-                totalCount: [
-                    { $count: 'count' }
-                ],
-                totals: [
-                    {
-                        $group: {
-                            _id: null,
-                            totalAmount: { $sum: "$totalAmountNum" },
-                            totalGovSubsidy: { $sum: "$govSubsidyNum" },
-                            totalParticipantContribution: { $sum: "$participantContributionNum" },
-                            invoicedCount: {
-                                $sum: {
-                                    $cond: [{ $eq: ["$invoicedFlag", true] }, 1, 0]
-                                }
-                            },
-                            pendingCount: {
-                                $sum: {
-                                    $cond: [{ $eq: ["$invoicedFlag", true] }, 0, 1]
-                                }
-                            }
-                        }
-                    }
-                ]
-            }
-        });
-
-        // Second, get sorted items with pagination
-        const itemsPipeline = [...pipeline];
-        itemsPipeline.push({ $sort: sortStage });
-        if (applyPagination && limitNumber) {
-            if (skip > 0) {
-                itemsPipeline.push({ $skip: skip });
-            }
-            itemsPipeline.push({ $limit: limitNumber });
-        }
-
-        let aggResult;
-        let totalsResult;
-        try {
-            // Execute both pipelines in parallel
-            // Use allowDiskUse to handle large datasets on memory-constrained servers
-            const aggregationOptions = { 
-                allowDiskUse: true,
-                batchSize: 1000, // Process in smaller batches to reduce memory pressure
-                maxTimeMS: 300000 // 5 minute timeout to prevent hanging
-            };
-            
-            [totalsResult, aggResult] = await Promise.all([
-                Item.aggregate(totalsPipeline, aggregationOptions),
-                Item.aggregate(itemsPipeline, aggregationOptions)
-            ]);
-        } catch (aggErr) {
-            error('Items-Service', 'Aggregation pipeline error', {
-                message: aggErr.message,
-                stack: aggErr.stack,
-                workspaceId,
-                boardId,
-                pipelineLength: pipeline.length
-            }, extractContextFromReq(req));
-            return res.status(500).json({ 
-                message: 'Error fetching invoice generator data',
-                error: aggErr.message 
-            });
-        }
-        
-        const items = Array.isArray(aggResult) ? aggResult : [];
-        const total = (totalsResult[0] && totalsResult[0].totalCount && totalsResult[0].totalCount[0]) ? totalsResult[0].totalCount[0].count : 0;
-
-        // Get totals from aggregation
-        const totalsData = (totalsResult[0] && totalsResult[0].totals && totalsResult[0].totals[0]) ? totalsResult[0].totals[0] : {
+        // Calculate totals from filtered items
+        const totalsData = {
             totalAmount: 0,
             totalGovSubsidy: 0,
             totalParticipantContribution: 0,
@@ -992,10 +607,67 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             pendingCount: 0
         };
 
+        filteredItems.forEach(p => {
+            totalsData.totalAmount += p.totalAmountNum;
+            totalsData.totalGovSubsidy += p.govSubsidyNum;
+            totalsData.totalParticipantContribution += p.participantContributionNum;
+            if (p.invoicedFlag) {
+                totalsData.invoicedCount++;
+            } else {
+                totalsData.pendingCount++;
+            }
+        });
+
+        const total = filteredItems.length;
+
+        // Sort items in JavaScript
+        const sortFieldMap = {
+            scheduledServiceDate: 'scheduledStartDate',
+            serviceDeliveryDate: 'actualEndDate',
+            updatedAt: 'updatedAt'
+        };
+        const selectedSortField = sortFieldMap[sortBy] || 'scheduledStartDate';
+        const selectedSortOrder = sortOrder === 'desc' ? -1 : 1;
+
+        filteredItems.sort((a, b) => {
+            let aVal, bVal;
+            
+            if (selectedSortField === 'updatedAt') {
+                aVal = a.item.updatedAt || a.item.createdAt || new Date(0);
+                bVal = b.item.updatedAt || b.item.createdAt || new Date(0);
+            } else {
+                aVal = a[selectedSortField];
+                bVal = b[selectedSortField];
+            }
+
+            if (aVal === null || aVal === undefined) return 1;
+            if (bVal === null || bVal === undefined) return -1;
+            
+            if (aVal < bVal) return -1 * selectedSortOrder;
+            if (aVal > bVal) return 1 * selectedSortOrder;
+            
+            // Secondary sort by updatedAt if not primary sort field
+            if (selectedSortField !== 'updatedAt') {
+                const aUpdated = a.item.updatedAt || a.item.createdAt || new Date(0);
+                const bUpdated = b.item.updatedAt || b.item.createdAt || new Date(0);
+                if (aUpdated < bUpdated) return 1;
+                if (aUpdated > bUpdated) return -1;
+            }
+            
+            return 0;
+        });
+
+        // Apply pagination
+        const items = applyPagination && limitNumber
+            ? filteredItems.slice(skip, skip + limitNumber)
+            : filteredItems;
+
         // Transform items
-        const transformedItems = await Promise.all(items.map(async item => {
+        const transformedItems = await Promise.all(items.map(async processedItem => {
+            const item = processedItem.item;
             const getValue = (attributeName) => {
-                return item.data.values.find(v => v.attribute.name === attributeName)?.data;
+                if (!item.data || !item.data.values) return null;
+                return item.data.values.find(v => v.attribute && v.attribute.name === attributeName)?.data;
             };
 
             const participant = getValue(ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
@@ -1217,7 +889,9 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
             // Get status
             const invoiceIssued = getValue('Invoice Issued and Sent') || false;
-            const paymentStatusValueForCheck = item.data.values.find(v => v.attribute.name === 'Payment Status');
+            const paymentStatusValueForCheck = item.data && item.data.values 
+                ? item.data.values.find(v => v.attribute && v.attribute.name === 'Payment Status')
+                : null;
             let hasPaidStatus = false;
             if (paymentStatusValueForCheck) {
                 const paymentStatusData = paymentStatusValueForCheck.data;
@@ -1255,7 +929,9 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 : null;
             
             // Get transaction status - need to look up label name from attribute settings
-            const transactionStatusValue = item.data.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.TRANSACTION_STATUS);
+            const transactionStatusValue = item.data && item.data.values
+                ? item.data.values.find(v => v.attribute && v.attribute.name === ATTRIBUTE_NAMES.TRANSACTION_STATUS)
+                : null;
             let transactionStatus = undefined;
             if (transactionStatusValue) {
                 const transactionStatusData = transactionStatusValue.data;
@@ -1282,7 +958,9 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             }
 
             // Format payment status - need to look up label names from attribute settings
-            const paymentStatusValue = item.data.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.PAYMENT_STATUS || v.attribute.name === 'Payment Status');
+            const paymentStatusValue = item.data && item.data.values
+                ? item.data.values.find(v => v.attribute && (v.attribute.name === ATTRIBUTE_NAMES.PAYMENT_STATUS || v.attribute.name === 'Payment Status'))
+                : null;
             let paymentStatusFormatted = undefined;
             if (paymentStatusValue) {
                 const paymentStatusData = paymentStatusValue.data;
@@ -1397,7 +1075,9 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             };
             
             let fundingSource = undefined;
-            const fundingSourceValue = item.data.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.FUNDING_SOURCE);
+            const fundingSourceValue = item.data && item.data.values
+                ? item.data.values.find(v => v.attribute && v.attribute.name === ATTRIBUTE_NAMES.FUNDING_SOURCE)
+                : null;
             if (fundingSourceValue && fundingSourceValue.data) {
                 const fundingSourceData = fundingSourceValue.data;
                 if (Array.isArray(fundingSourceData) && fundingSourceData.length > 0) {
