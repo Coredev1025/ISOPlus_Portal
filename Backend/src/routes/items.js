@@ -3,7 +3,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import Item from '../models/Item.js';
 import Business from '../models/Business.js';
 import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
-import { getItemValues, getFolder, getMember, getMonthlyStatementBudgetData } from '../services/isoplus.js';
+import { getItemValues, getFolder, getMember, getMonthlyStatementBudgetData, getAgeCareParticipantsServicePlanReferencedItems } from '../services/isoplus.js';
 
 const router = express.Router();
 
@@ -493,6 +493,15 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             return [];
         };
 
+        // Helper function to get raw status data for fallback matching
+        const getRawStatusData = (item, attributeName) => {
+            const statusValue = item.data.values.find(v => 
+                v.attribute && v.attribute.name === attributeName
+            );
+            if (!statusValue || !statusValue.data) return null;
+            return statusValue.data;
+        };
+
         // Process and filter items in JavaScript (more stable than aggregation)
         const processedItems = allItems.map(item => {
             const scheduledStart = getValueFromItem(item, ATTRIBUTE_NAMES.SCHEDULED_START);
@@ -509,7 +518,9 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 govSubsidyNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.GOV_SUBSIDY)),
                 participantContributionNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)),
                 transactionStatusNames: getLabelNames(item, ATTRIBUTE_NAMES.TRANSACTION_STATUS),
-                paymentStatusNames: getLabelNames(item, ATTRIBUTE_NAMES.PAYMENT_STATUS || 'Payment Status')
+                paymentStatusNames: getLabelNames(item, ATTRIBUTE_NAMES.PAYMENT_STATUS || 'Payment Status'),
+                transactionStatusRaw: getRawStatusData(item, ATTRIBUTE_NAMES.TRANSACTION_STATUS),
+                paymentStatusRaw: getRawStatusData(item, ATTRIBUTE_NAMES.PAYMENT_STATUS || 'Payment Status')
             };
         });
 
@@ -566,12 +577,38 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
         if (transactionStatusFilter && transactionStatusFilter !== 'all') {
             try {
-                const transactionStatusRegex = new RegExp(transactionStatusFilter, 'i');
                 filteredItems = filteredItems.filter(p => {
-                    if (Array.isArray(p.transactionStatusNames)) {
-                        return p.transactionStatusNames.some(name => transactionStatusRegex.test(String(name)));
+                    // Helper to check if two strings match (bidirectional contains check)
+                    const matches = (searchTerm, value) => {
+                        const searchLower = String(searchTerm).toLowerCase();
+                        const valueLower = String(value).toLowerCase();
+                        return valueLower.includes(searchLower) || searchLower.includes(valueLower);
+                    };
+                    
+                    // First try matching against label names
+                    if (Array.isArray(p.transactionStatusNames) && p.transactionStatusNames.length > 0) {
+                        if (p.transactionStatusNames.some(name => {
+                            const nameStr = String(name);
+                            return transactionStatusFilter == nameStr
+                        })) {
+                            return true;
+                        }
+                    } else if (p.transactionStatusNames && !Array.isArray(p.transactionStatusNames)) {
+                        const nameStr = String(p.transactionStatusNames);
+                        if (transactionStatusFilter == nameStr) {
+                            return true;
+                        }
                     }
-                    return transactionStatusRegex.test(String(p.transactionStatusNames));
+                    // Fallback: try matching against raw status data if label names didn't match or were empty
+                    if (p.transactionStatusRaw) {
+                        const rawStr = Array.isArray(p.transactionStatusRaw) 
+                            ? p.transactionStatusRaw.map(v => String(v)).join(' ')
+                            : String(p.transactionStatusRaw);
+                        if (transactionStatusFilter == rawStr) {
+                            return true;
+                        }
+                    }
+                    return false;
                 });
             } catch (regexErr) {
                 warn('Items-Service', 'Invalid transaction status regex pattern', {
@@ -583,12 +620,38 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
         if (paymentStatusFilter && paymentStatusFilter !== 'all') {
             try {
-                const paymentStatusRegex = new RegExp(paymentStatusFilter, 'i');
                 filteredItems = filteredItems.filter(p => {
-                    if (Array.isArray(p.paymentStatusNames)) {
-                        return p.paymentStatusNames.some(name => paymentStatusRegex.test(String(name)));
+                    // Helper to check if two strings match (bidirectional contains check)
+                    const matches = (searchTerm, value) => {
+                        const searchLower = String(searchTerm).toLowerCase();
+                        const valueLower = String(value).toLowerCase();
+                        return valueLower.includes(searchLower) || searchLower.includes(valueLower);
+                    };
+                    
+                    // First try matching against label names
+                    if (Array.isArray(p.paymentStatusNames) && p.paymentStatusNames.length > 0) {
+                        if (p.paymentStatusNames.some(name => {
+                            const nameStr = String(name);
+                            return paymentStatusFilter == nameStr
+                        })) {
+                            return true;
+                        }
+                    } else if (p.paymentStatusNames && !Array.isArray(p.paymentStatusNames)) {
+                        const nameStr = String(p.paymentStatusNames);
+                        if (paymentStatusFilter == nameStr) {
+                            return true;
+                        }
                     }
-                    return paymentStatusRegex.test(String(p.paymentStatusNames));
+                    // Fallback: try matching against raw status data if label names didn't match or were empty
+                    if (p.paymentStatusRaw) {
+                        const rawStr = Array.isArray(p.paymentStatusRaw) 
+                            ? p.paymentStatusRaw.map(v => String(v)).join(' ')
+                            : String(p.paymentStatusRaw);
+                        if (paymentStatusFilter == rawStr) {
+                            return true;
+                        }
+                    }
+                    return false;
                 });
             } catch (regexErr) {
                 warn('Items-Service', 'Invalid payment status regex pattern', {
@@ -672,8 +735,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
             const participant = getValue(ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
             const scheduledStart = getValue(ATTRIBUTE_NAMES.SCHEDULED_START) || null;
-            const worker = getValue(ATTRIBUTE_NAMES.WORKER_PLANNER)?.toString() || 'N/A';
-            const workerName = members.find(m => m.id == worker)?.name || 'N/A';
             const unit = getValue(ATTRIBUTE_NAMES.UNIT) || 'Hours';
             const quantity = Number(getValue(ATTRIBUTE_NAMES.QUANTITY)) || 0;
             const unitPrice = Number(getValue(ATTRIBUTE_NAMES.UNIT_PRICE)) || 0;
@@ -682,221 +743,169 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             const participantContribution = Number(getValue(ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)) || 0;
             const notes = getValue(ATTRIBUTE_NAMES.ADDITIONAL_NOTES) || '';
 
-            // Get Service: second section after "-" of Service Plan ID
             const servicePlanId = getValue(ATTRIBUTE_NAMES.SERVICE_PLAN);
-            const servicePlan = servicePlanId?.toString() ? await getItemValues(workspaceId, boardId, servicePlanId.toString()) : null;
+            const servicePlan = servicePlanId?.toString()
+                ? await getItemValues(workspaceId, boardId, servicePlanId.toString())
+                : null;
+
             let service = undefined;
-            let serviceIdentifier = undefined; // For CSV export: Service ID / Item ID from Aged Care Pricing
-            let servicePlanName = undefined; // For CSV export: to check if contains "Wraparound"
-            if (servicePlan && servicePlan.values) {
-                const servicePlanIdValue = servicePlan.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.SERVICE_PLAN_ID)?.data?.toString().trim();
-                if (servicePlanIdValue && typeof servicePlanIdValue === 'string' && servicePlanIdValue.includes('-')) {
+            let serviceIdentifier = undefined;
+            let itemId = '';
+            let itemName = '';
+            let wraparoundItemId = '';
+            let wraparoundDescription = '';
+            let healthProfessionalTypeCode;
+            let healthProfessionalTypeOther;
+
+            if (servicePlan?.values) {
+                const servicePlanIdValue = servicePlan.values
+                    .find(v => v.attribute.name === ATTRIBUTE_NAMES.SERVICE_PLAN_ID)?.data?.toString().trim();
+                if (servicePlanIdValue) {
                     const parts = servicePlanIdValue.split('-');
-                    if (parts.length >= 2) {
-                        service = parts.slice(1).join('-').trim();
-                    }
-                } else if (servicePlanIdValue && typeof servicePlanIdValue === 'string') {
-                    service = servicePlanIdValue;
+                    service = parts.length >= 2 ? parts.slice(1).join('-').trim() : servicePlanIdValue;
                 }
-                
-                // Get Service Identifier from Service ID / Item ID attribute (from Aged Care Pricing folders)
-                const serviceIdItemId = servicePlan.values.find(v => 
-                    v.attribute.name === 'Service ID / Item ID' || 
-                    v.attribute.name === 'Service ID' ||
-                    v.attribute.name === 'Item ID'
-                )?.data;
+
+                const [
+                    ,
+                    homeSupportValues,
+                    assistiveTechnologyShortTermValues,
+                    assistiveTechnologyOngoingValues,
+                    homeModificationValues,
+                    healthProfessionalValues,
+                    wraparoundValues
+                ] = await getAgeCareParticipantsServicePlanReferencedItems(workspaceId, boardId, servicePlanId);
+
+                const serviceIdItemId =
+                    homeSupportValues?.serviceIDItemID ||
+                    assistiveTechnologyShortTermValues?.serviceIDItemID ||
+                    assistiveTechnologyOngoingValues?.serviceIDItemID ||
+                    homeModificationValues?.serviceIDItemID ||
+                    healthProfessionalValues?.serviceIDItemID ||
+                    '';
+
                 if (serviceIdItemId) {
-                    serviceIdentifier = typeof serviceIdItemId === 'string' ? serviceIdItemId : String(serviceIdItemId);
-                    // Remove "/" and anything after it
+                    serviceIdentifier = typeof serviceIdItemId === 'string'
+                        ? serviceIdItemId
+                        : String(serviceIdItemId);
                     if (serviceIdentifier.includes('/')) {
                         serviceIdentifier = serviceIdentifier.split('/')[0].trim();
                     }
                 }
-                
-                // Get Service Plan name to check for "Wraparound"
-                const servicePlanNameValue = servicePlan.values.find(v => 
-                    v.attribute.name === 'Name' || 
-                    v.attribute.name === 'Service Plan Name' ||
-                    v.attribute.name === 'Title'
-                )?.data;
-                if (servicePlanNameValue) {
-                    servicePlanName = typeof servicePlanNameValue === 'string' ? servicePlanNameValue : String(servicePlanNameValue);
-                }
+
+                healthProfessionalTypeCode = healthProfessionalValues?.healthProfessionalTypeCode || '';
+                healthProfessionalTypeOther = healthProfessionalValues?.healthProfessionalTypeOther.includes(' - Other') ? healthProfessionalValues?.healthProfessionalTypeOther.split(' - Other')[0] : '';
+
+                itemId =
+                    homeSupportValues?.itemID ||
+                    assistiveTechnologyShortTermValues?.itemID ||
+                    assistiveTechnologyOngoingValues?.itemID ||
+                    homeModificationValues?.itemID ||
+                    healthProfessionalValues?.itemID ||
+                    '';
+
+                itemName =
+                    homeSupportValues?.item ||
+                    assistiveTechnologyShortTermValues?.item ||
+                    assistiveTechnologyOngoingValues?.item ||
+                    homeModificationValues?.item ||
+                    healthProfessionalValues?.item ||
+                    '';
+
+                wraparoundItemId = wraparoundValues?.itemID || '';
+                wraparoundDescription = wraparoundValues?.wraparoundDescription || '';
             }
-            
-            const invoiceNumber = getValue(ATTRIBUTE_NAMES.INVOICE_NUMBER) || getValue('Generated Invoice Number') || '';
-            
-            // Get Care Recipient Identifier (My Aged Care ID Number from Participant Profile/Intake)
-            let careRecipientIdentifier = undefined;
+
+            const invoiceNumber =
+                getValue(ATTRIBUTE_NAMES.INVOICE_NUMBER) || getValue('Generated Invoice Number') || '';
+
+            let careRecipientIdentifier;
             const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
             if (participantProfileValue) {
                 try {
-                    const participantProfileId = Array.isArray(participantProfileValue) 
-                        ? participantProfileValue[0] 
-                        : (typeof participantProfileValue === 'object' ? participantProfileValue.id : participantProfileValue);
+                    const participantProfileId = Array.isArray(participantProfileValue)
+                        ? participantProfileValue[0]
+                        : (typeof participantProfileValue === 'object'
+                            ? participantProfileValue.id
+                            : participantProfileValue);
+
                     if (participantProfileId) {
-                        const participantProfile = await getItemValues(workspaceId, boardId, participantProfileId.toString());
-                        if (participantProfile && participantProfile.values) {
-                            const myAgedCareId = participantProfile.values.find(v => 
-                                v.attribute.name === ATTRIBUTE_NAMES.MY_AGED_CARE_ID || 
-                                v.attribute.name === ATTRIBUTE_NAMES.MY_AGED_CARE_ID_ALT
-                            )?.data;
-                            if (myAgedCareId) {
-                                careRecipientIdentifier = typeof myAgedCareId === 'string' ? myAgedCareId : String(myAgedCareId);
-                            }
+                        const participantProfile = await getItemValues(
+                            workspaceId,
+                            boardId,
+                            participantProfileId.toString()
+                        );
+                        const myAgedCareId = participantProfile?.values?.find(v =>
+                            v.attribute.name === ATTRIBUTE_NAMES.MY_AGED_CARE_ID ||
+                            v.attribute.name === ATTRIBUTE_NAMES.MY_AGED_CARE_ID_ALT
+                        )?.data;
+                        if (myAgedCareId) {
+                            careRecipientIdentifier = typeof myAgedCareId === 'string'
+                                ? myAgedCareId
+                                : String(myAgedCareId);
                         }
                     }
                 } catch (err) {
-                    warn('Items-Service', 'Failed to fetch My Aged Care ID from participant profile', {
-                        error: err.message
-                    }, extractContextFromReq(req));
+                    warn(
+                        'Items-Service',
+                        'Failed to fetch My Aged Care ID from participant profile',
+                        { error: err.message },
+                        extractContextFromReq(req)
+                    );
                 }
             }
-            
-            // Get Delivered By value
+
             const deliveredBy = getValue(ATTRIBUTE_NAMES.DELIVERED_BY);
-            const deliveredByString = deliveredBy 
+            const deliveredByString = deliveredBy
                 ? (typeof deliveredBy === 'object' ? deliveredBy.name : String(deliveredBy))
                 : undefined;
-            
-            // Get Item ID, Item, Wraparound Item ID, Wraparound Description
-            const itemId = getValue('Item ID') || undefined;
-            const itemName = getValue('Item') || undefined;
-            const wraparoundItemId = getValue('Wraparound Item ID') || undefined;
-            const wraparoundDescription = getValue('Wraparound Description') || undefined;
-            
-            // Get Item or Wraparound - determine based on whether wraparound fields exist
-            const itemOrWraparoundRaw = getValue(ATTRIBUTE_NAMES.ITEM_OR_WRAPAROUND);
-            let itemOrWraparound = undefined;
-            if (itemOrWraparoundRaw) {
-                itemOrWraparound = typeof itemOrWraparoundRaw === 'object' ? itemOrWraparoundRaw.name : String(itemOrWraparoundRaw);
-            } else if (wraparoundItemId || wraparoundDescription) {
-                // If wraparound fields exist, it's a wraparound
-                itemOrWraparound = 'Wraparound';
-            } else if (itemId || itemName) {
-                // If item fields exist, it's an item
-                itemOrWraparound = 'Item';
-            }
-            
-            // Get Item Description Code
-            const itemDescriptionCode = getValue(ATTRIBUTE_NAMES.ITEM_DESCRIPTION_CODE) || undefined;
-            
-            // Get Item Description (fallback to Item if not found)
-            const itemDescription = getValue(ATTRIBUTE_NAMES.ITEM_DESCRIPTION) || itemName || undefined;
-            
-            // Get Wraparound Description Code
-            const wraparoundDescriptionCode = getValue(ATTRIBUTE_NAMES.WRAPAROUND_DESCRIPTION_CODE) || undefined;
-            
-            // Get Prescribed Item
-            const prescribedItem = getValue('Prescribed Item');
-            const prescribedItemValue = prescribedItem === true || prescribedItem === 'true' || prescribedItem === 'Y' ? 'Y' : 'N';
 
-            // Get Item First Payment flag
+            const prescribedItem = getValue('Prescribed Item');
+            const prescribedItemValue =
+                prescribedItem === true || prescribedItem === 'true' || prescribedItem === 'Y' ? 'Y' : 'N';
+
             const itemFirstPaymentRaw = getValue('Item First Payment');
-            let itemFirstPaymentValue = undefined;
+            let itemFirstPaymentValue;
             if (typeof itemFirstPaymentRaw === 'boolean') {
                 itemFirstPaymentValue = itemFirstPaymentRaw ? 'Y' : 'N';
             } else if (typeof itemFirstPaymentRaw === 'string') {
                 const normalized = itemFirstPaymentRaw.trim().toLowerCase();
-                itemFirstPaymentValue = (normalized === 'true' || normalized === 'y' || normalized === 'yes') ? 'Y' : 'N';
-            } else if (itemFirstPaymentRaw !== undefined && itemFirstPaymentRaw !== null) {
-                itemFirstPaymentValue = String(itemFirstPaymentRaw).trim().toLowerCase() === 'y' ? 'Y' : 'N';
+                itemFirstPaymentValue = ['true', 'y', 'yes'].includes(normalized) ? 'Y' : 'N';
             }
-            
-            // Get Item Purchased Method
+
             const itemPurchasedMethod = getValue('Item Purchased Method');
-            const itemPurchasedMethodString = itemPurchasedMethod 
-                ? (typeof itemPurchasedMethod === 'object' ? itemPurchasedMethod.name : String(itemPurchasedMethod))
+            const itemPurchasedMethodString = itemPurchasedMethod
+                ? (typeof itemPurchasedMethod === 'object'
+                    ? itemPurchasedMethod.name
+                    : String(itemPurchasedMethod))
                 : undefined;
-            
-            // Get Associated Provider and Associated Provider Invoice No
+
             const associatedProvider = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
-            const associatedProviderString = associatedProvider 
+            const associatedProviderString = associatedProvider
                 ? (typeof associatedProvider === 'object' ? associatedProvider.name : String(associatedProvider))
                 : undefined;
-            const associatedProviderInvoiceNo = getValue('Associated Provider Invoice No. (if applicable)') || 
-                                               getValue('Associated Provider Invoice No') || 
-                                               undefined;
-            
-            // Get Loaned by Organisation Name (may be same as Associated Provider, but check separately)
-            const loanedByOrganisationName = getValue(ATTRIBUTE_NAMES.LOANED_BY_ORGANISATION_NAME) || 
-                                           associatedProviderString || 
-                                           undefined;
-            
-            // Get Delivered By Third Party
-            const deliveredByThirdPartyRaw = getValue(ATTRIBUTE_NAMES.DELIVERED_BY_THIRD_PARTY);
-            let deliveredByThirdParty = undefined;
-            if (deliveredByThirdPartyRaw !== undefined && deliveredByThirdPartyRaw !== null) {
-                if (typeof deliveredByThirdPartyRaw === 'boolean') {
-                    deliveredByThirdParty = deliveredByThirdPartyRaw ? 'Y' : 'N';
-                } else if (typeof deliveredByThirdPartyRaw === 'string') {
-                    const normalized = deliveredByThirdPartyRaw.trim().toLowerCase();
-                    deliveredByThirdParty = (normalized === 'true' || normalized === 'y' || normalized === 'yes') ? 'Y' : 'N';
-                } else {
-                    deliveredByThirdParty = String(deliveredByThirdPartyRaw).trim().toLowerCase() === 'y' ? 'Y' : 'N';
-                }
-            }
-            
-            // Get Health Professional Type Code and Health Professional Type Other
-            // These come from the Health Professional Pricing folder of the selected Health Professional Service
-            // The Health Professional Service is in the "Health Professional" Reference attribute of the Participant Service Plan
-            let healthProfessionalTypeCode = undefined;
-            let healthProfessionalTypeOther = undefined;
-            if (servicePlan && servicePlan.values) {
-                const healthProfessionalValue = servicePlan.values.find(v => 
-                    v.attribute.name === 'Health Professional' ||
-                    v.attribute.name === 'Health Professional Service'
-                )?.data;
-                if (healthProfessionalValue) {
-                    try {
-                        const healthProfessionalId = Array.isArray(healthProfessionalValue) 
-                            ? healthProfessionalValue[0] 
-                            : (typeof healthProfessionalValue === 'object' ? healthProfessionalValue.id : healthProfessionalValue);
-                        if (healthProfessionalId) {
-                            const healthProfessionalService = await getItemValues(workspaceId, boardId, healthProfessionalId.toString());
-                            if (healthProfessionalService && healthProfessionalService.values) {
-                                // Get Health Professional Type Code from Health Professional Pricing folder
-                                const hpTypeCode = healthProfessionalService.values.find(v => 
-                                    v.attribute.name === 'Health Professional Type Code'
-                                )?.data;
-                                if (hpTypeCode) {
-                                    healthProfessionalTypeCode = typeof hpTypeCode === 'string' ? hpTypeCode : String(hpTypeCode);
-                                }
-                                
-                                // Get Health Professional Type Other (free text if "Other" is selected)
-                                const hpTypeOther = healthProfessionalService.values.find(v => 
-                                    v.attribute.name === 'Health Professional Type Other'
-                                )?.data;
-                                if (hpTypeOther) {
-                                    healthProfessionalTypeOther = typeof hpTypeOther === 'string' ? hpTypeOther : String(hpTypeOther);
-                                }
-                            }
-                        }
-                    } catch (err) {
-                        warn('Items-Service', 'Failed to fetch Health Professional information', {
-                            error: err.message
-                        }, extractContextFromReq(req));
-                    }
-                }
-            }
 
-            // Get file URL from various possible attribute names
-            const fileUrl = getValue('Invoice File URL') || 
-                          getValue('Invoice PDF Link') || 
-                          getValue('Generated Invoice File URL') || 
-                          getValue('Generated Invoice Link') || 
-                          undefined;
+            const associatedProviderInvoiceNo =
+                getValue('Associated Provider Invoice No. (if applicable)') ||
+                getValue('Associated Provider Invoice No') ||
+                undefined;
 
-            // Get status
+            const loanedByOrganisationName = associatedProviderString || undefined;
+
+            const fileUrl =
+                getValue('Invoice File URL') ||
+                getValue('Invoice PDF Link') ||
+                getValue('Generated Invoice File URL') ||
+                getValue('Generated Invoice Link') ||
+                undefined;
+
             const invoiceIssued = getValue('Invoice Issued and Sent') || false;
-            const paymentStatusValueForCheck = item.data && item.data.values 
-                ? item.data.values.find(v => v.attribute && v.attribute.name === 'Payment Status')
-                : null;
+            const paymentStatusValueForCheck = item.data?.values?.find(v =>
+                v.attribute && v.attribute.name === 'Payment Status'
+            );
             let hasPaidStatus = false;
             if (paymentStatusValueForCheck) {
                 const paymentStatusData = paymentStatusValueForCheck.data;
                 const labels = paymentStatusValueForCheck.attribute?.settings?.labels || [];
-                
                 if (Array.isArray(paymentStatusData) && paymentStatusData.length > 0) {
                     hasPaidStatus = paymentStatusData.some(id => {
                         const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
@@ -919,35 +928,32 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             }
             const invoiceStatus = invoiceIssued || hasPaidStatus ? 'invoiced' : 'pending';
 
-            // Get additional fields
             const actualEnd = getValue(ATTRIBUTE_NAMES.ACTUAL_END) || null;
-            const serviceDeliveryDate = actualEnd && typeof actualEnd === 'string' 
-                ? (actualEnd.includes('T') ? actualEnd.split('T')[0] : actualEnd.split(' ')[0]) 
+            const serviceDeliveryDate = actualEnd && typeof actualEnd === 'string'
+                ? (actualEnd.includes('T') ? actualEnd.split('T')[0] : actualEnd.split(' ')[0])
                 : null;
             const scheduledServiceDate = scheduledStart && typeof scheduledStart === 'string'
                 ? (scheduledStart.includes('T') ? scheduledStart.split('T')[0] : scheduledStart.split(' ')[0])
                 : null;
-            
-            // Get transaction status - need to look up label name from attribute settings
-            const transactionStatusValue = item.data && item.data.values
-                ? item.data.values.find(v => v.attribute && v.attribute.name === ATTRIBUTE_NAMES.TRANSACTION_STATUS)
-                : null;
-            let transactionStatus = undefined;
+
+            const transactionStatusValue = item.data?.values?.find(v =>
+                v.attribute && v.attribute.name === ATTRIBUTE_NAMES.TRANSACTION_STATUS
+            );
+            let transactionStatus;
             if (transactionStatusValue) {
                 const transactionStatusData = transactionStatusValue.data;
                 const labels = transactionStatusValue.attribute?.settings?.labels || [];
-                
                 if (Array.isArray(transactionStatusData) && transactionStatusData.length > 0) {
-                    // Map label IDs to label names
                     transactionStatus = transactionStatusData.map(id => {
                         const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
                         return label ? label.name : (typeof id === 'object' ? id.name : String(id));
                     }).join(', ');
                 } else if (transactionStatusData) {
-                    // Single value - could be ID string, object with id/name, or already a name
                     if (typeof transactionStatusData === 'object' && transactionStatusData.id) {
                         const label = labels.find(l => l.id === transactionStatusData.id);
-                        transactionStatus = label ? label.name : (transactionStatusData.name || String(transactionStatusData.id));
+                        transactionStatus = label
+                            ? label.name
+                            : (transactionStatusData.name || String(transactionStatusData.id));
                     } else if (typeof transactionStatusData === 'string') {
                         const label = labels.find(l => l.id === transactionStatusData);
                         transactionStatus = label ? label.name : transactionStatusData;
@@ -957,26 +963,27 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 }
             }
 
-            // Format payment status - need to look up label names from attribute settings
-            const paymentStatusValue = item.data && item.data.values
-                ? item.data.values.find(v => v.attribute && (v.attribute.name === ATTRIBUTE_NAMES.PAYMENT_STATUS || v.attribute.name === 'Payment Status'))
-                : null;
-            let paymentStatusFormatted = undefined;
+            const paymentStatusValue = item.data?.values?.find(v =>
+                v.attribute && (
+                    v.attribute.name === ATTRIBUTE_NAMES.PAYMENT_STATUS ||
+                    v.attribute.name === 'Payment Status'
+                )
+            );
+            let paymentStatusFormatted;
             if (paymentStatusValue) {
                 const paymentStatusData = paymentStatusValue.data;
                 const labels = paymentStatusValue.attribute?.settings?.labels || [];
-                
                 if (Array.isArray(paymentStatusData) && paymentStatusData.length > 0) {
-                    // Map label IDs to label names
                     paymentStatusFormatted = paymentStatusData.map(id => {
                         const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
                         return label ? label.name : (typeof id === 'object' ? id.name : String(id));
-                    }).filter(s => s).join(', ');
+                    }).filter(Boolean).join(', ');
                 } else if (paymentStatusData) {
-                    // Single value
                     if (typeof paymentStatusData === 'object' && paymentStatusData.id) {
                         const label = labels.find(l => l.id === paymentStatusData.id);
-                        paymentStatusFormatted = label ? label.name : (paymentStatusData.name || String(paymentStatusData.id));
+                        paymentStatusFormatted = label
+                            ? label.name
+                            : (paymentStatusData.name || String(paymentStatusData.id));
                     } else if (typeof paymentStatusData === 'string') {
                         const label = labels.find(l => l.id === paymentStatusData);
                         paymentStatusFormatted = label ? label.name : paymentStatusData;
@@ -986,158 +993,128 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 }
             }
 
-            // Get Funding Source - it's a reference type, need to fetch referenced items
-            // Use a helper function with retry logic and timeout to handle race conditions
             const fetchFundingSourceName = async (refItemId, timeoutMs = 8000, maxRetries = 3) => {
                 if (!refItemId || typeof refItemId !== 'string' || refItemId.trim() === '') {
                     return null;
                 }
-                
                 let lastError = null;
-                
-                // Retry logic with exponential backoff
                 for (let attempt = 0; attempt < maxRetries; attempt++) {
                     try {
-                        // Add a small delay between retries (exponential backoff)
                         if (attempt > 0) {
-                            const delayMs = Math.min(200 * Math.pow(2, attempt - 1), 1000); // Max 1 second delay
+                            const delayMs = Math.min(200 * Math.pow(2, attempt - 1), 1000);
                             await new Promise(resolve => setTimeout(resolve, delayMs));
                         }
-                        
-                        // Create a timeout promise
                         const timeoutPromise = new Promise((_, reject) => {
                             setTimeout(() => reject(new Error('Timeout')), timeoutMs);
                         });
-                        
-                        // Race between the API call and timeout
                         const refItem = await Promise.race([
                             getItemValues(workspaceId, boardId, refItemId.toString()),
                             timeoutPromise
                         ]);
-                        
-                        if (refItem && refItem.values) {
-                            // Try to find a name attribute (could be "Name", "Title", "Funding Source Name", etc.)
-                            const nameValue = refItem.values.find(v => 
-                                v.attribute.name === 'Name' || 
-                                v.attribute.name === 'Title' ||
-                                v.attribute.name === 'Funding Source Name' ||
-                                v.attribute.name === 'Full Name'
+                        if (refItem?.values) {
+                            const nameValue = refItem.values.find(v =>
+                                ['Name', 'Title', 'Funding Source Name', 'Full Name'].includes(v.attribute.name)
                             );
-                            if (nameValue && nameValue.data) {
-                                const name = typeof nameValue.data === 'object' && nameValue.data.name 
-                                    ? nameValue.data.name 
+                            if (nameValue?.data) {
+                                const name = typeof nameValue.data === 'object' && nameValue.data.name
+                                    ? nameValue.data.name
                                     : String(nameValue.data);
-                                // Only return if we got a valid non-empty name
-                                if (name && name.trim() !== '') {
+                                if (name?.trim()) {
                                     return name;
                                 }
                             }
-                            // Fallback: use the first text attribute
-                            const textValue = refItem.values.find(v => 
+                            const textValue = refItem.values.find(v =>
                                 v.attribute.type === 'text' && v.data
                             );
-                            if (textValue && textValue.data) {
+                            if (textValue?.data) {
                                 const text = String(textValue.data);
-                                // Only return if we got a valid non-empty text
-                                if (text && text.trim() !== '') {
+                                if (text?.trim()) {
                                     return text;
                                 }
                             }
                         }
-                        
-                        // If we got here but no valid data, it might be that the item exists but data isn't ready yet
-                        // Continue to retry if we have attempts left
                         if (attempt < maxRetries - 1) {
                             continue;
                         }
-                        
                         return null;
                     } catch (err) {
                         lastError = err;
-                        // If it's not a timeout and we have retries left, continue
                         if (err.message !== 'Timeout' && attempt < maxRetries - 1) {
                             continue;
                         }
-                        // On last attempt or timeout, log the error
-                        if (attempt === maxRetries - 1) {
-                            if (err.message !== 'Timeout') {
-                                warn('Items-Service', 'Failed to fetch funding source item after retries', {
-                                    refId: refItemId,
-                                    error: err.message,
-                                    attempts: maxRetries
-                                }, extractContextFromReq(req));
-                            }
+                        if (attempt === maxRetries - 1 && err.message !== 'Timeout') {
+                            warn('Items-Service', 'Failed to fetch funding source item after retries', {
+                                refId: refItemId,
+                                error: err.message,
+                                attempts: maxRetries
+                            }, extractContextFromReq(req));
                         }
                     }
                 }
-                
                 return null;
             };
-            
-            let fundingSource = undefined;
-            const fundingSourceValue = item.data && item.data.values
-                ? item.data.values.find(v => v.attribute && v.attribute.name === ATTRIBUTE_NAMES.FUNDING_SOURCE)
-                : null;
-            if (fundingSourceValue && fundingSourceValue.data) {
+
+            let fundingSource;
+            const fundingSourceValue = item.data?.values?.find(v =>
+                v.attribute && v.attribute.name === ATTRIBUTE_NAMES.FUNDING_SOURCE
+            );
+            if (fundingSourceValue?.data) {
                 const fundingSourceData = fundingSourceValue.data;
                 if (Array.isArray(fundingSourceData) && fundingSourceData.length > 0) {
-                    // Fetch all referenced items and get their names
-                    // Use Promise.allSettled to prevent one failure from stopping all
                     const fundingSourceResults = await Promise.allSettled(
                         fundingSourceData.map(async (refId) => {
                             const refItemId = typeof refId === 'object' ? refId.id || refId : refId;
                             if (!refItemId) return null;
-                            return await fetchFundingSourceName(refItemId.toString());
+                            return fetchFundingSourceName(refItemId.toString());
                         })
                     );
                     const fundingSourceNames = fundingSourceResults
                         .filter(result => result.status === 'fulfilled' && result.value)
                         .map(result => result.value);
                     fundingSource = fundingSourceNames.length > 0 ? fundingSourceNames.join(', ') : undefined;
-                } else if (fundingSourceData) {
-                    // Single reference
-                    const refItemId = typeof fundingSourceData === 'object' ? fundingSourceData.id || fundingSourceData : fundingSourceData;
+                } else {
+                    const refItemId = typeof fundingSourceData === 'object'
+                        ? fundingSourceData.id || fundingSourceData
+                        : fundingSourceData;
                     if (refItemId) {
                         fundingSource = await fetchFundingSourceName(refItemId.toString());
                     }
                 }
             }
 
+            const normalizedUnit = typeof unit === 'string' ? unit.toLowerCase() : '';
+            const isItemUnit = normalizedUnit === 'item';
+            const serviceLabel = service || '';
+            const isWraparound = serviceLabel.toLowerCase().includes('wraparound');
+
             return {
                 id: item.itemId,
                 status: invoiceStatus,
+                invoiceNumber,
                 participant,
+                service: serviceLabel,
                 scheduledStart,
                 scheduledServiceDate,
                 serviceDeliveryDate,
-                worker: workerName,
                 unit,
                 quantity,
                 unitPrice,
                 totalAmount,
                 govSubsidy,
                 participantContribution,
-                service,
-                // serviceCategory,
                 notes,
-                invoiceNumber,
                 transactionStatus,
                 paymentStatus: paymentStatusFormatted,
                 fundingSource,
                 fileUrl,
-                // CSV export fields
                 careRecipientIdentifier,
                 serviceIdentifier,
                 deliveredBy: deliveredByString,
-                servicePlan: servicePlanName,
-                itemId,
-                item: itemName,
-                itemOrWraparound,
-                itemDescriptionCode,
-                itemDescription,
-                wraparoundItemId,
-                wraparoundDescription,
-                wraparoundDescriptionCode,
+                itemOrWraparound: isItemUnit ? 'Item' : (isWraparound ? 'Wraparound' : undefined),
+                itemDescriptionCode: isItemUnit ? itemId : undefined,
+                itemDescription: isItemUnit ? itemName : undefined,
+                wraparoundDescriptionCode: isWraparound ? wraparoundItemId : undefined,
+                wraparoundDescription: isWraparound ? wraparoundDescription : undefined,
                 prescribedItem: prescribedItemValue,
                 itemPurchasedMethod: itemPurchasedMethodString,
                 associatedProvider: associatedProviderString,
@@ -1145,8 +1122,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 loanedByOrganisationName,
                 healthProfessionalTypeCode,
                 healthProfessionalTypeOther,
-                itemFirstPayment: itemFirstPaymentValue,
-                deliveredByThirdParty
+                itemFirstPayment: itemFirstPaymentValue
             };
         }));
 
@@ -1867,7 +1843,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             }
             
             // Get Service Identifier from Service Plan
-            let serviceIdentifier = undefined;
+            let serviceIdentifier = '';
             if (servicePlan && servicePlan.values) {
                 const serviceIdItemId = servicePlan.values.find(v => 
                     v.attribute.name === 'Service ID / Item ID' || 
@@ -2015,26 +1991,22 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             let deliveredByThirdParty = undefined;
             if (deliveredByThirdPartyRaw !== undefined && deliveredByThirdPartyRaw !== null) {
                 if (typeof deliveredByThirdPartyRaw === 'boolean') {
-                    deliveredByThirdParty = deliveredByThirdPartyRaw ? 'Y' : 'N';
+                    deliveredByThirdParty = deliveredByThirdPartyRaw ? 'true' : 'false';
                 } else if (typeof deliveredByThirdPartyRaw === 'string') {
                     const normalized = deliveredByThirdPartyRaw.trim().toLowerCase();
-                    deliveredByThirdParty = (normalized === 'true' || normalized === 'y' || normalized === 'yes') ? 'Y' : 'N';
+                    deliveredByThirdParty = (normalized === 'true' || normalized === 'y' || normalized === 'yes') ? 'true' : 'false';
                 } else {
-                    deliveredByThirdParty = String(deliveredByThirdPartyRaw).trim().toLowerCase() === 'y' ? 'Y' : 'N';
+                    deliveredByThirdParty = String(deliveredByThirdPartyRaw).trim().toLowerCase() === 'y' ? 'true' : 'false';
                 }
             }
 
             return {
                 id: item.itemId,
-                participant: participantName,
+                paymentStatus: paymentStatusFormatted,
+                participant,
                 service,
-                serviceIdentifier,
-                serviceProvider,
                 scheduledServiceDate,
                 serviceDeliveryDate,
-                transactionStatus,
-                paymentStatus: paymentStatusFormatted,
-                committedAtHmForDelivery,
                 unit,
                 quantity,
                 unitPrice,
@@ -2043,8 +2015,13 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 participantContribution,
                 fundingSource,
                 notes,
-                participantProfileId: participantProfileId ? participantProfileId.toString() : null,
+                // CSV export fields
+                invoiceNumber,
                 careRecipientIdentifier,
+                serviceIdentifier,
+                deliveredBy: deliveredByString,
+                serviceProvider,
+                participantProfileId: participantProfileId ? participantProfileId.toString() : null,
                 invoiceNumber,
                 itemId,
                 item: itemName,

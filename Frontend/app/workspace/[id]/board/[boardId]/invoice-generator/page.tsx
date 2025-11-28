@@ -61,7 +61,7 @@ const TRANSACTION_STATUS_FILTERS = [
 
 const PAYMENT_STATUS_FILTERS = [
   { value: "all", label: "All Payment Status" },
-  { value: "Gov Claim Submited", label: "Gov Claim Submited" },
+  { value: "Gov Claim Submitted", label: "Gov Claim Submitted" },
   { value: "Gov Claim Paid", label: "Gov Claim Paid" },
   { value: "Participant Invoiced", label: "Participant Invoiced" },
   { value: "Participant Paid", label: "Participant Paid" }
@@ -87,7 +87,6 @@ interface ServiceRecord {
   scheduledStart: string | null;
   scheduledServiceDate?: string | null;
   serviceDeliveryDate?: string | null;
-  worker: string;
   unit: string;
   quantity: number;
   unitPrice: number;
@@ -96,7 +95,6 @@ interface ServiceRecord {
   participantContribution: number;
   notes: string;
   service: string;
-  serviceCategory: string;
   invoiceNumber?: string;
   transactionStatus?: string;
   paymentStatus?: string;
@@ -107,13 +105,9 @@ interface ServiceRecord {
   careRecipientIdentifier?: string;
   serviceIdentifier?: string;
   deliveredBy?: string;
-  itemId?: string;
-  item?: string;
   itemOrWraparound?: string;
   itemDescriptionCode?: string;
   itemDescription?: string;
-  servicePlan?: string;
-  wraparoundItemId?: string;
   wraparoundDescription?: string;
   wraparoundDescriptionCode?: string;
   prescribedItem?: boolean | string;
@@ -539,7 +533,7 @@ export default function InvoiceGenerator() {
   const getDeliveredByThirdParty = (deliveredBy?: string) => {
     if (!deliveredBy) return '';
     const value = deliveredBy.toLowerCase();
-    if (value.includes('associated provider')) {
+    if (value.includes('associated providers')) {
       return 'true';
     }
     if (value.includes('company workforce')) {
@@ -552,8 +546,12 @@ export default function InvoiceGenerator() {
     if (record.unit && record.unit.toLowerCase() === 'item') {
       return 'Item';
     }
-    if (record.servicePlan && record.servicePlan.toLowerCase().includes('wraparound')) {
+    if (record.service && record.service.toLowerCase().includes('wraparound')) {
       return 'Wraparound';
+    }
+    // Fallback to itemOrWraparound if directly provided
+    if (record.itemOrWraparound) {
+      return record.itemOrWraparound;
     }
     return '';
   };
@@ -873,9 +871,9 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
 
         const deliveredByThirdParty = getDeliveredByThirdParty(item.deliveredBy);
         const itemOrWraparound = getItemOrWraparound(item);
-        const itemDescriptionCode = (itemOrWraparound === 'Item' && item.itemId) ? item.itemId : '';
-        const itemDescription = (itemOrWraparound === 'Item' && item.item) ? item.item : '';
-        const wraparoundDescriptionCode = (itemOrWraparound === 'Wraparound' && item.wraparoundItemId) ? item.wraparoundItemId : '';
+        const itemDescriptionCode = (itemOrWraparound === 'Item' && item.itemDescriptionCode) ? item.itemDescriptionCode : '';
+        const itemDescription = (itemOrWraparound === 'Item' && item.itemDescription) ? item.itemDescription : '';
+        const wraparoundDescriptionCode = (itemOrWraparound === 'Wraparound' && item.wraparoundDescriptionCode) ? item.wraparoundDescriptionCode : '';
         const wraparoundDescription = (itemOrWraparound === 'Wraparound' && item.wraparoundDescription) ? item.wraparoundDescription : '';
         const prescribedItem = item.prescribedItem === 'Y' ? 'Y' : 'N';
         const purchasedMethodType = getPurchasedMethodType(item.itemPurchasedMethod);
@@ -1774,7 +1772,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
                           <div className="flex-1 flex justify-between items-center">
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
-                                <p className="font-medium">{record?.serviceCategory || record?.service || record?.notes || 'Service'}</p>
+                                <p className="font-medium">{record?.service || record?.notes || 'Service'}</p>
                                 {record.status === 'invoiced' && (
                                   <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300 text-xs">
                                     <CheckCircle className="h-3 w-3 mr-1" />
