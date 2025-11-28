@@ -2212,6 +2212,9 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                             unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
                             participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
                             wraparound: values.find(v => v.attribute.name === "Wraparound")?.data?.toString() || '',
+                            serviceIDItemID: values.find(v => v.attribute.name === "Service ID / Item ID")?.data?.toString() || '',
+                            itemID: values.find(v => v.attribute.name === "Item ID")?.data?.toString() || '',
+                            item: values.find(v => v.attribute.name === "Item")?.data?.toString() || '',
                         }
                     }
                     break;
@@ -2254,6 +2257,9 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                             unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
                             participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
                             wraparound: values.find(v => v.attribute.name === "Wraparound")?.data?.toString() || '',
+                            serviceIDItemID: values.find(v => v.attribute.name === "Service ID / Item ID")?.data?.toString() || '',
+                            itemID: values.find(v => v.attribute.name === "Item ID")?.data?.toString() || '',
+                            item: values.find(v => v.attribute.name === "Item")?.data?.toString() || '',
                         }
                     }
                     break;
@@ -2275,6 +2281,9 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                             unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
                             participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
                             wraparound: values.find(v => v.attribute.name === "Wraparound")?.data?.toString() || '',
+                            serviceIDItemID: values.find(v => v.attribute.name === "Service ID / Item ID")?.data?.toString() || '',
+                            itemID: values.find(v => v.attribute.name === "Item ID")?.data?.toString() || '',
+                            item: values.find(v => v.attribute.name === "Item")?.data?.toString() || '',
                         }
                     }
                     break;
@@ -2296,6 +2305,11 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                             unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
                             participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
                             wraparound: values.find(v => v.attribute.name === "Wraparound")?.data?.toString() || '',
+                            serviceIDItemID: values.find(v => v.attribute.name === "Service ID / Item ID")?.data?.toString() || '',                            
+                            itemID: values.find(v => v.attribute.name === "Item ID")?.data?.toString() || '',
+                            item: values.find(v => v.attribute.name === "Item")?.data?.toString() || '',
+                            healthProfessionalTypeCode: values.find(v => v.attribute.name === "Health Professional Type Code")?.data?.toString() || '',
+                            healthProfessionalTypeOther: values.find(v => v.attribute.name === "Health Professional Type")?.data?.toString() || '',
                         }
                     }
                     break;
@@ -2311,6 +2325,7 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
 
                         wraparoundValues = {
                             id: wraparound.id,
+                            itemID: values.find(v => v.attribute.name === "Wraparound Item ID")?.data?.toString() || '',
                             wraparoundDescription: values.find(v => v.attribute.name === "Wraparound Description").data.toString() || '',
                             unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
                             unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
