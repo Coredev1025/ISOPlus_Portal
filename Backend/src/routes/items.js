@@ -434,6 +434,8 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 return true;
             }
             
+            if (!item.data || !item.data.values) return false;
+            
             const paymentStatusValue = item.data.values.find(v => 
                 v.attribute && (v.attribute.name === 'Payment Status' || v.attribute.name === ATTRIBUTE_NAMES.PAYMENT_STATUS)
             );
@@ -466,6 +468,8 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
         // Helper function to get label names from status value
         const getLabelNames = (item, attributeName) => {
+            if (!item.data || !item.data.values) return [];
+            
             const statusValue = item.data.values.find(v => 
                 v.attribute && v.attribute.name === attributeName
             );
@@ -495,6 +499,8 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
         // Helper function to get raw status data for fallback matching
         const getRawStatusData = (item, attributeName) => {
+            if (!item.data || !item.data.values) return null;
+            
             const statusValue = item.data.values.find(v => 
                 v.attribute && v.attribute.name === attributeName
             );
