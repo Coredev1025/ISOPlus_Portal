@@ -673,7 +673,8 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             totalGovSubsidy: 0,
             totalParticipantContribution: 0,
             invoicedCount: 0,
-            pendingCount: 0
+            pendingCount: 0,
+            total: 0
         };
 
         filteredItems.forEach(p => {
@@ -685,9 +686,8 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             } else {
                 totalsData.pendingCount++;
             }
+            totalsData.total++;
         });
-
-        const total = filteredItems.length;
 
         // Sort items in JavaScript
         const sortFieldMap = {
@@ -1134,7 +1134,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
         res.status(200).json({
             items: transformedItems,
-            total,
+            total: totalsData.total || 0,
             invoiced: totalsData.invoicedCount || 0,
             pending: totalsData.pendingCount || 0,
             totalAmount: totalsData.totalAmount || 0,
