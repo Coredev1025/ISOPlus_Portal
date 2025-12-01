@@ -18,10 +18,11 @@ export const isEmpty = (value) => {
  */
 export class RateLimiter {
     constructor(options = {}) {
-        this.batchSize = options.batchSize || 5; // Process 5 requests at a time
-        this.delayBetweenBatches = options.delayBetweenBatches || 200; // 200ms delay between batches
-        this.maxRetries = options.maxRetries || 3;
-        this.retryDelay = options.retryDelay || 1000; // Start with 1 second delay
+        this.batchSize = options.batchSize || 2; // Process 2 requests at a time (reduced from 5)
+        this.delayBetweenBatches = options.delayBetweenBatches || 500; // 500ms delay between batches (increased from 200ms)
+        this.delayBetweenRequests = options.delayBetweenRequests || 100; // 100ms delay between individual requests in a batch
+        this.maxRetries = options.maxRetries || 5; // Increased from 3
+        this.retryDelay = options.retryDelay || 2000; // Start with 2 seconds delay (increased from 1 second)
     }
 
     /**
@@ -30,11 +31,27 @@ export class RateLimiter {
     async processBatches(promises, options = {}) {
         const batchSize = options.batchSize || this.batchSize;
         const delay = options.delayBetweenBatches || this.delayBetweenBatches;
+        const requestDelay = options.delayBetweenRequests || this.delayBetweenRequests;
         const results = [];
 
         for (let i = 0; i < promises.length; i += batchSize) {
             const batch = promises.slice(i, i + batchSize);
-            const batchResults = await Promise.allSettled(batch);
+            
+            // Process requests in batch with delay between each request
+            const batchResults = [];
+            for (let j = 0; j < batch.length; j++) {
+                if (j > 0) {
+                    // Add delay between individual requests in the batch
+                    await new Promise(resolve => setTimeout(resolve, requestDelay));
+                }
+                try {
+                    const result = await batch[j];
+                    batchResults.push({ status: 'fulfilled', value: result });
+                } catch (error) {
+                    batchResults.push({ status: 'rejected', reason: error });
+                }
+            }
+            
             results.push(...batchResults);
 
             // Add delay between batches (except for the last batch)
@@ -67,9 +84,14 @@ export class RateLimiter {
                                        err.message?.toLowerCase().includes('too many requests');
 
                 if (isRateLimitError && attempt < this.maxRetries - 1) {
-                    // Exponential backoff: delay increases with each retry
-                    const backoffDelay = delay * Math.pow(2, attempt);
-                    await new Promise(resolve => setTimeout(resolve, backoffDelay));
+                    // Exponential backoff with jitter: delay increases with each retry
+                    // Add random jitter (0-30%) to prevent thundering herd
+                    const jitter = 1 + (Math.random() * 0.3);
+                    const backoffDelay = Math.min(
+                        delay * Math.pow(2, attempt) * jitter,
+                        30000 // Cap at 30 seconds
+                    );
+                    await new Promise(resolve => setTimeout(resolve, Math.floor(backoffDelay)));
                     continue;
                 }
 
@@ -86,12 +108,20 @@ export class RateLimiter {
  * Helper function to batch process items with rate limiting
  */
 export async function batchProcess(items, processor, options = {}) {
-    const rateLimiter = new RateLimiter(options);
+    // Use more conservative defaults if not specified
+    const defaultOptions = {
+        batchSize: 2,
+        delayBetweenBatches: 500,
+        delayBetweenRequests: 100,
+        ...options
+    };
+    
+    const rateLimiter = new RateLimiter(defaultOptions);
     const promises = items.map(item => () => processor(item));
     
     const results = await rateLimiter.processBatches(
         promises.map(p => p()),
-        options
+        defaultOptions
     );
 
     return results.map((result, index) => {
