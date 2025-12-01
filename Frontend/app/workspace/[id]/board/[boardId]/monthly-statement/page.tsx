@@ -857,11 +857,106 @@ export default function MonthlyStatement() {
     try {
       setLoading(true);
       
+      // Fetch all items for PDF generation using pagination
+      const dateRange = getSelectedMonthDateRange();
+      if (!dateRange) {
+        showErrorToast('Please choose a valid month and year before generating PDF.');
+        return null;
+      }
+
+      // Fetch all budget items
+      const firstBudgetResponse = await fetchMonthlyStatementItems(id, boardId, {
+        participant: selectedParticipant,
+        month: selectedMonth,
+        year: selectedYear,
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate,
+        budgetPage: 1,
+        budgetLimit: 1000,
+      });
+
+      let allBudgetItems: BudgetRecord[] = firstBudgetResponse?.budgetItems?.items || [];
+      const budgetTotal = firstBudgetResponse?.budgetItems?.total || 0;
+      
+      if (budgetTotal > allBudgetItems.length) {
+        const remainingBudgetPages = Math.ceil((budgetTotal - allBudgetItems.length) / 1000);
+        const budgetBatchPromises = [];
+        
+        for (let page = 2; page <= remainingBudgetPages + 1; page++) {
+          budgetBatchPromises.push(
+            fetchMonthlyStatementItems(id, boardId, {
+              participant: selectedParticipant,
+              month: selectedMonth,
+              year: selectedYear,
+              startDate: dateRange.startDate,
+              endDate: dateRange.endDate,
+              budgetPage: page,
+              budgetLimit: 1000,
+            })
+          );
+        }
+
+        const budgetBatchResponses = await Promise.all(budgetBatchPromises);
+        budgetBatchResponses.forEach(response => {
+          if (response?.budgetItems?.items) {
+            allBudgetItems = [...allBudgetItems, ...response.budgetItems.items];
+          }
+        });
+      }
+
+      // Fetch all service items
+      const firstServiceResponse = await fetchMonthlyStatementItems(id, boardId, {
+        participant: selectedParticipant,
+        month: selectedMonth,
+        year: selectedYear,
+        startDate: dateRange.startDate,
+        endDate: dateRange.endDate,
+        servicePage: 1,
+        serviceLimit: 1000,
+      });
+
+      let allServiceItems: ServiceRecord[] = firstServiceResponse?.serviceItems?.items || [];
+      const serviceTotal = firstServiceResponse?.serviceItems?.total || 0;
+      
+      if (serviceTotal > allServiceItems.length) {
+        const remainingServicePages = Math.ceil((serviceTotal - allServiceItems.length) / 1000);
+        const serviceBatchPromises = [];
+        
+        for (let page = 2; page <= remainingServicePages + 1; page++) {
+          serviceBatchPromises.push(
+            fetchMonthlyStatementItems(id, boardId, {
+              participant: selectedParticipant,
+              month: selectedMonth,
+              year: selectedYear,
+              startDate: dateRange.startDate,
+              endDate: dateRange.endDate,
+              servicePage: page,
+              serviceLimit: 1000,
+            })
+          );
+        }
+
+        const serviceBatchResponses = await Promise.all(serviceBatchPromises);
+        serviceBatchResponses.forEach(response => {
+          if (response?.serviceItems?.items) {
+            allServiceItems = [...allServiceItems, ...response.serviceItems.items];
+          }
+        });
+      }
+
+      // Create updated statement data with all items
+      const fullStatementData = {
+        ...statementData,
+        budgetItems: allBudgetItems,
+        serviceItems: allServiceItems,
+        services: allServiceItems, // Also update services for backward compatibility
+      };
+      
       // Call backend PDF generation endpoint
       const response = await axios.post(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/${id}/${boardId}/monthly-statement`,
         {
-          statementData,
+          statementData: fullStatementData,
           businessDetails,
         }
       );
@@ -902,21 +997,59 @@ export default function MonthlyStatement() {
 
     try {
       setExportingSection('budget-csv');
-      const response = await fetchMonthlyStatementItems(id, boardId, {
+      
+      // Fetch first page to get total count
+      const firstResponse = await fetchMonthlyStatementItems(id, boardId, {
         participant: selectedParticipant,
         month: selectedMonth,
         year: selectedYear,
         startDate: dateRange.startDate,
         endDate: dateRange.endDate,
         budgetPage: 1,
-        budgetLimit: 5000,
+        budgetLimit: 1000, // Reasonable batch size
       });
 
-      const items: BudgetRecord[] = response?.budgetItems?.items || [];
-      if (!items.length) {
+      const total = firstResponse?.budgetItems?.total || 0;
+      let allItems: BudgetRecord[] = firstResponse?.budgetItems?.items || [];
+      
+      if (allItems.length === 0) {
         showErrorToast('No budget items to export.');
         return;
       }
+
+      // If there are more items, fetch them in batches (max 5000 for CSV export)
+      const MAX_EXPORT_ITEMS = 5000;
+      if (total > allItems.length && total <= MAX_EXPORT_ITEMS) {
+        const remainingPages = Math.ceil((total - allItems.length) / 1000);
+        const batchPromises = [];
+        
+        for (let page = 2; page <= remainingPages + 1 && allItems.length < MAX_EXPORT_ITEMS; page++) {
+          batchPromises.push(
+            fetchMonthlyStatementItems(id, boardId, {
+              participant: selectedParticipant,
+              month: selectedMonth,
+              year: selectedYear,
+              startDate: dateRange.startDate,
+              endDate: dateRange.endDate,
+              budgetPage: page,
+              budgetLimit: 1000,
+            })
+          );
+        }
+
+        const batchResponses = await Promise.all(batchPromises);
+        batchResponses.forEach(response => {
+          if (response?.budgetItems?.items) {
+            allItems = [...allItems, ...response.budgetItems.items];
+          }
+        });
+      } else if (total > MAX_EXPORT_ITEMS) {
+        showErrorToast(`Too many records to export (${total}). Please use filters to reduce the number of records. Maximum export limit is ${MAX_EXPORT_ITEMS} records.`);
+        setExportingSection(null);
+        return;
+      }
+
+      const items = allItems;
 
       const headers = [
         'Funding Stream',
@@ -982,21 +1115,59 @@ export default function MonthlyStatement() {
 
     try {
       setExportingSection('service-csv');
-      const response = await fetchMonthlyStatementItems(id, boardId, {
+      
+      // Fetch first page to get total count
+      const firstResponse = await fetchMonthlyStatementItems(id, boardId, {
         participant: selectedParticipant,
         month: selectedMonth,
         year: selectedYear,
         startDate: dateRange.startDate,
         endDate: dateRange.endDate,
         servicePage: 1,
-        serviceLimit: 5000,
+        serviceLimit: 1000, // Reasonable batch size
       });
 
-      const items: ServiceRecord[] = response?.serviceItems?.items || [];
-      if (!items.length) {
+      const total = firstResponse?.serviceItems?.total || 0;
+      let allItems: ServiceRecord[] = firstResponse?.serviceItems?.items || [];
+      
+      if (allItems.length === 0) {
         showErrorToast('No service records to export.');
         return;
       }
+
+      // If there are more items, fetch them in batches (max 5000 for CSV export)
+      const MAX_EXPORT_ITEMS = 5000;
+      if (total > allItems.length && total <= MAX_EXPORT_ITEMS) {
+        const remainingPages = Math.ceil((total - allItems.length) / 1000);
+        const batchPromises = [];
+        
+        for (let page = 2; page <= remainingPages + 1 && allItems.length < MAX_EXPORT_ITEMS; page++) {
+          batchPromises.push(
+            fetchMonthlyStatementItems(id, boardId, {
+              participant: selectedParticipant,
+              month: selectedMonth,
+              year: selectedYear,
+              startDate: dateRange.startDate,
+              endDate: dateRange.endDate,
+              servicePage: page,
+              serviceLimit: 1000,
+            })
+          );
+        }
+
+        const batchResponses = await Promise.all(batchPromises);
+        batchResponses.forEach(response => {
+          if (response?.serviceItems?.items) {
+            allItems = [...allItems, ...response.serviceItems.items];
+          }
+        });
+      } else if (total > MAX_EXPORT_ITEMS) {
+        showErrorToast(`Too many records to export (${total}). Please use filters to reduce the number of records. Maximum export limit is ${MAX_EXPORT_ITEMS} records.`);
+        setExportingSection(null);
+        return;
+      }
+
+      const items = allItems;
 
       const headers = [
         'Participant',

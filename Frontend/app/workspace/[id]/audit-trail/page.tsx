@@ -96,7 +96,7 @@ export default function AuditTrailPage() {
         // Backend now returns paginated response
         const { items, total, page, totalPages: apiTotalPages } = response.data;
 
-        let auditData = items.map((item: any) => ({
+        let auditData: AuditTrailItem[] = items.map((item: any) => ({
           action: item.action,
           user: item.userEmail,
           ipAddress: item.userIp,
@@ -114,7 +114,7 @@ export default function AuditTrailPage() {
 
         // Client-side filtering for current page only (reduces memory)
         if (debouncedSearch || actionFilter !== "all" || userFilter !== "all") {
-          auditData = auditData.filter(item => {
+          auditData = auditData.filter((item) => {
             const matchesSearch = !debouncedSearch ||
               item.action.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
               item.user.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
