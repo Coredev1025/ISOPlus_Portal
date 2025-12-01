@@ -375,21 +375,60 @@ export function putTimeTracking(workspaceId, boardId, itemId, startTime, endTime
 };
 
 export async function getItemValues(workspaceId, boardId, itemId) {
-    try {
-        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}?expand[]=values.attribute`;
-        const headers = {
-            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-API-Version": "2025-02-26.morava",
-        };
+    const maxRetries = 3;
+    let lastError = null;
+    let retryDelay = 1000; // Start with 1 second
 
-        const result = await axios.get(url, { headers });
-        return result.status === 200 ? result.data : null;
-    } catch (err) {
-        error('ISO+™ Service', `Error getting item values: ${err.message}`, { workspaceId, boardId, itemId });
-        return null;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}?expand[]=values.attribute`;
+            const headers = {
+                "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-API-Version": "2025-02-26.morava",
+            };
+
+            const result = await axios.get(url, { headers });
+            return result.status === 200 ? result.data : null;
+        } catch (err) {
+            lastError = err;
+            
+            // Check if it's a 429 error (rate limit)
+            const isRateLimitError = err.response?.status === 429 || 
+                                   err.message?.includes('429') ||
+                                   err.message?.toLowerCase().includes('rate limit') ||
+                                   err.message?.toLowerCase().includes('too many requests');
+
+            if (isRateLimitError && attempt < maxRetries - 1) {
+                // Exponential backoff: delay increases with each retry
+                const backoffDelay = retryDelay * Math.pow(2, attempt);
+                warn('ISO+™ Service', `Rate limit hit, retrying after ${backoffDelay}ms`, { 
+                    workspaceId, 
+                    boardId, 
+                    itemId, 
+                    attempt: attempt + 1,
+                    maxRetries 
+                });
+                await sleep(backoffDelay);
+                continue;
+            }
+
+            // If not a rate limit error or max retries reached, log and return null
+            if (!isRateLimitError || attempt === maxRetries - 1) {
+                error('ISO+™ Service', `Error getting item values: ${err.message}`, { 
+                    workspaceId, 
+                    boardId, 
+                    itemId,
+                    status: err.response?.status,
+                    isRateLimitError
+                });
+                return null;
+            }
+        }
     }
+
+    return null;
 }
 
 export async function validateItemBelongsToTenant(workspaceId, boardId, itemId) {

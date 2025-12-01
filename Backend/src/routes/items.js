@@ -4,6 +4,7 @@ import Item from '../models/Item.js';
 import Business from '../models/Business.js';
 import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
 import { getItemValues, getFolder, getMember, getMonthlyStatementBudgetData, getAgeCareParticipantsServicePlanReferencedItems } from '../services/isoplus.js';
+import { RateLimiter, batchProcess } from '../utils/helpers.js';
 
 const router = express.Router();
 
@@ -108,6 +109,22 @@ const BUDGET_CATEGORY_ORDER = BUDGET_CATEGORY_CONFIG.map(config => config.code);
 const DELIVERED_BY_TYPES = {
     COMPANY_WORKFORCE: 'company workforce',
     ASSOCIATED_PROVIDERS: 'associated providers'
+};
+
+// Rate limiter instance for API calls
+const rateLimiter = new RateLimiter({
+    batchSize: 3, // Process 3 requests at a time
+    delayBetweenBatches: 300, // 300ms delay between batches
+    maxRetries: 3,
+    retryDelay: 1000
+});
+
+// Wrapper for getItemValues with rate limiting and retry logic
+const getItemValuesWithRateLimit = async (workspaceId, boardId, itemId) => {
+    return rateLimiter.executeWithRetry(
+        () => getItemValues(workspaceId, boardId, itemId),
+        { workspaceId, boardId, itemId }
+    );
 };
 
 const getFolderIds = async (folderName, workspaceId, boardId, providedFolders = null) => {
@@ -330,7 +347,6 @@ router.get('/:workspaceId/:boardId/monthly-statement/participants', authenticate
 router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async (req, res) => {
     try {
         const { workspaceId, boardId } = req.params;
-        const { members } = await getMember(req.session.Authorization, workspaceId);
         const {
             status = '',
             participant = '',
@@ -532,6 +548,8 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
         // Apply filters in JavaScript
         let filteredItems = processedItems;
+        console.log("Base Query: ", baseQuery);
+        console.log("ALL Count: ", allItems.length);
 
         if (status && status !== 'all') {
             filteredItems = filteredItems.filter(p => 
@@ -677,6 +695,8 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             total: 0
         };
 
+        console.log("Filtered Count: ", filteredItems.length);
+
         filteredItems.forEach(p => {
             totalsData.totalAmount += p.totalAmountNum;
             totalsData.totalGovSubsidy += p.govSubsidyNum;
@@ -731,28 +751,30 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             ? filteredItems.slice(skip, skip + limitNumber)
             : filteredItems;
 
-        // Transform items
-        const transformedItems = await Promise.all(items.map(async processedItem => {
-            const item = processedItem.item;
-            const getValue = (attributeName) => {
-                if (!item.data || !item.data.values) return null;
-                return item.data.values.find(v => v.attribute && v.attribute.name === attributeName)?.data;
-            };
+        // Transform items with rate limiting
+        const transformedItems = await batchProcess(
+            items,
+            async (processedItem) => {
+                const item = processedItem.item;
+                const getValue = (attributeName) => {
+                    if (!item.data || !item.data.values) return null;
+                    return item.data.values.find(v => v.attribute && v.attribute.name === attributeName)?.data;
+                };
 
-            const participant = getValue(ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
-            const scheduledStart = getValue(ATTRIBUTE_NAMES.SCHEDULED_START) || null;
-            const unit = getValue(ATTRIBUTE_NAMES.UNIT) || 'Hours';
-            const quantity = Number(getValue(ATTRIBUTE_NAMES.QUANTITY)) || 0;
-            const unitPrice = Number(getValue(ATTRIBUTE_NAMES.UNIT_PRICE)) || 0;
-            const totalAmount = Number(getValue(ATTRIBUTE_NAMES.TOTAL_AMOUNT)) || 0;
-            const govSubsidy = Number(getValue(ATTRIBUTE_NAMES.GOV_SUBSIDY)) || 0;
-            const participantContribution = Number(getValue(ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)) || 0;
-            const notes = getValue(ATTRIBUTE_NAMES.ADDITIONAL_NOTES) || '';
+                const participant = getValue(ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
+                const scheduledStart = getValue(ATTRIBUTE_NAMES.SCHEDULED_START) || null;
+                const unit = getValue(ATTRIBUTE_NAMES.UNIT) || 'Hours';
+                const quantity = Number(getValue(ATTRIBUTE_NAMES.QUANTITY)) || 0;
+                const unitPrice = Number(getValue(ATTRIBUTE_NAMES.UNIT_PRICE)) || 0;
+                const totalAmount = Number(getValue(ATTRIBUTE_NAMES.TOTAL_AMOUNT)) || 0;
+                const govSubsidy = Number(getValue(ATTRIBUTE_NAMES.GOV_SUBSIDY)) || 0;
+                const participantContribution = Number(getValue(ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)) || 0;
+                const notes = getValue(ATTRIBUTE_NAMES.ADDITIONAL_NOTES) || '';
 
-            const servicePlanId = getValue(ATTRIBUTE_NAMES.SERVICE_PLAN);
-            const servicePlan = servicePlanId?.toString()
-                ? await getItemValues(workspaceId, boardId, servicePlanId.toString())
-                : null;
+                const servicePlanId = getValue(ATTRIBUTE_NAMES.SERVICE_PLAN);
+                const servicePlan = servicePlanId?.toString()
+                    ? await getItemValuesWithRateLimit(workspaceId, boardId, servicePlanId.toString())
+                    : null;
 
             let service = undefined;
             let serviceIdentifier = undefined;
@@ -835,7 +857,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                             : participantProfileValue);
 
                     if (participantProfileId) {
-                        const participantProfile = await getItemValues(
+                        const participantProfile = await getItemValuesWithRateLimit(
                             workspaceId,
                             boardId,
                             participantProfileId.toString()
@@ -1014,7 +1036,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                             setTimeout(() => reject(new Error('Timeout')), timeoutMs);
                         });
                         const refItem = await Promise.race([
-                            getItemValues(workspaceId, boardId, refItemId.toString()),
+                            getItemValuesWithRateLimit(workspaceId, boardId, refItemId.toString()),
                             timeoutPromise
                         ]);
                         if (refItem?.values) {
@@ -1067,13 +1089,18 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             if (fundingSourceValue?.data) {
                 const fundingSourceData = fundingSourceValue.data;
                 if (Array.isArray(fundingSourceData) && fundingSourceData.length > 0) {
-                    const fundingSourceResults = await Promise.allSettled(
-                        fundingSourceData.map(async (refId) => {
-                            const refItemId = typeof refId === 'object' ? refId.id || refId : refId;
-                            if (!refItemId) return null;
-                            return fetchFundingSourceName(refItemId.toString());
-                        })
+                    // Process funding sources in batches to avoid rate limiting
+                    const fundingSourcePromises = fundingSourceData.map((refId) => {
+                        const refItemId = typeof refId === 'object' ? refId.id || refId : refId;
+                        if (!refItemId) return Promise.resolve(null);
+                        return fetchFundingSourceName(refItemId.toString());
+                    });
+                    
+                    const fundingSourceResults = await rateLimiter.processBatches(
+                        fundingSourcePromises,
+                        { batchSize: 3, delayBetweenBatches: 300 }
                     );
+                    
                     const fundingSourceNames = fundingSourceResults
                         .filter(result => result.status === 'fulfilled' && result.value)
                         .map(result => result.value);
@@ -1130,7 +1157,9 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 healthProfessionalTypeOther,
                 itemFirstPayment: itemFirstPaymentValue
             };
-        }));
+            },
+            { batchSize: 3, delayBetweenBatches: 300 }
+        );
 
         res.status(200).json({
             items: transformedItems,
@@ -1459,7 +1488,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 return itemValuesCache.get(targetItemId);
             }
             try {
-                const values = await getItemValues(workspaceId, boardId, targetItemId);
+                const values = await getItemValuesWithRateLimit(workspaceId, boardId, targetItemId);
                 itemValuesCache.set(targetItemId, values);
                 return values;
             } catch (err) {
@@ -1620,7 +1649,12 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             };
         };
 
-        const transformedAllBudgetItems = await Promise.all(allBudgetItems.map(transformBudgetItem));
+        // Transform budget items with rate limiting
+        const transformedAllBudgetItems = await batchProcess(
+            allBudgetItems,
+            transformBudgetItem,
+            { batchSize: 5, delayBetweenBatches: 200 }
+        );
 
         const normalizeString = (value) => (value || '').toString().trim().toLowerCase();
         const isIdLike = (value) => typeof value === 'string' && value.includes('-');
@@ -1749,8 +1783,10 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         const serviceItems = (serviceAggResult[0] && serviceAggResult[0].items) ? serviceAggResult[0].items : [];
         const serviceTotal = (serviceAggResult[0] && serviceAggResult[0].totalCount && serviceAggResult[0].totalCount[0]) ? serviceAggResult[0].totalCount[0].count : 0;
 
-        // Transform service items with specific fields from image
-        const transformedServiceItems = await Promise.all(serviceItems.map(async item => {
+        // Transform service items with specific fields from image (with rate limiting)
+        const transformedServiceItems = await batchProcess(
+            serviceItems,
+            async (item) => {
             const getValue = (attributeName) => {
                 return item.data.values.find(v => v.attribute.name === attributeName)?.data;
             };
@@ -1759,9 +1795,9 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             let participantName = getValue(ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
             const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
             const participantProfileId = Array.isArray(participantProfileValue) ? participantProfileValue[0] : participantProfileValue;
-            try {
-                if (participantProfileId) {
-                    const participantProfile = await getItemValues(workspaceId, boardId, participantProfileId.toString());
+                try {
+                    if (participantProfileId) {
+                        const participantProfile = await getItemValuesWithRateLimit(workspaceId, boardId, participantProfileId.toString());
                     if (participantProfile && participantProfile.values) {
                         const fullName = participantProfile.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.FULL_NAME)?.data;
                         if (fullName) {
@@ -1775,7 +1811,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
 
             // Get Service: second section after "-" of Service Plan ID
             const servicePlanId = getValue(ATTRIBUTE_NAMES.SERVICE_PLAN);
-            const servicePlan = servicePlanId?.toString() ? await getItemValues(workspaceId, boardId, servicePlanId.toString()) : null;
+            const servicePlan = servicePlanId?.toString() ? await getItemValuesWithRateLimit(workspaceId, boardId, servicePlanId.toString()) : null;
             let service = undefined;
             if (servicePlan && servicePlan.values) {
                 const servicePlanIdValue = servicePlan.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.SERVICE_PLAN_ID)?.data?.toString().trim();
@@ -2047,7 +2083,9 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 itemFirstPayment: itemFirstPaymentValue,
                 deliveredByThirdParty
             };
-        }));
+            },
+            { batchSize: 3, delayBetweenBatches: 300 }
+        );
 
         const budgetCategoryAggregates = {};
         const createBudgetAggregate = () => ({
