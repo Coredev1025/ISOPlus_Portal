@@ -375,9 +375,9 @@ export function putTimeTracking(workspaceId, boardId, itemId, startTime, endTime
 };
 
 export async function getItemValues(workspaceId, boardId, itemId) {
-    const maxRetries = 3;
+    const maxRetries = 5; // Increased from 3 to handle rate limits better
     let lastError = null;
-    let retryDelay = 1000; // Start with 1 second
+    let retryDelay = 2000; // Start with 2 seconds (increased from 1 second)
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
@@ -401,16 +401,21 @@ export async function getItemValues(workspaceId, boardId, itemId) {
                                    err.message?.toLowerCase().includes('too many requests');
 
             if (isRateLimitError && attempt < maxRetries - 1) {
-                // Exponential backoff: delay increases with each retry
-                const backoffDelay = retryDelay * Math.pow(2, attempt);
-                warn('ISO+™ Service', `Rate limit hit, retrying after ${backoffDelay}ms`, { 
+                // Exponential backoff with jitter: delay increases with each retry
+                // Add random jitter (0-30%) to prevent thundering herd
+                const jitter = 1 + (Math.random() * 0.3);
+                const backoffDelay = Math.min(
+                    retryDelay * Math.pow(2, attempt) * jitter,
+                    30000 // Cap at 30 seconds
+                );
+                warn('ISO+™ Service', `Rate limit hit, retrying after ${Math.floor(backoffDelay)}ms`, { 
                     workspaceId, 
                     boardId, 
                     itemId, 
                     attempt: attempt + 1,
                     maxRetries 
                 });
-                await sleep(backoffDelay);
+                await sleep(Math.floor(backoffDelay));
                 continue;
             }
 

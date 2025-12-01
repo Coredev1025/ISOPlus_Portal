@@ -111,12 +111,13 @@ const DELIVERED_BY_TYPES = {
     ASSOCIATED_PROVIDERS: 'associated providers'
 };
 
-// Rate limiter instance for API calls
+// Rate limiter instance for API calls with more conservative settings to prevent 429 errors
 const rateLimiter = new RateLimiter({
-    batchSize: 3, // Process 3 requests at a time
-    delayBetweenBatches: 300, // 300ms delay between batches
-    maxRetries: 3,
-    retryDelay: 1000
+    batchSize: 2, // Process 2 requests at a time (reduced from 3)
+    delayBetweenBatches: 600, // 600ms delay between batches (increased from 300ms)
+    delayBetweenRequests: 150, // 150ms delay between individual requests in a batch
+    maxRetries: 5, // Increased from 3
+    retryDelay: 2500 // Start with 2.5 seconds delay (increased from 1.5 seconds)
 });
 
 // Wrapper for getItemValues with rate limiting and retry logic
@@ -751,7 +752,24 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             ? filteredItems.slice(skip, skip + limitNumber)
             : filteredItems;
 
-        // Transform items with rate limiting
+        // Cache for item values to reduce redundant API calls
+        const itemValuesCache = new Map();
+        const getCachedItemValues = async (itemId) => {
+            if (!itemId) return null;
+            const cacheKey = itemId.toString();
+            if (itemValuesCache.has(cacheKey)) {
+                return itemValuesCache.get(cacheKey);
+            }
+            // Add small delay to prevent rate limiting
+            await new Promise(resolve => setTimeout(resolve, 100));
+            const values = await getItemValuesWithRateLimit(workspaceId, boardId, cacheKey);
+            if (values) {
+                itemValuesCache.set(cacheKey, values);
+            }
+            return values;
+        };
+
+        // Transform items with rate limiting (reduced batch size to prevent 429 errors)
         const transformedItems = await batchProcess(
             items,
             async (processedItem) => {
@@ -773,7 +791,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
                 const servicePlanId = getValue(ATTRIBUTE_NAMES.SERVICE_PLAN);
                 const servicePlan = servicePlanId?.toString()
-                    ? await getItemValuesWithRateLimit(workspaceId, boardId, servicePlanId.toString())
+                    ? await getCachedItemValues(servicePlanId.toString())
                     : null;
 
             let service = undefined;
@@ -793,6 +811,8 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     service = parts.length >= 2 ? parts.slice(1).join('-').trim() : servicePlanIdValue;
                 }
 
+                // Add small delay before making multiple API calls to prevent rate limiting
+                await new Promise(resolve => setTimeout(resolve, 150));
                 const [
                     ,
                     homeSupportValues,
@@ -857,11 +877,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                             : participantProfileValue);
 
                     if (participantProfileId) {
-                        const participantProfile = await getItemValuesWithRateLimit(
-                            workspaceId,
-                            boardId,
-                            participantProfileId.toString()
-                        );
+                        const participantProfile = await getCachedItemValues(participantProfileId.toString());
                         const myAgedCareId = participantProfile?.values?.find(v =>
                             v.attribute.name === ATTRIBUTE_NAMES.MY_AGED_CARE_ID ||
                             v.attribute.name === ATTRIBUTE_NAMES.MY_AGED_CARE_ID_ALT
@@ -1021,16 +1037,22 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 }
             }
 
-            const fetchFundingSourceName = async (refItemId, timeoutMs = 8000, maxRetries = 3) => {
+            const fetchFundingSourceName = async (refItemId, timeoutMs = 10000, maxRetries = 5) => {
                 if (!refItemId || typeof refItemId !== 'string' || refItemId.trim() === '') {
                     return null;
                 }
                 let lastError = null;
                 for (let attempt = 0; attempt < maxRetries; attempt++) {
                     try {
+                        // Add delay before each attempt to prevent rate limiting
                         if (attempt > 0) {
-                            const delayMs = Math.min(200 * Math.pow(2, attempt - 1), 1000);
-                            await new Promise(resolve => setTimeout(resolve, delayMs));
+                            // Exponential backoff with jitter
+                            const jitter = 1 + (Math.random() * 0.3);
+                            const delayMs = Math.min(500 * Math.pow(2, attempt - 1) * jitter, 5000);
+                            await new Promise(resolve => setTimeout(resolve, Math.floor(delayMs)));
+                        } else {
+                            // Small delay even on first attempt to space out requests
+                            await new Promise(resolve => setTimeout(resolve, 100));
                         }
                         const timeoutPromise = new Promise((_, reject) => {
                             setTimeout(() => reject(new Error('Timeout')), timeoutMs);
@@ -1098,7 +1120,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     
                     const fundingSourceResults = await rateLimiter.processBatches(
                         fundingSourcePromises,
-                        { batchSize: 3, delayBetweenBatches: 300 }
+                        { batchSize: 2, delayBetweenBatches: 600, delayBetweenRequests: 150 }
                     );
                     
                     const fundingSourceNames = fundingSourceResults
@@ -1158,7 +1180,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 itemFirstPayment: itemFirstPaymentValue
             };
             },
-            { batchSize: 3, delayBetweenBatches: 300 }
+            { batchSize: 2, delayBetweenBatches: 600, delayBetweenRequests: 150 }
         );
 
         res.status(200).json({
@@ -1649,11 +1671,11 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             };
         };
 
-        // Transform budget items with rate limiting
+        // Transform budget items with rate limiting (reduced batch size to prevent 429 errors)
         const transformedAllBudgetItems = await batchProcess(
             allBudgetItems,
             transformBudgetItem,
-            { batchSize: 5, delayBetweenBatches: 200 }
+            { batchSize: 2, delayBetweenBatches: 600, delayBetweenRequests: 150 }
         );
 
         const normalizeString = (value) => (value || '').toString().trim().toLowerCase();
@@ -2084,7 +2106,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 deliveredByThirdParty
             };
             },
-            { batchSize: 3, delayBetweenBatches: 300 }
+            { batchSize: 2, delayBetweenBatches: 600, delayBetweenRequests: 150 }
         );
 
         const budgetCategoryAggregates = {};
