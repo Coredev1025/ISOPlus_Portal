@@ -375,21 +375,65 @@ export function putTimeTracking(workspaceId, boardId, itemId, startTime, endTime
 };
 
 export async function getItemValues(workspaceId, boardId, itemId) {
-    try {
-        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}?expand[]=values.attribute`;
-        const headers = {
-            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-API-Version": "2025-02-26.morava",
-        };
+    const maxRetries = 5; // Increased from 3 to handle rate limits better
+    let lastError = null;
+    let retryDelay = 2000; // Start with 2 seconds (increased from 1 second)
 
-        const result = await axios.get(url, { headers });
-        return result.status === 200 ? result.data : null;
-    } catch (err) {
-        error('ISO+™ Service', `Error getting item values: ${err.message}`, { workspaceId, boardId, itemId });
-        return null;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}?expand[]=values.attribute`;
+            const headers = {
+                "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-API-Version": "2025-02-26.morava",
+            };
+
+            const result = await axios.get(url, { headers });
+            return result.status === 200 ? result.data : null;
+        } catch (err) {
+            lastError = err;
+            
+            // Check if it's a 429 error (rate limit)
+            const isRateLimitError = err.response?.status === 429 || 
+                                   err.message?.includes('429') ||
+                                   err.message?.toLowerCase().includes('rate limit') ||
+                                   err.message?.toLowerCase().includes('too many requests');
+
+            if (isRateLimitError && attempt < maxRetries - 1) {
+                // Exponential backoff with jitter: delay increases with each retry
+                // Add random jitter (0-30%) to prevent thundering herd
+                const jitter = 1 + (Math.random() * 0.3);
+                const backoffDelay = Math.min(
+                    retryDelay * Math.pow(2, attempt) * jitter,
+                    30000 // Cap at 30 seconds
+                );
+                warn('ISO+™ Service', `Rate limit hit, retrying after ${Math.floor(backoffDelay)}ms`, { 
+                    workspaceId, 
+                    boardId, 
+                    itemId, 
+                    attempt: attempt + 1,
+                    maxRetries 
+                });
+                await sleep(Math.floor(backoffDelay));
+                continue;
+            }
+
+            // If not a rate limit error or max retries reached, log and return null
+            if (!isRateLimitError || attempt === maxRetries - 1) {
+                error('ISO+™ Service', `Error getting item values: ${err.message}`, { 
+                    workspaceId, 
+                    boardId, 
+                    itemId,
+                    status: err.response?.status,
+                    isRateLimitError
+                });
+                return null;
+            }
+        }
     }
+
+    return null;
 }
 
 export async function validateItemBelongsToTenant(workspaceId, boardId, itemId) {
@@ -2212,6 +2256,9 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                             unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
                             participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
                             wraparound: values.find(v => v.attribute.name === "Wraparound")?.data?.toString() || '',
+                            serviceIDItemID: values.find(v => v.attribute.name === "Service ID / Item ID")?.data?.toString() || '',
+                            itemID: values.find(v => v.attribute.name === "Item ID")?.data?.toString() || '',
+                            item: values.find(v => v.attribute.name === "Item")?.data?.toString() || '',
                         }
                     }
                     break;
@@ -2254,6 +2301,9 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                             unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
                             participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
                             wraparound: values.find(v => v.attribute.name === "Wraparound")?.data?.toString() || '',
+                            serviceIDItemID: values.find(v => v.attribute.name === "Service ID / Item ID")?.data?.toString() || '',
+                            itemID: values.find(v => v.attribute.name === "Item ID")?.data?.toString() || '',
+                            item: values.find(v => v.attribute.name === "Item")?.data?.toString() || '',
                         }
                     }
                     break;
@@ -2275,6 +2325,9 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                             unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
                             participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
                             wraparound: values.find(v => v.attribute.name === "Wraparound")?.data?.toString() || '',
+                            serviceIDItemID: values.find(v => v.attribute.name === "Service ID / Item ID")?.data?.toString() || '',
+                            itemID: values.find(v => v.attribute.name === "Item ID")?.data?.toString() || '',
+                            item: values.find(v => v.attribute.name === "Item")?.data?.toString() || '',
                         }
                     }
                     break;
@@ -2296,6 +2349,11 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
                             unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',
                             participantContributionGuideline: values.find(v => v.attribute.name === "Participant Contribution Guideline (%)").data.toString() || '',
                             wraparound: values.find(v => v.attribute.name === "Wraparound")?.data?.toString() || '',
+                            serviceIDItemID: values.find(v => v.attribute.name === "Service ID / Item ID")?.data?.toString() || '',                            
+                            itemID: values.find(v => v.attribute.name === "Item ID")?.data?.toString() || '',
+                            item: values.find(v => v.attribute.name === "Item")?.data?.toString() || '',
+                            healthProfessionalTypeCode: values.find(v => v.attribute.name === "Health Professional Type Code")?.data?.toString() || '',
+                            healthProfessionalTypeOther: values.find(v => v.attribute.name === "Health Professional Type")?.data?.toString() || '',
                         }
                     }
                     break;
@@ -2311,6 +2369,7 @@ export async function getAgeCareParticipantsServicePlanReferencedItems(workspace
 
                         wraparoundValues = {
                             id: wraparound.id,
+                            itemID: values.find(v => v.attribute.name === "Wraparound Item ID")?.data?.toString() || '',
                             wraparoundDescription: values.find(v => v.attribute.name === "Wraparound Description").data.toString() || '',
                             unit: values.find(v => v.attribute.name === "Unit Type").data.toString() || '',
                             unitPrice: values.find(v => v.attribute.name === "Price ($)").data.toString().replace('$', '') || '0',

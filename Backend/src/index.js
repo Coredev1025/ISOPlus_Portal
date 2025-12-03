@@ -22,6 +22,10 @@ import itemsRoutes from './routes/items.js';
 import session from 'express-session';
 import MongoStore from 'connect-mongo';
 import './workers/syncWorker.js'; // Initialize sync worker
+import { createBullBoard } from '@bull-board/api';
+import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
+import { ExpressAdapter } from '@bull-board/express';
+import { syncQueue } from './services/sync/queue.js';
 
 dotenv.config();
 
@@ -71,6 +75,20 @@ app.use('/api/care-management-ndis-pricing', ndisRoutes);
 app.use('/api/age-care', ageCareRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/api/items', itemsRoutes);
+
+// Setup Bull Board for queue monitoring
+const serverAdapter = new ExpressAdapter();
+serverAdapter.setBasePath('/api/queues');
+
+createBullBoard({
+  queues: [
+    new BullMQAdapter(syncQueue),
+  ],
+  serverAdapter: serverAdapter,
+});
+
+// Mount Bull Board UI
+app.use('/api/queues', serverAdapter.getRouter());
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('Connected to MongoDB'))
