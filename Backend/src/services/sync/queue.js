@@ -130,5 +130,6 @@ syncQueue.on('waiting', (jobId) => {
   info('Sync-Queue', 'Job waiting', { jobId });
 });
 
+export { redisConnection };
 export default syncQueue;
 
