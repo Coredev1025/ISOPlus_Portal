@@ -534,10 +534,10 @@ export default function InvoiceGenerator() {
     if (!deliveredBy) return '';
     const value = deliveredBy.toLowerCase();
     if (value.includes('associated providers')) {
-      return 'true';
+      return 'True';
     }
     if (value.includes('company workforce')) {
-      return 'false';
+      return 'False';
     }
     return '';
   };
@@ -837,13 +837,13 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
       };
 
       const csvHeaders = [
-        'Invoice Number',
+        'Item External Reference Identifier',
         'Care Recipient Identifier',
         'Service Identifier',
-        'Service Delivery Date',
-        'Unit',
+        'Delivery Date',
+        'Unit Type',
         'Quantity',
-        'Unit Price ($)',
+        'Price Per Unit',
         'Funding Source',
         'Delivered By Third Party',
         'Item or Wraparound',
@@ -856,7 +856,8 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
         'Loaned by Organisation Name',
         'Loaned By Invoice Number',
         'Health Professional Type Code',
-        'Health Professional Type Other'
+        'Health Professional Type Other',
+        'Item First Payment'
       ];
 
       const csvRows: string[] = [];
@@ -869,21 +870,23 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
           serviceIdentifier = serviceIdentifier.split('/')[0].trim();
         }
 
-        const deliveredByThirdParty = getDeliveredByThirdParty(item.deliveredBy);
-        const itemOrWraparound = getItemOrWraparound(item);
-        const itemDescriptionCode = (itemOrWraparound === 'Item' && item.itemDescriptionCode) ? item.itemDescriptionCode : '';
-        const itemDescription = (itemOrWraparound === 'Item' && item.itemDescription) ? item.itemDescription : '';
-        const wraparoundDescriptionCode = (itemOrWraparound === 'Wraparound' && item.wraparoundDescriptionCode) ? item.wraparoundDescriptionCode : '';
-        const wraparoundDescription = (itemOrWraparound === 'Wraparound' && item.wraparoundDescription) ? item.wraparoundDescription : '';
-        const prescribedItem = item.prescribedItem === 'Y' ? 'Y' : 'N';
-        const purchasedMethodType = getPurchasedMethodType(item.itemPurchasedMethod);
-        const loanedByOrganisationName = purchasedMethodType === 'LOANED' ? (item.associatedProvider || '') : '';
+        // Use backend fields directly as they are already formatted
+        const deliveredByThirdParty = item.deliveredByThirdParty || '';
+        const itemOrWraparound = item.itemOrWraparound || '';
+        const itemDescriptionCode = item.itemDescriptionCode || '';
+        const itemDescription = item.itemDescription || '';
+        const wraparoundDescriptionCode = item.wraparoundDescriptionCode || '';
+        const wraparoundDescription = item.wraparoundDescription || '';
+        const prescribedItem = item.prescribedItem || 'N';
+        const purchasedMethodType = item.itemPurchasedMethod || '';
+        const loanedByOrganisationName = purchasedMethodType === 'LOANED' ? (item.loanedByOrganisationName || '') : '';
         const loanedByInvoiceNumber = purchasedMethodType === 'LOANED' ? (item.associatedProviderInvoiceNo || '') : '';
         const healthProfessionalTypeCode = item.healthProfessionalTypeCode || '';
         const healthProfessionalTypeOther = item.healthProfessionalTypeOther || '';
         const serviceDeliveryDateCsv = formatDateForCsv(item.serviceDeliveryDate);
-        // Get funding source code - try multiple sources
+        // Get funding source code - convert from name to code
         const fundingSourceCode = getFundingSourceCode(item.fundingSource);
+        const itemFirstPayment = item.itemFirstPayment || 'False';
 
         csvRows.push(
           [
@@ -906,7 +909,8 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
             escapeForCsv(loanedByOrganisationName),
             escapeForCsv(loanedByInvoiceNumber),
             escapeForCsv(healthProfessionalTypeCode),
-            escapeForCsv(healthProfessionalTypeOther)
+            escapeForCsv(healthProfessionalTypeOther),
+            escapeForCsv(itemFirstPayment)
           ].join(',')
         );
       });
