@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, FileText, Search, Calendar, Filter, CheckCircle, DollarSign, BarChart3, FileSpreadsheet, Receipt, X, RefreshCcw, Percent, ArrowLeftCircle, ArrowRightCircle, Download, Clock, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { ArrowLeft, FileText, Search, Calendar, Filter, CheckCircle, DollarSign, BarChart3, FileSpreadsheet, Receipt, X, RefreshCcw, Percent, ArrowLeftCircle, ArrowRightCircle, Download, Clock, ArrowUpDown, ArrowUp, ArrowDown, HelpCircle } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useState, useEffect, useCallback, useRef, ReactNode } from "react";
@@ -171,6 +171,9 @@ export default function InvoiceGenerator() {
   const [isManualSyncing, setIsManualSyncing] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+  const isGeneratingInvoiceRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const eligibleRecordsAbortControllerRef = useRef<AbortController | null>(null);
 
   // Modal state for invoice generation
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
@@ -184,10 +187,86 @@ export default function InvoiceGenerator() {
     return date.toISOString().split('T')[0];
   });
   const [uniqueParticipants, setUniqueParticipants] = useState<string[]>([]);
+  const [showHelpDialog, setShowHelpDialog] = useState(false);
+  const [generatingPDF, setGeneratingPDF] = useState(false);
+  const [generatingXero, setGeneratingXero] = useState(false);
 
-  const handleManualRefresh = useCallback(() => {
-    setRefreshKey(prev => prev + 1);
-  }, []);
+  const handleManualRefresh = useCallback(async (silent = false) => {
+    if (!id || !boardId) {
+      if (!silent) {
+        showErrorToast('Workspace or board missing', { description: 'Please navigate back and select a workspace again.' });
+      }
+      return;
+    }
+
+    try {
+      // Check sync status first
+      const statusUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/sync/board/status/${boardId}`;
+      const statusResponse = await axios.get(statusUrl, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+
+      const syncStatus = statusResponse.data;
+      const jobState = syncStatus?.jobStatus?.state;
+      const syncStatusValue = syncStatus?.syncStatus;
+      const finishedOn = syncStatus?.jobStatus?.finishedOn;
+
+      // Check if a manual sync was just completed
+      // A completed job with finishedOn timestamp indicates the sync just finished
+      const isSyncCompleted = jobState === 'completed' && finishedOn;
+      // Valid sync statuses (not failed or stopped)
+      const isValidSyncStatus = syncStatusValue && 
+        !['failed', 'sync_stopped', 'sync_cancelled', 'board_invalid'].includes(syncStatusValue);
+
+      if (isSyncCompleted && isValidSyncStatus) {
+        if (!silent) {
+          showSuccessToast('Manual sync completed', {
+            description: 'The sync job has finished successfully. Reloading service records with latest data...'
+          });
+        }
+        // Reload data after a short delay to ensure backend has updated
+        setTimeout(() => {
+          setRefreshKey(prev => prev + 1);
+        }, 500);
+      } else if (jobState === 'active' || jobState === 'waiting') {
+        if (!silent) {
+          showInfoToast('Sync in progress', {
+            description: 'A sync job is currently running. Data will be refreshed, but may not include the latest changes yet.'
+          });
+        }
+        // Still refresh data, but let user know sync is in progress
+        setRefreshKey(prev => prev + 1);
+      } else if (jobState === 'failed') {
+        if (!silent) {
+          showErrorToast('Sync job failed', {
+            description: 'The last sync job encountered an error. Data refreshed, but you may want to trigger a new sync.'
+          });
+        }
+        // Still refresh data
+        setRefreshKey(prev => prev + 1);
+      } else {
+        // No active sync job or sync is in normal state
+        if (!silent) {
+          showInfoToast('Refreshing data', {
+            description: 'Loading the latest cached service records...'
+          });
+        }
+        setRefreshKey(prev => prev + 1);
+      }
+    } catch (err: any) {
+      // If status check fails, still refresh data but show warning
+      console.error('Error checking sync status:', err);
+      if (!silent) {
+        showInfoToast('Refreshing data', {
+          description: 'Unable to check sync status. Loading cached service records...'
+        });
+      }
+      setRefreshKey(prev => prev + 1);
+    }
+  }, [id, boardId]);
 
   // Fetch unique participants for the modal dropdown using dedicated endpoint
   useEffect(() => {
@@ -223,6 +302,15 @@ export default function InvoiceGenerator() {
         setEligibleRecords([]);
         return;
       }
+
+      // Cancel previous request if it exists
+      if (eligibleRecordsAbortControllerRef.current) {
+        eligibleRecordsAbortControllerRef.current.abort();
+      }
+
+      // Create new AbortController for this request
+      const abortController = new AbortController();
+      eligibleRecordsAbortControllerRef.current = abortController;
 
       setLoadingEligible(true);
       try {
@@ -282,7 +370,8 @@ export default function InvoiceGenerator() {
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
-          }
+          },
+          signal: abortController.signal
         });
 
         if (response.data?.items) {
@@ -293,36 +382,68 @@ export default function InvoiceGenerator() {
           // Auto-select all eligible records by default (including invoiced ones)
           setSelectedItems(new Set(items.map((r: ServiceRecord) => r.id)));
           
-          if (items.length > 0) {
-            if (total > items.length) {
-              showInfoToast(`Loaded ${items.length} of ${total} eligible records`, {
-                description: 'Showing first 1000 records. Use filters to narrow down if needed.'
-              });
-            } else {
-              showInfoToast(`Loaded ${items.length} eligible record${items.length === 1 ? '' : 's'}`, {
-                description: 'All records (including invoiced) are shown. You can select which ones to include in the invoice.'
-              });
+          // Only show toasts if not generating invoice (to avoid duplicate/empty toasts)
+          if (!isGeneratingInvoiceRef.current) {
+            if (items.length > 0) {
+              if (total > items.length) {
+                showInfoToast(`Loaded ${items.length} of ${total} eligible records`, {
+                  description: 'Showing first 1000 records. Use filters to narrow down if needed.'
+                });
+              } else {
+                showInfoToast(`Loaded ${items.length} eligible record${items.length === 1 ? '' : 's'}`, {
+                  description: 'All records (including invoiced) are shown. You can select which ones to include in the invoice.'
+                });
+              }
             }
           }
         } else {
-          showInfoToast('No eligible records found', {
-            description: 'No records match your current filters.'
-          });
+          // Only show toast if not generating invoice
+          if (!isGeneratingInvoiceRef.current) {
+            showInfoToast('No eligible records found', {
+              description: 'No records match your current filters.'
+            });
+          }
         }
-      } catch (err) {
+      } catch (err: any) {
+        // Don't handle errors for cancelled requests
+        if (err.name === 'AbortError' || err.code === 'ERR_CANCELED') {
+          return;
+        }
         console.error('Error fetching eligible records:', err);
-        showErrorToast('Failed to fetch eligible records', { description: err instanceof Error ? err.message : 'Unknown error' });
+        // Only show error toast if not generating invoice
+        if (!isGeneratingInvoiceRef.current) {
+          showErrorToast('Failed to fetch eligible records', { description: err instanceof Error ? err.message : 'Unknown error' });
+        }
         setEligibleRecords([]);
       } finally {
-        setLoadingEligible(false);
+        // Only update loading state if this request wasn't cancelled
+        if (!abortController.signal.aborted) {
+          setLoadingEligible(false);
+        }
       }
     };
 
     fetchEligibleRecords();
+
+    // Cleanup: abort request when component unmounts or dependencies change
+    return () => {
+      if (eligibleRecordsAbortControllerRef.current) {
+        eligibleRecordsAbortControllerRef.current.abort();
+      }
+    };
   }, [showInvoiceModal, id, boardId, participantFilter, scheduledServiceDateRange, serviceDeliveryDateRange, transactionStatusFilter, paymentStatusFilter, sortBy, sortOrder, refreshKey]);
 
   useEffect(() => {
     const fetchData = async () => {
+      // Cancel previous request if it exists
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+
+      // Create new AbortController for this request
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
       setLoading(true);
       setError(null);
       try {
@@ -389,7 +510,8 @@ export default function InvoiceGenerator() {
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
-          }
+          },
+          signal: abortController.signal
         });
 
         // Validate response format
@@ -428,17 +550,31 @@ export default function InvoiceGenerator() {
         });
         setLastSyncedAt(new Date());
       } catch (err: any) {
+        // Don't handle errors for cancelled requests
+        if (err.name === 'AbortError' || err.code === 'ERR_CANCELED') {
+          return;
+        }
         const errorMessage = err.response?.data?.message || err.message || 'An error occurred while fetching data';
         setError(errorMessage);
         console.error("Error fetching invoice data:", err);
       } finally {
-        setLoading(false);
+        // Only update loading state if this request wasn't cancelled
+        if (!abortController.signal.aborted) {
+          setLoading(false);
+        }
       }
     };
 
     if (id && boardId) {
       fetchData();
     }
+
+    // Cleanup: abort request when component unmounts or dependencies change
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [
     id,
     boardId,
@@ -658,14 +794,20 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
     {
       key: 'scheduledServiceDate',
       label: 'Scheduled Service Date',
-      className: 'min-w-[180px]',
+      className: 'min-w-[220px]',
       render: (record) => formatDisplayDate(record.scheduledServiceDate || record.scheduledStart)
     },
     {
       key: 'serviceDeliveryDate',
       label: 'Service Delivery Date',
-      className: 'min-w-[180px]',
+      className: 'min-w-[220px]',
       render: (record) => formatDisplayDate(record.serviceDeliveryDate)
+    },
+    {
+      key: 'transactionStatus',
+      label: 'Transaction Status',
+      className: 'min-w-[220px]',
+      render: (record) => record.transactionStatus || '-'
     },
     {
       key: 'unit',
@@ -860,7 +1002,8 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
         'Item First Payment'
       ];
 
-      const csvRows: string[] = [];
+      // Add CSV headers
+      const csvRows: string[] = [csvHeaders.join(',')];
 
       allItems.forEach((item) => {
         const invoiceNumber = item.invoiceNumber || '';
@@ -871,18 +1014,28 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
         }
 
         // Use backend fields directly as they are already formatted
-        const deliveredByThirdParty = item.deliveredByThirdParty || '';
+        const deliveredByThirdParty = item.deliveredByThirdParty === 'True' ? 'True' : (item.deliveredByThirdParty === 'False' ? 'False' : '');
         const itemOrWraparound = item.itemOrWraparound || '';
-        const itemDescriptionCode = item.itemDescriptionCode || '';
-        const itemDescription = item.itemDescription || '';
-        const wraparoundDescriptionCode = item.wraparoundDescriptionCode || '';
-        const wraparoundDescription = item.wraparoundDescription || '';
+        
+        // Item Description Code and Item Description only for 'Item' type
+        const itemDescriptionCode = (itemOrWraparound === 'Item' && item.itemDescriptionCode) ? item.itemDescriptionCode : '';
+        const itemDescription = (itemOrWraparound === 'Item' && item.itemDescription) ? item.itemDescription : '';
+        
+        // Wraparound Description Code and Wraparound Description only for 'Wraparound' type
+        const wraparoundDescriptionCode = (itemOrWraparound === 'Wraparound' && item.wraparoundDescriptionCode) ? item.wraparoundDescriptionCode : '';
+        const wraparoundDescription = (itemOrWraparound === 'Wraparound' && item.wraparoundDescription) ? item.wraparoundDescription : '';
+        
         const prescribedItem = item.prescribedItem || 'N';
+        
+        // Purchased Method Type should be empty if itemPurchasedMethod is undefined/null/empty
         const purchasedMethodType = item.itemPurchasedMethod || '';
         const loanedByOrganisationName = purchasedMethodType === 'LOANED' ? (item.loanedByOrganisationName || '') : '';
         const loanedByInvoiceNumber = purchasedMethodType === 'LOANED' ? (item.associatedProviderInvoiceNo || '') : '';
+        
+        // Health Professional Type Code and Other - include for all items (backend sets these when available)
         const healthProfessionalTypeCode = item.healthProfessionalTypeCode || '';
         const healthProfessionalTypeOther = item.healthProfessionalTypeOther || '';
+        
         const serviceDeliveryDateCsv = formatDateForCsv(item.serviceDeliveryDate);
         // Get funding source code - convert from name to code
         const fundingSourceCode = getFundingSourceCode(item.fundingSource);
@@ -971,12 +1124,13 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
       if (response.data?.success) {
         const description = response.data?.message || 'Manual sync triggered successfully.';
         showSuccessToast('Manual sync queued', {
-          description: `${description} The sync job has been added to the queue and will start processing shortly. It may take a few minutes—refresh to see new records.`
+          description: `${description} The sync job has been added to the queue and will start processing shortly. Refreshing data...`
         });
         
-        // Optionally refresh data after a short delay to show updated status
+        // Automatically refresh data after a short delay to allow sync job to be queued
+        // Use silent mode to avoid duplicate toast (we already showed "Manual sync queued" toast)
         setTimeout(() => {
-          setRefreshKey(prev => prev + 1);
+          handleManualRefresh(true);
         }, 2000);
       } else {
         showErrorToast('Sync not started', {
@@ -1003,9 +1157,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
     due.setDate(due.getDate() + 14);
     setDueDate(due.toISOString().split('T')[0]);
     setShowInvoiceModal(true);
-    showInfoToast('Loading eligible records...', {
-      description: 'Fetching all records (including invoiced) that match your filters.'
-    });
+    // Don't show toast here - fetchEligibleRecords will show appropriate toasts
   };
 
   // Toggle item selection
@@ -1057,13 +1209,18 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
       // Get participant name from first record
       const participantName = selectedRecords[0]?.participant || '';
 
-      setLoading(true);
+      setGeneratingPDF(true);
+      isGeneratingInvoiceRef.current = true;
 
       // Endpoint generates ONE PDF for all selected items
       const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/${id}/${boardId}/invoiceparticipanttax`;
 
+      // Extract item IDs from selected records - backend expects itemIds array
+      const itemIds = selectedRecords.map(record => record.id);
+
       const payload = {
-        items: selectedRecords, 
+        itemIds: itemIds,
+        items: selectedRecords, // Keep items for backward compatibility
         participantName: participantName,
         invoiceDate: new Date(invoiceDate).toISOString(),
         dueDate: new Date(dueDate).toISOString()
@@ -1127,16 +1284,25 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
         showSuccessToast('Participant Tax Invoice generated', {
           description: `Invoice ${invoiceNumber} for ${participantName} (${itemCount} item${itemCount === 1 ? '' : 's'}) created.`
         });
-        // Refresh data to show updated invoice numbers
-        handleManualRefresh();
+        // Refresh data to show updated invoice numbers (silent mode to avoid showing another toast)
+        setTimeout(() => {
+          handleManualRefresh(true);
+          // Reset the flag after a delay to allow refresh to complete
+          setTimeout(() => {
+            isGeneratingInvoiceRef.current = false;
+          }, 2000);
+        }, 1000);
       } else {
+        isGeneratingInvoiceRef.current = false;
         showErrorToast('Unexpected response while generating invoice');
       }
     } catch (err: any) {
       console.error('Error generating participant invoice', err);
-      showErrorToast('Failed to generate invoice', { description: err.response?.data?.message || err.message || 'Unknown error occurred' });
+      isGeneratingInvoiceRef.current = false;
+      const errorMessage = err.response?.data?.message || err.message || 'Unknown error occurred';
+      showErrorToast('Failed to generate invoice', { description: errorMessage });
     } finally {
-      setLoading(false);
+      setGeneratingPDF(false);
     }
   };
 
@@ -1169,7 +1335,8 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
       // Get participant name from first record
       const participantName = selectedRecords[0]?.participant || '';
 
-      setLoading(true);
+      setGeneratingXero(true);
+      isGeneratingInvoiceRef.current = true;
 
       // Endpoint generates ONE Xero invoice for all selected items
       const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/${id}/${boardId}/invoiceparticipanttax`;
@@ -1214,16 +1381,25 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
         showSuccessToast('Xero Participant Tax Invoice generated', {
           description: `Invoice ${invoiceNumber} for ${participantName} (${itemCount} item${itemCount === 1 ? '' : 's'}) created in Xero.`
         });
-        // Refresh data to show updated invoice numbers
-        handleManualRefresh();
+        // Refresh data to show updated invoice numbers (silent mode to avoid showing another toast)
+        setTimeout(() => {
+          handleManualRefresh(true);
+          // Reset the flag after a delay to allow refresh to complete
+          setTimeout(() => {
+            isGeneratingInvoiceRef.current = false;
+          }, 2000);
+        }, 1000);
       } else {
+        isGeneratingInvoiceRef.current = false;
         showErrorToast('Unexpected response while generating Xero invoice');
       }
     } catch (err: any) {
       console.error('Error generating Xero invoice', err);
-      showErrorToast('Failed to generate Xero invoice', { description: err.response?.data?.message || err.message || 'Unknown error occurred' });
+      isGeneratingInvoiceRef.current = false;
+      const errorMessage = err.response?.data?.message || err.message || 'Unknown error occurred';
+      showErrorToast('Failed to generate Xero invoice', { description: errorMessage });
     } finally {
-      setLoading(false);
+      setGeneratingXero(false);
     }
   };
 
@@ -1265,11 +1441,12 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
                 <Button
                   variant="outline"
                   className="gap-2"
-                  onClick={handleManualRefresh}
+                  onClick={() => handleManualRefresh(false)}
                   disabled={loading}
                 >
                   <RefreshCcw className="h-4 w-4" />
                   Refresh Data
+                  <HelpCircle className="h-4 w-4" aria-label="Learn more about Refresh Data" onClick={(e) => { e.stopPropagation(); setShowHelpDialog(true); }} />
                 </Button>
                 <TooltipProvider>
                   <Tooltip>
@@ -1287,10 +1464,10 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
                           </>
                         ) : (
                           <>
-                            <RefreshCcw className="h-4 w-4" />
-                            Sync from ISO+
+                            Sync Data
                           </>
-                        )}
+                        )}  
+                        <HelpCircle className="h-4 w-4" aria-label="Learn more about Sync Data" onClick={(e) => { e.stopPropagation(); setShowHelpDialog(true); }}/>
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
@@ -1316,9 +1493,6 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
                 </Button>
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Transaction filter labels (Delivered, Cancelled, Adjustment) automatically match their equivalent ISO+ values such as &quot;Delivered - To be claimed and invoiced.&quot;
-            </p>
 
             {/* Search and Filters */}
             <div className="flex flex-nowrap gap-4 mb-6 overflow-x-auto pb-2">
@@ -1343,7 +1517,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
 
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="min-w-[120px] max-w-[200px] justify-start text-left font-normal flex-shrink-0">
+                  <Button variant="outline" className="min-w-[220px] max-w-[300px] justify-start text-left font-normal flex-shrink-0">
                     <div className="flex items-center gap-2 min-w-0 w-full">
                       <Calendar className="h-4 w-4 flex-shrink-0" />
                       <span className="truncate">
@@ -1385,7 +1559,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
 
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="min-w-[120px] max-w-[200px] justify-start text-left font-normal flex-shrink-0">
+                  <Button variant="outline" className="min-w-[220px] max-w-[300px] justify-start text-left font-normal flex-shrink-0">
                     <div className="flex items-center gap-2 min-w-0 w-full">
                       <Calendar className="h-4 w-4 flex-shrink-0" />
                       <span className="truncate">
@@ -1426,7 +1600,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
               )}
 
               <Select value={transactionStatusFilter} onValueChange={setTransactionStatusFilter}>
-                <SelectTrigger className="min-w-[120px] max-w-[200px] flex-shrink-0">
+                <SelectTrigger className="w-[220px] flex-shrink-0">
                   <div className="flex items-center gap-2 min-w-0 w-full">
                     <Filter className="h-4 w-4 flex-shrink-0" />
                     <SelectValue placeholder="Transaction Status" className="truncate" />
@@ -1496,9 +1670,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Total Participant Contribution</p>
                     <p className="text-2xl font-bold text-purple-600">
-                      {filteredSummary.totalAmount > 0 
-                        ? ((filteredSummary.totalParticipantContribution / filteredSummary.totalAmount) * 100).toFixed(2)
-                        : '0.00'}%
+                      {formatCurrency(filteredSummary.totalParticipantContribution)}
                     </p>
                   </div>
                   <Percent className="h-8 w-8 text-purple-600" />
@@ -1675,6 +1847,48 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
           </Card>
         </div>
 
+        {/* Help Dialog - Refresh vs Sync */}
+        <Dialog open={showHelpDialog} onOpenChange={setShowHelpDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <HelpCircle className="h-5 w-5" />
+                Refresh Data vs Sync Data
+              </DialogTitle>
+              <DialogDescription>
+                Understanding the difference between these two actions
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <div className="flex items-start gap-3">
+                  <RefreshCcw className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h3 className="font-semibold text-sm">Refresh Data</h3>
+                    <p className="text-sm text-muted-foreground">
+                      It pulls the most recent data that is already stored (cached) on your device or browser.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-start gap-3">
+                  <Download className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                  <div>
+                    <h3 className="font-semibold text-sm">Sync Data</h3>
+                    <p className="text-sm text-muted-foreground">
+                      It downloads brand-new data from the server, including any edits and new records.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setShowHelpDialog(false)}>Got it</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         {/* Invoice Generation Modal */}
         <Dialog open={showInvoiceModal} onOpenChange={(open) => {
           setShowInvoiceModal(open);
@@ -1820,10 +2034,10 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
               </Button>
               <Button
                 onClick={handleGeneratePDFInvoice}
-                disabled={!selectedItems.size}
+                disabled={!selectedItems.size || generatingPDF || generatingXero}
                 className="gap-2"
               >
-                {loading ? (
+                {generatingPDF ? (
                   <>
                     <Spinner />
                     Generating...
@@ -1837,11 +2051,11 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
               </Button>
               <Button
                 onClick={handleGenerateXeroInvoice}
-                disabled={!selectedItems.size}
+                disabled={!selectedItems.size || generatingPDF || generatingXero}
                 variant="secondary"
                 className="gap-2"
               >
-                {loading ? (
+                {generatingXero ? (
                   <>
                     <Spinner />
                     Generating...

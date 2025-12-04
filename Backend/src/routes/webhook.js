@@ -1760,7 +1760,10 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                                         : String(entry.data);
                                 };
 
-                                participantName = getProfileValue(ATTRIBUTE_NAMES.FULL_NAME) || ' ';
+                                // Get Preferred Name first, then fallback to Full Name
+                                const preferredName = getProfileValue('Preferred Name') || '';
+                                const fullName = getProfileValue(ATTRIBUTE_NAMES.FULL_NAME) || '';
+                                participantName = preferredName || fullName || ' ';
                                 participantAddress = getProfileValue(ATTRIBUTE_NAMES.ADDRESS) || ' ';
                                 participantSuburb = getProfileValue(ATTRIBUTE_NAMES.SUBURB) || ' ';
                                 participantState = getProfileValue(ATTRIBUTE_NAMES.STATE) || ' ';
@@ -1807,9 +1810,9 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                     }
                 }
 
-                // Date: If Transaction Status is "Delivered", use Actual Shift End Date & Time, otherwise Scheduled Shift Start Date & Time
+                // Date: If Transaction Status is "Delivered - To be claimed and invoiced.", use Actual Shift End Date & Time, otherwise Scheduled Shift Start Date & Time
                 let rowDate = '';
-                const isDelivered = transactionStatus && transactionStatus.toLowerCase().includes('delivered');
+                const isDelivered = transactionStatus && transactionStatus === 'Delivered - To be claimed and invoiced.';
                 
                 if (isDelivered) {
                     const actualEnd = getValue(ATTRIBUTE_NAMES.ACTUAL_END);
@@ -1852,11 +1855,10 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                     description = 'Service';
                 }
 
-                // For Adjustment transactions, append Additional Notes
+                // For Adjustment transactions (Adjustment (Charge) or Adjustment (Refund)), append Additional Notes
                 const isAdjustment = transactionStatus && (
-                    transactionStatus.toLowerCase().includes('adjustment') || 
-                    transactionStatus.toLowerCase().includes('charge') ||
-                    transactionStatus.toLowerCase().includes('refund')
+                    transactionStatus === 'Adjustment (Charge) - To be claimed and invoiced.' ||
+                    transactionStatus === 'Adjustment (Refund) - To be claimed and invoiced.'
                 );
                 if (isAdjustment) {
                     const notes = getValue(ATTRIBUTE_NAMES.ADDITIONAL_NOTES);

@@ -837,7 +837,13 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     }
 
                     healthProfessionalTypeCode = healthProfessionalValues?.healthProfessionalTypeCode || '';
-                    healthProfessionalTypeOther = healthProfessionalValues?.healthProfessionalTypeOther.includes(' - Other') ? healthProfessionalValues?.healthProfessionalTypeOther.split(' - Other')[0] : '';
+                    if (healthProfessionalValues?.healthProfessionalTypeOther) {
+                        healthProfessionalTypeOther = healthProfessionalValues.healthProfessionalTypeOther.includes(' - Other') 
+                            ? healthProfessionalValues.healthProfessionalTypeOther.split(' - Other')[0] 
+                            : healthProfessionalValues.healthProfessionalTypeOther;
+                    } else {
+                        healthProfessionalTypeOther = '';
+                    }
 
                     itemId =
                         homeSupportValues?.itemID ||
@@ -922,10 +928,12 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 let itemPurchasedMethodString = undefined;
                 if (itemPurchasedMethod) {
                     const methodName = typeof itemPurchasedMethod === 'object'
-                        ? itemPurchasedMethod.name
-                        : String(itemPurchasedMethod);
-                    const normalized = methodName.toLowerCase().trim();
-                    itemPurchasedMethodString = normalized.includes('loan') ? 'LOANED' : 'PURCHASED';
+                        ? (itemPurchasedMethod.name || '')
+                        : String(itemPurchasedMethod || '');
+                    if (methodName) {
+                        const normalized = methodName.toLowerCase().trim();
+                        itemPurchasedMethodString = normalized.includes('loan') ? 'LOANED' : 'PURCHASED';
+                    }
                 }
 
                 const associatedProvider = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);

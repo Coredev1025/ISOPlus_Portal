@@ -29,7 +29,7 @@ router.post('/isoplus', async (req, res) => {
 
     switch (event) {
       case 'item.updated':
-        await handleItemUpdated(payload);
+        await handleValueUpdated(payload);
         break;
       
       case 'item.finalized':
@@ -200,53 +200,6 @@ async function fetchOrCreateItem(itemId, boardId = null, workspaceId = null) {
   return { item, boardId: foundBoardId, workspaceId: foundWorkspaceId };
 }
 
-async function handleItemUpdated(payload) {
-  try {
-    const itemId = payload.id;
-    const boardId = payload.board_id;
-    const workspaceId = payload.workspace_id;
-    
-    info('Webhook-Handler', 'Processing item.updated event', { 
-      itemId,
-      boardId
-    });
-
-    // Fetch or create item if it doesn't exist
-    const itemResult = await fetchOrCreateItem(itemId, boardId, workspaceId);
-    if (!itemResult) {
-      warn('Webhook-Handler', 'Could not fetch or create item', { itemId });
-      return;
-    }
-
-    const { item, boardId: foundBoardId } = itemResult;
-
-    // Check if board has sync enabled
-    const board = await Board.findOne({ boardId: foundBoardId, syncData: true });
-    if (!board) {
-      info('Webhook-Handler', 'Board not found or sync not enabled', { boardId: foundBoardId });
-      return;
-    }
-
-    // Update item in database with payload data
-    item.data = payload;
-    item.updatedAt = new Date();
-    await item.save();
-
-    info('Webhook-Handler', 'Item updated successfully', { 
-      itemId, 
-      boardId: foundBoardId 
-    });
-
-  } catch (err) {
-    error('Webhook-Handler', 'Failed to handle item.updated', { 
-      itemId: payload?.id,
-      error: err.message,
-      stack: err.stack
-    });
-    throw err;
-  }
-}
-
 async function handleValueCreated(payload) {
   try {
     info('Webhook-Handler', 'Processing value.created event', { 
@@ -296,7 +249,7 @@ async function handleValueUpdated(payload) {
       return;
     }
 
-    const { item, boardId } = itemResult;
+    const { boardId } = itemResult;
     if (!boardId) {
       warn('Webhook-Handler', 'No boardId found on item', { itemId, valueId });
       return;
@@ -309,25 +262,40 @@ async function handleValueUpdated(payload) {
       return;
     }
 
-    // Ensure item.data exists
-    if (!item.data) {
-      item.data = {};
-    }
-    if (!item.data.values) {
-      item.data.values = [];
+    // Fetch the full item data including values array
+    const fullItem = await Item.findOne({ itemId: itemId })
+      .select('data')
+      .lean();
+    
+    if (!fullItem || !fullItem.data) {
+      warn('Webhook-Handler', 'Item data not found', { itemId, valueId });
+      return;
     }
 
-    // Find the value in the item's data.values array
-    const values = item.data.values;
-    const valueIndex = values.findIndex(v => 
-      v?.id === valueId || v?.attribute?.id === attributeId
-    );
+    // Ensure values array exists
+    if (!fullItem.data.values) {
+      fullItem.data.values = [];
+    }
+
+    // Find the value by attribute.id (this is the reliable identifier in the database)
+    const values = fullItem.data.values;
+    const valueIndex = values.findIndex(v => v?.attribute?.id === attributeId);
 
     if (isDeleted) {
       // Remove the value if it's marked as deleted
       if (valueIndex !== -1) {
-        values.splice(valueIndex, 1);
-        item.data.values = values;
+        // Use MongoDB array update operator to remove the value
+        await Item.findOneAndUpdate(
+          { itemId: itemId },
+          {
+            $pull: {
+              'data.values': { 'attribute.id': attributeId }
+            },
+            $set: {
+              updatedAt: new Date()
+            }
+          }
+        );
         info('Webhook-Handler', 'Value removed from item', { 
           itemId, 
           valueId, 
@@ -342,20 +310,29 @@ async function handleValueUpdated(payload) {
       }
     } else if (valueIndex === -1) {
       // Value doesn't exist, add it
-      // We need to preserve the attribute structure from existing values if possible
-      // or create a minimal structure
-      const existingAttribute = values.find(v => v?.attribute?.id === attributeId)?.attribute;
-      
+      // Try to get attribute structure from API or use minimal structure
+      // For now, create with minimal structure - the attribute will be populated on next full sync
       const newValue = {
-        id: valueId,
-        attribute: existingAttribute || {
+        object: 'value',
+        data: payload.data,
+        attribute: {
           id: attributeId
         },
-        data: payload.data
+        deleted: false
       };
       
-      values.push(newValue);
-      item.data.values = values;
+      // Use MongoDB array update operator to add the value
+      await Item.findOneAndUpdate(
+        { itemId: itemId },
+        {
+          $push: {
+            'data.values': newValue
+          },
+          $set: {
+            updatedAt: new Date()
+          }
+        }
+      );
       
       info('Webhook-Handler', 'Value added to item (was missing)', { 
         itemId, 
@@ -363,16 +340,27 @@ async function handleValueUpdated(payload) {
         attributeId 
       });
     } else {
-      // Update existing value
-      const existingValue = values[valueIndex];
-      values[valueIndex] = {
-        ...existingValue,
-        data: payload.data,
-        // Preserve existing attribute structure
-        attribute: existingValue.attribute || { id: attributeId }
+      // Update existing value - only update the data field
+      // The payload only contains the new data value and attribute_id
+      // We preserve the existing full attribute structure and object field
+      const updateData = {
+        'data.values.$[elem].data': payload.data,
+        'data.values.$[elem].deleted': false,
+        updatedAt: new Date()
       };
-      
-      item.data.values = values;
+
+      // Use arrayFilters to find and update the specific value by attribute.id
+      // This preserves the existing attribute object structure (name, type, settings, etc.)
+      // and the object field ('value')
+      await Item.findOneAndUpdate(
+        { itemId: itemId },
+        {
+          $set: updateData
+        },
+        {
+          arrayFilters: [{ 'elem.attribute.id': attributeId }]
+        }
+      );
       
       info('Webhook-Handler', 'Value updated in item', { 
         itemId, 
@@ -380,10 +368,6 @@ async function handleValueUpdated(payload) {
         attributeId 
       });
     }
-
-    // Save the updated item
-    item.updatedAt = new Date();
-    await item.save();
 
     info('Webhook-Handler', 'Value updated successfully', { 
       itemId, 
@@ -422,7 +406,7 @@ async function handleItemFinalized(payload) {
       return;
     }
 
-    const { item, boardId: foundBoardId } = itemResult;
+    const { boardId: foundBoardId } = itemResult;
 
     // Check if board has sync enabled
     const board = await Board.findOne({ boardId: foundBoardId, syncData: true });
@@ -431,10 +415,18 @@ async function handleItemFinalized(payload) {
       return;
     }
 
-    // Update item in database with payload data
-    item.data = payload;
-    item.updatedAt = new Date();
-    await item.save();
+    // Update item in database with payload data using findOneAndUpdate
+    // The payload contains the full item data structure
+    await Item.findOneAndUpdate(
+      { itemId: itemId },
+      {
+        $set: {
+          data: payload,
+          updatedAt: new Date()
+        }
+      },
+      { new: true }
+    );
 
     info('Webhook-Handler', 'Item finalized successfully', { 
       itemId, 
