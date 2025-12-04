@@ -6,6 +6,7 @@ import Item from '../models/Item.js';
 import { validateBoard } from '../services/sync/validator.js';
 import { registerBoardWebhooks } from '../services/webhookService.js';
 import { info, error, warn } from '../utils/logger.js';
+import { syncQueue } from '../services/sync/queue.js';
 
 // Redis connection configuration for ElastiCache
 // Supports both regular Redis and Redis Cluster mode
@@ -547,6 +548,120 @@ async function processManualTriggeredSync(job) {
 }
 
 /**
+ * Check and retry failed jobs if no active/waiting jobs exist
+ * Maximum 3 retries per job
+ */
+async function checkAndRetryFailedJobs() {
+  try {
+    // Get queue counts
+    const [waiting, active, failed] = await Promise.all([
+      syncQueue.getWaitingCount(),
+      syncQueue.getActiveCount(),
+      syncQueue.getFailedCount()
+    ]);
+
+    info('Sync-Worker', 'Checking queue status for retry', {
+      waiting,
+      active,
+      failed
+    });
+
+    // Only retry if there are no waiting or active jobs, and there are failed jobs
+    if (waiting === 0 && active === 0 && failed > 0) {
+      info('Sync-Worker', 'No active/waiting jobs, checking failed jobs for retry', {
+        failedCount: failed
+      });
+
+      // Get failed jobs (limit to reasonable number to avoid memory issues)
+      const failedJobs = await syncQueue.getFailed(0, Math.min(failed, 100));
+      
+      let retriedCount = 0;
+      let skippedCount = 0;
+
+      for (const failedJob of failedJobs) {
+        try {
+          // Get retry count from job data (tracked separately from BullMQ attempts)
+          const retryCount = failedJob.data?.retryCount || 0;
+
+          // Skip if already manually retried 3 times (BullMQ attempts are separate)
+          if (retryCount >= 3) {
+            skippedCount++;
+            warn('Sync-Worker', 'Skipping retry - max retries reached', {
+              jobId: failedJob.id,
+              retryCount,
+              jobType: failedJob.data?.jobType
+            });
+            continue;
+          }
+
+          // Determine job name based on jobType
+          const jobType = failedJob.data?.jobType;
+          let jobName = 'retry';
+          if (jobType === 'board_validation') {
+            jobName = 'board_validation';
+          } else if (jobType === 'data_backlog_sync') {
+            jobName = 'backlog_sync';
+          } else if (jobType === 'manual_triggered_sync') {
+            jobName = 'manual_sync';
+          } else if (failedJob.name) {
+            jobName = failedJob.name;
+          }
+
+          // Retry the job with updated retry count
+          const jobData = {
+            ...failedJob.data,
+            retryCount: retryCount + 1
+          };
+
+          // Remove the failed job and add it back to the queue
+          await failedJob.remove();
+          
+          const retryJob = await syncQueue.add(
+            jobName,
+            jobData,
+            {
+              jobId: `${failedJob.id}-retry-${Date.now()}`,
+              priority: failedJob.opts?.priority || 0,
+              attempts: 1, // Single attempt per retry
+              backoff: {
+                type: 'exponential',
+                delay: 5000
+              }
+            }
+          );
+
+          retriedCount++;
+          info('Sync-Worker', 'Retrying failed job', {
+            originalJobId: failedJob.id,
+            retryJobId: retryJob.id,
+            retryCount: retryCount + 1,
+            jobType: jobType,
+            jobName: jobName
+          });
+        } catch (retryErr) {
+          error('Sync-Worker', 'Failed to retry job', {
+            jobId: failedJob.id,
+            error: retryErr.message,
+            stack: retryErr.stack
+          });
+        }
+      }
+
+      info('Sync-Worker', 'Failed jobs retry check completed', {
+        retried: retriedCount,
+        skipped: skippedCount,
+        totalFailed: failedJobs.length
+      });
+    }
+  } catch (err) {
+    error('Sync-Worker', 'Error checking and retrying failed jobs', {
+      error: err.message,
+      stack: err.stack
+    });
+  }
+}
+
+/**
  * Main job processor
  */
 async function processJob(job) {
@@ -607,15 +722,18 @@ export const syncWorker = new Worker(queueName, processJob, {
 });
 
 // Worker event handlers
-syncWorker.on('completed', (job, result) => {
+syncWorker.on('completed', async (job, result) => {
   info('Sync-Worker', 'Job completed', { 
     jobId: job.id, 
     jobType: job.data.jobType,
     result 
   });
+  
+  // Check and retry failed jobs if no active/waiting jobs
+  await checkAndRetryFailedJobs();
 });
 
-syncWorker.on('failed', (job, err) => {
+syncWorker.on('failed', async (job, err) => {
   error('Sync-Worker', 'Job failed', { 
     jobId: job?.id, 
     jobType: job?.data?.jobType,
@@ -623,6 +741,9 @@ syncWorker.on('failed', (job, err) => {
     attemptsMade: job?.attemptsMade,
     attemptsTotal: job?.opts?.attempts
   });
+  
+  // Check and retry failed jobs if no active/waiting jobs
+  await checkAndRetryFailedJobs();
 });
 
 syncWorker.on('error', (err) => {
@@ -632,6 +753,19 @@ syncWorker.on('error', (err) => {
 info('Sync-Worker', 'Sync worker initialized and ready', {
   concurrency: 5,
   queueName: queueName
+});
+
+// Export the retry function for use on server startup
+export { checkAndRetryFailedJobs };
+
+// Check and retry failed jobs when worker is ready
+// This handles cases where worker restarts but server is still running
+syncWorker.on('ready', async () => {
+  info('Sync-Worker', 'Worker ready, checking for failed jobs to retry');
+  // Add a small delay to ensure queue is fully initialized
+  setTimeout(async () => {
+    await checkAndRetryFailedJobs();
+  }, 2000);
 });
 
 export default syncWorker;
