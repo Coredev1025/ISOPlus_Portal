@@ -21,7 +21,7 @@ import syncRoutes from './routes/sync.js';
 import itemsRoutes from './routes/items.js';
 import session from 'express-session';
 import MongoStore from 'connect-mongo';
-import './workers/syncWorker.js'; // Initialize sync worker
+import syncWorker, { checkAndRetryFailedJobs } from './workers/syncWorker.js'; // Initialize sync worker
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
@@ -95,6 +95,17 @@ mongoose.connect(process.env.MONGODB_URI)
   .catch((err) => console.error('MongoDB connection error:', err));
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Server is running on port ${PORT}`);
+  
+  // Check and retry failed jobs on server startup
+  // Add a delay to ensure Redis connection and queue are fully initialized
+  setTimeout(async () => {
+    try {
+      console.log('Checking for failed jobs to retry on startup...');
+      await checkAndRetryFailedJobs();
+    } catch (err) {
+      console.error('Error checking failed jobs on startup:', err);
+    }
+  }, 3000); // 3 second delay to ensure everything is initialized
 });

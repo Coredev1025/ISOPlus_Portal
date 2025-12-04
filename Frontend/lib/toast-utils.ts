@@ -5,10 +5,50 @@ export interface ToastOptions {
   description?: string;
 }
 
+// Track recent toasts to prevent duplicates
+const recentToasts = new Map<string, number>();
+const DEDUPE_WINDOW_MS = 2000; // Prevent same toast within 2 seconds
+
+const getToastKey = (message: string, description?: string) => {
+  return `${message}|${description || ''}`;
+};
+
+const isDuplicate = (key: string): boolean => {
+  const lastShown = recentToasts.get(key);
+  if (!lastShown) return false;
+  const now = Date.now();
+  if (now - lastShown < DEDUPE_WINDOW_MS) {
+    return true;
+  }
+  return false;
+};
+
+const recordToast = (key: string) => {
+  recentToasts.set(key, Date.now());
+  // Clean up old entries (older than 5 seconds)
+  const now = Date.now();
+  const keysToDelete: string[] = [];
+  recentToasts.forEach((timestamp, k) => {
+    if (now - timestamp > 5000) {
+      keysToDelete.push(k);
+    }
+  });
+  keysToDelete.forEach(k => recentToasts.delete(k));
+};
+
 /**
  * Show a success toast notification
  */
 export const showSuccessToast = (message: string, options?: ToastOptions) => {
+  if (!message || message.trim() === '') {
+    console.warn('showSuccessToast called with empty message');
+    return;
+  }
+  const key = getToastKey(message, options?.description);
+  if (isDuplicate(key)) {
+    return; // Skip duplicate toast
+  }
+  recordToast(key);
   toast.success(message, {
     duration: options?.duration || 4000,
     description: options?.description,
@@ -19,6 +59,15 @@ export const showSuccessToast = (message: string, options?: ToastOptions) => {
  * Show an error toast notification
  */
 export const showErrorToast = (message: string, options?: ToastOptions) => {
+  if (!message || message.trim() === '') {
+    console.warn('showErrorToast called with empty message');
+    return;
+  }
+  const key = getToastKey(message, options?.description);
+  if (isDuplicate(key)) {
+    return; // Skip duplicate toast
+  }
+  recordToast(key);
   toast.error(message, {
     duration: options?.duration || 6000,
     description: options?.description,
@@ -29,6 +78,15 @@ export const showErrorToast = (message: string, options?: ToastOptions) => {
  * Show an info toast notification
  */
 export const showInfoToast = (message: string, options?: ToastOptions) => {
+  if (!message || message.trim() === '') {
+    console.warn('showInfoToast called with empty message');
+    return;
+  }
+  const key = getToastKey(message, options?.description);
+  if (isDuplicate(key)) {
+    return; // Skip duplicate toast
+  }
+  recordToast(key);
   toast.info(message, {
     duration: options?.duration || 4000,
     description: options?.description,
@@ -39,6 +97,15 @@ export const showInfoToast = (message: string, options?: ToastOptions) => {
  * Show a warning toast notification
  */
 export const showWarningToast = (message: string, options?: ToastOptions) => {
+  if (!message || message.trim() === '') {
+    console.warn('showWarningToast called with empty message');
+    return;
+  }
+  const key = getToastKey(message, options?.description);
+  if (isDuplicate(key)) {
+    return; // Skip duplicate toast
+  }
+  recordToast(key);
   toast.warning(message, {
     duration: options?.duration || 5000,
     description: options?.description,

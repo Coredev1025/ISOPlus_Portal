@@ -549,8 +549,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
         // Apply filters in JavaScript
         let filteredItems = processedItems;
-        console.log("Base Query: ", baseQuery);
-        console.log("ALL Count: ", allItems.length);
 
         if (status && status !== 'all') {
             filteredItems = filteredItems.filter(p => 
@@ -696,8 +694,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             total: 0
         };
 
-        console.log("Filtered Count: ", filteredItems.length);
-
         filteredItems.forEach(p => {
             totalsData.totalAmount += p.totalAmountNum;
             totalsData.totalGovSubsidy += p.govSubsidyNum;
@@ -781,7 +777,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
                 const participant = getValue(ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
                 const scheduledStart = getValue(ATTRIBUTE_NAMES.SCHEDULED_START) || null;
-                const unit = getValue(ATTRIBUTE_NAMES.UNIT) || 'Hours';
+                const unit = getValue(ATTRIBUTE_NAMES.UNIT) || '';
                 const quantity = Number(getValue(ATTRIBUTE_NAMES.QUANTITY)) || 0;
                 const unitPrice = Number(getValue(ATTRIBUTE_NAMES.UNIT_PRICE)) || 0;
                 const totalAmount = Number(getValue(ATTRIBUTE_NAMES.TOTAL_AMOUNT)) || 0;
@@ -794,391 +790,341 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     ? await getCachedItemValues(servicePlanId.toString())
                     : null;
 
-            let service = undefined;
-            let serviceIdentifier = undefined;
-            let itemId = '';
-            let itemName = '';
-            let wraparoundItemId = '';
-            let wraparoundDescription = '';
-            let healthProfessionalTypeCode;
-            let healthProfessionalTypeOther;
+                let service = undefined;
+                let serviceIdentifier = undefined;
+                let itemId = '';
+                let itemName = '';
+                let wraparoundItemId = '';
+                let wraparoundDescription = '';
+                let healthProfessionalTypeCode = '';
+                let healthProfessionalTypeOther = '';
 
-            if (servicePlan?.values) {
-                const servicePlanIdValue = servicePlan.values
-                    .find(v => v.attribute.name === ATTRIBUTE_NAMES.SERVICE_PLAN_ID)?.data?.toString().trim();
-                if (servicePlanIdValue) {
-                    const parts = servicePlanIdValue.split('-');
-                    service = parts.length >= 2 ? parts.slice(1).join('-').trim() : servicePlanIdValue;
-                }
-
-                // Add small delay before making multiple API calls to prevent rate limiting
-                await new Promise(resolve => setTimeout(resolve, 150));
-                const [
-                    ,
-                    homeSupportValues,
-                    assistiveTechnologyShortTermValues,
-                    assistiveTechnologyOngoingValues,
-                    homeModificationValues,
-                    healthProfessionalValues,
-                    wraparoundValues
-                ] = await getAgeCareParticipantsServicePlanReferencedItems(workspaceId, boardId, servicePlanId);
-
-                const serviceIdItemId =
-                    homeSupportValues?.serviceIDItemID ||
-                    assistiveTechnologyShortTermValues?.serviceIDItemID ||
-                    assistiveTechnologyOngoingValues?.serviceIDItemID ||
-                    homeModificationValues?.serviceIDItemID ||
-                    healthProfessionalValues?.serviceIDItemID ||
-                    '';
-
-                if (serviceIdItemId) {
-                    serviceIdentifier = typeof serviceIdItemId === 'string'
-                        ? serviceIdItemId
-                        : String(serviceIdItemId);
-                    if (serviceIdentifier.includes('/')) {
-                        serviceIdentifier = serviceIdentifier.split('/')[0].trim();
+                if (servicePlan?.values) {
+                    const servicePlanIdValue = servicePlan.values
+                        .find(v => v.attribute.name === ATTRIBUTE_NAMES.SERVICE_PLAN_ID)?.data?.toString().trim();
+                    if (servicePlanIdValue) {
+                        const parts = servicePlanIdValue.split('-');
+                        service = parts.length >= 2 ? parts.slice(1).join('-').trim() : servicePlanIdValue;
                     }
-                }
 
-                healthProfessionalTypeCode = healthProfessionalValues?.healthProfessionalTypeCode || '';
-                healthProfessionalTypeOther = healthProfessionalValues?.healthProfessionalTypeOther.includes(' - Other') ? healthProfessionalValues?.healthProfessionalTypeOther.split(' - Other')[0] : '';
+                    // Add small delay before making multiple API calls to prevent rate limiting
+                    await new Promise(resolve => setTimeout(resolve, 150));
+                    const [
+                        ,
+                        homeSupportValues,
+                        assistiveTechnologyShortTermValues,
+                        assistiveTechnologyOngoingValues,
+                        homeModificationValues,
+                        healthProfessionalValues,
+                        wraparoundValues
+                    ] = await getAgeCareParticipantsServicePlanReferencedItems(workspaceId, boardId, servicePlanId);
 
-                itemId =
-                    homeSupportValues?.itemID ||
-                    assistiveTechnologyShortTermValues?.itemID ||
-                    assistiveTechnologyOngoingValues?.itemID ||
-                    homeModificationValues?.itemID ||
-                    healthProfessionalValues?.itemID ||
-                    '';
+                    const serviceIdItemId =
+                        homeSupportValues?.serviceIDItemID ||
+                        assistiveTechnologyShortTermValues?.serviceIDItemID ||
+                        assistiveTechnologyOngoingValues?.serviceIDItemID ||
+                        homeModificationValues?.serviceIDItemID ||
+                        healthProfessionalValues?.serviceIDItemID ||
+                        '';
 
-                itemName =
-                    homeSupportValues?.item ||
-                    assistiveTechnologyShortTermValues?.item ||
-                    assistiveTechnologyOngoingValues?.item ||
-                    homeModificationValues?.item ||
-                    healthProfessionalValues?.item ||
-                    '';
-
-                wraparoundItemId = wraparoundValues?.itemID || '';
-                wraparoundDescription = wraparoundValues?.wraparoundDescription || '';
-            }
-
-            const invoiceNumber =
-                getValue(ATTRIBUTE_NAMES.INVOICE_NUMBER) || getValue('Generated Invoice Number') || '';
-
-            let careRecipientIdentifier;
-            const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
-            if (participantProfileValue) {
-                try {
-                    const participantProfileId = Array.isArray(participantProfileValue)
-                        ? participantProfileValue[0]
-                        : (typeof participantProfileValue === 'object'
-                            ? participantProfileValue.id
-                            : participantProfileValue);
-
-                    if (participantProfileId) {
-                        const participantProfile = await getCachedItemValues(participantProfileId.toString());
-                        const myAgedCareId = participantProfile?.values?.find(v =>
-                            v.attribute.name === ATTRIBUTE_NAMES.MY_AGED_CARE_ID ||
-                            v.attribute.name === ATTRIBUTE_NAMES.MY_AGED_CARE_ID_ALT
-                        )?.data;
-                        if (myAgedCareId) {
-                            careRecipientIdentifier = typeof myAgedCareId === 'string'
-                                ? myAgedCareId
-                                : String(myAgedCareId);
+                    if (serviceIdItemId) {
+                        serviceIdentifier = typeof serviceIdItemId === 'string'
+                            ? serviceIdItemId
+                            : String(serviceIdItemId);
+                        if (serviceIdentifier.includes('/')) {
+                            serviceIdentifier = serviceIdentifier.split('/')[0].trim();
                         }
                     }
-                } catch (err) {
-                    warn(
-                        'Items-Service',
-                        'Failed to fetch My Aged Care ID from participant profile',
-                        { error: err.message },
-                        extractContextFromReq(req)
-                    );
-                }
-            }
 
-            const deliveredBy = getValue(ATTRIBUTE_NAMES.DELIVERED_BY);
-            const deliveredByString = deliveredBy
-                ? (typeof deliveredBy === 'object' ? deliveredBy.name : String(deliveredBy))
-                : undefined;
-
-            const prescribedItem = getValue('Prescribed Item');
-            const prescribedItemValue =
-                prescribedItem === true || prescribedItem === 'true' || prescribedItem === 'Y' ? 'Y' : 'N';
-
-            const itemFirstPaymentRaw = getValue('Item First Payment');
-            let itemFirstPaymentValue;
-            if (typeof itemFirstPaymentRaw === 'boolean') {
-                itemFirstPaymentValue = itemFirstPaymentRaw ? 'Y' : 'N';
-            } else if (typeof itemFirstPaymentRaw === 'string') {
-                const normalized = itemFirstPaymentRaw.trim().toLowerCase();
-                itemFirstPaymentValue = ['true', 'y', 'yes'].includes(normalized) ? 'Y' : 'N';
-            }
-
-            const itemPurchasedMethod = getValue('Item Purchased Method');
-            const itemPurchasedMethodString = itemPurchasedMethod
-                ? (typeof itemPurchasedMethod === 'object'
-                    ? itemPurchasedMethod.name
-                    : String(itemPurchasedMethod))
-                : undefined;
-
-            const associatedProvider = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
-            const associatedProviderString = associatedProvider
-                ? (typeof associatedProvider === 'object' ? associatedProvider.name : String(associatedProvider))
-                : undefined;
-
-            const associatedProviderInvoiceNo =
-                getValue('Associated Provider Invoice No. (if applicable)') ||
-                getValue('Associated Provider Invoice No') ||
-                undefined;
-
-            const loanedByOrganisationName = associatedProviderString || undefined;
-
-            const fileUrl =
-                getValue('Invoice File URL') ||
-                getValue('Invoice PDF Link') ||
-                getValue('Generated Invoice File URL') ||
-                getValue('Generated Invoice Link') ||
-                undefined;
-
-            const invoiceIssued = getValue('Invoice Issued and Sent') || false;
-            const paymentStatusValueForCheck = item.data?.values?.find(v =>
-                v.attribute && v.attribute.name === 'Payment Status'
-            );
-            let hasPaidStatus = false;
-            if (paymentStatusValueForCheck) {
-                const paymentStatusData = paymentStatusValueForCheck.data;
-                const labels = paymentStatusValueForCheck.attribute?.settings?.labels || [];
-                if (Array.isArray(paymentStatusData) && paymentStatusData.length > 0) {
-                    hasPaidStatus = paymentStatusData.some(id => {
-                        const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
-                        const labelName = label ? label.name : (typeof id === 'object' ? id.name : String(id));
-                        return labelName && labelName.includes('Paid');
-                    });
-                } else if (paymentStatusData) {
-                    let labelName = '';
-                    if (typeof paymentStatusData === 'object' && paymentStatusData.id) {
-                        const label = labels.find(l => l.id === paymentStatusData.id);
-                        labelName = label ? label.name : (paymentStatusData.name || String(paymentStatusData.id));
-                    } else if (typeof paymentStatusData === 'string') {
-                        const label = labels.find(l => l.id === paymentStatusData);
-                        labelName = label ? label.name : paymentStatusData;
+                    healthProfessionalTypeCode = healthProfessionalValues?.healthProfessionalTypeCode || '';
+                    if (healthProfessionalValues?.healthProfessionalTypeOther) {
+                        healthProfessionalTypeOther = healthProfessionalValues.healthProfessionalTypeOther.includes(' - Other') 
+                            ? healthProfessionalValues.healthProfessionalTypeOther.split(' - Other')[0] 
+                            : healthProfessionalValues.healthProfessionalTypeOther;
                     } else {
-                        labelName = String(paymentStatusData);
+                        healthProfessionalTypeOther = '';
                     }
-                    hasPaidStatus = labelName.includes('Paid');
-                }
-            }
-            const invoiceStatus = invoiceIssued || hasPaidStatus ? 'invoiced' : 'pending';
 
-            const actualEnd = getValue(ATTRIBUTE_NAMES.ACTUAL_END) || null;
-            const serviceDeliveryDate = actualEnd && typeof actualEnd === 'string'
-                ? (actualEnd.includes('T') ? actualEnd.split('T')[0] : actualEnd.split(' ')[0])
-                : null;
-            const scheduledServiceDate = scheduledStart && typeof scheduledStart === 'string'
-                ? (scheduledStart.includes('T') ? scheduledStart.split('T')[0] : scheduledStart.split(' ')[0])
-                : null;
+                    itemId =
+                        homeSupportValues?.itemID ||
+                        assistiveTechnologyShortTermValues?.itemID ||
+                        assistiveTechnologyOngoingValues?.itemID ||
+                        homeModificationValues?.itemID ||
+                        healthProfessionalValues?.itemID ||
+                        '';
 
-            const transactionStatusValue = item.data?.values?.find(v =>
-                v.attribute && v.attribute.name === ATTRIBUTE_NAMES.TRANSACTION_STATUS
-            );
-            let transactionStatus;
-            if (transactionStatusValue) {
-                const transactionStatusData = transactionStatusValue.data;
-                const labels = transactionStatusValue.attribute?.settings?.labels || [];
-                if (Array.isArray(transactionStatusData) && transactionStatusData.length > 0) {
-                    transactionStatus = transactionStatusData.map(id => {
-                        const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
-                        return label ? label.name : (typeof id === 'object' ? id.name : String(id));
-                    }).join(', ');
-                } else if (transactionStatusData) {
-                    if (typeof transactionStatusData === 'object' && transactionStatusData.id) {
-                        const label = labels.find(l => l.id === transactionStatusData.id);
-                        transactionStatus = label
-                            ? label.name
-                            : (transactionStatusData.name || String(transactionStatusData.id));
-                    } else if (typeof transactionStatusData === 'string') {
-                        const label = labels.find(l => l.id === transactionStatusData);
-                        transactionStatus = label ? label.name : transactionStatusData;
-                    } else {
-                        transactionStatus = String(transactionStatusData);
-                    }
-                }
-            }
+                    itemName =
+                        homeSupportValues?.item ||
+                        assistiveTechnologyShortTermValues?.item ||
+                        assistiveTechnologyOngoingValues?.item ||
+                        homeModificationValues?.item ||
+                        healthProfessionalValues?.item ||
+                        '';
 
-            const paymentStatusValue = item.data?.values?.find(v =>
-                v.attribute && (
-                    v.attribute.name === ATTRIBUTE_NAMES.PAYMENT_STATUS ||
-                    v.attribute.name === 'Payment Status'
-                )
-            );
-            let paymentStatusFormatted;
-            if (paymentStatusValue) {
-                const paymentStatusData = paymentStatusValue.data;
-                const labels = paymentStatusValue.attribute?.settings?.labels || [];
-                if (Array.isArray(paymentStatusData) && paymentStatusData.length > 0) {
-                    paymentStatusFormatted = paymentStatusData.map(id => {
-                        const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
-                        return label ? label.name : (typeof id === 'object' ? id.name : String(id));
-                    }).filter(Boolean).join(', ');
-                } else if (paymentStatusData) {
-                    if (typeof paymentStatusData === 'object' && paymentStatusData.id) {
-                        const label = labels.find(l => l.id === paymentStatusData.id);
-                        paymentStatusFormatted = label
-                            ? label.name
-                            : (paymentStatusData.name || String(paymentStatusData.id));
-                    } else if (typeof paymentStatusData === 'string') {
-                        const label = labels.find(l => l.id === paymentStatusData);
-                        paymentStatusFormatted = label ? label.name : paymentStatusData;
-                    } else {
-                        paymentStatusFormatted = String(paymentStatusData);
-                    }
+                    wraparoundItemId = wraparoundValues?.itemID || '';
+                    wraparoundDescription = wraparoundValues?.wraparoundDescription || '';
                 }
-            }
 
-            const fetchFundingSourceName = async (refItemId, timeoutMs = 10000, maxRetries = 5) => {
-                if (!refItemId || typeof refItemId !== 'string' || refItemId.trim() === '') {
-                    return null;
-                }
-                let lastError = null;
-                for (let attempt = 0; attempt < maxRetries; attempt++) {
+                const invoiceNumber =
+                    getValue(ATTRIBUTE_NAMES.INVOICE_NUMBER) || getValue('Generated Invoice Number') || '';
+
+                let careRecipientIdentifier;
+                const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
+                if (participantProfileValue) {
                     try {
-                        // Add delay before each attempt to prevent rate limiting
-                        if (attempt > 0) {
-                            // Exponential backoff with jitter
-                            const jitter = 1 + (Math.random() * 0.3);
-                            const delayMs = Math.min(500 * Math.pow(2, attempt - 1) * jitter, 5000);
-                            await new Promise(resolve => setTimeout(resolve, Math.floor(delayMs)));
-                        } else {
-                            // Small delay even on first attempt to space out requests
-                            await new Promise(resolve => setTimeout(resolve, 100));
-                        }
-                        const timeoutPromise = new Promise((_, reject) => {
-                            setTimeout(() => reject(new Error('Timeout')), timeoutMs);
-                        });
-                        const refItem = await Promise.race([
-                            getItemValuesWithRateLimit(workspaceId, boardId, refItemId.toString()),
-                            timeoutPromise
-                        ]);
-                        if (refItem?.values) {
-                            const nameValue = refItem.values.find(v =>
-                                ['Name', 'Title', 'Funding Source Name', 'Full Name'].includes(v.attribute.name)
-                            );
-                            if (nameValue?.data) {
-                                const name = typeof nameValue.data === 'object' && nameValue.data.name
-                                    ? nameValue.data.name
-                                    : String(nameValue.data);
-                                if (name?.trim()) {
-                                    return name;
-                                }
-                            }
-                            const textValue = refItem.values.find(v =>
-                                v.attribute.type === 'text' && v.data
-                            );
-                            if (textValue?.data) {
-                                const text = String(textValue.data);
-                                if (text?.trim()) {
-                                    return text;
-                                }
+                        const participantProfileId = Array.isArray(participantProfileValue)
+                            ? participantProfileValue[0]
+                            : (typeof participantProfileValue === 'object'
+                                ? participantProfileValue.id
+                                : participantProfileValue);
+
+                        if (participantProfileId) {
+                            const participantProfile = await getCachedItemValues(participantProfileId.toString());
+                            const myAgedCareId = participantProfile?.values?.find(v =>
+                                v.attribute.name === ATTRIBUTE_NAMES.MY_AGED_CARE_ID ||
+                                v.attribute.name === ATTRIBUTE_NAMES.MY_AGED_CARE_ID_ALT
+                            )?.data;
+                            if (myAgedCareId) {
+                                careRecipientIdentifier = typeof myAgedCareId === 'string'
+                                    ? myAgedCareId
+                                    : String(myAgedCareId);
                             }
                         }
-                        if (attempt < maxRetries - 1) {
-                            continue;
-                        }
-                        return null;
                     } catch (err) {
-                        lastError = err;
-                        if (err.message !== 'Timeout' && attempt < maxRetries - 1) {
-                            continue;
-                        }
-                        if (attempt === maxRetries - 1 && err.message !== 'Timeout') {
-                            warn('Items-Service', 'Failed to fetch funding source item after retries', {
-                                refId: refItemId,
-                                error: err.message,
-                                attempts: maxRetries
-                            }, extractContextFromReq(req));
+                        warn(
+                            'Items-Service',
+                            'Failed to fetch My Aged Care ID from participant profile',
+                            { error: err.message },
+                            extractContextFromReq(req)
+                        );
+                    }
+                }
+
+                // Get Delivered By for deliveredByThirdParty calculation
+                const deliveredBy = getValue(ATTRIBUTE_NAMES.DELIVERED_BY);
+                let deliveredByThirdParty = undefined;
+                if (deliveredBy) {
+                    const deliveredByName = typeof deliveredBy === 'object' ? deliveredBy.name : String(deliveredBy);
+                    // true if "Associated Providers", false if "Company Workforce"
+                    deliveredByThirdParty = deliveredByName && deliveredByName.includes('Associated') ? 'True' : 'False';
+                }
+
+                const prescribedItem = getValue('Prescribed Item');
+                const prescribedItemValue =
+                    prescribedItem === true || prescribedItem === 'true' || prescribedItem === 'Y' ? 'Y' : 'N';
+
+                const itemFirstPaymentRaw = getValue('Item First Payment');
+                let itemFirstPaymentValue = 'False';
+                if (typeof itemFirstPaymentRaw === 'boolean') {
+                    itemFirstPaymentValue = itemFirstPaymentRaw ? 'True' : 'False';
+                } else if (typeof itemFirstPaymentRaw === 'string') {
+                    const normalized = itemFirstPaymentRaw.trim().toLowerCase();
+                    itemFirstPaymentValue = ['true', 'y', 'yes'].includes(normalized) ? 'True' : 'False';
+                } else if (itemFirstPaymentRaw !== undefined && itemFirstPaymentRaw !== null) {
+                    itemFirstPaymentValue = String(itemFirstPaymentRaw).trim().toLowerCase() === 'y' ? 'True' : 'False';
+                }
+
+                const itemPurchasedMethod = getValue('Item Purchased Method');
+                let itemPurchasedMethodString = undefined;
+                if (itemPurchasedMethod) {
+                    const methodName = typeof itemPurchasedMethod === 'object'
+                        ? (itemPurchasedMethod.name || '')
+                        : String(itemPurchasedMethod || '');
+                    if (methodName) {
+                        const normalized = methodName.toLowerCase().trim();
+                        itemPurchasedMethodString = normalized.includes('loan') ? 'LOANED' : 'PURCHASED';
+                    }
+                }
+
+                const associatedProvider = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
+                const associatedProviderString = associatedProvider
+                    ? (typeof associatedProvider === 'object' ? associatedProvider.name : String(associatedProvider))
+                    : '';
+
+                const associatedProviderInvoiceNo =
+                    getValue('Associated Provider Invoice No. (if applicable)') ||
+                    getValue('Associated Provider Invoice No') ||
+                    undefined;
+
+                const loanedByOrganisationName = associatedProviderString || '';
+
+                const actualEnd = getValue(ATTRIBUTE_NAMES.ACTUAL_END) || null;
+                const serviceDeliveryDate = actualEnd && typeof actualEnd === 'string'
+                    ? (actualEnd.includes('T') ? actualEnd.split('T')[0] : actualEnd.split(' ')[0])
+                    : null;
+                const scheduledServiceDate = scheduledStart && typeof scheduledStart === 'string'
+                    ? (scheduledStart.includes('T') ? scheduledStart.split('T')[0] : scheduledStart.split(' ')[0])
+                    : null;
+
+                const paymentStatusValue = item.data?.values?.find(v =>
+                    v.attribute && (
+                        v.attribute.name === ATTRIBUTE_NAMES.PAYMENT_STATUS ||
+                        v.attribute.name === 'Payment Status'
+                    )
+                );
+                let paymentStatusFormatted;
+                if (paymentStatusValue) {
+                    const paymentStatusData = paymentStatusValue.data;
+                    const labels = paymentStatusValue.attribute?.settings?.labels || [];
+                    if (Array.isArray(paymentStatusData) && paymentStatusData.length > 0) {
+                        paymentStatusFormatted = paymentStatusData.map(id => {
+                            const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
+                            return label ? label.name : (typeof id === 'object' ? id.name : String(id));
+                        }).filter(Boolean).join(', ');
+                    } else if (paymentStatusData) {
+                        if (typeof paymentStatusData === 'object' && paymentStatusData.id) {
+                            const label = labels.find(l => l.id === paymentStatusData.id);
+                            paymentStatusFormatted = label
+                                ? label.name
+                                : (paymentStatusData.name || String(paymentStatusData.id));
+                        } else if (typeof paymentStatusData === 'string') {
+                            const label = labels.find(l => l.id === paymentStatusData);
+                            paymentStatusFormatted = label ? label.name : paymentStatusData;
+                        } else {
+                            paymentStatusFormatted = String(paymentStatusData);
                         }
                     }
                 }
-                return null;
-            };
 
-            let fundingSource;
-            const fundingSourceValue = item.data?.values?.find(v =>
-                v.attribute && v.attribute.name === ATTRIBUTE_NAMES.FUNDING_SOURCE
-            );
-            if (fundingSourceValue?.data) {
-                const fundingSourceData = fundingSourceValue.data;
-                if (Array.isArray(fundingSourceData) && fundingSourceData.length > 0) {
-                    // Process funding sources in batches to avoid rate limiting
-                    const fundingSourcePromises = fundingSourceData.map((refId) => {
-                        const refItemId = typeof refId === 'object' ? refId.id || refId : refId;
-                        if (!refItemId) return Promise.resolve(null);
-                        return fetchFundingSourceName(refItemId.toString());
-                    });
-                    
-                    const fundingSourceResults = await rateLimiter.processBatches(
-                        fundingSourcePromises,
-                        { batchSize: 2, delayBetweenBatches: 600, delayBetweenRequests: 150 }
-                    );
-                    
-                    const fundingSourceNames = fundingSourceResults
-                        .filter(result => result.status === 'fulfilled' && result.value)
-                        .map(result => result.value);
-                    fundingSource = fundingSourceNames.length > 0 ? fundingSourceNames.join(', ') : undefined;
-                } else {
-                    const refItemId = typeof fundingSourceData === 'object'
-                        ? fundingSourceData.id || fundingSourceData
-                        : fundingSourceData;
-                    if (refItemId) {
-                        fundingSource = await fetchFundingSourceName(refItemId.toString());
+                const fetchFundingSourceName = async (refItemId, timeoutMs = 10000, maxRetries = 5) => {
+                    if (!refItemId || typeof refItemId !== 'string' || refItemId.trim() === '') {
+                        return null;
+                    }
+                    let lastError = null;
+                    for (let attempt = 0; attempt < maxRetries; attempt++) {
+                        try {
+                            // Add delay before each attempt to prevent rate limiting
+                            if (attempt > 0) {
+                                // Exponential backoff with jitter
+                                const jitter = 1 + (Math.random() * 0.3);
+                                const delayMs = Math.min(500 * Math.pow(2, attempt - 1) * jitter, 5000);
+                                await new Promise(resolve => setTimeout(resolve, Math.floor(delayMs)));
+                            } else {
+                                // Small delay even on first attempt to space out requests
+                                await new Promise(resolve => setTimeout(resolve, 100));
+                            }
+                            const timeoutPromise = new Promise((_, reject) => {
+                                setTimeout(() => reject(new Error('Timeout')), timeoutMs);
+                            });
+                            const refItem = await Promise.race([
+                                getItemValuesWithRateLimit(workspaceId, boardId, refItemId.toString()),
+                                timeoutPromise
+                            ]);
+                            if (refItem?.values) {
+                                const nameValue = refItem.values.find(v =>
+                                    ['Name', 'Title', 'Funding Source Name', 'Full Name'].includes(v.attribute.name)
+                                );
+                                if (nameValue?.data) {
+                                    const name = typeof nameValue.data === 'object' && nameValue.data.name
+                                        ? nameValue.data.name
+                                        : String(nameValue.data);
+                                    if (name?.trim()) {
+                                        return name;
+                                    }
+                                }
+                                const textValue = refItem.values.find(v =>
+                                    v.attribute.type === 'text' && v.data
+                                );
+                                if (textValue?.data) {
+                                    const text = String(textValue.data);
+                                    if (text?.trim()) {
+                                        return text;
+                                    }
+                                }
+                            }
+                            if (attempt < maxRetries - 1) {
+                                continue;
+                            }
+                            return null;
+                        } catch (err) {
+                            lastError = err;
+                            if (err.message !== 'Timeout' && attempt < maxRetries - 1) {
+                                continue;
+                            }
+                            if (attempt === maxRetries - 1 && err.message !== 'Timeout') {
+                                warn('Items-Service', 'Failed to fetch funding source item after retries', {
+                                    refId: refItemId,
+                                    error: err.message,
+                                    attempts: maxRetries
+                                }, extractContextFromReq(req));
+                            }
+                        }
+                    }
+                    return null;
+                };
+
+                let fundingSource;
+                const fundingSourceValue = item.data?.values?.find(v =>
+                    v.attribute && v.attribute.name === ATTRIBUTE_NAMES.FUNDING_SOURCE
+                );
+                if (fundingSourceValue?.data) {
+                    const fundingSourceData = fundingSourceValue.data;
+                    if (Array.isArray(fundingSourceData) && fundingSourceData.length > 0) {
+                        // Process funding sources in batches to avoid rate limiting
+                        const fundingSourcePromises = fundingSourceData.map((refId) => {
+                            const refItemId = typeof refId === 'object' ? refId.id || refId : refId;
+                            if (!refItemId) return Promise.resolve(null);
+                            return fetchFundingSourceName(refItemId.toString());
+                        });
+                        
+                        const fundingSourceResults = await rateLimiter.processBatches(
+                            fundingSourcePromises,
+                            { batchSize: 2, delayBetweenBatches: 600, delayBetweenRequests: 150 }
+                        );
+                        
+                        const fundingSourceNames = fundingSourceResults
+                            .filter(result => result.status === 'fulfilled' && result.value)
+                            .map(result => result.value);
+                        fundingSource = fundingSourceNames.length > 0 ? fundingSourceNames.join(', ') : undefined;
+                    } else {
+                        const refItemId = typeof fundingSourceData === 'object'
+                            ? fundingSourceData.id || fundingSourceData
+                            : fundingSourceData;
+                        if (refItemId) {
+                            fundingSource = await fetchFundingSourceName(refItemId.toString());
+                        }
                     }
                 }
-            }
 
-            const normalizedUnit = typeof unit === 'string' ? unit.toLowerCase() : '';
-            const isItemUnit = normalizedUnit === 'item';
-            const serviceLabel = service || '';
-            const isWraparound = serviceLabel.toLowerCase().includes('wraparound');
+                const normalizedUnit = typeof unit === 'string' ? unit.toLowerCase() : '';
+                const isItemUnit = normalizedUnit === 'item';
+                const serviceLabel = service || '';
+                const isWraparound = serviceLabel.toLowerCase().includes('wraparound');
 
-            return {
-                id: item.itemId,
-                status: invoiceStatus,
-                invoiceNumber,
-                participant,
-                service: serviceLabel,
-                scheduledStart,
-                scheduledServiceDate,
-                serviceDeliveryDate,
-                unit,
-                quantity,
-                unitPrice,
-                totalAmount,
-                govSubsidy,
-                participantContribution,
-                notes,
-                transactionStatus,
-                paymentStatus: paymentStatusFormatted,
-                fundingSource,
-                fileUrl,
-                careRecipientIdentifier,
-                serviceIdentifier,
-                deliveredBy: deliveredByString,
-                itemOrWraparound: isItemUnit ? 'Item' : (isWraparound ? 'Wraparound' : undefined),
-                itemDescriptionCode: isItemUnit ? itemId : undefined,
-                itemDescription: isItemUnit ? itemName : undefined,
-                wraparoundDescriptionCode: isWraparound ? wraparoundItemId : undefined,
-                wraparoundDescription: isWraparound ? wraparoundDescription : undefined,
-                prescribedItem: prescribedItemValue,
-                itemPurchasedMethod: itemPurchasedMethodString,
-                associatedProvider: associatedProviderString,
-                associatedProviderInvoiceNo,
-                loanedByOrganisationName,
-                healthProfessionalTypeCode,
-                healthProfessionalTypeOther,
-                itemFirstPayment: itemFirstPaymentValue
-            };
+                return {
+                    // Table fields (Visible in ISO+ Portal Table)
+                    id: item.itemId,
+                    paymentStatus: paymentStatusFormatted,
+                    participant: participant,
+                    service: serviceLabel,
+                    scheduledServiceDate: scheduledServiceDate,
+                    serviceDeliveryDate: serviceDeliveryDate,
+                    unit: unit,
+                    quantity: quantity,
+                    unitPrice: unitPrice,
+                    totalAmount: totalAmount,
+                    govSubsidy: govSubsidy,
+                    participantContribution: participantContribution,
+                    fundingSource: fundingSource,
+                    notes: notes,
+                    // CSV export fields (Included in CSV but not in table)
+                    invoiceNumber: invoiceNumber,
+                    careRecipientIdentifier: careRecipientIdentifier,
+                    serviceIdentifier: serviceIdentifier,
+                    deliveredByThirdParty: deliveredByThirdParty,
+                    itemOrWraparound: isItemUnit ? 'Item' : (isWraparound ? 'Wraparound' : ''),
+                    itemDescriptionCode: isItemUnit ? itemId : undefined,
+                    itemDescription: isItemUnit ? itemName : undefined,
+                    wraparoundDescriptionCode: isWraparound ? wraparoundItemId : undefined,
+                    wraparoundDescription: isWraparound ? wraparoundDescription : undefined,
+                    prescribedItem: prescribedItemValue,
+                    itemPurchasedMethod: itemPurchasedMethodString,
+                    loanedByOrganisationName: loanedByOrganisationName,
+                    associatedProviderInvoiceNo: associatedProviderInvoiceNo,
+                    healthProfessionalTypeCode: healthProfessionalTypeCode,
+                    healthProfessionalTypeOther: healthProfessionalTypeOther,
+                    itemFirstPayment: itemFirstPaymentValue
+                };
             },
             { batchSize: 2, delayBetweenBatches: 600, delayBetweenRequests: 150 }
         );
