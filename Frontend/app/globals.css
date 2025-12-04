@@ -146,3 +146,275 @@
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
+
+/* Toast Progress Bar Styles */
+[data-sonner-toast] {
+  position: relative;
+  overflow: hidden;
+  --toast-duration: 4000ms;
+}
+
+[data-sonner-toast]::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  width: 100%;
+  background: currentColor;
+  opacity: 0.3;
+  transform-origin: left;
+  animation: toast-progress var(--toast-duration, 4000ms) linear forwards;
+}
+
+/* Success toast progress bar */
+[data-sonner-toast][data-type="success"]::after {
+  background: rgb(34, 197, 94);
+  opacity: 0.6;
+}
+
+/* Error toast progress bar */
+[data-sonner-toast][data-type="error"]::after {
+  background: rgb(239, 68, 68);
+  opacity: 0.6;
+}
+
+/* Warning toast progress bar */
+[data-sonner-toast][data-type="warning"]::after {
+  background: rgb(234, 179, 8);
+  opacity: 0.6;
+}
+
+/* Info toast progress bar */
+[data-sonner-toast][data-type="info"]::after {
+  background: rgb(59, 130, 246);
+  opacity: 0.6;
+}
+
+/* Default toast progress bar */
+[data-sonner-toast]:not([data-type])::after {
+  background: hsl(var(--primary));
+  opacity: 0.4;
+}
+
+@keyframes toast-progress {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+/* Pause animation on hover */
+[data-sonner-toast]:hover::after {
+  animation-play-state: paused;
+}
+
+/* Toast Close Button Styles - Make it more visible */
+/* Target Sonner's close button - multiple selectors to catch all variations */
+[data-sonner-toast] button[aria-label*="close" i],
+[data-sonner-toast] button[aria-label*="dismiss" i],
+[data-sonner-toast] > button:last-child {
+  position: absolute !important;
+  top: 8px !important;
+  right: 8px !important;
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  min-height: 28px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 6px !important;
+  background: rgba(0, 0, 0, 0.08) !important;
+  color: rgba(0, 0, 0, 0.7) !important;
+  opacity: 1 !important;
+  transition: all 0.2s ease !important;
+  cursor: pointer !important;
+  z-index: 10 !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+[data-sonner-toast] button[aria-label*="close" i]:hover,
+[data-sonner-toast] button[aria-label*="dismiss" i]:hover,
+[data-sonner-toast] > button:last-child:hover {
+  background: rgba(0, 0, 0, 0.15) !important;
+  color: rgba(0, 0, 0, 0.95) !important;
+  transform: scale(1.1) !important;
+  border-color: rgba(0, 0, 0, 0.2) !important;
+}
+
+[data-sonner-toast] button[aria-label*="close" i]:active,
+[data-sonner-toast] button[aria-label*="dismiss" i]:active,
+[data-sonner-toast] > button:last-child:active {
+  transform: scale(0.95) !important;
+}
+
+/* Dark mode close button */
+.dark [data-sonner-toast] button[aria-label*="close" i],
+.dark [data-sonner-toast] button[aria-label*="dismiss" i],
+.dark [data-sonner-toast] > button:last-child {
+  background: rgba(255, 255, 255, 0.15) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.dark [data-sonner-toast] button[aria-label*="close" i]:hover,
+.dark [data-sonner-toast] button[aria-label*="dismiss" i]:hover,
+.dark [data-sonner-toast] > button:last-child:hover {
+  background: rgba(255, 255, 255, 0.25) !important;
+  color: rgba(255, 255, 255, 1) !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+/* Close button for colored toasts - Success */
+[data-sonner-toast][data-type="success"] button[aria-label*="close" i],
+[data-sonner-toast][data-type="success"] button[aria-label*="dismiss" i],
+[data-sonner-toast][data-type="success"] > button:last-child {
+  background: rgba(34, 197, 94, 0.15) !important;
+  color: rgb(22, 163, 74) !important;
+  border-color: rgba(34, 197, 94, 0.3) !important;
+}
+
+[data-sonner-toast][data-type="success"] button[aria-label*="close" i]:hover,
+[data-sonner-toast][data-type="success"] button[aria-label*="dismiss" i]:hover,
+[data-sonner-toast][data-type="success"] > button:last-child:hover {
+  background: rgba(34, 197, 94, 0.25) !important;
+  color: rgb(21, 128, 61) !important;
+  border-color: rgba(34, 197, 94, 0.4) !important;
+}
+
+/* Close button for colored toasts - Error */
+[data-sonner-toast][data-type="error"] button[aria-label*="close" i],
+[data-sonner-toast][data-type="error"] button[aria-label*="dismiss" i],
+[data-sonner-toast][data-type="error"] > button:last-child {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: rgb(220, 38, 38) !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+}
+
+[data-sonner-toast][data-type="error"] button[aria-label*="close" i]:hover,
+[data-sonner-toast][data-type="error"] button[aria-label*="dismiss" i]:hover,
+[data-sonner-toast][data-type="error"] > button:last-child:hover {
+  background: rgba(239, 68, 68, 0.25) !important;
+  color: rgb(185, 28, 28) !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+}
+
+/* Close button for colored toasts - Warning */
+[data-sonner-toast][data-type="warning"] button[aria-label*="close" i],
+[data-sonner-toast][data-type="warning"] button[aria-label*="dismiss" i],
+[data-sonner-toast][data-type="warning"] > button:last-child {
+  background: rgba(234, 179, 8, 0.15) !important;
+  color: rgb(202, 138, 4) !important;
+  border-color: rgba(234, 179, 8, 0.3) !important;
+}
+
+[data-sonner-toast][data-type="warning"] button[aria-label*="close" i]:hover,
+[data-sonner-toast][data-type="warning"] button[aria-label*="dismiss" i]:hover,
+[data-sonner-toast][data-type="warning"] > button:last-child:hover {
+  background: rgba(234, 179, 8, 0.25) !important;
+  color: rgb(161, 98, 7) !important;
+  border-color: rgba(234, 179, 8, 0.4) !important;
+}
+
+/* Close button for colored toasts - Info */
+[data-sonner-toast][data-type="info"] button[aria-label*="close" i],
+[data-sonner-toast][data-type="info"] button[aria-label*="dismiss" i],
+[data-sonner-toast][data-type="info"] > button:last-child {
+  background: rgba(59, 130, 246, 0.15) !important;
+  color: rgb(37, 99, 235) !important;
+  border-color: rgba(59, 130, 246, 0.3) !important;
+}
+
+[data-sonner-toast][data-type="info"] button[aria-label*="close" i]:hover,
+[data-sonner-toast][data-type="info"] button[aria-label*="dismiss" i]:hover,
+[data-sonner-toast][data-type="info"] > button:last-child:hover {
+  background: rgba(59, 130, 246, 0.25) !important;
+  color: rgb(29, 78, 216) !important;
+  border-color: rgba(59, 130, 246, 0.4) !important;
+}
+
+/* Toast Close Button Styles - Make it more visible */
+[data-sonner-toast] [data-close-button] {
+  position: absolute !important;
+  top: 8px !important;
+  right: 8px !important;
+  width: 24px !important;
+  height: 24px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 4px !important;
+  background: rgba(0, 0, 0, 0.05) !important;
+  color: rgba(0, 0, 0, 0.6) !important;
+  opacity: 1 !important;
+  transition: all 0.2s ease !important;
+  cursor: pointer !important;
+  z-index: 10 !important;
+}
+
+[data-sonner-toast] [data-close-button]:hover {
+  background: rgba(0, 0, 0, 0.1) !important;
+  color: rgba(0, 0, 0, 0.9) !important;
+  transform: scale(1.1) !important;
+}
+
+[data-sonner-toast] [data-close-button]:active {
+  transform: scale(0.95) !important;
+}
+
+/* Dark mode close button */
+.dark [data-sonner-toast] [data-close-button] {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.dark [data-sonner-toast] [data-close-button]:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: rgba(255, 255, 255, 0.95) !important;
+}
+
+/* Close button for colored toasts */
+[data-sonner-toast][data-type="success"] [data-close-button] {
+  background: rgba(34, 197, 94, 0.1) !important;
+  color: rgb(22, 163, 74) !important;
+}
+
+[data-sonner-toast][data-type="success"] [data-close-button]:hover {
+  background: rgba(34, 197, 94, 0.2) !important;
+  color: rgb(21, 128, 61) !important;
+}
+
+[data-sonner-toast][data-type="error"] [data-close-button] {
+  background: rgba(239, 68, 68, 0.1) !important;
+  color: rgb(220, 38, 38) !important;
+}
+
+[data-sonner-toast][data-type="error"] [data-close-button]:hover {
+  background: rgba(239, 68, 68, 0.2) !important;
+  color: rgb(185, 28, 28) !important;
+}
+
+[data-sonner-toast][data-type="warning"] [data-close-button] {
+  background: rgba(234, 179, 8, 0.1) !important;
+  color: rgb(202, 138, 4) !important;
+}
+
+[data-sonner-toast][data-type="warning"] [data-close-button]:hover {
+  background: rgba(234, 179, 8, 0.2) !important;
+  color: rgb(161, 98, 7) !important;
+}
+
+[data-sonner-toast][data-type="info"] [data-close-button] {
+  background: rgba(59, 130, 246, 0.1) !important;
+  color: rgb(37, 99, 235) !important;
+}
+
+[data-sonner-toast][data-type="info"] [data-close-button]:hover {
+  background: rgba(59, 130, 246, 0.2) !important;
+  color: rgb(29, 78, 216) !important;
+}
