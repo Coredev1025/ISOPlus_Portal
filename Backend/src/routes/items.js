@@ -2,6 +2,7 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import Item from '../models/Item.js';
 import Business from '../models/Business.js';
+import InvoiceNumber from '../models/InvoiceNumber.js';
 import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
 import { getItemValues, getFolder, getMember, getMonthlyStatementBudgetData, getAgeCareParticipantsServicePlanReferencedItems } from '../services/isoplus.js';
 import { RateLimiter, batchProcess } from '../utils/helpers.js';
@@ -415,6 +416,36 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             });
         }
 
+        // Fetch all invoice numbers from database for items in this workspace/board
+        const itemIds = allItems.map(item => item.itemId);
+        let invoiceNumbersMap = new Map();
+        try {
+            const invoiceNumbers = await InvoiceNumber.find({
+                workspaceId: workspaceId,
+                boardId: boardId,
+                itemId: { $in: itemIds }
+            }).lean();
+            
+            // Create a map: itemId -> { invoiceNumber, type }
+            // Prefer PDF over Xero if both exist
+            invoiceNumbers.forEach(inv => {
+                const existing = invoiceNumbersMap.get(inv.itemId);
+                if (!existing || (existing.type === 'Xero' && inv.type === 'PDF')) {
+                    invoiceNumbersMap.set(inv.itemId, {
+                        invoiceNumber: inv.invoiceNumber,
+                        type: inv.type
+                    });
+                }
+            });
+        } catch (invErr) {
+            warn('Items-Service', 'Failed to fetch invoice numbers from database', {
+                message: invErr.message,
+                workspaceId,
+                boardId
+            }, extractContextFromReq(req));
+            // Continue without invoice numbers - fallback to old method
+        }
+
         // Helper function to extract value from item data
         const getValueFromItem = (item, attributeName) => {
             if (!item.data || !item.data.values) return null;
@@ -444,8 +475,15 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             return null;
         };
 
-        // Helper function to check if item is invoiced
+        // Helper function to check if item is invoiced (using database invoice numbers)
         const isInvoiced = (item) => {
+            // First check database for invoice numbers
+            const invoiceData = invoiceNumbersMap.get(item.itemId);
+            if (invoiceData && invoiceData.invoiceNumber) {
+                return true;
+            }
+            
+            // Fallback to old method for backward compatibility
             const invoiceIssued = getValueFromItem(item, 'Invoice Issued and Sent');
             if (invoiceIssued === true || invoiceIssued === 'true' || invoiceIssued === 'Y') {
                 return true;
@@ -865,8 +903,12 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     wraparoundDescription = wraparoundValues?.wraparoundDescription || '';
                 }
 
-                const invoiceNumber =
-                    getValue(ATTRIBUTE_NAMES.INVOICE_NUMBER) || getValue('Generated Invoice Number') || '';
+                // Get invoice number from database first, fallback to item attribute
+                const invoiceData = invoiceNumbersMap.get(item.itemId);
+                const invoiceNumber = invoiceData?.invoiceNumber || 
+                    getValue(ATTRIBUTE_NAMES.INVOICE_NUMBER) || 
+                    getValue('Generated Invoice Number') || 
+                    '';
 
                 let careRecipientIdentifier;
                 const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
@@ -1099,9 +1141,14 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 const serviceLabel = service || '';
                 const isWraparound = serviceLabel.toLowerCase().includes('wraparound');
 
+                // Determine status based on invoice number from database
+                const hasInvoiceNumber = invoiceData && invoiceData.invoiceNumber;
+                const status = hasInvoiceNumber ? 'invoiced' : 'pending';
+
                 return {
                     // Table fields (Visible in ISO+ Portal Table)
                     id: item.itemId,
+                    status: status,
                     paymentStatus: paymentStatusFormatted,
                     participant: participant,
                     service: serviceLabel,

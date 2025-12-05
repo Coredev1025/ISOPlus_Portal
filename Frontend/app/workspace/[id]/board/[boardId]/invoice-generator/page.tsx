@@ -53,10 +53,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 const TRANSACTION_STATUS_FILTERS = [
   { value: "all", label: "All Transaction Status", isoValue: "" },
-  { value: "delivered", label: "Delivered", description: "To be claimed and invoiced.", isoValue: "Delivered - To be claimed and invoiced." },
-  { value: "cancelled", label: "Cancelled", description: "To be claimed and invoiced if applicable.", isoValue: "Cancelled - To be claimed and invoiced if applicable." },
-  { value: "adjustment-refund", label: "Adjustment (Refund)", description: "To be claimed and invoiced.", isoValue: "Adjustment (Refund) - To be claimed and invoiced." },
-  { value: "adjustment-charge", label: "Adjustment (Charge)", description: "To be claimed and invoiced.", isoValue: "Adjustment (Charge) - To be claimed and invoiced." }
+  { value: "delivered", label: "Delivered - To be claimed and invoiced.", description: "To be claimed and invoiced.", isoValue: "Delivered - To be claimed and invoiced." },
+  { value: "cancelled", label: "Cancelled - To be claimed and invoiced if applicable.", description: "To be claimed and invoiced if applicable.", isoValue: "Cancelled - To be claimed and invoiced if applicable." },
+  { value: "adjustment-refund", label: "Adjustment (Refund) - To be claimed and invoiced.", description: "To be claimed and invoiced.", isoValue: "Adjustment (Refund) - To be claimed and invoiced." },
+  { value: "adjustment-charge", label: "Adjustment (Charge) - To be claimed and invoiced.", description: "To be claimed and invoiced.", isoValue: "Adjustment (Charge) - To be claimed and invoiced." }
 ];
 
 const PAYMENT_STATUS_FILTERS = [
@@ -1425,77 +1425,92 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
                 <p className="text-muted-foreground">
                   Manage delivered service records, submit claims and generate participant tax invoices.
                 </p>
-                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                  <Clock className="h-4 w-4" />
-                  {lastSyncedAt ? (
-                    <span>Last refreshed {formatDistanceToNow(lastSyncedAt, { addSuffix: true })}</span>
-                  ) : (
-                    <span>Not refreshed yet</span>
-                  )}
-                </div>
                 <p className="text-xs text-muted-foreground">
                   Use Refresh to reload the latest cached ISO+ data. Trigger Sync when you&apos;ve updated ISO+ and need those changes pulled in.
                 </p>
               </div>
-              <div className="flex flex-wrap justify-end gap-2">
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  onClick={() => handleManualRefresh(false)}
-                  disabled={loading}
-                >
-                  <RefreshCcw className="h-4 w-4" />
-                  Refresh Data
-                  <HelpCircle className="h-4 w-4" aria-label="Learn more about Refresh Data" onClick={(e) => { e.stopPropagation(); setShowHelpDialog(true); }} />
-                </Button>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="secondary"
-                        className="gap-2"
-                        onClick={handleManualSync}
-                        disabled={isManualSyncing}
-                      >
-                        {isManualSyncing ? (
-                          <>
-                            <Spinner className="h-4 w-4" />
-                            Syncing...
-                          </>
-                        ) : (
-                          <>
-                            Sync Data
-                          </>
-                        )}  
-                        <HelpCircle className="h-4 w-4" aria-label="Learn more about Sync Data" onClick={(e) => { e.stopPropagation(); setShowHelpDialog(true); }}/>
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      Trigger a manual ISO+ sync. We&apos;ll fetch the latest data from the portal in the background.
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-                <Button
-                  variant="outline"
-                  onClick={handleExportCSV}
-                  className="gap-2"
-                  disabled={exportingCSV}
-                >
-                  <FileSpreadsheet className="h-4 w-4" />
-                  Export to CSV
-                </Button>
-                <Button
-                  className="gap-2"
-                  onClick={handleOpenInvoiceModal}
-                >
-                  <Receipt className="h-4 w-4" />
-                  Participant Tax Invoice
-                </Button>
+              <div className="flex flex-col items-end gap-3">
+                <div className="flex flex-wrap justify-end gap-2">
+                  <div className="flex flex-col items-end gap-2">
+                    <div className="flex gap-2">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className="gap-2"
+                              onClick={() => handleManualRefresh(false)}
+                              disabled={loading}
+                            >
+                              <RefreshCcw className="h-4 w-4" />
+                              Refresh Data
+                              <HelpCircle className="h-4 w-4" aria-label="Learn more about Refresh Data" onClick={(e) => { e.stopPropagation(); setShowHelpDialog(true); }} />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            It pulls the most recent data that is already stored (cached) on your device or browser.
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="secondary"
+                              className="gap-2"
+                              onClick={handleManualSync}
+                              disabled={isManualSyncing}
+                            >
+                              {isManualSyncing ? (
+                                <>
+                                  <Spinner className="h-4 w-4" />
+                                  Syncing...
+                                </>
+                              ) : (
+                                <>
+                                  Sync Data
+                                </>
+                              )}  
+                              <HelpCircle className="h-4 w-4" aria-label="Learn more about Sync Data" onClick={(e) => { e.stopPropagation(); setShowHelpDialog(true); }}/>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            It downloads brand-new data from the server, including any edits and new records.
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Clock className="h-4 w-4" />
+                      {lastSyncedAt ? (
+                        <span>Last refreshed {formatDistanceToNow(lastSyncedAt, { addSuffix: true })}</span>
+                      ) : (
+                        <span>Not refreshed yet</span>
+                      )}
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={handleExportCSV}
+                    className="gap-2"
+                    disabled={exportingCSV}
+                  >
+                    <FileSpreadsheet className="h-4 w-4" />
+                    Export to CSV
+                  </Button>
+                  <Button
+                    className="gap-2"
+                    onClick={handleOpenInvoiceModal}
+                  >
+                    <Receipt className="h-4 w-4" />
+                    Participant Tax Invoice
+                  </Button>
+                </div>
               </div>
             </div>
 
             {/* Search and Filters */}
-            <div className="flex flex-nowrap gap-4 mb-6 overflow-x-auto pb-2">
+            <div className="flex flex-nowrap gap-4 mb-6 overflow-x-auto p-2">
               <div className="min-w-[120px] max-w-[200px] flex-shrink-0">
                 <Select value={participantFilter} onValueChange={setParticipantFilter}>
                   <SelectTrigger className="w-full">
