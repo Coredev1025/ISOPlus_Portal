@@ -956,35 +956,43 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     ? (scheduledStart.includes('T') ? scheduledStart.split('T')[0] : scheduledStart.split(' ')[0])
                     : null;
 
+                // Helper to format select/multi-select labels
+                const formatStatus = (valueObj) => {
+                    if (!valueObj) return undefined;
+                    const data = valueObj.data;
+                    const labels = valueObj.attribute?.settings?.labels || [];
+                    if (Array.isArray(data) && data.length > 0) {
+                        return data.map(id => {
+                            const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
+                            return label ? label.name : (typeof id === 'object' ? id.name : String(id));
+                        }).filter(Boolean).join(', ');
+                    }
+                    if (data) {
+                        if (typeof data === 'object' && data.id) {
+                            const label = labels.find(l => l.id === data.id);
+                            return label ? label.name : (data.name || String(data.id));
+                        }
+                        if (typeof data === 'string') {
+                            const label = labels.find(l => l.id === data);
+                            return label ? label.name : data;
+                        }
+                        return String(data);
+                    }
+                    return undefined;
+                };
+
                 const paymentStatusValue = item.data?.values?.find(v =>
                     v.attribute && (
                         v.attribute.name === ATTRIBUTE_NAMES.PAYMENT_STATUS ||
                         v.attribute.name === 'Payment Status'
                     )
                 );
-                let paymentStatusFormatted;
-                if (paymentStatusValue) {
-                    const paymentStatusData = paymentStatusValue.data;
-                    const labels = paymentStatusValue.attribute?.settings?.labels || [];
-                    if (Array.isArray(paymentStatusData) && paymentStatusData.length > 0) {
-                        paymentStatusFormatted = paymentStatusData.map(id => {
-                            const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
-                            return label ? label.name : (typeof id === 'object' ? id.name : String(id));
-                        }).filter(Boolean).join(', ');
-                    } else if (paymentStatusData) {
-                        if (typeof paymentStatusData === 'object' && paymentStatusData.id) {
-                            const label = labels.find(l => l.id === paymentStatusData.id);
-                            paymentStatusFormatted = label
-                                ? label.name
-                                : (paymentStatusData.name || String(paymentStatusData.id));
-                        } else if (typeof paymentStatusData === 'string') {
-                            const label = labels.find(l => l.id === paymentStatusData);
-                            paymentStatusFormatted = label ? label.name : paymentStatusData;
-                        } else {
-                            paymentStatusFormatted = String(paymentStatusData);
-                        }
-                    }
-                }
+                const paymentStatusFormatted = formatStatus(paymentStatusValue);
+
+                const transactionStatusValue = item.data?.values?.find(v =>
+                    v.attribute && v.attribute.name === ATTRIBUTE_NAMES.TRANSACTION_STATUS
+                );
+                const transactionStatusFormatted = formatStatus(transactionStatusValue);
 
                 const fetchFundingSourceName = async (refItemId, timeoutMs = 10000, maxRetries = 5) => {
                     if (!refItemId || typeof refItemId !== 'string' || refItemId.trim() === '') {
@@ -1106,6 +1114,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     govSubsidy: govSubsidy,
                     participantContribution: participantContribution,
                     fundingSource: fundingSource,
+                    transactionStatus: transactionStatusFormatted,
                     notes: notes,
                     // CSV export fields (Included in CSV but not in table)
                     invoiceNumber: invoiceNumber,
@@ -1204,99 +1213,30 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             }
         });
 
-        // Helper function to build aggregation pipeline
-        const buildPipeline = (folderName, participantFilter, dateFilter, options = {}, type = 'budget') => {
-            const pipeline = [];
-            const baseMatch = { workspaceId, boardId };
-
-            return getFolderIds(folderName, workspaceId, boardId, options.folderList).then(folderIds => {
-                if (folderIds && folderIds.length > 0) {
-                    baseMatch.folderId = { $in: folderIds };
-                }
-                pipeline.push({ $match: baseMatch });
-
-                // Add aggregation stages for extracting values
-                pipeline.push(
-                    {
-                        $addFields: {
-                            scheduledStartValue: {
-                                $filter: {
-                                    input: "$data.values",
-                                    as: "value",
-                                    cond: { $eq: ["$$value.attribute.name", ATTRIBUTE_NAMES.SCHEDULED_START] }
-                                }
-                            },
-                            actualEndValue: {
-                                $filter: {
-                                    input: "$data.values",
-                                    as: "value",
-                                    cond: { $eq: ["$$value.attribute.name", ATTRIBUTE_NAMES.ACTUAL_END] }
-                                }
-                            },
-                            participantValue: {
-                                $filter: {
-                                    input: "$data.values",
-                                    as: "value",
-                                    cond: { $eq: ["$$value.attribute.name", type === 'budget' ? ATTRIBUTE_NAMES.PARTICIPANT_PROFILE : ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME] }
-                                }
-                            }
-                        }
-                    },
-                    {
-                        $addFields: {
-                            scheduledStartRaw: {
-                                $let: {
-                                    vars: { firstVal: { $arrayElemAt: ["$scheduledStartValue", 0] } },
-                                    in: { $ifNull: ["$$firstVal.data", null] }
-                                }
-                            },
-                            actualEndRaw: {
-                                $let: {
-                                    vars: { firstVal: { $arrayElemAt: ["$actualEndValue", 0] } },
-                                    in: { $ifNull: ["$$firstVal.data", null] }
-                                }
-                            },
-                            participantNameRaw: {
-                                $let: {
-                                    vars: { firstVal: { $arrayElemAt: ["$participantValue", 0] } },
-                                    in: { $ifNull: ["$$firstVal.data", null] }
-                                }
-                            }
-                        }
-                    },
-                    {
-                        $addFields: {
-                            scheduledStartDate: {
-                                $dateFromString: { dateString: "$scheduledStartRaw", onError: null }
-                            },
-                            actualEndDate: {
-                                $dateFromString: { dateString: "$actualEndRaw", onError: null }
-                            }
-                        }
-                    }
-                );
-
-                // Add filters
-                const andConditions = [];
-                const dateFieldName = type === 'service' ? 'actualEndDate' : 'scheduledStartDate';
-                if (participantFilter) {
-                    andConditions.push({ participantNameRaw: { $regex: participantFilter, $options: 'i' } });
-                }
-                if (dateFilter && dateFilter.startDate) {
-                    andConditions.push({ [dateFieldName]: { $gte: new Date(dateFilter.startDate) } });
-                }
-                if (dateFilter && dateFilter.endDate) {
-                    andConditions.push({ [dateFieldName]: { $lte: new Date(dateFilter.endDate) } });
-                }
-                if (andConditions.length > 0) {
-                    pipeline.push({ $match: { $and: andConditions } });
-                }
-
-                return pipeline;
-            });
+        // Helper function to get folder IDs for a query
+        const getFolderIdsForQuery = async (folderName) => {
+            return await getFolderIds(folderName, workspaceId, boardId, folderList);
         };
 
-        // Fetch all budget items (first table)
+        // Helper function to extract value from item data
+        const getValueFromItem = (item, attributeName) => {
+            if (!item.data || !item.data.values) return null;
+            const valueObj = item.data.values.find(v => v.attribute && v.attribute.name === attributeName);
+            return valueObj ? valueObj.data : null;
+        };
+
+        // Helper function to parse date from value
+        const parseDate = (value) => {
+            if (!value) return null;
+            if (value instanceof Date) return value;
+            if (typeof value === 'string') {
+                const date = new Date(value);
+                return isNaN(date.getTime()) ? null : date;
+            }
+            return null;
+        };
+
+        // Fetch all budget items (first table) using find()
         const budgetFolderNames = [
             'Home Support Quarterly Budget',
             'Restorative Care Pathway Budget',
@@ -1306,43 +1246,27 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             'Home Modification Budget'
         ].join(',');
 
-        let participantIntakeIds = [];
-        const participantIntakeFolderIds = await getFolderIds('Participants Intake', workspaceId, boardId);
-        if (participantIntakeFolderIds && participantIntakeFolderIds.length > 0) {
-            // Only select itemId and data.values to reduce memory usage
-            const participantIntakeItems = await Item.find({ workspaceId: workspaceId, boardId: boardId, folderId: { $in: participantIntakeFolderIds } })
-                .select('itemId data.values')
-                .lean();
-            participantIntakeIds = participantIntakeItems.map(item => item.data.values.find(v => v.attribute.name.includes(ATTRIBUTE_NAMES.FULL_NAME))?.data == participant ? item.itemId : null).filter(id => id !== null);
+        const budgetFolderIds = await getFolderIdsForQuery(budgetFolderNames);
+        const budgetBaseQuery = { workspaceId, boardId };
+        if (budgetFolderIds && budgetFolderIds.length > 0) {
+            budgetBaseQuery.folderId = { $in: budgetFolderIds };
         }
 
-        const budgetPipelineForTotals = await buildPipeline(budgetFolderNames, participantIntakeIds[0] ? participantIntakeIds[0] : null, {}, { folderList }, 'budget');
-        budgetPipelineForTotals.push({ $sort: { updatedAt: -1 } });
-        
-        let allBudgetItemsResult;
+        let allBudgetItems;
         try {
-            // Use allowDiskUse to handle large datasets on memory-constrained servers
-            // batchSize helps control memory usage during aggregation
-            allBudgetItemsResult = await Item.aggregate(budgetPipelineForTotals, { 
-                allowDiskUse: true,
-                batchSize: 1000, // Process in smaller batches to reduce memory pressure
-                maxTimeMS: 300000 // 5 minute timeout to prevent hanging
-            });
-        } catch (aggErr) {
-            error('Items-Service', 'Budget aggregation pipeline error', {
-                message: aggErr.message,
-                stack: aggErr.stack,
+            allBudgetItems = await Item.find(budgetBaseQuery).lean();
+        } catch (dbErr) {
+            error('Items-Service', 'Database query error for budget items', {
+                message: dbErr.message,
+                stack: dbErr.stack,
                 workspaceId,
-                boardId,
-                pipelineLength: budgetPipelineForTotals.length
+                boardId
             }, extractContextFromReq(req));
             return res.status(500).json({ 
                 message: 'Error fetching budget items for monthly statement',
-                error: aggErr.message 
+                error: dbErr.message 
             });
         }
-        
-        const allBudgetItems = Array.isArray(allBudgetItemsResult) ? allBudgetItemsResult : [];
 
         const parseNumberValue = (rawValue) => {
             if (rawValue === null || rawValue === undefined) return 0;
@@ -1693,8 +1617,109 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             ? filteredBudgetItems.slice(budgetSkip, budgetSkip + budgetLimitNumber)
             : filteredBudgetItems;
 
-        // Fetch service items (second table) from Master Plan,Shift Planning and Reporting
-        const servicePipeline = await buildPipeline('Master Plan,Shift Planning and Reporting', participant, { startDate, endDate }, {}, 'service');
+        // Fetch service items (second table) from Master Plan,Shift Planning and Reporting using find()
+        const serviceFolderIds = await getFolderIdsForQuery('Master Plan,Shift Planning and Reporting');
+        const serviceBaseQuery = { workspaceId, boardId };
+        if (serviceFolderIds && serviceFolderIds.length > 0) {
+            serviceBaseQuery.folderId = { $in: serviceFolderIds };
+        }
+
+        let allServiceItems;
+        try {
+            allServiceItems = await Item.find(serviceBaseQuery).lean();
+        } catch (dbErr) {
+            error('Items-Service', 'Database query error for service items', {
+                message: dbErr.message,
+                stack: dbErr.stack,
+                workspaceId,
+                boardId
+            }, extractContextFromReq(req));
+            return res.status(500).json({ 
+                message: 'Error fetching service items for monthly statement',
+                error: dbErr.message 
+            });
+        }
+
+        // Helper function to parse number from value
+        const parseNumber = (value) => {
+            if (value === null || value === undefined) return 0;
+            if (typeof value === 'number') return value;
+            if (typeof value === 'string') {
+                const match = value.match(/-?\d+(?:\.\d+)?/);
+                return match ? parseFloat(match[0]) : 0;
+            }
+            return 0;
+        };
+
+        // Process and filter service items in JavaScript
+        const processedServiceItems = allServiceItems.map(item => {
+            const scheduledStart = getValueFromItem(item, ATTRIBUTE_NAMES.SCHEDULED_START);
+            const actualEnd = getValueFromItem(item, ATTRIBUTE_NAMES.ACTUAL_END);
+            const participantName = getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
+            const participantProfileValue = getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
+            
+            return {
+                item,
+                scheduledStartDate: parseDate(scheduledStart),
+                actualEndDate: parseDate(actualEnd),
+                participantName: String(participantName),
+                participantProfileValue,
+                totalAmountNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.TOTAL_AMOUNT)),
+                govSubsidyNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.GOV_SUBSIDY)),
+                participantContributionNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)),
+                quantityNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.QUANTITY)),
+                unitValue: getValueFromItem(item, ATTRIBUTE_NAMES.UNIT) || ''
+            };
+        });
+
+        // Apply filters in JavaScript
+        let filteredServiceItems = processedServiceItems;
+
+        if (participant) {
+            try {
+                const participantRegex = new RegExp(participant, 'i');
+                filteredServiceItems = filteredServiceItems.filter(p => 
+                    participantRegex.test(p.participantName) ||
+                    (p.participantProfileValue && (
+                        (typeof p.participantProfileValue === 'string' && participantRegex.test(p.participantProfileValue)) ||
+                        (Array.isArray(p.participantProfileValue) && p.participantProfileValue.some(v => participantRegex.test(String(v)))) ||
+                        (typeof p.participantProfileValue === 'object' && p.participantProfileValue.id && participantRegex.test(String(p.participantProfileValue.id)))
+                    ))
+                );
+            } catch (regexErr) {
+                warn('Items-Service', 'Invalid participant regex pattern', {
+                    pattern: participant,
+                    error: regexErr.message
+                }, extractContextFromReq(req));
+            }
+        }
+
+        if (startDate) {
+            const startDateObj = new Date(startDate);
+            filteredServiceItems = filteredServiceItems.filter(p => 
+                p.scheduledStartDate && p.scheduledStartDate >= startDateObj
+            );
+        }
+
+        if (endDate) {
+            const endDateObj = new Date(endDate);
+            filteredServiceItems = filteredServiceItems.filter(p => 
+                p.scheduledStartDate && p.scheduledStartDate <= endDateObj
+            );
+        }
+
+        // Sort service items
+        filteredServiceItems.sort((a, b) => {
+            const aUpdated = a.item.updatedAt || a.item.createdAt || new Date(0);
+            const bUpdated = b.item.updatedAt || b.item.createdAt || new Date(0);
+            if (aUpdated < bUpdated) return 1;
+            if (aUpdated > bUpdated) return -1;
+            return 0;
+        });
+
+        const serviceTotal = filteredServiceItems.length;
+
+        // Apply pagination
         const hasServiceLimit = serviceLimitParam !== undefined && serviceLimitParam !== null && serviceLimitParam !== '';
         let serviceLimitNumber = hasServiceLimit ? parseInt(serviceLimitParam, 10) : null;
         if (hasServiceLimit && (isNaN(serviceLimitNumber) || serviceLimitNumber <= 0)) {
@@ -1706,50 +1731,35 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         const serviceSkip = hasServiceLimit && serviceLimitNumber
             ? (servicePageNumber - 1) * serviceLimitNumber
             : 0;
-        const serviceFacetStages = [];
-        if (hasServiceLimit && serviceLimitNumber) {
-            if (serviceSkip > 0) {
-                serviceFacetStages.push({ $skip: serviceSkip });
+        const paginatedServiceItems = hasServiceLimit && serviceLimitNumber
+            ? filteredServiceItems.slice(serviceSkip, serviceSkip + serviceLimitNumber)
+            : filteredServiceItems;
+
+        const serviceItems = paginatedServiceItems.map(p => p.item);
+
+        const formatStatus = (valueObj) => {
+            if (!valueObj) return undefined;
+            const data = valueObj.data;
+            const labels = valueObj.attribute?.settings?.labels || [];
+            if (Array.isArray(data) && data.length > 0) {
+                return data.map(id => {
+                    const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
+                    return label ? label.name : (typeof id === 'object' ? id.name : String(id));
+                }).filter(Boolean).join(', ');
             }
-            serviceFacetStages.push({ $limit: serviceLimitNumber });
-        }
-        servicePipeline.push(
-            { $sort: { updatedAt: -1 } },
-            {
-                $facet: {
-                    items: serviceFacetStages,
-                    totalCount: [
-                        { $count: 'count' }
-                    ]
+            if (data) {
+                if (typeof data === 'object' && data.id) {
+                    const label = labels.find(l => l.id === data.id);
+                    return label ? label.name : (data.name || String(data.id));
+                } else if (typeof data === 'string') {
+                    const label = labels.find(l => l.id === data);
+                    return label ? label.name : data;
+                } else {
+                    return String(data);
                 }
             }
-        );
-
-        let serviceAggResult;
-        try {
-            // Use allowDiskUse to handle large datasets on memory-constrained servers
-            // batchSize helps control memory usage during aggregation
-            serviceAggResult = await Item.aggregate(servicePipeline, { 
-                allowDiskUse: true,
-                batchSize: 1000, // Process in smaller batches to reduce memory pressure
-                maxTimeMS: 300000 // 5 minute timeout to prevent hanging
-            });
-        } catch (aggErr) {
-            error('Items-Service', 'Service aggregation pipeline error', {
-                message: aggErr.message,
-                stack: aggErr.stack,
-                workspaceId,
-                boardId,
-                pipelineLength: servicePipeline.length
-            }, extractContextFromReq(req));
-            return res.status(500).json({ 
-                message: 'Error fetching service items for monthly statement',
-                error: aggErr.message 
-            });
-        }
-
-        const serviceItems = (serviceAggResult[0] && serviceAggResult[0].items) ? serviceAggResult[0].items : [];
-        const serviceTotal = (serviceAggResult[0] && serviceAggResult[0].totalCount && serviceAggResult[0].totalCount[0]) ? serviceAggResult[0].totalCount[0].count : 0;
+            return undefined;
+        };
 
         // Transform service items with specific fields from image (with rate limiting)
         const transformedServiceItems = await batchProcess(
@@ -1794,12 +1804,31 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             }
 
             // Get Service Provider based on Delivered by
-            const worker = getValue(ATTRIBUTE_NAMES.WORKER_PLANNER)?.toString() || 'N/A';
-            const workerName = members.find(m => m.id == worker)?.name || 'Removed User';
             const deliveredByRaw = getValue(ATTRIBUTE_NAMES.DELIVERED_BY);
-            const serviceProvider = deliveredByRaw
-                ? (typeof deliveredByRaw === 'object' ? deliveredByRaw.name : deliveredByRaw.toString())
-                : null;
+            let serviceProvider = undefined;
+            if (deliveredByRaw) {
+                let deliveredByName = null;
+                if (typeof deliveredByRaw === 'object' && deliveredByRaw !== null) {
+                    deliveredByName = deliveredByRaw.name || deliveredByRaw.toString();
+                } else {
+                    deliveredByName = String(deliveredByRaw);
+                }
+                
+                if (deliveredByName && typeof deliveredByName === 'string') {
+                    const deliveredByLower = deliveredByName.toLowerCase();
+                    
+                    if (deliveredByLower.includes('company workforce')) {
+                        // Use company name from Business Configuration
+                        serviceProvider = businessProfile?.name || undefined;
+                    } else if (deliveredByLower.includes('associated')) {
+                        // Use Associated Provider (If Applicable)
+                        const associatedProvider = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
+                        serviceProvider = associatedProvider
+                            ? (typeof associatedProvider === 'object' ? associatedProvider.name : associatedProvider.toString())
+                            : undefined;
+                    }
+                }
+            }
             // Get dates
             const scheduledStart = getValue(ATTRIBUTE_NAMES.SCHEDULED_START) || null;
             const actualEnd = getValue(ATTRIBUTE_NAMES.ACTUAL_END) || null;
@@ -1810,11 +1839,10 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 ? (actualEnd.includes('T') ? actualEnd.split('T')[0] : actualEnd.split(' ')[0])
                 : null;
 
-            // Get other fields
-            const transactionStatusRaw = getValue(ATTRIBUTE_NAMES.TRANSACTION_STATUS);
-            const transactionStatus = transactionStatusRaw
-                ? (typeof transactionStatusRaw === 'object' ? transactionStatusRaw.name : transactionStatusRaw)
-                : undefined;
+            // Get Transaction Status
+            // Get Transaction Status (formatted labels like payment status)
+            const transactionStatusValue = item.data.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.TRANSACTION_STATUS);
+            const transactionStatus = formatStatus(transactionStatusValue);
             const committedAtHm = getValue(ATTRIBUTE_NAMES.COMMITTED_AT_HM);
             const committedAtHmForDelivery = committedAtHm !== null && committedAtHm !== undefined
                 ? (typeof committedAtHm === 'number' ? committedAtHm : Number(committedAtHm) || 0)
@@ -1825,198 +1853,118 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const totalAmount = Number(getValue(ATTRIBUTE_NAMES.TOTAL_AMOUNT)) || 0;
             const govSubsidy = Number(getValue(ATTRIBUTE_NAMES.GOV_SUBSIDY)) || 0;
             const participantContribution = Number(getValue(ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)) || 0;
-            const fundingSourceRaw = getValue(ATTRIBUTE_NAMES.FUNDING_SOURCE);
-            const fundingSource = fundingSourceRaw
-                ? (typeof fundingSourceRaw === 'object'
-                    ? (fundingSourceRaw.name || fundingSourceRaw.toString())
-                    : fundingSourceRaw.toString())
-                : 'Home Support';
-            const notes = getValue(ATTRIBUTE_NAMES.ADDITIONAL_NOTES) || '';
             
-            // Get Care Recipient Identifier (My Aged Care ID Number from Participant Profile)
-            let careRecipientIdentifier = undefined;
-            if (participantProfileId) {
-                try {
-                    const participantProfile = await fetchItemValuesCached(participantProfileId.toString());
-                    if (participantProfile && participantProfile.values) {
-                        const myAgedCareId = participantProfile.values.find(v => 
-                            v.attribute.name === ATTRIBUTE_NAMES.MY_AGED_CARE_ID || 
-                            v.attribute.name === ATTRIBUTE_NAMES.MY_AGED_CARE_ID_ALT
-                        )?.data;
-                        if (myAgedCareId) {
-                            careRecipientIdentifier = typeof myAgedCareId === 'string' ? myAgedCareId : String(myAgedCareId);
-                        }
-                    }
-                } catch (err) {
-                    // Silently fail
+            // Get Funding Source using the same logic as invoice generator
+            const fetchFundingSourceName = async (refItemId, timeoutMs = 10000, maxRetries = 5) => {
+                if (!refItemId || typeof refItemId !== 'string' || refItemId.trim() === '') {
+                    return null;
                 }
-            }
-            
-            // Get Service Identifier from Service Plan
-            let serviceIdentifier = '';
-            if (servicePlan && servicePlan.values) {
-                const serviceIdItemId = servicePlan.values.find(v => 
-                    v.attribute.name === 'Service ID / Item ID' || 
-                    v.attribute.name === 'Service ID' ||
-                    v.attribute.name === 'Item ID'
-                )?.data;
-                if (serviceIdItemId) {
-                    serviceIdentifier = typeof serviceIdItemId === 'string' ? serviceIdItemId : String(serviceIdItemId);
-                    // Remove "/" and anything after it
-                    if (serviceIdentifier.includes('/')) {
-                        serviceIdentifier = serviceIdentifier.split('/')[0].trim();
-                    }
-                }
-            }
-            
-            // Get Payment Status
-            const paymentStatusValue = item.data.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.PAYMENT_STATUS || v.attribute.name === 'Payment Status');
-            let paymentStatusFormatted = undefined;
-            if (paymentStatusValue) {
-                const paymentStatusData = paymentStatusValue.data;
-                const labels = paymentStatusValue.attribute?.settings?.labels || [];
-                
-                if (Array.isArray(paymentStatusData) && paymentStatusData.length > 0) {
-                    paymentStatusFormatted = paymentStatusData.map(id => {
-                        const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
-                        return label ? label.name : (typeof id === 'object' ? id.name : String(id));
-                    }).filter(s => s).join(', ');
-                } else if (paymentStatusData) {
-                    if (typeof paymentStatusData === 'object' && paymentStatusData.id) {
-                        const label = labels.find(l => l.id === paymentStatusData.id);
-                        paymentStatusFormatted = label ? label.name : (paymentStatusData.name || String(paymentStatusData.id));
-                    } else if (typeof paymentStatusData === 'string') {
-                        const label = labels.find(l => l.id === paymentStatusData);
-                        paymentStatusFormatted = label ? label.name : paymentStatusData;
-                    } else {
-                        paymentStatusFormatted = String(paymentStatusData);
-                    }
-                }
-            }
-            
-            // Get Invoice Number
-            const invoiceNumber = getValue(ATTRIBUTE_NAMES.INVOICE_NUMBER) || getValue('Generated Invoice Number') || '';
-            
-            // Get Item ID, Item, Wraparound Item ID, Wraparound Description
-            const itemId = getValue('Item ID') || undefined;
-            const itemName = getValue('Item') || undefined;
-            const wraparoundItemId = getValue('Wraparound Item ID') || undefined;
-            const wraparoundDescription = getValue('Wraparound Description') || undefined;
-            
-            // Get Item or Wraparound
-            const itemOrWraparoundRaw = getValue(ATTRIBUTE_NAMES.ITEM_OR_WRAPAROUND);
-            let itemOrWraparound = undefined;
-            if (itemOrWraparoundRaw) {
-                itemOrWraparound = typeof itemOrWraparoundRaw === 'object' ? itemOrWraparoundRaw.name : String(itemOrWraparoundRaw);
-            } else if (wraparoundItemId || wraparoundDescription) {
-                itemOrWraparound = 'Wraparound';
-            } else if (itemId || itemName) {
-                itemOrWraparound = 'Item';
-            }
-            
-            // Get Item Description Code
-            const itemDescriptionCode = getValue(ATTRIBUTE_NAMES.ITEM_DESCRIPTION_CODE) || undefined;
-            
-            // Get Item Description
-            const itemDescription = getValue(ATTRIBUTE_NAMES.ITEM_DESCRIPTION) || itemName || undefined;
-            
-            // Get Wraparound Description Code
-            const wraparoundDescriptionCode = getValue(ATTRIBUTE_NAMES.WRAPAROUND_DESCRIPTION_CODE) || undefined;
-            
-            // Get Prescribed Item
-            const prescribedItem = getValue('Prescribed Item');
-            const prescribedItemValue = prescribedItem === true || prescribedItem === 'true' || prescribedItem === 'Y' ? 'Y' : 'N';
-            
-            // Get Item Purchased Method
-            const itemPurchasedMethod = getValue('Item Purchased Method');
-            const itemPurchasedMethodString = itemPurchasedMethod 
-                ? (typeof itemPurchasedMethod === 'object' ? itemPurchasedMethod.name : String(itemPurchasedMethod))
-                : undefined;
-            
-            // Get Associated Provider and Associated Provider Invoice No
-            const associatedProvider = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
-            const associatedProviderString = associatedProvider 
-                ? (typeof associatedProvider === 'object' ? associatedProvider.name : String(associatedProvider))
-                : undefined;
-            const associatedProviderInvoiceNo = getValue('Associated Provider Invoice No. (if applicable)') || 
-                                               getValue('Associated Provider Invoice No') || 
-                                               undefined;
-            
-            // Get Loaned by Organisation Name
-            const loanedByOrganisationName = getValue(ATTRIBUTE_NAMES.LOANED_BY_ORGANISATION_NAME) || 
-                                           associatedProviderString || 
-                                           undefined;
-            
-            // Get Health Professional Type Code and Health Professional Type Other
-            let healthProfessionalTypeCode = undefined;
-            let healthProfessionalTypeOther = undefined;
-            if (servicePlan && servicePlan.values) {
-                const healthProfessionalValue = servicePlan.values.find(v => 
-                    v.attribute.name === 'Health Professional' ||
-                    v.attribute.name === 'Health Professional Service'
-                )?.data;
-                if (healthProfessionalValue) {
+                let lastError = null;
+                for (let attempt = 0; attempt < maxRetries; attempt++) {
                     try {
-                        const healthProfessionalId = Array.isArray(healthProfessionalValue) 
-                            ? healthProfessionalValue[0] 
-                            : (typeof healthProfessionalValue === 'object' ? healthProfessionalValue.id : healthProfessionalValue);
-                        if (healthProfessionalId) {
-                            const healthProfessionalService = await fetchItemValuesCached(healthProfessionalId.toString());
-                            if (healthProfessionalService && healthProfessionalService.values) {
-                                const hpTypeCode = healthProfessionalService.values.find(v => 
-                                    v.attribute.name === 'Health Professional Type Code'
-                                )?.data;
-                                if (hpTypeCode) {
-                                    healthProfessionalTypeCode = typeof hpTypeCode === 'string' ? hpTypeCode : String(hpTypeCode);
+                        // Add delay before each attempt to prevent rate limiting
+                        if (attempt > 0) {
+                            // Exponential backoff with jitter
+                            const jitter = 1 + (Math.random() * 0.3);
+                            const delayMs = Math.min(500 * Math.pow(2, attempt - 1) * jitter, 5000);
+                            await new Promise(resolve => setTimeout(resolve, Math.floor(delayMs)));
+                        } else {
+                            // Small delay even on first attempt to space out requests
+                            await new Promise(resolve => setTimeout(resolve, 100));
+                        }
+                        const timeoutPromise = new Promise((_, reject) => {
+                            setTimeout(() => reject(new Error('Timeout')), timeoutMs);
+                        });
+                        const refItem = await Promise.race([
+                            getItemValuesWithRateLimit(workspaceId, boardId, refItemId.toString()),
+                            timeoutPromise
+                        ]);
+                        if (refItem?.values) {
+                            const nameValue = refItem.values.find(v =>
+                                ['Name', 'Title', 'Funding Source Name', 'Full Name'].includes(v.attribute.name)
+                            );
+                            if (nameValue?.data) {
+                                const name = typeof nameValue.data === 'object' && nameValue.data.name
+                                    ? nameValue.data.name
+                                    : String(nameValue.data);
+                                if (name?.trim()) {
+                                    return name;
                                 }
-                                
-                                const hpTypeOther = healthProfessionalService.values.find(v => 
-                                    v.attribute.name === 'Health Professional Type Other'
-                                )?.data;
-                                if (hpTypeOther) {
-                                    healthProfessionalTypeOther = typeof hpTypeOther === 'string' ? hpTypeOther : String(hpTypeOther);
+                            }
+                            const textValue = refItem.values.find(v =>
+                                v.attribute.type === 'text' && v.data
+                            );
+                            if (textValue?.data) {
+                                const text = String(textValue.data);
+                                if (text?.trim()) {
+                                    return text;
                                 }
                             }
                         }
+                        if (attempt < maxRetries - 1) {
+                            continue;
+                        }
+                        return null;
                     } catch (err) {
-                        // Silently fail
+                        lastError = err;
+                        if (err.message !== 'Timeout' && attempt < maxRetries - 1) {
+                            continue;
+                        }
+                        if (attempt === maxRetries - 1 && err.message !== 'Timeout') {
+                            warn('Items-Service', 'Failed to fetch funding source item after retries', {
+                                refId: refItemId,
+                                error: err.message,
+                                attempts: maxRetries
+                            }, extractContextFromReq(req));
+                        }
+                    }
+                }
+                return null;
+            };
+
+            let fundingSource;
+            const fundingSourceValue = item.data?.values?.find(v =>
+                v.attribute && v.attribute.name === ATTRIBUTE_NAMES.FUNDING_SOURCE
+            );
+            if (fundingSourceValue?.data) {
+                const fundingSourceData = fundingSourceValue.data;
+                if (Array.isArray(fundingSourceData) && fundingSourceData.length > 0) {
+                    // Process funding sources in batches to avoid rate limiting
+                    const fundingSourcePromises = fundingSourceData.map((refId) => {
+                        const refItemId = typeof refId === 'object' ? refId.id || refId : refId;
+                        if (!refItemId) return Promise.resolve(null);
+                        return fetchFundingSourceName(refItemId.toString());
+                    });
+                    
+                    const fundingSourceResults = await rateLimiter.processBatches(
+                        fundingSourcePromises,
+                        { batchSize: 2, delayBetweenBatches: 600, delayBetweenRequests: 150 }
+                    );
+                    
+                    const fundingSourceNames = fundingSourceResults
+                        .filter(result => result.status === 'fulfilled' && result.value)
+                        .map(result => result.value);
+                    fundingSource = fundingSourceNames.length > 0 ? fundingSourceNames.join(', ') : undefined;
+                } else {
+                    const refItemId = typeof fundingSourceData === 'object'
+                        ? fundingSourceData.id || fundingSourceData
+                        : fundingSourceData;
+                    if (refItemId) {
+                        fundingSource = await fetchFundingSourceName(refItemId.toString());
                     }
                 }
             }
             
-            // Get Item First Payment flag
-            const itemFirstPaymentRaw = getValue('Item First Payment');
-            let itemFirstPaymentValue = undefined;
-            if (typeof itemFirstPaymentRaw === 'boolean') {
-                itemFirstPaymentValue = itemFirstPaymentRaw ? 'Y' : 'N';
-            } else if (typeof itemFirstPaymentRaw === 'string') {
-                const normalized = itemFirstPaymentRaw.trim().toLowerCase();
-                itemFirstPaymentValue = (normalized === 'true' || normalized === 'y' || normalized === 'yes') ? 'Y' : 'N';
-            } else if (itemFirstPaymentRaw !== undefined && itemFirstPaymentRaw !== null) {
-                itemFirstPaymentValue = String(itemFirstPaymentRaw).trim().toLowerCase() === 'y' ? 'Y' : 'N';
-            }
-            
-            // Get Delivered By Third Party
-            const deliveredByThirdPartyRaw = getValue(ATTRIBUTE_NAMES.DELIVERED_BY_THIRD_PARTY);
-            let deliveredByThirdParty = undefined;
-            if (deliveredByThirdPartyRaw !== undefined && deliveredByThirdPartyRaw !== null) {
-                if (typeof deliveredByThirdPartyRaw === 'boolean') {
-                    deliveredByThirdParty = deliveredByThirdPartyRaw ? 'true' : 'false';
-                } else if (typeof deliveredByThirdPartyRaw === 'string') {
-                    const normalized = deliveredByThirdPartyRaw.trim().toLowerCase();
-                    deliveredByThirdParty = (normalized === 'true' || normalized === 'y' || normalized === 'yes') ? 'true' : 'false';
-                } else {
-                    deliveredByThirdParty = String(deliveredByThirdPartyRaw).trim().toLowerCase() === 'y' ? 'true' : 'false';
-                }
-            }
+            const notes = getValue(ATTRIBUTE_NAMES.ADDITIONAL_NOTES) || '';
 
             return {
-                id: item.itemId,
-                paymentStatus: paymentStatusFormatted,
-                participant,
+                participant: participantName,
                 service,
+                serviceProvider,
                 scheduledServiceDate,
                 serviceDeliveryDate,
+                transactionStatus,
+                committedAtHmForDelivery,
                 unit,
                 quantity,
                 unitPrice,
@@ -2024,32 +1972,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 govSubsidy,
                 participantContribution,
                 fundingSource,
-                notes,
-                // CSV export fields
-                invoiceNumber,
-                careRecipientIdentifier,
-                serviceIdentifier,
-                deliveredBy: deliveredByString,
-                serviceProvider,
-                participantProfileId: participantProfileId ? participantProfileId.toString() : null,
-                invoiceNumber,
-                itemId,
-                item: itemName,
-                itemOrWraparound,
-                itemDescriptionCode,
-                itemDescription,
-                wraparoundItemId,
-                wraparoundDescription,
-                wraparoundDescriptionCode,
-                prescribedItem: prescribedItemValue,
-                itemPurchasedMethod: itemPurchasedMethodString,
-                associatedProvider: associatedProviderString,
-                associatedProviderInvoiceNo,
-                loanedByOrganisationName,
-                healthProfessionalTypeCode,
-                healthProfessionalTypeOther,
-                itemFirstPayment: itemFirstPaymentValue,
-                deliveredByThirdParty
+                notes
             };
             },
             { batchSize: 2, delayBetweenBatches: 600, delayBetweenRequests: 150 }
@@ -2081,23 +2004,13 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             shouldDisplay: false
         });
 
-        transformedServiceItems.forEach(service => {
-            const code = determineCategoryCodeForService(service);
-            if (!budgetCategoryAggregates[code]) {
-                budgetCategoryAggregates[code] = createBudgetAggregate();
-            }
-            const aggregate = budgetCategoryAggregates[code];
-            aggregate.govSubsidyAmount += Number(service.govSubsidy) || 0;
-            aggregate.participantContributionAmount += Number(service.participantContribution) || 0;
-            aggregate.serviceCount += 1;
-        });
-
-        const summaryTotals = transformedServiceItems.reduce((acc, service) => {
-            const quantity = Number(service.quantity) || 0;
-            const totalAmount = Number(service.totalAmount) || 0;
-            const gov = Number(service.govSubsidy) || 0;
-            const participantContribution = Number(service.participantContribution) || 0;
-            const unit = (service.unit || '').toString().toLowerCase();
+        // Calculate summary from all filtered service items (before pagination) - following invoice generator pattern
+        const summaryTotals = filteredServiceItems.reduce((acc, p) => {
+            const quantity = p.quantityNum || 0;
+            const totalAmount = p.totalAmountNum || 0;
+            const gov = p.govSubsidyNum || 0;
+            const participantContribution = p.participantContributionNum || 0;
+            const unit = (p.unitValue || '').toString().toLowerCase();
             const hours = unit.includes('hour') ? quantity : 0;
             return {
                 totalServices: acc.totalServices + 1,
@@ -2107,6 +2020,49 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 participantContribution: acc.participantContribution + participantContribution
             };
         }, { totalServices: 0, totalHours: 0, totalAmount: 0, govSubsidy: 0, participantContribution: 0 });
+
+        // Calculate budget category aggregates from all filtered service items (before pagination)
+        filteredServiceItems.forEach(p => {
+            // We need to determine category code, but we don't have the transformed service yet
+            // So we'll calculate it from the item data
+            const fundingSourceValue = getValueFromItem(p.item, ATTRIBUTE_NAMES.FUNDING_SOURCE);
+            const serviceValue = getValueFromItem(p.item, ATTRIBUTE_NAMES.SERVICE_PLAN);
+            const notesValue = getValueFromItem(p.item, ATTRIBUTE_NAMES.ADDITIONAL_NOTES) || '';
+            
+            // Determine category code from item data
+            const normalize = (value) => {
+                if (Array.isArray(value)) {
+                    return value.map(v => String(v || '')).join(' ').toLowerCase();
+                }
+                return (value || '').toString().toLowerCase();
+            };
+            const fundingSourceStr = normalize(fundingSourceValue);
+            const notesStr = normalize(notesValue);
+            const haystack = `${fundingSourceStr} ${notesStr}`;
+            
+            let code = 'HSQ';
+            if (haystack.includes('restorative care')) {
+                code = 'RCP';
+            } else if (haystack.includes('end-of-life') || haystack.includes('end of life')) {
+                code = 'EOL';
+            } else if (haystack.includes('assistive') && haystack.includes('short')) {
+                code = 'ATS';
+            } else if (haystack.includes('assistive') && haystack.includes('ongoing')) {
+                code = 'ATO';
+            } else if (haystack.includes('modification')) {
+                code = 'HMB';
+            } else if (haystack.includes('home support') || haystack.includes('hsq')) {
+                code = 'HSQ';
+            }
+            
+            if (!budgetCategoryAggregates[code]) {
+                budgetCategoryAggregates[code] = createBudgetAggregate();
+            }
+            const aggregate = budgetCategoryAggregates[code];
+            aggregate.govSubsidyAmount += p.govSubsidyNum || 0;
+            aggregate.participantContributionAmount += p.participantContributionNum || 0;
+            aggregate.serviceCount += 1;
+        });
 
         const summary = {
             ...summaryTotals,
@@ -2185,7 +2141,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             participantProfileId = transformedServiceItems.find(service => service.participantProfileId)?.participantProfileId || null;
         }
         if (!participantProfileId) {
-            const rawServiceWithProfile = serviceItems.find(rawItem =>
+            const rawServiceWithProfile = allServiceItems.find(rawItem =>
                 rawItem?.data?.values?.some(v => v.attribute.name === ATTRIBUTE_NAMES.PARTICIPANT_PROFILE && v.data)
             );
             if (rawServiceWithProfile) {
@@ -2238,7 +2194,8 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 participantFullName;
             participantAddress = getProfileValue(ATTRIBUTE_NAMES.ADDRESS) || participantAddress;
             participantSuburb = getProfileValue(ATTRIBUTE_NAMES.SUBURB) || participantSuburb;
-            participantState = getProfileValue(ATTRIBUTE_NAMES.STATE) || participantState;
+            participantState = participantProfileValues.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.STATE) || participantState;
+            participantState = formatStatus(participantProfileValues.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.STATE)) || participantState?.data || '';
             participantPostcode = getProfileValue(ATTRIBUTE_NAMES.POSTCODE) ||
                 getProfileValue(ATTRIBUTE_NAMES.POST_CODE) ||
                 participantPostcode;

@@ -1766,7 +1766,31 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                                 participantName = preferredName || fullName || ' ';
                                 participantAddress = getProfileValue(ATTRIBUTE_NAMES.ADDRESS) || ' ';
                                 participantSuburb = getProfileValue(ATTRIBUTE_NAMES.SUBURB) || ' ';
-                                participantState = getProfileValue(ATTRIBUTE_NAMES.STATE) || ' ';
+                                const formatStatus = (valueObj) => {
+                                    if (!valueObj) return undefined;
+                                    const data = valueObj.data;
+                                    const labels = valueObj.attribute?.settings?.labels || [];
+                                    if (Array.isArray(data) && data.length > 0) {
+                                        return data.map(id => {
+                                            const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
+                                            return label ? label.name : (typeof id === 'object' ? id.name : String(id));
+                                        }).filter(Boolean).join(', ');
+                                    }
+                                    if (data) {
+                                        if (typeof data === 'object' && data.id) {
+                                            const label = labels.find(l => l.id === data.id);
+                                            return label ? label.name : (data.name || String(data.id));
+                                        }
+                                        if (typeof data === 'string') {
+                                            const label = labels.find(l => l.id === data);
+                                            return label ? label.name : data;
+                                        }
+                                        return String(data);
+                                    }
+                                    return undefined;
+                                };
+                                participantState = participantProfile.values.find(v => v.attribute.name === 'State');
+                                participantState = formatStatus(participantState) || participantState?.data || '';
                                 participantPostcode = getProfileValue(ATTRIBUTE_NAMES.POSTCODE) || getProfileValue(ATTRIBUTE_NAMES.POST_CODE) || ' ';
                             }
                         }
