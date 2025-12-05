@@ -693,19 +693,31 @@ export default function InvoiceGenerator() {
   };
 
   const getFundingSourceCode = (fundingSource?: string) => {
-    if (fundingSource) {
-      const match = Object.entries(FUNDING_SOURCE_CODE_MAP).find(([key]) =>
-        fundingSource.toLowerCase().includes(key.toLowerCase())
-      );
-      if (match) {
-        return match[1];
-      } else {
-        return '';
+    if (!fundingSource) {
+      return '';
+    }
+    
+    const fundingSourceLower = fundingSource.toLowerCase();
+    
+    // Check for exact matches first (case-insensitive)
+    for (const [key, code] of Object.entries(FUNDING_SOURCE_CODE_MAP)) {
+      if (fundingSourceLower.includes(key.toLowerCase())) {
+        return code;
       }
     }
-
-
-    return fundingSource ? fundingSource.substring(0, 4).toUpperCase() : '';
+    
+    // Special handling for Primary Supplements and HCP
+    if (fundingSourceLower.includes('primary supplement')) {
+      return 'PS';
+    }
+    if (fundingSourceLower.includes('unspent home care package') || 
+        fundingSourceLower.includes('hcp fund') ||
+        fundingSourceLower.includes('home care package')) {
+      return 'HCP';
+    }
+    
+    // Fallback: return first 4 characters uppercase if no match found
+    return fundingSource.substring(0, 4).toUpperCase();
   };
 
 const getTransactionStatusSearchValue = (filterValue: string) => {
@@ -921,7 +933,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
       params.append('page', '1');
       params.append('limit', '1000'); // Reasonable batch size
 
-      const firstResponse = await axios.get(apiUrl, {
+      const response = await axios.get(apiUrl, {
         params: Object.fromEntries(params),
         headers: {
           'Content-Type': 'application/json',
@@ -929,43 +941,10 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
         }
       });
 
-      const total = firstResponse.data.total || 0;
-      let allItems: ServiceRecord[] = firstResponse.data.items || [];
+      const allItems: ServiceRecord[] = response.data?.items || [];
 
       if (allItems.length === 0) {
         showErrorToast('No records to export.');
-        setExportingCSV(false);
-        return;
-      }
-
-      // If there are more items, fetch them in batches (max 5000 for CSV export)
-      const MAX_EXPORT_ITEMS = 5000;
-      if (total > allItems.length && total <= MAX_EXPORT_ITEMS) {
-        const remainingPages = Math.ceil((total - allItems.length) / 1000);
-        const batchPromises = [];
-        
-        for (let page = 2; page <= remainingPages + 1 && allItems.length < MAX_EXPORT_ITEMS; page++) {
-          const batchParams = new URLSearchParams(params);
-          batchParams.set('page', page.toString());
-          batchPromises.push(
-            axios.get(apiUrl, {
-              params: Object.fromEntries(batchParams),
-              headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-              }
-            })
-          );
-        }
-
-        const batchResponses = await Promise.all(batchPromises);
-        batchResponses.forEach(response => {
-          if (response.data?.items) {
-            allItems = [...allItems, ...response.data.items];
-          }
-        });
-      } else if (total > MAX_EXPORT_ITEMS) {
-        showErrorToast(`Too many records to export (${total}). Please use filters to reduce the number of records. Maximum export limit is ${MAX_EXPORT_ITEMS} records.`);
         setExportingCSV(false);
         return;
       }
@@ -1005,6 +984,12 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
       // Add CSV headers
       const csvRows: string[] = [csvHeaders.join(',')];
 
+      // Get or initialize CSV export count from localStorage
+      const STORAGE_KEY = 'csv_export_count';
+      const currentExportCount = parseInt(localStorage.getItem(STORAGE_KEY) || '0', 10);
+      const newExportCount = currentExportCount + 1;
+      localStorage.setItem(STORAGE_KEY, newExportCount.toString());
+
       allItems.forEach((item) => {
         const invoiceNumber = item.invoiceNumber || '';
         const careRecipientIdentifier = item.careRecipientIdentifier || '';
@@ -1013,8 +998,14 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
           serviceIdentifier = serviceIdentifier.split('/')[0].trim();
         }
 
-        // Use backend fields directly as they are already formatted
-        const deliveredByThirdParty = item.deliveredByThirdParty === 'True' ? 'True' : (item.deliveredByThirdParty === 'False' ? 'False' : '');
+        // Delivered By Third Party: Check if it's 'True' or 'False', default to empty if not set
+        let deliveredByThirdParty = '';
+        if (item.deliveredByThirdParty === 'True') {
+          deliveredByThirdParty = 'True';
+        } else if (item.deliveredByThirdParty === 'False') {
+          deliveredByThirdParty = 'False';
+        }
+        
         const itemOrWraparound = item.itemOrWraparound || '';
         
         // Item Description Code and Item Description only for 'Item' type
@@ -1029,7 +1020,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
         
         // Purchased Method Type should be empty if itemPurchasedMethod is undefined/null/empty
         const purchasedMethodType = item.itemPurchasedMethod || '';
-        const loanedByOrganisationName = purchasedMethodType === 'LOANED' ? (item.loanedByOrganisationName || '') : '';
+        const loanedByOrganisationName = purchasedMethodType === 'LOANED' ? (item.loanedByOrganisationName || item.associatedProvider || '') : '';
         const loanedByInvoiceNumber = purchasedMethodType === 'LOANED' ? (item.associatedProviderInvoiceNo || '') : '';
         
         // Health Professional Type Code and Other - include for all items (backend sets these when available)
@@ -1073,16 +1064,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
-      
-      // Generate CSV filename following the format: External Reference Identifier
-      // Format: BulkInvoice_YYYYMMDD_HHMMSS_<participant_identifier>.csv
-      const now = new Date();
-      const participantSegment = participantFilter && participantFilter !== 'all'
-        ? participantFilter.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '')
-        : 'AllParticipants';
-      const invoiceDateSegment = now.toISOString().split('T')[0];
-      const sanitizedParticipantSegment = participantSegment || 'AllParticipants';
-      const fileName = `Extinvoice01-INVOICE-${sanitizedParticipantSegment}-${invoiceDateSegment}.csv`;
+      const fileName = `Ext-Invoice-Item-${newExportCount}.csv`;
       
       link.href = url;
       link.download = fileName;
@@ -1430,8 +1412,8 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
                 </p>
               </div>
               <div className="flex flex-col items-end gap-3">
-                <div className="flex flex-wrap justify-end gap-2">
-                  <div className="flex flex-col items-end gap-2">
+                <div className="flex flex-wrap justify-end gap-2 pl-2">
+                  <div className="flex flex-col items-start gap-2">
                     <div className="flex gap-2">
                       <TooltipProvider>
                         <Tooltip>
@@ -1480,7 +1462,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
                         </Tooltip>
                       </TooltipProvider>
                     </div>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <div className="flex items-start gap-2 text-sm text-muted-foreground">
                       <Clock className="h-4 w-4" />
                       {lastSyncedAt ? (
                         <span>Last refreshed {formatDistanceToNow(lastSyncedAt, { addSuffix: true })}</span>

@@ -942,15 +942,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     }
                 }
 
-                // Get Delivered By for deliveredByThirdParty calculation
-                const deliveredBy = getValue(ATTRIBUTE_NAMES.DELIVERED_BY);
-                let deliveredByThirdParty = undefined;
-                if (deliveredBy) {
-                    const deliveredByName = typeof deliveredBy === 'object' ? deliveredBy.name : String(deliveredBy);
-                    // true if "Associated Providers", false if "Company Workforce"
-                    deliveredByThirdParty = deliveredByName && deliveredByName.includes('Associated') ? 'True' : 'False';
-                }
-
                 const prescribedItem = getValue('Prescribed Item');
                 const prescribedItemValue =
                     prescribedItem === true || prescribedItem === 'true' || prescribedItem === 'Y' ? 'Y' : 'N';
@@ -1022,6 +1013,10 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     }
                     return undefined;
                 };
+
+                // Get Delivered By for deliveredByThirdParty calculation
+                const deliveredBy = formatStatus(item.data?.values?.find(v => v.attribute && v.attribute.name === ATTRIBUTE_NAMES.DELIVERED_BY));
+                const deliveredByThirdParty = deliveredBy && deliveredBy.includes('Associated') ? 'True' : 'False';
 
                 const paymentStatusValue = item.data?.values?.find(v =>
                     v.attribute && (
@@ -1176,6 +1171,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     prescribedItem: prescribedItemValue,
                     itemPurchasedMethod: itemPurchasedMethodString,
                     loanedByOrganisationName: loanedByOrganisationName,
+                    associatedProvider: associatedProviderString,
                     associatedProviderInvoiceNo: associatedProviderInvoiceNo,
                     healthProfessionalTypeCode: healthProfessionalTypeCode,
                     healthProfessionalTypeOther: healthProfessionalTypeOther,
