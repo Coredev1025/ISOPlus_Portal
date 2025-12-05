@@ -208,7 +208,7 @@ export default function MonthlyStatement() {
   const pathname = usePathname();
   const id = pathname.split('/')[2];
   const boardId = pathname.split('/')[4];
-  
+
   const [loading, setLoading] = useState(false);
   const [loadingParticipants, setLoadingParticipants] = useState(false);
   const [loadingBudgetItems, setLoadingBudgetItems] = useState(false);
@@ -263,7 +263,7 @@ export default function MonthlyStatement() {
   useEffect(() => {
     const fetchParticipants = async () => {
       if (!id || !boardId) return;
-      
+
       setLoadingParticipants(true);
       try {
         const response = await axios.get(
@@ -477,7 +477,7 @@ export default function MonthlyStatement() {
   ): BudgetCategory[] => {
     const quarterMonths = getQuarterMonths(monthNumber);
     const defaultFundingEndDate = new Date(parseInt(year), 11, 31).toISOString(); // End of year
-    
+
     // If budget categories are provided from API, use them directly (services are already categorized in backend)
     if (budgetCategoriesFromAPI && budgetCategoriesFromAPI.length > 0) {
       // Create a map for quick lookup
@@ -856,7 +856,7 @@ export default function MonthlyStatement() {
 
     try {
       setLoading(true);
-      
+
       // Fetch all items for PDF generation using pagination
       const dateRange = getSelectedMonthDateRange();
       if (!dateRange) {
@@ -877,11 +877,11 @@ export default function MonthlyStatement() {
 
       let allBudgetItems: BudgetRecord[] = firstBudgetResponse?.budgetItems?.items || [];
       const budgetTotal = firstBudgetResponse?.budgetItems?.total || 0;
-      
+
       if (budgetTotal > allBudgetItems.length) {
         const remainingBudgetPages = Math.ceil((budgetTotal - allBudgetItems.length) / 1000);
         const budgetBatchPromises = [];
-        
+
         for (let page = 2; page <= remainingBudgetPages + 1; page++) {
           budgetBatchPromises.push(
             fetchMonthlyStatementItems(id, boardId, {
@@ -917,11 +917,11 @@ export default function MonthlyStatement() {
 
       let allServiceItems: ServiceRecord[] = firstServiceResponse?.serviceItems?.items || [];
       const serviceTotal = firstServiceResponse?.serviceItems?.total || 0;
-      
+
       if (serviceTotal > allServiceItems.length) {
         const remainingServicePages = Math.ceil((serviceTotal - allServiceItems.length) / 1000);
         const serviceBatchPromises = [];
-        
+
         for (let page = 2; page <= remainingServicePages + 1; page++) {
           serviceBatchPromises.push(
             fetchMonthlyStatementItems(id, boardId, {
@@ -951,7 +951,7 @@ export default function MonthlyStatement() {
         serviceItems: allServiceItems,
         services: allServiceItems, // Also update services for backward compatibility
       };
-      
+
       // Call backend PDF generation endpoint
       const response = await axios.post(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/${id}/${boardId}/monthly-statement`,
@@ -997,7 +997,7 @@ export default function MonthlyStatement() {
 
     try {
       setExportingSection('budget-csv');
-      
+
       // Fetch first page to get total count
       const firstResponse = await fetchMonthlyStatementItems(id, boardId, {
         participant: selectedParticipant,
@@ -1011,7 +1011,7 @@ export default function MonthlyStatement() {
 
       const total = firstResponse?.budgetItems?.total || 0;
       let allItems: BudgetRecord[] = firstResponse?.budgetItems?.items || [];
-      
+
       if (allItems.length === 0) {
         showErrorToast('No budget items to export.');
         return;
@@ -1022,7 +1022,7 @@ export default function MonthlyStatement() {
       if (total > allItems.length && total <= MAX_EXPORT_ITEMS) {
         const remainingPages = Math.ceil((total - allItems.length) / 1000);
         const batchPromises = [];
-        
+
         for (let page = 2; page <= remainingPages + 1 && allItems.length < MAX_EXPORT_ITEMS; page++) {
           batchPromises.push(
             fetchMonthlyStatementItems(id, boardId, {
@@ -1115,7 +1115,7 @@ export default function MonthlyStatement() {
 
     try {
       setExportingSection('service-csv');
-      
+
       // Fetch first page to get total count
       const firstResponse = await fetchMonthlyStatementItems(id, boardId, {
         participant: selectedParticipant,
@@ -1129,7 +1129,7 @@ export default function MonthlyStatement() {
 
       const total = firstResponse?.serviceItems?.total || 0;
       let allItems: ServiceRecord[] = firstResponse?.serviceItems?.items || [];
-      
+
       if (allItems.length === 0) {
         showErrorToast('No service records to export.');
         return;
@@ -1140,7 +1140,7 @@ export default function MonthlyStatement() {
       if (total > allItems.length && total <= MAX_EXPORT_ITEMS) {
         const remainingPages = Math.ceil((total - allItems.length) / 1000);
         const batchPromises = [];
-        
+
         for (let page = 2; page <= remainingPages + 1 && allItems.length < MAX_EXPORT_ITEMS; page++) {
           batchPromises.push(
             fetchMonthlyStatementItems(id, boardId, {
@@ -1194,7 +1194,7 @@ export default function MonthlyStatement() {
         formatDateForCsv(service.scheduledServiceDate),
         formatDateForCsv(service.serviceDeliveryDate),
         service.transactionStatus || '',
-        Number(service.committedAtHmForDelivery ?? 0).toFixed(2),
+        service.committedAtHmForDelivery && service.committedAtHmForDelivery > 0 ? 'True' : 'False',
         service.unit || '',
         service.quantity ?? 0,
         Number(service.unitPrice ?? 0).toFixed(2),
@@ -1903,12 +1903,14 @@ export default function MonthlyStatement() {
                             {service.serviceDeliveryDate ? formatDate(service.serviceDeliveryDate) : 'N/A'}
                           </TableCell>
                           <TableCell>
-                            <Badge variant={service.transactionStatus === 'Delivered' ? 'default' : 'secondary'} className="text-xs">
-                              {service.transactionStatus || 'Delivered'}
-                            </Badge>
+                            {service.transactionStatus !== undefined && service.transactionStatus.trim() !== '' &&
+                              <Badge variant={service.transactionStatus?.includes('Cancelled') ? 'default' : 'secondary'} className="text-xs">
+                                {service.transactionStatus.split(' - ')[0]}
+                              </Badge>
+                            }
                           </TableCell>
                           <TableCell className="text-right">
-                            {service.committedAtHmForDelivery !== undefined ? formatCurrency(service.committedAtHmForDelivery) : 'N/A'}
+                            {service.committedAtHmForDelivery && service.committedAtHmForDelivery > 0 ? 'True' : 'False'}
                           </TableCell>
                           <TableCell className="text-xs">{service.unit}</TableCell>
                           <TableCell className="text-right">{service.quantity}</TableCell>

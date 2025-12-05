@@ -2004,7 +2004,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
                                 )}
                               </div>
                               <p className="text-xs text-muted-foreground">
-                                {record.scheduledStart ? formatDate(record.scheduledStart) : 'N/A'} • {record.quantity} {record.unit}
+                                {record.scheduledServiceDate ? formatDate(record.scheduledServiceDate) : 'N/A'} • {record.quantity} {record.unit}
                               </p>
                             </div>
                             <div className="text-right">
