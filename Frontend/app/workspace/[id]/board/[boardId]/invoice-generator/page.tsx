@@ -1784,7 +1784,7 @@ export default function InvoiceGenerator() {
                       currentItems.map((record) => (
                         <TableRow
                           key={record.id}
-                          className={record?.invoiceNumber && (record?.invoiceNumber !== '' || record?.invoiceNumber !== undefined) ? 'bg-green-50 text-gray-600' : 'hover:bg-blue-50 transition-colors'}
+                          className={record?.invoiceNumber && record?.invoiceNumber !== '' && record?.invoiceNumber !== undefined ? 'bg-green-50 text-gray-600' : 'hover:bg-blue-50 transition-colors'}
                         >
                           {tableColumns.map((column) => (
                             <TableCell key={`${record.id}-${column.key}`} className={column.className}>
@@ -1975,7 +1975,7 @@ export default function InvoiceGenerator() {
                       {eligibleRecords.map((record) => (
                         <div
                           key={record.id}
-                          className={`flex items-start gap-3 py-2 border-b last:border-0 hover:bg-muted/50 rounded px-2 cursor-pointer ${record.status === 'invoiced' ? 'bg-green-50/50 border-l-4 border-l-green-500' : ''
+                          className={`flex items-start gap-3 py-2 border-b last:border-0 hover:bg-muted/50 rounded px-2 cursor-pointer ${record?.invoiceNumber && record?.invoiceNumber !== '' && record?.invoiceNumber !== undefined ? 'bg-green-50/50 border-l-4 border-l-green-500' : ''
                             }`}
                           onClick={() => handleToggleItem(record.id)}
                         >
@@ -1989,7 +1989,7 @@ export default function InvoiceGenerator() {
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <p className="font-medium">{record?.service || record?.notes || 'Service'}</p>
-                                {record.status === 'invoiced' && (
+                                {record?.invoiceNumber && record?.invoiceNumber !== '' && record?.invoiceNumber !== undefined  && (
                                   <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300 text-xs">
                                     <CheckCircle className="h-3 w-3 mr-1" />
                                     Invoiced
