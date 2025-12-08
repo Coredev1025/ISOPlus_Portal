@@ -903,7 +903,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     if (healthProfessionalValues?.healthProfessionalTypeOther) {
                         healthProfessionalTypeOther = healthProfessionalValues.healthProfessionalTypeOther.includes(' - Other') 
                             ? healthProfessionalValues.healthProfessionalTypeOther.split(' - Other')[0] 
-                            : healthProfessionalValues.healthProfessionalTypeOther;
+                            : '';
                     } else {
                         healthProfessionalTypeOther = '';
                     }
