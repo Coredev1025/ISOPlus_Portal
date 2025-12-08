@@ -416,36 +416,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             });
         }
 
-        // Fetch all invoice numbers from database for items in this workspace/board
-        const itemIds = allItems.map(item => item.itemId);
-        let invoiceNumbersMap = new Map();
-        try {
-            const invoiceNumbers = await InvoiceNumber.find({
-                workspaceId: workspaceId,
-                boardId: boardId,
-                itemId: { $in: itemIds }
-            }).lean();
-            
-            // Create a map: itemId -> { invoiceNumber, type }
-            // Prefer PDF over Xero if both exist
-            invoiceNumbers.forEach(inv => {
-                const existing = invoiceNumbersMap.get(inv.itemId);
-                if (!existing || (existing.type === 'Xero' && inv.type === 'PDF')) {
-                    invoiceNumbersMap.set(inv.itemId, {
-                        invoiceNumber: inv.invoiceNumber,
-                        type: inv.type
-                    });
-                }
-            });
-        } catch (invErr) {
-            warn('Items-Service', 'Failed to fetch invoice numbers from database', {
-                message: invErr.message,
-                workspaceId,
-                boardId
-            }, extractContextFromReq(req));
-            // Continue without invoice numbers - fallback to old method
-        }
-
         // Helper function to extract value from item data
         const getValueFromItem = (item, attributeName) => {
             if (!item.data || !item.data.values) return null;
@@ -473,52 +443,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 return isNaN(date.getTime()) ? null : date;
             }
             return null;
-        };
-
-        // Helper function to check if item is invoiced (using database invoice numbers)
-        const isInvoiced = (item) => {
-            // First check database for invoice numbers
-            const invoiceData = invoiceNumbersMap.get(item.itemId);
-            if (invoiceData && invoiceData.invoiceNumber) {
-                return true;
-            }
-            
-            // Fallback to old method for backward compatibility
-            const invoiceIssued = getValueFromItem(item, 'Invoice Issued and Sent');
-            if (invoiceIssued === true || invoiceIssued === 'true' || invoiceIssued === 'Y') {
-                return true;
-            }
-            
-            if (!item.data || !item.data.values) return false;
-            
-            const paymentStatusValue = item.data.values.find(v => 
-                v.attribute && (v.attribute.name === 'Payment Status' || v.attribute.name === ATTRIBUTE_NAMES.PAYMENT_STATUS)
-            );
-            if (paymentStatusValue) {
-                const paymentStatusData = paymentStatusValue.data;
-                const labels = paymentStatusValue.attribute?.settings?.labels || [];
-                
-                if (Array.isArray(paymentStatusData) && paymentStatusData.length > 0) {
-                    return paymentStatusData.some(id => {
-                        const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
-                        const labelName = label ? label.name : (typeof id === 'object' ? id.name : String(id));
-                        return labelName && labelName.includes('Paid');
-                    });
-                } else if (paymentStatusData) {
-                    let labelName = '';
-                    if (typeof paymentStatusData === 'object' && paymentStatusData.id) {
-                        const label = labels.find(l => l.id === paymentStatusData.id);
-                        labelName = label ? label.name : (paymentStatusData.name || String(paymentStatusData.id));
-                    } else if (typeof paymentStatusData === 'string') {
-                        const label = labels.find(l => l.id === paymentStatusData);
-                        labelName = label ? label.name : paymentStatusData;
-                    } else {
-                        labelName = String(paymentStatusData);
-                    }
-                    return labelName.includes('Paid');
-                }
-            }
-            return false;
         };
 
         // Helper function to get label names from status value
@@ -574,7 +498,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 scheduledStartDate: parseDate(scheduledStart),
                 actualEndDate: parseDate(actualEnd),
                 participantName: String(participantName),
-                invoicedFlag: isInvoiced(item),
                 totalAmountNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.TOTAL_AMOUNT)),
                 govSubsidyNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.GOV_SUBSIDY)),
                 participantContributionNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)),
@@ -812,6 +735,17 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     if (!item.data || !item.data.values) return null;
                     return item.data.values.find(v => v.attribute && v.attribute.name === attributeName)?.data;
                 };
+
+                let invoiceNumber = undefined;
+                const invoiceNumberItem = await InvoiceNumber.findOne({
+                    workspaceId: workspaceId,
+                    boardId: boardId,
+                    itemId: item.itemId
+                }).lean();
+                
+                if (invoiceNumberItem) {
+                    invoiceNumber = invoiceNumberItem.invoiceNumber;
+                }
 
                 // Helper to format select/multi-select labels
                 const formatStatus = (valueObj) => {
@@ -1156,6 +1090,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     transactionStatus: transactionStatusFormatted,
                     notes: notes,
                     // CSV export fields (Included in CSV but not in table)
+                    invoiceNumber,
                     careRecipientIdentifier: careRecipientIdentifier,
                     serviceIdentifier: serviceIdentifier,
                     deliveredByThirdParty: deliveredByThirdParty,

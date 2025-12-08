@@ -219,7 +219,7 @@ export default function InvoiceGenerator() {
       // A completed job with finishedOn timestamp indicates the sync just finished
       const isSyncCompleted = jobState === 'completed' && finishedOn;
       // Valid sync statuses (not failed or stopped)
-      const isValidSyncStatus = syncStatusValue && 
+      const isValidSyncStatus = syncStatusValue &&
         !['failed', 'sync_stopped', 'sync_cancelled', 'board_invalid'].includes(syncStatusValue);
 
       if (isSyncCompleted && isValidSyncStatus) {
@@ -320,11 +320,11 @@ export default function InvoiceGenerator() {
 
         // Use current filters from main page - fetch ALL records (including invoiced)
         params.append('status', 'all'); // Get all records, not just pending
-        
+
         if (participantFilter && participantFilter !== 'all') {
           params.append('participant', participantFilter);
         }
-        
+
         if (scheduledServiceDateRange?.from) {
           const from = new Date(scheduledServiceDateRange.from);
           from.setHours(0, 0, 0, 0);
@@ -378,11 +378,11 @@ export default function InvoiceGenerator() {
         if (response.data?.items) {
           const items = response.data.items;
           const total = response.data.total || 0;
-          
+
           setEligibleRecords(items);
           // Auto-select all eligible records by default (including invoiced ones)
           setSelectedItems(new Set(items.map((r: ServiceRecord) => r.id)));
-          
+
           // Only show toasts if not generating invoice (to avoid duplicate/empty toasts)
           if (!isGeneratingInvoiceRef.current) {
             if (items.length > 0) {
@@ -697,33 +697,33 @@ export default function InvoiceGenerator() {
     if (!fundingSource) {
       return '';
     }
-    
+
     const fundingSourceLower = fundingSource.toLowerCase();
-    
+
     // Check for exact matches first (case-insensitive)
     for (const [key, code] of Object.entries(FUNDING_SOURCE_CODE_MAP)) {
       if (fundingSourceLower.includes(key.toLowerCase())) {
         return code;
       }
     }
-    
+
     // Special handling for Primary Supplements and HCP
     if (fundingSourceLower.includes('primary supplement')) {
       return 'PS';
     }
-    if (fundingSourceLower.includes('unspent home care package') || 
-        fundingSourceLower.includes('hcp fund') ||
-        fundingSourceLower.includes('home care package')) {
+    if (fundingSourceLower.includes('unspent home care package') ||
+      fundingSourceLower.includes('hcp fund') ||
+      fundingSourceLower.includes('home care package')) {
       return 'HCP';
     }
-    
+
     // Fallback: return first 4 characters uppercase if no match found
     return fundingSource.substring(0, 4).toUpperCase();
   };
 
-const getTransactionStatusSearchValue = (filterValue: string) => {
-  return TRANSACTION_STATUS_FILTERS.find(option => option.value === filterValue)?.isoValue || '';
-};
+  const getTransactionStatusSearchValue = (filterValue: string) => {
+    return TRANSACTION_STATUS_FILTERS.find(option => option.value === filterValue)?.isoValue || '';
+  };
 
   const getPurchasedMethodType = (value?: string) => {
     if (!value) return '';
@@ -733,22 +733,22 @@ const getTransactionStatusSearchValue = (filterValue: string) => {
     return '';
   };
 
-const getItemFirstPaymentDisplay = (value?: string | boolean) => {
-  if (typeof value === 'boolean') {
-    return value ? 'Y' : 'N';
-  }
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (['y', 'yes', 'true'].includes(normalized)) {
-      return 'Y';
+  const getItemFirstPaymentDisplay = (value?: string | boolean) => {
+    if (typeof value === 'boolean') {
+      return value ? 'Y' : 'N';
     }
-    if (['n', 'no', 'false'].includes(normalized)) {
-      return 'N';
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['y', 'yes', 'true'].includes(normalized)) {
+        return 'Y';
+      }
+      if (['n', 'no', 'false'].includes(normalized)) {
+        return 'N';
+      }
+      return value.toUpperCase();
     }
-    return value.toUpperCase();
-  }
-  return 'N';
-};
+    return 'N';
+  };
 
   const formatDateForCsv = (dateString: string | null | undefined) => {
     if (!dateString) {
@@ -1006,29 +1006,29 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
         } else if (item.deliveredByThirdParty === 'False') {
           deliveredByThirdParty = 'False';
         }
-        
+
         const itemOrWraparound = item.itemOrWraparound || '';
-        
+
         // Item Description Code and Item Description only for 'Item' type
         const itemDescriptionCode = (itemOrWraparound === 'Item' && item.itemDescriptionCode) ? item.itemDescriptionCode : '';
         const itemDescription = (itemOrWraparound === 'Item' && item.itemDescription) ? item.itemDescription : '';
-        
+
         // Wraparound Description Code and Wraparound Description only for 'Wraparound' type
         const wraparoundDescriptionCode = (itemOrWraparound === 'Wraparound' && item.wraparoundDescriptionCode) ? item.wraparoundDescriptionCode : '';
         const wraparoundDescription = (itemOrWraparound === 'Wraparound' && item.wraparoundDescription) ? item.wraparoundDescription : '';
-        
+
         const prescribedItem = item.prescribedItem || 'N';
-        
+
         // Purchased Method Type should be empty if itemPurchasedMethod is undefined/null/empty
         const purchasedMethodType = item.itemPurchasedMethod || '';
         // Use loanedByOrganisationName and loanedByInvoiceNumber from backend (already set based on LOANED status)
         const loanedByOrganisationName = purchasedMethodType === 'LOANED' ? (item.loanedByOrganisationName || '') : '';
         const loanedByInvoiceNumber = purchasedMethodType === 'LOANED' ? (item.loanedByInvoiceNumber || '') : '';
-        
+
         // Health Professional Type Code and Other - include for all items (backend sets these when available)
         const healthProfessionalTypeCode = item.healthProfessionalTypeCode || '';
         const healthProfessionalTypeOther = item.healthProfessionalTypeOther || '';
-        
+
         const serviceDeliveryDateCsv = formatDateForCsv(item.serviceDeliveryDate);
         // Get funding source code - convert from name to code
         const fundingSourceCode = getFundingSourceCode(item.fundingSource);
@@ -1067,13 +1067,13 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
       const fileName = `Ext-Invoice-Item-${newExportCount.toString().padStart(3, '0')}.csv`;
-      
+
       link.href = url;
       link.download = fileName;
       link.style.display = 'none';
       document.body.appendChild(link);
       link.click();
-      
+
       // Clean up
       setTimeout(() => {
         document.body.removeChild(link);
@@ -1110,7 +1110,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
         showSuccessToast('Manual sync queued', {
           description: `${description} The sync job has been added to the queue and will start processing shortly. Refreshing data...`
         });
-        
+
         // Automatically refresh data after a short delay to allow sync job to be queued
         // Use silent mode to avoid duplicate toast (we already showed "Manual sync queued" toast)
         setTimeout(() => {
@@ -1216,7 +1216,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
 
       if (resp.status === 200 && resp.data) {
         const { invoiceNumber, fileUrl, itemCount } = resp.data;
-        
+
         // Update item statuses in database
         try {
           const updateUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/update-status`;
@@ -1248,7 +1248,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
             link.style.display = 'none';
             document.body.appendChild(link);
             link.click();
-            
+
             // Clean up
             setTimeout(() => {
               document.body.removeChild(link);
@@ -1326,7 +1326,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
       const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/${id}/${boardId}/invoiceparticipanttax`;
 
       const payload = {
-        items: selectedRecords, 
+        items: selectedRecords,
         participantName: participantName,
         invoiceDate: new Date(invoiceDate).toISOString(),
         dueDate: new Date(dueDate).toISOString()
@@ -1338,7 +1338,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
 
       if (resp.status === 200 && resp.data) {
         const { invoiceNumber, invoiceUrl, itemCount } = resp.data;
-        
+
         // Update item statuses in database (mark as invoiced)
         try {
           const updateUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/update-status`;
@@ -1454,8 +1454,8 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
                                 <>
                                   Sync Data
                                 </>
-                              )}  
-                              <HelpCircle className="h-4 w-4" aria-label="Learn more about Sync Data" onClick={(e) => { e.stopPropagation(); setShowHelpDialog(true); }}/>
+                              )}
+                              <HelpCircle className="h-4 w-4" aria-label="Learn more about Sync Data" onClick={(e) => { e.stopPropagation(); setShowHelpDialog(true); }} />
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent>
@@ -1715,10 +1715,10 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
                       {tableColumns.map((column) => {
                         const isSortable = column.key === 'scheduledServiceDate' || column.key === 'serviceDeliveryDate';
                         const isActiveSort = sortBy === column.key;
-                        
+
                         return (
-                          <TableHead 
-                            key={column.key} 
+                          <TableHead
+                            key={column.key}
                             className={`${column.className ?? ''} whitespace-nowrap ${isSortable ? 'cursor-pointer hover:bg-muted/50' : ''} ${isActiveSort ? 'text-primary font-semibold' : ''}`}
                             onClick={isSortable ? () => {
                               if (isActiveSort) {
@@ -1784,7 +1784,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
                       currentItems.map((record) => (
                         <TableRow
                           key={record.id}
-                          className={record.status === 'invoiced' ? 'bg-green-50 text-gray-600' : 'hover:bg-blue-50 transition-colors'}
+                          className={record?.invoiceNumber && (record?.invoiceNumber !== '' || record?.invoiceNumber !== undefined) ? 'bg-green-50 text-gray-600' : 'hover:bg-blue-50 transition-colors'}
                         >
                           {tableColumns.map((column) => (
                             <TableCell key={`${record.id}-${column.key}`} className={column.className}>
@@ -1973,11 +1973,10 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
                   <div className="border rounded-lg p-4 max-h-60 overflow-y-auto bg-muted/30">
                     <div className="space-y-2">
                       {eligibleRecords.map((record) => (
-                        <div 
+                        <div
                           key={record.id}
-                          className={`flex items-start gap-3 py-2 border-b last:border-0 hover:bg-muted/50 rounded px-2 cursor-pointer ${
-                            record.status === 'invoiced' ? 'bg-green-50/50 border-l-4 border-l-green-500' : ''
-                          }`}
+                          className={`flex items-start gap-3 py-2 border-b last:border-0 hover:bg-muted/50 rounded px-2 cursor-pointer ${record.status === 'invoiced' ? 'bg-green-50/50 border-l-4 border-l-green-500' : ''
+                            }`}
                           onClick={() => handleToggleItem(record.id)}
                         >
                           <Checkbox
