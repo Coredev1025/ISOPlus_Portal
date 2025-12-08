@@ -53,10 +53,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 const TRANSACTION_STATUS_FILTERS = [
   { value: "all", label: "All Transaction Status", isoValue: "" },
-  { value: "delivered", label: "Delivered", description: "To be claimed and invoiced.", isoValue: "Delivered - To be claimed and invoiced." },
-  { value: "cancelled", label: "Cancelled", description: "To be claimed and invoiced if applicable.", isoValue: "Cancelled - To be claimed and invoiced if applicable." },
-  { value: "adjustment-refund", label: "Adjustment (Refund)", description: "To be claimed and invoiced.", isoValue: "Adjustment (Refund) - To be claimed and invoiced." },
-  { value: "adjustment-charge", label: "Adjustment (Charge)", description: "To be claimed and invoiced.", isoValue: "Adjustment (Charge) - To be claimed and invoiced." }
+  { value: "delivered", label: "Delivered - To be claimed and invoiced.", description: "To be claimed and invoiced.", isoValue: "Delivered - To be claimed and invoiced." },
+  { value: "cancelled", label: "Cancelled - To be claimed and invoiced if applicable.", description: "To be claimed and invoiced if applicable.", isoValue: "Cancelled - To be claimed and invoiced if applicable." },
+  { value: "adjustment-refund", label: "Adjustment (Refund) - To be claimed and invoiced.", description: "To be claimed and invoiced.", isoValue: "Adjustment (Refund) - To be claimed and invoiced." },
+  { value: "adjustment-charge", label: "Adjustment (Charge) - To be claimed and invoiced.", description: "To be claimed and invoiced.", isoValue: "Adjustment (Charge) - To be claimed and invoiced." }
 ];
 
 const PAYMENT_STATUS_FILTERS = [
@@ -115,6 +115,7 @@ interface ServiceRecord {
   associatedProvider?: string;
   associatedProviderInvoiceNo?: string;
   loanedByOrganisationName?: string;
+  loanedByInvoiceNumber?: string;
   healthProfessionalTypeCode?: string;
   healthProfessionalTypeOther?: string;
   deliveredByThirdParty?: string;
@@ -218,7 +219,7 @@ export default function InvoiceGenerator() {
       // A completed job with finishedOn timestamp indicates the sync just finished
       const isSyncCompleted = jobState === 'completed' && finishedOn;
       // Valid sync statuses (not failed or stopped)
-      const isValidSyncStatus = syncStatusValue && 
+      const isValidSyncStatus = syncStatusValue &&
         !['failed', 'sync_stopped', 'sync_cancelled', 'board_invalid'].includes(syncStatusValue);
 
       if (isSyncCompleted && isValidSyncStatus) {
@@ -319,11 +320,11 @@ export default function InvoiceGenerator() {
 
         // Use current filters from main page - fetch ALL records (including invoiced)
         params.append('status', 'all'); // Get all records, not just pending
-        
+
         if (participantFilter && participantFilter !== 'all') {
           params.append('participant', participantFilter);
         }
-        
+
         if (scheduledServiceDateRange?.from) {
           const from = new Date(scheduledServiceDateRange.from);
           from.setHours(0, 0, 0, 0);
@@ -377,11 +378,11 @@ export default function InvoiceGenerator() {
         if (response.data?.items) {
           const items = response.data.items;
           const total = response.data.total || 0;
-          
+
           setEligibleRecords(items);
           // Auto-select all eligible records by default (including invoiced ones)
           setSelectedItems(new Set(items.map((r: ServiceRecord) => r.id)));
-          
+
           // Only show toasts if not generating invoice (to avoid duplicate/empty toasts)
           if (!isGeneratingInvoiceRef.current) {
             if (items.length > 0) {
@@ -693,24 +694,36 @@ export default function InvoiceGenerator() {
   };
 
   const getFundingSourceCode = (fundingSource?: string) => {
-    if (fundingSource) {
-      const match = Object.entries(FUNDING_SOURCE_CODE_MAP).find(([key]) =>
-        fundingSource.toLowerCase().includes(key.toLowerCase())
-      );
-      if (match) {
-        return match[1];
-      } else {
-        return '';
+    if (!fundingSource) {
+      return '';
+    }
+
+    const fundingSourceLower = fundingSource.toLowerCase();
+
+    // Check for exact matches first (case-insensitive)
+    for (const [key, code] of Object.entries(FUNDING_SOURCE_CODE_MAP)) {
+      if (fundingSourceLower.includes(key.toLowerCase())) {
+        return code;
       }
     }
 
+    // Special handling for Primary Supplements and HCP
+    if (fundingSourceLower.includes('primary supplement')) {
+      return 'PS';
+    }
+    if (fundingSourceLower.includes('unspent home care package') ||
+      fundingSourceLower.includes('hcp fund') ||
+      fundingSourceLower.includes('home care package')) {
+      return 'HCP';
+    }
 
-    return fundingSource ? fundingSource.substring(0, 4).toUpperCase() : '';
+    // Fallback: return first 4 characters uppercase if no match found
+    return fundingSource.substring(0, 4).toUpperCase();
   };
 
-const getTransactionStatusSearchValue = (filterValue: string) => {
-  return TRANSACTION_STATUS_FILTERS.find(option => option.value === filterValue)?.isoValue || '';
-};
+  const getTransactionStatusSearchValue = (filterValue: string) => {
+    return TRANSACTION_STATUS_FILTERS.find(option => option.value === filterValue)?.isoValue || '';
+  };
 
   const getPurchasedMethodType = (value?: string) => {
     if (!value) return '';
@@ -720,22 +733,22 @@ const getTransactionStatusSearchValue = (filterValue: string) => {
     return '';
   };
 
-const getItemFirstPaymentDisplay = (value?: string | boolean) => {
-  if (typeof value === 'boolean') {
-    return value ? 'Y' : 'N';
-  }
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (['y', 'yes', 'true'].includes(normalized)) {
-      return 'Y';
+  const getItemFirstPaymentDisplay = (value?: string | boolean) => {
+    if (typeof value === 'boolean') {
+      return value ? 'Y' : 'N';
     }
-    if (['n', 'no', 'false'].includes(normalized)) {
-      return 'N';
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['y', 'yes', 'true'].includes(normalized)) {
+        return 'Y';
+      }
+      if (['n', 'no', 'false'].includes(normalized)) {
+        return 'N';
+      }
+      return value.toUpperCase();
     }
-    return value.toUpperCase();
-  }
-  return 'N';
-};
+    return 'N';
+  };
 
   const formatDateForCsv = (dateString: string | null | undefined) => {
     if (!dateString) {
@@ -921,7 +934,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
       params.append('page', '1');
       params.append('limit', '1000'); // Reasonable batch size
 
-      const firstResponse = await axios.get(apiUrl, {
+      const response = await axios.get(apiUrl, {
         params: Object.fromEntries(params),
         headers: {
           'Content-Type': 'application/json',
@@ -929,43 +942,10 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
         }
       });
 
-      const total = firstResponse.data.total || 0;
-      let allItems: ServiceRecord[] = firstResponse.data.items || [];
+      const allItems: ServiceRecord[] = response.data?.items || [];
 
       if (allItems.length === 0) {
         showErrorToast('No records to export.');
-        setExportingCSV(false);
-        return;
-      }
-
-      // If there are more items, fetch them in batches (max 5000 for CSV export)
-      const MAX_EXPORT_ITEMS = 5000;
-      if (total > allItems.length && total <= MAX_EXPORT_ITEMS) {
-        const remainingPages = Math.ceil((total - allItems.length) / 1000);
-        const batchPromises = [];
-        
-        for (let page = 2; page <= remainingPages + 1 && allItems.length < MAX_EXPORT_ITEMS; page++) {
-          const batchParams = new URLSearchParams(params);
-          batchParams.set('page', page.toString());
-          batchPromises.push(
-            axios.get(apiUrl, {
-              params: Object.fromEntries(batchParams),
-              headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-              }
-            })
-          );
-        }
-
-        const batchResponses = await Promise.all(batchPromises);
-        batchResponses.forEach(response => {
-          if (response.data?.items) {
-            allItems = [...allItems, ...response.data.items];
-          }
-        });
-      } else if (total > MAX_EXPORT_ITEMS) {
-        showErrorToast(`Too many records to export (${total}). Please use filters to reduce the number of records. Maximum export limit is ${MAX_EXPORT_ITEMS} records.`);
         setExportingCSV(false);
         return;
       }
@@ -1005,6 +985,12 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
       // Add CSV headers
       const csvRows: string[] = [csvHeaders.join(',')];
 
+      // Get or initialize CSV export count from localStorage
+      const STORAGE_KEY = 'csv_export_count';
+      const currentExportCount = parseInt(localStorage.getItem(STORAGE_KEY) || '0', 10);
+      const newExportCount = currentExportCount + 1;
+      localStorage.setItem(STORAGE_KEY, newExportCount.toString().padStart(3, '0'));
+
       allItems.forEach((item) => {
         const invoiceNumber = item.invoiceNumber || '';
         const careRecipientIdentifier = item.careRecipientIdentifier || '';
@@ -1013,29 +999,36 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
           serviceIdentifier = serviceIdentifier.split('/')[0].trim();
         }
 
-        // Use backend fields directly as they are already formatted
-        const deliveredByThirdParty = item.deliveredByThirdParty === 'True' ? 'True' : (item.deliveredByThirdParty === 'False' ? 'False' : '');
+        // Delivered By Third Party: Check if it's 'True' or 'False', default to empty if not set
+        let deliveredByThirdParty = '';
+        if (item.deliveredByThirdParty === 'True') {
+          deliveredByThirdParty = 'True';
+        } else if (item.deliveredByThirdParty === 'False') {
+          deliveredByThirdParty = 'False';
+        }
+
         const itemOrWraparound = item.itemOrWraparound || '';
-        
+
         // Item Description Code and Item Description only for 'Item' type
         const itemDescriptionCode = (itemOrWraparound === 'Item' && item.itemDescriptionCode) ? item.itemDescriptionCode : '';
         const itemDescription = (itemOrWraparound === 'Item' && item.itemDescription) ? item.itemDescription : '';
-        
+
         // Wraparound Description Code and Wraparound Description only for 'Wraparound' type
         const wraparoundDescriptionCode = (itemOrWraparound === 'Wraparound' && item.wraparoundDescriptionCode) ? item.wraparoundDescriptionCode : '';
         const wraparoundDescription = (itemOrWraparound === 'Wraparound' && item.wraparoundDescription) ? item.wraparoundDescription : '';
-        
+
         const prescribedItem = item.prescribedItem || 'N';
-        
+
         // Purchased Method Type should be empty if itemPurchasedMethod is undefined/null/empty
         const purchasedMethodType = item.itemPurchasedMethod || '';
+        // Use loanedByOrganisationName and loanedByInvoiceNumber from backend (already set based on LOANED status)
         const loanedByOrganisationName = purchasedMethodType === 'LOANED' ? (item.loanedByOrganisationName || '') : '';
-        const loanedByInvoiceNumber = purchasedMethodType === 'LOANED' ? (item.associatedProviderInvoiceNo || '') : '';
-        
+        const loanedByInvoiceNumber = purchasedMethodType === 'LOANED' ? (item.loanedByInvoiceNumber || '') : '';
+
         // Health Professional Type Code and Other - include for all items (backend sets these when available)
         const healthProfessionalTypeCode = item.healthProfessionalTypeCode || '';
         const healthProfessionalTypeOther = item.healthProfessionalTypeOther || '';
-        
+
         const serviceDeliveryDateCsv = formatDateForCsv(item.serviceDeliveryDate);
         // Get funding source code - convert from name to code
         const fundingSourceCode = getFundingSourceCode(item.fundingSource);
@@ -1073,23 +1066,14 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
-      
-      // Generate CSV filename following the format: External Reference Identifier
-      // Format: BulkInvoice_YYYYMMDD_HHMMSS_<participant_identifier>.csv
-      const now = new Date();
-      const participantSegment = participantFilter && participantFilter !== 'all'
-        ? participantFilter.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '')
-        : 'AllParticipants';
-      const invoiceDateSegment = now.toISOString().split('T')[0];
-      const sanitizedParticipantSegment = participantSegment || 'AllParticipants';
-      const fileName = `Extinvoice01-INVOICE-${sanitizedParticipantSegment}-${invoiceDateSegment}.csv`;
-      
+      const fileName = `Ext-Invoice-Item-${newExportCount.toString().padStart(3, '0')}.csv`;
+
       link.href = url;
       link.download = fileName;
       link.style.display = 'none';
       document.body.appendChild(link);
       link.click();
-      
+
       // Clean up
       setTimeout(() => {
         document.body.removeChild(link);
@@ -1126,7 +1110,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
         showSuccessToast('Manual sync queued', {
           description: `${description} The sync job has been added to the queue and will start processing shortly. Refreshing data...`
         });
-        
+
         // Automatically refresh data after a short delay to allow sync job to be queued
         // Use silent mode to avoid duplicate toast (we already showed "Manual sync queued" toast)
         setTimeout(() => {
@@ -1232,7 +1216,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
 
       if (resp.status === 200 && resp.data) {
         const { invoiceNumber, fileUrl, itemCount } = resp.data;
-        
+
         // Update item statuses in database
         try {
           const updateUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/update-status`;
@@ -1264,7 +1248,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
             link.style.display = 'none';
             document.body.appendChild(link);
             link.click();
-            
+
             // Clean up
             setTimeout(() => {
               document.body.removeChild(link);
@@ -1342,7 +1326,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
       const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/${id}/${boardId}/invoiceparticipanttax`;
 
       const payload = {
-        items: selectedRecords, 
+        items: selectedRecords,
         participantName: participantName,
         invoiceDate: new Date(invoiceDate).toISOString(),
         dueDate: new Date(dueDate).toISOString()
@@ -1354,7 +1338,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
 
       if (resp.status === 200 && resp.data) {
         const { invoiceNumber, invoiceUrl, itemCount } = resp.data;
-        
+
         // Update item statuses in database (mark as invoiced)
         try {
           const updateUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/update-status`;
@@ -1425,77 +1409,92 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
                 <p className="text-muted-foreground">
                   Manage delivered service records, submit claims and generate participant tax invoices.
                 </p>
-                <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                  <Clock className="h-4 w-4" />
-                  {lastSyncedAt ? (
-                    <span>Last refreshed {formatDistanceToNow(lastSyncedAt, { addSuffix: true })}</span>
-                  ) : (
-                    <span>Not refreshed yet</span>
-                  )}
-                </div>
                 <p className="text-xs text-muted-foreground">
                   Use Refresh to reload the latest cached ISO+ data. Trigger Sync when you&apos;ve updated ISO+ and need those changes pulled in.
                 </p>
               </div>
-              <div className="flex flex-wrap justify-end gap-2">
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  onClick={() => handleManualRefresh(false)}
-                  disabled={loading}
-                >
-                  <RefreshCcw className="h-4 w-4" />
-                  Refresh Data
-                  <HelpCircle className="h-4 w-4" aria-label="Learn more about Refresh Data" onClick={(e) => { e.stopPropagation(); setShowHelpDialog(true); }} />
-                </Button>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="secondary"
-                        className="gap-2"
-                        onClick={handleManualSync}
-                        disabled={isManualSyncing}
-                      >
-                        {isManualSyncing ? (
-                          <>
-                            <Spinner className="h-4 w-4" />
-                            Syncing...
-                          </>
-                        ) : (
-                          <>
-                            Sync Data
-                          </>
-                        )}  
-                        <HelpCircle className="h-4 w-4" aria-label="Learn more about Sync Data" onClick={(e) => { e.stopPropagation(); setShowHelpDialog(true); }}/>
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      Trigger a manual ISO+ sync. We&apos;ll fetch the latest data from the portal in the background.
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-                <Button
-                  variant="outline"
-                  onClick={handleExportCSV}
-                  className="gap-2"
-                  disabled={exportingCSV}
-                >
-                  <FileSpreadsheet className="h-4 w-4" />
-                  Export to CSV
-                </Button>
-                <Button
-                  className="gap-2"
-                  onClick={handleOpenInvoiceModal}
-                >
-                  <Receipt className="h-4 w-4" />
-                  Participant Tax Invoice
-                </Button>
+              <div className="flex flex-col items-end gap-3">
+                <div className="flex flex-wrap justify-end gap-2 pl-2">
+                  <div className="flex flex-col items-start gap-2">
+                    <div className="flex gap-2">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className="gap-2"
+                              onClick={() => handleManualRefresh(false)}
+                              disabled={loading}
+                            >
+                              <RefreshCcw className="h-4 w-4" />
+                              Refresh Data
+                              <HelpCircle className="h-4 w-4" aria-label="Learn more about Refresh Data" onClick={(e) => { e.stopPropagation(); setShowHelpDialog(true); }} />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            It pulls the most recent data that is already stored (cached) on your device or browser.
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="secondary"
+                              className="gap-2"
+                              onClick={handleManualSync}
+                              disabled={isManualSyncing}
+                            >
+                              {isManualSyncing ? (
+                                <>
+                                  <Spinner className="h-4 w-4" />
+                                  Syncing...
+                                </>
+                              ) : (
+                                <>
+                                  Sync Data
+                                </>
+                              )}
+                              <HelpCircle className="h-4 w-4" aria-label="Learn more about Sync Data" onClick={(e) => { e.stopPropagation(); setShowHelpDialog(true); }} />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            It downloads brand-new data from the server, including any edits and new records.
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                    <div className="flex items-start gap-2 text-sm text-muted-foreground">
+                      <Clock className="h-4 w-4" />
+                      {lastSyncedAt ? (
+                        <span>Last refreshed {formatDistanceToNow(lastSyncedAt, { addSuffix: true })}</span>
+                      ) : (
+                        <span>Not refreshed yet</span>
+                      )}
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={handleExportCSV}
+                    className="gap-2"
+                    disabled={exportingCSV}
+                  >
+                    <FileSpreadsheet className="h-4 w-4" />
+                    Export to CSV
+                  </Button>
+                  <Button
+                    className="gap-2"
+                    onClick={handleOpenInvoiceModal}
+                  >
+                    <Receipt className="h-4 w-4" />
+                    Participant Tax Invoice
+                  </Button>
+                </div>
               </div>
             </div>
 
             {/* Search and Filters */}
-            <div className="flex flex-nowrap gap-4 mb-6 overflow-x-auto pb-2">
+            <div className="flex flex-nowrap gap-4 mb-6 overflow-x-auto p-2">
               <div className="min-w-[120px] max-w-[200px] flex-shrink-0">
                 <Select value={participantFilter} onValueChange={setParticipantFilter}>
                   <SelectTrigger className="w-full">
@@ -1716,10 +1715,10 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
                       {tableColumns.map((column) => {
                         const isSortable = column.key === 'scheduledServiceDate' || column.key === 'serviceDeliveryDate';
                         const isActiveSort = sortBy === column.key;
-                        
+
                         return (
-                          <TableHead 
-                            key={column.key} 
+                          <TableHead
+                            key={column.key}
                             className={`${column.className ?? ''} whitespace-nowrap ${isSortable ? 'cursor-pointer hover:bg-muted/50' : ''} ${isActiveSort ? 'text-primary font-semibold' : ''}`}
                             onClick={isSortable ? () => {
                               if (isActiveSort) {
@@ -1785,7 +1784,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
                       currentItems.map((record) => (
                         <TableRow
                           key={record.id}
-                          className={record.status === 'invoiced' ? 'bg-green-50 text-gray-600' : 'hover:bg-blue-50 transition-colors'}
+                          className={record?.invoiceNumber && record?.invoiceNumber !== '' && record?.invoiceNumber !== undefined ? 'bg-green-50 text-gray-600' : 'hover:bg-blue-50 transition-colors'}
                         >
                           {tableColumns.map((column) => (
                             <TableCell key={`${record.id}-${column.key}`} className={column.className}>
@@ -1974,11 +1973,10 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
                   <div className="border rounded-lg p-4 max-h-60 overflow-y-auto bg-muted/30">
                     <div className="space-y-2">
                       {eligibleRecords.map((record) => (
-                        <div 
+                        <div
                           key={record.id}
-                          className={`flex items-start gap-3 py-2 border-b last:border-0 hover:bg-muted/50 rounded px-2 cursor-pointer ${
-                            record.status === 'invoiced' ? 'bg-green-50/50 border-l-4 border-l-green-500' : ''
-                          }`}
+                          className={`flex items-start gap-3 py-2 border-b last:border-0 hover:bg-muted/50 rounded px-2 cursor-pointer ${record?.invoiceNumber && record?.invoiceNumber !== '' && record?.invoiceNumber !== undefined ? 'bg-green-50/50 border-l-4 border-l-green-500' : ''
+                            }`}
                           onClick={() => handleToggleItem(record.id)}
                         >
                           <Checkbox
@@ -1991,7 +1989,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <p className="font-medium">{record?.service || record?.notes || 'Service'}</p>
-                                {record.status === 'invoiced' && (
+                                {record?.invoiceNumber && record?.invoiceNumber !== '' && record?.invoiceNumber !== undefined  && (
                                   <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300 text-xs">
                                     <CheckCircle className="h-3 w-3 mr-1" />
                                     Invoiced

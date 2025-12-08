@@ -1,6 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import Business from '../models/Business.js';
+import InvoiceNumber from '../models/InvoiceNumber.js';
 import { warn, error, extractContextFromReq } from '../utils/logger.js';
 import { isEmpty } from '../utils/helpers.js';
 import {
@@ -65,6 +66,46 @@ async function initializeXeroOperation(workspaceId, boardId, item) {
   await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
 
   return business;
+}
+
+async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, type) {
+  try {
+    await InvoiceNumber.findOneAndUpdate(
+      {
+        itemId: itemId,
+        workspaceId: workspaceId,
+        boardId: boardId,
+        type: type
+      },
+      {
+        $set: {
+          itemId: itemId,
+          workspaceId: workspaceId,
+          boardId: boardId,
+          invoiceNumber: invoiceNumber,
+          type: type,
+          updatedAt: new Date()
+        },
+        $setOnInsert: {
+          createdAt: new Date()
+        }
+      },
+      {
+        upsert: true,
+        new: true
+      }
+    );
+  } catch (err) {
+    // Log error but don't fail the invoice generation if saving fails
+    warn('Xero-Service', 'Failed to save invoice number to database', {
+      workspaceId,
+      boardId,
+      itemId,
+      invoiceNumber,
+      type,
+      error: err.message
+    }, extractContextFromReq({}));
+  }
 }
 
 function createContactPayload(values, isUpdate = false) {
@@ -300,6 +341,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     });
 
     await setGeneratedField(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`);
+    await saveInvoiceNumber(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`, 'Xero');
 
     res.json(createdInvoice);
   } catch (err) {
@@ -860,6 +902,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
     });
 
     await setGeneratedField(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`);
+    await saveInvoiceNumber(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`, 'Xero');
 
     res.json(createdInvoice);
   } catch (err) {
@@ -1631,6 +1674,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     await Promise.all(items.map(async (item) => {
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your participant tax invoice has been created successfully in Xero.");
       await setGeneratedField(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`);
+      await saveInvoiceNumber(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`, 'Xero');
     }));
 
     logAuditTrail({

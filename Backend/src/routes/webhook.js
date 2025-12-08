@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import Business from '../models/Business.js';
 import PDFLink from '../models/PDFLink.js';
 import Item from '../models/Item.js';
+import InvoiceNumber from '../models/InvoiceNumber.js';
 import { getS3FileUrl, uploadFileToS3 } from '../utils/uploadS3.js';
 import { isEmpty } from '../utils/helpers.js';
 import {
@@ -96,6 +97,46 @@ async function getLogoData(business) {
     console.log(business.defaultLogo)
     const type = business.defaultLogo.split('.').pop();
     return `data:image/${type};base64,${Buffer.from(buffer).toString('base64')}`;
+}
+
+async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, type) {
+    try {
+        await InvoiceNumber.findOneAndUpdate(
+            {
+                itemId: itemId,
+                workspaceId: workspaceId,
+                boardId: boardId,
+                type: type
+            },
+            {
+                $set: {
+                    itemId: itemId,
+                    workspaceId: workspaceId,
+                    boardId: boardId,
+                    invoiceNumber: invoiceNumber,
+                    type: type,
+                    updatedAt: new Date()
+                },
+                $setOnInsert: {
+                    createdAt: new Date()
+                }
+            },
+            {
+                upsert: true,
+                new: true
+            }
+        );
+    } catch (err) {
+        // Log error but don't fail the invoice generation if saving fails
+        warn('Webhook-Service', 'Failed to save invoice number to database', {
+            workspaceId,
+            boardId,
+            itemId,
+            invoiceNumber,
+            type,
+            error: err.message
+        }, {});
+    }
 }
 
 function formatValue(val) {
@@ -703,6 +744,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                     const fileUrl = await getS3FileUrl(filename);
                     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'Invoice', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
+                    await saveInvoiceNumber(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`, 'PDF');
                     business.documentNumbering.invoice.nextNumber += 1;
                     await business.save();
                 } else {
@@ -1656,6 +1698,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     const fileUrl = await getS3FileUrl(filename);
                     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS Invoice', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
+                    await saveInvoiceNumber(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`, 'PDF');
                     business.documentNumbering.invoice.nextNumber += 1;
                     await business.save();
                 } else {
@@ -1987,6 +2030,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                 await Promise.all(dbItems.map(async (item) => {
                     await setIntegrationMessage(workspaceId, boardId, item.itemId, "Invoice generated successfully");
                     await setGeneratedField(workspaceId, boardId, item.itemId, `${invoiceNumber} (ISO+™)`);
+                    await saveInvoiceNumber(workspaceId, boardId, item.itemId, `${invoiceNumber} (ISO+™)`, 'PDF');
                 }));
 
                 // Increment invoice number only once
@@ -1996,13 +2040,13 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                 logAuditTrail({
                     workspaceId,
                     action: "Generate PDF Participant Tax Invoice",
-                    detail: `Invoice generated successfully, invoice number: ${invoiceNumber}, participant: ${participantName}, items: ${dbItems.length}, fileUrl: ${fileUrl}`,
+                    detail: `Invoice generated successfully, invoice number: ${invoiceNumber} (ISO+™), participant: ${participantName}, items: ${dbItems.length}, fileUrl: ${fileUrl}`,
                     req
                 });
 
                 return res.status(200).json({ 
                     message: "Participant Tax Invoice generated successfully",
-                    invoiceNumber: invoiceNumber,
+                    invoiceNumber: `${invoiceNumber} (ISO+™)`,
                     fileUrl: fileUrl,
                     itemCount: dbItems.length
                 });
