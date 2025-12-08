@@ -115,6 +115,7 @@ interface ServiceRecord {
   associatedProvider?: string;
   associatedProviderInvoiceNo?: string;
   loanedByOrganisationName?: string;
+  loanedByInvoiceNumber?: string;
   healthProfessionalTypeCode?: string;
   healthProfessionalTypeOther?: string;
   deliveredByThirdParty?: string;
@@ -988,7 +989,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
       const STORAGE_KEY = 'csv_export_count';
       const currentExportCount = parseInt(localStorage.getItem(STORAGE_KEY) || '0', 10);
       const newExportCount = currentExportCount + 1;
-      localStorage.setItem(STORAGE_KEY, newExportCount.toString());
+      localStorage.setItem(STORAGE_KEY, newExportCount.toString().padStart(3, '0'));
 
       allItems.forEach((item) => {
         const invoiceNumber = item.invoiceNumber || '';
@@ -1020,8 +1021,9 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
         
         // Purchased Method Type should be empty if itemPurchasedMethod is undefined/null/empty
         const purchasedMethodType = item.itemPurchasedMethod || '';
-        const loanedByOrganisationName = purchasedMethodType === 'LOANED' ? (item.loanedByOrganisationName || item.associatedProvider || '') : '';
-        const loanedByInvoiceNumber = purchasedMethodType === 'LOANED' ? (item.associatedProviderInvoiceNo || '') : '';
+        // Use loanedByOrganisationName and loanedByInvoiceNumber from backend (already set based on LOANED status)
+        const loanedByOrganisationName = purchasedMethodType === 'LOANED' ? (item.loanedByOrganisationName || '') : '';
+        const loanedByInvoiceNumber = purchasedMethodType === 'LOANED' ? (item.loanedByInvoiceNumber || '') : '';
         
         // Health Professional Type Code and Other - include for all items (backend sets these when available)
         const healthProfessionalTypeCode = item.healthProfessionalTypeCode || '';
@@ -1064,7 +1066,7 @@ const getItemFirstPaymentDisplay = (value?: string | boolean) => {
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
-      const fileName = `Ext-Invoice-Item-${newExportCount}.csv`;
+      const fileName = `Ext-Invoice-Item-${newExportCount.toString().padStart(3, '0')}.csv`;
       
       link.href = url;
       link.download = fileName;

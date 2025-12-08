@@ -813,6 +813,31 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     return item.data.values.find(v => v.attribute && v.attribute.name === attributeName)?.data;
                 };
 
+                // Helper to format select/multi-select labels
+                const formatStatus = (valueObj) => {
+                    if (!valueObj) return undefined;
+                    const data = valueObj.data;
+                    const labels = valueObj.attribute?.settings?.labels || [];
+                    if (Array.isArray(data) && data.length > 0) {
+                        return data.map(id => {
+                            const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
+                            return label ? label.name : (typeof id === 'object' ? id.name : String(id));
+                        }).filter(Boolean).join(', ');
+                    }
+                    if (data) {
+                        if (typeof data === 'object' && data.id) {
+                            const label = labels.find(l => l.id === data.id);
+                            return label ? label.name : (data.name || String(data.id));
+                        }
+                        if (typeof data === 'string') {
+                            const label = labels.find(l => l.id === data);
+                            return label ? label.name : data;
+                        }
+                        return String(data);
+                    }
+                    return undefined;
+                };
+
                 const participant = getValue(ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
                 const scheduledStart = getValue(ATTRIBUTE_NAMES.SCHEDULED_START) || null;
                 const unit = getValue(ATTRIBUTE_NAMES.UNIT) || '';
@@ -903,13 +928,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     wraparoundDescription = wraparoundValues?.wraparoundDescription || '';
                 }
 
-                // Get invoice number from database first, fallback to item attribute
-                const invoiceData = invoiceNumbersMap.get(item.itemId);
-                const invoiceNumber = invoiceData?.invoiceNumber || 
-                    getValue(ATTRIBUTE_NAMES.INVOICE_NUMBER) || 
-                    getValue('Generated Invoice Number') || 
-                    '';
-
                 let careRecipientIdentifier;
                 const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
                 if (participantProfileValue) {
@@ -957,7 +975,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     itemFirstPaymentValue = String(itemFirstPaymentRaw).trim().toLowerCase() === 'y' ? 'True' : 'False';
                 }
 
-                const itemPurchasedMethod = getValue('Item Purchased Method');
+                const itemPurchasedMethod = formatStatus(item.data?.values?.find(v => v.attribute && v.attribute.name === 'Item Purchased Method'));
                 let itemPurchasedMethodString = undefined;
                 if (itemPurchasedMethod) {
                     const methodName = typeof itemPurchasedMethod === 'object'
@@ -969,17 +987,24 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     }
                 }
 
-                const associatedProvider = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
-                const associatedProviderString = associatedProvider
-                    ? (typeof associatedProvider === 'object' ? associatedProvider.name : String(associatedProvider))
+                // Get "If Loaned, Lender Name" and "If Loaned, Lender Invoice No." fields
+                const ifLoanedLenderName = getValue('If Loaned, Lender Name');
+                const ifLoanedLenderNameString = ifLoanedLenderName
+                    ? (typeof ifLoanedLenderName === 'object' ? ifLoanedLenderName.name : String(ifLoanedLenderName))
                     : '';
 
-                const associatedProviderInvoiceNo =
-                    getValue('Associated Provider Invoice No. (if applicable)') ||
-                    getValue('Associated Provider Invoice No') ||
-                    undefined;
+                const ifLoanedLenderInvoiceNo =
+                    getValue('If Loaned, Lender Invoice No.') ||
+                    '';
 
-                const loanedByOrganisationName = associatedProviderString || '';
+                // Set loanedByOrganisationName and loanedByInvoiceNumber based on itemPurchasedMethod
+                // If LOANED is selected, use the "If Loaned" fields; otherwise, use BLANK
+                let loanedByOrganisationName = '';
+                let loanedByInvoiceNumber = '';
+                if (itemPurchasedMethodString === 'LOANED') {
+                    loanedByOrganisationName = ifLoanedLenderNameString || '';
+                    loanedByInvoiceNumber = ifLoanedLenderInvoiceNo || '';
+                }
 
                 const actualEnd = getValue(ATTRIBUTE_NAMES.ACTUAL_END) || null;
                 const serviceDeliveryDate = actualEnd && typeof actualEnd === 'string'
@@ -988,31 +1013,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 const scheduledServiceDate = scheduledStart && typeof scheduledStart === 'string'
                     ? (scheduledStart.includes('T') ? scheduledStart.split('T')[0] : scheduledStart.split(' ')[0])
                     : null;
-
-                // Helper to format select/multi-select labels
-                const formatStatus = (valueObj) => {
-                    if (!valueObj) return undefined;
-                    const data = valueObj.data;
-                    const labels = valueObj.attribute?.settings?.labels || [];
-                    if (Array.isArray(data) && data.length > 0) {
-                        return data.map(id => {
-                            const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
-                            return label ? label.name : (typeof id === 'object' ? id.name : String(id));
-                        }).filter(Boolean).join(', ');
-                    }
-                    if (data) {
-                        if (typeof data === 'object' && data.id) {
-                            const label = labels.find(l => l.id === data.id);
-                            return label ? label.name : (data.name || String(data.id));
-                        }
-                        if (typeof data === 'string') {
-                            const label = labels.find(l => l.id === data);
-                            return label ? label.name : data;
-                        }
-                        return String(data);
-                    }
-                    return undefined;
-                };
 
                 // Get Delivered By for deliveredByThirdParty calculation
                 const deliveredBy = formatStatus(item.data?.values?.find(v => v.attribute && v.attribute.name === ATTRIBUTE_NAMES.DELIVERED_BY));
@@ -1137,13 +1137,10 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 const isWraparound = serviceLabel.toLowerCase().includes('wraparound');
 
                 // Determine status based on invoice number from database
-                const hasInvoiceNumber = invoiceData && invoiceData.invoiceNumber;
-                const status = hasInvoiceNumber ? 'invoiced' : 'pending';
 
                 return {
                     // Table fields (Visible in ISO+ Portal Table)
                     id: item.itemId,
-                    status: status,
                     paymentStatus: paymentStatusFormatted,
                     participant: participant,
                     service: serviceLabel,
@@ -1159,7 +1156,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     transactionStatus: transactionStatusFormatted,
                     notes: notes,
                     // CSV export fields (Included in CSV but not in table)
-                    invoiceNumber: invoiceNumber,
                     careRecipientIdentifier: careRecipientIdentifier,
                     serviceIdentifier: serviceIdentifier,
                     deliveredByThirdParty: deliveredByThirdParty,
@@ -1171,8 +1167,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     prescribedItem: prescribedItemValue,
                     itemPurchasedMethod: itemPurchasedMethodString,
                     loanedByOrganisationName: loanedByOrganisationName,
-                    associatedProvider: associatedProviderString,
-                    associatedProviderInvoiceNo: associatedProviderInvoiceNo,
+                    loanedByInvoiceNumber: loanedByInvoiceNumber,
                     healthProfessionalTypeCode: healthProfessionalTypeCode,
                     healthProfessionalTypeOther: healthProfessionalTypeOther,
                     itemFirstPayment: itemFirstPaymentValue
