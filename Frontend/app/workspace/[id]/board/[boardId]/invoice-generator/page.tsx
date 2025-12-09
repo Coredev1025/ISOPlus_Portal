@@ -1409,9 +1409,6 @@ export default function InvoiceGenerator() {
                 <p className="text-muted-foreground">
                   Manage delivered service records, submit claims and generate participant tax invoices.
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  Use Refresh to reload the latest cached ISO+ data. Trigger Sync when you&apos;ve updated ISO+ and need those changes pulled in.
-                </p>
               </div>
               <div className="flex flex-col items-end gap-3">
                 <div className="flex flex-wrap justify-end gap-2 pl-2">
@@ -1495,7 +1492,7 @@ export default function InvoiceGenerator() {
 
             {/* Search and Filters */}
             <div className="flex flex-nowrap gap-4 mb-6 overflow-x-auto p-2">
-              <div className="min-w-[120px] max-w-[200px] flex-shrink-0">
+              <div className="w-fit flex-shrink-0">
                 <Select value={participantFilter} onValueChange={setParticipantFilter}>
                   <SelectTrigger className="w-full">
                     <div className="flex items-center gap-2 min-w-0 w-full">
@@ -1516,7 +1513,7 @@ export default function InvoiceGenerator() {
 
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="min-w-[220px] max-w-[300px] justify-start text-left font-normal flex-shrink-0">
+                  <Button variant="outline" className="w-fit justify-start text-left font-normal flex-shrink-0">
                     <div className="flex items-center gap-2 min-w-0 w-full">
                       <Calendar className="h-4 w-4 flex-shrink-0" />
                       <span className="truncate">
@@ -1558,7 +1555,7 @@ export default function InvoiceGenerator() {
 
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="min-w-[220px] max-w-[300px] justify-start text-left font-normal flex-shrink-0">
+                  <Button variant="outline" className="w-fit justify-start text-left font-normal flex-shrink-0">
                     <div className="flex items-center gap-2 min-w-0 w-full">
                       <Calendar className="h-4 w-4 flex-shrink-0" />
                       <span className="truncate">
@@ -1599,7 +1596,7 @@ export default function InvoiceGenerator() {
               )}
 
               <Select value={transactionStatusFilter} onValueChange={setTransactionStatusFilter}>
-                <SelectTrigger className="w-[220px] flex-shrink-0">
+                <SelectTrigger className="w-fit flex-shrink-0 min-w-[220px]">
                   <div className="flex items-center gap-2 min-w-0 w-full">
                     <Filter className="h-4 w-4 flex-shrink-0" />
                     <SelectValue placeholder="Transaction Status" className="truncate" />
@@ -1615,7 +1612,7 @@ export default function InvoiceGenerator() {
               </Select>
 
               <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
-                <SelectTrigger className="min-w-[120px] max-w-[200px] flex-shrink-0">
+                <SelectTrigger className="w-fit flex-shrink-0">
                   <div className="flex items-center gap-2 min-w-0 w-full">
                     <Filter className="h-4 w-4 flex-shrink-0" />
                     <SelectValue placeholder="Payment Status" className="truncate" />
