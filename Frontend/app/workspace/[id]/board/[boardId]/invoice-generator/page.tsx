@@ -175,6 +175,9 @@ export default function InvoiceGenerator() {
   const isGeneratingInvoiceRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const eligibleRecordsAbortControllerRef = useRef<AbortController | null>(null);
+  const syncCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [isSyncChecking, setIsSyncChecking] = useState(false);
+  const [isAutoCheckingSync, setIsAutoCheckingSync] = useState(false);
 
   // Modal state for invoice generation
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
@@ -268,6 +271,80 @@ export default function InvoiceGenerator() {
       setRefreshKey(prev => prev + 1);
     }
   }, [id, boardId]);
+
+  // Function to check sync status periodically
+  const checkSyncStatus = useCallback(async () => {
+    if (!id || !boardId) {
+      return;
+    }
+
+    try {
+      setIsSyncChecking(true);
+      const statusUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/sync/board/status/${boardId}`;
+      const statusResponse = await axios.get(statusUrl, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+
+      const syncStatus = statusResponse.data;
+      const jobState = syncStatus?.jobStatus?.state;
+      const syncStatusValue = syncStatus?.syncStatus;
+      const finishedOn = syncStatus?.jobStatus?.finishedOn;
+
+      // Check if sync is completed
+      const isSyncCompleted = jobState === 'completed' && finishedOn;
+      const isValidSyncStatus = syncStatusValue &&
+        !['failed', 'sync_stopped', 'sync_cancelled', 'board_invalid'].includes(syncStatusValue);
+
+      if (isSyncCompleted && isValidSyncStatus) {
+        // Sync completed - refresh data and stop interval
+        showSuccessToast('Sync completed', {
+          description: 'The sync job has finished successfully. Refreshing data with latest records...'
+        });
+        
+        // Clear the interval
+        if (syncCheckIntervalRef.current) {
+          clearInterval(syncCheckIntervalRef.current);
+          syncCheckIntervalRef.current = null;
+          setIsAutoCheckingSync(false);
+        }
+        
+        // Refresh data
+        setTimeout(() => {
+          handleManualRefresh(true);
+        }, 500);
+      } else if (jobState === 'failed') {
+        // Sync failed - stop interval and show error
+        showErrorToast('Sync job failed', {
+          description: 'The sync job encountered an error. Please try again.'
+        });
+        
+        if (syncCheckIntervalRef.current) {
+          clearInterval(syncCheckIntervalRef.current);
+          syncCheckIntervalRef.current = null;
+          setIsAutoCheckingSync(false);
+        }
+      }
+      // If still active or waiting, continue checking
+    } catch (err: any) {
+      console.error('Error checking sync status:', err);
+    } finally {
+      setIsSyncChecking(false);
+    }
+  }, [id, boardId, handleManualRefresh]);
+
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (syncCheckIntervalRef.current) {
+        clearInterval(syncCheckIntervalRef.current);
+        syncCheckIntervalRef.current = null;
+        setIsAutoCheckingSync(false);
+      }
+    };
+  }, []);
 
   // Fetch unique participants for the modal dropdown using dedicated endpoint
   useEffect(() => {
@@ -1108,14 +1185,25 @@ export default function InvoiceGenerator() {
       if (response.data?.success) {
         const description = response.data?.message || 'Manual sync triggered successfully.';
         showSuccessToast('Manual sync queued', {
-          description: `${description} The sync job has been added to the queue and will start processing shortly. Refreshing data...`
+          description: `${description} The sync job has been added to the queue and will start processing shortly. Data will auto-refresh when sync completes.`
         });
 
-        // Automatically refresh data after a short delay to allow sync job to be queued
-        // Use silent mode to avoid duplicate toast (we already showed "Manual sync queued" toast)
+        // Clear any existing interval
+        if (syncCheckIntervalRef.current) {
+          clearInterval(syncCheckIntervalRef.current);
+          syncCheckIntervalRef.current = null;
+        }
+
+        // Start checking sync status every 3 minutes (180000ms)
+        setIsAutoCheckingSync(true);
+        syncCheckIntervalRef.current = setInterval(() => {
+          checkSyncStatus();
+        }, 180000); // 3 minutes
+
+        // Also check immediately after 30 seconds to catch quick syncs
         setTimeout(() => {
-          handleManualRefresh(true);
-        }, 2000);
+          checkSyncStatus();
+        }, 30000);
       } else {
         showErrorToast('Sync not started', {
           description: response.data?.message || 'Sync could not be started. It may already be in progress.'
