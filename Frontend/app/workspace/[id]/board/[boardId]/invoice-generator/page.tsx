@@ -84,8 +84,7 @@ interface ServiceRecord {
   id: string;
   status: "invoiced" | "pending";
   participant: string;
-  scheduledStart: string | null;
-  scheduledServiceDate?: string | null;
+  scheduledServiceDate: string | null;
   serviceDeliveryDate?: string | null;
   unit: string;
   quantity: number;
@@ -100,25 +99,22 @@ interface ServiceRecord {
   paymentStatus?: string;
   fundingSource?: string;
   fileUrl?: string;
-  itemFirstPayment?: boolean | string;
-  // CSV export fields
+  itemFirstPayment?: string;
+  // CSV export fields (already formatted by backend)
   careRecipientIdentifier?: string;
   serviceIdentifier?: string;
-  deliveredBy?: string;
+  deliveredByThirdParty?: string;
   itemOrWraparound?: string;
   itemDescriptionCode?: string;
   itemDescription?: string;
   wraparoundDescription?: string;
   wraparoundDescriptionCode?: string;
-  prescribedItem?: boolean | string;
+  prescribedItem?: string;
   itemPurchasedMethod?: string;
-  associatedProvider?: string;
-  associatedProviderInvoiceNo?: string;
   loanedByOrganisationName?: string;
   loanedByInvoiceNumber?: string;
   healthProfessionalTypeCode?: string;
   healthProfessionalTypeOther?: string;
-  deliveredByThirdParty?: string;
 }
 
 interface InvoiceSummary {
@@ -744,32 +740,6 @@ export default function InvoiceGenerator() {
     return value.replace(/<[^>]*>/g, '').trim();
   };
 
-  const getDeliveredByThirdParty = (deliveredBy?: string) => {
-    if (!deliveredBy) return '';
-    const value = deliveredBy.toLowerCase();
-    if (value.includes('associated providers')) {
-      return 'True';
-    }
-    if (value.includes('company workforce')) {
-      return 'False';
-    }
-    return '';
-  };
-
-  const getItemOrWraparound = (record: ServiceRecord) => {
-    if (record.unit && record.unit.toLowerCase() === 'item') {
-      return 'Item';
-    }
-    if (record.service && record.service.toLowerCase().includes('wraparound')) {
-      return 'Wraparound';
-    }
-    // Fallback to itemOrWraparound if directly provided
-    if (record.itemOrWraparound) {
-      return record.itemOrWraparound;
-    }
-    return '';
-  };
-
   const getFundingSourceCode = (fundingSource?: string) => {
     if (!fundingSource) {
       return '';
@@ -800,31 +770,6 @@ export default function InvoiceGenerator() {
 
   const getTransactionStatusSearchValue = (filterValue: string) => {
     return TRANSACTION_STATUS_FILTERS.find(option => option.value === filterValue)?.isoValue || '';
-  };
-
-  const getPurchasedMethodType = (value?: string) => {
-    if (!value) return '';
-    const methodLower = value.toLowerCase();
-    if (methodLower.includes('loan')) return 'LOANED';
-    if (methodLower.includes('purchase')) return 'PURCHASED';
-    return '';
-  };
-
-  const getItemFirstPaymentDisplay = (value?: string | boolean) => {
-    if (typeof value === 'boolean') {
-      return value ? 'Y' : 'N';
-    }
-    if (typeof value === 'string') {
-      const normalized = value.trim().toLowerCase();
-      if (['y', 'yes', 'true'].includes(normalized)) {
-        return 'Y';
-      }
-      if (['n', 'no', 'false'].includes(normalized)) {
-        return 'N';
-      }
-      return value.toUpperCase();
-    }
-    return 'N';
   };
 
   const formatDateForCsv = (dateString: string | null | undefined) => {
@@ -885,7 +830,7 @@ export default function InvoiceGenerator() {
       key: 'scheduledServiceDate',
       label: 'Scheduled Service Date',
       className: 'min-w-[220px]',
-      render: (record) => formatDisplayDate(record.scheduledServiceDate || record.scheduledStart)
+      render: (record) => formatDisplayDate(record.scheduledServiceDate)
     },
     {
       key: 'serviceDeliveryDate',
@@ -1062,37 +1007,39 @@ export default function InvoiceGenerator() {
       // Add CSV headers
       const csvRows: string[] = [csvHeaders.join(',')];
 
-      // Get or initialize CSV export count from localStorage
-      const STORAGE_KEY = 'csv_export_count';
-      const currentExportCount = parseInt(localStorage.getItem(STORAGE_KEY) || '0', 10);
-      const newExportCount = currentExportCount + 1;
-      localStorage.setItem(STORAGE_KEY, newExportCount.toString().padStart(3, '0'));
-
-      allItems.forEach((item) => {
-        const invoiceNumber = item.invoiceNumber || '';
+      allItems.forEach((item, index) => {
+        const rowNumber = index + 1;
+        const invoiceNumber = `Ext-Invoice-Item-${rowNumber.toString().padStart(3, '0')}`;
         const careRecipientIdentifier = item.careRecipientIdentifier || '';
         let serviceIdentifier = item.serviceIdentifier || '';
         if (serviceIdentifier.includes('/')) {
           serviceIdentifier = serviceIdentifier.split('/')[0].trim();
         }
 
-        // Delivered By Third Party: Check if it's 'True' or 'False', default to empty if not set
-        let deliveredByThirdParty = '';
-        if (item.deliveredByThirdParty === 'True') {
-          deliveredByThirdParty = 'True';
-        } else if (item.deliveredByThirdParty === 'False') {
-          deliveredByThirdParty = 'False';
-        }
-
+        // Backend already provides formatted values - use them directly
+        const deliveredByThirdParty = item.deliveredByThirdParty || '';
         const itemOrWraparound = item.itemOrWraparound || '';
 
-        // Item Description Code and Item Description only for 'Item' type
-        const itemDescriptionCode = (itemOrWraparound === 'Item' && item.itemDescriptionCode) ? item.itemDescriptionCode : '';
-        const itemDescription = (itemOrWraparound === 'Item' && item.itemDescription) ? item.itemDescription : '';
+        let itemDescriptionCode = '';
+        let itemDescription = '';
+        if (itemOrWraparound === 'Item') {
+          itemDescriptionCode = item.itemDescriptionCode || '';
+          itemDescription = item.itemDescription || '';
+        } else if (itemOrWraparound === 'Wraparound') {
+          itemDescriptionCode = '';
+          itemDescription = '';
+        }
 
-        // Wraparound Description Code and Wraparound Description only for 'Wraparound' type
-        const wraparoundDescriptionCode = (itemOrWraparound === 'Wraparound' && item.wraparoundDescriptionCode) ? item.wraparoundDescriptionCode : '';
-        const wraparoundDescription = (itemOrWraparound === 'Wraparound' && item.wraparoundDescription) ? item.wraparoundDescription : '';
+        // Wraparound Description Code and Wraparound Description rules:
+        let wraparoundDescriptionCode = '';
+        let wraparoundDescription = '';
+        if (itemOrWraparound === 'Wraparound') {
+          wraparoundDescriptionCode = item.wraparoundDescriptionCode || '';
+          wraparoundDescription = item.wraparoundDescription || '';
+        } else if (itemOrWraparound === 'Item') {
+          wraparoundDescriptionCode = '';
+          wraparoundDescription = '';
+        }
 
         const prescribedItem = item.prescribedItem || 'N';
 
@@ -1143,7 +1090,7 @@ export default function InvoiceGenerator() {
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
-      const fileName = `Ext-Invoice-Item-${newExportCount.toString().padStart(3, '0')}.csv`;
+      const fileName = `ExtInvoice01~INVOICE~${participantFilter}~${invoiceDate}.csv`;
 
       link.href = url;
       link.download = fileName;
