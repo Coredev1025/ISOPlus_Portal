@@ -568,7 +568,7 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
             }
         }
         const totalAmountAttributeId = getAttributeId("Total Amount ($)");
-        if (totalAmountAttributeId >= 0) {
+        if (totalAmountAttributeId) {
             updatevariables.push({
                 data: totalAmount,
                 attribute_id: totalAmountAttributeId
