@@ -607,6 +607,16 @@ async function processManualTriggeredSync(job) {
       }
     );
     
+    // Delete all items for this board before manual sync
+    info('Sync-Worker', 'Deleting all items before manual sync', { jobId: job.id, workspaceId, boardId });
+    const deleteResult = await Item.deleteMany({ workspaceId, boardId });
+    info('Sync-Worker', 'Items deleted before manual sync', { 
+      jobId: job.id, 
+      workspaceId, 
+      boardId,
+      deletedCount: deleteResult.deletedCount 
+    });
+    
     // Process the same way as backlog sync
     const result = await processDataBacklogSync(job);
     
