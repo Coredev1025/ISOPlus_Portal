@@ -6,7 +6,7 @@ import InvoiceNumber from '../models/InvoiceNumber.js';
 import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
 import { getItemValues, getFolder, getMember, getMonthlyStatementBudgetData, getAgeCareParticipantsServicePlanReferencedItems } from '../services/isoplus.js';
 import { RateLimiter, batchProcess } from '../utils/helpers.js';
-import { getCachedTransform, setCachedTransform, getCacheStats, invalidateCacheForItem } from '../utils/transformCache.js';
+import { getCachedTransform, setCachedTransform, getCacheStats, invalidateCacheForItem, getCachedMSBudget, setCachedMSBudget, getCachedMSService, setCachedMSService, invalidateMSCacheForItem } from '../utils/transformCache.js';
 
 const router = express.Router();
 
@@ -85,7 +85,8 @@ const ATTRIBUTE_NAMES = {
     DELIVERED_BY_THIRD_PARTY: 'Delivered By Third Party',
     LOANED_BY_ORGANISATION_NAME: 'Loaned by Organisation Name',
     PAYMENT_STATUS: 'Payment Status',
-    INVOICE_NUMBER: 'Generated Invoice Number'
+    INVOICE_NUMBER: 'Generated Invoice Number',
+    ALLOCATED_TIME: 'Allocated time (Hr.)'
 };
 
 const FUNDING_SOURCE_TYPES = {
@@ -1403,6 +1404,15 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         };
 
         const transformBudgetItem = async (item) => {
+            const itemId = item.itemId;
+            const itemUpdatedAt = item.updatedAt || item.createdAt;
+
+            // Check if transformed data is already in cache
+            const cachedData = getCachedMSBudget(workspaceId, boardId, itemId, itemUpdatedAt);
+            if (cachedData) {
+                return cachedData;
+            }
+
             const categoryCode = determineCategoryCodeForBudget(item);
             const folderName = folderIdToName.get(item.folderId) || '';
 
@@ -1461,7 +1471,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 committedFunds = committedHM;
             }
 
-            return {
+            const transformedData = {
                 id: item.itemId,
                 categoryCode,
                 folderName,
@@ -1492,6 +1502,11 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 committedFunds,
                 fundingStreamId: getFirstReferenceId(item, ATTRIBUTE_NAMES.FUNDING_STREAM)
             };
+
+            // Store transformed data in cache for future requests
+            setCachedMSBudget(workspaceId, boardId, itemId, transformedData);
+
+            return transformedData;
         };
 
         // Transform budget items with rate limiting (reduced batch size to prevent 429 errors)
@@ -1718,6 +1733,15 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         const transformedServiceItems = await batchProcess(
             serviceItems,
             async (item) => {
+            const itemId = item.itemId;
+            const itemUpdatedAt = item.updatedAt || item.createdAt;
+
+            // Check if transformed data is already in cache
+            const cachedData = getCachedMSService(workspaceId, boardId, itemId, itemUpdatedAt);
+            if (cachedData) {
+                return cachedData;
+            }
+
             const getValue = (attributeName) => {
                 return item.data.values.find(v => v.attribute.name === attributeName)?.data;
             };
@@ -1910,11 +1934,45 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             
             const notes = getValue(ATTRIBUTE_NAMES.ADDITIONAL_NOTES) || '';
 
-            return {
+            // Get Delivered By raw value for PDF generation
+            let deliveredByName = null;
+            if (deliveredByRaw) {
+                if (typeof deliveredByRaw === 'object' && deliveredByRaw !== null) {
+                    deliveredByName = deliveredByRaw.name || deliveredByRaw.toString();
+                } else {
+                    deliveredByName = String(deliveredByRaw);
+                }
+            }
+
+            // Get Associated Provider raw value for PDF generation
+            const associatedProviderValue = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
+            let associatedProviderName = null;
+            if (associatedProviderValue) {
+                if (typeof associatedProviderValue === 'object' && associatedProviderValue !== null) {
+                    associatedProviderName = associatedProviderValue.name || associatedProviderValue.toString();
+                } else {
+                    associatedProviderName = String(associatedProviderValue);
+                }
+            }
+
+            // Get allocated time if available
+            const allocatedTimeValue = getValue(ATTRIBUTE_NAMES.ALLOCATED_TIME);
+            const allocatedTime = allocatedTimeValue !== null && allocatedTimeValue !== undefined
+                ? (typeof allocatedTimeValue === 'number' ? allocatedTimeValue : Number(allocatedTimeValue) || 0)
+                : undefined;
+
+            const transformedData = {
                 participant: participantName,
                 service,
                 serviceProvider,
+                deliveredBy: deliveredByName,
+                associatedProvider: associatedProviderName,
+                scheduledStart,
                 scheduledServiceDate,
+                scheduledShiftStart: scheduledStart,
+                scheduledShiftStartDateTime: scheduledStart,
+                actualEnd,
+                actualShiftEndDateTime: actualEnd,
                 serviceDeliveryDate,
                 transactionStatus,
                 committedAtHmForDelivery,
@@ -1925,8 +1983,14 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 govSubsidy,
                 participantContribution,
                 fundingSource,
-                notes
+                notes,
+                allocatedTime
             };
+
+            // Store transformed data in cache for future requests
+            setCachedMSService(workspaceId, boardId, itemId, transformedData);
+
+            return transformedData;
             },
             { batchSize: 2, delayBetweenBatches: 600, delayBetweenRequests: 150 }
         );
@@ -2375,6 +2439,7 @@ router.post('/:workspaceId/:boardId/update-status', authenticateToken, async (re
 
                 // Invalidate cache for this item since it was updated
                 invalidateCacheForItem(workspaceId, boardId, itemId);
+                invalidateMSCacheForItem(workspaceId, boardId, itemId);
 
                 results.push({
                     itemId,

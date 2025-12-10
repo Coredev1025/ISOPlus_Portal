@@ -55,8 +55,11 @@ interface ServiceRecord {
   participantName?: string;
   scheduledStart: string | null;
   scheduledServiceDate?: string | null;
+  scheduledShiftStart?: string | null;
+  scheduledShiftStartDateTime?: string | null;
   actualStart: string | null;
   actualEnd: string | null;
+  actualShiftEndDateTime?: string | null;
   serviceDeliveryDate?: string | null;
   worker: string;
   unit: string;
@@ -72,7 +75,11 @@ interface ServiceRecord {
   service?: string;
   serviceCategory?: string;
   serviceProvider?: string;
+  deliveredBy?: string;
+  associatedProvider?: string;
+  loanedByOrganisationName?: string;
   committedAtHmForDelivery?: number;
+  allocatedTime?: number;
 }
 
 interface BudgetRecord {
@@ -211,7 +218,6 @@ export default function MonthlyStatement() {
 
   const [loading, setLoading] = useState(false);
   const [loadingParticipants, setLoadingParticipants] = useState(false);
-  const [loadingBudgetItems, setLoadingBudgetItems] = useState(false);
   const [loadingServiceItems, setLoadingServiceItems] = useState(false);
   const [statementData, setStatementData] = useState<MonthlyStatementData | null>(null);
   const [budgetItems, setBudgetItems] = useState<BudgetRecord[]>([]);
@@ -623,61 +629,6 @@ export default function MonthlyStatement() {
         serviceCount: 0,
       },
     ];
-  };
-
-  // Fetch budget items from budget folders
-  const fetchBudgetItems = async (page: number = 1, limit: number = 10) => {
-    if (!selectedParticipant || !selectedMonth || !selectedYear) {
-      return;
-    }
-
-    setLoadingBudgetItems(true);
-    try {
-      const monthNum = parseInt(selectedMonth);
-      const yearNum = parseInt(selectedYear);
-      const monthDate = new Date(yearNum, monthNum - 1, 1);
-      const startDate = startOfMonth(monthDate);
-      const endDate = new Date(endOfMonth(monthDate));
-      endDate.setHours(23, 59, 59, 999);
-
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/monthly-statement`,
-        {
-          params: {
-            participant: selectedParticipant,
-            startDate: startDate.toISOString(),
-            endDate: endDate.toISOString(),
-            month: selectedMonth,
-            year: selectedYear,
-            budgetPage: page,
-            budgetLimit: limit
-          },
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          }
-        }
-      );
-
-      if (response.data?.budgetItems) {
-        setBudgetItems(response.data.budgetItems.items as BudgetRecord[]);
-        setBudgetPagination({
-          page: response.data.budgetItems.page || page,
-          limit: response.data.budgetItems.limit || limit,
-          total: response.data.budgetItems.total || 0
-        });
-      } else {
-        setBudgetItems([]);
-        setBudgetPagination({ page: 1, limit: 10, total: 0 });
-      }
-    } catch (err) {
-      console.error('Error fetching budget items:', err);
-      showErrorToast('Failed to fetch budget items');
-      setBudgetItems([]);
-      setBudgetPagination({ page: 1, limit: 10, total: 0 });
-    } finally {
-      setLoadingBudgetItems(false);
-    }
   };
 
   // Fetch statement data
@@ -1693,14 +1644,18 @@ export default function MonthlyStatement() {
               )}
             </Card>
 
-            {chartConfigs.length > 0 && (
-              <Card className="p-6 shadow-lg print:shadow-none">
-                <div className="mb-6">
-                  <h3 className="text-xl font-semibold">Budget Mini Charts</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Visual summaries for each funding stream showing the ordered Support at Home layout.
-                  </p>
+            <Card className="p-6 shadow-lg print:shadow-none">
+              <div className="mb-6">
+                <h3 className="text-xl font-semibold">Budget Mini Charts</h3>
+                <p className="text-sm text-muted-foreground">
+                  Visual summaries for each funding stream showing the ordered Support at Home layout.
+                </p>
+              </div>
+              {loadingServiceItems ? (
+                <div className="text-center py-8">
+                  <Spinner />
                 </div>
+              ) : chartConfigs.length > 0 ? (
                 <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                   {chartConfigs.map((chart) => (
                     <div key={chart.code} className="rounded-lg border border-border/60 bg-card p-5 space-y-4 shadow-sm">
@@ -1760,8 +1715,13 @@ export default function MonthlyStatement() {
                     </div>
                   ))}
                 </div>
-              </Card>
-            )}
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <AlertCircle className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p>No services found for the selected period</p>
+                </div>
+              )}
+            </Card>
 
             {/* Individualised Budgets */}
             <Card className="p-6 shadow-lg print:shadow-none">
@@ -1785,7 +1745,7 @@ export default function MonthlyStatement() {
                 </div>
               </div>
               <div className="overflow-x-auto">
-                {loadingBudgetItems ? (
+                {loadingServiceItems ? (
                   <div className="text-center py-8">
                     <Spinner />
                   </div>
@@ -1890,10 +1850,10 @@ export default function MonthlyStatement() {
                       {serviceItems.map((service) => (
                         <TableRow key={service.id}>
                           <TableCell className="whitespace-nowrap">
-                            {service.participant || 'N/A'}
+                            {service.participant || '-'}
                           </TableCell>
-                          <TableCell className="max-w-[200px] truncate">
-                            {service.service || service.taskName || service.notes || 'Service'}
+                          <TableCell className="min-w-[250px] text-xs">
+                            {service.service || '-'}
                           </TableCell>
                           <TableCell>{service.serviceProvider || 'N/A'}</TableCell>
                           <TableCell className="whitespace-nowrap text-xs">
@@ -1902,10 +1862,10 @@ export default function MonthlyStatement() {
                           <TableCell className="whitespace-nowrap text-xs">
                             {service.serviceDeliveryDate ? formatDate(service.serviceDeliveryDate) : 'N/A'}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="w-fit">
                             {service.transactionStatus !== undefined && service.transactionStatus.trim() !== '' &&
-                              <Badge variant={service.transactionStatus?.includes('Cancelled') ? 'default' : 'secondary'} className="text-xs">
-                                {service.transactionStatus.split(' - ')[0]}
+                              <Badge variant={service.transactionStatus?.includes('Cancelled') ? 'default' : 'secondary'} className="text-xs w-max">
+                                {service.transactionStatus}
                               </Badge>
                             }
                           </TableCell>
@@ -1918,7 +1878,7 @@ export default function MonthlyStatement() {
                           <TableCell className="text-right font-medium">{formatCurrency(service.totalAmount)}</TableCell>
                           <TableCell className="text-right">{formatCurrency(service.govSubsidy)}</TableCell>
                           <TableCell className="text-right">{formatCurrency(service.participantContribution)}</TableCell>
-                          <TableCell className="text-xs">{service.fundingSource || 'Home Support'}</TableCell>
+                          <TableCell className="text-xs min-w-[200px]">{service.fundingSource}</TableCell>
                           <TableCell className="max-w-[200px] truncate text-xs">{service.notes || 'N/A'}</TableCell>
                         </TableRow>
                       ))}
