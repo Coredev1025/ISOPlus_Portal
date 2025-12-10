@@ -7,6 +7,7 @@ import { validateBoard } from '../services/sync/validator.js';
 import { registerBoardWebhooks } from '../services/webhookService.js';
 import { info, error, warn } from '../utils/logger.js';
 import { syncQueue } from '../services/sync/queue.js';
+import { invalidateCacheForBoard } from '../utils/transformCache.js';
 
 // Redis connection configuration for ElastiCache
 // Supports both regular Redis and Redis Cluster mode
@@ -258,6 +259,9 @@ async function processDataBacklogSync(job) {
     let totalItemsSynced = 0;
     let totalItemsUpdated = 0;
     let totalItemsCreated = 0;
+    
+    // Bulk write configuration
+    const BULK_BATCH_SIZE = 20;
 
     // Process each folder
     for (const folder of folders) {
@@ -280,6 +284,8 @@ async function processDataBacklogSync(job) {
 
         let folderItemsProcessed = 0;
         let pageIndex = 0;
+        let bulkOps = [];
+        
         try {
           const itemIterator = iterateBoardItems(workspaceId, boardId, folder.id.toString());
           while (true) {
@@ -288,7 +294,7 @@ async function processDataBacklogSync(job) {
               break;
             }
             pageIndex += 1;
-            folderItemsProcessed += itemsPage.length;
+
             info('Sync-Worker', 'Processing items page for folder', {
               jobId: job.id,
               workspaceId,
@@ -296,16 +302,17 @@ async function processDataBacklogSync(job) {
               folderId: folder.id,
               pageIndex,
               pageSize: itemsPage.length,
-              itemsProcessed: folderItemsProcessed
+              itemsProcessed: folderItemsProcessed + itemsPage.length
             });
 
+            // Build bulk operations for this page
             for (const item of itemsPage) {
-              try {
-                const itemIdStr = item.id.toString();
-                
-                const result = await Item.findOneAndUpdate(
-                  { itemId: itemIdStr },
-                  {
+              const itemIdStr = item.id.toString();
+              
+              bulkOps.push({
+                updateOne: {
+                  filter: { itemId: itemIdStr },
+                  update: {
                     $set: {
                       workspaceId: workspaceId,
                       boardId: boardId,
@@ -319,25 +326,84 @@ async function processDataBacklogSync(job) {
                       createdAt: new Date()
                     }
                   },
-                  { upsert: true, new: true }
-                );
-
-                totalItemsSynced++;
-                if (result.createdAt.getTime() === result.updatedAt.getTime()) {
-                  totalItemsCreated++;
-                } else {
-                  totalItemsUpdated++;
+                  upsert: true
                 }
-              } catch (itemErr) {
-                error('Sync-Worker', 'Failed to save item', { 
+              });
+            }
+            
+            folderItemsProcessed += itemsPage.length;
+            
+            // Execute bulk write when batch size is reached
+            if (bulkOps.length >= BULK_BATCH_SIZE) {
+              try {
+                const bulkResult = await Item.bulkWrite(bulkOps, { ordered: false });
+                
+                totalItemsSynced += bulkOps.length;
+                totalItemsCreated += bulkResult.upsertedCount || 0;
+                totalItemsUpdated += bulkResult.modifiedCount || 0;
+                
+                info('Sync-Worker', 'Bulk write completed', {
                   jobId: job.id,
-                  workspaceId, 
-                  boardId, 
+                  workspaceId,
+                  boardId,
                   folderId: folder.id,
-                  itemId: item.id,
-                  error: itemErr.message 
+                  batchSize: bulkOps.length,
+                  upserted: bulkResult.upsertedCount,
+                  modified: bulkResult.modifiedCount,
+                  matched: bulkResult.matchedCount
                 });
+                
+                // Clear the bulk operations array
+                bulkOps = [];
+                
+                // Small delay to prevent memory buildup
+                await new Promise(resolve => setTimeout(resolve, 50));
+              } catch (bulkErr) {
+                error('Sync-Worker', 'Bulk write failed', {
+                  jobId: job.id,
+                  workspaceId,
+                  boardId,
+                  folderId: folder.id,
+                  batchSize: bulkOps.length,
+                  error: bulkErr.message
+                });
+                
+                // Clear failed batch to continue with next batch
+                bulkOps = [];
               }
+            }
+          }
+          
+          // Execute any remaining bulk operations for this folder
+          if (bulkOps.length > 0) {
+            try {
+              const bulkResult = await Item.bulkWrite(bulkOps, { ordered: false });
+              
+              totalItemsSynced += bulkOps.length;
+              totalItemsCreated += bulkResult.upsertedCount || 0;
+              totalItemsUpdated += bulkResult.modifiedCount || 0;
+              
+              info('Sync-Worker', 'Final bulk write completed for folder', {
+                jobId: job.id,
+                workspaceId,
+                boardId,
+                folderId: folder.id,
+                batchSize: bulkOps.length,
+                upserted: bulkResult.upsertedCount,
+                modified: bulkResult.modifiedCount,
+                matched: bulkResult.matchedCount
+              });
+              
+              bulkOps = [];
+            } catch (bulkErr) {
+              error('Sync-Worker', 'Final bulk write failed for folder', {
+                jobId: job.id,
+                workspaceId,
+                boardId,
+                folderId: folder.id,
+                batchSize: bulkOps.length,
+                error: bulkErr.message
+              });
             }
           }
         } catch (itemsErr) {
@@ -388,6 +454,15 @@ async function processDataBacklogSync(job) {
         }
       }
     );
+
+    // Invalidate transformation cache for the board since items were synced/updated
+    // This ensures fresh data is used for CSV export, PDF and Xero invoice generation
+    invalidateCacheForBoard(workspaceId, boardId);
+    info('Sync-Worker', 'Invalidated transformation cache for board', {
+      jobId: job.id,
+      workspaceId,
+      boardId
+    });
 
     info('Sync-Worker', 'Data backlog sync completed successfully', { 
       jobId: job.id,
@@ -714,7 +789,7 @@ async function processJob(job) {
 const queueName = useCluster ? '{board-sync}' : 'board-sync';
 export const syncWorker = new Worker(queueName, processJob, {
   connection: redisConnection,
-  concurrency: 5, // Process up to 5 jobs concurrently
+  concurrency: 2,
   limiter: {
     max: 10, // Max 10 jobs
     duration: 1000 // per second
@@ -751,7 +826,7 @@ syncWorker.on('error', (err) => {
 });
 
 info('Sync-Worker', 'Sync worker initialized and ready', {
-  concurrency: 5,
+  concurrency: 2,
   queueName: queueName
 });
 

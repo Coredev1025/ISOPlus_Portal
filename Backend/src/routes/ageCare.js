@@ -568,7 +568,7 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
             }
         }
         const totalAmountAttributeId = getAttributeId("Total Amount ($)");
-        if (totalAmountAttributeId) {
+        if (totalAmountAttributeId >= 0) {
             updatevariables.push({
                 data: totalAmount,
                 attribute_id: totalAmountAttributeId
@@ -581,7 +581,7 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
                 attribute_id: governmentSubsidyAttributeId
             });
         }
-        if (participantContribution > 0) {
+        if (participantContribution >= 0) {
             const participantContributionAttributeId = getAttributeId("Participant Contribution ($)");
             if (participantContributionAttributeId) {
                 updatevariables.push({

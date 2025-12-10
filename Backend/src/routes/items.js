@@ -6,6 +6,7 @@ import InvoiceNumber from '../models/InvoiceNumber.js';
 import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
 import { getItemValues, getFolder, getMember, getMonthlyStatementBudgetData, getAgeCareParticipantsServicePlanReferencedItems } from '../services/isoplus.js';
 import { RateLimiter, batchProcess } from '../utils/helpers.js';
+import { getCachedTransform, setCachedTransform, getCacheStats, invalidateCacheForItem } from '../utils/transformCache.js';
 
 const router = express.Router();
 
@@ -114,11 +115,11 @@ const DELIVERED_BY_TYPES = {
 
 // Rate limiter instance for API calls with more conservative settings to prevent 429 errors
 const rateLimiter = new RateLimiter({
-    batchSize: 2, // Process 2 requests at a time (reduced from 3)
-    delayBetweenBatches: 600, // 600ms delay between batches (increased from 300ms)
-    delayBetweenRequests: 150, // 150ms delay between individual requests in a batch
-    maxRetries: 5, // Increased from 3
-    retryDelay: 2500 // Start with 2.5 seconds delay (increased from 1.5 seconds)
+    batchSize: 1, // Process only 1 at a time
+    delayBetweenBatches: 1000, // 1 second between batches
+    delayBetweenRequests: 500, // 500ms between requests
+    maxRetries: 8, // More retries
+    retryDelay: 5000 // Start with 5-second delay
 });
 
 // Wrapper for getItemValues with rate limiting and retry logic
@@ -350,7 +351,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
     try {
         const { workspaceId, boardId } = req.params;
         const {
-            status = '',
             participant = '',
             startDate,
             endDate,
@@ -511,12 +511,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
         // Apply filters in JavaScript
         let filteredItems = processedItems;
 
-        if (status && status !== 'all') {
-            filteredItems = filteredItems.filter(p => 
-                status === 'invoiced' ? p.invoicedFlag : !p.invoicedFlag
-            );
-        }
-
         if (startDate) {
             const startDateObj = new Date(startDate);
             filteredItems = filteredItems.filter(p => 
@@ -560,89 +554,61 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
         }
 
         if (transactionStatusFilter && transactionStatusFilter !== 'all') {
-            try {
-                filteredItems = filteredItems.filter(p => {
-                    // Helper to check if two strings match (bidirectional contains check)
-                    const matches = (searchTerm, value) => {
-                        const searchLower = String(searchTerm).toLowerCase();
-                        const valueLower = String(value).toLowerCase();
-                        return valueLower.includes(searchLower) || searchLower.includes(valueLower);
-                    };
-                    
-                    // First try matching against label names
-                    if (Array.isArray(p.transactionStatusNames) && p.transactionStatusNames.length > 0) {
-                        if (p.transactionStatusNames.some(name => {
-                            const nameStr = String(name);
-                            return transactionStatusFilter == nameStr
-                        })) {
-                            return true;
-                        }
-                    } else if (p.transactionStatusNames && !Array.isArray(p.transactionStatusNames)) {
-                        const nameStr = String(p.transactionStatusNames);
-                        if (transactionStatusFilter == nameStr) {
-                            return true;
-                        }
+            filteredItems = filteredItems.filter(p => {
+                // First try matching against label names
+                if (Array.isArray(p.transactionStatusNames) && p.transactionStatusNames.length > 0) {
+                    if (p.transactionStatusNames.some(name => {
+                        const nameStr = String(name);
+                        return transactionStatusFilter == nameStr
+                    })) {
+                        return true;
                     }
-                    // Fallback: try matching against raw status data if label names didn't match or were empty
-                    if (p.transactionStatusRaw) {
-                        const rawStr = Array.isArray(p.transactionStatusRaw) 
-                            ? p.transactionStatusRaw.map(v => String(v)).join(' ')
-                            : String(p.transactionStatusRaw);
-                        if (transactionStatusFilter == rawStr) {
-                            return true;
-                        }
+                } else if (p.transactionStatusNames && !Array.isArray(p.transactionStatusNames)) {
+                    const nameStr = String(p.transactionStatusNames);
+                    if (transactionStatusFilter == nameStr) {
+                        return true;
                     }
-                    return false;
-                });
-            } catch (regexErr) {
-                warn('Items-Service', 'Invalid transaction status regex pattern', {
-                    pattern: transactionStatusFilter,
-                    error: regexErr.message
-                }, extractContextFromReq(req));
-            }
+                }
+                // Fallback: try matching against raw status data if label names didn't match or were empty
+                if (p.transactionStatusRaw) {
+                    const rawStr = Array.isArray(p.transactionStatusRaw) 
+                        ? p.transactionStatusRaw.map(v => String(v)).join(' ')
+                        : String(p.transactionStatusRaw);
+                    if (transactionStatusFilter == rawStr) {
+                        return true;
+                    }
+                }
+                return false;
+            });
         }
 
         if (paymentStatusFilter && paymentStatusFilter !== 'all') {
-            try {
-                filteredItems = filteredItems.filter(p => {
-                    // Helper to check if two strings match (bidirectional contains check)
-                    const matches = (searchTerm, value) => {
-                        const searchLower = String(searchTerm).toLowerCase();
-                        const valueLower = String(value).toLowerCase();
-                        return valueLower.includes(searchLower) || searchLower.includes(valueLower);
-                    };
-                    
-                    // First try matching against label names
-                    if (Array.isArray(p.paymentStatusNames) && p.paymentStatusNames.length > 0) {
-                        if (p.paymentStatusNames.some(name => {
-                            const nameStr = String(name);
-                            return paymentStatusFilter == nameStr
-                        })) {
-                            return true;
-                        }
-                    } else if (p.paymentStatusNames && !Array.isArray(p.paymentStatusNames)) {
-                        const nameStr = String(p.paymentStatusNames);
-                        if (paymentStatusFilter == nameStr) {
-                            return true;
-                        }
+            filteredItems = filteredItems.filter(p => {
+                // First try matching against label names
+                if (Array.isArray(p.paymentStatusNames) && p.paymentStatusNames.length > 0) {
+                    if (p.paymentStatusNames.some(name => {
+                        const nameStr = String(name);
+                        return paymentStatusFilter == nameStr
+                    })) {
+                        return true;
                     }
-                    // Fallback: try matching against raw status data if label names didn't match or were empty
-                    if (p.paymentStatusRaw) {
-                        const rawStr = Array.isArray(p.paymentStatusRaw) 
-                            ? p.paymentStatusRaw.map(v => String(v)).join(' ')
-                            : String(p.paymentStatusRaw);
-                        if (paymentStatusFilter == rawStr) {
-                            return true;
-                        }
+                } else if (p.paymentStatusNames && !Array.isArray(p.paymentStatusNames)) {
+                    const nameStr = String(p.paymentStatusNames);
+                    if (paymentStatusFilter == nameStr) {
+                        return true;
                     }
-                    return false;
-                });
-            } catch (regexErr) {
-                warn('Items-Service', 'Invalid payment status regex pattern', {
-                    pattern: paymentStatusFilter,
-                    error: regexErr.message
-                }, extractContextFromReq(req));
-            }
+                }
+                // Fallback: try matching against raw status data if label names didn't match or were empty
+                if (p.paymentStatusRaw) {
+                    const rawStr = Array.isArray(p.paymentStatusRaw) 
+                        ? p.paymentStatusRaw.map(v => String(v)).join(' ')
+                        : String(p.paymentStatusRaw);
+                    if (paymentStatusFilter == rawStr) {
+                        return true;
+                    }
+                }
+                return false;
+            });
         }
 
         // Calculate totals from filtered items
@@ -650,8 +616,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             totalAmount: 0,
             totalGovSubsidy: 0,
             totalParticipantContribution: 0,
-            invoicedCount: 0,
-            pendingCount: 0,
             total: 0
         };
 
@@ -659,11 +623,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             totalsData.totalAmount += p.totalAmountNum;
             totalsData.totalGovSubsidy += p.govSubsidyNum;
             totalsData.totalParticipantContribution += p.participantContributionNum;
-            if (p.invoicedFlag) {
-                totalsData.invoicedCount++;
-            } else {
-                totalsData.pendingCount++;
-            }
             totalsData.total++;
         });
 
@@ -727,10 +686,30 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
         };
 
         // Transform items with rate limiting (reduced batch size to prevent 429 errors)
+        // Use cache to speed up transformation for items that have already been processed
         const transformedItems = await batchProcess(
             items,
             async (processedItem) => {
                 const item = processedItem.item;
+                const itemId = item.itemId;
+                const itemUpdatedAt = item.updatedAt || item.createdAt;
+
+                // Check if transformed data is already in cache
+                const cachedData = getCachedTransform(workspaceId, boardId, itemId, itemUpdatedAt);
+                if (cachedData) {
+                    // Return cached data but always fetch fresh invoice number
+                    const invoiceNumberItem = await InvoiceNumber.findOne({
+                        workspaceId: workspaceId,
+                        boardId: boardId,
+                        itemId: itemId
+                    }).lean();
+                    
+                    return {
+                        ...cachedData,
+                        invoiceNumber: invoiceNumberItem?.invoiceNumber || cachedData.invoiceNumber
+                    };
+                }
+
                 const getValue = (attributeName) => {
                     if (!item.data || !item.data.values) return null;
                     return item.data.values.find(v => v.attribute && v.attribute.name === attributeName)?.data;
@@ -789,9 +768,9 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
                 let service = undefined;
                 let serviceIdentifier = undefined;
-                let itemId = '';
-                let itemName = '';
-                let wraparoundItemId = '';
+                let itemDescriptionCode = '';
+                let itemDescription = '';
+                let wraparoundDescriptionCode = '';
                 let wraparoundDescription = '';
                 let healthProfessionalTypeCode = '';
                 let healthProfessionalTypeOther = '';
@@ -842,7 +821,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                         healthProfessionalTypeOther = '';
                     }
 
-                    itemId =
+                    itemDescriptionCode =
                         homeSupportValues?.itemID ||
                         assistiveTechnologyShortTermValues?.itemID ||
                         assistiveTechnologyOngoingValues?.itemID ||
@@ -850,7 +829,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                         healthProfessionalValues?.itemID ||
                         '';
 
-                    itemName =
+                    itemDescription =
                         homeSupportValues?.item ||
                         assistiveTechnologyShortTermValues?.item ||
                         assistiveTechnologyOngoingValues?.item ||
@@ -858,7 +837,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                         healthProfessionalValues?.item ||
                         '';
 
-                    wraparoundItemId = wraparoundValues?.itemID || '';
+                    wraparoundDescriptionCode = wraparoundValues?.itemID || '';
                     wraparoundDescription = wraparoundValues?.wraparoundDescription || '';
                 }
 
@@ -1070,9 +1049,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 const serviceLabel = service || '';
                 const isWraparound = serviceLabel.toLowerCase().includes('wraparound');
 
-                // Determine status based on invoice number from database
-
-                return {
+                const transformedData = {
                     // Table fields (Visible in ISO+ Portal Table)
                     id: item.itemId,
                     paymentStatus: paymentStatusFormatted,
@@ -1090,15 +1067,15 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     transactionStatus: transactionStatusFormatted,
                     notes: notes,
                     // CSV export fields (Included in CSV but not in table)
-                    invoiceNumber,
+                    invoiceNumber: invoiceNumber,
                     careRecipientIdentifier: careRecipientIdentifier,
                     serviceIdentifier: serviceIdentifier,
                     deliveredByThirdParty: deliveredByThirdParty,
                     itemOrWraparound: isItemUnit ? 'Item' : (isWraparound ? 'Wraparound' : ''),
-                    itemDescriptionCode: isItemUnit ? itemId : undefined,
-                    itemDescription: isItemUnit ? itemName : undefined,
-                    wraparoundDescriptionCode: isWraparound ? wraparoundItemId : undefined,
-                    wraparoundDescription: isWraparound ? wraparoundDescription : undefined,
+                    itemDescriptionCode: isItemUnit ? (itemDescriptionCode || '') : '',
+                    itemDescription: isItemUnit ? (itemDescription || '') : '',
+                    wraparoundDescriptionCode: isWraparound ? (wraparoundDescriptionCode || '') : '',
+                    wraparoundDescription: isWraparound ? (wraparoundDescription || '') : '',
                     prescribedItem: prescribedItemValue,
                     itemPurchasedMethod: itemPurchasedMethodString,
                     loanedByOrganisationName: loanedByOrganisationName,
@@ -1107,6 +1084,11 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     healthProfessionalTypeOther: healthProfessionalTypeOther,
                     itemFirstPayment: itemFirstPaymentValue
                 };
+
+                // Store transformed data in cache for future requests
+                setCachedTransform(workspaceId, boardId, item.itemId, transformedData);
+
+                return transformedData;
             },
             { batchSize: 2, delayBetweenBatches: 600, delayBetweenRequests: 150 }
         );
@@ -1114,8 +1096,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
         res.status(200).json({
             items: transformedItems,
             total: totalsData.total || 0,
-            invoiced: totalsData.invoicedCount || 0,
-            pending: totalsData.pendingCount || 0,
             totalAmount: totalsData.totalAmount || 0,
             totalGovSubsidy: totalsData.totalGovSubsidy || 0,
             totalParticipantContribution: totalsData.totalParticipantContribution || 0
@@ -2393,6 +2373,9 @@ router.post('/:workspaceId/:boardId/update-status', authenticateToken, async (re
                 item.markModified('data.values');
                 await item.save();
 
+                // Invalidate cache for this item since it was updated
+                invalidateCacheForItem(workspaceId, boardId, itemId);
+
                 results.push({
                     itemId,
                     updated: true,
@@ -2467,6 +2450,23 @@ router.get('/:workspaceId/:boardId/:itemId', authenticateToken, async (req, res)
         res.status(200).json(item);
     } catch (err) {
         error('Items-Service', 'Failed to fetch item', {
+            message: err.message
+        }, extractContextFromReq(req));
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Debug endpoint to check transformation cache stats
+router.get('/cache/stats', authenticateToken, async (req, res) => {
+    try {
+        const stats = getCacheStats();
+        res.status(200).json({
+            success: true,
+            cache: stats,
+            message: 'Transformation cache statistics'
+        });
+    } catch (err) {
+        error('Items-Service', 'Failed to get cache stats', {
             message: err.message
         }, extractContextFromReq(req));
         res.status(500).json({ message: 'Server error' });
