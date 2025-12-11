@@ -822,8 +822,6 @@ export default function MonthlyStatement() {
         year: selectedYear,
         startDate: dateRange.startDate,
         endDate: dateRange.endDate,
-        budgetPage: 1,
-        budgetLimit: 1000,
       });
 
       let allBudgetItems: BudgetRecord[] = firstBudgetResponse?.budgetItems?.items || [];
@@ -1600,7 +1598,7 @@ export default function MonthlyStatement() {
                     disabled={!statementData || exportingSection === 'statement-pdf' || loading}
                   >
                     <FileCheck className="h-4 w-4" />
-                    SaH Monthly Statement
+                    Generate Monthly Statement
                   </Button>
                 </div>
               </div>
@@ -1736,7 +1734,7 @@ export default function MonthlyStatement() {
                   <Button
                     variant="outline"
                     className="gap-2"
-                    onClick={handleBudgetExportCSV}
+                    onClick={handleSaHMonthlyStatement}
                     disabled={!statementData || exportingSection === 'budget-csv'}
                   >
                     <FileSpreadsheet className="h-4 w-4" />
@@ -1812,11 +1810,11 @@ export default function MonthlyStatement() {
                   <Button
                     variant="outline"
                     className="gap-2"
-                    onClick={handleServiceExportCSV}
-                    disabled={!statementData || exportingSection === 'service-csv'}
+                    onClick={handleSaHMonthlyStatement}
+                    disabled={!statementData || exportingSection === 'statement-pdf'}
                   >
                     <FileSpreadsheet className="h-4 w-4" />
-                    Export to CSV
+                    Export to PDF
                   </Button>
                 </div>
               </div>
