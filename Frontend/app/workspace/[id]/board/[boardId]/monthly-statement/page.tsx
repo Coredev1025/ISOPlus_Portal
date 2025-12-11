@@ -176,6 +176,7 @@ interface BusinessDetails {
   businessEmail: string;
   address: string;
   location: string;
+  country: string;
   suburb: string;
   state: string;
   postcode: string;
@@ -210,6 +211,205 @@ const BUDGET_CATEGORY_LABELS: Record<string, string> = {
   HMB: 'Home Modification Budget',
 };
 
+const countryStates: { [key: string]: string[] } = {
+  "Afghanistan": [],
+  "Albania": [],
+  "Algeria": [],
+  "Andorra": [],
+  "Angola": [],
+  "Antigua and Barbuda": [],
+  "Argentina": [],
+  "Armenia": [],
+  "Australia": ["New South Wales", "Victoria", "Queensland", "Western Australia", "South Australia", "Tasmania", "Northern Territory", "Australian Capital Territory"],
+  "Austria": [],
+  "Azerbaijan": [],
+  "Bahamas": [],
+  "Bahrain": [],
+  "Bangladesh": [],
+  "Barbados": [],
+  "Belarus": [],
+  "Belgium": [],
+  "Belize": [],
+  "Benin": [],
+  "Bhutan": [],
+  "Bolivia": [],
+  "Bosnia and Herzegovina": [],
+  "Botswana": [],
+  "Brazil": [],
+  "Brunei": [],
+  "Bulgaria": [],
+  "Burkina Faso": [],
+  "Burundi": [],
+  "Cabo Verde": [],
+  "Cambodia": [],
+  "Cameroon": [],
+  "Canada": ["Alberta", "British Columbia", "Manitoba", "New Brunswick", "Newfoundland and Labrador", "Nova Scotia", "Ontario", "Prince Edward Island", "Quebec", "Saskatchewan", "Northwest Territories", "Nunavut", "Yukon"],
+  "Central African Republic": [],
+  "Chad": [],
+  "Chile": [],
+  "China": [],
+  "Colombia": [],
+  "Comoros": [],
+  "Congo, Democratic Republic of the": [],
+  "Congo, Republic of the": [],
+  "Costa Rica": [],
+  "Croatia": [],
+  "Cuba": [],
+  "Cyprus": [],
+  "Czech Republic": [],
+  "Denmark": [],
+  "Djibouti": [],
+  "Dominica": [],
+  "Dominican Republic": [],
+  "Ecuador": [],
+  "Egypt": [],
+  "El Salvador": [],
+  "Equatorial Guinea": [],
+  "Eritrea": [],
+  "Estonia": [],
+  "Eswatini": [],
+  "Ethiopia": [],
+  "Fiji": [],
+  "Finland": [],
+  "France": [],
+  "Gabon": [],
+  "Gambia": [],
+  "Georgia": [],
+  "Germany": [],
+  "Ghana": [],
+  "Greece": [],
+  "Grenada": [],
+  "Guatemala": [],
+  "Guinea": [],
+  "Guinea-Bissau": [],
+  "Guyana": [],
+  "Haiti": [],
+  "Honduras": [],
+  "Hungary": [],
+  "Iceland": [],
+  "India": ["Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu", "Lakshadweep", "Delhi", "Puducherry", "Ladakh", "Jammu and Kashmir"],
+  "Indonesia": [],
+  "Iran": [],
+  "Iraq": [],
+  "Ireland": [],
+  "Israel": [],
+  "Italy": [],
+  "Jamaica": [],
+  "Japan": [],
+  "Jordan": [],
+  "Kazakhstan": [],
+  "Kenya": [],
+  "Kiribati": [],
+  "Korea, North": [],
+  "Korea, South": [],
+  "Kosovo": [],
+  "Kuwait": [],
+  "Kyrgyzstan": [],
+  "Laos": [],
+  "Latvia": [],
+  "Lebanon": [],
+  "Lesotho": [],
+  "Liberia": [],
+  "Libya": [],
+  "Liechtenstein": [],
+  "Lithuania": [],
+  "Luxembourg": [],
+  "Madagascar": [],
+  "Malawi": [],
+  "Malaysia": [],
+  "Maldives": [],
+  "Mali": [],
+  "Malta": [],
+  "Marshall Islands": [],
+  "Mauritania": [],
+  "Mauritius": [],
+  "Mexico": [],
+  "Micronesia": [],
+  "Moldova": [],
+  "Monaco": [],
+  "Mongolia": [],
+  "Montenegro": [],
+  "Morocco": [],
+  "Mozambique": [],
+  "Myanmar": [],
+  "Namibia": [],
+  "Nauru": [],
+  "Nepal": [],
+  "Netherlands": [],
+  "New Zealand": [],
+  "Nicaragua": [],
+  "Niger": [],
+  "Nigeria": [],
+  "North Macedonia": [],
+  "Norway": [],
+  "Oman": [],
+  "Pakistan": ["Balochistan", "Khyber Pakhtunkhwa", "Punjab", "Sindh", "Islamabad Capital Territory", "Gilgit-Baltistan", "Azad Jammu and Kashmir"],
+  "Palau": [],
+  "Palestine": [],
+  "Panama": [],
+  "Papua New Guinea": [],
+  "Paraguay": [],
+  "Peru": [],
+  "Philippines": [],
+  "Poland": [],
+  "Portugal": [],
+  "Qatar": [],
+  "Romania": [],
+  "Russia": [],
+  "Rwanda": [],
+  "Saint Kitts and Nevis": [],
+  "Saint Lucia": [],
+  "Saint Vincent and the Grenadines": [],
+  "Samoa": [],
+  "San Marino": [],
+  "Sao Tome and Principe": [],
+  "Saudi Arabia": [],
+  "Senegal": [],
+  "Serbia": [],
+  "Seychelles": [],
+  "Sierra Leone": [],
+  "Singapore": [],
+  "Slovakia": [],
+  "Slovenia": [],
+  "Solomon Islands": [],
+  "Somalia": [],
+  "South Africa": [],
+  "South Sudan": [],
+  "Spain": [],
+  "Sri Lanka": [],
+  "Sudan": [],
+  "Suriname": [],
+  "Sweden": [],
+  "Switzerland": [],
+  "Syria": [],
+  "Taiwan": [],
+  "Tajikistan": [],
+  "Tanzania": [],
+  "Thailand": [],
+  "Timor-Leste": [],
+  "Togo": [],
+  "Tonga": [],
+  "Trinidad and Tobago": [],
+  "Tunisia": [],
+  "Turkey": [],
+  "Turkmenistan": [],
+  "Tuvalu": [],
+  "Uganda": [],
+  "Ukraine": [],
+  "United Arab Emirates": ["Abu Dhabi", "Dubai", "Sharjah", "Ajman", "Umm Al Quwain", "Ras Al Khaimah and Fujairah"],
+  "United Kingdom": ["England", "Scotland", "Wales", "Northern Ireland"],
+  "United States": ["Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware", "Florida", "Georgia", "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky", "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota", "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire", "New Jersey", "New Mexico", "New York", "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah", "Vermont", "Virginia", "Washington", "West Virginia", "Wisconsin", "Wyoming"],
+  "Uruguay": [],
+  "Uzbekistan": [],
+  "Vanuatu": [],
+  "Vatican City": [],
+  "Venezuela": [],
+  "Vietnam": [],
+  "Yemen": [],
+  "Zambia": [],
+  "Zimbabwe": []
+};
+
 export default function MonthlyStatement() {
   const router = useRouter();
   const pathname = usePathname();
@@ -236,12 +436,14 @@ export default function MonthlyStatement() {
     businessEmail: "",
     address: "",
     location: "",
+    country: "",
     suburb: "",
     state: "",
     postcode: "",
     companyRegistrationId: "",
   });
   const [exportingSection, setExportingSection] = useState<null | 'budget-csv' | 'service-csv' | 'statement-pdf'>(null);
+  const [businessDetailsErrors, setBusinessDetailsErrors] = useState<string[]>([]);
 
 
   // Budget data will come from the API response
@@ -323,6 +525,7 @@ export default function MonthlyStatement() {
             businessEmail: response.data.email || "",
             address: response.data.address?.street || "",
             location: `${response.data.address?.suburb || ""}, ${response.data.address?.state || ""}`,
+            country: response.data.address?.country || "",
             suburb: response.data.address?.suburb || "",
             state: response.data.address?.state || "",
             postcode: response.data.address?.postcode || "",
@@ -815,8 +1018,8 @@ export default function MonthlyStatement() {
         return null;
       }
 
-      // Fetch all budget items
-      const firstBudgetResponse = await fetchMonthlyStatementItems(id, boardId, {
+      // Fetch all budget and service items in a single initial request
+      const firstResponse = await fetchMonthlyStatementItems(id, boardId, {
         participant: selectedParticipant,
         month: selectedMonth,
         year: selectedYear,
@@ -824,15 +1027,20 @@ export default function MonthlyStatement() {
         endDate: dateRange.endDate,
       });
 
-      let allBudgetItems: BudgetRecord[] = firstBudgetResponse?.budgetItems?.items || [];
-      const budgetTotal = firstBudgetResponse?.budgetItems?.total || 0;
+      let allBudgetItems: BudgetRecord[] = firstResponse?.budgetItems?.items || [];
+      const budgetTotal = firstResponse?.budgetItems?.total || 0;
 
+      let allServiceItems: ServiceRecord[] = firstResponse?.serviceItems?.items || [];
+      const serviceTotal = firstResponse?.serviceItems?.total || 0;
+
+      // Fetch remaining budget and service pages in parallel if needed
+      const batchPromises: Promise<any>[] = [];
+
+      // Add budget page fetches
       if (budgetTotal > allBudgetItems.length) {
         const remainingBudgetPages = Math.ceil((budgetTotal - allBudgetItems.length) / 1000);
-        const budgetBatchPromises = [];
-
         for (let page = 2; page <= remainingBudgetPages + 1; page++) {
-          budgetBatchPromises.push(
+          batchPromises.push(
             fetchMonthlyStatementItems(id, boardId, {
               participant: selectedParticipant,
               month: selectedMonth,
@@ -841,38 +1049,16 @@ export default function MonthlyStatement() {
               endDate: dateRange.endDate,
               budgetPage: page,
               budgetLimit: 1000,
-            })
+            }).then(response => ({ type: 'budget', response }))
           );
         }
-
-        const budgetBatchResponses = await Promise.all(budgetBatchPromises);
-        budgetBatchResponses.forEach(response => {
-          if (response?.budgetItems?.items) {
-            allBudgetItems = [...allBudgetItems, ...response.budgetItems.items];
-          }
-        });
       }
 
-      // Fetch all service items
-      const firstServiceResponse = await fetchMonthlyStatementItems(id, boardId, {
-        participant: selectedParticipant,
-        month: selectedMonth,
-        year: selectedYear,
-        startDate: dateRange.startDate,
-        endDate: dateRange.endDate,
-        servicePage: 1,
-        serviceLimit: 1000,
-      });
-
-      let allServiceItems: ServiceRecord[] = firstServiceResponse?.serviceItems?.items || [];
-      const serviceTotal = firstServiceResponse?.serviceItems?.total || 0;
-
+      // Add service page fetches
       if (serviceTotal > allServiceItems.length) {
         const remainingServicePages = Math.ceil((serviceTotal - allServiceItems.length) / 1000);
-        const serviceBatchPromises = [];
-
         for (let page = 2; page <= remainingServicePages + 1; page++) {
-          serviceBatchPromises.push(
+          batchPromises.push(
             fetchMonthlyStatementItems(id, boardId, {
               participant: selectedParticipant,
               month: selectedMonth,
@@ -881,13 +1067,18 @@ export default function MonthlyStatement() {
               endDate: dateRange.endDate,
               servicePage: page,
               serviceLimit: 1000,
-            })
+            }).then(response => ({ type: 'service', response }))
           );
         }
+      }
 
-        const serviceBatchResponses = await Promise.all(serviceBatchPromises);
-        serviceBatchResponses.forEach(response => {
-          if (response?.serviceItems?.items) {
+      // Execute all remaining fetches in parallel
+      if (batchPromises.length > 0) {
+        const batchResults = await Promise.all(batchPromises);
+        batchResults.forEach(({ type, response }) => {
+          if (type === 'budget' && response?.budgetItems?.items) {
+            allBudgetItems = [...allBudgetItems, ...response.budgetItems.items];
+          } else if (type === 'service' && response?.serviceItems?.items) {
             allServiceItems = [...allServiceItems, ...response.serviceItems.items];
           }
         });
@@ -1186,8 +1377,40 @@ export default function MonthlyStatement() {
 
   // Save business details
   const handleSaveBusinessDetails = async () => {
-    if (!businessDetails.companyName || !businessDetails.phoneNumber || !businessDetails.businessEmail || !businessDetails.companyRegistrationId) {
-      showErrorToast('Please fill in all required fields (Company Name, Registration ID, Phone, Email)');
+    // Clear previous errors
+    setBusinessDetailsErrors([]);
+    
+    // Validation
+    const errors: string[] = [];
+    
+    if (!businessDetails.companyName?.trim()) {
+      errors.push('Company Name is required');
+    }
+    
+    if (!businessDetails.companyRegistrationId?.trim()) {
+      errors.push('Company Registration ID is required');
+    }
+    
+    if (!businessDetails.phoneNumber?.trim()) {
+      errors.push('Phone Number is required');
+    }
+    
+    if (!businessDetails.businessEmail?.trim()) {
+      errors.push('Business Email is required');
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(businessDetails.businessEmail)) {
+      errors.push('Business Email must be a valid email address');
+    }
+    
+    // Validate postcode if provided (should be numeric and max 8 characters)
+    if (businessDetails.postcode && businessDetails.postcode.trim()) {
+      if (!/^\d{1,8}$/.test(businessDetails.postcode)) {
+        errors.push('Postcode must be numeric and maximum 8 digits');
+      }
+    }
+    
+    if (errors.length > 0) {
+      setBusinessDetailsErrors(errors);
+      showErrorToast('Please correct the validation errors');
       return;
     }
 
@@ -1201,6 +1424,7 @@ export default function MonthlyStatement() {
           phone: businessDetails.phoneNumber,
           email: businessDetails.businessEmail,
           street: businessDetails.address,
+          country: businessDetails.country,
           suburb: businessDetails.suburb,
           state: businessDetails.state,
           postcode: businessDetails.postcode,
@@ -1208,10 +1432,17 @@ export default function MonthlyStatement() {
         }
       );
       setShowBusinessDialog(false);
+      setBusinessDetailsErrors([]);
       showSuccessToast('Business details saved successfully');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saving business details:', err);
-      showErrorToast('Failed to save business details. Please try again.');
+      if (err.response?.data?.errors) {
+        setBusinessDetailsErrors(err.response.data.errors);
+      } else if (err.response?.data?.message) {
+        showErrorToast(err.response.data.message);
+      } else {
+        showErrorToast('Failed to save business details. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -2028,6 +2259,19 @@ export default function MonthlyStatement() {
           </DialogHeader>
 
           <div className="grid grid-cols-2 gap-4 py-4">
+            {businessDetailsErrors.length > 0 && (
+              <div className="col-span-2 mb-2 p-4 bg-destructive/10 border border-destructive rounded-md">
+                <h4 className="text-sm font-medium text-destructive mb-2">Please correct the following errors:</h4>
+                <ul className="list-disc list-inside space-y-1">
+                  {businessDetailsErrors.map((error, index) => (
+                    <li key={index} className="text-sm text-destructive">
+                      {error}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="companyName">Company Name *</Label>
               <Input
@@ -2058,7 +2302,7 @@ export default function MonthlyStatement() {
               />
             </div>
 
-            <div className="space-y-2 col-span-2">
+            <div className="space-y-2">
               <Label htmlFor="businessEmail">Business Email *</Label>
               <Input
                 id="businessEmail"
@@ -2090,13 +2334,56 @@ export default function MonthlyStatement() {
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="country">Country</Label>
+              <Select
+                value={businessDetails.country}
+                onValueChange={(value) =>
+                  setBusinessDetails({
+                    ...businessDetails,
+                    country: value,
+                    state: "", // Reset state when country changes
+                  })
+                }
+              >
+                <SelectTrigger id="country">
+                  <SelectValue placeholder="Select country" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.keys(countryStates).map((country) => (
+                    <SelectItem key={country} value={country}>
+                      {country}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="state">State</Label>
-              <Input
-                id="state"
+              <Select
                 value={businessDetails.state}
-                onChange={(e) => setBusinessDetails({ ...businessDetails, state: e.target.value })}
-                placeholder="Enter state"
-              />
+                onValueChange={(value) =>
+                  setBusinessDetails({ ...businessDetails, state: value })
+                }
+                disabled={!businessDetails.country || countryStates[businessDetails.country]?.length === 0}
+              >
+                <SelectTrigger id="state">
+                  <SelectValue placeholder={
+                    !businessDetails.country
+                      ? "Select country first"
+                      : countryStates[businessDetails.country]?.length === 0
+                      ? "No states available"
+                      : "Select state"
+                  } />
+                </SelectTrigger>
+                <SelectContent>
+                  {businessDetails.country && countryStates[businessDetails.country]?.map((state: string) => (
+                    <SelectItem key={state} value={state}>
+                      {state}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
@@ -2106,6 +2393,7 @@ export default function MonthlyStatement() {
                 value={businessDetails.postcode}
                 onChange={(e) => setBusinessDetails({ ...businessDetails, postcode: e.target.value })}
                 placeholder="Enter postcode"
+                maxLength={8}
               />
             </div>
           </div>

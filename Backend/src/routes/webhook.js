@@ -342,11 +342,21 @@ function cleanRichText(value) {
 }
 
 function normalizeTableCell(value) {
-    if (value === null || value === undefined) {
+    if (value === null || value === undefined || value === '') {
         return '';
     }
+    if (typeof value === 'string') {
+        // Ensure it's a valid string that pdfme can handle
+        return value.trim();
+    }
+    if (typeof value === 'number') {
+        return value.toString();
+    }
+    if (typeof value === 'boolean') {
+        return value ? 'Yes' : 'No';
+    }
     if (Array.isArray(value)) {
-        return value.map((entry) => normalizeTableCell(entry)).join(', ');
+        return value.map((entry) => normalizeTableCell(entry)).filter(Boolean).join(', ');
     }
     if (typeof value === 'object' && value !== null) {
         const normalized = Object.values(value)
@@ -355,109 +365,118 @@ function normalizeTableCell(value) {
             .join(', ');
         return normalized || '';
     }
-    return value.toString();
+    // Fallback for any other type
+    try {
+        return String(value) || '';
+    } catch {
+        return '';
+    }
 }
 
+// SERVICE_TABLE_CONFIG: Maps funding codes to template table field names (must match monthlyStatement.json exactly)
 const SERVICE_TABLE_CONFIG = {
     HSQ: {
         delivered: {
-            tableName: 'Table P6-1',
+            tableName: 'Table P6-1 copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
-            totals: ['$P6-1 ', '$P6-2', '$P6-3'],
+            totals: ['$P6-1  copy', '$P6-2 copy', '$P6-3 copy'],
             rowType: 'delivered'
         },
         adjustment: {
-            tableName: 'Table P7-1',
+            tableName: 'Table P7-1 copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
-            totals: ['$P7-1', '$P7-2', '$P7-3'],
+            totals: ['$P7-1 copy', '$P7-2 copy', '$P7-3 copy'],
             rowType: 'adjustment'
         }
     },
     RCP: {
+        // RCP uses Table P12-1 copy copy and Table P12-3 copy copy in the template for service tables
         delivered: {
-            tableName: 'Table P8-1 ',
+            tableName: 'Table P12-1  copy copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
-            totals: ['$P8-1 ', '$P8-2', '$P8-3'],
+            totals: ['$P12-1  copy copy', '$P11-3   copy copy', '$P12-3  copy copy'],
             rowType: 'delivered'
         },
         adjustment: {
-            tableName: 'Table P8-2',
+            tableName: 'Table P12-3  copy copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
-            totals: ['$P8-4', '$P8-5', '$P8-6'],
+            totals: ['$P12-7  copy copy', '$P11-8 copy copy copy', '$P11-9 1 copy copy copy'],
             rowType: 'adjustment'
         }
     },
     EOL: {
         delivered: {
             tableName: 'Table P9-1',
-            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            // Template table has 9 columns: Date, Provider, Service, Unit, Quantity, Unit Price, Total Price, Gov. Sub., Cont.
+            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P9-1', '$P9-2', '$P9-3'],
             rowType: 'delivered'
         },
         adjustment: {
             tableName: 'Table P9-2',
-            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            // Template table has 9 columns: Date, Provider, Service, Unit, Quantity, Unit Price, Total Price, Gov. Sub., Cont.
+            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P9-4', '$P9-5', '$P9-6'],
             rowType: 'adjustment'
         }
     },
     ATS: {
         delivered: {
-            tableName: 'Table P10-1 ',
+            tableName: 'Table P10-1  copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
-            totals: ['$P10-1 ', '$P10-3', '$P10-3 '],
+            totals: ['$P10-1  copy', '$P10-3 copy', '$P10-3  copy'],
             rowType: 'delivered'
         },
         committed: {
-            tableName: 'Table P10-2',
+            tableName: 'Table P10-2 copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
-            totals: ['$P10-4', '$P10-5', '$P10-6'],
+            totals: ['$P10-4 copy', '$P10-5 copy', '$P10-6 copy'],
             rowType: 'committed'
         },
         adjustment: {
-            tableName: 'Table P10-3',
+            tableName: 'Table P10-3 copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
-            totals: ['$P10-7', '$P10-8', '$P10-9'],
+            totals: ['$P10-7 copy', '$P10-8 copy', '$P10-9 copy'],
             rowType: 'adjustment'
         }
     },
     ATO: {
         delivered: {
-            tableName: 'Table P11-1 ',
+            tableName: 'Table P11-1  copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
-            totals: ['$P11-1', '$P11-3 ', '$P11-3'],
+            totals: ['$P11-1 copy', '$P11-3  copy', '$P11-3 copy'],
             rowType: 'delivered'
         },
         committed: {
-            tableName: 'Table P11-3 ',
+            tableName: 'Table P11-3  copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
-            totals: ['$P11-4', '$P11-5', '$P11-6'],
-            rowType: 'committed'
-        },
-        adjustment: {
-            tableName: 'Table P11-2',
-            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
-            totals: ['$P11-7 ', '$P11-8', '$P11-9 1'],
-            rowType: 'adjustment'
-        }
-    },
-    HMB: {
-        delivered: {
-            tableName: 'Table P12-1 ',
-            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
-            totals: ['$P12-1 ', '$P11-3  ', '$P12-3 '],
-            rowType: 'delivered'
-        },
-        committed: {
-            tableName: 'Table P12-3 ',
-            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
-            totals: ['$P12-4 ', '$P11-5 copy', '$P11-6 '],
+            totals: ['$P11-4 copy', '$P11-5 copy', '$P11-6 copy'],
             rowType: 'committed'
         },
         adjustment: {
             tableName: 'Table P11-2 copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
-            totals: ['$P12-7 ', '$P11-8 copy', '$P11-9 1 copy'],
+            totals: ['$P11-7  copy', '$P11-8 copy', '$P11-9 1 copy'],
+            rowType: 'adjustment'
+        }
+    },
+    HMB: {
+        delivered: {
+            tableName: 'Table P12-1  copy',
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P12-1  copy', '$P11-3   copy', '$P12-3  copy'],
+            rowType: 'delivered'
+        },
+        committed: {
+            tableName: 'Table P12-3  copy',
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P12-4  copy', '$P11-5 copy copy', '$P11-6  copy'],
+            rowType: 'committed'
+        },
+        adjustment: {
+            tableName: 'Table P11-2 copy copy',
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P12-7  copy', '$P11-8 copy copy', '$P11-9 1 copy copy'],
             rowType: 'adjustment'
         }
     }
@@ -2150,7 +2169,20 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 year: yearValue
             });
 
-            ['P2 Subtitle', 'P3 Subtitle', 'P4 Subtitle', 'P5 Subtitle'].forEach((field) => {
+            // Populate all subtitle fields in the template with quarter metadata
+            const allSubtitleFields = [
+                'P2 Subtitle',
+                'P3 Subtitle', 'P3 Subtitle copy',
+                'P4 Subtitle copy',
+                'P5 Subtitle copy',
+                'P7 Subtitle 1 copy', 'P7 Subtitle  2 copy', 'P7 Subtitle  2 copy 2', 'P7 Subtitle  2 copy copy',
+                'P8 Subtitle  copy',
+                'P9 Subtitle', 'P9 Subtitle copy', 'P9 Subtitle-2',
+                'P10 Subtitle copy', 'P10 Subtitle-2 copy',
+                'P11 Subtitle copy', 'P11 Subtitle-2 copy',
+                'P12 Subtitle  copy', 'P12 Subtitle-2  copy', 'P12 Subtitle-2  copy copy'
+            ];
+            allSubtitleFields.forEach((field) => {
                 setMultiValueField(templateInputs, field, subtitlePayload);
             });
 
@@ -2173,17 +2205,19 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 { type: 'currency', field: '$P2-3', value: (agg) => agg.primarySupplementAmount },
                 { type: 'currency', field: '$P2-4', value: (agg) => agg.carryoverFunding + agg.unspentReturned },
                 { type: 'currency', field: '$P2-6', value: (agg) => agg.commonwealthUnspent },
-                { type: 'currency', field: '$P2-7', value: (agg) => agg.providerUnspent },
-                { type: 'currency', field: '$P2-8', value: (agg) => agg.participantUnspent },
+                { type: 'currency', field: '$P2-6 copy copy', value: (agg) => agg.commonwealthUnspent },
+                { type: 'currency', field: '$P2-7 copy copy', value: (agg) => agg.providerUnspent },
+                { type: 'currency', field: '$P2-8 copy copy', value: (agg) => agg.participantUnspent },
                 { type: 'currency', field: '$P2-9', value: (agg) => agg.previousMonthSpending },
                 { type: 'currency', field: '$P2-10', value: (agg) => agg.totalAvailableBudget },
                 { type: 'currency', field: '$P2-11', value: (agg) => agg.totalAvailableBudget },
                 { type: 'currency', field: '$P2-12', value: (agg) => agg.deliveredAmount },
                 { type: 'currency', field: '$P2-13', value: (agg) => agg.adjustmentAmount },
                 { type: 'currency', field: '$P2-14', value: (agg) => agg.remainingBalance },
-                { type: 'currency', field: '$P7-4', value: (agg) => agg.carryoverFunding },
-                { type: 'currency', field: '$P7-5', value: (agg) => agg.unspentReturned },
-                { type: 'currency', field: '$P7-6', value: (agg) => agg.carryoverFunding + agg.unspentReturned }
+                { type: 'currency', field: '$P2-14 copy', value: (agg) => agg.remainingBalance },
+                { type: 'currency', field: '$P7-4 copy', value: (agg) => agg.carryoverFunding },
+                { type: 'currency', field: '$P7-5 copy', value: (agg) => agg.unspentReturned },
+                { type: 'currency', field: '$P7-6 copy', value: (agg) => agg.carryoverFunding + agg.unspentReturned }
             ]);
 
             const restorativeAggregate = budgetAggregates.RCP ? { ...budgetAggregates.RCP } : initializeBudgetAggregate();
@@ -2208,79 +2242,95 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             endOfLifeAggregate.primarySupplementLabel = endOfLifeAggregate.primarySupplementLabel || endOfLifeAggregate.fund || endOfLifeAggregate.fundClassification || '';
 
             applyBudgetMapping(templateInputs, endOfLifeAggregate, [
-                { type: 'multi', field: 'P3-12', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
-                { type: 'currency', field: '$P3-11', value: (agg) => agg.availableFundStart },
-                { type: 'currency', field: '$P3-12', value: (agg) => agg.primarySupplementAmount },
-                { type: 'currency', field: '$P3-13', value: (agg) => agg.commonwealthUnspent },
-                { type: 'currency', field: '$P3-14', value: (agg) => agg.providerUnspent },
-                { type: 'currency', field: '$P3-15', value: (agg) => agg.participantUnspent },
-                { type: 'currency', field: '$P3-16', value: (agg) => agg.previousMonthSpending },
-                { type: 'currency', field: '$P3-17', value: (agg) => agg.totalAvailableBudget },
-                { type: 'currency', field: '$P3-18', value: (agg) => agg.deliveredAmount },
-                { type: 'currency', field: '$P3-19', value: (agg) => agg.adjustmentAmount },
-                { type: 'currency', field: '$P3-20', value: (agg) => agg.remainingBalance },
-                { type: 'multi', field: 'P3 Footer 2', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate) || 'N/A' }) }
+                { type: 'multi', field: 'P3-12 copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
+                { type: 'currency', field: '$P3-11 copy', value: (agg) => agg.availableFundStart },
+                { type: 'currency', field: '$P3-12 copy', value: (agg) => agg.primarySupplementAmount },
+                { type: 'currency', field: '$P3-16 copy', value: (agg) => agg.previousMonthSpending },
+                { type: 'currency', field: '$P3-17 copy', value: (agg) => agg.totalAvailableBudget },
+                { type: 'currency', field: '$P3-18 copy', value: (agg) => agg.deliveredAmount },
+                { type: 'currency', field: '$P3-19 copy', value: (agg) => agg.adjustmentAmount },
+                { type: 'currency', field: '$P3-20 copy', value: (agg) => agg.remainingBalance }
             ]);
 
             const assistiveShortAggregate = budgetAggregates.ATS ? { ...budgetAggregates.ATS } : initializeBudgetAggregate();
             assistiveShortAggregate.primarySupplementLabel = assistiveShortAggregate.primarySupplementLabel || assistiveShortAggregate.fund || assistiveShortAggregate.fundClassification || '';
 
             applyBudgetMapping(templateInputs, assistiveShortAggregate, [
-                { type: 'multi', field: 'P4-2', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
-                { type: 'currency', field: '$P4-1 ', value: (agg) => agg.availableFundStart },
-                { type: 'currency', field: '$P4-3', value: (agg) => agg.fundAmount },
-                { type: 'currency', field: '$P4-4', value: (agg) => agg.commonwealthUnspent },
-                { type: 'currency', field: '$P4-5', value: (agg) => agg.providerUnspent },
-                { type: 'currency', field: '$P4-6', value: (agg) => agg.participantUnspent },
-                { type: 'currency', field: '$P4-7', value: (agg) => agg.previousMonthSpending },
-                { type: 'currency', field: '$P4-8', value: (agg) => agg.totalAvailableBudget },
-                { type: 'currency', field: '$P4-9', value: (agg) => agg.deliveredAmount },
-                { type: 'currency', field: '$P4-10', value: (agg) => agg.adjustmentAmount },
-                { type: 'currency', field: '$P4-11', value: (agg) => agg.remainingBalance },
-                { type: 'currency', field: '$P4-12', value: (agg) => agg.committedFunds },
-                { type: 'currency', field: '$P4-13', value: (agg) => agg.remainingBalance },
-                { type: 'multi', field: 'P4 Footer 2', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate) || 'N/A' }) }
+                { type: 'multi', field: 'P4-2 copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
+                { type: 'currency', field: '$P4-1  copy', value: (agg) => agg.availableFundStart },
+                { type: 'currency', field: '$P4-2 copy', value: (agg) => agg.primarySupplementAmount },
+                { type: 'currency', field: '$P4-3 copy', value: (agg) => agg.fundAmount },
+                { type: 'currency', field: '$P4-7 copy', value: (agg) => agg.previousMonthSpending },
+                { type: 'currency', field: '$P4-8 copy', value: (agg) => agg.totalAvailableBudget },
+                { type: 'currency', field: '$P4-9 copy', value: (agg) => agg.deliveredAmount },
+                { type: 'currency', field: '$P4-10 copy', value: (agg) => agg.adjustmentAmount },
+                { type: 'currency', field: '$P4-11 copy', value: (agg) => agg.remainingBalance },
+                { type: 'currency', field: '$P4-12 copy', value: (agg) => agg.committedFunds },
+                { type: 'currency', field: '$P4-13 copy', value: (agg) => agg.remainingBalance },
+                { type: 'multi', field: 'P4 Footer 2 copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate) || 'N/A' }) }
             ]);
 
             const assistiveOngoingAggregate = budgetAggregates.ATO ? { ...budgetAggregates.ATO } : initializeBudgetAggregate();
             assistiveOngoingAggregate.primarySupplementLabel = assistiveOngoingAggregate.primarySupplementLabel || assistiveOngoingAggregate.fund || assistiveOngoingAggregate.fundClassification || '';
 
             applyBudgetMapping(templateInputs, assistiveOngoingAggregate, [
-                { type: 'multi', field: 'P4-15', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
-                { type: 'currency', field: '$P4-14', value: (agg) => agg.availableFundStart },
-                { type: 'currency', field: '$P4-15', value: (agg) => agg.primarySupplementAmount },
-                { type: 'currency', field: '$P4-16', value: (agg) => agg.commonwealthUnspent },
-                { type: 'currency', field: '$P4-17', value: (agg) => agg.providerUnspent },
-                { type: 'currency', field: '$P4-18', value: (agg) => agg.participantUnspent },
-                { type: 'currency', field: '$P4-19', value: (agg) => agg.previousMonthSpending },
-                { type: 'currency', field: '$P4-20', value: (agg) => agg.totalAvailableBudget },
-                { type: 'currency', field: '$P4-21', value: (agg) => agg.deliveredAmount },
-                { type: 'currency', field: '$P4-22', value: (agg) => agg.adjustmentAmount },
-                { type: 'currency', field: '$P4-23', value: (agg) => agg.remainingBalance },
-                { type: 'currency', field: '$P4-24', value: (agg) => agg.committedFunds },
-                { type: 'currency', field: '$P4-25', value: (agg) => agg.remainingBalance },
-                { type: 'multi', field: 'P4 Footer 1', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate) || 'N/A' }) }
+                { type: 'multi', field: 'P4-15 copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
+                { type: 'currency', field: '$P4-14 copy', value: (agg) => agg.availableFundStart },
+                { type: 'currency', field: '$P4-15 copy', value: (agg) => agg.primarySupplementAmount },
+                { type: 'currency', field: '$P4-19 copy', value: (agg) => agg.previousMonthSpending },
+                { type: 'currency', field: '$P4-20 copy', value: (agg) => agg.totalAvailableBudget },
+                { type: 'currency', field: '$P4-21 copy', value: (agg) => agg.deliveredAmount },
+                { type: 'currency', field: '$P4-22 copy', value: (agg) => agg.adjustmentAmount },
+                { type: 'currency', field: '$P4-23 copy', value: (agg) => agg.remainingBalance },
+                { type: 'currency', field: '$P4-24 copy', value: (agg) => agg.committedFunds },
+                { type: 'currency', field: '$P4-25 copy', value: (agg) => agg.remainingBalance },
+                { type: 'multi', field: 'P4 Footer 1 copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate) || 'N/A' }) }
             ]);
 
             const homeModificationAggregate = budgetAggregates.HMB ? { ...budgetAggregates.HMB } : initializeBudgetAggregate();
             homeModificationAggregate.primarySupplementLabel = homeModificationAggregate.primarySupplementLabel || homeModificationAggregate.fund || homeModificationAggregate.fundClassification || '';
 
             applyBudgetMapping(templateInputs, homeModificationAggregate, [
-                { type: 'multi', field: 'P5-', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
-                { type: 'currency', field: '$P5-1', value: (agg) => agg.availableFundStart },
-                { type: 'currency', field: '$P5-2', value: (agg) => agg.primarySupplementAmount },
-                { type: 'currency', field: '$P5-3', value: (agg) => agg.commonwealthUnspent },
-                { type: 'currency', field: '$P5-4', value: (agg) => agg.providerUnspent },
-                { type: 'currency', field: '$P5-5', value: (agg) => agg.participantUnspent },
-                { type: 'currency', field: '$P5-6', value: (agg) => agg.previousMonthSpending },
-                { type: 'currency', field: '$P5-7', value: (agg) => agg.totalAvailableBudget },
-                { type: 'currency', field: '$P5-8', value: (agg) => agg.deliveredAmount },
-                { type: 'currency', field: '$P5-9', value: (agg) => agg.adjustmentAmount },
-                { type: 'currency', field: '$P5-10', value: (agg) => agg.remainingBalance },
-                { type: 'currency', field: '$P5-11', value: (agg) => agg.committedFunds },
-                { type: 'currency', field: '$P5-12', value: (agg) => agg.remainingBalance },
-                { type: 'multi', field: 'P4 Footer 2 copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate) || 'N/A' }) }
+                { type: 'multi', field: 'P5- copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
+                { type: 'currency', field: '$P5-1 copy', value: (agg) => agg.availableFundStart },
+                { type: 'currency', field: '$P5-2 copy', value: (agg) => agg.primarySupplementAmount },
+                { type: 'currency', field: '$P5-6 copy', value: (agg) => agg.previousMonthSpending },
+                { type: 'currency', field: '$P5-7 copy', value: (agg) => agg.totalAvailableBudget },
+                { type: 'currency', field: '$P5-8 copy', value: (agg) => agg.deliveredAmount },
+                { type: 'currency', field: '$P5-9 copy', value: (agg) => agg.adjustmentAmount },
+                { type: 'currency', field: '$P5-10 copy', value: (agg) => agg.remainingBalance },
+                { type: 'currency', field: '$P5-11 copy', value: (agg) => agg.committedFunds },
+                { type: 'currency', field: '$P5-12 copy', value: (agg) => agg.remainingBalance },
+                { type: 'multi', field: 'P4 Footer 2 copy copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate) || 'N/A' }) },
+                { type: 'multi', field: 'P4 Footer 3 copy copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate) || 'N/A' }) }
             ]);
+
+            // Pre-initialize ALL template tables with empty rows to prevent pdfme errors
+            // These are all table field names from monthlyStatement.json
+            const allTemplateTables = [
+                { name: 'Table P6-1 copy', columns: 8 },
+                { name: 'Table P6-1 copy copy copy', columns: 8 },
+                { name: 'Table P7-1 copy', columns: 8 },
+                { name: 'Table P9-1', columns: 9 },
+                { name: 'Table P9-2', columns: 9 },
+                { name: 'Table P10-1  copy', columns: 8 },
+                { name: 'Table P10-2 copy', columns: 8 },
+                { name: 'Table P10-3 copy', columns: 8 },
+                { name: 'Table P11-1  copy', columns: 8 },
+                { name: 'Table P11-2 copy', columns: 8 },
+                { name: 'Table P11-3  copy', columns: 8 },
+                { name: 'Table P12-1  copy', columns: 8 },
+                { name: 'Table P12-3  copy', columns: 8 },
+                { name: 'Table P11-2 copy copy', columns: 8 },
+                { name: 'Table P12-1  copy copy', columns: 8 },
+                { name: 'Table P12-3  copy copy', columns: 8 }
+            ];
+
+            allTemplateTables.forEach(({ name, columns }) => {
+                const emptyRow = Array(columns).fill('');
+                emptyRow[1] = 'No services recorded';
+                templateInputs[name] = JSON.stringify([emptyRow]);
+            });
 
             const serviceBuckets = createServiceBuckets();
             services.forEach((service) => {
@@ -2337,28 +2387,52 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 });
             });
 
+            // Sanitize all table inputs to ensure pdfme compatibility
             Object.entries(templateInputs).forEach(([key, value]) => {
-                if (typeof key === 'string' && key.startsWith('Table ') && typeof value === 'string') {
+                if (typeof key === 'string' && key.startsWith('Table ')) {
                     try {
-                        const parsed = JSON.parse(value);
+                        let parsed;
+                        if (typeof value === 'string') {
+                            parsed = JSON.parse(value);
+                        } else if (Array.isArray(value)) {
+                            parsed = value;
+                        } else {
+                            parsed = [];
+                        }
+                        
                         const columnCount = tableColumnCounts[key]
-                            ?? (Array.isArray(parsed) && Array.isArray(parsed[0]) ? parsed[0].length : 0);
-                        const sanitized = Array.isArray(parsed)
-                            ? parsed.map((row) => {
-                                const baseRow = Array.isArray(row) ? row : [];
-                                const padded = [...baseRow];
-                                while (padded.length < columnCount) {
-                                    padded.push('');
-                                }
-                                if (columnCount > 0) {
-                                    padded.length = columnCount;
-                                }
-                                return padded.map((cell) => normalizeTableCell(cell));
-                            })
-                            : [];
+                            ?? (Array.isArray(parsed) && Array.isArray(parsed[0]) ? parsed[0].length : 8);
+                        
+                        // Ensure we have at least one row with empty cells
+                        if (!Array.isArray(parsed) || parsed.length === 0) {
+                            const emptyRow = Array(columnCount).fill('');
+                            emptyRow[1] = 'No services recorded for this period'; // Service column
+                            parsed = [emptyRow];
+                        }
+                        
+                        const sanitized = parsed.map((row) => {
+                            const baseRow = Array.isArray(row) ? row : [];
+                            const padded = [...baseRow];
+                            while (padded.length < columnCount) {
+                                padded.push('');
+                            }
+                            if (columnCount > 0) {
+                                padded.length = columnCount;
+                            }
+                            // Ensure every cell is a valid string
+                            return padded.map((cell) => {
+                                const normalized = normalizeTableCell(cell);
+                                // Double-check: pdfme requires strings that can be split
+                                return typeof normalized === 'string' ? normalized : '';
+                            });
+                        });
                         templateInputs[key] = JSON.stringify(sanitized);
                     } catch (e) {
-                        templateInputs[key] = JSON.stringify([]);
+                        // Fallback: create an empty row with default column count
+                        const defaultColumnCount = tableColumnCounts[key] || 8;
+                        const emptyRow = Array(defaultColumnCount).fill('');
+                        emptyRow[1] = 'No data available';
+                        templateInputs[key] = JSON.stringify([emptyRow]);
                     }
                 }
             });
