@@ -1665,14 +1665,14 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         if (startDate) {
             const startDateObj = new Date(startDate);
             filteredServiceItems = filteredServiceItems.filter(p => 
-                p.scheduledStartDate && p.scheduledStartDate >= startDateObj
+                p.actualEndDate && p.actualEndDate >= startDateObj
             );
         }
 
         if (endDate) {
             const endDateObj = new Date(endDate);
             filteredServiceItems = filteredServiceItems.filter(p => 
-                p.scheduledStartDate && p.scheduledStartDate <= endDateObj
+                p.actualEndDate && p.actualEndDate <= endDateObj
             );
         }
 
