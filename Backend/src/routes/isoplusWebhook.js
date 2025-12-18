@@ -34,7 +34,7 @@ router.post('/isoplus', async (req, res) => {
         break;
       
       case 'item.updated':
-        await handleValueUpdated(payload);
+        await handleItemUpdated(payload);
         break;
       
       case 'item.finalized':
@@ -609,6 +609,11 @@ async function handleValueUpdated(payload) {
         isDeleted,
         syncGUID
       });
+
+      const attributeType = payload.attribute?.type;
+      if (attributeType === 'reference' || attributeType === 'members') {
+        await updateReferencingItems(itemId, workspaceId, boardId);
+      }
     }
 
   } catch (err) {
@@ -689,6 +694,251 @@ async function handleItemFinalized(payload) {
     });
     throw err;
   }
+}
+
+async function handleItemUpdated(payload) {
+  try {
+    const itemId = payload.id;
+    const boardId = payload.board_id;
+    const workspaceId = payload.workspace_id;
+    
+    info('Webhook-Handler', 'Processing item.updated event', { 
+      itemId,
+      boardId,
+      workspaceId
+    });
+
+    // Fetch or create item if it doesn't exist
+    const itemResult = await fetchOrCreateItem(itemId, boardId, workspaceId);
+    if (!itemResult) {
+      warn('Webhook-Handler', 'Item not found for item update and could not be fetched', { 
+        itemId
+      });
+      return;
+    }
+
+    if (itemResult.deleted) {
+      info('Webhook-Handler', 'Item was deleted in ISO+, skipping item update', { 
+        itemId
+      });
+      return;
+    }
+
+    const { boardId: foundBoardId, workspaceId: foundWorkspaceId, currentSyncGUID } = itemResult;
+    if (!foundBoardId) {
+      warn('Webhook-Handler', 'No boardId found on item', { itemId });
+      return;
+    }
+
+    // Check if board has sync enabled
+    const board = await Board.findOne({ boardId: foundBoardId, syncData: true })
+      .select('currentSyncGUID')
+      .lean();
+    if (!board) {
+      info('Webhook-Handler', 'Board not found or sync not enabled', { boardId: foundBoardId });
+      return;
+    }
+
+    // Fetch full item data from API
+    const fullItemData = await getItemValues(foundWorkspaceId, foundBoardId, itemId);
+    
+    if (fullItemData === ITEM_DELETED) {
+      info('Webhook-Handler', 'Item was deleted in ISO+ during refresh, deleting local copy', { 
+        itemId
+      });
+      await deleteItemFromDatabase(itemId);
+      return;
+    }
+    
+    if (!fullItemData) {
+      warn('Webhook-Handler', 'Failed to fetch item data for update', { itemId });
+      return;
+    }
+
+    // Transform and update the item
+    const transformedData = transformItemData(fullItemData);
+    const syncGUID = null; // Set to null for webhook updates
+    
+    await Item.findOneAndUpdate(
+      { itemId: itemId },
+      {
+        $set: {
+          data: transformedData,
+          syncGUID: syncGUID,
+          updatedAt: new Date()
+        }
+      }
+    );
+    
+    info('Webhook-Handler', 'Item updated successfully', { 
+      itemId, 
+      boardId: foundBoardId,
+      syncGUID
+    });
+
+    // Update all items that reference this item
+    await updateReferencingItems(itemId, foundWorkspaceId, foundBoardId);
+
+  } catch (err) {
+    error('Webhook-Handler', 'Failed to handle item.updated', { 
+      itemId: payload?.id,
+      error: err.message,
+      stack: err.stack
+    });
+    throw err;
+  }
+}
+
+async function updateReferencingItems(referencedItemId, workspaceId, boardId) {
+  try {
+    const referencedIdStr = referencedItemId.toString();
+    
+    const boards = await Board.find({ 
+      workspaceId: workspaceId,
+      syncData: true 
+    })
+      .select('boardId')
+      .lean();
+
+    if (boards.length === 0) {
+      return;
+    }
+
+    const boardIds = boards.map(b => b.boardId);
+    
+    const batchSize = 100;
+    let processedCount = 0;
+    let updatedCount = 0;
+
+    for (const boardIdToCheck of boardIds) {
+      let skip = 0;
+      
+      while (true) {
+        const items = await Item.find({ boardId: boardIdToCheck })
+          .select('itemId boardId workspaceId data')
+          .skip(skip)
+          .limit(batchSize)
+          .lean();
+
+        if (items.length === 0) {
+          break;
+        }
+
+        // Check each item to see if it references the updated item
+        for (const item of items) {
+          try {
+            // Check if item's data contains a reference to the updated item
+            const referencesItem = checkIfItemReferences(item.data, referencedIdStr);
+            
+            if (referencesItem) {
+              // Refresh this item from API to get updated reference data
+              const itemBoard = await Board.findOne({ 
+                boardId: item.boardId, 
+                syncData: true 
+              }).lean();
+              
+              if (!itemBoard) {
+                continue;
+              }
+
+              const fullItemData = await getItemValues(item.workspaceId, item.boardId, item.itemId);
+              
+              if (fullItemData === ITEM_DELETED) {
+                continue;
+              }
+              
+              if (fullItemData) {
+                const transformedData = transformItemData(fullItemData);
+                
+                await Item.findOneAndUpdate(
+                  { itemId: item.itemId },
+                  {
+                    $set: {
+                      data: transformedData,
+                      syncGUID: null,
+                      updatedAt: new Date()
+                    }
+                  }
+                );
+                
+                updatedCount++;
+                
+                info('Webhook-Handler', 'Updated referencing item', {
+                  itemId: item.itemId,
+                  referencedItemId,
+                  boardId: item.boardId
+                });
+              }
+            }
+          } catch (itemErr) {
+            warn('Webhook-Handler', 'Failed to check/update referencing item', {
+              itemId: item.itemId,
+              referencedItemId,
+              error: itemErr.message
+            });
+          }
+        }
+
+        processedCount += items.length;
+        
+        if (items.length < batchSize) {
+          break;
+        }
+        
+        skip += batchSize;
+      }
+    }
+
+    if (updatedCount > 0) {
+      info('Webhook-Handler', 'Finished updating referencing items', {
+        referencedItemId,
+        processedCount,
+        updatedCount
+      });
+    }
+
+  } catch (err) {
+    warn('Webhook-Handler', 'Failed to update referencing items', {
+      referencedItemId,
+      error: err.message
+    });
+  }
+}
+
+function checkIfItemReferences(itemData, referencedIdStr) {
+  if (!itemData || typeof itemData !== 'object') {
+    return false;
+  }
+
+  for (const [key, value] of Object.entries(itemData)) {
+    if (value === null || value === undefined) {
+      continue;
+    }
+
+    // Check if value is the ID directly (string)
+    if (typeof value === 'string' && value === referencedIdStr) {
+      return true;
+    }
+
+    // Check if value is an array
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (typeof item === 'string' && item === referencedIdStr) {
+          return true;
+        }
+        if (typeof item === 'object' && item !== null && item.id === referencedIdStr) {
+          return true;
+        }
+      }
+    }
+
+    // Check if value is an object with id property
+    if (typeof value === 'object' && value !== null && value.id === referencedIdStr) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 async function handleItemDeleted(payload) {

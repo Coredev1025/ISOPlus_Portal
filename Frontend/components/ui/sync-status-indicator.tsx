@@ -80,7 +80,7 @@ export function SyncStatusIndicator() {
                             (board.jobStatus && board.jobStatus.state === 'failed');
             
             if (isManualSync) {
-              // For manual syncs, use jobStatus.progress for folders and syncStats for items
+              // For manual syncs, use jobStatus.progress for both folders and items
               const jobProgress = board.jobStatus?.progress || {};
               const syncStats = board.syncStats || {};
               
@@ -95,11 +95,8 @@ export function SyncStatusIndicator() {
               const totalFolders = jobProgress.totalFolders ?? 0;
               const currentFolder = jobProgress.currentFolder || null;
               
-              // Extract item counters from syncStats (updated by backend during sync)
-              const itemsProcessed = syncStats.itemsSynced ?? 0;
-              const itemsInserted = syncStats.itemsCreated ?? 0;
-              const itemsUpdated = syncStats.itemsUpdated ?? 0;
-              const itemsSkipped = syncStats.itemsSkipped ?? 0;
+              // Extract item counters from jobStatus.progress (real-time), fallback to syncStats
+              const itemsProcessed = jobProgress.itemsProcessed ?? syncStats.itemsSynced ?? 0;
               
               return {
                 boardId: board.boardId,
@@ -113,18 +110,12 @@ export function SyncStatusIndicator() {
                 duration: board.jobStatus.finishedOn && board.jobStatus.processedOn
                   ? board.jobStatus.finishedOn - board.jobStatus.processedOn
                   : undefined,
-                // Use jobStatus.progress for folder counters, fallback to syncStats
+                // Use jobStatus.progress for folder and item counters
                 progress: {
                   foldersProcessed: foldersProcessed,
                   totalFolders: totalFolders,
-                  currentFolder: currentFolder
-                },
-                // Use syncStats for item counters (updated by backend during sync)
-                counters: {
-                  itemsProcessed: itemsProcessed,
-                  itemsInserted: itemsInserted,
-                  itemsUpdated: itemsUpdated,
-                  itemsSkipped: itemsSkipped
+                  currentFolder: currentFolder,
+                  itemsProcessed: itemsProcessed
                 },
                 isManualSync: true,
                 error: isFailed ? {
@@ -157,14 +148,8 @@ export function SyncStatusIndicator() {
                   totalFolders: syncProgress.totalFolders ?? 0,
                   currentFolder: syncProgress.currentFolder || null,
                   currentPage: syncProgress.currentPage,
-                  totalPages: syncProgress.totalPages
-                },
-                // Use syncExecution.counters, fallback to syncStats for items
-                counters: {
-                  itemsProcessed: syncCounters.itemsProcessed ?? syncStats.itemsSynced ?? 0,
-                  itemsInserted: syncCounters.itemsInserted ?? syncStats.itemsCreated ?? 0,
-                  itemsUpdated: syncCounters.itemsUpdated ?? syncStats.itemsUpdated ?? 0,
-                  itemsSkipped: syncCounters.itemsSkipped ?? syncStats.itemsSkipped ?? 0
+                  totalPages: syncProgress.totalPages,
+                  itemsProcessed: syncCounters.itemsProcessed ?? syncStats.itemsSynced ?? 0
                 },
                 isManualSync: false,
                 error: isFailed ? {
@@ -235,12 +220,9 @@ export function SyncStatusIndicator() {
         
         // Get latest counters and progress from context (updated every 10 seconds via polling)
         // These values will automatically update when context changes
-        // For manual syncs: progress comes from jobStatus.progress, counters from syncStats
-        // For regular syncs: both come from syncExecution
-        const itemsProcessed = sync.counters?.itemsProcessed ?? 0;
-        const itemsInserted = sync.counters?.itemsInserted ?? 0;
-        const itemsUpdated = sync.counters?.itemsUpdated ?? 0;
-        const itemsSkipped = sync.counters?.itemsSkipped ?? 0;
+        // For manual syncs: progress (including itemsProcessed) comes from jobStatus.progress
+        // For regular syncs: progress comes from syncExecution
+        const itemsProcessed = sync.progress?.itemsProcessed ?? 0;
         const foldersProcessed = sync.progress?.foldersProcessed ?? 0;
         const totalFolders = sync.progress?.totalFolders ?? 0;
         const isManualSync = (sync as any).isManualSync || false;
@@ -332,34 +314,12 @@ export function SyncStatusIndicator() {
                 {/* Stats - uses latest counters from context */}
                 {!isFailed && (
                   <div className="flex flex-col gap-2 text-xs text-muted-foreground">
-                    {/* Item counters - always show, even if 0 initially */}
-                    <div className="flex items-center gap-4 flex-wrap">
-                      <div className="flex items-center gap-1">
-                        <Database className="h-3 w-3" />
-                        <span>
-                          {itemsProcessed > 0 ? `${itemsProcessed} items synced` : 'No items synced yet'}
-                        </span>
-                      </div>
-                      {/* Show detailed counters for manual syncs */}
-                      {isManualSync && (itemsInserted > 0 || itemsUpdated > 0 || itemsSkipped > 0) && (
-                        <div className="flex items-center gap-3 flex-wrap">
-                          {itemsInserted > 0 && (
-                            <span className="text-green-600" title="Items created">
-                              +{itemsInserted} created
-                            </span>
-                          )}
-                          {itemsUpdated > 0 && (
-                            <span className="text-blue-600" title="Items updated">
-                              ~{itemsUpdated} updated
-                            </span>
-                          )}
-                          {itemsSkipped > 0 && (
-                            <span className="text-gray-500" title="Items skipped">
-                              {itemsSkipped} skipped
-                            </span>
-                          )}
-                        </div>
-                      )}
+                    {/* Item processed count - always show, even if 0 initially */}
+                    <div className="flex items-center gap-1">
+                      <Database className="h-3 w-3" />
+                      <span>
+                        {itemsProcessed > 0 ? `${itemsProcessed} items processed` : 'No items processed yet'}
+                      </span>
                     </div>
                     {/* Sync type */}
                     {sync.syncType && (

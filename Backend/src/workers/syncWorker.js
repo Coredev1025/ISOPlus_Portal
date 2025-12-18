@@ -6,7 +6,7 @@ import Board from '../models/Board.js';
 import Item from '../models/Item.js';
 import SyncExecution from '../models/SyncExecution.js';
 import { validateBoard } from '../services/sync/validator.js';
-import { registerBoardWebhooks, unregisterBoardWebhooks } from '../services/webhookService.js';
+import { registerBoardWebhooks, unregisterBoardWebhooks, getBoardHooks } from '../services/webhookService.js';
 import { info, error, warn } from '../utils/logger.js';
 import { syncQueue } from '../services/sync/queue.js';
 import { invalidateCacheForBoard } from '../utils/transformCache.js';
@@ -121,15 +121,68 @@ async function waitWithBackoff(retryCount) {
 
 async function disableWebhooksForBoard(authorization, workspaceId, boardId) {
   try {
+    if (!authorization) {
+      warn('Sync-Worker', 'Cannot disable webhooks: no authorization token', { boardId });
+      return;
+    }
+
+    // First, get all hooks from the API to ensure we delete all of them
+    const hooksResult = await getBoardHooks(authorization, workspaceId, boardId);
+    
+    if (hooksResult.success && hooksResult.hooks && hooksResult.hooks.length > 0) {
+      info('Sync-Worker', 'Found hooks to delete before sync', { 
+        boardId, 
+        hookCount: hooksResult.hooks.length 
+      });
+
+      // Delete all hooks from API
+      for (const hook of hooksResult.hooks) {
+        if (hook.id) {
+          try {
+            await unregisterBoardWebhooks(authorization, workspaceId, boardId, hook.id);
+            info('Sync-Worker', 'Deleted hook before sync', { 
+              boardId, 
+              hookId: hook.id 
+            });
+          } catch (hookErr) {
+            warn('Sync-Worker', 'Failed to delete hook', { 
+              boardId, 
+              hookId: hook.id,
+              error: hookErr.message 
+            });
+          }
+        }
+      }
+    }
+
+    // Also check database for hookId and delete it
     const board = await Board.findOne({ boardId }).select('hookId').lean();
     if (board?.hookId) {
-      info('Sync-Worker', 'Disabling webhooks before sync', { boardId, hookId: board.hookId });
-      await unregisterBoardWebhooks(authorization, workspaceId, boardId, board.hookId);
+      info('Sync-Worker', 'Deleting hook from database record', { 
+        boardId, 
+        hookId: board.hookId 
+      });
+      
+      // Try to delete the hook from API (in case it wasn't in the list)
+      try {
+        await unregisterBoardWebhooks(authorization, workspaceId, boardId, board.hookId);
+      } catch (hookErr) {
+        // Ignore errors - hook might already be deleted
+        warn('Sync-Worker', 'Hook from database not found in API (may already be deleted)', { 
+          boardId, 
+          hookId: board.hookId 
+        });
+      }
+      
+      // Clear hook from database
       await Board.findOneAndUpdate(
         { boardId },
         { $set: { hookId: null, hookSecret: null } }
       );
     }
+
+    info('Sync-Worker', 'Webhooks disabled successfully', { boardId });
+
   } catch (err) {
     warn('Sync-Worker', 'Failed to disable webhooks', { boardId, error: err.message });
   }
@@ -143,6 +196,38 @@ async function reEnableWebhooksForBoard(authorization, workspaceId, boardId) {
     }
     
     info('Sync-Worker', 'Re-enabling webhooks after sync', { boardId });
+    
+    try {
+      const hooksResult = await getBoardHooks(authorization, workspaceId, boardId);
+      
+      if (hooksResult.success && hooksResult.hooks && hooksResult.hooks.length > 0) {
+        info('Sync-Worker', 'Cleaning up existing hooks before re-enabling', { 
+          boardId, 
+          hookCount: hooksResult.hooks.length 
+        });
+        
+        for (const hook of hooksResult.hooks) {
+          if (hook.id) {
+            try {
+              await unregisterBoardWebhooks(authorization, workspaceId, boardId, hook.id);
+            } catch (hookErr) {
+              warn('Sync-Worker', 'Failed to delete existing hook during re-enable', { 
+                boardId, 
+                hookId: hook.id,
+                error: hookErr.message 
+              });
+            }
+          }
+        }
+      }
+    } catch (cleanupErr) {
+      warn('Sync-Worker', 'Error during hook cleanup before re-enable', { 
+        boardId, 
+        error: cleanupErr.message 
+      });
+      // Continue with registration anyway
+    }
+    
     const hookResult = await registerBoardWebhooks(authorization, workspaceId, boardId);
     
     if (hookResult.success) {
@@ -150,12 +235,23 @@ async function reEnableWebhooksForBoard(authorization, workspaceId, boardId) {
         { boardId },
         { $set: { hookId: hookResult.hookId, hookSecret: hookResult.secret } }
       );
-      info('Sync-Worker', 'Webhooks re-enabled successfully', { boardId, hookId: hookResult.hookId });
+      info('Sync-Worker', 'Webhooks re-enabled successfully', { 
+        boardId, 
+        hookId: hookResult.hookId 
+      });
     } else {
-      warn('Sync-Worker', 'Failed to re-enable webhooks', { boardId, error: hookResult.error });
+      error('Sync-Worker', 'Failed to re-enable webhooks', { 
+        boardId, 
+        error: hookResult.error,
+        errorDetails: hookResult.errorDetails 
+      });
     }
   } catch (err) {
-    error('Sync-Worker', 'Exception re-enabling webhooks', { boardId, error: err.message });
+    error('Sync-Worker', 'Exception re-enabling webhooks', { 
+      boardId, 
+      error: err.message,
+      stack: err.stack 
+    });
   }
 }
 
@@ -383,6 +479,7 @@ async function processDataBacklogSync(job) {
           currentFolder: folder.name,
           foldersProcessed: folderIndex + 1,
           totalFolders: folders.length,
+          itemsProcessed: totalItemsProcessed,
           syncGUID
         });
 
@@ -478,6 +575,15 @@ async function processDataBacklogSync(job) {
                   modified: bulkResult.modifiedCount
                 });
                 
+                await job.updateProgress({
+                  stage: 'syncing_folders',
+                  currentFolder: folder.name,
+                  foldersProcessed: folderIndex + 1,
+                  totalFolders: folders.length,
+                  itemsProcessed: totalItemsProcessed,
+                  syncGUID
+                });
+                
                 // Update sync execution progress
                 if (syncExecution) {
                   await SyncExecution.updateProgress(syncGUID, {
@@ -554,6 +660,15 @@ async function processDataBacklogSync(job) {
               batchSize: bulkOps.length,
               upserted: bulkResult.upsertedCount,
               modified: bulkResult.modifiedCount
+            });
+            
+            await job.updateProgress({
+              stage: 'syncing_folders',
+              currentFolder: folder.name,
+              foldersProcessed: folderIndex + 1,
+              totalFolders: folders.length,
+              itemsProcessed: totalItemsProcessed,
+              syncGUID
             });
             
             bulkOps = [];

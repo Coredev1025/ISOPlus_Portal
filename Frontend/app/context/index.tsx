@@ -32,12 +32,7 @@ export interface SyncStatus {
         currentFolder?: string;
         foldersProcessed?: number;
         totalFolders?: number;
-    };
-    counters?: {
         itemsProcessed?: number;
-        itemsInserted?: number;
-        itemsUpdated?: number;
-        itemsSkipped?: number;
     };
     isManualSync?: boolean;
     error?: {

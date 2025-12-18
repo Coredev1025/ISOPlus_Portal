@@ -315,7 +315,7 @@ export default function InvoiceGenerator() {
           const isCompleted = !isActive && !isFailed && wasActive;
           
           if (isManualSync) {
-            // For manual syncs, use jobStatus.progress for folders and syncStats for items
+            // For manual syncs, use jobStatus.progress for both folders and items
             const jobProgress = board.jobStatus?.progress || {};
             const syncStats = board.syncStats || {};
             
@@ -324,11 +324,8 @@ export default function InvoiceGenerator() {
             const totalFolders = jobProgress.totalFolders ?? 0;
             const currentFolder = jobProgress.currentFolder || null;
             
-            // Extract item counters from syncStats
-            const itemsProcessed = syncStats.itemsSynced ?? 0;
-            const itemsInserted = syncStats.itemsCreated ?? 0;
-            const itemsUpdated = syncStats.itemsUpdated ?? 0;
-            const itemsSkipped = syncStats.itemsSkipped ?? 0;
+            // Extract item counters from jobStatus.progress (real-time), fallback to syncStats
+            const itemsProcessed = jobProgress.itemsProcessed ?? syncStats.itemsSynced ?? 0;
             
             // Update sync status in context
             const updatedSyncStatus = {
@@ -343,13 +340,8 @@ export default function InvoiceGenerator() {
               progress: {
                 foldersProcessed,
                 totalFolders,
-                currentFolder
-              },
-              counters: {
-                itemsProcessed,
-                itemsInserted,
-                itemsUpdated,
-                itemsSkipped
+                currentFolder,
+                itemsProcessed
               },
               isManualSync: true,
               error: isFailed ? {
@@ -1108,7 +1100,7 @@ export default function InvoiceGenerator() {
 
       allItems.forEach((item, index) => {
         // Generate GUID for Item External Reference Identifier
-        const invoiceNumber = crypto.randomUUID();
+        const invoiceNumber = item.id;
         const careRecipientIdentifier = item.careRecipientIdentifier || '';
         let serviceIdentifier = item.serviceIdentifier || '';
         if (serviceIdentifier.includes('/')) {
@@ -1189,7 +1181,16 @@ export default function InvoiceGenerator() {
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
-      const fileName = `ExtInvoice01~INVOICE~${participantFilter}~${invoiceDate}.csv`;
+
+      const GenerateClaimExportFileName = () => {
+        // Generate a 5-character unique uppercase code using random values
+        const uniqueCode = Math.random().toString(36).substring(2, 7).toUpperCase();
+        let currentDate = new Date();
+        let timestamp = `${currentDate.getFullYear().toString().slice(2)}${(currentDate.getMonth() + 1).toString().padStart(2, '0')}${currentDate.getDate().toString().padStart(2, '0')}${currentDate.getHours().toString().padStart(2, '0')}${currentDate.getMinutes().toString().padStart(2, '0')}${currentDate.getSeconds().toString().padStart(2, '0')}`;
+        return `CLAIM~${timestamp}~${uniqueCode}.csv`;
+      }
+
+      const fileName = GenerateClaimExportFileName();
 
       link.href = url;
       link.download = fileName;
@@ -1264,13 +1265,8 @@ export default function InvoiceGenerator() {
           progress: {
             foldersProcessed: 0,
             totalFolders: 0,
-            currentFolder: undefined
-          },
-          counters: {
-            itemsProcessed: 0,
-            itemsInserted: 0,
-            itemsUpdated: 0,
-            itemsSkipped: 0
+            currentFolder: undefined,
+            itemsProcessed: 0
           },
           isManualSync: true
         };
