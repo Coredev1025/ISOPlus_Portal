@@ -19,6 +19,7 @@ import ndisRoutes from './routes/ndis.js';
 import ageCareRoutes from './routes/ageCare.js';
 import syncRoutes from './routes/sync.js';
 import itemsRoutes from './routes/items.js';
+import exportOptimizedRoutes from './routes/exportOptimized.js';
 import session from 'express-session';
 import MongoStore from 'connect-mongo';
 import syncWorker, { checkAndRetryFailedJobs } from './workers/syncWorker.js'; // Initialize sync worker
@@ -75,6 +76,7 @@ app.use('/api/care-management-ndis-pricing', ndisRoutes);
 app.use('/api/age-care', ageCareRoutes);
 app.use('/api/sync', syncRoutes);
 app.use('/api/items', itemsRoutes);
+app.use('/api/export', exportOptimizedRoutes);
 
 // Setup Bull Board for queue monitoring
 const serverAdapter = new ExpressAdapter();

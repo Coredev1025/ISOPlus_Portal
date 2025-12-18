@@ -99,6 +99,332 @@ async function getLogoData(business) {
     return `data:image/${type};base64,${Buffer.from(buffer).toString('base64')}`;
 }
 
+// Attribute names for referenced item types
+const REF_ATTRIBUTE_NAMES = {
+    // Participant Profile attributes
+    PROFILE_FULL_NAME: 'Full Name/Preferred Name',
+    PROFILE_PREFERRED_NAME: 'Preferred Name',
+    PROFILE_FIRST_NAME: 'First Name',
+    PROFILE_LAST_NAME: 'Last Name',
+    PROFILE_EMAIL: 'Email',
+    PROFILE_PRIMARY_PHONE: 'Primary Phone Number',
+    PROFILE_MY_AGED_CARE_ID: 'My Aged Care ID Number',
+    PROFILE_MY_AGED_CARE_ID_ALT: 'My Aged Care ID',
+    PROFILE_ADDRESS: 'Address',
+    PROFILE_SUBURB: 'Suburb',
+    PROFILE_STATE: 'State',
+    PROFILE_POSTCODE: 'Postcode',
+    PROFILE_POST_CODE: 'Post Code',
+    PROFILE_BILLING_CONTACT: 'Billing Contact',
+    PROFILE_BILLING_ADDRESS: 'Billing Address',
+    
+    // Client/Contractor attributes
+    CLIENT: 'Client',
+    CLIENT_EMAIL: 'Email Address',
+    CLIENT_PHONE: 'Phone Number',
+    CLIENT_ADDRESS: 'Address',
+    CLIENT_SUBURB: 'Suburb',
+    CLIENT_STATE: 'State',
+    CLIENT_POSTCODE: 'Postcode',
+    CLIENT_CONTACT_FIRST_NAME: 'Contact Person\'s First Name',
+    CLIENT_CONTACT_LAST_NAME: 'Contact Person\'s Last Name',
+    CLIENT_UPDATED_AT: 'Updated At',
+    CONTRACTOR: 'Contractor',
+    
+    // Job Planning/Type attributes
+    JOB_NUMBER: 'Job Number',
+    JOB_TITLE: 'Job Title',
+    JOB_TYPE: 'Job Type',
+    JOB_CODE: 'Job Code',
+    CLIENT_ORDER_NUMBER: 'Client\'s Order Number',
+    
+    // Service Fee Type attributes
+    FEE_TYPE: 'Fee Type',
+    RATE_GST_EXCL: 'Rate($) - GST Excl.',
+    
+    // Service Plan attributes
+    SERVICE_PLAN_ID: 'Service Plan ID',
+    SERVICE_ID_ITEM_ID: 'Service ID /  Item ID',
+    SERVICE_ID_ITEM_ID_ALT: 'Service ID/Item ID',
+    SERVICE: 'Service',
+    SERVICE_TYPE: 'Service Type',
+    UNIT_TYPE: 'Unit Type',
+    UNIT: 'Unit',
+    PRICE: 'Price ($)',
+    AGREED_UNIT_PRICE: 'Agreed Unit Price ($)',
+    PARTICIPANT_CONTRIBUTION: 'Participant Contribution (%)',
+    PARTICIPANT_CONTRIBUTION_GUIDELINE: 'Participant Contribution Guideline (%)',
+    
+    // Item attributes
+    ITEM_DESCRIPTION_CODE: 'Item Description Code',
+    ITEM_ID: 'Item ID',
+    ITEM_DESCRIPTION: 'Item Description',
+    ITEM: 'Item',
+    
+    // Wraparound attributes
+    WRAPAROUND: 'Wraparound',
+    WRAPAROUND_DESCRIPTION_CODE: 'Wraparound Description Code',
+    WRAPAROUND_ITEM_ID: 'Wraparound Item ID',
+    WRAPAROUND_DESCRIPTION: 'Wraparound Description',
+    
+    // Health Professional attributes
+    HEALTH_PROFESSIONAL_TYPE_CODE: 'Health Professional Type Code',
+    HEALTH_PROFESSIONAL_TYPE_OTHER: 'Health Professional Type',
+    
+    // NDIS Support Item attributes
+    SUPPORT_ITEM_NUMBER: 'Support Item Number',
+    SUPPORT_ITEM_NAME: 'Support Item Name',
+    SHORT_NOTICE_CANCELLATIONS: 'Short Notice Cancellations',
+    LABOUR_TRAVEL_TIME_COSTS: 'Labour Travel Time Costs',
+    
+    // NDIS State-based pricing attributes
+    ACT_PRICE: 'ACT($)',
+    NSW_PRICE: 'NSW($)',
+    NT_PRICE: 'NT($)',
+    QLD_PRICE: 'QLD($)',
+    SA_PRICE: 'SA($)',
+    TAS_PRICE: 'TAS($)',
+    VIC_PRICE: 'VIC($)',
+    WA_PRICE: 'WA($)',
+    REMOTE_PRICE: 'Remote($)',
+    VERY_REMOTE_PRICE: 'Very Remote($)',
+    
+    // NDIS Service Area attributes
+    SERVICE_AREA: 'Service Area',
+    
+    // NDIS Service Plan specific attributes
+    UNIT_DIRECT_SUPPORT: 'Unit (Direct Support)',
+    AGREED_PRICE_DIRECT_SUPPORT: 'Agreed Unit Price for Direct Support ($)',
+    UNIT_NON_LABOUR_TRAVEL: 'Unit (Provider Travel - Non-Labour Cost)',
+    AGREED_PRICE_NON_LABOUR_TRAVEL: 'Agreed Unit Price for Non-Labour Travel ($)',
+    UNIT_ACTIVITY_TRANSPORT: 'Unit (Activity Based Transport)',
+    AGREED_PRICE_ACTIVITY_TRANSPORT: 'Agreed Price for Activity Based Transport ($)',
+    UNIT_CENTRE_CAPITAL: 'Unit (Centre Capital Costs)',
+    AGREED_PRICE_CENTRE_CAPITAL: 'Agreed Unit Price for Centre Capital Costs($)',
+    UNIT_LABOUR_TRAVEL_TIME: 'Unit (Labour Travel Time)',
+    AGREED_PRICE_LABOUR_TRAVEL_TIME: 'Agreed Unit Price for Labour Travel Time ($)',
+    UNIT_ALLOWANCES: 'Unit (Allowances)',
+    AGREED_PRICE_ALLOWANCES: 'Agreed Price for Allowances($)',
+    UNIT_NON_FACE_TO_FACE: 'Unit (Non-Face-to-Face Support)',
+    AGREED_PRICE_NON_FACE_TO_FACE: 'Agreed Unit Price for Non-Face-to-Face Support($)',
+    
+    // Cancellation Type attributes
+    CANCELLATION_DEFINITION: 'Definition',
+    BILLABLE_TO_CLIENT: 'Billable to Client %',
+    PAYABLE_TO_WORKER: 'Payable to Worker %',
+    
+    // Fund attributes
+    FUND_AMOUNT: 'Fund Amount($)',
+    PREVIOUSLY_USED: 'Previously Used ($)',
+    INVOICED_AND_RECEIVED: 'Invoiced and Received Amount($)',
+    
+    // Participation Type attributes
+    PARTICIPATION_TYPE: 'Participation Type',
+    PARTICIPATION_DEFINITION: 'Definition',
+    
+    // Aged Care Budget attributes
+    TOTAL_BUDGET_HOME_SUPPORT: 'Total Available Budget for Home Support ($)',
+    REMAINING_HOME_SUPPORT: 'Remaining Home Support Balance as at the End of the Month ($)',
+    TOTAL_BUDGET_RESTORATIVE: 'Total Available Budget for Restorative Care ($)',
+    REMAINING_RESTORATIVE: 'Remaining Balance for Allocation Period ($)',
+    TOTAL_BUDGET_END_OF_LIFE: 'Total Available Budget for End-of-Life Care ($)',
+    TOTAL_BUDGET_AT_SHORT_TERM: 'Total Available Budget for Assistive Technology - Short-term ($)',
+    REMAINING_AT_SHORT_TERM: 'Remaining AT - Short-term Balance for Allocation Period ($)',
+    COMMITTED_AT_SHORT_TERM: 'Committed AT Short-term Funds - to be delivered ($-)',
+    TOTAL_BUDGET_AT_ONGOING: 'Total Available Budget for Assistive Technology - Ongoing ($)',
+    REMAINING_AT_ONGOING: 'Remaining AT - Ongoing Balance for Allocation Period ($)',
+    COMMITTED_AT_ONGOING: 'Committed AT Ongoing Funds - to be delivered ($-)',
+    TOTAL_BUDGET_HOME_MOD: 'Total Available Budget for Home Modification ($)',
+    REMAINING_HOME_MOD: 'Remaining HM Balance for Allocation Period ($)',
+    COMMITTED_HOME_MOD: 'Committed HM Funds - to be delivered ($-)',
+    FUNDING_END_DATE: 'Funding End Date',
+    
+    // Funding Source attributes
+    FS_NAME: 'Name',
+    FS_TITLE: 'Title',
+    FS_FUNDING_SOURCE_NAME: 'Funding Source Name',
+    FS_FULL_NAME: 'Full Name'
+};
+
+async function bulkFetchReferenceItemsFromDB(workspaceId, boardId, itemIds) {
+    if (!itemIds || itemIds.length === 0) return new Map();
+    
+    // Remove duplicates and nulls
+    const uniqueIds = [...new Set(itemIds.filter(Boolean).map(id => {
+        if (typeof id === 'object' && id.id) return id.id.toString();
+        if (typeof id === 'object' && id) return id.toString();
+        return id?.toString();
+    }).filter(Boolean))];
+    
+    if (uniqueIds.length === 0) return new Map();
+
+    // First try to fetch from the same board
+    let items = await Item.find({
+        workspaceId,
+        boardId,
+        itemId: { $in: uniqueIds }
+    }).lean();
+
+    // Build lookup map
+    const itemMap = new Map();
+    for (const item of items) {
+        itemMap.set(item.itemId, item);
+    }
+
+    // Check if we're missing any items - they might be in other boards
+    const foundIds = new Set(items.map(i => i.itemId));
+    const missingIds = uniqueIds.filter(id => !foundIds.has(id));
+    
+    if (missingIds.length > 0) {
+        // Fetch missing items from ANY board in the workspace
+        const crossBoardItems = await Item.find({
+            workspaceId,
+            itemId: { $in: missingIds }
+        }).lean();
+        
+        for (const item of crossBoardItems) {
+            if (!itemMap.has(item.itemId)) {
+                itemMap.set(item.itemId, item);
+            }
+        }
+        
+        // Log items that are still missing after cross-board search
+        const stillMissingIds = missingIds.filter(id => !itemMap.has(id));
+        if (stillMissingIds.length > 0) {
+            console.warn(`[Webhook] ${stillMissingIds.length} reference items not found in database`);
+        }
+    }
+
+    console.log(`[Webhook] Bulk fetch: requested=${uniqueIds.length}, found=${itemMap.size}`);
+    return itemMap;
+}
+
+function extractRefId(value) {
+    if (!value) return null;
+    if (Array.isArray(value) && value.length > 0) {
+        const first = value[0];
+        if (typeof first === 'object' && first.id) return first.id.toString();
+        if (typeof first === 'string') return first;
+        return first?.toString();
+    }
+    if (typeof value === 'object' && value.id) return value.id.toString();
+    if (typeof value === 'string') return value;
+    return value?.toString();
+}
+
+function getValueFromFlatData(item, attributeName) {
+    if (!item?.data) return null;
+    
+    // Handle array of attribute names (try each until one is found)
+    const attributeNames = Array.isArray(attributeName) ? attributeName : [attributeName];
+    
+    for (const attrName of attributeNames) {
+        // Check flat format (data.key)
+        if (item.data[attrName] !== undefined && item.data[attrName] !== null) {
+            return item.data[attrName];
+        }
+    }
+    
+    // Check values array format (data.values) - for older format support
+    if (Array.isArray(item.data.values)) {
+        for (const attrName of attributeNames) {
+            const entry = item.data.values.find(v => v.attribute?.name === attrName);
+            if (entry?.data !== undefined && entry?.data !== null) {
+                return entry.data;
+            }
+        }
+    }
+    
+    return null;
+}
+
+function getParticipantNameFromProfile(profileItem) {
+    if (!profileItem) return null;
+    
+    // Try different name attributes
+    const nameAttrs = [
+        REF_ATTRIBUTE_NAMES.PROFILE_PREFERRED_NAME,
+        REF_ATTRIBUTE_NAMES.PROFILE_FULL_NAME,
+        'Full Name',
+        'Preferred Name',
+        'Name'
+    ];
+    
+    const name = getValueFromFlatData(profileItem, nameAttrs);
+    if (!name) return null;
+    
+    // Handle object format
+    if (typeof name === 'object' && name.name) return name.name;
+    return String(name);
+}
+
+function getAddressFromProfile(profileItem) {
+    if (!profileItem) return { address: '', suburb: '', state: '', postcode: '' };
+    
+    const address = getValueFromFlatData(profileItem, [
+        REF_ATTRIBUTE_NAMES.PROFILE_ADDRESS,
+        'Address'
+    ]) || '';
+    
+    const suburb = getValueFromFlatData(profileItem, [
+        REF_ATTRIBUTE_NAMES.PROFILE_SUBURB,
+        'Suburb'
+    ]) || '';
+    
+    const stateValue = getValueFromFlatData(profileItem, [
+        REF_ATTRIBUTE_NAMES.PROFILE_STATE,
+        'State'
+    ]);
+    const state = stateValue ? (typeof stateValue === 'object' && stateValue.name ? stateValue.name : String(stateValue)) : '';
+    
+    const postcode = getValueFromFlatData(profileItem, [
+        REF_ATTRIBUTE_NAMES.PROFILE_POSTCODE,
+        REF_ATTRIBUTE_NAMES.PROFILE_POST_CODE,
+        'Postcode',
+        'Post Code'
+    ]) || '';
+    
+    return { address, suburb, state, postcode };
+}
+
+function getServiceFromServicePlan(servicePlanItem) {
+    if (!servicePlanItem) return null;
+    
+    const servicePlanIdValue = getValueFromFlatData(servicePlanItem, REF_ATTRIBUTE_NAMES.SERVICE_PLAN_ID);
+    if (!servicePlanIdValue) return null;
+    
+    const servicePlanIdStr = String(servicePlanIdValue).trim();
+    if (servicePlanIdStr.includes(' - ')) {
+        const parts = servicePlanIdStr.split(' - ');
+        return parts.length >= 2 ? parts[1].trim() : servicePlanIdStr;
+    } else if (servicePlanIdStr.includes('-')) {
+        const parts = servicePlanIdStr.split('-');
+        return parts.length >= 2 ? parts.slice(1).join('-').trim() : servicePlanIdStr;
+    }
+    return servicePlanIdStr;
+}
+
+function formatLabelValue(value, labels = []) {
+    if (!value) return '';
+    if (Array.isArray(value) && value.length > 0) {
+        return value.map(id => {
+            if (typeof id === 'object' && id.name) return id.name;
+            const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
+            return label ? label.name : (typeof id === 'object' ? id.name : String(id));
+        }).filter(Boolean).join(', ');
+    }
+    if (typeof value === 'object' && value.name) return value.name;
+    if (typeof value === 'object' && value.id) {
+        const label = labels.find(l => l.id === value.id);
+        return label ? label.name : (value.name || String(value.id));
+    }
+    if (typeof value === 'string') {
+        const label = labels.find(l => l.id === value);
+        return label ? label.name : value;
+    }
+    return String(value);
+}
+
 async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, type) {
     try {
         await InvoiceNumber.findOneAndUpdate(
@@ -1783,7 +2109,36 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             const toNumber = (v) => typeof v === 'number' ? v : Number(v || 0);
             const fmt = (v) => formatValue(toNumber(v));
 
-            // Fetch participant profile details from first item (following items.js pattern)
+            // OPTIMIZED: Collect all reference IDs first, then bulk fetch from database
+            const participantProfileIds = new Set();
+            const servicePlanIds = new Set();
+            
+            // Extract all reference IDs from items
+            for (const dbItem of dbItems) {
+                const getValue = (attributeName) => getValueFromFlatData(dbItem, attributeName);
+                
+                // Get participant profile ID
+                const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
+                const participantProfileId = extractRefId(participantProfileValue);
+                if (participantProfileId) participantProfileIds.add(participantProfileId);
+                
+                // Get service plan ID
+                const servicePlanValue = getValue(ATTRIBUTE_NAMES.SERVICE_PLAN);
+                const servicePlanId = extractRefId(servicePlanValue);
+                if (servicePlanId) servicePlanIds.add(servicePlanId);
+            }
+            
+            // Bulk fetch all reference items from MongoDB (NO API calls!)
+            const allRefIds = [...participantProfileIds, ...servicePlanIds];
+            const refItemsMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, allRefIds);
+            
+            info('Webhook-Service', 'Bulk fetched reference items from DB', {
+                participantProfiles: participantProfileIds.size,
+                servicePlans: servicePlanIds.size,
+                foundItems: refItemsMap.size
+            }, extractContextFromReq(req));
+
+            // Fetch participant profile details from first item using database lookup
             let participantName = ' ';
             let participantAddress = ' ';
             let participantSuburb = ' ';
@@ -1792,109 +2147,36 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 
             if (dbItems.length > 0) {
                 const firstItem = dbItems[0];
-                const getValue = (attributeName) => {
-                    return firstItem.data.values.find(v => v.attribute.name === attributeName)?.data;
-                };
+                const getValue = (attributeName) => getValueFromFlatData(firstItem, attributeName);
 
-                // Get Participant Profile reference
+                // Get Participant Profile reference from DB lookup map
                 const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
-                if (participantProfileValue) {
-                    try {
-                        const participantProfileId = Array.isArray(participantProfileValue) 
-                            ? participantProfileValue[0] 
-                            : (typeof participantProfileValue === 'object' ? participantProfileValue.id : participantProfileValue);
+                const participantProfileId = extractRefId(participantProfileValue);
+                
+                if (participantProfileId) {
+                    const participantProfileItem = refItemsMap.get(participantProfileId);
+                    if (participantProfileItem) {
+                        // Use helper functions to get participant profile data
+                        const profileName = getParticipantNameFromProfile(participantProfileItem);
+                        participantName = profileName || ' ';
                         
-                        if (participantProfileId) {
-                            const participantProfile = await getItemValues(workspaceId, boardId, participantProfileId.toString());
-                            if (participantProfile && participantProfile.values) {
-                                const getProfileValue = (attributeName) => {
-                                    const entry = participantProfile.values.find(v => v.attribute.name === attributeName);
-                                    if (!entry || entry.data === null || entry.data === undefined) {
-                                        return '';
-                                    }
-                                    if (Array.isArray(entry.data) && entry.data.length > 0) {
-                                        return typeof entry.data[0] === 'object' && entry.data[0].name 
-                                            ? entry.data[0].name 
-                                            : String(entry.data[0]);
-                                    }
-                                    return typeof entry.data === 'object' && entry.data.name 
-                                        ? entry.data.name 
-                                        : String(entry.data);
-                                };
-
-                                // Get Preferred Name first, then fallback to Full Name
-                                const preferredName = getProfileValue('Preferred Name') || '';
-                                const fullName = getProfileValue(ATTRIBUTE_NAMES.FULL_NAME) || '';
-                                participantName = preferredName || fullName || ' ';
-                                participantAddress = getProfileValue(ATTRIBUTE_NAMES.ADDRESS) || ' ';
-                                participantSuburb = getProfileValue(ATTRIBUTE_NAMES.SUBURB) || ' ';
-                                const formatStatus = (valueObj) => {
-                                    if (!valueObj) return undefined;
-                                    const data = valueObj.data;
-                                    const labels = valueObj.attribute?.settings?.labels || [];
-                                    if (Array.isArray(data) && data.length > 0) {
-                                        return data.map(id => {
-                                            const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
-                                            return label ? label.name : (typeof id === 'object' ? id.name : String(id));
-                                        }).filter(Boolean).join(', ');
-                                    }
-                                    if (data) {
-                                        if (typeof data === 'object' && data.id) {
-                                            const label = labels.find(l => l.id === data.id);
-                                            return label ? label.name : (data.name || String(data.id));
-                                        }
-                                        if (typeof data === 'string') {
-                                            const label = labels.find(l => l.id === data);
-                                            return label ? label.name : data;
-                                        }
-                                        return String(data);
-                                    }
-                                    return undefined;
-                                };
-                                participantState = participantProfile.values.find(v => v.attribute.name === 'State');
-                                participantState = formatStatus(participantState) || participantState?.data || '';
-                                participantPostcode = getProfileValue(ATTRIBUTE_NAMES.POSTCODE) || getProfileValue(ATTRIBUTE_NAMES.POST_CODE) || ' ';
-                            }
-                        }
-                    } catch (err) {
-                        warn('Webhook-Service', 'Failed to fetch participant profile details', { 
-                            error: err.message,
-                            itemId: firstItem.itemId 
-                        }, extractContextFromReq(req));
+                        // Get address information using helper function
+                        const addressInfo = getAddressFromProfile(participantProfileItem);
+                        participantAddress = addressInfo.address || ' ';
+                        participantSuburb = addressInfo.suburb || ' ';
+                        participantState = addressInfo.state || '';
+                        participantPostcode = addressInfo.postcode || ' ';
                     }
                 }
             }
 
-            // Process all items and add them to the orders array (following items.js pattern)
+            // Process all items and add them to the orders array using database lookups
             for (const dbItem of dbItems) {
-                const getValue = (attributeName) => {
-                    return dbItem.data.values.find(v => v.attribute.name === attributeName)?.data;
-                };
+                const getValue = (attributeName) => getValueFromFlatData(dbItem, attributeName);
 
-                // Get Transaction Status and format it (following items.js pattern)
-                const transactionStatusValue = dbItem.data.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.TRANSACTION_STATUS);
-                let transactionStatus = '';
-                if (transactionStatusValue) {
-                    const transactionStatusData = transactionStatusValue.data;
-                    const labels = transactionStatusValue.attribute?.settings?.labels || [];
-                    
-                    if (Array.isArray(transactionStatusData) && transactionStatusData.length > 0) {
-                        transactionStatus = transactionStatusData.map(id => {
-                            const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
-                            return label ? label.name : (typeof id === 'object' ? id.name : String(id));
-                        }).join(', ');
-                    } else if (transactionStatusData) {
-                        if (typeof transactionStatusData === 'object' && transactionStatusData.id) {
-                            const label = labels.find(l => l.id === transactionStatusData.id);
-                            transactionStatus = label ? label.name : (transactionStatusData.name || String(transactionStatusData.id));
-                        } else if (typeof transactionStatusData === 'string') {
-                            const label = labels.find(l => l.id === transactionStatusData);
-                            transactionStatus = label ? label.name : transactionStatusData;
-                        } else {
-                            transactionStatus = String(transactionStatusData);
-                        }
-                    }
-                }
+                // Get Transaction Status and format it
+                const transactionStatusValue = getValue(ATTRIBUTE_NAMES.TRANSACTION_STATUS);
+                const transactionStatus = formatLabelValue(transactionStatusValue);
 
                 // Date: If Transaction Status is "Delivered - To be claimed and invoiced.", use Actual Shift End Date & Time, otherwise Scheduled Shift Start Date & Time
                 let rowDate = '';
@@ -1914,27 +2196,14 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                     }
                 }
 
-                // Description: Second section after "-" of Service Plan ID (following items.js pattern)
+                // Description: Service name from Service Plan using helper function
                 let description = '';
-                const servicePlanId = getValue(ATTRIBUTE_NAMES.SERVICE_PLAN);
+                const servicePlanValue = getValue(ATTRIBUTE_NAMES.SERVICE_PLAN);
+                const servicePlanId = extractRefId(servicePlanValue);
+                
                 if (servicePlanId) {
-                    try {
-                        const servicePlan = await getItemValues(workspaceId, boardId, servicePlanId.toString());
-                        if (servicePlan && servicePlan.values) {
-                            const servicePlanIdValue = servicePlan.values.find(v => v.attribute.name === ATTRIBUTE_NAMES.SERVICE_PLAN_ID)?.data?.toString().trim();
-                            if (servicePlanIdValue && typeof servicePlanIdValue === 'string' && servicePlanIdValue.includes(' - ')) {
-                                const parts = servicePlanIdValue.split(' - ');
-                                description = parts[1].trim();
-                            } else if (servicePlanIdValue && typeof servicePlanIdValue === 'string') {
-                                description = servicePlanIdValue;
-                            }
-                        }
-                    } catch (err) {
-                        warn('Webhook-Service', 'Failed to fetch service plan', {
-                            error: err.message,
-                            itemId: dbItem.itemId
-                        }, extractContextFromReq(req));
-                    }
+                    const servicePlanItem = refItemsMap.get(servicePlanId);
+                    description = getServiceFromServicePlan(servicePlanItem) || '';
                 }
                 
                 if (!description) {
@@ -1956,7 +2225,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                     }
                 }
 
-                // Get other fields (following items.js pattern)
+                // Get other fields
                 const unit = getValue(ATTRIBUTE_NAMES.UNIT) || ' ';
                 const quantity = Number(getValue(ATTRIBUTE_NAMES.QUANTITY)) || 0;
                 const unitPrice = Number(getValue(ATTRIBUTE_NAMES.UNIT_PRICE)) || 0;

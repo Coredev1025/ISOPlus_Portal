@@ -182,9 +182,14 @@ export async function registerBoardWebhooks(authorization, workspaceId, boardId)
     const hookCallbackUrl = `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/webhooks/isoplus`;
   
     const events = [
+      'item.created',
       'item.updated',
+      'item.deleted',
       'item.finalized',
-      'value.updated'
+      'value.created',
+      'value.updated',
+      'comment.created',
+      'comment.updated'
     ];
 
     info('Webhook-Service', 'Attempting hook registration', {

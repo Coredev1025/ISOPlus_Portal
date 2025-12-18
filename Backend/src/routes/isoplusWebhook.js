@@ -2,7 +2,8 @@ import express from 'express';
 import Board from '../models/Board.js';
 import Item from '../models/Item.js';
 import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
-import { getItemValues } from '../services/isoplus.js';
+import { getItemValues, ITEM_DELETED } from '../services/isoplus.js';
+import { transformItemData, transformValue } from '../utils/itemTransform.js';
 
 const router = express.Router();
 
@@ -28,6 +29,10 @@ router.post('/isoplus', async (req, res) => {
     }
 
     switch (event) {
+      case 'item.created':
+        await handleItemCreated(payload);
+        break;
+      
       case 'item.updated':
         await handleValueUpdated(payload);
         break;
@@ -40,8 +45,20 @@ router.post('/isoplus', async (req, res) => {
         await handleItemDeleted(payload);
         break;
       
+      case 'value.created':
+        await handleValueCreated(payload);
+        break;
+      
       case 'value.updated':
         await handleValueUpdated(payload);
+        break;
+      
+      case 'comment.created':
+        await handleCommentCreated(payload);
+        break;
+      
+      case 'comment.updated':
+        await handleCommentUpdated(payload);
         break;
       
       default:
@@ -81,37 +98,81 @@ router.post('/isoplus', async (req, res) => {
   }
 });
 
-/**
- * Helper function to fetch and create an item if it doesn't exist
- * Returns the item and board info, or null if not found
- */
+async function getBoardSyncGUID(boardId) {
+  const board = await Board.findOne({ boardId })
+    .select('currentSyncGUID')
+    .lean();
+  return board?.currentSyncGUID || null;
+}
+
+async function deleteItemFromDatabase(itemId) {
+  const item = await Item.findOne({ itemId: itemId })
+    .select('boardId workspaceId')
+    .lean();
+  
+  if (!item) {
+    info('Webhook-Handler', 'Item not in database, nothing to delete', { itemId });
+    return null;
+  }
+
+  await Item.findOneAndDelete({ itemId: itemId });
+  
+  await Board.findOneAndUpdate(
+    { boardId: item.boardId },
+    { 
+      $inc: { 
+        'syncStats.itemsSynced': -1
+      }
+    }
+  );
+
+  info('Webhook-Handler', 'Item deleted from database (confirmed deleted in ISO+)', { 
+    itemId, 
+    boardId: item.boardId 
+  });
+  
+  return { deleted: true, itemId, boardId: item.boardId, workspaceId: item.workspaceId };
+}
+
 async function fetchOrCreateItem(itemId, boardId = null, workspaceId = null) {
   // First check if item exists in database
   let item = await Item.findOne({ itemId: itemId })
-    .select('boardId workspaceId')
+    .select('boardId workspaceId syncGUID')
     .lean();
   if (item) {
-    return { item, boardId: item.boardId, workspaceId: item.workspaceId };
+    const currentSyncGUID = await getBoardSyncGUID(item.boardId);
+    return { item, boardId: item.boardId, workspaceId: item.workspaceId, currentSyncGUID };
   }
 
   // Item doesn't exist, need to fetch from API
   let itemData = null;
   let foundBoardId = boardId;
   let foundWorkspaceId = workspaceId;
+  let currentSyncGUID = null;
+  let itemDeletedInIsoPlus = false;
 
   // If we don't have boardId/workspaceId, search through all boards with sync enabled
   if (!foundBoardId || !foundWorkspaceId) {
     const boards = await Board.find({ syncData: true })
-      .select('workspaceId boardId')
+      .select('workspaceId boardId currentSyncGUID')
       .lean();
     
     for (const board of boards) {
       if (board.workspaceId && board.boardId) {
         try {
           itemData = await getItemValues(board.workspaceId, board.boardId, itemId);
+          
+          if (itemData === ITEM_DELETED) {
+            itemDeletedInIsoPlus = true;
+            foundBoardId = board.boardId;
+            foundWorkspaceId = board.workspaceId;
+            break;
+          }
+          
           if (itemData) {
             foundBoardId = board.boardId;
             foundWorkspaceId = board.workspaceId;
+            currentSyncGUID = board.currentSyncGUID;
             break;
           }
         } catch (err) {
@@ -124,6 +185,12 @@ async function fetchOrCreateItem(itemId, boardId = null, workspaceId = null) {
     // We have boardId and workspaceId, try to fetch directly
     try {
       itemData = await getItemValues(foundWorkspaceId, foundBoardId, itemId);
+      
+      if (itemData === ITEM_DELETED) {
+        itemDeletedInIsoPlus = true;
+      } else {
+        currentSyncGUID = await getBoardSyncGUID(foundBoardId);
+      }
     } catch (err) {
       warn('Webhook-Handler', 'Failed to fetch item from API', { 
         itemId, 
@@ -132,6 +199,15 @@ async function fetchOrCreateItem(itemId, boardId = null, workspaceId = null) {
         error: err.message 
       });
     }
+  }
+
+  if (itemDeletedInIsoPlus) {
+    info('Webhook-Handler', 'Item deleted in ISO+ (404), deleting local copy', { 
+      itemId,
+      boardId: foundBoardId
+    });
+    const deleteResult = await deleteItemFromDatabase(itemId);
+    return deleteResult ? { deleted: true, ...deleteResult } : { deleted: true, itemId };
   }
 
   if (!itemData) {
@@ -151,6 +227,8 @@ async function fetchOrCreateItem(itemId, boardId = null, workspaceId = null) {
     return null;
   }
 
+  const transformedData = transformItemData(itemData);
+
   // Use findOneAndUpdate with upsert to atomically create or update
   // This prevents duplicate key errors from race conditions
   const now = new Date();
@@ -164,7 +242,8 @@ async function fetchOrCreateItem(itemId, boardId = null, workspaceId = null) {
           folderId: folderId.toString(),
           itemId: itemId,
           isoPlusItemId: itemId,
-          data: itemData,
+          syncGUID: currentSyncGUID,
+          data: transformedData,
           updatedAt: now
         },
         $setOnInsert: {
@@ -194,26 +273,183 @@ async function fetchOrCreateItem(itemId, boardId = null, workspaceId = null) {
     itemId, 
     boardId: foundBoardId, 
     workspaceId: foundWorkspaceId, 
-    folderId 
+    folderId,
+    syncGUID: currentSyncGUID
   });
 
-  return { item, boardId: foundBoardId, workspaceId: foundWorkspaceId };
+  return { item, boardId: foundBoardId, workspaceId: foundWorkspaceId, currentSyncGUID };
+}
+
+async function handleItemCreated(payload) {
+  try {
+    const itemId = payload.id;
+    const boardId = payload.board_id;
+    const workspaceId = payload.workspace_id;
+    
+    info('Webhook-Handler', 'Processing item.created event', { 
+      itemId,
+      boardId
+    });
+
+    const itemResult = await fetchOrCreateItem(itemId, boardId, workspaceId);
+    if (!itemResult) {
+      warn('Webhook-Handler', 'Could not fetch or create new item', { itemId });
+      return;
+    }
+
+    if (itemResult.deleted) {
+      warn('Webhook-Handler', 'Newly created item was deleted in ISO+ immediately', { 
+        itemId
+      });
+      return;
+    }
+
+    info('Webhook-Handler', 'Item created successfully', { 
+      itemId, 
+      boardId: itemResult.boardId
+    });
+
+  } catch (err) {
+    error('Webhook-Handler', 'Failed to handle item.created', { 
+      itemId: payload?.id,
+      error: err.message,
+      stack: err.stack
+    });
+    throw err;
+  }
 }
 
 async function handleValueCreated(payload) {
   try {
+    const valueId = payload.id;
+    const itemId = payload.item_id;
+    const attributeId = payload.attribute_id;
+    
     info('Webhook-Handler', 'Processing value.created event', { 
-      valueId: payload.id,
-      attributeId: payload.attribute_id
+      valueId,
+      itemId,
+      attributeId
     });
 
-    info('Webhook-Handler', 'Value created acknowledged', { 
-      valueId: payload.id 
-    });
+    if (!itemId) {
+      warn('Webhook-Handler', 'No item_id in value.created payload', { valueId });
+      return;
+    }
+
+    const itemResult = await fetchOrCreateItem(itemId);
+    if (!itemResult) {
+      warn('Webhook-Handler', 'Item not found for value create and could not be fetched', { 
+        itemId, 
+        valueId
+      });
+      return;
+    }
+
+    if (itemResult.deleted) {
+      info('Webhook-Handler', 'Item was deleted in ISO+, skipping value create', { 
+        itemId, 
+        valueId
+      });
+      return;
+    }
+
+    const { boardId, workspaceId } = itemResult;
+    if (!boardId) {
+      warn('Webhook-Handler', 'No boardId found on item', { itemId, valueId });
+      return;
+    }
+
+    const board = await Board.findOne({ boardId: boardId, syncData: true }).lean();
+    if (!board) {
+      info('Webhook-Handler', 'Board not found or sync not enabled', { boardId });
+      return;
+    }
+
+    const fullItemData = await getItemValues(workspaceId, boardId, itemId);
+    
+    if (fullItemData === ITEM_DELETED) {
+      info('Webhook-Handler', 'Item was deleted in ISO+ during value.created refresh', { 
+        itemId, 
+        valueId
+      });
+      await deleteItemFromDatabase(itemId);
+      return;
+    }
+    
+    if (fullItemData) {
+      const transformedData = transformItemData(fullItemData);
+      await Item.findOneAndUpdate(
+        { itemId: itemId },
+        {
+          $set: {
+            data: transformedData,
+            syncGUID: null,
+            updatedAt: new Date()
+          }
+        }
+      );
+      
+      info('Webhook-Handler', 'Value created and item data refreshed', { 
+        itemId, 
+        valueId,
+        boardId
+      });
+    }
 
   } catch (err) {
     error('Webhook-Handler', 'Failed to handle value.created', { 
       valueId: payload?.id,
+      itemId: payload?.item_id,
+      error: err.message 
+    });
+    throw err;
+  }
+}
+
+async function handleCommentCreated(payload) {
+  try {
+    const commentId = payload.id;
+    const itemId = payload.item_id;
+    
+    info('Webhook-Handler', 'Processing comment.created event', { 
+      commentId,
+      itemId
+    });
+
+    info('Webhook-Handler', 'Comment created acknowledged', { 
+      commentId,
+      itemId
+    });
+
+  } catch (err) {
+    error('Webhook-Handler', 'Failed to handle comment.created', { 
+      commentId: payload?.id,
+      itemId: payload?.item_id,
+      error: err.message 
+    });
+    throw err;
+  }
+}
+
+async function handleCommentUpdated(payload) {
+  try {
+    const commentId = payload.id;
+    const itemId = payload.item_id;
+    
+    info('Webhook-Handler', 'Processing comment.updated event', { 
+      commentId,
+      itemId
+    });
+
+    info('Webhook-Handler', 'Comment updated acknowledged', { 
+      commentId,
+      itemId
+    });
+
+  } catch (err) {
+    error('Webhook-Handler', 'Failed to handle comment.updated', { 
+      commentId: payload?.id,
+      itemId: payload?.item_id,
       error: err.message 
     });
     throw err;
@@ -225,12 +461,14 @@ async function handleValueUpdated(payload) {
     const valueId = payload.id;
     const itemId = payload.item_id;
     const attributeId = payload.attribute_id;
+    const attributeName = payload.attribute?.name; // May be present in webhook payload
     const isDeleted = payload.deleted === true;
     
     info('Webhook-Handler', 'Processing value.updated event', { 
       valueId,
       itemId,
       attributeId,
+      attributeName,
       isDeleted
     });
 
@@ -249,133 +487,129 @@ async function handleValueUpdated(payload) {
       return;
     }
 
-    const { boardId } = itemResult;
+    if (itemResult.deleted) {
+      info('Webhook-Handler', 'Item was deleted in ISO+, skipping value update', { 
+        itemId, 
+        valueId
+      });
+      return;
+    }
+
+    const { boardId, workspaceId, currentSyncGUID } = itemResult;
     if (!boardId) {
       warn('Webhook-Handler', 'No boardId found on item', { itemId, valueId });
       return;
     }
 
     // Check if board has sync enabled
-    const board = await Board.findOne({ boardId: boardId, syncData: true });
+    const board = await Board.findOne({ boardId: boardId, syncData: true })
+      .select('currentSyncGUID')
+      .lean();
     if (!board) {
       info('Webhook-Handler', 'Board not found or sync not enabled', { boardId });
       return;
     }
 
-    // Fetch the full item data including values array
-    const fullItem = await Item.findOne({ itemId: itemId })
-      .select('data')
-      .lean();
-    
-    if (!fullItem || !fullItem.data) {
-      warn('Webhook-Handler', 'Item data not found', { itemId, valueId });
-      return;
-    }
+    const syncGUID = null;
 
-    // Ensure values array exists
-    if (!fullItem.data.values) {
-      fullItem.data.values = [];
-    }
-
-    // Find the value by attribute.id (this is the reliable identifier in the database)
-    const values = fullItem.data.values;
-    const valueIndex = values.findIndex(v => v?.attribute?.id === attributeId);
-
-    if (isDeleted) {
-      // Remove the value if it's marked as deleted
-      if (valueIndex !== -1) {
-        // Use MongoDB array update operator to remove the value
+    let updateSuccessful = false;
+    try {
+      const fullItemData = await getItemValues(workspaceId, boardId, itemId);
+      
+      if (fullItemData === ITEM_DELETED) {
+        info('Webhook-Handler', 'Item was deleted in ISO+ during refresh, deleting local copy', { 
+          itemId, 
+          valueId
+        });
+        await deleteItemFromDatabase(itemId);
+        return;
+      }
+      
+      if (fullItemData) {
+        const transformedData = transformItemData(fullItemData);
+        
         await Item.findOneAndUpdate(
           { itemId: itemId },
           {
-            $pull: {
-              'data.values': { 'attribute.id': attributeId }
-            },
             $set: {
+              data: transformedData,
+              syncGUID: syncGUID,
               updatedAt: new Date()
             }
           }
         );
-        info('Webhook-Handler', 'Value removed from item', { 
+        
+        info('Webhook-Handler', 'Item data refreshed and transformed', { 
           itemId, 
           valueId, 
-          attributeId 
+          attributeId,
+          attributeName: attributeName || 'fetched from API',
+          syncGUID
         });
+        updateSuccessful = true;
       } else {
-        info('Webhook-Handler', 'Value not found for deletion', { 
-          itemId, 
-          valueId, 
-          attributeId 
-        });
-      }
-    } else if (valueIndex === -1) {
-      // Value doesn't exist, add it
-      // Try to get attribute structure from API or use minimal structure
-      // For now, create with minimal structure - the attribute will be populated on next full sync
-      const newValue = {
-        object: 'value',
-        data: payload.data,
-        attribute: {
-          id: attributeId
-        },
-        deleted: false
-      };
-      
-      // Use MongoDB array update operator to add the value
-      await Item.findOneAndUpdate(
-        { itemId: itemId },
-        {
-          $push: {
-            'data.values': newValue
-          },
-          $set: {
-            updatedAt: new Date()
+        if (attributeName) {
+          let transformedValue;
+          if (isDeleted) {
+            transformedValue = null;
+          } else {
+            const attributeType = payload.attribute?.type;
+            if (attributeType === 'label' && !payload.attribute?.settings?.labels) {
+              warn('Webhook-Handler', 'Incomplete label metadata in webhook payload, storing raw data', {
+                itemId,
+                attributeName,
+                attributeType
+              });
+              transformedValue = payload.data;
+            } else {
+              transformedValue = transformValue(payload);
+            }
           }
+          
+          const updateObj = {};
+          updateObj[`data.${attributeName}`] = transformedValue;
+          updateObj.syncGUID = syncGUID; // Update syncGUID for GUID tracking
+          updateObj.updatedAt = new Date();
+          
+          await Item.findOneAndUpdate(
+            { itemId: itemId },
+            { $set: updateObj }
+          );
+          
+          info('Webhook-Handler', 'Value updated by attribute name (with transformation)', { 
+            itemId, 
+            valueId, 
+            attributeName,
+            attributeType: payload.attribute?.type,
+            syncGUID
+          });
+          updateSuccessful = true;
+        } else {
+          warn('Webhook-Handler', 'Cannot update value - no attribute name and failed to fetch item', { 
+            itemId, 
+            valueId, 
+            attributeId 
+          });
         }
-      );
-      
-      info('Webhook-Handler', 'Value added to item (was missing)', { 
-        itemId, 
-        valueId, 
-        attributeId 
-      });
-    } else {
-      // Update existing value - only update the data field
-      // The payload only contains the new data value and attribute_id
-      // We preserve the existing full attribute structure and object field
-      const updateData = {
-        'data.values.$[elem].data': payload.data,
-        'data.values.$[elem].deleted': false,
-        updatedAt: new Date()
-      };
-
-      // Use arrayFilters to find and update the specific value by attribute.id
-      // This preserves the existing attribute object structure (name, type, settings, etc.)
-      // and the object field ('value')
-      await Item.findOneAndUpdate(
-        { itemId: itemId },
-        {
-          $set: updateData
-        },
-        {
-          arrayFilters: [{ 'elem.attribute.id': attributeId }]
-        }
-      );
-      
-      info('Webhook-Handler', 'Value updated in item', { 
-        itemId, 
-        valueId, 
-        attributeId 
+      }
+    } catch (fetchErr) {
+      warn('Webhook-Handler', 'Failed to fetch full item data, skipping update', {
+        itemId,
+        valueId,
+        error: fetchErr.message
       });
     }
 
-    info('Webhook-Handler', 'Value updated successfully', { 
-      itemId, 
-      valueId, 
-      boardId, 
-      attributeId,
-      isDeleted
-    });
+    if (updateSuccessful) {
+      info('Webhook-Handler', 'Value updated successfully', { 
+        itemId, 
+        valueId, 
+        boardId, 
+        attributeId,
+        isDeleted,
+        syncGUID
+      });
+    }
 
   } catch (err) {
     error('Webhook-Handler', 'Failed to handle value.updated', { 
@@ -406,22 +640,35 @@ async function handleItemFinalized(payload) {
       return;
     }
 
-    const { boardId: foundBoardId } = itemResult;
+    if (itemResult.deleted) {
+      info('Webhook-Handler', 'Item was deleted in ISO+, skipping finalization', { 
+        itemId, 
+        boardId
+      });
+      return;
+    }
+
+    const { boardId: foundBoardId, currentSyncGUID } = itemResult;
 
     // Check if board has sync enabled
-    const board = await Board.findOne({ boardId: foundBoardId, syncData: true });
+    const board = await Board.findOne({ boardId: foundBoardId, syncData: true })
+      .select('currentSyncGUID')
+      .lean();
     if (!board) {
       info('Webhook-Handler', 'Board not found or sync not enabled', { boardId: foundBoardId });
       return;
     }
 
-    // Update item in database with payload data using findOneAndUpdate
-    // The payload contains the full item data structure
+    const syncGUID = null;
+
+    const transformedData = transformItemData(payload);
+
     await Item.findOneAndUpdate(
       { itemId: itemId },
       {
         $set: {
-          data: payload,
+          data: transformedData,
+          syncGUID: syncGUID,
           updatedAt: new Date()
         }
       },
@@ -430,7 +677,8 @@ async function handleItemFinalized(payload) {
 
     info('Webhook-Handler', 'Item finalized successfully', { 
       itemId, 
-      boardId: foundBoardId 
+      boardId: foundBoardId,
+      syncGUID
     });
 
   } catch (err) {

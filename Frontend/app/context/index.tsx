@@ -18,11 +18,44 @@ export interface Workspace {
     subscription_id: number;
     user_role: string;
 }
+
+export interface SyncStatus {
+    boardId: string;
+    boardName: string;
+    status: 'started' | 'in-progress' | 'completed' | 'failed' | 'timeout';
+    syncType: string;
+    startTime: string;
+    duration?: number;
+    progress?: {
+        currentPage?: number;
+        totalPages?: number;
+        currentFolder?: string;
+        foldersProcessed?: number;
+        totalFolders?: number;
+    };
+    counters?: {
+        itemsProcessed?: number;
+        itemsInserted?: number;
+        itemsUpdated?: number;
+        itemsSkipped?: number;
+    };
+    isManualSync?: boolean;
+    error?: {
+        message: string;
+        stack?: string | null;
+        details?: any | null;
+    } | null;
+}
+
 interface ContextProps {
     user: User;
     setUser: Dispatch<SetStateAction<User>>;
     workspaces: Workspace[];
     setWorkspaces: Dispatch<SetStateAction<Workspace[]>>;
+    syncStatuses: SyncStatus[];
+    setSyncStatuses: Dispatch<SetStateAction<SyncStatus[]>>;
+    currentWorkspaceId: string | null;
+    setCurrentWorkspaceId: Dispatch<SetStateAction<string | null>>;
 }
 
 export const Context = createContext<ContextProps | null>(null);
@@ -36,6 +69,8 @@ export function ContextProvider({ children }: { children: ReactNode }) {
         role: "isoplus_user"
     });
     const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+    const [syncStatuses, setSyncStatuses] = useState<SyncStatus[]>([]);
+    const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string | null>(null);
 
     useEffect(() => {
         const currentUser = window.localStorage.getItem("user");
@@ -59,7 +94,16 @@ export function ContextProvider({ children }: { children: ReactNode }) {
     }, [user, workspaces]);
 
     return (
-        <Context.Provider value={{ user, setUser, workspaces, setWorkspaces }}>
+        <Context.Provider value={{ 
+            user, 
+            setUser, 
+            workspaces, 
+            setWorkspaces,
+            syncStatuses,
+            setSyncStatuses,
+            currentWorkspaceId,
+            setCurrentWorkspaceId
+        }}>
             {children}
         </Context.Provider>
     );

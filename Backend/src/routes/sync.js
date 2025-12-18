@@ -235,7 +235,7 @@ router.get('/workspace/status/:workspaceId', authenticateToken, async (req, res)
       });
     }
 
-    const boards = await Board.find({ syncData: true })
+    const boards = await Board.find({ workspaceId, syncData: true })
       .select('boardId')
       .lean();
     

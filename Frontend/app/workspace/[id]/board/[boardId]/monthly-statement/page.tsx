@@ -1011,78 +1011,42 @@ export default function MonthlyStatement() {
     try {
       setLoading(true);
 
-      // Fetch all items for PDF generation using pagination
       const dateRange = getSelectedMonthDateRange();
       if (!dateRange) {
         showErrorToast('Please choose a valid month and year before generating PDF.');
         return null;
       }
 
-      // Fetch all budget and service items in a single initial request
-      const firstResponse = await fetchMonthlyStatementItems(id, boardId, {
-        participant: selectedParticipant,
-        month: selectedMonth,
-        year: selectedYear,
-        startDate: dateRange.startDate,
-        endDate: dateRange.endDate,
-      });
+      // Use optimized export endpoints to fetch all data in parallel
+      const exportBaseUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/export/${id}/${boardId}/monthly-statement-csv`;
+      
+      const [budgetResponse, serviceResponse] = await Promise.all([
+        axios.get(exportBaseUrl, {
+          params: {
+            participant: selectedParticipant,
+            month: selectedMonth,
+            year: selectedYear,
+            startDate: dateRange.startDate,
+            endDate: dateRange.endDate,
+            type: 'budget'
+          },
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+        }),
+        axios.get(exportBaseUrl, {
+          params: {
+            participant: selectedParticipant,
+            month: selectedMonth,
+            year: selectedYear,
+            startDate: dateRange.startDate,
+            endDate: dateRange.endDate,
+            type: 'service'
+          },
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+        })
+      ]);
 
-      let allBudgetItems: BudgetRecord[] = firstResponse?.budgetItems?.items || [];
-      const budgetTotal = firstResponse?.budgetItems?.total || 0;
-
-      let allServiceItems: ServiceRecord[] = firstResponse?.serviceItems?.items || [];
-      const serviceTotal = firstResponse?.serviceItems?.total || 0;
-
-      // Fetch remaining budget and service pages in parallel if needed
-      const batchPromises: Promise<any>[] = [];
-
-      // Add budget page fetches
-      if (budgetTotal > allBudgetItems.length) {
-        const remainingBudgetPages = Math.ceil((budgetTotal - allBudgetItems.length) / 1000);
-        for (let page = 2; page <= remainingBudgetPages + 1; page++) {
-          batchPromises.push(
-            fetchMonthlyStatementItems(id, boardId, {
-              participant: selectedParticipant,
-              month: selectedMonth,
-              year: selectedYear,
-              startDate: dateRange.startDate,
-              endDate: dateRange.endDate,
-              budgetPage: page,
-              budgetLimit: 1000,
-            }).then(response => ({ type: 'budget', response }))
-          );
-        }
-      }
-
-      // Add service page fetches
-      if (serviceTotal > allServiceItems.length) {
-        const remainingServicePages = Math.ceil((serviceTotal - allServiceItems.length) / 1000);
-        for (let page = 2; page <= remainingServicePages + 1; page++) {
-          batchPromises.push(
-            fetchMonthlyStatementItems(id, boardId, {
-              participant: selectedParticipant,
-              month: selectedMonth,
-              year: selectedYear,
-              startDate: dateRange.startDate,
-              endDate: dateRange.endDate,
-              servicePage: page,
-              serviceLimit: 1000,
-            }).then(response => ({ type: 'service', response }))
-          );
-        }
-      }
-
-      // Execute all remaining fetches in parallel
-      if (batchPromises.length > 0) {
-        const batchResults = await Promise.all(batchPromises);
-        batchResults.forEach(({ type, response }) => {
-          if (type === 'budget' && response?.budgetItems?.items) {
-            allBudgetItems = [...allBudgetItems, ...response.budgetItems.items];
-          } else if (type === 'service' && response?.serviceItems?.items) {
-            allServiceItems = [...allServiceItems, ...response.serviceItems.items];
-          }
-        });
-      }
+      const allBudgetItems: BudgetRecord[] = budgetResponse.data?.items || [];
+      const allServiceItems: ServiceRecord[] = serviceResponse.data?.items || [];
 
       // Create updated statement data with all items
       const fullStatementData = {
@@ -1138,53 +1102,28 @@ export default function MonthlyStatement() {
     try {
       setExportingSection('budget-csv');
 
-      // Fetch first page to get total count
-      const firstResponse = await fetchMonthlyStatementItems(id, boardId, {
-        participant: selectedParticipant,
-        month: selectedMonth,
-        year: selectedYear,
-        startDate: dateRange.startDate,
-        endDate: dateRange.endDate,
-        budgetPage: 1,
-        budgetLimit: 1000, // Reasonable batch size
+      // Use optimized export endpoint for faster CSV generation
+      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/export/${id}/${boardId}/monthly-statement-csv`;
+      const response = await axios.get(apiUrl, {
+        params: {
+          participant: selectedParticipant,
+          month: selectedMonth,
+          year: selectedYear,
+          startDate: dateRange.startDate,
+          endDate: dateRange.endDate,
+          type: 'budget'
+        },
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
       });
 
-      const total = firstResponse?.budgetItems?.total || 0;
-      let allItems: BudgetRecord[] = firstResponse?.budgetItems?.items || [];
+      const allItems: BudgetRecord[] = response.data?.items || [];
+      const exportDuration = response.data?.exportDurationMs;
 
       if (allItems.length === 0) {
         showErrorToast('No budget items to export.');
-        return;
-      }
-
-      // If there are more items, fetch them in batches (max 5000 for CSV export)
-      const MAX_EXPORT_ITEMS = 5000;
-      if (total > allItems.length && total <= MAX_EXPORT_ITEMS) {
-        const remainingPages = Math.ceil((total - allItems.length) / 1000);
-        const batchPromises = [];
-
-        for (let page = 2; page <= remainingPages + 1 && allItems.length < MAX_EXPORT_ITEMS; page++) {
-          batchPromises.push(
-            fetchMonthlyStatementItems(id, boardId, {
-              participant: selectedParticipant,
-              month: selectedMonth,
-              year: selectedYear,
-              startDate: dateRange.startDate,
-              endDate: dateRange.endDate,
-              budgetPage: page,
-              budgetLimit: 1000,
-            })
-          );
-        }
-
-        const batchResponses = await Promise.all(batchPromises);
-        batchResponses.forEach(response => {
-          if (response?.budgetItems?.items) {
-            allItems = [...allItems, ...response.budgetItems.items];
-          }
-        });
-      } else if (total > MAX_EXPORT_ITEMS) {
-        showErrorToast(`Too many records to export (${total}). Please use filters to reduce the number of records. Maximum export limit is ${MAX_EXPORT_ITEMS} records.`);
         setExportingSection(null);
         return;
       }
@@ -1231,7 +1170,8 @@ export default function MonthlyStatement() {
       const monthSlug = sanitizeForFileName(statementData.monthNumber || selectedMonth || '01');
       const filename = `Individualised_Budgets_${participantSlug}_${statementData.year}_${monthSlug}.csv`;
       downloadCsv(csvContent, filename);
-      showSuccessToast(`Exported ${items.length} budget item${items.length === 1 ? '' : 's'} to CSV.`);
+      const durationText = exportDuration ? ` (${(exportDuration / 1000).toFixed(1)}s)` : '';
+      showSuccessToast(`Exported ${items.length} budget item${items.length === 1 ? '' : 's'} to CSV${durationText}.`);
     } catch (err: any) {
       console.error('Error exporting budget items:', err);
       showErrorToast('Failed to export budget items', { description: err?.message || 'Unknown error' });
@@ -1256,53 +1196,28 @@ export default function MonthlyStatement() {
     try {
       setExportingSection('service-csv');
 
-      // Fetch first page to get total count
-      const firstResponse = await fetchMonthlyStatementItems(id, boardId, {
-        participant: selectedParticipant,
-        month: selectedMonth,
-        year: selectedYear,
-        startDate: dateRange.startDate,
-        endDate: dateRange.endDate,
-        servicePage: 1,
-        serviceLimit: 1000, // Reasonable batch size
+      // Use optimized export endpoint for faster CSV generation
+      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/export/${id}/${boardId}/monthly-statement-csv`;
+      const response = await axios.get(apiUrl, {
+        params: {
+          participant: selectedParticipant,
+          month: selectedMonth,
+          year: selectedYear,
+          startDate: dateRange.startDate,
+          endDate: dateRange.endDate,
+          type: 'service'
+        },
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
       });
 
-      const total = firstResponse?.serviceItems?.total || 0;
-      let allItems: ServiceRecord[] = firstResponse?.serviceItems?.items || [];
+      const allItems: ServiceRecord[] = response.data?.items || [];
+      const exportDuration = response.data?.exportDurationMs;
 
       if (allItems.length === 0) {
         showErrorToast('No service records to export.');
-        return;
-      }
-
-      // If there are more items, fetch them in batches (max 5000 for CSV export)
-      const MAX_EXPORT_ITEMS = 5000;
-      if (total > allItems.length && total <= MAX_EXPORT_ITEMS) {
-        const remainingPages = Math.ceil((total - allItems.length) / 1000);
-        const batchPromises = [];
-
-        for (let page = 2; page <= remainingPages + 1 && allItems.length < MAX_EXPORT_ITEMS; page++) {
-          batchPromises.push(
-            fetchMonthlyStatementItems(id, boardId, {
-              participant: selectedParticipant,
-              month: selectedMonth,
-              year: selectedYear,
-              startDate: dateRange.startDate,
-              endDate: dateRange.endDate,
-              servicePage: page,
-              serviceLimit: 1000,
-            })
-          );
-        }
-
-        const batchResponses = await Promise.all(batchPromises);
-        batchResponses.forEach(response => {
-          if (response?.serviceItems?.items) {
-            allItems = [...allItems, ...response.serviceItems.items];
-          }
-        });
-      } else if (total > MAX_EXPORT_ITEMS) {
-        showErrorToast(`Too many records to export (${total}). Please use filters to reduce the number of records. Maximum export limit is ${MAX_EXPORT_ITEMS} records.`);
         setExportingSection(null);
         return;
       }
@@ -1353,7 +1268,8 @@ export default function MonthlyStatement() {
       const monthSlug = sanitizeForFileName(statementData.monthNumber || selectedMonth || '01');
       const filename = `Service_Records_${participantSlug}_${statementData.year}_${monthSlug}.csv`;
       downloadCsv(csvContent, filename);
-      showSuccessToast(`Service records CSV exported successfully. ${items.length} record${items.length === 1 ? '' : 's'} exported.`);
+      const durationText = exportDuration ? ` (${(exportDuration / 1000).toFixed(1)}s)` : '';
+      showSuccessToast(`Service records CSV exported successfully. ${items.length} record${items.length === 1 ? '' : 's'} exported${durationText}.`);
     } catch (err: any) {
       console.error('Error exporting service records:', err);
       showErrorToast('Failed to export service records', { description: err?.message || 'Unknown error' });
