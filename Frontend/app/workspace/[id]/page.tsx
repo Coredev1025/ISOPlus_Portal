@@ -46,11 +46,20 @@ const LABEL_COLORS: Record<NonNullable<BoardLabel>, string> = {
 export default function WorkspaceDetail() {
   const router = useRouter();
   const pathname = usePathname();
-  const { workspaces, user } = useAppContext();
+  const { workspaces, user, setCurrentWorkspaceId } = useAppContext();
   const id = pathname.split('/').pop();
   const workspace = workspaces.find(workspace => workspace.id.toString() === id);
   const [boards, setBoards] = useState<Board[]>([]);
   const [loadingBoards, setLoadingBoards] = useState<boolean>(false); // Loading state for boards
+
+  useEffect(() => {
+    if (id) {
+      setCurrentWorkspaceId(id);
+    }
+    return () => {
+      setCurrentWorkspaceId(null);
+    };
+  }, [id, setCurrentWorkspaceId]);
 
   useEffect(() => {
     const abortController = new AbortController();

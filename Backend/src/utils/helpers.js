@@ -134,3 +134,52 @@ export async function batchProcess(items, processor, options = {}) {
         }
     });
 }
+
+export async function batchProcessFast(items, processor, options = {}) {
+    const defaultOptions = {
+        batchSize: 100,
+        delayBetweenBatches: 100,
+        ...options
+    };
+    
+    const results = [];
+    
+    for (let i = 0; i < items.length; i += defaultOptions.batchSize) {
+        const batch = items.slice(i, i + defaultOptions.batchSize);
+        
+        const batchResults = await Promise.allSettled(
+            batch.map(item => processor(item))
+        );
+        
+        for (const result of batchResults) {
+            if (result.status === 'fulfilled') {
+                results.push(result.value);
+            } else {
+                results.push(null);
+            }
+        }
+
+        if (i + defaultOptions.batchSize < items.length) {
+            await new Promise(resolve => setTimeout(resolve, defaultOptions.delayBetweenBatches));
+        }
+    }
+    
+    return results;
+}
+
+export async function processParallel(items, processor, concurrencyLimit = 50) {
+    const results = [];
+    
+    for (let i = 0; i < items.length; i += concurrencyLimit) {
+        const batch = items.slice(i, i + concurrencyLimit);
+        const batchResults = await Promise.allSettled(
+            batch.map(item => processor(item))
+        );
+        
+        for (const result of batchResults) {
+            results.push(result.status === 'fulfilled' ? result.value : null);
+        }
+    }
+    
+    return results;
+}

@@ -55,8 +55,11 @@ interface ServiceRecord {
   participantName?: string;
   scheduledStart: string | null;
   scheduledServiceDate?: string | null;
+  scheduledShiftStart?: string | null;
+  scheduledShiftStartDateTime?: string | null;
   actualStart: string | null;
   actualEnd: string | null;
+  actualShiftEndDateTime?: string | null;
   serviceDeliveryDate?: string | null;
   worker: string;
   unit: string;
@@ -72,7 +75,11 @@ interface ServiceRecord {
   service?: string;
   serviceCategory?: string;
   serviceProvider?: string;
+  deliveredBy?: string;
+  associatedProvider?: string;
+  loanedByOrganisationName?: string;
   committedAtHmForDelivery?: number;
+  allocatedTime?: number;
 }
 
 interface BudgetRecord {
@@ -169,6 +176,7 @@ interface BusinessDetails {
   businessEmail: string;
   address: string;
   location: string;
+  country: string;
   suburb: string;
   state: string;
   postcode: string;
@@ -203,6 +211,205 @@ const BUDGET_CATEGORY_LABELS: Record<string, string> = {
   HMB: 'Home Modification Budget',
 };
 
+const countryStates: { [key: string]: string[] } = {
+  "Afghanistan": [],
+  "Albania": [],
+  "Algeria": [],
+  "Andorra": [],
+  "Angola": [],
+  "Antigua and Barbuda": [],
+  "Argentina": [],
+  "Armenia": [],
+  "Australia": ["New South Wales", "Victoria", "Queensland", "Western Australia", "South Australia", "Tasmania", "Northern Territory", "Australian Capital Territory"],
+  "Austria": [],
+  "Azerbaijan": [],
+  "Bahamas": [],
+  "Bahrain": [],
+  "Bangladesh": [],
+  "Barbados": [],
+  "Belarus": [],
+  "Belgium": [],
+  "Belize": [],
+  "Benin": [],
+  "Bhutan": [],
+  "Bolivia": [],
+  "Bosnia and Herzegovina": [],
+  "Botswana": [],
+  "Brazil": [],
+  "Brunei": [],
+  "Bulgaria": [],
+  "Burkina Faso": [],
+  "Burundi": [],
+  "Cabo Verde": [],
+  "Cambodia": [],
+  "Cameroon": [],
+  "Canada": ["Alberta", "British Columbia", "Manitoba", "New Brunswick", "Newfoundland and Labrador", "Nova Scotia", "Ontario", "Prince Edward Island", "Quebec", "Saskatchewan", "Northwest Territories", "Nunavut", "Yukon"],
+  "Central African Republic": [],
+  "Chad": [],
+  "Chile": [],
+  "China": [],
+  "Colombia": [],
+  "Comoros": [],
+  "Congo, Democratic Republic of the": [],
+  "Congo, Republic of the": [],
+  "Costa Rica": [],
+  "Croatia": [],
+  "Cuba": [],
+  "Cyprus": [],
+  "Czech Republic": [],
+  "Denmark": [],
+  "Djibouti": [],
+  "Dominica": [],
+  "Dominican Republic": [],
+  "Ecuador": [],
+  "Egypt": [],
+  "El Salvador": [],
+  "Equatorial Guinea": [],
+  "Eritrea": [],
+  "Estonia": [],
+  "Eswatini": [],
+  "Ethiopia": [],
+  "Fiji": [],
+  "Finland": [],
+  "France": [],
+  "Gabon": [],
+  "Gambia": [],
+  "Georgia": [],
+  "Germany": [],
+  "Ghana": [],
+  "Greece": [],
+  "Grenada": [],
+  "Guatemala": [],
+  "Guinea": [],
+  "Guinea-Bissau": [],
+  "Guyana": [],
+  "Haiti": [],
+  "Honduras": [],
+  "Hungary": [],
+  "Iceland": [],
+  "India": ["Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu", "Lakshadweep", "Delhi", "Puducherry", "Ladakh", "Jammu and Kashmir"],
+  "Indonesia": [],
+  "Iran": [],
+  "Iraq": [],
+  "Ireland": [],
+  "Israel": [],
+  "Italy": [],
+  "Jamaica": [],
+  "Japan": [],
+  "Jordan": [],
+  "Kazakhstan": [],
+  "Kenya": [],
+  "Kiribati": [],
+  "Korea, North": [],
+  "Korea, South": [],
+  "Kosovo": [],
+  "Kuwait": [],
+  "Kyrgyzstan": [],
+  "Laos": [],
+  "Latvia": [],
+  "Lebanon": [],
+  "Lesotho": [],
+  "Liberia": [],
+  "Libya": [],
+  "Liechtenstein": [],
+  "Lithuania": [],
+  "Luxembourg": [],
+  "Madagascar": [],
+  "Malawi": [],
+  "Malaysia": [],
+  "Maldives": [],
+  "Mali": [],
+  "Malta": [],
+  "Marshall Islands": [],
+  "Mauritania": [],
+  "Mauritius": [],
+  "Mexico": [],
+  "Micronesia": [],
+  "Moldova": [],
+  "Monaco": [],
+  "Mongolia": [],
+  "Montenegro": [],
+  "Morocco": [],
+  "Mozambique": [],
+  "Myanmar": [],
+  "Namibia": [],
+  "Nauru": [],
+  "Nepal": [],
+  "Netherlands": [],
+  "New Zealand": [],
+  "Nicaragua": [],
+  "Niger": [],
+  "Nigeria": [],
+  "North Macedonia": [],
+  "Norway": [],
+  "Oman": [],
+  "Pakistan": ["Balochistan", "Khyber Pakhtunkhwa", "Punjab", "Sindh", "Islamabad Capital Territory", "Gilgit-Baltistan", "Azad Jammu and Kashmir"],
+  "Palau": [],
+  "Palestine": [],
+  "Panama": [],
+  "Papua New Guinea": [],
+  "Paraguay": [],
+  "Peru": [],
+  "Philippines": [],
+  "Poland": [],
+  "Portugal": [],
+  "Qatar": [],
+  "Romania": [],
+  "Russia": [],
+  "Rwanda": [],
+  "Saint Kitts and Nevis": [],
+  "Saint Lucia": [],
+  "Saint Vincent and the Grenadines": [],
+  "Samoa": [],
+  "San Marino": [],
+  "Sao Tome and Principe": [],
+  "Saudi Arabia": [],
+  "Senegal": [],
+  "Serbia": [],
+  "Seychelles": [],
+  "Sierra Leone": [],
+  "Singapore": [],
+  "Slovakia": [],
+  "Slovenia": [],
+  "Solomon Islands": [],
+  "Somalia": [],
+  "South Africa": [],
+  "South Sudan": [],
+  "Spain": [],
+  "Sri Lanka": [],
+  "Sudan": [],
+  "Suriname": [],
+  "Sweden": [],
+  "Switzerland": [],
+  "Syria": [],
+  "Taiwan": [],
+  "Tajikistan": [],
+  "Tanzania": [],
+  "Thailand": [],
+  "Timor-Leste": [],
+  "Togo": [],
+  "Tonga": [],
+  "Trinidad and Tobago": [],
+  "Tunisia": [],
+  "Turkey": [],
+  "Turkmenistan": [],
+  "Tuvalu": [],
+  "Uganda": [],
+  "Ukraine": [],
+  "United Arab Emirates": ["Abu Dhabi", "Dubai", "Sharjah", "Ajman", "Umm Al Quwain", "Ras Al Khaimah and Fujairah"],
+  "United Kingdom": ["England", "Scotland", "Wales", "Northern Ireland"],
+  "United States": ["Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware", "Florida", "Georgia", "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky", "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota", "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire", "New Jersey", "New Mexico", "New York", "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah", "Vermont", "Virginia", "Washington", "West Virginia", "Wisconsin", "Wyoming"],
+  "Uruguay": [],
+  "Uzbekistan": [],
+  "Vanuatu": [],
+  "Vatican City": [],
+  "Venezuela": [],
+  "Vietnam": [],
+  "Yemen": [],
+  "Zambia": [],
+  "Zimbabwe": []
+};
+
 export default function MonthlyStatement() {
   const router = useRouter();
   const pathname = usePathname();
@@ -211,7 +418,6 @@ export default function MonthlyStatement() {
 
   const [loading, setLoading] = useState(false);
   const [loadingParticipants, setLoadingParticipants] = useState(false);
-  const [loadingBudgetItems, setLoadingBudgetItems] = useState(false);
   const [loadingServiceItems, setLoadingServiceItems] = useState(false);
   const [statementData, setStatementData] = useState<MonthlyStatementData | null>(null);
   const [budgetItems, setBudgetItems] = useState<BudgetRecord[]>([]);
@@ -230,12 +436,14 @@ export default function MonthlyStatement() {
     businessEmail: "",
     address: "",
     location: "",
+    country: "",
     suburb: "",
     state: "",
     postcode: "",
     companyRegistrationId: "",
   });
   const [exportingSection, setExportingSection] = useState<null | 'budget-csv' | 'service-csv' | 'statement-pdf'>(null);
+  const [businessDetailsErrors, setBusinessDetailsErrors] = useState<string[]>([]);
 
 
   // Budget data will come from the API response
@@ -317,6 +525,7 @@ export default function MonthlyStatement() {
             businessEmail: response.data.email || "",
             address: response.data.address?.street || "",
             location: `${response.data.address?.suburb || ""}, ${response.data.address?.state || ""}`,
+            country: response.data.address?.country || "",
             suburb: response.data.address?.suburb || "",
             state: response.data.address?.state || "",
             postcode: response.data.address?.postcode || "",
@@ -625,61 +834,6 @@ export default function MonthlyStatement() {
     ];
   };
 
-  // Fetch budget items from budget folders
-  const fetchBudgetItems = async (page: number = 1, limit: number = 10) => {
-    if (!selectedParticipant || !selectedMonth || !selectedYear) {
-      return;
-    }
-
-    setLoadingBudgetItems(true);
-    try {
-      const monthNum = parseInt(selectedMonth);
-      const yearNum = parseInt(selectedYear);
-      const monthDate = new Date(yearNum, monthNum - 1, 1);
-      const startDate = startOfMonth(monthDate);
-      const endDate = new Date(endOfMonth(monthDate));
-      endDate.setHours(23, 59, 59, 999);
-
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/monthly-statement`,
-        {
-          params: {
-            participant: selectedParticipant,
-            startDate: startDate.toISOString(),
-            endDate: endDate.toISOString(),
-            month: selectedMonth,
-            year: selectedYear,
-            budgetPage: page,
-            budgetLimit: limit
-          },
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          }
-        }
-      );
-
-      if (response.data?.budgetItems) {
-        setBudgetItems(response.data.budgetItems.items as BudgetRecord[]);
-        setBudgetPagination({
-          page: response.data.budgetItems.page || page,
-          limit: response.data.budgetItems.limit || limit,
-          total: response.data.budgetItems.total || 0
-        });
-      } else {
-        setBudgetItems([]);
-        setBudgetPagination({ page: 1, limit: 10, total: 0 });
-      }
-    } catch (err) {
-      console.error('Error fetching budget items:', err);
-      showErrorToast('Failed to fetch budget items');
-      setBudgetItems([]);
-      setBudgetPagination({ page: 1, limit: 10, total: 0 });
-    } finally {
-      setLoadingBudgetItems(false);
-    }
-  };
-
   // Fetch statement data
   const fetchStatementData = async () => {
     // Input validation
@@ -857,92 +1011,42 @@ export default function MonthlyStatement() {
     try {
       setLoading(true);
 
-      // Fetch all items for PDF generation using pagination
       const dateRange = getSelectedMonthDateRange();
       if (!dateRange) {
         showErrorToast('Please choose a valid month and year before generating PDF.');
         return null;
       }
 
-      // Fetch all budget items
-      const firstBudgetResponse = await fetchMonthlyStatementItems(id, boardId, {
-        participant: selectedParticipant,
-        month: selectedMonth,
-        year: selectedYear,
-        startDate: dateRange.startDate,
-        endDate: dateRange.endDate,
-        budgetPage: 1,
-        budgetLimit: 1000,
-      });
+      // Use optimized export endpoints to fetch all data in parallel
+      const exportBaseUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/export/${id}/${boardId}/monthly-statement-csv`;
+      
+      const [budgetResponse, serviceResponse] = await Promise.all([
+        axios.get(exportBaseUrl, {
+          params: {
+            participant: selectedParticipant,
+            month: selectedMonth,
+            year: selectedYear,
+            startDate: dateRange.startDate,
+            endDate: dateRange.endDate,
+            type: 'budget'
+          },
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+        }),
+        axios.get(exportBaseUrl, {
+          params: {
+            participant: selectedParticipant,
+            month: selectedMonth,
+            year: selectedYear,
+            startDate: dateRange.startDate,
+            endDate: dateRange.endDate,
+            type: 'service'
+          },
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+        })
+      ]);
 
-      let allBudgetItems: BudgetRecord[] = firstBudgetResponse?.budgetItems?.items || [];
-      const budgetTotal = firstBudgetResponse?.budgetItems?.total || 0;
-
-      if (budgetTotal > allBudgetItems.length) {
-        const remainingBudgetPages = Math.ceil((budgetTotal - allBudgetItems.length) / 1000);
-        const budgetBatchPromises = [];
-
-        for (let page = 2; page <= remainingBudgetPages + 1; page++) {
-          budgetBatchPromises.push(
-            fetchMonthlyStatementItems(id, boardId, {
-              participant: selectedParticipant,
-              month: selectedMonth,
-              year: selectedYear,
-              startDate: dateRange.startDate,
-              endDate: dateRange.endDate,
-              budgetPage: page,
-              budgetLimit: 1000,
-            })
-          );
-        }
-
-        const budgetBatchResponses = await Promise.all(budgetBatchPromises);
-        budgetBatchResponses.forEach(response => {
-          if (response?.budgetItems?.items) {
-            allBudgetItems = [...allBudgetItems, ...response.budgetItems.items];
-          }
-        });
-      }
-
-      // Fetch all service items
-      const firstServiceResponse = await fetchMonthlyStatementItems(id, boardId, {
-        participant: selectedParticipant,
-        month: selectedMonth,
-        year: selectedYear,
-        startDate: dateRange.startDate,
-        endDate: dateRange.endDate,
-        servicePage: 1,
-        serviceLimit: 1000,
-      });
-
-      let allServiceItems: ServiceRecord[] = firstServiceResponse?.serviceItems?.items || [];
-      const serviceTotal = firstServiceResponse?.serviceItems?.total || 0;
-
-      if (serviceTotal > allServiceItems.length) {
-        const remainingServicePages = Math.ceil((serviceTotal - allServiceItems.length) / 1000);
-        const serviceBatchPromises = [];
-
-        for (let page = 2; page <= remainingServicePages + 1; page++) {
-          serviceBatchPromises.push(
-            fetchMonthlyStatementItems(id, boardId, {
-              participant: selectedParticipant,
-              month: selectedMonth,
-              year: selectedYear,
-              startDate: dateRange.startDate,
-              endDate: dateRange.endDate,
-              servicePage: page,
-              serviceLimit: 1000,
-            })
-          );
-        }
-
-        const serviceBatchResponses = await Promise.all(serviceBatchPromises);
-        serviceBatchResponses.forEach(response => {
-          if (response?.serviceItems?.items) {
-            allServiceItems = [...allServiceItems, ...response.serviceItems.items];
-          }
-        });
-      }
+      const allBudgetItems: BudgetRecord[] = budgetResponse.data?.items || [];
+      const allServiceItems: ServiceRecord[] = serviceResponse.data?.items || [];
 
       // Create updated statement data with all items
       const fullStatementData = {
@@ -998,53 +1102,28 @@ export default function MonthlyStatement() {
     try {
       setExportingSection('budget-csv');
 
-      // Fetch first page to get total count
-      const firstResponse = await fetchMonthlyStatementItems(id, boardId, {
-        participant: selectedParticipant,
-        month: selectedMonth,
-        year: selectedYear,
-        startDate: dateRange.startDate,
-        endDate: dateRange.endDate,
-        budgetPage: 1,
-        budgetLimit: 1000, // Reasonable batch size
+      // Use optimized export endpoint for faster CSV generation
+      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/export/${id}/${boardId}/monthly-statement-csv`;
+      const response = await axios.get(apiUrl, {
+        params: {
+          participant: selectedParticipant,
+          month: selectedMonth,
+          year: selectedYear,
+          startDate: dateRange.startDate,
+          endDate: dateRange.endDate,
+          type: 'budget'
+        },
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
       });
 
-      const total = firstResponse?.budgetItems?.total || 0;
-      let allItems: BudgetRecord[] = firstResponse?.budgetItems?.items || [];
+      const allItems: BudgetRecord[] = response.data?.items || [];
+      const exportDuration = response.data?.exportDurationMs;
 
       if (allItems.length === 0) {
         showErrorToast('No budget items to export.');
-        return;
-      }
-
-      // If there are more items, fetch them in batches (max 5000 for CSV export)
-      const MAX_EXPORT_ITEMS = 5000;
-      if (total > allItems.length && total <= MAX_EXPORT_ITEMS) {
-        const remainingPages = Math.ceil((total - allItems.length) / 1000);
-        const batchPromises = [];
-
-        for (let page = 2; page <= remainingPages + 1 && allItems.length < MAX_EXPORT_ITEMS; page++) {
-          batchPromises.push(
-            fetchMonthlyStatementItems(id, boardId, {
-              participant: selectedParticipant,
-              month: selectedMonth,
-              year: selectedYear,
-              startDate: dateRange.startDate,
-              endDate: dateRange.endDate,
-              budgetPage: page,
-              budgetLimit: 1000,
-            })
-          );
-        }
-
-        const batchResponses = await Promise.all(batchPromises);
-        batchResponses.forEach(response => {
-          if (response?.budgetItems?.items) {
-            allItems = [...allItems, ...response.budgetItems.items];
-          }
-        });
-      } else if (total > MAX_EXPORT_ITEMS) {
-        showErrorToast(`Too many records to export (${total}). Please use filters to reduce the number of records. Maximum export limit is ${MAX_EXPORT_ITEMS} records.`);
         setExportingSection(null);
         return;
       }
@@ -1091,7 +1170,8 @@ export default function MonthlyStatement() {
       const monthSlug = sanitizeForFileName(statementData.monthNumber || selectedMonth || '01');
       const filename = `Individualised_Budgets_${participantSlug}_${statementData.year}_${monthSlug}.csv`;
       downloadCsv(csvContent, filename);
-      showSuccessToast(`Exported ${items.length} budget item${items.length === 1 ? '' : 's'} to CSV.`);
+      const durationText = exportDuration ? ` (${(exportDuration / 1000).toFixed(1)}s)` : '';
+      showSuccessToast(`Exported ${items.length} budget item${items.length === 1 ? '' : 's'} to CSV${durationText}.`);
     } catch (err: any) {
       console.error('Error exporting budget items:', err);
       showErrorToast('Failed to export budget items', { description: err?.message || 'Unknown error' });
@@ -1116,53 +1196,28 @@ export default function MonthlyStatement() {
     try {
       setExportingSection('service-csv');
 
-      // Fetch first page to get total count
-      const firstResponse = await fetchMonthlyStatementItems(id, boardId, {
-        participant: selectedParticipant,
-        month: selectedMonth,
-        year: selectedYear,
-        startDate: dateRange.startDate,
-        endDate: dateRange.endDate,
-        servicePage: 1,
-        serviceLimit: 1000, // Reasonable batch size
+      // Use optimized export endpoint for faster CSV generation
+      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/export/${id}/${boardId}/monthly-statement-csv`;
+      const response = await axios.get(apiUrl, {
+        params: {
+          participant: selectedParticipant,
+          month: selectedMonth,
+          year: selectedYear,
+          startDate: dateRange.startDate,
+          endDate: dateRange.endDate,
+          type: 'service'
+        },
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
       });
 
-      const total = firstResponse?.serviceItems?.total || 0;
-      let allItems: ServiceRecord[] = firstResponse?.serviceItems?.items || [];
+      const allItems: ServiceRecord[] = response.data?.items || [];
+      const exportDuration = response.data?.exportDurationMs;
 
       if (allItems.length === 0) {
         showErrorToast('No service records to export.');
-        return;
-      }
-
-      // If there are more items, fetch them in batches (max 5000 for CSV export)
-      const MAX_EXPORT_ITEMS = 5000;
-      if (total > allItems.length && total <= MAX_EXPORT_ITEMS) {
-        const remainingPages = Math.ceil((total - allItems.length) / 1000);
-        const batchPromises = [];
-
-        for (let page = 2; page <= remainingPages + 1 && allItems.length < MAX_EXPORT_ITEMS; page++) {
-          batchPromises.push(
-            fetchMonthlyStatementItems(id, boardId, {
-              participant: selectedParticipant,
-              month: selectedMonth,
-              year: selectedYear,
-              startDate: dateRange.startDate,
-              endDate: dateRange.endDate,
-              servicePage: page,
-              serviceLimit: 1000,
-            })
-          );
-        }
-
-        const batchResponses = await Promise.all(batchPromises);
-        batchResponses.forEach(response => {
-          if (response?.serviceItems?.items) {
-            allItems = [...allItems, ...response.serviceItems.items];
-          }
-        });
-      } else if (total > MAX_EXPORT_ITEMS) {
-        showErrorToast(`Too many records to export (${total}). Please use filters to reduce the number of records. Maximum export limit is ${MAX_EXPORT_ITEMS} records.`);
         setExportingSection(null);
         return;
       }
@@ -1213,7 +1268,8 @@ export default function MonthlyStatement() {
       const monthSlug = sanitizeForFileName(statementData.monthNumber || selectedMonth || '01');
       const filename = `Service_Records_${participantSlug}_${statementData.year}_${monthSlug}.csv`;
       downloadCsv(csvContent, filename);
-      showSuccessToast(`Service records CSV exported successfully. ${items.length} record${items.length === 1 ? '' : 's'} exported.`);
+      const durationText = exportDuration ? ` (${(exportDuration / 1000).toFixed(1)}s)` : '';
+      showSuccessToast(`Service records CSV exported successfully. ${items.length} record${items.length === 1 ? '' : 's'} exported${durationText}.`);
     } catch (err: any) {
       console.error('Error exporting service records:', err);
       showErrorToast('Failed to export service records', { description: err?.message || 'Unknown error' });
@@ -1237,8 +1293,40 @@ export default function MonthlyStatement() {
 
   // Save business details
   const handleSaveBusinessDetails = async () => {
-    if (!businessDetails.companyName || !businessDetails.phoneNumber || !businessDetails.businessEmail || !businessDetails.companyRegistrationId) {
-      showErrorToast('Please fill in all required fields (Company Name, Registration ID, Phone, Email)');
+    // Clear previous errors
+    setBusinessDetailsErrors([]);
+    
+    // Validation
+    const errors: string[] = [];
+    
+    if (!businessDetails.companyName?.trim()) {
+      errors.push('Company Name is required');
+    }
+    
+    if (!businessDetails.companyRegistrationId?.trim()) {
+      errors.push('Company Registration ID is required');
+    }
+    
+    if (!businessDetails.phoneNumber?.trim()) {
+      errors.push('Phone Number is required');
+    }
+    
+    if (!businessDetails.businessEmail?.trim()) {
+      errors.push('Business Email is required');
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(businessDetails.businessEmail)) {
+      errors.push('Business Email must be a valid email address');
+    }
+    
+    // Validate postcode if provided (should be numeric and max 8 characters)
+    if (businessDetails.postcode && businessDetails.postcode.trim()) {
+      if (!/^\d{1,8}$/.test(businessDetails.postcode)) {
+        errors.push('Postcode must be numeric and maximum 8 digits');
+      }
+    }
+    
+    if (errors.length > 0) {
+      setBusinessDetailsErrors(errors);
+      showErrorToast('Please correct the validation errors');
       return;
     }
 
@@ -1252,6 +1340,7 @@ export default function MonthlyStatement() {
           phone: businessDetails.phoneNumber,
           email: businessDetails.businessEmail,
           street: businessDetails.address,
+          country: businessDetails.country,
           suburb: businessDetails.suburb,
           state: businessDetails.state,
           postcode: businessDetails.postcode,
@@ -1259,10 +1348,17 @@ export default function MonthlyStatement() {
         }
       );
       setShowBusinessDialog(false);
+      setBusinessDetailsErrors([]);
       showSuccessToast('Business details saved successfully');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saving business details:', err);
-      showErrorToast('Failed to save business details. Please try again.');
+      if (err.response?.data?.errors) {
+        setBusinessDetailsErrors(err.response.data.errors);
+      } else if (err.response?.data?.message) {
+        showErrorToast(err.response.data.message);
+      } else {
+        showErrorToast('Failed to save business details. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -1649,7 +1745,7 @@ export default function MonthlyStatement() {
                     disabled={!statementData || exportingSection === 'statement-pdf' || loading}
                   >
                     <FileCheck className="h-4 w-4" />
-                    SaH Monthly Statement
+                    Generate Monthly Statement
                   </Button>
                 </div>
               </div>
@@ -1693,14 +1789,18 @@ export default function MonthlyStatement() {
               )}
             </Card>
 
-            {chartConfigs.length > 0 && (
-              <Card className="p-6 shadow-lg print:shadow-none">
-                <div className="mb-6">
-                  <h3 className="text-xl font-semibold">Budget Mini Charts</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Visual summaries for each funding stream showing the ordered Support at Home layout.
-                  </p>
+            <Card className="p-6 shadow-lg print:shadow-none">
+              <div className="mb-6">
+                <h3 className="text-xl font-semibold">Budget Mini Charts</h3>
+                <p className="text-sm text-muted-foreground">
+                  Visual summaries for each funding stream showing the ordered Support at Home layout.
+                </p>
+              </div>
+              {loadingServiceItems ? (
+                <div className="text-center py-8">
+                  <Spinner />
                 </div>
+              ) : chartConfigs.length > 0 ? (
                 <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                   {chartConfigs.map((chart) => (
                     <div key={chart.code} className="rounded-lg border border-border/60 bg-card p-5 space-y-4 shadow-sm">
@@ -1760,8 +1860,13 @@ export default function MonthlyStatement() {
                     </div>
                   ))}
                 </div>
-              </Card>
-            )}
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <AlertCircle className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p>No services found for the selected period</p>
+                </div>
+              )}
+            </Card>
 
             {/* Individualised Budgets */}
             <Card className="p-6 shadow-lg print:shadow-none">
@@ -1776,7 +1881,7 @@ export default function MonthlyStatement() {
                   <Button
                     variant="outline"
                     className="gap-2"
-                    onClick={handleBudgetExportCSV}
+                    onClick={handleSaHMonthlyStatement}
                     disabled={!statementData || exportingSection === 'budget-csv'}
                   >
                     <FileSpreadsheet className="h-4 w-4" />
@@ -1785,7 +1890,7 @@ export default function MonthlyStatement() {
                 </div>
               </div>
               <div className="overflow-x-auto">
-                {loadingBudgetItems ? (
+                {loadingServiceItems ? (
                   <div className="text-center py-8">
                     <Spinner />
                   </div>
@@ -1852,11 +1957,11 @@ export default function MonthlyStatement() {
                   <Button
                     variant="outline"
                     className="gap-2"
-                    onClick={handleServiceExportCSV}
-                    disabled={!statementData || exportingSection === 'service-csv'}
+                    onClick={handleSaHMonthlyStatement}
+                    disabled={!statementData || exportingSection === 'statement-pdf'}
                   >
                     <FileSpreadsheet className="h-4 w-4" />
-                    Export to CSV
+                    Export to PDF
                   </Button>
                 </div>
               </div>
@@ -1890,10 +1995,10 @@ export default function MonthlyStatement() {
                       {serviceItems.map((service) => (
                         <TableRow key={service.id}>
                           <TableCell className="whitespace-nowrap">
-                            {service.participant || 'N/A'}
+                            {service.participant || '-'}
                           </TableCell>
-                          <TableCell className="max-w-[200px] truncate">
-                            {service.service || service.taskName || service.notes || 'Service'}
+                          <TableCell className="min-w-[250px] text-xs">
+                            {service.service || '-'}
                           </TableCell>
                           <TableCell>{service.serviceProvider || 'N/A'}</TableCell>
                           <TableCell className="whitespace-nowrap text-xs">
@@ -1902,10 +2007,10 @@ export default function MonthlyStatement() {
                           <TableCell className="whitespace-nowrap text-xs">
                             {service.serviceDeliveryDate ? formatDate(service.serviceDeliveryDate) : 'N/A'}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="w-fit">
                             {service.transactionStatus !== undefined && service.transactionStatus.trim() !== '' &&
-                              <Badge variant={service.transactionStatus?.includes('Cancelled') ? 'default' : 'secondary'} className="text-xs">
-                                {service.transactionStatus.split(' - ')[0]}
+                              <Badge variant={service.transactionStatus?.includes('Cancelled') ? 'default' : 'secondary'} className="text-xs w-max">
+                                {service.transactionStatus}
                               </Badge>
                             }
                           </TableCell>
@@ -1918,7 +2023,7 @@ export default function MonthlyStatement() {
                           <TableCell className="text-right font-medium">{formatCurrency(service.totalAmount)}</TableCell>
                           <TableCell className="text-right">{formatCurrency(service.govSubsidy)}</TableCell>
                           <TableCell className="text-right">{formatCurrency(service.participantContribution)}</TableCell>
-                          <TableCell className="text-xs">{service.fundingSource || 'Home Support'}</TableCell>
+                          <TableCell className="text-xs min-w-[200px]">{service.fundingSource}</TableCell>
                           <TableCell className="max-w-[200px] truncate text-xs">{service.notes || 'N/A'}</TableCell>
                         </TableRow>
                       ))}
@@ -2070,6 +2175,19 @@ export default function MonthlyStatement() {
           </DialogHeader>
 
           <div className="grid grid-cols-2 gap-4 py-4">
+            {businessDetailsErrors.length > 0 && (
+              <div className="col-span-2 mb-2 p-4 bg-destructive/10 border border-destructive rounded-md">
+                <h4 className="text-sm font-medium text-destructive mb-2">Please correct the following errors:</h4>
+                <ul className="list-disc list-inside space-y-1">
+                  {businessDetailsErrors.map((error, index) => (
+                    <li key={index} className="text-sm text-destructive">
+                      {error}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="companyName">Company Name *</Label>
               <Input
@@ -2100,7 +2218,7 @@ export default function MonthlyStatement() {
               />
             </div>
 
-            <div className="space-y-2 col-span-2">
+            <div className="space-y-2">
               <Label htmlFor="businessEmail">Business Email *</Label>
               <Input
                 id="businessEmail"
@@ -2132,13 +2250,56 @@ export default function MonthlyStatement() {
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="country">Country</Label>
+              <Select
+                value={businessDetails.country}
+                onValueChange={(value) =>
+                  setBusinessDetails({
+                    ...businessDetails,
+                    country: value,
+                    state: "", // Reset state when country changes
+                  })
+                }
+              >
+                <SelectTrigger id="country">
+                  <SelectValue placeholder="Select country" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.keys(countryStates).map((country) => (
+                    <SelectItem key={country} value={country}>
+                      {country}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="state">State</Label>
-              <Input
-                id="state"
+              <Select
                 value={businessDetails.state}
-                onChange={(e) => setBusinessDetails({ ...businessDetails, state: e.target.value })}
-                placeholder="Enter state"
-              />
+                onValueChange={(value) =>
+                  setBusinessDetails({ ...businessDetails, state: value })
+                }
+                disabled={!businessDetails.country || countryStates[businessDetails.country]?.length === 0}
+              >
+                <SelectTrigger id="state">
+                  <SelectValue placeholder={
+                    !businessDetails.country
+                      ? "Select country first"
+                      : countryStates[businessDetails.country]?.length === 0
+                      ? "No states available"
+                      : "Select state"
+                  } />
+                </SelectTrigger>
+                <SelectContent>
+                  {businessDetails.country && countryStates[businessDetails.country]?.map((state: string) => (
+                    <SelectItem key={state} value={state}>
+                      {state}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
@@ -2148,6 +2309,7 @@ export default function MonthlyStatement() {
                 value={businessDetails.postcode}
                 onChange={(e) => setBusinessDetails({ ...businessDetails, postcode: e.target.value })}
                 placeholder="Enter postcode"
+                maxLength={8}
               />
             </div>
           </div>

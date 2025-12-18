@@ -2,10 +2,11 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, FileText, Search, Calendar, Filter, CheckCircle, DollarSign, BarChart3, FileSpreadsheet, Receipt, X, RefreshCcw, Percent, ArrowLeftCircle, ArrowRightCircle, Download, Clock, ArrowUpDown, ArrowUp, ArrowDown, HelpCircle } from "lucide-react";
+import { ArrowLeft, FileText, Search, Calendar, Filter, CheckCircle, DollarSign, BarChart3, FileSpreadsheet, Receipt, X, Percent, ArrowLeftCircle, ArrowRightCircle, Download, Clock, ArrowUpDown, ArrowUp, ArrowDown, HelpCircle } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useState, useEffect, useCallback, useRef, ReactNode } from "react";
+import { useAppContext } from "@/app/context";
 import {
   Table,
   TableBody,
@@ -38,7 +39,7 @@ import axios from "@/app/utils/axiosConfig";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format, formatDistanceToNow } from "date-fns";
-import { showSuccessToast, showErrorToast, showInfoToast } from "@/lib/toast-utils";
+import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast } from "@/lib/toast-utils";
 import {
   Dialog,
   DialogContent,
@@ -138,6 +139,7 @@ export default function InvoiceGenerator() {
   const pathname = usePathname();
   const id = pathname.split('/')[2];
   const boardId = pathname.split('/')[4];
+  const { workspaces, user, setCurrentWorkspaceId, syncStatuses, setSyncStatuses } = useAppContext();
 
   const [serviceRecords, setServiceRecords] = useState<ServiceRecord[]>([]);
   const [summary, setSummary] = useState<InvoiceSummary>({
@@ -172,8 +174,7 @@ export default function InvoiceGenerator() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const eligibleRecordsAbortControllerRef = useRef<AbortController | null>(null);
   const syncCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const [isSyncChecking, setIsSyncChecking] = useState(false);
-  const [isAutoCheckingSync, setIsAutoCheckingSync] = useState(false);
+  const previousSyncStatusRef = useRef<{ boardId: string; status: string; startTime?: number; seenInContext?: boolean } | null>(null);
 
   // Modal state for invoice generation
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
@@ -191,7 +192,25 @@ export default function InvoiceGenerator() {
   const [generatingPDF, setGeneratingPDF] = useState(false);
   const [generatingXero, setGeneratingXero] = useState(false);
 
-  const handleManualRefresh = useCallback(async (silent = false) => {
+  const clearAllFilters = useCallback(() => {
+    setParticipantFilter("all");
+    setScheduledServiceDateRange(undefined);
+    setServiceDeliveryDateRange(undefined);
+    setTransactionStatusFilter("all");
+    setPaymentStatusFilter("all");
+    setStatusFilter("all");
+  }, []);
+
+  useEffect(() => {
+    if (id) {
+      setCurrentWorkspaceId(id);
+    }
+    return () => {
+      setCurrentWorkspaceId(null);
+    };
+  }, [id, setCurrentWorkspaceId]);
+
+  const handleManualRefresh = useCallback(async (silent = false, clearFilters = false) => {
     if (!id || !boardId) {
       if (!silent) {
         showErrorToast('Workspace or board missing', { description: 'Please navigate back and select a workspace again.' });
@@ -199,146 +218,233 @@ export default function InvoiceGenerator() {
       return;
     }
 
-    try {
-      // Check sync status first
-      const statusUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/sync/board/status/${boardId}`;
-      const statusResponse = await axios.get(statusUrl, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
-      });
+    // Clear all filters if requested (e.g., after manual sync)
+    if (clearFilters) {
+      clearAllFilters();
+    }
 
-      const syncStatus = statusResponse.data;
-      const jobState = syncStatus?.jobStatus?.state;
-      const syncStatusValue = syncStatus?.syncStatus;
-      const finishedOn = syncStatus?.jobStatus?.finishedOn;
+    // Check sync status from context (no API call needed)
+    const currentSync = syncStatuses.find(sync => sync.boardId === boardId);
+    const isSyncActive = currentSync &&
+      (currentSync.status === 'started' || currentSync.status === 'in-progress');
+    const isSyncCompleted = currentSync?.status === 'completed';
+    const isSyncFailed = currentSync?.status === 'failed' || currentSync?.status === 'timeout';
 
-      // Check if a manual sync was just completed
-      // A completed job with finishedOn timestamp indicates the sync just finished
-      const isSyncCompleted = jobState === 'completed' && finishedOn;
-      // Valid sync statuses (not failed or stopped)
-      const isValidSyncStatus = syncStatusValue &&
-        !['failed', 'sync_stopped', 'sync_cancelled', 'board_invalid'].includes(syncStatusValue);
-
-      if (isSyncCompleted && isValidSyncStatus) {
-        if (!silent) {
-          showSuccessToast('Manual sync completed', {
-            description: 'The sync job has finished successfully. Reloading service records with latest data...'
-          });
-        }
-        // Reload data after a short delay to ensure backend has updated
-        setTimeout(() => {
-          setRefreshKey(prev => prev + 1);
-        }, 500);
-      } else if (jobState === 'active' || jobState === 'waiting') {
-        if (!silent) {
-          showInfoToast('Sync in progress', {
-            description: 'A sync job is currently running. Data will be refreshed, but may not include the latest changes yet.'
-          });
-        }
-        // Still refresh data, but let user know sync is in progress
-        setRefreshKey(prev => prev + 1);
-      } else if (jobState === 'failed') {
-        if (!silent) {
-          showErrorToast('Sync job failed', {
-            description: 'The last sync job encountered an error. Data refreshed, but you may want to trigger a new sync.'
-          });
-        }
-        // Still refresh data
-        setRefreshKey(prev => prev + 1);
-      } else {
-        // No active sync job or sync is in normal state
-        if (!silent) {
-          showInfoToast('Refreshing data', {
-            description: 'Loading the latest cached service records...'
-          });
-        }
-        setRefreshKey(prev => prev + 1);
+    if (isSyncCompleted) {
+      if (!silent) {
+        showSuccessToast('Manual sync completed', {
+          description: 'The sync job has finished successfully. Reloading service records with latest data...'
+        });
       }
-    } catch (err: any) {
-      // If status check fails, still refresh data but show warning
-      console.error('Error checking sync status:', err);
+      // Reload data after a short delay to ensure backend has updated
+      setTimeout(() => {
+        setRefreshKey(prev => prev + 1);
+      }, 500);
+    } else if (isSyncActive) {
       if (!silent) {
         showInfoToast('Refreshing data', {
-          description: 'Unable to check sync status. Loading cached service records...'
+          description: 'Loading the latest cached service records. Sync is in progress - latest changes may appear after sync completes.'
+        });
+      }
+      // Still refresh data, but let user know sync is in progress
+      setRefreshKey(prev => prev + 1);
+    } else if (isSyncFailed) {
+      if (!silent) {
+        showErrorToast('Sync job failed', {
+          description: 'The last sync job encountered an error. Data refreshed, but you may want to trigger a new sync.'
+        });
+      }
+      // Still refresh data
+      setRefreshKey(prev => prev + 1);
+    } else {
+      // No active sync job or sync is in normal state
+      if (!silent) {
+        showInfoToast('Refreshing data', {
+          description: 'Loading the latest cached service records...'
         });
       }
       setRefreshKey(prev => prev + 1);
     }
-  }, [id, boardId]);
+  }, [id, boardId, clearAllFilters, syncStatuses]);
 
-  // Function to check sync status periodically
+  const stopSyncChecking = useCallback(() => {
+    if (syncCheckIntervalRef.current) {
+      clearInterval(syncCheckIntervalRef.current);
+      syncCheckIntervalRef.current = null;
+    }
+    previousSyncStatusRef.current = null;
+  }, []);
+
   const checkSyncStatus = useCallback(async () => {
     if (!id || !boardId) {
       return;
     }
 
     try {
-      setIsSyncChecking(true);
-      const statusUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/sync/board/status/${boardId}`;
-      const statusResponse = await axios.get(statusUrl, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
-      });
+      const previousSync = previousSyncStatusRef.current;
+      const wasActive = previousSync &&
+        previousSync.boardId === boardId &&
+        (previousSync.status === 'started' || previousSync.status === 'in-progress');
 
-      const syncStatus = statusResponse.data;
-      const jobState = syncStatus?.jobStatus?.state;
-      const syncStatusValue = syncStatus?.syncStatus;
-      const finishedOn = syncStatus?.jobStatus?.finishedOn;
+      if (!wasActive) {
+        return;
+      }
 
-      // Check if sync is completed
-      const isSyncCompleted = jobState === 'completed' && finishedOn;
-      const isValidSyncStatus = syncStatusValue &&
-        !['failed', 'sync_stopped', 'sync_cancelled', 'board_invalid'].includes(syncStatusValue);
+      // Poll the API directly like sync-status-indicator.tsx does
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/sync/workspace/status/${id}`
+      );
 
-      if (isSyncCompleted && isValidSyncStatus) {
-        // Sync completed - refresh data and stop interval
-        showSuccessToast('Sync completed', {
-          description: 'The sync job has finished successfully. Refreshing data with latest records...'
-        });
+      if (response.data && response.data.boards) {
+        const board = response.data.boards.find((b: any) => b.boardId === boardId);
         
-        // Clear the interval
-        if (syncCheckIntervalRef.current) {
-          clearInterval(syncCheckIntervalRef.current);
-          syncCheckIntervalRef.current = null;
-          setIsAutoCheckingSync(false);
-        }
-        
-        // Refresh data
-        setTimeout(() => {
-          handleManualRefresh(true);
-        }, 500);
-      } else if (jobState === 'failed') {
-        // Sync failed - stop interval and show error
-        showErrorToast('Sync job failed', {
-          description: 'The sync job encountered an error. Please try again.'
-        });
-        
-        if (syncCheckIntervalRef.current) {
-          clearInterval(syncCheckIntervalRef.current);
-          syncCheckIntervalRef.current = null;
-          setIsAutoCheckingSync(false);
+        if (board) {
+          // Determine if this is a manual sync (has jobStatus) or regular sync (has syncExecution)
+          const isManualSync = board.jobStatus && 
+            (board.jobStatus.state === 'active' || board.jobStatus.state === 'waiting' || board.jobStatus.state === 'failed');
+          
+          // Check if sync is failed
+          const isFailed = (board.syncExecution && (board.syncExecution.status === 'failed' || board.syncExecution.status === 'timeout')) ||
+                          (board.jobStatus && board.jobStatus.state === 'failed');
+          
+          // Check if sync is active
+          const isActive = (board.syncExecution && (board.syncExecution.status === 'started' || board.syncExecution.status === 'in-progress')) ||
+                          (board.jobStatus && (board.jobStatus.state === 'active' || board.jobStatus.state === 'waiting'));
+          
+          // Check if sync is completed (no active job or syncExecution, and was previously active)
+          const isCompleted = !isActive && !isFailed && wasActive;
+          
+          if (isManualSync) {
+            // For manual syncs, use jobStatus.progress for folders and syncStats for items
+            const jobProgress = board.jobStatus?.progress || {};
+            const syncStats = board.syncStats || {};
+            
+            // Extract folder progress
+            const foldersProcessed = jobProgress.foldersProcessed ?? syncStats.foldersProcessed ?? 0;
+            const totalFolders = jobProgress.totalFolders ?? 0;
+            const currentFolder = jobProgress.currentFolder || null;
+            
+            // Extract item counters from syncStats
+            const itemsProcessed = syncStats.itemsSynced ?? 0;
+            const itemsInserted = syncStats.itemsCreated ?? 0;
+            const itemsUpdated = syncStats.itemsUpdated ?? 0;
+            const itemsSkipped = syncStats.itemsSkipped ?? 0;
+            
+            // Update sync status in context
+            const updatedSyncStatus = {
+              boardId: board.boardId,
+              boardName: board.boardName || board.boardId,
+              status: board.jobStatus.state === 'active' ? 'in-progress' as const : 
+                      board.jobStatus.state === 'failed' ? 'failed' as const : 'started' as const,
+              syncType: board.syncStatus || 'manual_triggered_sync',
+              startTime: board.jobStatus.processedOn 
+                ? new Date(board.jobStatus.processedOn).toISOString()
+                : previousSync?.startTime ? new Date(previousSync.startTime).toISOString() : new Date().toISOString(),
+              progress: {
+                foldersProcessed,
+                totalFolders,
+                currentFolder
+              },
+              counters: {
+                itemsProcessed,
+                itemsInserted,
+                itemsUpdated,
+                itemsSkipped
+              },
+              isManualSync: true,
+              error: isFailed ? {
+                message: board.jobStatus?.failedReason || board.lastSyncError || 'Sync failed with unknown error',
+                stack: null,
+                details: null
+              } : null
+            };
+            
+            // Update context with latest sync status
+            setSyncStatuses(prev => {
+              const existingIndex = prev.findIndex(s => s.boardId === boardId);
+              if (existingIndex >= 0) {
+                const updated = [...prev];
+                updated[existingIndex] = updatedSyncStatus;
+                return updated;
+              } else {
+                return [...prev, updatedSyncStatus];
+              }
+            });
+
+            previousSyncStatusRef.current = {
+              boardId: board.boardId,
+              status: updatedSyncStatus.status,
+              startTime: previousSync?.startTime || Date.now()
+            };
+          }
+
+          if (isFailed && wasActive) {
+            const errorMessage = board.jobStatus?.failedReason || 
+                                board.lastSyncError || 
+                                board.syncExecution?.error?.message ||
+                                'The sync job encountered an error. Please try again.';
+
+            showErrorToast('Sync job failed', {
+              description: errorMessage
+            });
+
+            stopSyncChecking();
+          } else if (isCompleted) {
+            showSuccessToast('Sync completed', {
+              description: 'The sync job has finished successfully. Refreshing data with latest records and clearing filters...'
+            });
+
+            // Remove sync from context since it's completed
+            setSyncStatuses(prev => prev.filter(s => s.boardId !== boardId));
+            
+            stopSyncChecking();
+
+            setTimeout(() => {
+              handleManualRefresh(true, true);
+            }, 500);
+          }
+        } else {
+          // Board not found in response - check if sync completed
+          const timeSinceStart = previousSync?.startTime ? Date.now() - previousSync.startTime : 0;
+          
+          if (timeSinceStart > 15000 && wasActive) {
+            showSuccessToast('Sync completed', {
+              description: 'The sync job has finished successfully. Refreshing data with latest records and clearing filters...'
+            });
+
+            // Remove sync from context since it's completed
+            setSyncStatuses(prev => prev.filter(s => s.boardId !== boardId));
+
+            stopSyncChecking();
+
+            setTimeout(() => {
+              handleManualRefresh(true, true);
+            }, 500);
+          }
         }
       }
-      // If still active or waiting, continue checking
     } catch (err: any) {
       console.error('Error checking sync status:', err);
-    } finally {
-      setIsSyncChecking(false);
     }
-  }, [id, boardId, handleManualRefresh]);
+  }, [id, boardId, handleManualRefresh, stopSyncChecking, setSyncStatuses]);
 
-  // Cleanup interval on unmount
   useEffect(() => {
     return () => {
-      if (syncCheckIntervalRef.current) {
-        clearInterval(syncCheckIntervalRef.current);
-        syncCheckIntervalRef.current = null;
-        setIsAutoCheckingSync(false);
-      }
+      stopSyncChecking();
+    };
+  }, [stopSyncChecking]);
+
+  // Update "last refreshed" time display every 1 minute
+  // This forces a re-render to update the relative time text (e.g., "2 minutes ago" -> "3 minutes ago")
+  useEffect(() => {
+    const refreshTimeInterval = setInterval(() => {
+      // Force a re-render to update formatDistanceToNow display
+      // We use a dummy state update to trigger re-render without changing actual data
+      setLastSyncedAt(prev => prev ? new Date(prev.getTime()) : null);
+    }, 60000); // Update every 1 minute
+
+    return () => {
+      clearInterval(refreshTimeInterval);
     };
   }, []);
 
@@ -906,12 +1012,10 @@ export default function InvoiceGenerator() {
     try {
       setExportingCSV(true);
 
-      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator`;
+      // Use optimized export endpoint for faster CSV generation
+      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/export/${id}/${boardId}/invoice-csv`;
       const params = new URLSearchParams();
 
-      if (statusFilter !== 'all') {
-        params.append('status', statusFilter);
-      }
       if (participantFilter && participantFilter !== 'all') {
         params.append('participant', participantFilter);
       }
@@ -948,13 +1052,7 @@ export default function InvoiceGenerator() {
 
       params.append('sortBy', sortBy);
       params.append('sortOrder', sortOrder);
-
-      params.append('folderName', 'Master Plan,Shift Planning and Reporting');
-
-      // For CSV export, fetch in batches to avoid memory issues
-      // Start with first batch to check total count
-      params.append('page', '1');
-      params.append('limit', '1000'); // Reasonable batch size
+      params.append('limit', 'all'); // Fetch all records for export
 
       const response = await axios.get(apiUrl, {
         params: Object.fromEntries(params),
@@ -965,6 +1063,7 @@ export default function InvoiceGenerator() {
       });
 
       const allItems: ServiceRecord[] = response.data?.items || [];
+      const exportDuration = response.data?.exportDurationMs;
 
       if (allItems.length === 0) {
         showErrorToast('No records to export.');
@@ -1008,8 +1107,8 @@ export default function InvoiceGenerator() {
       const csvRows: string[] = [csvHeaders.join(',')];
 
       allItems.forEach((item, index) => {
-        const rowNumber = index + 1;
-        const invoiceNumber = `Ext-Invoice-Item-${rowNumber.toString().padStart(3, '0')}`;
+        // Generate GUID for Item External Reference Identifier
+        const invoiceNumber = crypto.randomUUID();
         const careRecipientIdentifier = item.careRecipientIdentifier || '';
         let serviceIdentifier = item.serviceIdentifier || '';
         if (serviceIdentifier.includes('/')) {
@@ -1105,7 +1204,8 @@ export default function InvoiceGenerator() {
       }, 100);
 
       setExportingCSV(false);
-      showSuccessToast(`Successfully exported ${allItems.length} records to CSV.`);
+      const durationText = exportDuration ? ` (${(exportDuration / 1000).toFixed(1)}s)` : '';
+      showSuccessToast(`Successfully exported ${allItems.length} records to CSV${durationText}.`);
     } catch (err: any) {
       console.error('Error exporting CSV:', err);
       showErrorToast('Failed to export CSV', { description: err.message });
@@ -1132,7 +1232,7 @@ export default function InvoiceGenerator() {
       if (response.data?.success) {
         const description = response.data?.message || 'Manual sync triggered successfully.';
         showSuccessToast('Manual sync queued', {
-          description: `${description} The sync job has been added to the queue and will start processing shortly. Data will auto-refresh when sync completes.`
+          description: `${description} The sync job has been added to the queue and will start processing shortly. You can track progress in the sync indicator.`
         });
 
         // Clear any existing interval
@@ -1141,16 +1241,82 @@ export default function InvoiceGenerator() {
           syncCheckIntervalRef.current = null;
         }
 
-        // Start checking sync status every 3 minutes (180000ms)
-        setIsAutoCheckingSync(true);
-        syncCheckIntervalRef.current = setInterval(() => {
-          checkSyncStatus();
-        }, 180000); // 3 minutes
+        // Get board name from sessionStorage or use boardId as fallback
+        let boardName = boardId;
+        try {
+          const currentBoardData = sessionStorage.getItem('currentBoard');
+          if (currentBoardData) {
+            const boardData = JSON.parse(currentBoardData);
+            boardName = boardData.boardName || boardId;
+          }
+        } catch (e) {
+          // Use boardId as fallback
+        }
 
-        // Also check immediately after 30 seconds to catch quick syncs
+        // Initialize sync status in context immediately
+        // This will be updated by sync-status-indicator as it polls the API every 10 seconds
+        const initialSyncStatus = {
+          boardId: boardId,
+          boardName: boardName,
+          status: 'started' as const,
+          syncType: 'manual_triggered_sync',
+          startTime: new Date().toISOString(),
+          progress: {
+            foldersProcessed: 0,
+            totalFolders: 0,
+            currentFolder: undefined
+          },
+          counters: {
+            itemsProcessed: 0,
+            itemsInserted: 0,
+            itemsUpdated: 0,
+            itemsSkipped: 0
+          },
+          isManualSync: true
+        };
+
+        // Add or update sync status in context
+        setSyncStatuses(prev => {
+          const existingIndex = prev.findIndex(s => s.boardId === boardId);
+          if (existingIndex >= 0) {
+            // Update existing - merge with new initial values but preserve any existing progress
+            const updated = [...prev];
+            updated[existingIndex] = {
+              ...initialSyncStatus,
+              ...updated[existingIndex],
+              status: 'started' as const, // Reset to started when new sync begins
+              startTime: new Date().toISOString()
+            };
+            return updated;
+          } else {
+            // Add new
+            return [...prev, initialSyncStatus];
+          }
+        });
+
+        previousSyncStatusRef.current = {
+          boardId: boardId,
+          status: 'started', // Will be updated when sync appears in context
+          startTime: Date.now(), // Track when we started monitoring this sync
+          seenInContext: false // Track if we've seen this sync in context at least once
+        };
+
+        // Start checking sync status every 10 seconds (10000ms) to coordinate with sync-status-indicator
+        // Check after 10 seconds to allow sync to start and status to be available
         setTimeout(() => {
           checkSyncStatus();
-        }, 30000);
+        }, 10000); // Check after 10 seconds to allow sync to start
+
+        // Then continue checking every 10 seconds
+        syncCheckIntervalRef.current = setInterval(() => {
+          checkSyncStatus();
+        }, 10000); // 10 seconds - synchronized with sync-status-indicator
+      } else if (response.data?.alreadyRunning) {
+        // Show warning toast when sync is already running
+        showWarningToast('Sync already running', {
+          description: response.data?.message || 'A manual sync is already in progress. Please wait for it to complete.',
+          duration: 5000
+        });
       } else {
         showErrorToast('Sync not started', {
           description: response.data?.message || 'Sync could not be started. It may already be in progress.'
@@ -1159,9 +1325,18 @@ export default function InvoiceGenerator() {
     } catch (err: any) {
       console.error('Error triggering manual sync:', err);
       const errorMessage = err.response?.data?.message || err.message || 'Unknown error';
-      showErrorToast('Failed to trigger manual sync', {
-        description: errorMessage
-      });
+
+      // Check if the error response indicates sync is already running
+      if (err.response?.data?.alreadyRunning) {
+        showWarningToast('Sync already running', {
+          description: err.response.data?.message || 'A manual sync is already in progress. Please wait for it to complete.',
+          duration: 5000
+        });
+      } else {
+        showErrorToast('Failed to trigger manual sync', {
+          description: errorMessage
+        });
+      }
     } finally {
       setIsManualSyncing(false);
     }
@@ -1453,29 +1628,10 @@ export default function InvoiceGenerator() {
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
-                              variant="outline"
-                              className="gap-2"
-                              onClick={() => handleManualRefresh(false)}
-                              disabled={loading}
-                            >
-                              <RefreshCcw className="h-4 w-4" />
-                              Refresh Data
-                              <HelpCircle className="h-4 w-4" aria-label="Learn more about Refresh Data" onClick={(e) => { e.stopPropagation(); setShowHelpDialog(true); }} />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            It pulls the most recent data that is already stored (cached) on your device or browser.
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
                               variant="secondary"
                               className="gap-2"
                               onClick={handleManualSync}
-                              disabled={isManualSyncing}
+                              disabled={isManualSyncing || syncStatuses.some(sync => sync.boardId === boardId && (sync.status === 'started' || sync.status === 'in-progress'))}
                             >
                               {isManualSyncing ? (
                                 <>
@@ -1484,10 +1640,10 @@ export default function InvoiceGenerator() {
                                 </>
                               ) : (
                                 <>
-                                  Sync Data
+                                  Resync Data
                                 </>
                               )}
-                              <HelpCircle className="h-4 w-4" aria-label="Learn more about Sync Data" onClick={(e) => { e.stopPropagation(); setShowHelpDialog(true); }} />
+                              <HelpCircle className="h-4 w-4" aria-label="Learn more about Resync Data" onClick={(e) => { e.stopPropagation(); setShowHelpDialog(true); }} />
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent>
@@ -1495,6 +1651,22 @@ export default function InvoiceGenerator() {
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
+                      <Button
+                        variant="outline"
+                        onClick={handleExportCSV}
+                        className="gap-2"
+                        disabled={exportingCSV}
+                      >
+                        <FileSpreadsheet className="h-4 w-4" />
+                        Export to CSV
+                      </Button>
+                      <Button
+                        className="gap-2"
+                        onClick={handleOpenInvoiceModal}
+                      >
+                        <Receipt className="h-4 w-4" />
+                        Participant Tax Invoice
+                      </Button>
                     </div>
                     <div className="flex items-start gap-2 text-sm text-muted-foreground">
                       <Clock className="h-4 w-4" />
@@ -1505,22 +1677,6 @@ export default function InvoiceGenerator() {
                       )}
                     </div>
                   </div>
-                  <Button
-                    variant="outline"
-                    onClick={handleExportCSV}
-                    className="gap-2"
-                    disabled={exportingCSV}
-                  >
-                    <FileSpreadsheet className="h-4 w-4" />
-                    Export to CSV
-                  </Button>
-                  <Button
-                    className="gap-2"
-                    onClick={handleOpenInvoiceModal}
-                  >
-                    <Receipt className="h-4 w-4" />
-                    Participant Tax Invoice
-                  </Button>
                 </div>
               </div>
             </div>
@@ -1878,37 +2034,26 @@ export default function InvoiceGenerator() {
           </Card>
         </div>
 
-        {/* Help Dialog - Refresh vs Sync */}
+        {/* Help Dialog - Resync Data */}
         <Dialog open={showHelpDialog} onOpenChange={setShowHelpDialog}>
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <HelpCircle className="h-5 w-5" />
-                Refresh Data vs Sync Data
+                Resync Data
               </DialogTitle>
               <DialogDescription>
-                Understanding the difference between these two actions
+                Understanding how resync works
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <div className="flex items-start gap-3">
-                  <RefreshCcw className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <h3 className="font-semibold text-sm">Refresh Data</h3>
-                    <p className="text-sm text-muted-foreground">
-                      It pulls the most recent data that is already stored (cached) on your device or browser.
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-start gap-3">
                   <Download className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
                   <div>
-                    <h3 className="font-semibold text-sm">Sync Data</h3>
+                    <h3 className="font-semibold text-sm">Resync Data</h3>
                     <p className="text-sm text-muted-foreground">
-                      It downloads brand-new data from the server, including any edits and new records.
+                      It downloads brand-new data from the server, including any edits and new records. The button will be disabled while a sync is in progress.
                     </p>
                   </div>
                 </div>
@@ -2021,7 +2166,7 @@ export default function InvoiceGenerator() {
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <p className="font-medium">{record?.service || record?.notes || 'Service'}</p>
-                                {record?.invoiceNumber && record?.invoiceNumber !== '' && record?.invoiceNumber !== undefined  && (
+                                {record?.invoiceNumber && record?.invoiceNumber !== '' && record?.invoiceNumber !== undefined && (
                                   <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300 text-xs">
                                     <CheckCircle className="h-3 w-3 mr-1" />
                                     Invoiced

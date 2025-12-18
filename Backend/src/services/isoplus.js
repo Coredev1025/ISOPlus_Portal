@@ -374,6 +374,8 @@ export function putTimeTracking(workspaceId, boardId, itemId, startTime, endTime
     return true;
 };
 
+export const ITEM_DELETED = Symbol('ITEM_DELETED');
+
 export async function getItemValues(workspaceId, boardId, itemId) {
     const maxRetries = 5; // Increased from 3 to handle rate limits better
     let lastError = null;
@@ -393,6 +395,15 @@ export async function getItemValues(workspaceId, boardId, itemId) {
             return result.status === 200 ? result.data : null;
         } catch (err) {
             lastError = err;
+            
+            if (err.response?.status === 404) {
+                info('ISO+™ Service', 'Item not found (404) - item was deleted in ISO+', { 
+                    workspaceId, 
+                    boardId, 
+                    itemId 
+                });
+                return ITEM_DELETED;
+            }
             
             // Check if it's a 429 error (rate limit)
             const isRateLimitError = err.response?.status === 429 || 
