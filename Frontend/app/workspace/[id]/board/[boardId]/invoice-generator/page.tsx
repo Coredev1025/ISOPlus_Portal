@@ -1108,7 +1108,7 @@ export default function InvoiceGenerator() {
 
       allItems.forEach((item, index) => {
         // Generate GUID for Item External Reference Identifier
-        const invoiceNumber = crypto.randomUUID();
+        const invoiceNumber = item.id;
         const careRecipientIdentifier = item.careRecipientIdentifier || '';
         let serviceIdentifier = item.serviceIdentifier || '';
         if (serviceIdentifier.includes('/')) {
@@ -1189,7 +1189,16 @@ export default function InvoiceGenerator() {
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       const url = URL.createObjectURL(blob);
-      const fileName = `ExtInvoice01~INVOICE~${participantFilter}~${invoiceDate}.csv`;
+
+      const GenerateClaimExportFileName = () => {
+        // Generate a 5-character unique uppercase code using random values
+        const uniqueCode = Math.random().toString(36).substring(2, 7).toUpperCase();
+        let currentDate = new Date();
+        let timestamp = `${currentDate.getFullYear().toString().slice(2)}${(currentDate.getMonth() + 1).toString().padStart(2, '0')}${currentDate.getDate().toString().padStart(2, '0')}${currentDate.getHours().toString().padStart(2, '0')}${currentDate.getMinutes().toString().padStart(2, '0')}${currentDate.getSeconds().toString().padStart(2, '0')}`;
+        return `CLAIM~${timestamp}~${uniqueCode}.csv`;
+      }
+
+      const fileName = GenerateClaimExportFileName();
 
       link.href = url;
       link.download = fileName;
