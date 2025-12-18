@@ -315,7 +315,7 @@ export default function InvoiceGenerator() {
           const isCompleted = !isActive && !isFailed && wasActive;
           
           if (isManualSync) {
-            // For manual syncs, use jobStatus.progress for folders and syncStats for items
+            // For manual syncs, use jobStatus.progress for both folders and items
             const jobProgress = board.jobStatus?.progress || {};
             const syncStats = board.syncStats || {};
             
@@ -324,11 +324,8 @@ export default function InvoiceGenerator() {
             const totalFolders = jobProgress.totalFolders ?? 0;
             const currentFolder = jobProgress.currentFolder || null;
             
-            // Extract item counters from syncStats
-            const itemsProcessed = syncStats.itemsSynced ?? 0;
-            const itemsInserted = syncStats.itemsCreated ?? 0;
-            const itemsUpdated = syncStats.itemsUpdated ?? 0;
-            const itemsSkipped = syncStats.itemsSkipped ?? 0;
+            // Extract item counters from jobStatus.progress (real-time), fallback to syncStats
+            const itemsProcessed = jobProgress.itemsProcessed ?? syncStats.itemsSynced ?? 0;
             
             // Update sync status in context
             const updatedSyncStatus = {
@@ -343,13 +340,8 @@ export default function InvoiceGenerator() {
               progress: {
                 foldersProcessed,
                 totalFolders,
-                currentFolder
-              },
-              counters: {
-                itemsProcessed,
-                itemsInserted,
-                itemsUpdated,
-                itemsSkipped
+                currentFolder,
+                itemsProcessed
               },
               isManualSync: true,
               error: isFailed ? {
@@ -1273,13 +1265,8 @@ export default function InvoiceGenerator() {
           progress: {
             foldersProcessed: 0,
             totalFolders: 0,
-            currentFolder: undefined
-          },
-          counters: {
-            itemsProcessed: 0,
-            itemsInserted: 0,
-            itemsUpdated: 0,
-            itemsSkipped: 0
+            currentFolder: undefined,
+            itemsProcessed: 0
           },
           isManualSync: true
         };
