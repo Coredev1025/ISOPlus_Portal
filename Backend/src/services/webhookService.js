@@ -4,6 +4,56 @@ import { info, error, warn } from '../utils/logger.js';
 const ISO_PLUS_API_BASE = 'https://app.isoplus.online/api/v2';
 const ISO_PLUS_API_VERSION = '2025-02-26.morava';
 
+/**
+ * Get all hooks for a board
+ */
+export async function getBoardHooks(authorization, workspaceId, boardId) {
+  try {
+    if (!authorization) {
+      return { success: false, error: 'Authorization token is required' };
+    }
+
+    const url = `${ISO_PLUS_API_BASE}/workspaces/${workspaceId}/boards/${boardId}/hooks`;
+    const headers = {
+      'Authorization': authorization,
+      'Accept': 'application/json',
+      'X-API-Version': ISO_PLUS_API_VERSION
+    };
+
+    const response = await axios.get(url, { headers });
+
+    if (response.status === 200) {
+      return {
+        success: true,
+        hooks: response.data || []
+      };
+    } else {
+      throw new Error(`Unexpected response status: ${response.status}`);
+    }
+
+  } catch (err) {
+    // If 404, return empty array (no hooks exist)
+    if (err.response?.status === 404) {
+      return {
+        success: true,
+        hooks: []
+      };
+    }
+
+    warn('Webhook-Service', 'Failed to get board hooks', {
+      workspaceId,
+      boardId,
+      error: err.message
+    });
+
+    return {
+      success: false,
+      error: err.message,
+      hooks: []
+    };
+  }
+}
+
 export async function registerHook(authorization, workspaceId, boardId, events, callbackUrl) {
   try {
     info('Webhook-Service', 'Registering hook', { 
@@ -182,10 +232,52 @@ export async function registerBoardWebhooks(authorization, workspaceId, boardId)
     const hookCallbackUrl = `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/webhooks/isoplus`;
   
     const events = [
+      'item.created',
       'item.updated',
+      'item.deleted',
       'item.finalized',
-      'value.updated'
+      'value.created',
+      'value.updated',
+      'comment.created',
+      'comment.updated'
     ];
+
+    // First, check for existing hooks and delete them to prevent duplicates
+    info('Webhook-Service', 'Checking for existing hooks', {
+      workspaceId,
+      boardId
+    });
+
+    const existingHooksResult = await getBoardHooks(authorization, workspaceId, boardId);
+    
+    if (existingHooksResult.success && existingHooksResult.hooks && existingHooksResult.hooks.length > 0) {
+      info('Webhook-Service', 'Found existing hooks, deleting them', {
+        workspaceId,
+        boardId,
+        hookCount: existingHooksResult.hooks.length
+      });
+
+      // Delete all existing hooks
+      for (const hook of existingHooksResult.hooks) {
+        if (hook.id) {
+          try {
+            await unregisterHook(authorization, workspaceId, boardId, hook.id);
+            info('Webhook-Service', 'Deleted existing hook', {
+              workspaceId,
+              boardId,
+              hookId: hook.id
+            });
+          } catch (deleteErr) {
+            warn('Webhook-Service', 'Failed to delete existing hook', {
+              workspaceId,
+              boardId,
+              hookId: hook.id,
+              error: deleteErr.message
+            });
+          }
+        }
+      }
+    }
 
     info('Webhook-Service', 'Attempting hook registration', {
       workspaceId,
@@ -217,6 +309,39 @@ export async function registerBoardWebhooks(authorization, workspaceId, boardId)
         events: events
       };
     } else {
+      // Check if error is due to duplicate hook (409 Conflict)
+      if (result.errorDetails?.code === 409 || result.error?.includes('already exists') || result.error?.includes('duplicate')) {
+        warn('Webhook-Service', 'Hook already exists, attempting to get existing hooks', {
+          workspaceId,
+          boardId
+        });
+
+        // Try to get the existing hook
+        const hooksResult = await getBoardHooks(authorization, workspaceId, boardId);
+        if (hooksResult.success && hooksResult.hooks && hooksResult.hooks.length > 0) {
+          const existingHook = hooksResult.hooks.find(h => 
+            h.url === hookCallbackUrl || 
+            h.events?.some(e => events.includes(e.event || e))
+          );
+
+          if (existingHook) {
+            info('Webhook-Service', 'Using existing hook', {
+              workspaceId,
+              boardId,
+              hookId: existingHook.id
+            });
+
+            return {
+              success: true,
+              hookId: existingHook.id,
+              secret: existingHook.secret,
+              events: events,
+              existing: true
+            };
+          }
+        }
+      }
+
       warn('Webhook-Service', 'Hook registration failed', { 
         workspaceId, 
         boardId,

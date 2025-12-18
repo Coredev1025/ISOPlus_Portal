@@ -1,5 +1,5 @@
 /**
- * Transformation Cache for Invoice Generator Data
+ * Transformation Cache for Invoice Generator and Monthly Statement Data
  * 
  * Caches transformed item data to speed up CSV export, PDF generation, and XERO invoice.
  * Uses in-memory Map with TTL (time-to-live) and version-based invalidation.
@@ -13,6 +13,13 @@ const DEFAULT_TTL_MS = 30 * 60 * 1000; // 30 minutes default TTL
 const MAX_CACHE_SIZE = 10000; // Maximum number of items to cache
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // Clean up expired entries every 5 minutes
 
+// Cache prefixes for different data types
+const CACHE_PREFIX = {
+    INVOICE: 'transform',
+    MS_BUDGET: 'ms-budget',
+    MS_SERVICE: 'ms-service'
+};
+
 /**
  * Generate a cache key for a transformed item
  * @param {string} workspaceId 
@@ -22,6 +29,18 @@ const CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // Clean up expired entries every 5 m
  */
 const generateCacheKey = (workspaceId, boardId, itemId) => {
     return `transform:${workspaceId}:${boardId}:${itemId}`;
+};
+
+/**
+ * Generate a cache key for monthly statement items
+ * @param {string} prefix - Cache prefix (ms-budget or ms-service)
+ * @param {string} workspaceId 
+ * @param {string} boardId 
+ * @param {string} itemId 
+ * @returns {string}
+ */
+const generateMSCacheKey = (prefix, workspaceId, boardId, itemId) => {
+    return `${prefix}:${workspaceId}:${boardId}:${itemId}`;
 };
 
 /**
@@ -213,6 +232,133 @@ export const clearCache = () => {
     cache.clear();
 };
 
+// ============================================
+// Monthly Statement Cache Functions
+// ============================================
+
+/**
+ * Get cached monthly statement budget item data
+ * @param {string} workspaceId 
+ * @param {string} boardId 
+ * @param {string} itemId 
+ * @param {Date|string} itemUpdatedAt - The item's last update timestamp for version validation
+ * @returns {object|null} - Returns cached data if valid, null otherwise
+ */
+export const getCachedMSBudget = (workspaceId, boardId, itemId, itemUpdatedAt = null) => {
+    const key = generateMSCacheKey(CACHE_PREFIX.MS_BUDGET, workspaceId, boardId, itemId);
+    const entry = cache.get(key);
+
+    if (!entry) {
+        return null;
+    }
+
+    if (Date.now() > entry.expiresAt) {
+        cache.delete(key);
+        return null;
+    }
+
+    if (itemUpdatedAt) {
+        const itemUpdateTime = new Date(itemUpdatedAt).getTime();
+        if (itemUpdateTime > entry.cachedAt) {
+            cache.delete(key);
+            return null;
+        }
+    }
+
+    return entry.data;
+};
+
+/**
+ * Set cached monthly statement budget item data
+ * @param {string} workspaceId 
+ * @param {string} boardId 
+ * @param {string} itemId 
+ * @param {object} data - The transformed data to cache
+ * @param {number} ttlMs - Optional TTL in milliseconds
+ */
+export const setCachedMSBudget = (workspaceId, boardId, itemId, data, ttlMs = DEFAULT_TTL_MS) => {
+    if (cache.size >= MAX_CACHE_SIZE) {
+        cleanupOldestEntries(Math.floor(MAX_CACHE_SIZE * 0.1));
+    }
+
+    const key = generateMSCacheKey(CACHE_PREFIX.MS_BUDGET, workspaceId, boardId, itemId);
+    const now = Date.now();
+
+    cache.set(key, {
+        data,
+        cachedAt: now,
+        expiresAt: now + ttlMs
+    });
+};
+
+/**
+ * Get cached monthly statement service item data
+ * @param {string} workspaceId 
+ * @param {string} boardId 
+ * @param {string} itemId 
+ * @param {Date|string} itemUpdatedAt - The item's last update timestamp for version validation
+ * @returns {object|null} - Returns cached data if valid, null otherwise
+ */
+export const getCachedMSService = (workspaceId, boardId, itemId, itemUpdatedAt = null) => {
+    const key = generateMSCacheKey(CACHE_PREFIX.MS_SERVICE, workspaceId, boardId, itemId);
+    const entry = cache.get(key);
+
+    if (!entry) {
+        return null;
+    }
+
+    if (Date.now() > entry.expiresAt) {
+        cache.delete(key);
+        return null;
+    }
+
+    if (itemUpdatedAt) {
+        const itemUpdateTime = new Date(itemUpdatedAt).getTime();
+        if (itemUpdateTime > entry.cachedAt) {
+            cache.delete(key);
+            return null;
+        }
+    }
+
+    return entry.data;
+};
+
+/**
+ * Set cached monthly statement service item data
+ * @param {string} workspaceId 
+ * @param {string} boardId 
+ * @param {string} itemId 
+ * @param {object} data - The transformed data to cache
+ * @param {number} ttlMs - Optional TTL in milliseconds
+ */
+export const setCachedMSService = (workspaceId, boardId, itemId, data, ttlMs = DEFAULT_TTL_MS) => {
+    if (cache.size >= MAX_CACHE_SIZE) {
+        cleanupOldestEntries(Math.floor(MAX_CACHE_SIZE * 0.1));
+    }
+
+    const key = generateMSCacheKey(CACHE_PREFIX.MS_SERVICE, workspaceId, boardId, itemId);
+    const now = Date.now();
+
+    cache.set(key, {
+        data,
+        cachedAt: now,
+        expiresAt: now + ttlMs
+    });
+};
+
+/**
+ * Invalidate monthly statement cache for a specific item
+ * @param {string} workspaceId 
+ * @param {string} boardId 
+ * @param {string} itemId 
+ */
+export const invalidateMSCacheForItem = (workspaceId, boardId, itemId) => {
+    const budgetKey = generateMSCacheKey(CACHE_PREFIX.MS_BUDGET, workspaceId, boardId, itemId);
+    const serviceKey = generateMSCacheKey(CACHE_PREFIX.MS_SERVICE, workspaceId, boardId, itemId);
+    cache.delete(budgetKey);
+    cache.delete(serviceKey);
+};
+
 // Start periodic cleanup
 setInterval(cleanupExpiredEntries, CLEANUP_INTERVAL_MS);
 
@@ -226,5 +372,11 @@ export default {
     invalidateCacheForWorkspace,
     cleanupExpiredEntries,
     getCacheStats,
-    clearCache
+    clearCache,
+    // Monthly Statement cache functions
+    getCachedMSBudget,
+    setCachedMSBudget,
+    getCachedMSService,
+    setCachedMSService,
+    invalidateMSCacheForItem
 };

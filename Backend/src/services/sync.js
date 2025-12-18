@@ -1,5 +1,6 @@
 import syncQueue from './sync/queue.js';
 import Board from '../models/Board.js';
+import SyncExecution from '../models/SyncExecution.js';
 import { unregisterBoardWebhooks } from './webhookService.js';
 import { info, error, warn } from '../utils/logger.js';
 
@@ -287,19 +288,11 @@ export async function retrySyncAfterFailure(authorization, workspaceId, boardId)
   }
 }
 
-/**
- * Trigger manual sync for a board
- * This will re-sync all data (similar to backlog sync)
- * @param {string} authorization - ISO+ authorization token
- * @param {string} workspaceId - Workspace ID
- * @param {string} boardId - Board ID
- * @returns {Promise<Object>} Result
- */
 export async function triggerManualSync(authorization, workspaceId, boardId) {
   try {
     info('Sync-Service', 'Triggering manual sync for board', { workspaceId, boardId });
     
-    const board = await Board.findOne({ boardId }).select('syncData syncStatus syncJobId').lean();
+    const board = await Board.findOne({ boardId }).select('syncData syncStatus syncJobId hookId').lean();
     
     if (!board) {
       throw new Error('Board not found');
@@ -313,23 +306,51 @@ export async function triggerManualSync(authorization, workspaceId, boardId) {
       };
     }
 
+    const hasRunningSync = await SyncExecution.hasRunningSync(boardId);
+    
+    if (hasRunningSync) {
+      info('Sync-Service', 'Manual sync already running for board', { 
+        workspaceId, 
+        boardId 
+      });
+      
+      return {
+        success: false,
+        alreadyRunning: true,
+        message: 'A manual sync is already running for this board. Please wait for it to complete.',
+        boardId,
+        syncStatus: board.syncStatus
+      };
+    }
+
+    // Also check if there's an active job in the queue
     if (board.syncJobId && ['board_validation', 'data_backlog_sync', 'manual_triggered_sync'].includes(board.syncStatus)) {
       try {
         const existingJob = await syncQueue.getJob(board.syncJobId);
         if (existingJob) {
           const jobState = await existingJob.getState();
-          // Only cancel if job is still waiting or active (not already completed/failed)
+          // If job is still active or waiting, sync is already running
           if (['waiting', 'active', 'delayed'].includes(jobState)) {
-            await existingJob.remove();
-            info('Sync-Service', 'Cancelled existing sync job to allow manual sync', { 
+            info('Sync-Service', 'Sync job already in progress', { 
               boardId, 
-              previousJobId: board.syncJobId,
-              previousStatus: board.syncStatus
+              jobId: board.syncJobId,
+              jobState,
+              syncStatus: board.syncStatus
             });
+            
+            return {
+              success: false,
+              alreadyRunning: true,
+              message: `A sync is already ${jobState === 'active' ? 'running' : 'queued'} for this board. Please wait for it to complete.`,
+              boardId,
+              syncStatus: board.syncStatus,
+              jobId: board.syncJobId,
+              jobState
+            };
           }
         }
       } catch (jobErr) {
-        warn('Sync-Service', 'Failed to cancel existing job (continuing with new sync)', { 
+        warn('Sync-Service', 'Failed to check existing job status', { 
           boardId, 
           jobId: board.syncJobId,
           error: jobErr.message 
@@ -622,7 +643,7 @@ export async function enableWorkspaceSync(authorization, workspaceId) {
 
 export async function getBoardSyncStatus(boardId) {
   try {
-    const board = await Board.findOne({ boardId }).select('boardId name syncData syncStatus lastSyncedAt lastSyncError validationErrors syncStats syncJobId').lean();
+    const board = await Board.findOne({ boardId }).select('boardId name syncData syncStatus lastSyncedAt lastSyncError validationErrors syncStats syncJobId currentSyncGUID').lean();
     
     if (!board) {
       throw new Error('Board not found');
@@ -655,6 +676,23 @@ export async function getBoardSyncStatus(boardId) {
       }
     }
 
+    // Get active sync execution details
+    let syncExecution = null;
+    if (board.currentSyncGUID) {
+      try {
+        syncExecution = await SyncExecution.findOne({ 
+          syncGUID: board.currentSyncGUID,
+          status: { $in: ['started', 'in-progress'] }
+        }).lean();
+      } catch (syncErr) {
+        warn('Sync-Service', 'Failed to get sync execution', { 
+          boardId, 
+          syncGUID: board.currentSyncGUID,
+          error: syncErr.message 
+        });
+      }
+    }
+
     return {
       boardId: board.boardId,
       boardName: board.name,
@@ -664,7 +702,8 @@ export async function getBoardSyncStatus(boardId) {
       lastSyncError: board.lastSyncError,
       validationErrors: board.validationErrors,
       syncStats: board.syncStats,
-      jobStatus
+      jobStatus,
+      syncExecution
     };
 
   } catch (err) {

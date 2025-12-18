@@ -59,7 +59,7 @@ export default function BoardDetail() {
   const id = pathname.split('/')[2];
   const boardId = pathname.split('/').pop();
   const [board, setBoard] = useState<Board>();
-  const { workspaces, user } = useAppContext();
+  const { workspaces, user, setCurrentWorkspaceId } = useAppContext();
   const workspace = workspaces.find(w => w.id.toString() === id);
   const [timeTrackingEnabled, setTimeTrackingEnabled] = useState(false);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
@@ -75,6 +75,15 @@ export default function BoardDetail() {
   const calcDuration = (startTime: any, endTime: any) => {
     return Math.floor((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000);
   };
+
+  useEffect(() => {
+    if (id) {
+      setCurrentWorkspaceId(id);
+    }
+    return () => {
+      setCurrentWorkspaceId(null);
+    };
+  }, [id, setCurrentWorkspaceId]);
 
   useEffect(() => {
     const abortController = new AbortController();
