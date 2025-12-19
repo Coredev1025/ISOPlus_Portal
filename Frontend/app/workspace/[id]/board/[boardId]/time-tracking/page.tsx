@@ -24,9 +24,18 @@ export default function TimeTrackingPage() {
   const [boards, setBoards] = useState<Board[]>([]);
   const [timeTrackingEnabled, setTimeTrackingEnabled] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const { workspaces } = useAppContext();
+  const { workspaces, setCurrentWorkspaceId } = useAppContext();
   const id = pathname.split("/")[2];
   const boardId = pathname.split("/")[4];
+
+  useEffect(() => {
+    if (id) {
+      setCurrentWorkspaceId(id);
+    }
+    return () => {
+      setCurrentWorkspaceId(null);
+    };
+  }, [id, setCurrentWorkspaceId]);
 
   useEffect(() => {
     const abortController = new AbortController();

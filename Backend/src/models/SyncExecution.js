@@ -260,9 +260,33 @@ syncExecutionSchema.statics.getLatestForBoard = async function(boardId) {
 };
 
 syncExecutionSchema.statics.hasRunningSync = async function(boardId) {
+  // Define timeout threshold (20 minutes)
+  const SYNC_TIMEOUT_MS = 20 * 60 * 1000;
+  const timeoutThreshold = new Date(Date.now() - SYNC_TIMEOUT_MS);
+  
+  // First, auto-timeout any stuck syncs that are older than the timeout threshold
+  await this.updateMany(
+    {
+      boardId,
+      status: { $in: ['started', 'in-progress'] },
+      syncType: { $ne: 'realtime_sync' },
+      startTime: { $lt: timeoutThreshold }
+    },
+    {
+      $set: {
+        status: 'timeout',
+        endTime: new Date(),
+        'error.message': 'Sync operation timed out (exceeded 20 minutes)',
+        'error.details': { autoTimeout: true, timeoutThreshold: SYNC_TIMEOUT_MS }
+      }
+    }
+  );
+  
+  // Now check for any remaining running syncs (excluding realtime syncs)
   const runningSync = await this.findOne({
     boardId,
-    status: { $in: ['started', 'in-progress'] }
+    status: { $in: ['started', 'in-progress'] },
+    syncType: { $ne: 'realtime_sync' } // Exclude realtime syncs - they shouldn't block manual syncs
   });
   return !!runningSync;
 };

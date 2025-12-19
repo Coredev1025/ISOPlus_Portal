@@ -45,10 +45,19 @@ const EXPORT_FORMATS = [
 export default function ExportPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const { workspaces } = useAppContext();
+  const { workspaces, setCurrentWorkspaceId } = useAppContext();
   const [boards, setBoards] = useState<Board[]>([]);
   const id = pathname.split("/")[2];
   const boardId = pathname.split("/")[4];
+  
+  useEffect(() => {
+    if (id) {
+      setCurrentWorkspaceId(id);
+    }
+    return () => {
+      setCurrentWorkspaceId(null);
+    };
+  }, [id, setCurrentWorkspaceId]);
   
   useEffect(() => {
     const abortController = new AbortController();
