@@ -46,12 +46,21 @@ const generateMockTimeEntry = (entryId: string): TimeEntry => {
 export default function LocationDetailPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const { workspaces } = useAppContext();
+  const { workspaces, setCurrentWorkspaceId } = useAppContext();
   const id = pathname.split("/")[2];
   const boardId = pathname.split("/")[4];
   const entryId = pathname.split("/").pop();
   const [boards, setBoards] = useState<Board[]>([]);
   const [timeEntry, setTimeEntry] = useState<TimeEntry | null>(null);
+
+  useEffect(() => {
+    if (id) {
+      setCurrentWorkspaceId(id);
+    }
+    return () => {
+      setCurrentWorkspaceId(null);
+    };
+  }, [id, setCurrentWorkspaceId]);
 
   // First useEffect for boards fetching
   useEffect(() => {

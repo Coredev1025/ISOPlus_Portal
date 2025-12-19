@@ -35,7 +35,7 @@ interface Board {
 export default function MapViewPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const { workspaces } = useAppContext();
+  const { workspaces, setCurrentWorkspaceId } = useAppContext();
   const [boards, setBoards] = useState<Board[]>([]);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -43,6 +43,15 @@ export default function MapViewPage() {
   const [dateFilter, setDateFilter] = useState<string>("all");
   const id = pathname.split("/")[2];
   const boardId = pathname.split("/")[4];
+
+  useEffect(() => {
+    if (id) {
+      setCurrentWorkspaceId(id);
+    }
+    return () => {
+      setCurrentWorkspaceId(null);
+    };
+  }, [id, setCurrentWorkspaceId]);
 
   useEffect(() => {
     const abortController = new AbortController();

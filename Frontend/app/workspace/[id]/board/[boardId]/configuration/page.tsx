@@ -102,7 +102,7 @@ export default function ConfigurationPage() {
   const pathname = usePathname();
   const id = pathname.split("/")[2];
   const boardId = pathname.split("/")[4];
-  const { workspaces } = useAppContext();
+  const { workspaces, setCurrentWorkspaceId } = useAppContext();
   const [board, setBoard] = useState<Board>();
   const [selectedAttribute, setSelectedAttribute] = useState<string>("");
   const [selectedPdfAttribute, setSelectedPdfAttribute] = useState<string>("");
@@ -120,6 +120,15 @@ export default function ConfigurationPage() {
   });
   const [updateAutomation, setUpdateAutomation] = useState(false);
   const [syncData, setSyncData] = useState(false);
+
+  useEffect(() => {
+    if (id) {
+      setCurrentWorkspaceId(id);
+    }
+    return () => {
+      setCurrentWorkspaceId(null);
+    };
+  }, [id, setCurrentWorkspaceId]);
 
   useEffect(() => {
     const abortController = new AbortController();

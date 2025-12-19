@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { ArrowLeft, Terminal, Link, CheckCircle, AlertCircle } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAppContext } from "@/app/context";
 import axios from "@/app/utils/axiosConfig";
 import { showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
@@ -22,12 +22,21 @@ export default function WorkspaceConfiguration() {
   const router = useRouter();
   const pathname = usePathname();
   const id = pathname.split('/')[2];
-  const { workspaces, user } = useAppContext();
+  const { workspaces, user, setCurrentWorkspaceId } = useAppContext();
   const workspace = workspaces.find(w => w.id.toString() === id);
   const [isCheckingLinks, setIsCheckingLinks] = useState(false);
   const [isCreatingLinks, setIsCreatingLinks] = useState(false);
   const [checkResults, setCheckResults] = useState<any>(null);
   const [createResults, setCreateResults] = useState<any>(null);
+
+  useEffect(() => {
+    if (id) {
+      setCurrentWorkspaceId(id);
+    }
+    return () => {
+      setCurrentWorkspaceId(null);
+    };
+  }, [id, setCurrentWorkspaceId]);
 
   const handleCheckLinks = async () => {
     setIsCheckingLinks(true);
