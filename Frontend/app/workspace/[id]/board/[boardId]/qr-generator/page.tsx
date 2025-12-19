@@ -59,9 +59,18 @@ export default function QRGeneratorPage() {
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [drawLogo, setDrawLogo] = useState<boolean>(false);
-  const { workspaces, user } = useAppContext();
+  const { workspaces, user, setCurrentWorkspaceId } = useAppContext();
   const workspace = workspaces.find(w => w.id.toString() === id);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    if (id) {
+      setCurrentWorkspaceId(id);
+    }
+    return () => {
+      setCurrentWorkspaceId(null);
+    };
+  }, [id, setCurrentWorkspaceId]);
 
   useEffect(() => {
     const fetchData = async () => {
