@@ -380,11 +380,10 @@ const getParticipantNameFromProfile = (profileItem) => {
     if (!profileItem) return null;
     
     const nameAttrs = [
-        REF_ATTRIBUTE_NAMES.PROFILE_PREFERRED_NAME,
         REF_ATTRIBUTE_NAMES.PROFILE_FULL_NAME,
-        'Full Name',
-        'Preferred Name',
-        'Name'
+        REF_ATTRIBUTE_NAMES.PROFILE_PREFERRED_NAME,
+        REF_ATTRIBUTE_NAMES.PROFILE_FIRST_NAME,
+        REF_ATTRIBUTE_NAMES.PROFILE_LAST_NAME
     ];
     
     const name = getValueFromFlatData(profileItem, nameAttrs);
