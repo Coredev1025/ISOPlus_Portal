@@ -1316,7 +1316,19 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 return String(value);
             };
 
-            const participant = getValue(ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
+            // DATABASE-ONLY: Get participant name from participant profile in lookup map
+            let participantName = getValue(ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
+            const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
+            const participantProfileId = extractRefId(participantProfileValue);
+            
+            if (participantProfileId) {
+                const participantProfileItem = refItemsMap.get(participantProfileId);
+                const profileName = getParticipantNameFromProfile(participantProfileItem);
+                if (profileName) {
+                    participantName = profileName;
+                }
+            }
+
             const scheduledStart = getValue(ATTRIBUTE_NAMES.SCHEDULED_START) || null;
             const unit = getValue(ATTRIBUTE_NAMES.UNIT) || '';
             const quantity = Number(getValue(ATTRIBUTE_NAMES.QUANTITY)) || 0;
@@ -1361,9 +1373,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
             // DATABASE-ONLY: Get participant profile from pre-fetched lookup map
             let careRecipientIdentifier;
-            const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
-            const participantProfileRefId = extractRefId(participantProfileValue);
-            const participantProfileItem = participantProfileRefId ? refItemsMap.get(participantProfileRefId) : null;
+            const participantProfileItem = participantProfileId ? refItemsMap.get(participantProfileId) : null;
             
             if (participantProfileItem) {
                 careRecipientIdentifier = getMyAgedCareIdFromProfile(participantProfileItem);
@@ -1462,7 +1472,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 // Table fields (Visible in ISO+ Portal Table)
                 id: item.itemId,
                 paymentStatus: paymentStatusFormatted,
-                participant: participant,
+                participant: participantName,
                 service: serviceLabel,
                 scheduledServiceDate: scheduledServiceDate,
                 serviceDeliveryDate: serviceDeliveryDate,

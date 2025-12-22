@@ -14,7 +14,7 @@ import {
 import Spinner from "@/components/ui/spin";
 import React, { useEffect, useRef, useState } from "react";
 import axios from "@/app/utils/axiosConfig";
-import { Search, History, Terminal, Download, Filter, AlertTriangle, AlertCircle, Info, Bug, XCircle, RollerCoaster } from "lucide-react";
+import { Search, Terminal, Download, Filter, AlertTriangle, AlertCircle, Info, Bug, XCircle } from "lucide-react";
 import { Header } from "@/components/ui/header";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -211,7 +211,7 @@ function WorkspacesList() {
       abortController.abort();
       setLoading(false);
     };
-  }, [workspaces.length]);
+  }, [workspaces, setWorkspaces, router, user.role]);
 
   return (
     <Card className="p-6 shadow-sm">
@@ -1022,7 +1022,7 @@ export default function Dashboard() {
     if (user.role !== "isoplus_user" && user.role !== "owner" && user.role !== "support_admin") {
       router.replace("/access-denied");
     }
-  }, []);
+  }, [user.role, router]);
 
   return (
     <div className="min-h-screen bg-background relative">

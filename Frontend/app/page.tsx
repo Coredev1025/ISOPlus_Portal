@@ -65,7 +65,7 @@ export default function LoginPage() {
     return () => {
       abortController.abort();
     };
-  }, [router, setUser]);
+  }, [router, setUser, setWorkspaces]);
 
   const handleAdminLogin = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();

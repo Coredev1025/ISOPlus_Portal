@@ -118,7 +118,7 @@ router.post('/:workspaceId/check-links', authenticateToken, async (req, res) => 
     }
 
     const dynamicLinkingService = new DynamicLinkingService(req.session.Authorization, host);
-    console.log("Checking links");
+    info('Workspace-Service', 'Checking links', { workspaceId }, extractContextFromReq(req));
     const results = await dynamicLinkingService.main(workspaceId, false);
 
     info('Workspace-Service', 'Links checked', { workspaceId, results }, extractContextFromReq(req));
@@ -140,7 +140,7 @@ router.post('/:workspaceId/create-links', authenticateToken, async (req, res) =>
     }
 
     const dynamicLinkingService = new DynamicLinkingService(req.session.Authorization, host);
-    console.log("Creating links");
+    info('Workspace-Service', 'Creating links', { workspaceId }, extractContextFromReq(req));
     const results = await dynamicLinkingService.main(workspaceId, true);
 
     info('Workspace-Service', 'Links created', { workspaceId, results }, extractContextFromReq(req));

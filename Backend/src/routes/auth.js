@@ -221,15 +221,25 @@ router.get("/isoplus/callback", async (req, res) => {
     }
 
     info('User-Service', 'OAuth callback successful', { state, user: userResponse.data }, extractContextFromReq(req));
+
+    const safeUserData = {
+      id: userResponse.data.id,
+      email: userResponse.data.email,
+      name: userResponse.data.name,
+      photo_url: userResponse.data.photo_url
+    };
+    
+    const messageData = JSON.stringify({
+      type: 'AUTH_SUCCESS',
+      data: safeUserData,
+      accessToken: `Bearer ${accessToken}`
+    }).replace(/</g, '\\u003c').replace(/>/g, '\\u003e'); // Escape HTML tags in JSON
+    
     res.send(`
       <html>
         <body>
           <script>
-            window.opener.postMessage(${JSON.stringify({
-              type: 'AUTH_SUCCESS',
-              data: userResponse.data,
-              accessToken: `Bearer ${accessToken}`
-            })}, '*');
+            window.opener.postMessage(${messageData}, '*');
             window.close();
           </script>
         </body>
@@ -248,15 +258,19 @@ router.get("/isoplus/callback", async (req, res) => {
       error: err.response?.data || err.message,
       status: err.response?.status
     }, extractContextFromReq(req));
-    const errorMessage = err.response?.data?.error || err.message || 'Failed to authenticate';
+    const rawErrorMessage = err.response?.data?.error || err.message || 'Failed to authenticate';
+    const safeErrorMessage = String(rawErrorMessage).substring(0, 500);
+    
+    const errorData = JSON.stringify({
+      type: 'AUTH_ERROR',
+      error: safeErrorMessage
+    }).replace(/</g, '\\u003c').replace(/>/g, '\\u003e'); // Escape HTML tags in JSON
+    
     res.send(`
       <html>
         <body>
           <script>
-            window.opener.postMessage(${JSON.stringify({
-              type: 'AUTH_ERROR',
-              error: errorMessage
-            })}, '*');
+            window.opener.postMessage(${errorData}, '*');
             window.close();
           </script>
         </body>
@@ -333,7 +347,15 @@ router.post('/oauth-login', async (req, res) => {
           role: user.role
         }
       });
-    }    
+    } else {
+      warn('User-Service', 'Failed to fetch workspaces during OAuth login', { 
+        status: workspaceResponse.status, 
+        email: user.email 
+      }, extractContextFromReq(req));
+      res.status(workspaceResponse.status || 500).json({ 
+        message: workspaceResponse.message || 'Failed to fetch workspace data' 
+      });
+    }
   } catch (err) {
     error('User-Service', 'Server error during OAuth login', { error: err.message }, extractContextFromReq(req));
     res.status(500).json({ message: 'Server error during OAuth login' });
