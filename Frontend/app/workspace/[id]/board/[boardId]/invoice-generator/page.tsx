@@ -297,44 +297,44 @@ export default function InvoiceGenerator() {
 
       if (response.data && response.data.boards) {
         const board = response.data.boards.find((b: any) => b.boardId === boardId);
-        
+
         if (board) {
           // Determine if this is a manual sync (has jobStatus) or regular sync (has syncExecution)
-          const isManualSync = board.jobStatus && 
+          const isManualSync = board.jobStatus &&
             (board.jobStatus.state === 'active' || board.jobStatus.state === 'waiting' || board.jobStatus.state === 'failed');
-          
+
           // Check if sync is failed
           const isFailed = (board.syncExecution && (board.syncExecution.status === 'failed' || board.syncExecution.status === 'timeout')) ||
-                          (board.jobStatus && board.jobStatus.state === 'failed');
-          
+            (board.jobStatus && board.jobStatus.state === 'failed');
+
           // Check if sync is active
           const isActive = (board.syncExecution && (board.syncExecution.status === 'started' || board.syncExecution.status === 'in-progress')) ||
-                          (board.jobStatus && (board.jobStatus.state === 'active' || board.jobStatus.state === 'waiting'));
-          
+            (board.jobStatus && (board.jobStatus.state === 'active' || board.jobStatus.state === 'waiting'));
+
           // Check if sync is completed (no active job or syncExecution, and was previously active)
           const isCompleted = !isActive && !isFailed && wasActive;
-          
+
           if (isManualSync) {
             // For manual syncs, use jobStatus.progress for both folders and items
             const jobProgress = board.jobStatus?.progress || {};
             const syncStats = board.syncStats || {};
-            
+
             // Extract folder progress
             const foldersProcessed = jobProgress.foldersProcessed ?? syncStats.foldersProcessed ?? 0;
             const totalFolders = jobProgress.totalFolders ?? 0;
             const currentFolder = jobProgress.currentFolder || null;
-            
+
             // Extract item counters from jobStatus.progress (real-time), fallback to syncStats
             const itemsProcessed = jobProgress.itemsProcessed ?? syncStats.itemsSynced ?? 0;
-            
+
             // Update sync status in context
             const updatedSyncStatus = {
               boardId: board.boardId,
               boardName: board.boardName || board.boardId,
-              status: board.jobStatus.state === 'active' ? 'in-progress' as const : 
-                      board.jobStatus.state === 'failed' ? 'failed' as const : 'started' as const,
+              status: board.jobStatus.state === 'active' ? 'in-progress' as const :
+                board.jobStatus.state === 'failed' ? 'failed' as const : 'started' as const,
               syncType: board.syncStatus || 'manual_triggered_sync',
-              startTime: board.jobStatus.processedOn 
+              startTime: board.jobStatus.processedOn
                 ? new Date(board.jobStatus.processedOn).toISOString()
                 : previousSync?.startTime ? new Date(previousSync.startTime).toISOString() : new Date().toISOString(),
               progress: {
@@ -350,7 +350,7 @@ export default function InvoiceGenerator() {
                 details: null
               } : null
             };
-            
+
             // Update context with latest sync status
             setSyncStatuses(prev => {
               const existingIndex = prev.findIndex(s => s.boardId === boardId);
@@ -371,10 +371,10 @@ export default function InvoiceGenerator() {
           }
 
           if (isFailed && wasActive) {
-            const errorMessage = board.jobStatus?.failedReason || 
-                                board.lastSyncError || 
-                                board.syncExecution?.error?.message ||
-                                'The sync job encountered an error. Please try again.';
+            const errorMessage = board.jobStatus?.failedReason ||
+              board.lastSyncError ||
+              board.syncExecution?.error?.message ||
+              'The sync job encountered an error. Please try again.';
 
             showErrorToast('Sync job failed', {
               description: errorMessage
@@ -388,7 +388,7 @@ export default function InvoiceGenerator() {
 
             // Remove sync from context since it's completed
             setSyncStatuses(prev => prev.filter(s => s.boardId !== boardId));
-            
+
             stopSyncChecking();
 
             setTimeout(() => {
@@ -398,7 +398,7 @@ export default function InvoiceGenerator() {
         } else {
           // Board not found in response - check if sync completed
           const timeSinceStart = previousSync?.startTime ? Date.now() - previousSync.startTime : 0;
-          
+
           if (timeSinceStart > 15000 && wasActive) {
             showSuccessToast('Sync completed', {
               description: 'The sync job has finished successfully. Refreshing data with latest records and clearing filters...'
@@ -893,7 +893,7 @@ export default function InvoiceGenerator() {
 
       if (response.data?.pdfLink) {
         const pdfUrl = response.data.pdfLink;
-        
+
         // Download the PDF file
         try {
           const pdfResponse = await fetch(pdfUrl);
@@ -971,31 +971,6 @@ export default function InvoiceGenerator() {
   const currentItems = serviceRecords; // Use the paginated data directly from the backend
 
   const tableColumns: TableColumn[] = [
-    {
-      key: 'invoiceNumber',
-      label: 'Invoice Number',
-      className: 'min-w-[180px]',
-      render: (record) => {
-        if (!record.invoiceNumber) return '-';
-        // Check if it's a PDF invoice (contains ISO+™)
-        const isPDFInvoice = record.invoiceNumber.includes('ISO+™');
-        if (isPDFInvoice) {
-          return (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDownloadInvoice(record.invoiceNumber!);
-              }}
-              className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer font-medium"
-              title="Click to download invoice PDF"
-            >
-              {record.invoiceNumber}
-            </button>
-          );
-        }
-        return record.invoiceNumber;
-      }
-    },
     {
       key: 'paymentStatus',
       label: 'Payment Status',
@@ -2259,7 +2234,10 @@ export default function InvoiceGenerator() {
                                   </Badge>
                                 )}
                                 {record.invoiceNumber && (
-                                  <Badge variant="outline" className="text-xs">
+                                  <Badge variant="outline" className="text-xs cursor-pointer hover:bg-green-200 hover:text-green-800" onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDownloadInvoice(record.invoiceNumber!);
+                                  }}>
                                     #{record.invoiceNumber}
                                   </Badge>
                                 )}
