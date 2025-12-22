@@ -721,7 +721,7 @@ router.get('/:workspaceId/:boardId/invoice-generator/participants', authenticate
 
         // Base match - only from Master Plan,Shift Planning and Reporting
         const baseMatch = { workspaceId, boardId };
-        const folderIds = await getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
+        const folderIds = await getFolderIds('📋 Participants Intake', workspaceId, boardId);
         if (folderIds && folderIds.length > 0) {
             baseMatch.folderId = { $in: folderIds };
         }
@@ -731,7 +731,7 @@ router.get('/:workspaceId/:boardId/invoice-generator/participants', authenticate
         // In flat format, data is: { "Participant Full Name": "Jane Smith", ... }
         pipeline.push({
             $addFields: {
-                participantName: { $ifNull: ["$data.Participant Full Name", null] }
+                participantName: { $ifNull: [`$data.${ATTRIBUTE_NAMES.FULL_NAME}`, null] }
             }
         });
 
@@ -798,7 +798,7 @@ router.get('/:workspaceId/:boardId/monthly-statement/participants', authenticate
 
         // Base match - only from Master Plan,Shift Planning and Reporting
         const baseMatch = { workspaceId, boardId };
-        const folderIds = await getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
+        const folderIds = await getFolderIds('📋 Participants Intake', workspaceId, boardId);
         if (folderIds && folderIds.length > 0) {
             baseMatch.folderId = { $in: folderIds };
         }
@@ -807,7 +807,7 @@ router.get('/:workspaceId/:boardId/monthly-statement/participants', authenticate
         // Extract participant name from flat data format
         pipeline.push({
             $addFields: {
-                participantName: { $ifNull: [`$data.${ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME}`, null] }
+                participantName: { $ifNull: [`$data.${ATTRIBUTE_NAMES.FULL_NAME}`, null] }
             }
         });
 
@@ -995,10 +995,16 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
         };
 
         // Process and filter items in JavaScript (more stable than aggregation)
-        const processedItems = allItems.map(item => {
+        const processedItems = await Promise.all(allItems.map(async item => {
             const scheduledStart = getValueFromItem(item, ATTRIBUTE_NAMES.SCHEDULED_START);
             const actualEnd = getValueFromItem(item, ATTRIBUTE_NAMES.ACTUAL_END);
-            const participantName = getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
+            const participantIds = getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE) || '';
+            const participantId = participantIds.length > 0 ? participantIds[0] : '';
+            let participantName = '';
+            if(participantId) {
+                const participantProfileItem = await Item.findOne({ itemId: participantId }).lean();
+                participantName = getValueFromItem(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_FULL_NAME);
+            }
 
             return {
                 item,
@@ -1013,8 +1019,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 transactionStatusRaw: getRawStatusData(item, ATTRIBUTE_NAMES.TRANSACTION_STATUS),
                 paymentStatusRaw: getRawStatusData(item, ATTRIBUTE_NAMES.PAYMENT_STATUS || 'Payment Status')
             };
-        });
-
+        }));
         // Apply filters in JavaScript
         let filteredItems = processedItems;
 
@@ -1311,19 +1316,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 return String(value);
             };
 
-            // DATABASE-ONLY: Get participant name from participant profile in lookup map
-            let participantName = getValue(ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
-            const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
-            const participantProfileId = extractRefId(participantProfileValue);
-
-            if (participantProfileId) {
-                const participantProfileItem = refItemsMap.get(participantProfileId);
-                const profileName = getParticipantNameFromProfile(participantProfileItem);
-                if (profileName) {
-                    participantName = profileName;
-                }
-            }
-
             const scheduledStart = getValue(ATTRIBUTE_NAMES.SCHEDULED_START) || null;
             const unit = getValue(ATTRIBUTE_NAMES.UNIT) || '';
             const quantity = Number(getValue(ATTRIBUTE_NAMES.QUANTITY)) || 0;
@@ -1368,7 +1360,9 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
             // DATABASE-ONLY: Get participant profile from pre-fetched lookup map
             let careRecipientIdentifier;
-            const participantProfileItem = participantProfileId ? refItemsMap.get(participantProfileId) : null;
+            const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
+            const participantProfileRefId = extractRefId(participantProfileValue);
+            const participantProfileItem = participantProfileRefId ? refItemsMap.get(participantProfileRefId) : null;
 
             if (participantProfileItem) {
                 careRecipientIdentifier = getMyAgedCareIdFromProfile(participantProfileItem);
@@ -1467,7 +1461,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 // Table fields (Visible in ISO+ Portal Table)
                 id: item.itemId,
                 paymentStatus: paymentStatusFormatted,
-                participant: participantName,
+                participant: processedItem?.participantName || '',
                 service: serviceLabel,
                 scheduledServiceDate: scheduledServiceDate,
                 serviceDeliveryDate: serviceDeliveryDate,
@@ -2881,6 +2875,57 @@ router.get('/cache/stats', authenticateToken, async (req, res) => {
         });
     } catch (err) {
         error('Items-Service', 'Failed to get cache stats', {
+            message: err.message
+        }, extractContextFromReq(req));
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// Get PDF link by invoice number
+router.get('/:workspaceId/:boardId/invoice/:invoiceNumber/pdf-link', authenticateToken, async (req, res) => {
+    try {
+        const { workspaceId, boardId, invoiceNumber } = req.params;
+
+        if (!workspaceId || !boardId || !invoiceNumber) {
+            return res.status(400).json({ message: 'WorkspaceId, boardId, and invoiceNumber are required' });
+        }
+
+        // Decode the invoice number from URL
+        const decodedInvoiceNumber = decodeURIComponent(invoiceNumber);
+        
+        // Try to find invoice with exact match first, then try with (ISO+™) suffix
+        let invoiceRecord = await InvoiceNumber.findOne({
+            workspaceId,
+            boardId,
+            invoiceNumber: decodedInvoiceNumber,
+            type: 'PDF'
+        }).lean();
+
+        // If not found, try with (ISO+™) suffix
+        if (!invoiceRecord) {
+            invoiceRecord = await InvoiceNumber.findOne({
+                workspaceId,
+                boardId,
+                invoiceNumber: `${decodedInvoiceNumber} (ISO+™)`,
+                type: 'PDF'
+            }).lean();
+        }
+
+        if (!invoiceRecord) {
+            return res.status(404).json({ message: 'Invoice not found or is not a PDF invoice' });
+        }
+
+        if (!invoiceRecord.pdfLink) {
+            return res.status(404).json({ message: 'PDF link not available for this invoice' });
+        }
+
+        return res.status(200).json({
+            pdfLink: invoiceRecord.pdfLink,
+            invoiceNumber: invoiceRecord.invoiceNumber,
+            itemId: invoiceRecord.itemId
+        });
+    } catch (err) {
+        error('Items-Service', 'Failed to get PDF link', {
             message: err.message
         }, extractContextFromReq(req));
         res.status(500).json({ message: 'Server error' });
