@@ -46,6 +46,13 @@ export const authenticateToken = (req, res, next) => {
     return res.status(401).json({ message: 'Authentication required' });
   }
 
+  if (!process.env.JWT_SECRET) {
+    warn('Authentication-Service', 'JWT_SECRET not configured', {
+      error: 'JWT_SECRET environment variable not set',
+    }, req);
+    return res.status(500).json({ message: 'Server configuration error' });
+  }
+
   try {
     const user = jwt.verify(token, process.env.JWT_SECRET);
 

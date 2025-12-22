@@ -149,12 +149,12 @@ export default function ConfigurationPage() {
               id: attr.id, name: attr.name, type: attr.type == "text" ? "Text" : "Long Text"
             }
           });
-          
+
           // Sort attributes alphabetically by name
-          const sortedAttributes = formattedAttributes.sort((a: any, b: any) => 
+          const sortedAttributes = formattedAttributes.sort((a: any, b: any) =>
             a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
           );
-          
+
           setIsoAttributes(sortedAttributes);
           showFetchSuccessToast("Board attributes");
         } catch (error: any) {
@@ -424,7 +424,7 @@ export default function ConfigurationPage() {
                       <SelectValue placeholder="Select an attribute" />
                     </SelectTrigger>
                     <SelectContent>
-                      {isoAttributes.map((attr) => (
+                      {isoAttributes.filter(attr => attr.type.toLowerCase().includes("long")).map((attr) => (
                         <SelectItem key={attr.id} value={attr.id} defaultValue={selectedAttribute}>
                           <div className="flex items-center justify-between w-full">
                             <span>{attr.name}</span>

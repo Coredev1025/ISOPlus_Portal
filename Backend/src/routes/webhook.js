@@ -117,7 +117,7 @@ const REF_ATTRIBUTE_NAMES = {
     PROFILE_POST_CODE: 'Post Code',
     PROFILE_BILLING_CONTACT: 'Billing Contact',
     PROFILE_BILLING_ADDRESS: 'Billing Address',
-    
+
     // Client/Contractor attributes
     CLIENT: 'Client',
     CLIENT_EMAIL: 'Email Address',
@@ -130,18 +130,18 @@ const REF_ATTRIBUTE_NAMES = {
     CLIENT_CONTACT_LAST_NAME: 'Contact Person\'s Last Name',
     CLIENT_UPDATED_AT: 'Updated At',
     CONTRACTOR: 'Contractor',
-    
+
     // Job Planning/Type attributes
     JOB_NUMBER: 'Job Number',
     JOB_TITLE: 'Job Title',
     JOB_TYPE: 'Job Type',
     JOB_CODE: 'Job Code',
     CLIENT_ORDER_NUMBER: 'Client\'s Order Number',
-    
+
     // Service Fee Type attributes
     FEE_TYPE: 'Fee Type',
     RATE_GST_EXCL: 'Rate($) - GST Excl.',
-    
+
     // Service Plan attributes
     SERVICE_PLAN_ID: 'Service Plan ID',
     SERVICE_ID_ITEM_ID: 'Service ID /  Item ID',
@@ -154,29 +154,29 @@ const REF_ATTRIBUTE_NAMES = {
     AGREED_UNIT_PRICE: 'Agreed Unit Price ($)',
     PARTICIPANT_CONTRIBUTION: 'Participant Contribution (%)',
     PARTICIPANT_CONTRIBUTION_GUIDELINE: 'Participant Contribution Guideline (%)',
-    
+
     // Item attributes
     ITEM_DESCRIPTION_CODE: 'Item Description Code',
     ITEM_ID: 'Item ID',
     ITEM_DESCRIPTION: 'Item Description',
     ITEM: 'Item',
-    
+
     // Wraparound attributes
     WRAPAROUND: 'Wraparound',
     WRAPAROUND_DESCRIPTION_CODE: 'Wraparound Description Code',
     WRAPAROUND_ITEM_ID: 'Wraparound Item ID',
     WRAPAROUND_DESCRIPTION: 'Wraparound Description',
-    
+
     // Health Professional attributes
     HEALTH_PROFESSIONAL_TYPE_CODE: 'Health Professional Type Code',
     HEALTH_PROFESSIONAL_TYPE_OTHER: 'Health Professional Type',
-    
+
     // NDIS Support Item attributes
     SUPPORT_ITEM_NUMBER: 'Support Item Number',
     SUPPORT_ITEM_NAME: 'Support Item Name',
     SHORT_NOTICE_CANCELLATIONS: 'Short Notice Cancellations',
     LABOUR_TRAVEL_TIME_COSTS: 'Labour Travel Time Costs',
-    
+
     // NDIS State-based pricing attributes
     ACT_PRICE: 'ACT($)',
     NSW_PRICE: 'NSW($)',
@@ -188,10 +188,10 @@ const REF_ATTRIBUTE_NAMES = {
     WA_PRICE: 'WA($)',
     REMOTE_PRICE: 'Remote($)',
     VERY_REMOTE_PRICE: 'Very Remote($)',
-    
+
     // NDIS Service Area attributes
     SERVICE_AREA: 'Service Area',
-    
+
     // NDIS Service Plan specific attributes
     UNIT_DIRECT_SUPPORT: 'Unit (Direct Support)',
     AGREED_PRICE_DIRECT_SUPPORT: 'Agreed Unit Price for Direct Support ($)',
@@ -207,21 +207,21 @@ const REF_ATTRIBUTE_NAMES = {
     AGREED_PRICE_ALLOWANCES: 'Agreed Price for Allowances($)',
     UNIT_NON_FACE_TO_FACE: 'Unit (Non-Face-to-Face Support)',
     AGREED_PRICE_NON_FACE_TO_FACE: 'Agreed Unit Price for Non-Face-to-Face Support($)',
-    
+
     // Cancellation Type attributes
     CANCELLATION_DEFINITION: 'Definition',
     BILLABLE_TO_CLIENT: 'Billable to Client %',
     PAYABLE_TO_WORKER: 'Payable to Worker %',
-    
+
     // Fund attributes
     FUND_AMOUNT: 'Fund Amount($)',
     PREVIOUSLY_USED: 'Previously Used ($)',
     INVOICED_AND_RECEIVED: 'Invoiced and Received Amount($)',
-    
+
     // Participation Type attributes
     PARTICIPATION_TYPE: 'Participation Type',
     PARTICIPATION_DEFINITION: 'Definition',
-    
+
     // Aged Care Budget attributes
     TOTAL_BUDGET_HOME_SUPPORT: 'Total Available Budget for Home Support ($)',
     REMAINING_HOME_SUPPORT: 'Remaining Home Support Balance as at the End of the Month ($)',
@@ -238,24 +238,22 @@ const REF_ATTRIBUTE_NAMES = {
     REMAINING_HOME_MOD: 'Remaining HM Balance for Allocation Period ($)',
     COMMITTED_HOME_MOD: 'Committed HM Funds - to be delivered ($-)',
     FUNDING_END_DATE: 'Funding End Date',
-    
+
     // Funding Source attributes
-    FS_NAME: 'Name',
-    FS_TITLE: 'Title',
-    FS_FUNDING_SOURCE_NAME: 'Funding Source Name',
-    FS_FULL_NAME: 'Full Name'
+    FS_NAME: 'Funding Stream',
+    FS_DEFINITION: 'Definition'
 };
 
 async function bulkFetchReferenceItemsFromDB(workspaceId, boardId, itemIds) {
     if (!itemIds || itemIds.length === 0) return new Map();
-    
+
     // Remove duplicates and nulls
     const uniqueIds = [...new Set(itemIds.filter(Boolean).map(id => {
         if (typeof id === 'object' && id.id) return id.id.toString();
         if (typeof id === 'object' && id) return id.toString();
         return id?.toString();
     }).filter(Boolean))];
-    
+
     if (uniqueIds.length === 0) return new Map();
 
     // First try to fetch from the same board
@@ -274,20 +272,20 @@ async function bulkFetchReferenceItemsFromDB(workspaceId, boardId, itemIds) {
     // Check if we're missing any items - they might be in other boards
     const foundIds = new Set(items.map(i => i.itemId));
     const missingIds = uniqueIds.filter(id => !foundIds.has(id));
-    
+
     if (missingIds.length > 0) {
         // Fetch missing items from ANY board in the workspace
         const crossBoardItems = await Item.find({
             workspaceId,
             itemId: { $in: missingIds }
         }).lean();
-        
+
         for (const item of crossBoardItems) {
             if (!itemMap.has(item.itemId)) {
                 itemMap.set(item.itemId, item);
             }
         }
-        
+
         // Log items that are still missing after cross-board search
         const stillMissingIds = missingIds.filter(id => !itemMap.has(id));
         if (stillMissingIds.length > 0) {
@@ -314,17 +312,17 @@ function extractRefId(value) {
 
 function getValueFromFlatData(item, attributeName) {
     if (!item?.data) return null;
-    
+
     // Handle array of attribute names (try each until one is found)
     const attributeNames = Array.isArray(attributeName) ? attributeName : [attributeName];
-    
+
     for (const attrName of attributeNames) {
         // Check flat format (data.key)
         if (item.data[attrName] !== undefined && item.data[attrName] !== null) {
             return item.data[attrName];
         }
     }
-    
+
     // Check values array format (data.values) - for older format support
     if (Array.isArray(item.data.values)) {
         for (const attrName of attributeNames) {
@@ -334,13 +332,13 @@ function getValueFromFlatData(item, attributeName) {
             }
         }
     }
-    
+
     return null;
 }
 
 function getParticipantNameFromProfile(profileItem) {
     if (!profileItem) return null;
-    
+
     // Try different name attributes
     const nameAttrs = [
         REF_ATTRIBUTE_NAMES.PROFILE_PREFERRED_NAME,
@@ -349,10 +347,10 @@ function getParticipantNameFromProfile(profileItem) {
         'Preferred Name',
         'Name'
     ];
-    
+
     const name = getValueFromFlatData(profileItem, nameAttrs);
     if (!name) return null;
-    
+
     // Handle object format
     if (typeof name === 'object' && name.name) return name.name;
     return String(name);
@@ -360,39 +358,39 @@ function getParticipantNameFromProfile(profileItem) {
 
 function getAddressFromProfile(profileItem) {
     if (!profileItem) return { address: '', suburb: '', state: '', postcode: '' };
-    
+
     const address = getValueFromFlatData(profileItem, [
         REF_ATTRIBUTE_NAMES.PROFILE_ADDRESS,
         'Address'
     ]) || '';
-    
+
     const suburb = getValueFromFlatData(profileItem, [
         REF_ATTRIBUTE_NAMES.PROFILE_SUBURB,
         'Suburb'
     ]) || '';
-    
+
     const stateValue = getValueFromFlatData(profileItem, [
         REF_ATTRIBUTE_NAMES.PROFILE_STATE,
         'State'
     ]);
     const state = stateValue ? (typeof stateValue === 'object' && stateValue.name ? stateValue.name : String(stateValue)) : '';
-    
+
     const postcode = getValueFromFlatData(profileItem, [
         REF_ATTRIBUTE_NAMES.PROFILE_POSTCODE,
         REF_ATTRIBUTE_NAMES.PROFILE_POST_CODE,
         'Postcode',
         'Post Code'
     ]) || '';
-    
+
     return { address, suburb, state, postcode };
 }
 
 function getServiceFromServicePlan(servicePlanItem) {
     if (!servicePlanItem) return null;
-    
+
     const servicePlanIdValue = getValueFromFlatData(servicePlanItem, REF_ATTRIBUTE_NAMES.SERVICE_PLAN_ID);
     if (!servicePlanIdValue) return null;
-    
+
     const servicePlanIdStr = String(servicePlanIdValue).trim();
     if (servicePlanIdStr.includes(' - ')) {
         const parts = servicePlanIdStr.split(' - ');
@@ -1966,7 +1964,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                                 desc5 += ` - ${itemNumber5}`;
                             }
                             desc5 += ` - ${cancellationPercentage1}%`;
-                            
+
                             ordersArr.push([
                                 desc5,
                                 servicePlanValues?.centreCapitalCostsUnit || ' ',
@@ -2065,7 +2063,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         const business = await getValidatedBusiness(workspaceId);
 
         const itemIds = req.body.items?.map(item => item.id || item) || req.body.itemIds || [];
-        
+
         if (!itemIds || itemIds.length === 0) {
             return res.status(400).json({ message: "No items provided for invoice generation." });
         }
@@ -2097,7 +2095,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             // Get dates from request or use defaults
             let invoiceDate = req.body?.invoiceDate || new Date().toISOString();
             let dueDate = req.body?.dueDate || '';
-            
+
             if (!dueDate) {
                 const d = new Date(invoiceDate);
                 d.setDate(d.getDate() + 14);
@@ -2112,26 +2110,26 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             // OPTIMIZED: Collect all reference IDs first, then bulk fetch from database
             const participantProfileIds = new Set();
             const servicePlanIds = new Set();
-            
+
             // Extract all reference IDs from items
             for (const dbItem of dbItems) {
                 const getValue = (attributeName) => getValueFromFlatData(dbItem, attributeName);
-                
+
                 // Get participant profile ID
                 const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
                 const participantProfileId = extractRefId(participantProfileValue);
                 if (participantProfileId) participantProfileIds.add(participantProfileId);
-                
+
                 // Get service plan ID
                 const servicePlanValue = getValue(ATTRIBUTE_NAMES.SERVICE_PLAN);
                 const servicePlanId = extractRefId(servicePlanValue);
                 if (servicePlanId) servicePlanIds.add(servicePlanId);
             }
-            
+
             // Bulk fetch all reference items from MongoDB (NO API calls!)
             const allRefIds = [...participantProfileIds, ...servicePlanIds];
             const refItemsMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, allRefIds);
-            
+
             info('Webhook-Service', 'Bulk fetched reference items from DB', {
                 participantProfiles: participantProfileIds.size,
                 servicePlans: servicePlanIds.size,
@@ -2152,14 +2150,14 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                 // Get Participant Profile reference from DB lookup map
                 const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
                 const participantProfileId = extractRefId(participantProfileValue);
-                
+
                 if (participantProfileId) {
                     const participantProfileItem = refItemsMap.get(participantProfileId);
                     if (participantProfileItem) {
                         // Use helper functions to get participant profile data
                         const profileName = getParticipantNameFromProfile(participantProfileItem);
                         participantName = profileName || ' ';
-                        
+
                         // Get address information using helper function
                         const addressInfo = getAddressFromProfile(participantProfileItem);
                         participantAddress = addressInfo.address || ' ';
@@ -2181,14 +2179,14 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                 // Date: If Transaction Status is "Delivered - To be claimed and invoiced.", use Actual Shift End Date & Time, otherwise Scheduled Shift Start Date & Time
                 let rowDate = '';
                 const isDelivered = transactionStatus && transactionStatus === 'Delivered - To be claimed and invoiced.';
-                
+
                 if (isDelivered) {
                     const actualEnd = getValue(ATTRIBUTE_NAMES.ACTUAL_END);
                     if (actualEnd) {
                         rowDate = dateFmt(actualEnd);
                     }
                 }
-                
+
                 if (!rowDate) {
                     const scheduledStart = getValue(ATTRIBUTE_NAMES.SCHEDULED_START);
                     if (scheduledStart) {
@@ -2200,12 +2198,12 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                 let description = '';
                 const servicePlanValue = getValue(ATTRIBUTE_NAMES.SERVICE_PLAN);
                 const servicePlanId = extractRefId(servicePlanValue);
-                
+
                 if (servicePlanId) {
                     const servicePlanItem = refItemsMap.get(servicePlanId);
                     description = getServiceFromServicePlan(servicePlanItem) || '';
                 }
-                
+
                 if (!description) {
                     description = 'Service';
                 }
@@ -2242,7 +2240,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                     formatCurrencyValue(totalAmount), // $ {Total Amount ($)}
                     formatCurrencyValue(participantContribution) // {Participant Contribution ($)}
                 ]);
-                
+
                 // Subtotal uses Participant Contribution, not Total Amount
                 totalParticipantContribution += participantContribution;
             }
@@ -2313,7 +2311,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename);
-                
+
                 // Update integration messages and generated fields for all items
                 await Promise.all(dbItems.map(async (item) => {
                     await setIntegrationMessage(workspaceId, boardId, item.itemId, "Invoice generated successfully");
@@ -2332,7 +2330,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                     req
                 });
 
-                return res.status(200).json({ 
+                return res.status(200).json({
                     message: "Participant Tax Invoice generated successfully",
                     invoiceNumber: `${invoiceNumber} (ISO+™)`,
                     fileUrl: fileUrl,
@@ -2668,17 +2666,17 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                         } else {
                             parsed = [];
                         }
-                        
+
                         const columnCount = tableColumnCounts[key]
                             ?? (Array.isArray(parsed) && Array.isArray(parsed[0]) ? parsed[0].length : 8);
-                        
+
                         // Ensure we have at least one row with empty cells
                         if (!Array.isArray(parsed) || parsed.length === 0) {
                             const emptyRow = Array(columnCount).fill('');
                             emptyRow[1] = 'No services recorded for this period'; // Service column
                             parsed = [emptyRow];
                         }
-                        
+
                         const sanitized = parsed.map((row) => {
                             const baseRow = Array.isArray(row) ? row : [];
                             const padded = [...baseRow];
@@ -2721,12 +2719,12 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             if (uploadResult['$metadata'].httpStatusCode === 200) {
                 const fileUrl = await getS3FileUrl(filename);
 
-                info('Webhook-Service', 'Monthly statement PDF generated successfully', { 
+                info('Webhook-Service', 'Monthly statement PDF generated successfully', {
                     participant: participantName,
                     month: statementData.month,
                     year: statementData.year,
                     servicesCount: services.length,
-                    fileUrl 
+                    fileUrl
                 }, extractContextFromReq(req));
 
                 return res.status(200).json({
@@ -2739,9 +2737,9 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             }
         } catch (err) {
             const errorMessage = (err && err.message) ? err.message : 'Server error: An unknown error occurred. Please contact support via ISO+™ Portal.';
-            error('Webhook-Service', 'Error generating monthly statement PDF', { 
+            error('Webhook-Service', 'Error generating monthly statement PDF', {
                 message: errorMessage,
-                stack: err.stack 
+                stack: err.stack
             }, extractContextFromReq(req));
             return res.status(500).json({ message: errorMessage, error: err.message });
         }

@@ -133,22 +133,20 @@ const REF_ATTR = {
     PROFILE_PREFERRED_NAME: 'Preferred Name',
     PROFILE_MY_AGED_CARE_ID: 'My Aged Care ID Number',
     PROFILE_MY_AGED_CARE_ID_ALT: 'My Aged Care ID',
-    
+
     // Service Plan attributes
     SERVICE_PLAN_ID: 'Service Plan ID',
     SERVICE_ID_ITEM_ID: 'Service ID/  Item ID',
     SERVICE_ID_ITEM_ID_ALT: 'Service ID/Item ID',
-    
+
     // Funding Source attributes
-    FS_NAME: 'Name',
-    FS_TITLE: 'Title',
-    FS_FUNDING_SOURCE_NAME: 'Funding Source Name',
-    FS_FULL_NAME: 'Full Name'
+    FS_NAME: 'Funding Stream',
+    FS_DEFINITION: 'Definition'
 };
 
 const bulkFetchItemsFromDB = async (workspaceId, boardId, itemIds) => {
     if (!itemIds || itemIds.length === 0) return new Map();
-    
+
     const uniqueIds = [...new Set(itemIds.filter(Boolean))];
     if (uniqueIds.length === 0) return new Map();
 
@@ -165,19 +163,19 @@ const bulkFetchItemsFromDB = async (workspaceId, boardId, itemIds) => {
 
     const foundIds = new Set(items.map(i => i.itemId));
     const missingIds = uniqueIds.filter(id => !foundIds.has(id));
-    
+
     if (missingIds.length > 0) {
         const crossBoardItems = await Item.find({
             workspaceId,
             itemId: { $in: missingIds }
         }).lean();
-        
+
         for (const item of crossBoardItems) {
             if (!itemMap.has(item.itemId)) {
                 itemMap.set(item.itemId, item);
             }
         }
-        
+
         const stillMissingIds = missingIds.filter(id => !itemMap.has(id));
         if (stillMissingIds.length > 0) {
             warn('Export-Service', 'Reference items not found in database', {
@@ -239,7 +237,7 @@ const getServiceFromServicePlan = (servicePlanItem) => {
         ATTRIBUTE_NAMES.SERVICE_PLAN_ID
     ]);
     if (!servicePlanIdValue) return null;
-    
+
     const servicePlanIdStr = String(servicePlanIdValue).trim();
     if (servicePlanIdStr.includes('-')) {
         const parts = servicePlanIdStr.split('-');
@@ -250,7 +248,7 @@ const getServiceFromServicePlan = (servicePlanItem) => {
 
 const getServiceIdentifierFromServicePlan = (servicePlanItem, refItemsMap) => {
     if (!servicePlanItem) return null;
-    
+
     const idAttrs = [
         REF_ATTR.SERVICE_ID_ITEM_ID,
         REF_ATTR.SERVICE_ID_ITEM_ID_ALT,
@@ -258,7 +256,7 @@ const getServiceIdentifierFromServicePlan = (servicePlanItem, refItemsMap) => {
         'Service ID /  Item ID',
         'Service ID/Item ID'
     ];
-    
+
     const serviceId = getValueMulti(servicePlanItem, idAttrs);
     if (serviceId) {
         let idStr = String(serviceId);
@@ -267,7 +265,7 @@ const getServiceIdentifierFromServicePlan = (servicePlanItem, refItemsMap) => {
         }
         return idStr;
     }
-    
+
     if (refItemsMap) {
         const serviceRefAttrs = [
             'Home Support (HS)',
@@ -276,7 +274,7 @@ const getServiceIdentifierFromServicePlan = (servicePlanItem, refItemsMap) => {
             'Home Modification (HM)',
             'Health Professional'
         ];
-        
+
         for (const refAttr of serviceRefAttrs) {
             const refValue = getValue(servicePlanItem, refAttr);
             const refId = extractRefId(refValue);
@@ -295,13 +293,13 @@ const getServiceIdentifierFromServicePlan = (servicePlanItem, refItemsMap) => {
             }
         }
     }
-    
+
     return null;
 };
 
 const getItemDescriptionFromServicePlan = (servicePlanItem, refItemsMap) => {
     if (!servicePlanItem) return { code: '', description: '' };
-    
+
     const codeAttrs = [
         ATTRIBUTE_NAMES.ITEM_DESCRIPTION_CODE,
         'Item ID',
@@ -312,17 +310,17 @@ const getItemDescriptionFromServicePlan = (servicePlanItem, refItemsMap) => {
         'Item',
         'Item Description'
     ];
-    
+
     const directCode = getValueMulti(servicePlanItem, codeAttrs);
     const directDesc = getValueMulti(servicePlanItem, descAttrs);
-    
+
     if (directCode || directDesc) {
         return {
             code: directCode || '',
             description: directDesc || ''
         };
     }
-    
+
     if (refItemsMap) {
         const serviceRefAttrs = [
             'Home Support (HS)',
@@ -331,7 +329,7 @@ const getItemDescriptionFromServicePlan = (servicePlanItem, refItemsMap) => {
             'Home Modification (HM)',
             'Health Professional'
         ];
-        
+
         for (const refAttr of serviceRefAttrs) {
             const refValue = getValue(servicePlanItem, refAttr);
             const refId = extractRefId(refValue);
@@ -350,13 +348,13 @@ const getItemDescriptionFromServicePlan = (servicePlanItem, refItemsMap) => {
             }
         }
     }
-    
+
     return { code: '', description: '' };
 };
 
 const getWraparoundDescriptionFromServicePlan = (servicePlanItem, refItemsMap) => {
     if (!servicePlanItem) return { code: '', description: '' };
-    
+
     const codeAttrs = [
         ATTRIBUTE_NAMES.WRAPAROUND_DESCRIPTION_CODE,
         'Wraparound Item ID',
@@ -366,21 +364,21 @@ const getWraparoundDescriptionFromServicePlan = (servicePlanItem, refItemsMap) =
         ATTRIBUTE_NAMES.WRAPAROUND_DESCRIPTION,
         'Wraparound Description'
     ];
-    
+
     const directCode = getValueMulti(servicePlanItem, codeAttrs);
     const directDesc = getValueMulti(servicePlanItem, descAttrs);
-    
+
     if (directCode || directDesc) {
         return {
             code: directCode || '',
             description: directDesc || ''
         };
     }
-    
+
     if (refItemsMap) {
         const wraparoundRefValue = getValue(servicePlanItem, 'Wraparound');
         const wraparoundRefId = extractRefId(wraparoundRefValue);
-        
+
         if (wraparoundRefId) {
             const wraparoundItem = refItemsMap.get(wraparoundRefId);
             if (wraparoundItem) {
@@ -393,13 +391,13 @@ const getWraparoundDescriptionFromServicePlan = (servicePlanItem, refItemsMap) =
             }
         }
     }
-    
+
     return { code: '', description: '' };
 };
 
 const getHealthProfessionalFromServicePlan = (servicePlanItem, refItemsMap) => {
     if (!servicePlanItem) return { typeCode: '', typeOther: '' };
-    
+
     const typeCodeAttrs = [
         ATTRIBUTE_NAMES.HEALTH_PROFESSIONAL_TYPE_CODE,
         'Health Professional Type Code'
@@ -408,10 +406,10 @@ const getHealthProfessionalFromServicePlan = (servicePlanItem, refItemsMap) => {
         ATTRIBUTE_NAMES.HEALTH_PROFESSIONAL_TYPE_OTHER,
         'Health Professional Type'
     ];
-    
+
     let typeCode = getValueMulti(servicePlanItem, typeCodeAttrs) || '';
     let typeOther = getValueMulti(servicePlanItem, typeOtherAttrs) || '';
-    
+
     if (typeCode || typeOther) {
         if (typeOther) {
             const typeOtherStr = String(typeOther);
@@ -421,17 +419,17 @@ const getHealthProfessionalFromServicePlan = (servicePlanItem, refItemsMap) => {
         }
         return { typeCode, typeOther };
     }
-    
+
     if (refItemsMap) {
         const healthProfRefValue = getValue(servicePlanItem, 'Health Professional');
         const healthProfRefId = extractRefId(healthProfRefValue);
-        
+
         if (healthProfRefId) {
             const healthProfItem = refItemsMap.get(healthProfRefId);
             if (healthProfItem) {
                 typeCode = getValueMulti(healthProfItem, typeCodeAttrs) || '';
                 typeOther = getValueMulti(healthProfItem, typeOtherAttrs) || '';
-                
+
                 if (typeOther) {
                     const typeOtherStr = String(typeOther);
                     if (typeOtherStr.includes(' - Other')) {
@@ -442,7 +440,7 @@ const getHealthProfessionalFromServicePlan = (servicePlanItem, refItemsMap) => {
             }
         }
     }
-    
+
     return { typeCode: '', typeOther: '' };
 };
 
@@ -504,10 +502,10 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
             const scheduledStart = getValue(item, ATTRIBUTE_NAMES.SCHEDULED_START);
             const actualEnd = getValue(item, ATTRIBUTE_NAMES.ACTUAL_END);
             const participantName = getValue(item, ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
-            
+
             const transactionStatusValue = getValue(item, ATTRIBUTE_NAMES.TRANSACTION_STATUS);
             const paymentStatusValue = getValue(item, ATTRIBUTE_NAMES.PAYMENT_STATUS);
-            
+
             return {
                 item,
                 scheduledStartDate: parseDate(scheduledStart),
@@ -593,7 +591,7 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
 
         const allRefIds = [...servicePlanIds, ...participantProfileIds, ...fundingSourceIds];
         const refItemsMap = await bulkFetchItemsFromDB(workspaceId, boardId, allRefIds);
-        
+
         const nestedRefIds = new Set();
         const serviceRefAttrs = [
             'Home Support (HS)',
@@ -603,7 +601,7 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
             'Health Professional',
             'Wraparound'
         ];
-        
+
         for (const servicePlanId of servicePlanIds) {
             const servicePlanItem = refItemsMap.get(servicePlanId);
             if (servicePlanItem && servicePlanItem.data) {
@@ -614,7 +612,7 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
                 }
             }
         }
-        
+
         if (nestedRefIds.size > 0) {
             const nestedRefItemsMap = await bulkFetchItemsFromDB(workspaceId, boardId, [...nestedRefIds]);
             for (const [key, value] of nestedRefItemsMap) {
@@ -663,11 +661,11 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
                     const itemDesc = getItemDescriptionFromServicePlan(servicePlanItem, refItemsMap);
                     itemDescriptionCode = itemDesc.code;
                     itemDescription = itemDesc.description;
-                    
+
                     const wraparound = getWraparoundDescriptionFromServicePlan(servicePlanItem, refItemsMap);
                     wraparoundDescriptionCode = wraparound.code;
                     wraparoundDescription = wraparound.description;
-                    
+
                     const healthProf = getHealthProfessionalFromServicePlan(servicePlanItem, refItemsMap);
                     healthProfessionalTypeCode = healthProf.typeCode;
                     healthProfessionalTypeOther = healthProf.typeOther;
@@ -717,7 +715,7 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
                 const normalized = itemFirstPaymentRaw.trim().toLowerCase();
                 itemFirstPaymentValue = ['true', 'y', 'yes'].includes(normalized) ? 'True' : 'False';
             }
-        
+
             const itemPurchasedMethod = formatStatus(getValue(item, 'Item Purchased Method'));
             let itemPurchasedMethodString = undefined;
             if (itemPurchasedMethod) {
@@ -1006,10 +1004,10 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
                 const serviceDeliveryDate = actualEnd && typeof actualEnd === 'string'
                     ? (actualEnd.includes('T') ? actualEnd.split('T')[0] : actualEnd.split(' ')[0])
                     : null;
-                const scheduledServiceDate = scheduledStart && typeof scheduledStart === 'string' 
+                const scheduledServiceDate = scheduledStart && typeof scheduledStart === 'string'
                     ? (scheduledStart.includes('T') ? scheduledStart.split('T')[0] : scheduledStart.split(' ')[0])
                     : null;
-                
+
                 const committedAtHmForDelivery = committedAtHm !== null && committedAtHm !== undefined
                     ? (typeof committedAtHm === 'number' ? committedAtHm : Number(committedAtHm) || 0)
                     : undefined;

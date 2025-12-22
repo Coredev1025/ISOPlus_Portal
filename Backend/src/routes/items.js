@@ -132,7 +132,7 @@ const REF_ATTRIBUTE_NAMES = {
     PROFILE_POST_CODE: 'Post Code',
     PROFILE_BILLING_CONTACT: 'Billing Contact',
     PROFILE_BILLING_ADDRESS: 'Billing Address',
-    
+
     // Client/Contractor attributes
     CLIENT: 'Client',
     CLIENT_EMAIL: 'Email Address',
@@ -145,18 +145,18 @@ const REF_ATTRIBUTE_NAMES = {
     CLIENT_CONTACT_LAST_NAME: 'Contact Person\'s Last Name',
     CLIENT_UPDATED_AT: 'Updated At',
     CONTRACTOR: 'Contractor',
-    
+
     // Job Planning/Type attributes
     JOB_NUMBER: 'Job Number',
     JOB_TITLE: 'Job Title',
     JOB_TYPE: 'Job Type',
     JOB_CODE: 'Job Code',
     CLIENT_ORDER_NUMBER: 'Client\'s Order Number',
-    
+
     // Service Fee Type attributes
     FEE_TYPE: 'Fee Type',
     RATE_GST_EXCL: 'Rate($) - GST Excl.',
-    
+
     // Service Plan attributes
     SERVICE_PLAN_ID: 'Service Plan ID',
     SERVICE_ID_ITEM_ID: 'Service ID /  Item ID',
@@ -169,29 +169,29 @@ const REF_ATTRIBUTE_NAMES = {
     AGREED_UNIT_PRICE: 'Agreed Unit Price ($)',
     PARTICIPANT_CONTRIBUTION: 'Participant Contribution (%)',
     PARTICIPANT_CONTRIBUTION_GUIDELINE: 'Participant Contribution Guideline (%)',
-    
+
     // Item attributes
     ITEM_DESCRIPTION_CODE: 'Item Description Code',
     ITEM_ID: 'Item ID',
     ITEM_DESCRIPTION: 'Item Description',
     ITEM: 'Item',
-    
+
     // Wraparound attributes
     WRAPAROUND: 'Wraparound',
     WRAPAROUND_DESCRIPTION_CODE: 'Wraparound Description Code',
     WRAPAROUND_ITEM_ID: 'Wraparound Item ID',
     WRAPAROUND_DESCRIPTION: 'Wraparound Description',
-    
+
     // Health Professional attributes
     HEALTH_PROFESSIONAL_TYPE_CODE: 'Health Professional Type Code',
     HEALTH_PROFESSIONAL_TYPE_OTHER: 'Health Professional Type',
-    
+
     // NDIS Support Item attributes
     SUPPORT_ITEM_NUMBER: 'Support Item Number',
     SUPPORT_ITEM_NAME: 'Support Item Name',
     SHORT_NOTICE_CANCELLATIONS: 'Short Notice Cancellations',
     LABOUR_TRAVEL_TIME_COSTS: 'Labour Travel Time Costs',
-    
+
     // NDIS State-based pricing attributes
     ACT_PRICE: 'ACT($)',
     NSW_PRICE: 'NSW($)',
@@ -203,10 +203,10 @@ const REF_ATTRIBUTE_NAMES = {
     WA_PRICE: 'WA($)',
     REMOTE_PRICE: 'Remote($)',
     VERY_REMOTE_PRICE: 'Very Remote($)',
-    
+
     // NDIS Service Area attributes
     SERVICE_AREA: 'Service Area',
-    
+
     // NDIS Service Plan specific attributes
     UNIT_DIRECT_SUPPORT: 'Unit (Direct Support)',
     AGREED_PRICE_DIRECT_SUPPORT: 'Agreed Unit Price for Direct Support ($)',
@@ -222,21 +222,21 @@ const REF_ATTRIBUTE_NAMES = {
     AGREED_PRICE_ALLOWANCES: 'Agreed Price for Allowances($)',
     UNIT_NON_FACE_TO_FACE: 'Unit (Non-Face-to-Face Support)',
     AGREED_PRICE_NON_FACE_TO_FACE: 'Agreed Unit Price for Non-Face-to-Face Support($)',
-    
+
     // Cancellation Type attributes
     CANCELLATION_DEFINITION: 'Definition',
     BILLABLE_TO_CLIENT: 'Billable to Client %',
     PAYABLE_TO_WORKER: 'Payable to Worker %',
-    
+
     // Fund attributes
     FUND_AMOUNT: 'Fund Amount($)',
     PREVIOUSLY_USED: 'Previously Used ($)',
     INVOICED_AND_RECEIVED: 'Invoiced and Received Amount($)',
-    
+
     // Participation Type attributes
     PARTICIPATION_TYPE: 'Participation Type',
     PARTICIPATION_DEFINITION: 'Definition',
-    
+
     // Aged Care Budget attributes
     TOTAL_BUDGET_HOME_SUPPORT: 'Total Available Budget for Home Support ($)',
     REMAINING_HOME_SUPPORT: 'Remaining Home Support Balance as at the End of the Month ($)',
@@ -253,23 +253,21 @@ const REF_ATTRIBUTE_NAMES = {
     REMAINING_HOME_MOD: 'Remaining HM Balance for Allocation Period ($)',
     COMMITTED_HOME_MOD: 'Committed HM Funds - to be delivered ($-)',
     FUNDING_END_DATE: 'Funding End Date',
-    
+
     // Funding Source attributes
-    FS_NAME: 'Name',
-    FS_TITLE: 'Title',
-    FS_FUNDING_SOURCE_NAME: 'Funding Source Name',
-    FS_FULL_NAME: 'Full Name'
+    FS_NAME: 'Funding Stream',
+    FS_DEFINITION: 'Definition'
 };
 
 const bulkFetchReferenceItemsFromDB = async (workspaceId, boardId, itemIds) => {
     if (!itemIds || itemIds.length === 0) return new Map();
-    
+
     const uniqueIds = [...new Set(itemIds.filter(Boolean).map(id => {
         if (typeof id === 'object' && id.id) return id.id.toString();
         if (typeof id === 'object' && id) return id.toString();
         return id?.toString();
     }).filter(Boolean))];
-    
+
     if (uniqueIds.length === 0) return new Map();
 
     let items = await Item.find({
@@ -287,21 +285,21 @@ const bulkFetchReferenceItemsFromDB = async (workspaceId, boardId, itemIds) => {
 
     const foundIds = new Set(items.map(i => i.itemId));
     const missingIds = uniqueIds.filter(id => !foundIds.has(id));
-    
+
     let crossBoardCount = 0;
     if (missingIds.length > 0) {
         const crossBoardItems = await Item.find({
             workspaceId,
             itemId: { $in: missingIds }
         }).lean();
-        
+
         for (const item of crossBoardItems) {
             if (!itemMap.has(item.itemId)) {
                 itemMap.set(item.itemId, item);
                 crossBoardCount++;
             }
         }
-        
+
         const stillMissingIds = missingIds.filter(id => !itemMap.has(id));
         if (stillMissingIds.length > 0 && stillMissingIds.length <= 5) {
             warn('Items-Service', 'Reference items not found in database', {
@@ -355,15 +353,15 @@ const extractAllRefIds = (value) => {
 
 const getValueFromFlatData = (item, attributeName) => {
     if (!item?.data) return null;
-    
+
     const attributeNames = Array.isArray(attributeName) ? attributeName : [attributeName];
-    
+
     for (const attrName of attributeNames) {
         if (item.data[attrName] !== undefined && item.data[attrName] !== null) {
             return item.data[attrName];
         }
     }
-    
+
     if (Array.isArray(item.data.values)) {
         for (const attrName of attributeNames) {
             const entry = item.data.values.find(v => v.attribute?.name === attrName);
@@ -372,20 +370,20 @@ const getValueFromFlatData = (item, attributeName) => {
             }
         }
     }
-    
+
     return null;
 };
 
 const getParticipantNameFromProfile = (profileItem) => {
     if (!profileItem) return null;
-    
+
     const nameAttrs = [
         REF_ATTRIBUTE_NAMES.PROFILE_FULL_NAME,
         REF_ATTRIBUTE_NAMES.PROFILE_PREFERRED_NAME,
         REF_ATTRIBUTE_NAMES.PROFILE_FIRST_NAME,
         REF_ATTRIBUTE_NAMES.PROFILE_LAST_NAME
     ];
-    
+
     const name = getValueFromFlatData(profileItem, nameAttrs);
     if (!name) {
         if (profileItem.data) {
@@ -396,19 +394,19 @@ const getParticipantNameFromProfile = (profileItem) => {
         }
         return null;
     }
-    
+
     if (typeof name === 'object' && name.name) return name.name;
     return String(name);
 };
 
 const getMyAgedCareIdFromProfile = (profileItem) => {
     if (!profileItem) return null;
-    
+
     const idAttrs = [
         REF_ATTRIBUTE_NAMES.PROFILE_MY_AGED_CARE_ID,
         REF_ATTRIBUTE_NAMES.PROFILE_MY_AGED_CARE_ID_ALT
     ];
-    
+
     const id = getValueFromFlatData(profileItem, idAttrs);
     if (!id) return null;
     return String(id);
@@ -416,7 +414,7 @@ const getMyAgedCareIdFromProfile = (profileItem) => {
 
 const getServiceFromServicePlan = (servicePlanItem) => {
     if (!servicePlanItem) return null;
-    
+
     const servicePlanIdValue = getValueFromFlatData(servicePlanItem, REF_ATTRIBUTE_NAMES.SERVICE_PLAN_ID);
     if (!servicePlanIdValue) {
         if (servicePlanItem.data) {
@@ -427,7 +425,7 @@ const getServiceFromServicePlan = (servicePlanItem) => {
         }
         return null;
     }
-    
+
     const servicePlanIdStr = String(servicePlanIdValue).trim();
     if (servicePlanIdStr.includes('-')) {
         const parts = servicePlanIdStr.split('-');
@@ -438,14 +436,14 @@ const getServiceFromServicePlan = (servicePlanItem) => {
 
 const getServiceIdentifierFromServicePlan = (servicePlanItem, refItemsMap) => {
     if (!servicePlanItem) return null;
-    
+
     const idAttrs = [
         REF_ATTRIBUTE_NAMES.SERVICE_ID_ITEM_ID,
         REF_ATTRIBUTE_NAMES.SERVICE_ID_ITEM_ID_ALT,
         'Service ID /  Item ID',
         'Service ID/Item ID'
     ];
-    
+
     const serviceId = getValueFromFlatData(servicePlanItem, idAttrs);
     if (serviceId) {
         let idStr = String(serviceId);
@@ -454,7 +452,7 @@ const getServiceIdentifierFromServicePlan = (servicePlanItem, refItemsMap) => {
         }
         return idStr;
     }
-    
+
     if (refItemsMap) {
         const serviceRefAttrs = [
             'Home Support (HS)',
@@ -463,7 +461,7 @@ const getServiceIdentifierFromServicePlan = (servicePlanItem, refItemsMap) => {
             'Home Modification (HM)',
             'Health Professional'
         ];
-        
+
         for (const refAttr of serviceRefAttrs) {
             const refValue = getValueFromFlatData(servicePlanItem, refAttr);
             const refId = extractRefId(refValue);
@@ -482,13 +480,13 @@ const getServiceIdentifierFromServicePlan = (servicePlanItem, refItemsMap) => {
             }
         }
     }
-    
+
     return null;
 };
 
 const getItemDescriptionFromServicePlan = (servicePlanItem, refItemsMap) => {
     if (!servicePlanItem) return { code: '', description: '' };
-    
+
     const codeAttrs = [
         REF_ATTRIBUTE_NAMES.ITEM_DESCRIPTION_CODE,
         REF_ATTRIBUTE_NAMES.ITEM_ID,
@@ -501,17 +499,17 @@ const getItemDescriptionFromServicePlan = (servicePlanItem, refItemsMap) => {
         'Item',
         'Item Description'
     ];
-    
+
     const directCode = getValueFromFlatData(servicePlanItem, codeAttrs);
     const directDesc = getValueFromFlatData(servicePlanItem, descAttrs);
-    
+
     if (directCode || directDesc) {
         return {
             code: directCode || '',
             description: directDesc || ''
         };
     }
-    
+
     if (refItemsMap) {
         const serviceRefAttrs = [
             'Home Support (HS)',
@@ -520,7 +518,7 @@ const getItemDescriptionFromServicePlan = (servicePlanItem, refItemsMap) => {
             'Home Modification (HM)',
             'Health Professional'
         ];
-        
+
         for (const refAttr of serviceRefAttrs) {
             const refValue = getValueFromFlatData(servicePlanItem, refAttr);
             const refId = extractRefId(refValue);
@@ -539,13 +537,13 @@ const getItemDescriptionFromServicePlan = (servicePlanItem, refItemsMap) => {
             }
         }
     }
-    
+
     return { code: '', description: '' };
 };
 
 const getWraparoundDescriptionFromServicePlan = (servicePlanItem, refItemsMap) => {
     if (!servicePlanItem) return { code: '', description: '' };
-    
+
     const codeAttrs = [
         REF_ATTRIBUTE_NAMES.WRAPAROUND_DESCRIPTION_CODE,
         REF_ATTRIBUTE_NAMES.WRAPAROUND_ITEM_ID,
@@ -556,21 +554,21 @@ const getWraparoundDescriptionFromServicePlan = (servicePlanItem, refItemsMap) =
         REF_ATTRIBUTE_NAMES.WRAPAROUND_DESCRIPTION,
         'Wraparound Description'
     ];
-    
+
     const directCode = getValueFromFlatData(servicePlanItem, codeAttrs);
     const directDesc = getValueFromFlatData(servicePlanItem, descAttrs);
-    
+
     if (directCode || directDesc) {
         return {
             code: directCode || '',
             description: directDesc || ''
         };
     }
-    
+
     if (refItemsMap) {
         const wraparoundRefValue = getValueFromFlatData(servicePlanItem, ['Wraparound', REF_ATTRIBUTE_NAMES.WRAPAROUND]);
         const wraparoundRefId = extractRefId(wraparoundRefValue);
-        
+
         if (wraparoundRefId) {
             const wraparoundItem = refItemsMap.get(wraparoundRefId);
             if (wraparoundItem) {
@@ -583,13 +581,13 @@ const getWraparoundDescriptionFromServicePlan = (servicePlanItem, refItemsMap) =
             }
         }
     }
-    
+
     return { code: '', description: '' };
 };
 
 const getHealthProfessionalFromServicePlan = (servicePlanItem, refItemsMap) => {
     if (!servicePlanItem) return { typeCode: '', typeOther: '' };
-    
+
     const typeCodeAttrs = [
         REF_ATTRIBUTE_NAMES.HEALTH_PROFESSIONAL_TYPE_CODE,
         'Health Professional Type Code'
@@ -598,27 +596,27 @@ const getHealthProfessionalFromServicePlan = (servicePlanItem, refItemsMap) => {
         REF_ATTRIBUTE_NAMES.HEALTH_PROFESSIONAL_TYPE_OTHER,
         'Health Professional Type'
     ];
-    
+
     let typeCode = getValueFromFlatData(servicePlanItem, typeCodeAttrs) || '';
     let typeOther = getValueFromFlatData(servicePlanItem, typeOtherAttrs) || '';
-    
+
     if (typeCode || typeOther) {
         if (typeOther && typeOther.includes(' - Other')) {
             typeOther = typeOther.split(' - Other')[0];
         }
         return { typeCode, typeOther };
     }
-    
+
     if (refItemsMap) {
         const healthProfRefValue = getValueFromFlatData(servicePlanItem, ['Health Professional']);
         const healthProfRefId = extractRefId(healthProfRefValue);
-        
+
         if (healthProfRefId) {
             const healthProfItem = refItemsMap.get(healthProfRefId);
             if (healthProfItem) {
                 typeCode = getValueFromFlatData(healthProfItem, typeCodeAttrs) || '';
                 typeOther = getValueFromFlatData(healthProfItem, typeOtherAttrs) || '';
-                
+
                 if (typeOther && typeOther.includes(' - Other')) {
                     typeOther = typeOther.split(' - Other')[0];
                 }
@@ -626,21 +624,18 @@ const getHealthProfessionalFromServicePlan = (servicePlanItem, refItemsMap) => {
             }
         }
     }
-    
+
     return { typeCode: '', typeOther: '' };
 };
 
 const getFundingSourceNameFromItem = (fsItem) => {
     if (!fsItem) return null;
-    
+
     const nameAttrs = [
         REF_ATTRIBUTE_NAMES.FS_NAME,
-        REF_ATTRIBUTE_NAMES.FS_TITLE,
-        REF_ATTRIBUTE_NAMES.FS_FUNDING_SOURCE_NAME,
-        REF_ATTRIBUTE_NAMES.FS_FULL_NAME,
-        ATTRIBUTE_NAMES.FULL_NAME
+        REF_ATTRIBUTE_NAMES.FS_DEFINITION
     ];
-    
+
     const name = getValueFromFlatData(fsItem, nameAttrs);
     if (!name) {
         if (fsItem.data) {
@@ -651,7 +646,7 @@ const getFundingSourceNameFromItem = (fsItem) => {
         }
         return null;
     }
-    
+
     if (typeof name === 'object' && name.name) return name.name;
     return String(name).trim();
 };
@@ -714,7 +709,7 @@ const getFolderIds = async (folderName, workspaceId, boardId, providedFolders = 
 router.get('/:workspaceId/:boardId/invoice-generator/participants', authenticateToken, async (req, res) => {
     try {
         const { workspaceId, boardId } = req.params;
-        
+
         if (!workspaceId || !boardId) {
             return res.status(400).json({
                 message: 'WorkspaceId and boardId are required'
@@ -767,7 +762,7 @@ router.get('/:workspaceId/:boardId/invoice-generator/participants', authenticate
             $sort: { participant: 1 }
         });
 
-        const result = await Item.aggregate(pipeline, { 
+        const result = await Item.aggregate(pipeline, {
             allowDiskUse: true,
             batchSize: 1000,
             maxTimeMS: 30000 // 30 second timeout
@@ -791,7 +786,7 @@ router.get('/:workspaceId/:boardId/invoice-generator/participants', authenticate
 router.get('/:workspaceId/:boardId/monthly-statement/participants', authenticateToken, async (req, res) => {
     try {
         const { workspaceId, boardId } = req.params;
-        
+
         if (!workspaceId || !boardId) {
             return res.status(400).json({
                 message: 'WorkspaceId and boardId are required'
@@ -843,7 +838,7 @@ router.get('/:workspaceId/:boardId/monthly-statement/participants', authenticate
             $sort: { participant: 1 }
         });
 
-        const result = await Item.aggregate(pipeline, { 
+        const result = await Item.aggregate(pipeline, {
             allowDiskUse: true,
             batchSize: 1000,
             maxTimeMS: 30000 // 30 second timeout
@@ -927,9 +922,9 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 workspaceId,
                 boardId
             }, extractContextFromReq(req));
-            return res.status(500).json({ 
+            return res.status(500).json({
                 message: 'Error fetching invoice generator data',
-                error: dbErr.message 
+                error: dbErr.message
             });
         }
 
@@ -966,10 +961,10 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
         // In flat format, labels are already resolved to { id, name, color } objects
         const getLabelNames = (item, attributeName) => {
             if (!item.data) return [];
-            
+
             const statusData = item.data[attributeName];
             if (!statusData) return [];
-            
+
             // Handle array of labels
             if (Array.isArray(statusData) && statusData.length > 0) {
                 return statusData.map(item => {
@@ -979,17 +974,17 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     return String(item);
                 });
             }
-            
+
             // Handle single label object
             if (typeof statusData === 'object' && statusData.name) {
                 return [statusData.name];
             }
-            
+
             // Handle string
             if (typeof statusData === 'string') {
                 return [statusData];
             }
-            
+
             return [String(statusData)];
         };
 
@@ -1004,7 +999,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             const scheduledStart = getValueFromItem(item, ATTRIBUTE_NAMES.SCHEDULED_START);
             const actualEnd = getValueFromItem(item, ATTRIBUTE_NAMES.ACTUAL_END);
             const participantName = getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
-            
+
             return {
                 item,
                 scheduledStartDate: parseDate(scheduledStart),
@@ -1025,28 +1020,28 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
         if (startDate) {
             const startDateObj = new Date(startDate);
-            filteredItems = filteredItems.filter(p => 
+            filteredItems = filteredItems.filter(p =>
                 p.scheduledStartDate && p.scheduledStartDate >= startDateObj
             );
         }
 
         if (endDate) {
             const endDateObj = new Date(endDate);
-            filteredItems = filteredItems.filter(p => 
+            filteredItems = filteredItems.filter(p =>
                 p.scheduledStartDate && p.scheduledStartDate <= endDateObj
             );
         }
 
         if (serviceDeliveryStart) {
             const serviceDeliveryStartObj = new Date(serviceDeliveryStart);
-            filteredItems = filteredItems.filter(p => 
+            filteredItems = filteredItems.filter(p =>
                 p.actualEndDate && p.actualEndDate >= serviceDeliveryStartObj
             );
         }
 
         if (serviceDeliveryEnd) {
             const serviceDeliveryEndObj = new Date(serviceDeliveryEnd);
-            filteredItems = filteredItems.filter(p => 
+            filteredItems = filteredItems.filter(p =>
                 p.actualEndDate && p.actualEndDate <= serviceDeliveryEndObj
             );
         }
@@ -1054,7 +1049,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
         if (participant) {
             try {
                 const participantRegex = new RegExp(participant, 'i');
-                filteredItems = filteredItems.filter(p => 
+                filteredItems = filteredItems.filter(p =>
                     participantRegex.test(p.participantName)
                 );
             } catch (regexErr) {
@@ -1083,7 +1078,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 }
                 // Fallback: try matching against raw status data if label names didn't match or were empty
                 if (p.transactionStatusRaw) {
-                    const rawStr = Array.isArray(p.transactionStatusRaw) 
+                    const rawStr = Array.isArray(p.transactionStatusRaw)
                         ? p.transactionStatusRaw.map(v => String(v)).join(' ')
                         : String(p.transactionStatusRaw);
                     if (transactionStatusFilter == rawStr) {
@@ -1112,7 +1107,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 }
                 // Fallback: try matching against raw status data if label names didn't match or were empty
                 if (p.paymentStatusRaw) {
-                    const rawStr = Array.isArray(p.paymentStatusRaw) 
+                    const rawStr = Array.isArray(p.paymentStatusRaw)
                         ? p.paymentStatusRaw.map(v => String(v)).join(' ')
                         : String(p.paymentStatusRaw);
                     if (paymentStatusFilter == rawStr) {
@@ -1149,7 +1144,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
         filteredItems.sort((a, b) => {
             let aVal, bVal;
-            
+
             if (selectedSortField === 'updatedAt') {
                 aVal = a.item.updatedAt || a.item.createdAt || new Date(0);
                 bVal = b.item.updatedAt || b.item.createdAt || new Date(0);
@@ -1160,10 +1155,10 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
             if (aVal === null || aVal === undefined) return 1;
             if (bVal === null || bVal === undefined) return -1;
-            
+
             if (aVal < bVal) return -1 * selectedSortOrder;
             if (aVal > bVal) return 1 * selectedSortOrder;
-            
+
             // Secondary sort by updatedAt if not primary sort field
             if (selectedSortField !== 'updatedAt') {
                 const aUpdated = a.item.updatedAt || a.item.createdAt || new Date(0);
@@ -1171,7 +1166,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 if (aUpdated < bUpdated) return 1;
                 if (aUpdated > bUpdated) return -1;
             }
-            
+
             return 0;
         });
 
@@ -1185,34 +1180,34 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
         const servicePlanIds = new Set();
         const participantProfileIds = new Set();
         const fundingSourceIds = new Set();
-        
+
         for (const processedItem of items) {
             const item = processedItem.item;
             const getValue = (attributeName) => {
                 if (!item.data) return null;
                 return item.data[attributeName] ?? null;
             };
-            
+
             // Service plan ID
             const servicePlanId = getValue(ATTRIBUTE_NAMES.SERVICE_PLAN);
             const spId = extractRefId(servicePlanId);
             if (spId) servicePlanIds.add(spId);
-            
+
             // Participant profile ID
             const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
             const ppId = extractRefId(participantProfileValue);
             if (ppId) participantProfileIds.add(ppId);
-            
+
             // Funding source IDs
             const fundingSourceValue = getValue(ATTRIBUTE_NAMES.FUNDING_SOURCE);
             const fsIds = extractAllRefIds(fundingSourceValue);
             fsIds.forEach(id => fundingSourceIds.add(id));
         }
-        
+
         // Bulk fetch ALL reference items from database in a single query
         const allRefIds = [...servicePlanIds, ...participantProfileIds, ...fundingSourceIds];
         const refItemsMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, allRefIds);
-        
+
         // SECOND LEVEL: Collect nested reference IDs from service plans
         // (Home Support, Assistive Technology, Wraparound, Health Professional items)
         const nestedRefIds = new Set();
@@ -1224,7 +1219,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             'Health Professional',
             'Wraparound'
         ];
-        
+
         for (const servicePlanId of servicePlanIds) {
             const servicePlanItem = refItemsMap.get(servicePlanId);
             if (servicePlanItem && servicePlanItem.data) {
@@ -1235,7 +1230,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 }
             }
         }
-        
+
         // Fetch nested reference items and add to map
         if (nestedRefIds.size > 0) {
             const nestedRefItemsMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, [...nestedRefIds]);
@@ -1244,7 +1239,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 refItemsMap.set(key, value);
             }
         }
-        
+
         info('Items-Service', 'Bulk fetched reference items from DB (invoice-generator)', {
             servicePlans: servicePlanIds.size,
             participantProfiles: participantProfileIds.size,
@@ -1292,7 +1287,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             // In flat format, labels are already resolved to { id, name, color } objects
             const formatStatus = (value) => {
                 if (!value) return undefined;
-                
+
                 // Handle array of labels
                 if (Array.isArray(value) && value.length > 0) {
                     return value.map(item => {
@@ -1302,21 +1297,33 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                         return String(item);
                     }).filter(Boolean).join(', ');
                 }
-                
+
                 // Handle single label object
                 if (typeof value === 'object' && value.name) {
                     return value.name;
                 }
-                
+
                 // Handle string
                 if (typeof value === 'string') {
                     return value;
                 }
-                
+
                 return String(value);
             };
 
-            const participant = getValue(ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
+            // DATABASE-ONLY: Get participant name from participant profile in lookup map
+            let participantName = getValue(ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
+            const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
+            const participantProfileId = extractRefId(participantProfileValue);
+
+            if (participantProfileId) {
+                const participantProfileItem = refItemsMap.get(participantProfileId);
+                const profileName = getParticipantNameFromProfile(participantProfileItem);
+                if (profileName) {
+                    participantName = profileName;
+                }
+            }
+
             const scheduledStart = getValue(ATTRIBUTE_NAMES.SCHEDULED_START) || null;
             const unit = getValue(ATTRIBUTE_NAMES.UNIT) || '';
             const quantity = Number(getValue(ATTRIBUTE_NAMES.QUANTITY)) || 0;
@@ -1345,15 +1352,15 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 // Pass refItemsMap to allow resolving nested references
                 service = getServiceFromServicePlan(servicePlanItem);
                 serviceIdentifier = getServiceIdentifierFromServicePlan(servicePlanItem, refItemsMap);
-                
+
                 const itemDesc = getItemDescriptionFromServicePlan(servicePlanItem, refItemsMap);
                 itemDescriptionCode = itemDesc.code;
                 itemDescription = itemDesc.description;
-                
+
                 const wraparound = getWraparoundDescriptionFromServicePlan(servicePlanItem, refItemsMap);
                 wraparoundDescriptionCode = wraparound.code;
                 wraparoundDescription = wraparound.description;
-                
+
                 const healthProf = getHealthProfessionalFromServicePlan(servicePlanItem, refItemsMap);
                 healthProfessionalTypeCode = healthProf.typeCode;
                 healthProfessionalTypeOther = healthProf.typeOther;
@@ -1361,10 +1368,8 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
             // DATABASE-ONLY: Get participant profile from pre-fetched lookup map
             let careRecipientIdentifier;
-            const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
-            const participantProfileRefId = extractRefId(participantProfileValue);
-            const participantProfileItem = participantProfileRefId ? refItemsMap.get(participantProfileRefId) : null;
-            
+            const participantProfileItem = participantProfileId ? refItemsMap.get(participantProfileId) : null;
+
             if (participantProfileItem) {
                 careRecipientIdentifier = getMyAgedCareIdFromProfile(participantProfileItem);
             }
@@ -1441,7 +1446,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             if (fundingSourceData) {
                 const fsIds = extractAllRefIds(fundingSourceData);
                 const fundingSourceNames = [];
-                
+
                 for (const fsId of fsIds) {
                     const fsItem = refItemsMap.get(fsId);
                     const fsName = getFundingSourceNameFromItem(fsItem);
@@ -1449,7 +1454,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                         fundingSourceNames.push(fsName);
                     }
                 }
-                
+
                 fundingSource = fundingSourceNames.length > 0 ? fundingSourceNames.join(', ') : undefined;
             }
 
@@ -1462,7 +1467,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 // Table fields (Visible in ISO+ Portal Table)
                 id: item.itemId,
                 paymentStatus: paymentStatusFormatted,
-                participant: participant,
+                participant: participantName,
                 service: serviceLabel,
                 scheduledServiceDate: scheduledServiceDate,
                 serviceDeliveryDate: serviceDeliveryDate,
@@ -1622,9 +1627,9 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 workspaceId,
                 boardId
             }, extractContextFromReq(req));
-            return res.status(500).json({ 
+            return res.status(500).json({
                 message: 'Error fetching budget items for monthly statement',
-                error: dbErr.message 
+                error: dbErr.message
             });
         }
 
@@ -1742,9 +1747,9 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 if (id) budgetParticipantProfileIds.add(id);
             }
         }
-        
+
         const budgetProfilesMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, [...budgetParticipantProfileIds]);
-        
+
         info('Items-Service', 'Bulk fetched participant profiles from DB (monthly-statement budget)', {
             profileIds: budgetParticipantProfileIds.size,
             foundProfiles: budgetProfilesMap.size
@@ -1757,7 +1762,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             }
             const profileIdStr = extractRefId(participantProfileIdValue);
             if (!profileIdStr) return '';
-            
+
             const participantProfile = budgetProfilesMap.get(profileIdStr);
             const name = getParticipantNameFromProfile(participantProfile);
             return name || '';
@@ -1999,9 +2004,9 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 workspaceId,
                 boardId
             }, extractContextFromReq(req));
-            return res.status(500).json({ 
+            return res.status(500).json({
                 message: 'Error fetching service items for monthly statement',
-                error: dbErr.message 
+                error: dbErr.message
             });
         }
 
@@ -2022,7 +2027,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const actualEnd = getValueFromItem(item, ATTRIBUTE_NAMES.ACTUAL_END);
             const participantName = getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
             const participantProfileValue = getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
-            
+
             return {
                 item,
                 scheduledStartDate: parseDate(scheduledStart),
@@ -2043,7 +2048,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         if (participant) {
             try {
                 const participantRegex = new RegExp(participant, 'i');
-                filteredServiceItems = filteredServiceItems.filter(p => 
+                filteredServiceItems = filteredServiceItems.filter(p =>
                     participantRegex.test(p.participantName) ||
                     (p.participantProfileValue && (
                         (typeof p.participantProfileValue === 'string' && participantRegex.test(p.participantProfileValue)) ||
@@ -2061,14 +2066,14 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
 
         if (startDate) {
             const startDateObj = new Date(startDate);
-            filteredServiceItems = filteredServiceItems.filter(p => 
+            filteredServiceItems = filteredServiceItems.filter(p =>
                 p.actualEndDate && p.actualEndDate >= startDateObj
             );
         }
 
         if (endDate) {
             const endDateObj = new Date(endDate);
-            filteredServiceItems = filteredServiceItems.filter(p => 
+            filteredServiceItems = filteredServiceItems.filter(p =>
                 p.actualEndDate && p.actualEndDate <= endDateObj
             );
         }
@@ -2106,33 +2111,33 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         const msServicePlanIds = new Set();
         const msParticipantProfileIds = new Set();
         const msFundingSourceIds = new Set();
-        
+
         for (const item of serviceItems) {
             const getValue = (attributeName) => {
                 if (!item.data) return null;
                 return item.data[attributeName] ?? null;
             };
-            
+
             // Service plan ID
             const servicePlanId = getValue(ATTRIBUTE_NAMES.SERVICE_PLAN);
             const spId = extractRefId(servicePlanId);
             if (spId) msServicePlanIds.add(spId);
-            
+
             // Participant profile ID
             const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
             const ppId = extractRefId(participantProfileValue);
             if (ppId) msParticipantProfileIds.add(ppId);
-            
+
             // Funding source IDs
             const fundingSourceValue = getValue(ATTRIBUTE_NAMES.FUNDING_SOURCE);
             const fsIds = extractAllRefIds(fundingSourceValue);
             fsIds.forEach(id => msFundingSourceIds.add(id));
         }
-        
+
         // Bulk fetch ALL service reference items from database in a single query
         const msAllRefIds = [...msServicePlanIds, ...msParticipantProfileIds, ...msFundingSourceIds];
         const msRefItemsMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, msAllRefIds);
-        
+
         info('Items-Service', 'Bulk fetched reference items from DB (monthly-statement service)', {
             servicePlans: msServicePlanIds.size,
             participantProfiles: msParticipantProfileIds.size,
@@ -2143,7 +2148,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         // Format label value from flat data format
         const formatStatus = (value) => {
             if (!value) return undefined;
-            
+
             // Handle array of labels
             if (Array.isArray(value) && value.length > 0) {
                 return value.map(item => {
@@ -2153,17 +2158,17 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                     return String(item);
                 }).filter(Boolean).join(', ');
             }
-            
+
             // Handle single label object
             if (typeof value === 'object' && value.name) {
                 return value.name;
             }
-            
+
             // Handle string
             if (typeof value === 'string') {
                 return value;
             }
-            
+
             return String(value);
         };
 
@@ -2171,168 +2176,168 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         const transformedServiceItems = await batchProcess(
             serviceItems,
             async (item) => {
-            const itemId = item.itemId;
-            const itemUpdatedAt = item.updatedAt || item.createdAt;
+                const itemId = item.itemId;
+                const itemUpdatedAt = item.updatedAt || item.createdAt;
 
-            // Check if transformed data is already in cache
-            const cachedData = getCachedMSService(workspaceId, boardId, itemId, itemUpdatedAt);
-            if (cachedData) {
-                return cachedData;
-            }
-
-            // Get value from flat data format
-            const getValue = (attributeName) => {
-                if (!item.data) return null;
-                return item.data[attributeName] ?? null;
-            };
-
-            // DATABASE-ONLY: Get participant name from participant profile in lookup map
-            let participantName = getValue(ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
-            const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
-            const participantProfileId = extractRefId(participantProfileValue);
-            
-            if (participantProfileId) {
-                const participantProfileItem = msRefItemsMap.get(participantProfileId);
-                const profileName = getParticipantNameFromProfile(participantProfileItem);
-                if (profileName) {
-                    participantName = profileName;
+                // Check if transformed data is already in cache
+                const cachedData = getCachedMSService(workspaceId, boardId, itemId, itemUpdatedAt);
+                if (cachedData) {
+                    return cachedData;
                 }
-            }
 
-            // DATABASE-ONLY: Get Service from service plan in lookup map
-            const servicePlanId = getValue(ATTRIBUTE_NAMES.SERVICE_PLAN);
-            const servicePlanRefId = extractRefId(servicePlanId);
-            const servicePlanItem = servicePlanRefId ? msRefItemsMap.get(servicePlanRefId) : null;
-            
-            let service = getServiceFromServicePlan(servicePlanItem);
+                // Get value from flat data format
+                const getValue = (attributeName) => {
+                    if (!item.data) return null;
+                    return item.data[attributeName] ?? null;
+                };
 
-            // Get Service Provider based on Delivered by
-            const deliveredByRaw = getValue(ATTRIBUTE_NAMES.DELIVERED_BY);
-            let serviceProvider = undefined;
-            if (deliveredByRaw) {
+                // DATABASE-ONLY: Get participant name from participant profile in lookup map
+                let participantName = getValue(ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
+                const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
+                const participantProfileId = extractRefId(participantProfileValue);
+
+                if (participantProfileId) {
+                    const participantProfileItem = msRefItemsMap.get(participantProfileId);
+                    const profileName = getParticipantNameFromProfile(participantProfileItem);
+                    if (profileName) {
+                        participantName = profileName;
+                    }
+                }
+
+                // DATABASE-ONLY: Get Service from service plan in lookup map
+                const servicePlanId = getValue(ATTRIBUTE_NAMES.SERVICE_PLAN);
+                const servicePlanRefId = extractRefId(servicePlanId);
+                const servicePlanItem = servicePlanRefId ? msRefItemsMap.get(servicePlanRefId) : null;
+
+                let service = getServiceFromServicePlan(servicePlanItem);
+
+                // Get Service Provider based on Delivered by
+                const deliveredByRaw = getValue(ATTRIBUTE_NAMES.DELIVERED_BY);
+                let serviceProvider = undefined;
+                if (deliveredByRaw) {
+                    let deliveredByName = null;
+                    if (typeof deliveredByRaw === 'object' && deliveredByRaw !== null) {
+                        deliveredByName = deliveredByRaw.name || deliveredByRaw.toString();
+                    } else {
+                        deliveredByName = String(deliveredByRaw);
+                    }
+
+                    if (deliveredByName && typeof deliveredByName === 'string') {
+                        const deliveredByLower = deliveredByName.toLowerCase();
+
+                        if (deliveredByLower.includes('company workforce')) {
+                            // Use company name from Business Configuration
+                            serviceProvider = businessProfile?.name || undefined;
+                        } else if (deliveredByLower.includes('associated')) {
+                            // Use Associated Provider (If Applicable)
+                            const associatedProvider = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
+                            serviceProvider = associatedProvider
+                                ? (typeof associatedProvider === 'object' ? associatedProvider.name : associatedProvider.toString())
+                                : undefined;
+                        }
+                    }
+                }
+                // Get dates
+                const scheduledStart = getValue(ATTRIBUTE_NAMES.SCHEDULED_START) || null;
+                const actualEnd = getValue(ATTRIBUTE_NAMES.ACTUAL_END) || null;
+                const scheduledServiceDate = scheduledStart && typeof scheduledStart === 'string'
+                    ? (scheduledStart.includes('T') ? scheduledStart.split('T')[0] : scheduledStart.split(' ')[0])
+                    : null;
+                const serviceDeliveryDate = actualEnd && typeof actualEnd === 'string'
+                    ? (actualEnd.includes('T') ? actualEnd.split('T')[0] : actualEnd.split(' ')[0])
+                    : null;
+
+                // Get Transaction Status from flat data format
+                const transactionStatusValue = getValue(ATTRIBUTE_NAMES.TRANSACTION_STATUS);
+                const transactionStatus = formatStatus(transactionStatusValue);
+                const committedAtHm = getValue(ATTRIBUTE_NAMES.COMMITTED_AT_HM);
+                const committedAtHmForDelivery = committedAtHm !== null && committedAtHm !== undefined
+                    ? (typeof committedAtHm === 'number' ? committedAtHm : Number(committedAtHm) || 0)
+                    : undefined;
+                const unit = getValue(ATTRIBUTE_NAMES.UNIT) || 'Hour';
+                const quantity = Number(getValue(ATTRIBUTE_NAMES.QUANTITY)) || 0;
+                const unitPrice = Number(getValue(ATTRIBUTE_NAMES.UNIT_PRICE)) || 0;
+                const totalAmount = Number(getValue(ATTRIBUTE_NAMES.TOTAL_AMOUNT)) || 0;
+                const govSubsidy = Number(getValue(ATTRIBUTE_NAMES.GOV_SUBSIDY)) || 0;
+                const participantContribution = Number(getValue(ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)) || 0;
+
+                // DATABASE-ONLY: Get Funding Source names from pre-fetched lookup map
+                let fundingSource;
+                const fundingSourceData = getValue(ATTRIBUTE_NAMES.FUNDING_SOURCE);
+                if (fundingSourceData) {
+                    const fsIds = extractAllRefIds(fundingSourceData);
+                    const fundingSourceNames = [];
+
+                    for (const fsId of fsIds) {
+                        const fsItem = msRefItemsMap.get(fsId);
+                        const fsName = getFundingSourceNameFromItem(fsItem);
+                        if (fsName) {
+                            fundingSourceNames.push(fsName);
+                        }
+                    }
+
+                    fundingSource = fundingSourceNames.length > 0 ? fundingSourceNames.join(', ') : undefined;
+                }
+
+                const notes = getValue(ATTRIBUTE_NAMES.ADDITIONAL_NOTES) || '';
+
+                // Get Delivered By raw value for PDF generation
                 let deliveredByName = null;
-                if (typeof deliveredByRaw === 'object' && deliveredByRaw !== null) {
-                    deliveredByName = deliveredByRaw.name || deliveredByRaw.toString();
-                } else {
-                    deliveredByName = String(deliveredByRaw);
-                }
-                
-                if (deliveredByName && typeof deliveredByName === 'string') {
-                    const deliveredByLower = deliveredByName.toLowerCase();
-                    
-                    if (deliveredByLower.includes('company workforce')) {
-                        // Use company name from Business Configuration
-                        serviceProvider = businessProfile?.name || undefined;
-                    } else if (deliveredByLower.includes('associated')) {
-                        // Use Associated Provider (If Applicable)
-                        const associatedProvider = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
-                        serviceProvider = associatedProvider
-                            ? (typeof associatedProvider === 'object' ? associatedProvider.name : associatedProvider.toString())
-                            : undefined;
+                if (deliveredByRaw) {
+                    if (typeof deliveredByRaw === 'object' && deliveredByRaw !== null) {
+                        deliveredByName = deliveredByRaw.name || deliveredByRaw.toString();
+                    } else {
+                        deliveredByName = String(deliveredByRaw);
                     }
                 }
-            }
-            // Get dates
-            const scheduledStart = getValue(ATTRIBUTE_NAMES.SCHEDULED_START) || null;
-            const actualEnd = getValue(ATTRIBUTE_NAMES.ACTUAL_END) || null;
-            const scheduledServiceDate = scheduledStart && typeof scheduledStart === 'string'
-                ? (scheduledStart.includes('T') ? scheduledStart.split('T')[0] : scheduledStart.split(' ')[0])
-                : null;
-            const serviceDeliveryDate = actualEnd && typeof actualEnd === 'string'
-                ? (actualEnd.includes('T') ? actualEnd.split('T')[0] : actualEnd.split(' ')[0])
-                : null;
 
-            // Get Transaction Status from flat data format
-            const transactionStatusValue = getValue(ATTRIBUTE_NAMES.TRANSACTION_STATUS);
-            const transactionStatus = formatStatus(transactionStatusValue);
-            const committedAtHm = getValue(ATTRIBUTE_NAMES.COMMITTED_AT_HM);
-            const committedAtHmForDelivery = committedAtHm !== null && committedAtHm !== undefined
-                ? (typeof committedAtHm === 'number' ? committedAtHm : Number(committedAtHm) || 0)
-                : undefined;
-            const unit = getValue(ATTRIBUTE_NAMES.UNIT) || 'Hour';
-            const quantity = Number(getValue(ATTRIBUTE_NAMES.QUANTITY)) || 0;
-            const unitPrice = Number(getValue(ATTRIBUTE_NAMES.UNIT_PRICE)) || 0;
-            const totalAmount = Number(getValue(ATTRIBUTE_NAMES.TOTAL_AMOUNT)) || 0;
-            const govSubsidy = Number(getValue(ATTRIBUTE_NAMES.GOV_SUBSIDY)) || 0;
-            const participantContribution = Number(getValue(ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)) || 0;
-            
-            // DATABASE-ONLY: Get Funding Source names from pre-fetched lookup map
-            let fundingSource;
-            const fundingSourceData = getValue(ATTRIBUTE_NAMES.FUNDING_SOURCE);
-            if (fundingSourceData) {
-                const fsIds = extractAllRefIds(fundingSourceData);
-                const fundingSourceNames = [];
-                
-                for (const fsId of fsIds) {
-                    const fsItem = msRefItemsMap.get(fsId);
-                    const fsName = getFundingSourceNameFromItem(fsItem);
-                    if (fsName) {
-                        fundingSourceNames.push(fsName);
+                // Get Associated Provider raw value for PDF generation
+                const associatedProviderValue = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
+                let associatedProviderName = null;
+                if (associatedProviderValue) {
+                    if (typeof associatedProviderValue === 'object' && associatedProviderValue !== null) {
+                        associatedProviderName = associatedProviderValue.name || associatedProviderValue.toString();
+                    } else {
+                        associatedProviderName = String(associatedProviderValue);
                     }
                 }
-                
-                fundingSource = fundingSourceNames.length > 0 ? fundingSourceNames.join(', ') : undefined;
-            }
-            
-            const notes = getValue(ATTRIBUTE_NAMES.ADDITIONAL_NOTES) || '';
 
-            // Get Delivered By raw value for PDF generation
-            let deliveredByName = null;
-            if (deliveredByRaw) {
-                if (typeof deliveredByRaw === 'object' && deliveredByRaw !== null) {
-                    deliveredByName = deliveredByRaw.name || deliveredByRaw.toString();
-                } else {
-                    deliveredByName = String(deliveredByRaw);
-                }
-            }
+                // Get allocated time if available
+                const allocatedTimeValue = getValue(ATTRIBUTE_NAMES.ALLOCATED_TIME);
+                const allocatedTime = allocatedTimeValue !== null && allocatedTimeValue !== undefined
+                    ? (typeof allocatedTimeValue === 'number' ? allocatedTimeValue : Number(allocatedTimeValue) || 0)
+                    : undefined;
 
-            // Get Associated Provider raw value for PDF generation
-            const associatedProviderValue = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
-            let associatedProviderName = null;
-            if (associatedProviderValue) {
-                if (typeof associatedProviderValue === 'object' && associatedProviderValue !== null) {
-                    associatedProviderName = associatedProviderValue.name || associatedProviderValue.toString();
-                } else {
-                    associatedProviderName = String(associatedProviderValue);
-                }
-            }
+                const transformedData = {
+                    participant: participantName,
+                    service,
+                    serviceProvider,
+                    deliveredBy: deliveredByName,
+                    associatedProvider: associatedProviderName,
+                    scheduledStart,
+                    scheduledServiceDate,
+                    scheduledShiftStart: scheduledStart,
+                    scheduledShiftStartDateTime: scheduledStart,
+                    actualEnd,
+                    actualShiftEndDateTime: actualEnd,
+                    serviceDeliveryDate,
+                    transactionStatus,
+                    committedAtHmForDelivery,
+                    unit,
+                    quantity,
+                    unitPrice,
+                    totalAmount,
+                    govSubsidy,
+                    participantContribution,
+                    fundingSource,
+                    notes,
+                    allocatedTime
+                };
 
-            // Get allocated time if available
-            const allocatedTimeValue = getValue(ATTRIBUTE_NAMES.ALLOCATED_TIME);
-            const allocatedTime = allocatedTimeValue !== null && allocatedTimeValue !== undefined
-                ? (typeof allocatedTimeValue === 'number' ? allocatedTimeValue : Number(allocatedTimeValue) || 0)
-                : undefined;
+                // Store transformed data in cache for future requests
+                setCachedMSService(workspaceId, boardId, itemId, transformedData);
 
-            const transformedData = {
-                participant: participantName,
-                service,
-                serviceProvider,
-                deliveredBy: deliveredByName,
-                associatedProvider: associatedProviderName,
-                scheduledStart,
-                scheduledServiceDate,
-                scheduledShiftStart: scheduledStart,
-                scheduledShiftStartDateTime: scheduledStart,
-                actualEnd,
-                actualShiftEndDateTime: actualEnd,
-                serviceDeliveryDate,
-                transactionStatus,
-                committedAtHmForDelivery,
-                unit,
-                quantity,
-                unitPrice,
-                totalAmount,
-                govSubsidy,
-                participantContribution,
-                fundingSource,
-                notes,
-                allocatedTime
-            };
-
-            // Store transformed data in cache for future requests
-            setCachedMSService(workspaceId, boardId, itemId, transformedData);
-
-            return transformedData;
+                return transformedData;
             },
             { batchSize: 2, delayBetweenBatches: 600, delayBetweenRequests: 150 }
         );
@@ -2387,7 +2392,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const fundingSourceValue = getValueFromItem(p.item, ATTRIBUTE_NAMES.FUNDING_SOURCE);
             const serviceValue = getValueFromItem(p.item, ATTRIBUTE_NAMES.SERVICE_PLAN);
             const notesValue = getValueFromItem(p.item, ATTRIBUTE_NAMES.ADDITIONAL_NOTES) || '';
-            
+
             // Determine category code from item data
             const normalize = (value) => {
                 if (Array.isArray(value)) {
@@ -2398,7 +2403,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const fundingSourceStr = normalize(fundingSourceValue);
             const notesStr = normalize(notesValue);
             const haystack = `${fundingSourceStr} ${notesStr}`;
-            
+
             let code = 'HSQ';
             if (haystack.includes('restorative care')) {
                 code = 'RCP';
@@ -2413,7 +2418,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             } else if (haystack.includes('home support') || haystack.includes('hsq')) {
                 code = 'HSQ';
             }
-            
+
             if (!budgetCategoryAggregates[code]) {
                 budgetCategoryAggregates[code] = createBudgetAggregate();
             }
@@ -2552,7 +2557,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 participantFullName;
             participantAddress = getProfileValue(ATTRIBUTE_NAMES.ADDRESS) || participantAddress;
             participantSuburb = getProfileValue(ATTRIBUTE_NAMES.SUBURB) || participantSuburb;
-            
+
             // Handle state field - may be a label/object
             const stateValue = getValueFromFlatData(participantProfileValues, ATTRIBUTE_NAMES.STATE);
             if (stateValue) {
@@ -2565,7 +2570,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                     participantState = typeof first === 'object' && first.name ? first.name : String(first);
                 }
             }
-            
+
             participantPostcode = getProfileValue(ATTRIBUTE_NAMES.POSTCODE) ||
                 getProfileValue(ATTRIBUTE_NAMES.POST_CODE) ||
                 participantPostcode;
@@ -2733,7 +2738,7 @@ router.post('/:workspaceId/:boardId/update-status', authenticateToken, async (re
                 const updateAttribute = (attributeName, newData, options = { required: true }) => {
                     const currentData = item.data[attributeName];
                     const nextData = typeof newData === 'function' ? newData(currentData) : newData;
-                    
+
                     if (nextData !== undefined && nextData !== currentData) {
                         item.data[attributeName] = nextData;
                         changed = true;

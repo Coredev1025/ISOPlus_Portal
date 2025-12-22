@@ -189,7 +189,7 @@ export function SyncStatusIndicator() {
         pollingIntervalRef.current = null;
       }
     };
-  }, [currentWorkspaceId]);
+  }, [currentWorkspaceId, setSyncStatuses]);
 
   // Update current time every second for elapsed time calculation
   // This ensures elapsed time updates smoothly while sync data comes from context

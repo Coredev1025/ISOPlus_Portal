@@ -48,7 +48,7 @@ export function Header() {
     return () => {
       abortController.abort();
     };
-  }, [router]);
+  }, [router, setUser, setWorkspaces]);
 
   const handleLogout = () => {
     axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/logout`, {})

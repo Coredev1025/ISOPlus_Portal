@@ -30,10 +30,22 @@ import { syncQueue } from './services/sync/queue.js';
 
 dotenv.config();
 
+const requiredEnvVars = ['MONGODB_URI', 'JWT_SECRET', 'SESSION_SECRET'];
+const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+if (missingEnvVars.length > 0) {
+  console.error(`❌ Missing required environment variables: ${missingEnvVars.join(', ')}`);
+  console.error('Please check your .env file and ensure all required variables are set.');
+  process.exit(1);
+}
+
 const app = express();
 
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+  ? process.env.ALLOWED_ORIGINS.split(' ').filter(Boolean)
+  : ['http://localhost:3000'];
+
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS.split(' '), 
+  origin: allowedOrigins, 
   methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Cookies', 'X-API-Version', 'Accept'],
   credentials: true,
@@ -71,7 +83,7 @@ app.use('/api/log', logRoutes);
 app.use('/api/pdf', webhookRoutes);
 app.use('/api/webhooks', isoplusWebhookRoutes);
 app.use('/api/audit', auditTrailRouters);
-app.use('/api/pdf', PdfRouters);
+app.use('/api/pdf-links', PdfRouters);
 app.use('/api/care-management-ndis-pricing', ndisRoutes);
 app.use('/api/age-care', ageCareRoutes);
 app.use('/api/sync', syncRoutes);

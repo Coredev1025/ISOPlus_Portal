@@ -15,7 +15,7 @@ router.post('/', authenticateToken, async (req, res) => {
         if (!boardId) return res.status(400).json({ message: 'Invalid boardId' });
         const existingBoard = await Board.findOne({ boardId }).lean();
         if (existingBoard) {
-            warn('Board-Service', 'Board already exsit', { boardId: req.body.boardId }, extractContextFromReq(req));
+            warn('Board-Service', 'Board already exists', { boardId: req.body.boardId }, extractContextFromReq(req));
             res.status(200).json({ board: existingBoard });
         } else {
             const newBoard = new Board({
