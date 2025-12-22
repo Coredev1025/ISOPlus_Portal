@@ -423,7 +423,7 @@ function formatLabelValue(value, labels = []) {
     return String(value);
 }
 
-async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, type) {
+async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, type, pdfLink = null) {
     try {
         await InvoiceNumber.findOneAndUpdate(
             {
@@ -439,6 +439,7 @@ async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, ty
                     boardId: boardId,
                     invoiceNumber: invoiceNumber,
                     type: type,
+                    pdfLink: pdfLink,
                     updatedAt: new Date()
                 },
                 $setOnInsert: {
@@ -1087,7 +1088,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                     const fileUrl = await getS3FileUrl(filename);
                     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'Invoice', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
-                    await saveInvoiceNumber(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`, 'PDF');
+                    await saveInvoiceNumber(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`, 'PDF', fileUrl);
                     business.documentNumbering.invoice.nextNumber += 1;
                     await business.save();
                 } else {
@@ -2041,7 +2042,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     const fileUrl = await getS3FileUrl(filename);
                     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS Invoice', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
-                    await saveInvoiceNumber(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`, 'PDF');
+                    await saveInvoiceNumber(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`, 'PDF', fileUrl);
                     business.documentNumbering.invoice.nextNumber += 1;
                     await business.save();
                 } else {
@@ -2316,7 +2317,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                 await Promise.all(dbItems.map(async (item) => {
                     await setIntegrationMessage(workspaceId, boardId, item.itemId, "Invoice generated successfully");
                     await setGeneratedField(workspaceId, boardId, item.itemId, `${invoiceNumber} (ISO+™)`);
-                    await saveInvoiceNumber(workspaceId, boardId, item.itemId, `${invoiceNumber} (ISO+™)`, 'PDF');
+                    await saveInvoiceNumber(workspaceId, boardId, item.itemId, `${invoiceNumber} (ISO+™)`, 'PDF', fileUrl);
                 }));
 
                 // Increment invoice number only once

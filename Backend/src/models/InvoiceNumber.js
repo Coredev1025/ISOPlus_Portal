@@ -23,6 +23,10 @@ const invoiceNumberSchema = new mongoose.Schema({
     required: true,
     enum: ['PDF', 'Xero']
   },
+  pdfLink: {
+    type: String,
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now

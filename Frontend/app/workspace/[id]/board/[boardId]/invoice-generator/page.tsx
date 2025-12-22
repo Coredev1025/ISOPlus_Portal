@@ -870,6 +870,71 @@ export default function InvoiceGenerator() {
     return TRANSACTION_STATUS_FILTERS.find(option => option.value === filterValue)?.isoValue || '';
   };
 
+  const handleDownloadInvoice = async (invoiceNumber: string) => {
+    try {
+      if (!id || !boardId) {
+        showErrorToast('Workspace or board missing', { description: 'Please navigate back and select a workspace again.' });
+        return;
+      }
+
+      // Extract the base invoice number (remove (ISO+™) suffix if present)
+      const baseInvoiceNumber = invoiceNumber.replace(/\s*\(ISO\+™\)\s*$/, '');
+
+      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice/${baseInvoiceNumber}/pdf-link`;
+
+      showInfoToast('Fetching invoice...', { description: 'Please wait while we retrieve the invoice PDF.' });
+
+      const response = await axios.get(apiUrl, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+
+      if (response.data?.pdfLink) {
+        const pdfUrl = response.data.pdfLink;
+        
+        // Download the PDF file
+        try {
+          const pdfResponse = await fetch(pdfUrl);
+          const pdfBlob = await pdfResponse.blob();
+          const pdfObjectUrl = URL.createObjectURL(pdfBlob);
+          const link = document.createElement('a');
+          link.href = pdfObjectUrl;
+          link.download = `Invoice_${baseInvoiceNumber}.pdf`;
+          link.style.display = 'none';
+          document.body.appendChild(link);
+          link.click();
+
+          // Clean up
+          setTimeout(() => {
+            document.body.removeChild(link);
+            URL.revokeObjectURL(pdfObjectUrl);
+          }, 100);
+
+          showSuccessToast('Invoice downloaded', {
+            description: `Invoice ${invoiceNumber} has been downloaded successfully.`
+          });
+        } catch (downloadErr: any) {
+          console.error('Error downloading PDF:', downloadErr);
+          // Fallback to opening in new tab if download fails
+          window.open(pdfUrl, '_blank');
+          showInfoToast('PDF opened in new tab', {
+            description: 'Download failed, opened PDF in new tab instead.'
+          });
+        }
+      } else {
+        showErrorToast('PDF link not found', {
+          description: 'The invoice PDF link is not available.'
+        });
+      }
+    } catch (err: any) {
+      console.error('Error fetching invoice PDF:', err);
+      const errorMessage = err.response?.data?.message || err.message || 'Unknown error occurred';
+      showErrorToast('Failed to download invoice', { description: errorMessage });
+    }
+  };
+
   const formatDateForCsv = (dateString: string | null | undefined) => {
     if (!dateString) {
       return '';
@@ -906,6 +971,31 @@ export default function InvoiceGenerator() {
   const currentItems = serviceRecords; // Use the paginated data directly from the backend
 
   const tableColumns: TableColumn[] = [
+    {
+      key: 'invoiceNumber',
+      label: 'Invoice Number',
+      className: 'min-w-[180px]',
+      render: (record) => {
+        if (!record.invoiceNumber) return '-';
+        // Check if it's a PDF invoice (contains ISO+™)
+        const isPDFInvoice = record.invoiceNumber.includes('ISO+™');
+        if (isPDFInvoice) {
+          return (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDownloadInvoice(record.invoiceNumber!);
+              }}
+              className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer font-medium"
+              title="Click to download invoice PDF"
+            >
+              {record.invoiceNumber}
+            </button>
+          );
+        }
+        return record.invoiceNumber;
+      }
+    },
     {
       key: 'paymentStatus',
       label: 'Payment Status',
@@ -1187,7 +1277,8 @@ export default function InvoiceGenerator() {
         const uniqueCode = Math.random().toString(36).substring(2, 7).toUpperCase();
         let currentDate = new Date();
         let timestamp = `${currentDate.getFullYear().toString().slice(2)}${(currentDate.getMonth() + 1).toString().padStart(2, '0')}${currentDate.getDate().toString().padStart(2, '0')}${currentDate.getHours().toString().padStart(2, '0')}${currentDate.getMinutes().toString().padStart(2, '0')}${currentDate.getSeconds().toString().padStart(2, '0')}`;
-        return `CLAIM~${timestamp}~${uniqueCode}.csv`;
+        let participantName = participantFilter && participantFilter !== 'all' ? participantFilter : '(Multiple)';
+        return `CLAIM~${timestamp}~${participantName}~${uniqueCode}.csv`;
       }
 
       const fileName = GenerateClaimExportFileName();
@@ -1231,9 +1322,8 @@ export default function InvoiceGenerator() {
       });
 
       if (response.data?.success) {
-        const description = response.data?.message || 'Manual sync triggered successfully.';
         showSuccessToast('Manual sync queued', {
-          description: `${description} The sync job has been added to the queue and will start processing shortly. You can track progress in the sync indicator.`
+          description: 'Your job is in the queue and will process shortly. Data will refresh automatically when complete. You can track progress in the sync indicator.'
         });
 
         // Clear any existing interval
