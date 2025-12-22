@@ -501,7 +501,6 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
         let processedItems = allItems.map(item => {
             const scheduledStart = getValue(item, ATTRIBUTE_NAMES.SCHEDULED_START);
             const actualEnd = getValue(item, ATTRIBUTE_NAMES.ACTUAL_END);
-            const participantName = getValue(item, ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
 
             const transactionStatusValue = getValue(item, ATTRIBUTE_NAMES.TRANSACTION_STATUS);
             const paymentStatusValue = getValue(item, ATTRIBUTE_NAMES.PAYMENT_STATUS);
@@ -510,7 +509,7 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
                 item,
                 scheduledStartDate: parseDate(scheduledStart),
                 actualEndDate: parseDate(actualEnd),
-                participantName: String(participantName),
+                participantName: '', // Will be populated after bulk fetching participant profiles
                 totalAmountNum: parseNumber(getValue(item, ATTRIBUTE_NAMES.TOTAL_AMOUNT)),
                 govSubsidyNum: parseNumber(getValue(item, ATTRIBUTE_NAMES.GOV_SUBSIDY)),
                 participantContributionNum: parseNumber(getValue(item, ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)),
@@ -538,10 +537,7 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
             const serviceDeliveryEndObj = new Date(serviceDeliveryEnd);
             processedItems = processedItems.filter(p => p.actualEndDate && p.actualEndDate <= serviceDeliveryEndObj);
         }
-        if (participant && participant !== 'all') {
-            const participantRegex = new RegExp(participant, 'i');
-            processedItems = processedItems.filter(p => participantRegex.test(p.participantName));
-        }
+        // Note: Participant filter will be applied after participant names are populated from profiles
         if (transactionStatusFilter && transactionStatusFilter !== 'all') {
             processedItems = processedItems.filter(p => p.transactionStatus === transactionStatusFilter);
         }
@@ -549,7 +545,7 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
             processedItems = processedItems.filter(p => p.paymentStatus === paymentStatusFilter);
         }
 
-        const totals = processedItems.reduce((acc, p) => ({
+        let totals = processedItems.reduce((acc, p) => ({
             totalAmount: acc.totalAmount + p.totalAmountNum,
             totalGovSubsidy: acc.totalGovSubsidy + p.govSubsidyNum,
             totalParticipantContribution: acc.totalParticipantContribution + p.participantContributionNum,
@@ -592,6 +588,38 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
         const allRefIds = [...servicePlanIds, ...participantProfileIds, ...fundingSourceIds];
         const refItemsMap = await bulkFetchItemsFromDB(workspaceId, boardId, allRefIds);
 
+        // Populate participant names from bulk-fetched participant profiles
+        for (const p of processedItems) {
+            if (p.participantProfileId) {
+                const participantProfileItem = refItemsMap.get(p.participantProfileId);
+                const profileName = getParticipantNameFromProfile(participantProfileItem);
+                if (profileName) {
+                    p.participantName = profileName;
+                } else {
+                    // Fallback to direct attribute if profile lookup fails
+                    const fallbackName = getValue(p.item, ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
+                    p.participantName = String(fallbackName);
+                }
+            } else {
+                // Fallback to direct attribute if no profile ID
+                const fallbackName = getValue(p.item, ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
+                p.participantName = String(fallbackName);
+            }
+        }
+
+        // Apply participant filter now that participant names are populated
+        if (participant && participant !== 'all') {
+            const participantRegex = new RegExp(participant, 'i');
+            processedItems = processedItems.filter(p => participantRegex.test(p.participantName));
+            // Recalculate totals after participant filtering
+            totals = processedItems.reduce((acc, p) => ({
+                totalAmount: acc.totalAmount + p.totalAmountNum,
+                totalGovSubsidy: acc.totalGovSubsidy + p.govSubsidyNum,
+                totalParticipantContribution: acc.totalParticipantContribution + p.participantContributionNum,
+                total: acc.total + 1
+            }), { totalAmount: 0, totalGovSubsidy: 0, totalParticipantContribution: 0, total: 0 });
+        }
+
         const nestedRefIds = new Set();
         const serviceRefAttrs = [
             'Home Support (HS)',
@@ -632,7 +660,8 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
             const item = p.item;
             const itemId = item.itemId;
 
-            const participant = getValue(item, ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
+            // Use participant name from processedItem (already resolved from participant profile)
+            const participant = p.participantName || '';
             const scheduledStart = getValue(item, ATTRIBUTE_NAMES.SCHEDULED_START);
             const actualEnd = getValue(item, ATTRIBUTE_NAMES.ACTUAL_END);
             const unit = getValue(item, ATTRIBUTE_NAMES.UNIT) || '';
