@@ -1258,9 +1258,11 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
         const invoiceNumbers = await InvoiceNumber.find({
             workspaceId,
             boardId,
-            itemId: { $in: itemIdsForInvoice }
+            itemId: { $in: itemIdsForInvoice },
+            type: 'PDF' // Only fetch PDF invoices for fileUrl
         }).lean();
         const invoiceNumberMap = new Map(invoiceNumbers.map(inv => [inv.itemId, inv.invoiceNumber]));
+        const invoiceFileUrlMap = new Map(invoiceNumbers.map(inv => [inv.itemId, inv.pdfLink || null]));
 
         // OPTIMIZED: Transform items synchronously without rate limiting (like invoice-csv endpoint)
         // This eliminates the massive delays from batchProcess rate limiting
@@ -1272,10 +1274,11 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             // Check if transformed data is already in cache (synchronous check)
             const cachedData = getCachedTransform(workspaceId, boardId, itemId, itemUpdatedAt);
             if (cachedData) {
-                // Return cached data with fresh invoice number from bulk-fetched map
+                // Return cached data with fresh invoice number and fileUrl from bulk-fetched maps
                 return {
                     ...cachedData,
-                    invoiceNumber: invoiceNumberMap.get(itemId) || cachedData.invoiceNumber
+                    invoiceNumber: invoiceNumberMap.get(itemId) || cachedData.invoiceNumber,
+                    fileUrl: invoiceFileUrlMap.get(itemId) || cachedData.fileUrl
                 };
             }
 
@@ -1285,8 +1288,9 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 return item.data[attributeName] ?? null;
             };
 
-            // Get invoice number from bulk-fetched map
+            // Get invoice number and fileUrl from bulk-fetched maps
             const invoiceNumber = invoiceNumberMap.get(itemId);
+            const fileUrl = invoiceFileUrlMap.get(itemId) || null;
 
             // Helper to format label values from flat data format
             // In flat format, labels are already resolved to { id, name, color } objects
@@ -1474,6 +1478,8 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 fundingSource: fundingSource,
                 transactionStatus: transactionStatusFormatted,
                 notes: notes,
+                // PDF download field
+                fileUrl: fileUrl,
                 // CSV export fields (Included in CSV but not in table)
                 invoiceNumber: invoiceNumber,
                 careRecipientIdentifier: careRecipientIdentifier,
