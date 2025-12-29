@@ -870,6 +870,59 @@ export default function InvoiceGenerator() {
     return TRANSACTION_STATUS_FILTERS.find(option => option.value === filterValue)?.isoValue || '';
   };
 
+  const handleDownloadPDF = async (fileUrl: string, invoiceNumber?: string) => {
+    try {
+      if (!fileUrl) {
+        if (invoiceNumber) {
+          // Fallback to the old method if fileUrl is not available
+          await handleDownloadInvoice(invoiceNumber);
+        } else {
+          showErrorToast('PDF link not available', {
+            description: 'The invoice PDF link is not available.'
+          });
+        }
+        return;
+      }
+
+      // Download the PDF file directly from fileUrl
+      try {
+        const pdfResponse = await fetch(fileUrl);
+        const pdfBlob = await pdfResponse.blob();
+        const pdfObjectUrl = URL.createObjectURL(pdfBlob);
+        const link = document.createElement('a');
+        link.href = pdfObjectUrl;
+        const baseInvoiceNumber = invoiceNumber ? invoiceNumber.replace(/\s*\(ISO\+™\)\s*$/, '').trim() : 'Invoice';
+        link.download = `Invoice_${baseInvoiceNumber}.pdf`;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+
+        // Clean up
+        setTimeout(() => {
+          document.body.removeChild(link);
+          URL.revokeObjectURL(pdfObjectUrl);
+        }, 100);
+
+        showSuccessToast('Invoice downloaded', {
+          description: invoiceNumber 
+            ? `Invoice ${invoiceNumber} has been downloaded successfully.`
+            : 'Invoice has been downloaded successfully.'
+        });
+      } catch (downloadErr: any) {
+        console.error('Error downloading PDF:', downloadErr);
+        // Fallback to opening in new tab if download fails
+        window.open(fileUrl, '_blank');
+        showInfoToast('PDF opened in new tab', {
+          description: 'Download failed, opened PDF in new tab instead.'
+        });
+      }
+    } catch (err: any) {
+      console.error('Error downloading PDF:', err);
+      const errorMessage = err.message || 'Unknown error occurred';
+      showErrorToast('Failed to download invoice', { description: errorMessage });
+    }
+  };
+
   const handleDownloadInvoice = async (invoiceNumber: string) => {
     try {
       if (!id || !boardId) {
@@ -892,37 +945,7 @@ export default function InvoiceGenerator() {
       });
 
       if (response.data?.pdfLink) {
-        const pdfUrl = response.data.pdfLink;
-
-        // Download the PDF file
-        try {
-          const pdfResponse = await fetch(pdfUrl);
-          const pdfBlob = await pdfResponse.blob();
-          const pdfObjectUrl = URL.createObjectURL(pdfBlob);
-          const link = document.createElement('a');
-          link.href = pdfObjectUrl;
-          link.download = `Invoice_${baseInvoiceNumber}.pdf`;
-          link.style.display = 'none';
-          document.body.appendChild(link);
-          link.click();
-
-          // Clean up
-          setTimeout(() => {
-            document.body.removeChild(link);
-            URL.revokeObjectURL(pdfObjectUrl);
-          }, 100);
-
-          showSuccessToast('Invoice downloaded', {
-            description: `Invoice ${invoiceNumber} has been downloaded successfully.`
-          });
-        } catch (downloadErr: any) {
-          console.error('Error downloading PDF:', downloadErr);
-          // Fallback to opening in new tab if download fails
-          window.open(pdfUrl, '_blank');
-          showInfoToast('PDF opened in new tab', {
-            description: 'Download failed, opened PDF in new tab instead.'
-          });
-        }
+        await handleDownloadPDF(response.data.pdfLink, invoiceNumber);
       } else {
         showErrorToast('PDF link not found', {
           description: 'The invoice PDF link is not available.'
@@ -1060,6 +1083,28 @@ export default function InvoiceGenerator() {
             {cleanNotes}
           </span>
         ) : '-';
+      }
+    },
+    {
+      key: 'fileUrl',
+      label: 'PDF Download',
+      className: 'min-w-[100px]',
+      render: (record) => {
+        if (record.fileUrl) {
+          return (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-2"
+              onClick={() => handleDownloadPDF(record.fileUrl!, record.invoiceNumber)}
+              title="Download PDF Invoice"
+            >
+              <Download className="h-4 w-4" />
+              {record.invoiceNumber ? `Invoice #${record.invoiceNumber}` : 'Download'}
+            </Button>
+          );
+        }
+        return '-';
       }
     }
   ];
