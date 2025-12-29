@@ -1021,7 +1021,7 @@ export default function InvoiceGenerator() {
     },
     {
       key: 'unitPrice',
-      label: 'Unit Price ($)',
+      label: 'Unit Price',
       className: 'min-w-[150px]',
       render: (record) => formatCurrency(record.unitPrice)
     },
@@ -1033,7 +1033,7 @@ export default function InvoiceGenerator() {
     },
     {
       key: 'govSubsidy',
-      label: 'Gov Subsidy',
+      label: 'Government Subsidy',
       className: 'min-w-[150px]',
       render: (record) => formatCurrency(record.govSubsidy)
     },
@@ -1298,7 +1298,7 @@ export default function InvoiceGenerator() {
 
       if (response.data?.success) {
         showSuccessToast('Manual sync queued', {
-          description: 'Your job is in the queue and will process shortly. Data will refresh automatically when complete. You can track progress in the sync indicator.'
+          description: 'Your job is in the queue and will be processed shortly. Data will refresh automatically when complete. You can track progress in the sync indicator.'
         });
 
         // Clear any existing interval
@@ -1678,7 +1678,7 @@ export default function InvoiceGenerator() {
               <div className="space-y-2">
                 <h1 className="text-2xl font-bold">Invoice Generator</h1>
                 <p className="text-muted-foreground">
-                  Manage delivered service records, submit claims and generate participant tax invoices.
+                  Manage service records, submit claims and generate participant tax invoices.
                 </p>
               </div>
               <div className="flex flex-col items-end gap-3">
