@@ -450,7 +450,7 @@
                 "width": 25,
                 "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "left",
                 "verticalAlignment": "middle",
                 "fontSize": 13,
                 "lineHeight": 1,

@@ -2104,7 +2104,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             }
 
             // Helper functions
-            const dateFmt = (d) => d ? new Date(d).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+            const dateFmt = (d) => d ? new Date(d).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
             const toNumber = (v) => typeof v === 'number' ? v : Number(v || 0);
             const fmt = (v) => formatValue(toNumber(v));
 
