@@ -525,7 +525,33 @@
             20,
             20
         ],
-        "staticSchema": []
+        "staticSchema": [
+            {
+                "name": "pageNumber",
+                "type": "text",
+                "content": "{{pageNumber}}",
+                "position": {
+                    "x": 85,
+                    "y": 285
+                },
+                "width": 40,
+                "height": 7,
+                "rotate": 0,
+                "alignment": "center",
+                "verticalAlignment": "middle",
+                "fontSize": 10,
+                "lineHeight": 1,
+                "characterSpacing": 0,
+                "fontColor": "#000000",
+                "backgroundColor": "",
+                "opacity": 1,
+                "strikethrough": false,
+                "underline": false,
+                "required": false,
+                "readOnly": false,
+                "fontName": "Roboto"
+            }
+        ]
     },
     "pdfmeVersion": "5.4.1"
 }
