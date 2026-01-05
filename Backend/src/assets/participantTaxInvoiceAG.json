@@ -548,7 +548,7 @@
                 "strikethrough": false,
                 "underline": false,
                 "required": false,
-                "readOnly": false,
+                "readOnly": true,
                 "fontName": "Roboto"
             }
         ]
