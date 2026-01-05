@@ -529,7 +529,7 @@
             {
                 "name": "pageNumber",
                 "type": "text",
-                "content": "{{pageNumber}}",
+                "content": "{currentPage}",
                 "position": {
                     "x": 85,
                     "y": 285
