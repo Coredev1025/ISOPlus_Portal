@@ -2278,14 +2278,6 @@ export default function InvoiceGenerator() {
                                     Invoiced
                                   </Badge>
                                 )}
-                                {record.invoiceNumber && (
-                                  <Badge variant="outline" className="text-xs cursor-pointer hover:bg-green-200 hover:text-green-800" onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDownloadInvoice(record.invoiceNumber!);
-                                  }}>
-                                    #{record.invoiceNumber}
-                                  </Badge>
-                                )}
                               </div>
                               <p className="text-xs text-muted-foreground">
                                 {record.scheduledServiceDate ? formatDate(record.scheduledServiceDate) : 'N/A'} • {record.quantity} {record.unit}

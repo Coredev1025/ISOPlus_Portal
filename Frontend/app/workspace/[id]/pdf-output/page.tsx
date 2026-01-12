@@ -269,7 +269,7 @@ export default function PDFOutputPage() {
                                             onClick={() => router.push(`/workspace/${id}/pdf-output/${output.id}`)}
                                         >
                                             <TableCell>{output.type}</TableCell>
-                                            <TableCell>{new Date(output.createdAt).toLocaleString()}</TableCell>
+                                            <TableCell>{new Date(output.createdAt).toLocaleString('en-AU')}</TableCell>
                                             <TableCell>{output.createdBy}</TableCell>
                                             <TableCell>
                                                 {output.signed ? (

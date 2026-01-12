@@ -149,7 +149,7 @@ export default function LocationDetailPage() {
   const formatDate = (dateString: string | null) => {
     if (!dateString) return "Ongoing";
     const date = new Date(dateString);
-    return date.toLocaleString();
+    return date.toLocaleString('en-AU');
   };
 
   // Open Google Maps with the location
