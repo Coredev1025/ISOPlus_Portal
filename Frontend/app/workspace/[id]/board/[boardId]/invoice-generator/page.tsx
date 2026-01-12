@@ -824,13 +824,7 @@ export default function InvoiceGenerator() {
 
   const formatDisplayDate = (dateString: string | null | undefined) => {
     if (!dateString) return '-';
-    const date = new Date(dateString);
-    if (Number.isNaN(date.getTime())) return '-';
-    return date.toLocaleDateString('en-AU', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
+    return dateString;
   };
 
   const stripHtml = (value?: string) => {
