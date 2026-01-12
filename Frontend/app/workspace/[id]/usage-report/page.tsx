@@ -113,7 +113,7 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-background border border-border rounded-lg p-3 shadow-lg">
-        <p className="font-medium mb-2">{label ? new Date(label).toLocaleDateString() : ''}</p>
+        <p className="font-medium mb-2">{label ? new Date(label).toLocaleDateString('en-AU') : ''}</p>
         {payload.map((entry) => (
           <div key={entry.name} className="flex items-center gap-2 text-sm">
             <div 
@@ -254,7 +254,7 @@ export default function UsageReportPage() {
                       />
                       <XAxis 
                         dataKey="date"
-                        tickFormatter={(value) => new Date(value).toLocaleDateString()}
+                        tickFormatter={(value) => new Date(value).toLocaleDateString('en-AU')}
                         stroke="hsl(var(--border))"
                         fontSize={12}
                         tickMargin={8}

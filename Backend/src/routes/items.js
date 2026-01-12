@@ -1419,11 +1419,17 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             }
 
             const actualEnd = getValue(ATTRIBUTE_NAMES.ACTUAL_END) || null;
-            const serviceDeliveryDate = actualEnd && typeof actualEnd === 'string'
-                ? (actualEnd.includes('T') ? actualEnd.split('T')[0] : actualEnd.split(' ')[0])
+            const serviceDeliveryDate = actualEnd
+                ? (() => {
+                    const date = new Date(actualEnd);
+                    return isNaN(date.getTime()) ? null : date.toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                })()
                 : null;
-            const scheduledServiceDate = scheduledStart && typeof scheduledStart === 'string'
-                ? (scheduledStart.includes('T') ? scheduledStart.split('T')[0] : scheduledStart.split(' ')[0])
+            const scheduledServiceDate = scheduledStart
+                ? (() => {
+                    const date = new Date(scheduledStart);
+                    return isNaN(date.getTime()) ? null : date.toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                })()
                 : null;
 
             // Get Delivered By for deliveredByThirdParty calculation
@@ -2268,11 +2274,17 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             // Get dates
             const scheduledStart = getValue(ATTRIBUTE_NAMES.SCHEDULED_START) || null;
             const actualEnd = getValue(ATTRIBUTE_NAMES.ACTUAL_END) || null;
-            const scheduledServiceDate = scheduledStart && typeof scheduledStart === 'string'
-                ? (scheduledStart.includes('T') ? scheduledStart.split('T')[0] : scheduledStart.split(' ')[0])
+            const scheduledServiceDate = scheduledStart
+                ? (() => {
+                    const date = new Date(scheduledStart);
+                    return isNaN(date.getTime()) ? null : date.toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                })()
                 : null;
-            const serviceDeliveryDate = actualEnd && typeof actualEnd === 'string'
-                ? (actualEnd.includes('T') ? actualEnd.split('T')[0] : actualEnd.split(' ')[0])
+            const serviceDeliveryDate = actualEnd
+                ? (() => {
+                    const date = new Date(actualEnd);
+                    return isNaN(date.getTime()) ? null : date.toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                })()
                 : null;
 
             // Get Transaction Status from flat data format
