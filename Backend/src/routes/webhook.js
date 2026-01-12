@@ -2178,7 +2178,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                 const transactionStatus = formatLabelValue(transactionStatusValue);
 
                 // Date: If Transaction Status is "Delivered - To be claimed and invoiced.", use Actual Shift End Date & Time, otherwise Scheduled Shift Start Date & Time
-                let rowDate = '';
+                let rowDate = ' ';
                 const isDelivered = transactionStatus && transactionStatus === 'Delivered - To be claimed and invoiced.';
 
                 if (isDelivered) {
@@ -2186,9 +2186,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                     if (actualEnd) {
                         rowDate = dateFmt(actualEnd);
                     }
-                }
-
-                if (!rowDate) {
+                } else {
                     const scheduledStart = getValue(ATTRIBUTE_NAMES.SCHEDULED_START);
                     if (scheduledStart) {
                         rowDate = dateFmt(scheduledStart);

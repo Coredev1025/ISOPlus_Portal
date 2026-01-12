@@ -476,7 +476,7 @@
                 "height": 7,
                 "rotate": 0,
                 "alignment": "left",
-                "verticalAlignment": "top",
+                "verticalAlignment": "middle",
                 "fontSize": 13,
                 "lineHeight": 1,
                 "characterSpacing": 0,
