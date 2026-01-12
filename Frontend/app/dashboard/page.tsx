@@ -366,7 +366,7 @@ function GlobalAuditTrail() {
           {filteredAuditTrail.map((item) => (
             <TableRow key={item.id}>
               <TableCell className="whitespace-nowrap">
-                {new Date(item.timestamp).toLocaleString()}
+                {new Date(item.timestamp).toLocaleString('en-AU')}
               </TableCell>
               <TableCell>{item.action}</TableCell>
               <TableCell>{item.user}</TableCell>

@@ -199,7 +199,7 @@ export default function MapViewPage() {
   // Format date for display
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleString();
+    return date.toLocaleString('en-AU');
   };
 
   // Open Google Maps with the location

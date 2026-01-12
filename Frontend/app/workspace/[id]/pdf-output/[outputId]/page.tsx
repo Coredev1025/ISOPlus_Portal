@@ -107,7 +107,7 @@ export default function PDFOutputDetailPage() {
                   <h3 className="text-sm font-medium text-muted-foreground">Created By</h3>
                   <p className="text-sm">{output.createdBy}</p>
                   <p className="text-sm text-muted-foreground">
-                    {new Date(output.createdAt).toLocaleString()}
+                    {new Date(output.createdAt).toLocaleString('en-AU')}
                   </p>
                 </div>
 
@@ -116,7 +116,7 @@ export default function PDFOutputDetailPage() {
                     <h3 className="text-sm font-medium text-muted-foreground">Signed By</h3>
                     <p className="text-sm">{output.signedBy}</p>
                     <p className="text-sm text-muted-foreground">
-                      {new Date(output.signedAt).toLocaleString()}
+                      {new Date(output.signedAt).toLocaleString('en-AU')}
                     </p>
                   </div>
                 )}

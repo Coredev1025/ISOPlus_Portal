@@ -367,8 +367,8 @@ export function TimeTrackingButton({ workspaceId, boardId, setTimeTrackingEnable
                 {startTime && formatDuration(startTime, new Date())}
               </p>
               <div className="mt-2 text-sm text-muted-foreground">
-                <p>Started: {startTime?.toLocaleString()}</p>
-                <p>Ended: {new Date().toLocaleString()}</p>
+                <p>Started: {startTime?.toLocaleString('en-AU')}</p>
+                <p>Ended: {new Date().toLocaleString('en-AU')}</p>
               </div>
             </div>
 
