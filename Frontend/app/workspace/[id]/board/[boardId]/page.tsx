@@ -102,7 +102,7 @@ export default function BoardDetail() {
         if (!abortController.signal.aborted) {
           const boardData: Board = boardsResponse.data.board.find((b: any) => b.id == boardId);
           setBoard(boardData);
-          
+
           // Store current board and workspace data in session storage
           const currentBoardData = {
             boardId: boardId,
@@ -112,7 +112,7 @@ export default function BoardDetail() {
             workspaceName: workspace?.name || `Workspace ${id}`,
             timestamp: new Date().toISOString()
           };
-          
+
           sessionStorage.setItem('currentBoard', JSON.stringify(currentBoardData));
           console.log('Board data stored in session storage:', currentBoardData);
         }
@@ -357,23 +357,43 @@ export default function BoardDetail() {
               </Card>
 
               {/* Invoice Generator Card */}
-              <Card className="p-6 space-y-4 card-hover">
-                <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
-                  <FileText className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-semibold">Invoice Generator</h2>
-                  <p className="text-muted-foreground mb-4 text-sm">
-                    Generate professional service invoices
-                  </p>
-                  <Button
-                    onClick={() => router.push(`/workspace/${id}/board/${board.id}/invoice-generator`)}
-                    className="w-full"
-                  >
-                    Generate Invoice
-                  </Button>
-                </div>
-              </Card>
+              {board.label === 'Care Management - SaH - Low Cat' ? (
+                <Card className="p-6 space-y-4 card-hover">
+                  <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold">Invoice Generator (Low-Cat)</h2>
+                    <p className="text-muted-foreground mb-4 text-sm">
+                      Generate professional service invoices
+                    </p>
+                    <Button
+                      onClick={() => router.push(`/workspace/${id}/board/${board.id}/invoice-generator`)}
+                      className="w-full"
+                    >
+                      Generate Invoice
+                    </Button>
+                  </div>
+                </Card>
+              ) : (
+                <Card className="p-6 space-y-4 card-hover">
+                  <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold">Invoice Generator</h2>
+                    <p className="text-muted-foreground mb-4 text-sm">
+                      Generate professional service invoices
+                    </p>
+                    <Button
+                      onClick={() => router.push(`/workspace/${id}/board/${board.id}/invoice-generator`)}
+                      className="w-full"
+                    >
+                      Generate Invoice
+                    </Button>
+                  </div>
+                </Card>
+              )}
 
               {/* Monthly Statement Card */}
               <Card className="p-6 space-y-4 card-hover">

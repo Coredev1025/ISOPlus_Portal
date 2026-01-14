@@ -9,6 +9,7 @@ import Business from '../models/Business.js';
 import PDFLink from '../models/PDFLink.js';
 import Item from '../models/Item.js';
 import InvoiceNumber from '../models/InvoiceNumber.js';
+import Board from '../models/Board.js';
 import { getS3FileUrl, uploadFileToS3 } from '../utils/uploadS3.js';
 import { isEmpty } from '../utils/helpers.js';
 import {
@@ -2069,6 +2070,18 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             return res.status(400).json({ message: "No items provided for invoice generation." });
         }
 
+        // Check if this is a Low-Cat board
+        const isLowCat = req.body?.isLowCat || false;
+        let boardLabel = '';
+        if (!isLowCat) {
+            // Check board label from database
+            const board = await Board.findOne({ boardId: boardId.toString() }).lean();
+            if (board?.label === 'Care Management - SaH - Low Cat') {
+                boardLabel = board.label;
+            }
+        }
+        const isLowCatBoard = isLowCat || boardLabel === 'Care Management - SaH - Low Cat';
+
         // Validate all items belong to the workspace/board and fetch from database
         const dbItems = [];
         for (const itemId of itemIds) {
@@ -2084,6 +2097,50 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             const templatePath = path.join(__dirname, '..', 'assets', 'participantTaxInvoiceAG.json');
             const templateData = await fs.readFile(templatePath, 'utf8');
             const template = JSON.parse(templateData);
+            
+            // Modify template for Low-Cat: update table headers and client details
+            if (isLowCatBoard) {
+                // Find the orders table and update headers
+                const ordersTable = template.schemas.find(schema => schema.name === 'orders');
+                if (ordersTable && ordersTable.head) {
+                    // Low-Cat: Participant Name, Date, Description, Unit, Quantity, Unit Price, GST, Total Amount
+                    ordersTable.head = [
+                        'Participant Name',
+                        'Date',
+                        'Description',
+                        'Unit',
+                        'Quantity',
+                        'Unit Price',
+                        'GST',
+                        'Total Amount'
+                    ];
+                    // Update head width percentages for 8 columns
+                    ordersTable.headWidthPercentages = [
+                        12, // Participant Name
+                        8.58838773307389, // Date
+                        19.909753763428345, // Description
+                        9.210988048382529, // Unit
+                        11.623020229158573, // Quantity
+                        12.364999987595796, // Unit Price
+                        7.4860869131589585, // GST
+                        18.216118536753712 // Total Amount
+                    ];
+                }
+                
+                // Update client details text to use "Receiver" instead of "Participant"
+                const clientDetailsSchema = template.schemas.find(schema => schema.name === 'clientDetails');
+                if (clientDetailsSchema) {
+                    clientDetailsSchema.text = "Invoiced  to:\n\n{Receiver}\n{Address}\n{Suburb} \n{State} {Postcode}";
+                    clientDetailsSchema.content = JSON.stringify({
+                        "Address": "ADDRESS",
+                        "Suburb": "SUBURB",
+                        "State": "STATE",
+                        "Postcode": "POSTCODE",
+                        "Receiver": "RECEIVER"
+                    });
+                    clientDetailsSchema.variables = ["Address", "Suburb", "State", "Postcode", "Receiver"];
+                }
+            }
 
             const logoBase64 = await getLogoData(business);
 
@@ -2091,6 +2148,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 
             let ordersArr = [];
             let totalParticipantContribution = 0;
+            let totalAmountSum = 0; 
             const gstLabel = "GST Free";
 
             // Get dates from request or use defaults
@@ -2143,6 +2201,8 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             let participantSuburb = ' ';
             let participantState = ' ';
             let participantPostcode = ' ';
+            let receiverName = ' ';
+            let receiverAddress = ' ';
 
             if (dbItems.length > 0) {
                 const firstItem = dbItems[0];
@@ -2159,12 +2219,18 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                         const profileName = getParticipantNameFromProfile(participantProfileItem);
                         participantName = profileName || ' ';
 
-                        // Get address information using helper function
-                        const addressInfo = getAddressFromProfile(participantProfileItem);
-                        participantAddress = addressInfo.address || ' ';
-                        participantSuburb = addressInfo.suburb || ' ';
-                        participantState = addressInfo.state || '';
-                        participantPostcode = addressInfo.postcode || ' ';
+                        if (isLowCatBoard) {
+                            receiverName = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || ' ';
+                            receiverAddress = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || ' ';
+                            participantSuburb = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_SUBURB) || ' ';
+                            participantState = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_STATE) || ' ';
+                        } else {
+                            const addressInfo = getAddressFromProfile(participantProfileItem);
+                            participantAddress = addressInfo.address || ' ';
+                            participantSuburb = addressInfo.suburb || ' ';
+                            participantState = addressInfo.state || '';
+                            participantPostcode = addressInfo.postcode || ' ';
+                        }
                     }
                 }
             }
@@ -2229,19 +2295,44 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                 const totalAmount = Number(getValue(ATTRIBUTE_NAMES.TOTAL_AMOUNT)) || 0;
                 const participantContribution = Number(getValue(ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)) || 0;
 
-                ordersArr.push([
-                    rowDate,
-                    description,
-                    unit,
-                    fmt(quantity),
-                    formatCurrencyValue(unitPrice), // $ {Unit Price ($)}
-                    gstLabel,
-                    formatCurrencyValue(totalAmount), // $ {Total Amount ($)}
-                    formatCurrencyValue(participantContribution) // {Participant Contribution ($)}
-                ]);
+                let rowParticipantName = participantName;
+                if (isLowCatBoard) {
+                    const itemParticipantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
+                    const itemParticipantProfileId = extractRefId(itemParticipantProfileValue);
+                    if (itemParticipantProfileId) {
+                        const itemParticipantProfileItem = refItemsMap.get(itemParticipantProfileId);
+                        if (itemParticipantProfileItem) {
+                            const itemProfileName = getParticipantNameFromProfile(itemParticipantProfileItem);
+                            rowParticipantName = itemProfileName || participantName;
+                        }
+                    }
+                }
 
-                // Subtotal uses Participant Contribution, not Total Amount
-                totalParticipantContribution += participantContribution;
+                if (isLowCatBoard) {
+                    ordersArr.push([
+                        rowParticipantName,
+                        rowDate,
+                        description,
+                        unit,
+                        fmt(quantity),
+                        formatCurrencyValue(unitPrice),
+                        gstLabel,
+                        formatCurrencyValue(totalAmount)
+                    ]);
+                    totalAmountSum += totalAmount;
+                } else {
+                    ordersArr.push([
+                        rowDate,
+                        description,
+                        unit,
+                        fmt(quantity),
+                        formatCurrencyValue(unitPrice),
+                        gstLabel,
+                        formatCurrencyValue(totalAmount),
+                        formatCurrencyValue(participantContribution)
+                    ]);
+                    totalParticipantContribution += participantContribution;
+                }
             }
 
             if (ordersArr.length === 0) {
@@ -2252,14 +2343,25 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             }
 
             const orders = JSON.stringify(ordersArr);
-            // Subtotal: Same as NDIS, but for Participant Contribution column
-            const participantContributionTotal = formatValue(totalParticipantContribution);
+            
+            let subtotalValue, totalAUDValue;
+            if (isLowCatBoard) {
+                subtotalValue = formatCurrencyValue(totalAmountSum);
+                totalAUDValue = formatCurrencyValue(totalAmountSum);
+            } else {
+                subtotalValue = formatCurrencyValue(totalParticipantContribution);
+                totalAUDValue = formatCurrencyValue(totalParticipantContribution);
+            }
             const gstTotal = formatValue(0); // Total GST: $ 0.00
-            // Total AUD: Same as subtotal (participant contribution total)
-            const totalAUD = participantContributionTotal;
 
             // Map client details to match template
-            const clientDetails = {
+            const clientDetails = isLowCatBoard ? {
+                Receiver: receiverName || participantName, // For Low-Cat: use billing contact
+                Address: receiverAddress || participantAddress, // For Low-Cat: use billing address (includes suburb and state)
+                Suburb: participantSuburb,
+                State: participantState,
+                Postcode: participantPostcode
+            } : {
                 Participant: participantName,
                 Address: participantAddress,
                 Suburb: participantSuburb,
@@ -2273,9 +2375,9 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                 inputs: [
                     {
                         logo: logoBase64,
-                        subtotal: formatCurrencyValue(totalParticipantContribution), // Subtotal: Participant Contribution total
-                        totalGST: formatCurrencyValue(0), // Total GST: $ 0.00
-                        total: formatCurrencyValue(totalParticipantContribution), // Total AUD: Same as subtotal
+                        subtotal: subtotalValue,
+                        totalGST: formatCurrencyValue(0),
+                        total: totalAUDValue,
                         clientDetails: JSON.stringify(clientDetails),
                         invoiceDetails: JSON.stringify({
                             Date: new Date(invoiceDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }),
