@@ -2,6 +2,8 @@ import express from 'express';
 import dotenv from 'dotenv';
 import Business from '../models/Business.js';
 import InvoiceNumber from '../models/InvoiceNumber.js';
+import Board from '../models/Board.js';
+import Item from '../models/Item.js';
 import { warn, error, extractContextFromReq } from '../utils/logger.js';
 import { isEmpty } from '../utils/helpers.js';
 import {
@@ -1539,6 +1541,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
   const participantName = req.body?.participantName || '';
   const invoiceDate = req.body?.invoiceDate || new Date().toISOString();
   const dueDate = req.body?.dueDate || '';
+  const isLowCat = req.body?.isLowCat || false;
 
   if (!items || items.length === 0) {
     return res.status(400).json({ message: "No items provided for invoice generation." });
@@ -1557,13 +1560,30 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     await configure();
     await ensureAuthenticated(workspaceId);
 
+    // Check if this is a Low-Cat board
+    let boardLabel = '';
+    if (!isLowCat) {
+      // Check board label from database
+      const board = await Board.findOne({ boardId: boardId.toString() }).lean();
+      if (board?.label === 'Care Management - SaH - Low Cat') {
+        boardLabel = board.label;
+      }
+    }
+    const isLowCatBoard = isLowCat || boardLabel === 'Care Management - SaH - Low Cat';
+
     // Validate all items belong to the workspace/board
     for (const item of items) {
       await validateItemBelongsToTenant(workspaceId, boardId, item.id);
     }
 
-    // Get participant name
-    const effectiveParticipantName = participantName || items[0].participant || '';
+    // Get participant name - for Low-Cat, prefer billing contact if available
+    let effectiveParticipantName = participantName || items[0].participant || '';
+    let billingContactName = req.body?.billingContact || '';
+    let billingAddress = req.body?.billingAddress || '';
+
+    if (isLowCatBoard && billingContactName) {
+      effectiveParticipantName = billingContactName; // Use billing contact for Low-Cat
+    }
 
     // Try to find or create contact in Xero
     // For participant tax invoices, we'll use the participant name as the contact name
@@ -1584,6 +1604,12 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       const firstName = nameParts[0] || '';
       const lastName = nameParts.slice(1).join(' ') || '';
 
+      // For Low-Cat, use billing address if available, otherwise fallback to participant address
+      const contactAddress = isLowCatBoard && billingAddress ? billingAddress : (req.body?.participantAddress || ' ');
+      const contactSuburb = (req.body?.participantSuburb || ' ');
+      const contactState = (req.body?.participantState || ' ');
+      const contactPostcode = (req.body?.participantPostcode || ' ');
+
       contact = await createOrUpdateContact({
         name: effectiveParticipantName,
         firstName: firstName,
@@ -1592,17 +1618,17 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         addresses: [
           {
             addressType: 'POBOX',
-            addressLine1: req.body?.participantAddress || ' ',
-            city: req.body?.participantSuburb || ' ',
-            region: req.body?.participantState || ' ',
-            postalCode: (req.body?.participantPostcode || ' ').toString()
+            addressLine1: contactAddress,
+            city: contactSuburb,
+            region: contactState,
+            postalCode: contactPostcode.toString()
           },
           {
             addressType: 'STREET',
-            addressLine1: req.body?.participantAddress || ' ',
-            city: req.body?.participantSuburb || ' ',
-            region: req.body?.participantState || ' ',
-            postalCode: (req.body?.participantPostcode || ' ').toString()
+            addressLine1: contactAddress,
+            city: contactSuburb,
+            region: contactState,
+            postalCode: contactPostcode.toString()
           }
         ],
         emailAddress: participantEmail || undefined
@@ -1619,22 +1645,36 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 
     // Build line items from service records
     const lineItems = [];
-    const gstType = "EXEMPTOUTPUT"; // GST Free for participant tax invoices
+    const gstType = isLowCatBoard ? "OUTPUT" : "EXEMPTOUTPUT"; // GST 10% for Low-Cat, GST Free for others
     let totalAmount = 0;
 
     for (const item of items) {
-      const description = (item.notes && typeof item.notes === 'string') 
-        ? item.notes.replace(/<[^>]*>/g, '').trim() 
-        : (item.service || item.worker ? `Service - ${item.worker || item.service}` : 'Service');
+      // Use service from Service Records table (item.service) as the primary source for description
+      // This matches what's shown in the Service Records table
+      let description = '';
+      if (item.service && typeof item.service === 'string' && item.service.trim()) {
+        description = item.service.trim();
+      } else if (item.notes && typeof item.notes === 'string' && item.notes.trim()) {
+        // Fallback to notes if service is not available
+        description = item.notes.replace(/<[^>]*>/g, '').trim();
+      } else if (item.worker && typeof item.worker === 'string' && item.worker.trim()) {
+        // Fallback to worker if neither service nor notes are available
+        description = item.worker.trim();
+      } else {
+        // Final fallback
+        description = 'Service';
+      }
       
       const quantity = typeof item.quantity === 'number' ? item.quantity : Number(item.quantity || 0);
       const unitPrice = typeof item.unitPrice === 'number' ? item.unitPrice : Number(item.unitPrice || 0);
       const totalItemAmount = typeof item.totalAmount === 'number' ? item.totalAmount : Number(item.totalAmount || 0);
 
-      // Use participant contribution if available, otherwise use total amount
-      const lineAmount = typeof item.participantContribution === 'number' && item.participantContribution > 0
-        ? item.participantContribution
-        : totalItemAmount;
+      // For Low-Cat, use total amount; for others, use participant contribution if available
+      const lineAmount = isLowCatBoard
+        ? totalItemAmount // For Low-Cat, use total amount
+        : (typeof item.participantContribution === 'number' && item.participantContribution > 0
+          ? item.participantContribution
+          : totalItemAmount); // For others, use participant contribution or total amount
 
       if (lineAmount > 0) {
         // Calculate unit price: if quantity > 0, divide line amount by quantity; otherwise use the unitPrice from item
@@ -1658,10 +1698,14 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     }
 
     // Create invoice in Xero
+    const invoiceReference = isLowCatBoard 
+      ? `Tax Invoice - ${effectiveParticipantName}`
+      : `Participant Tax Invoice - ${effectiveParticipantName}`;
+    
     const invoice = {
       type: 'ACCREC',
       contact: { contactID: contact.contactID },
-      reference: `Participant Tax Invoice - ${effectiveParticipantName}`,
+      reference: invoiceReference,
       lineItems: lineItems,
       date: invoiceDate,
       dueDate: effectiveDueDate,
@@ -1671,21 +1715,33 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     const createdInvoice = await createInvoice(invoice);
 
     // Update integration messages for all items
+    const successMessage = isLowCatBoard
+      ? "Your tax invoice has been created successfully in Xero."
+      : "Your participant tax invoice has been created successfully in Xero.";
+    
     await Promise.all(items.map(async (item) => {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "Your participant tax invoice has been created successfully in Xero.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, successMessage);
       await setGeneratedField(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`);
       await saveInvoiceNumber(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`, 'Xero');
     }));
 
+    const auditAction = isLowCatBoard
+      ? "Create Xero Tax Invoice"
+      : "Create Xero Participant Tax Invoice";
+    
     logAuditTrail({
       workspaceId,
-      action: "Create Xero Participant Tax Invoice",
-      detail: `Invoice created successfully, invoice number: ${createdInvoice.invoiceNumber}, participant: ${effectiveParticipantName}, items: ${items.length}`,
+      action: auditAction,
+      detail: `Invoice created successfully, invoice number: ${createdInvoice.invoiceNumber}, ${isLowCatBoard ? 'receiver' : 'participant'}: ${effectiveParticipantName}, items: ${items.length}`,
       req
     });
 
+    const responseMessage = isLowCatBoard
+      ? "Tax Invoice generated successfully in Xero"
+      : "Participant Tax Invoice generated successfully in Xero";
+
     res.status(200).json({
-      message: "Participant Tax Invoice generated successfully in Xero",
+      message: responseMessage,
       invoiceNumber: createdInvoice.invoiceNumber,
       invoiceId: createdInvoice.invoiceID,
       invoiceUrl: createdInvoice.url,
