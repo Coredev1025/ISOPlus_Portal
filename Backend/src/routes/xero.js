@@ -3,7 +3,6 @@ import dotenv from 'dotenv';
 import Business from '../models/Business.js';
 import InvoiceNumber from '../models/InvoiceNumber.js';
 import Board from '../models/Board.js';
-import Item from '../models/Item.js';
 import { warn, error, extractContextFromReq } from '../utils/logger.js';
 import { isEmpty } from '../utils/helpers.js';
 import {
@@ -996,7 +995,7 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
     IntegrationMessage: contractorValues['Integration Message'],
   };
 
-  const { error: validationError } = Item.validate('Contractor', mappedContractor);
+  const { error: validationError } = ItemPayloadDTO.validate('Contractor', mappedContractor);
   if (validationError) {
     await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Contractor validation failed: ${JSON.stringify(validationError.details)}`);
     return res.status(200).json({ message: 'Contractor validation failed', details: validationError.details });
@@ -1136,7 +1135,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
       ]
     };
 
-    const { error: validationError } = Item.validate('Quote', mappedQuote);
+    const { error: validationError } = ItemPayloadDTO.validate('Quote', mappedQuote);
     if (validationError) {
       await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Quote validation failed: ${JSON.stringify(validationError.details)}`);
       return res.status(200).json({ message: 'Quote validation failed', details: validationError.details });
@@ -1327,7 +1326,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
       terms: `Terms & Conditions\n- This quote remains valid until the expiry date indicated above.\n- Payment Terms: ${business && business.bankDetails && business.bankDetails.accountsReceivableTerms ? business.bankDetails.accountsReceivableTerms : ' '}\n- All prices are subject to change with prior notice.\n- A cancellation fee may apply as per the terms of the service agreement.`,
     };
 
-    const { error: validationError } = Item.validate('Quote', mappedQuote);
+    const { error: validationError } = ItemPayloadDTO.validate('Quote', mappedQuote);
     if (validationError) {
       await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Quote validation failed: ${JSON.stringify(validationError.details)}`);
       return res.status(200).json({ message: 'Quote validation failed', details: validationError.details });
@@ -1460,7 +1459,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
       ]
     };
 
-    const { error: validationError } = Item.validate('PurchaseOrder', mappedPO);
+    const { error: validationError } = ItemPayloadDTO.validate('PurchaseOrder', mappedPO);
     if (validationError) {
       await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Purchase order validation failed: ${JSON.stringify(validationError.details)}`);
       return res.status(200).json({ message: 'Purchase order validation failed', details: validationError.details });
