@@ -2094,53 +2094,9 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         }
 
         try {
-            const templatePath = path.join(__dirname, '..', 'assets', 'participantTaxInvoiceAG.json');
+            const templatePath = isLowCatBoard ? path.join(__dirname, '..', 'assets', 'taxInvoiceAG.json') : path.join(__dirname, '..', 'assets', 'participantTaxInvoiceAG.json');
             const templateData = await fs.readFile(templatePath, 'utf8');
             const template = JSON.parse(templateData);
-            
-            // Modify template for Low-Cat: update table headers and client details
-            if (isLowCatBoard) {
-                // Find the orders table and update headers
-                const ordersTable = template.schemas.find(schema => schema.name === 'orders');
-                if (ordersTable && ordersTable.head) {
-                    // Low-Cat: Participant Name, Date, Description, Unit, Quantity, Unit Price, GST, Total Amount
-                    ordersTable.head = [
-                        'Participant Name',
-                        'Date',
-                        'Description',
-                        'Unit',
-                        'Quantity',
-                        'Unit Price',
-                        'GST',
-                        'Total Amount'
-                    ];
-                    // Update head width percentages for 8 columns
-                    ordersTable.headWidthPercentages = [
-                        12, // Participant Name
-                        8.58838773307389, // Date
-                        19.909753763428345, // Description
-                        9.210988048382529, // Unit
-                        11.623020229158573, // Quantity
-                        12.364999987595796, // Unit Price
-                        7.4860869131589585, // GST
-                        18.216118536753712 // Total Amount
-                    ];
-                }
-                
-                // Update client details text to use "Receiver" instead of "Participant"
-                const clientDetailsSchema = template.schemas.find(schema => schema.name === 'clientDetails');
-                if (clientDetailsSchema) {
-                    clientDetailsSchema.text = "Invoiced  to:\n\n{Receiver}\n{Address}\n{Suburb} \n{State} {Postcode}";
-                    clientDetailsSchema.content = JSON.stringify({
-                        "Address": "ADDRESS",
-                        "Suburb": "SUBURB",
-                        "State": "STATE",
-                        "Postcode": "POSTCODE",
-                        "Receiver": "RECEIVER"
-                    });
-                    clientDetailsSchema.variables = ["Address", "Suburb", "State", "Postcode", "Receiver"];
-                }
-            }
 
             const logoBase64 = await getLogoData(business);
 
