@@ -1771,7 +1771,8 @@ export default function InvoiceGenerator() {
         items: selectedRecords,
         participantName: participantName,
         invoiceDate: new Date(invoiceDate).toISOString(),
-        dueDate: new Date(dueDate).toISOString()
+        dueDate: new Date(dueDate).toISOString(),
+        isLowCat: isLowCatBoard
       };
 
       const resp = await axios.post(apiUrl, payload, {

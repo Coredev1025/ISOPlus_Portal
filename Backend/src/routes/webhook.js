@@ -2178,8 +2178,6 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                         if (isLowCatBoard) {
                             receiverName = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || ' ';
                             receiverAddress = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || ' ';
-                            participantSuburb = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_SUBURB) || ' ';
-                            participantState = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_STATE) || ' ';
                         } else {
                             const addressInfo = getAddressFromProfile(participantProfileItem);
                             participantAddress = addressInfo.address || ' ';
@@ -2314,9 +2312,6 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             const clientDetails = isLowCatBoard ? {
                 Receiver: receiverName || participantName, // For Low-Cat: use billing contact
                 Address: receiverAddress || participantAddress, // For Low-Cat: use billing address (includes suburb and state)
-                Suburb: participantSuburb,
-                State: participantState,
-                Postcode: participantPostcode
             } : {
                 Participant: participantName,
                 Address: participantAddress,
