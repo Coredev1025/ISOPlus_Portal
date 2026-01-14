@@ -140,6 +140,8 @@ export default function InvoiceGenerator() {
   const id = pathname.split('/')[2];
   const boardId = pathname.split('/')[4];
   const { workspaces, user, setCurrentWorkspaceId, syncStatuses, setSyncStatuses } = useAppContext();
+  
+  const [boardLabel, setBoardLabel] = useState<string>('');
 
   const [serviceRecords, setServiceRecords] = useState<ServiceRecord[]>([]);
   const [summary, setSummary] = useState<InvoiceSummary>({
@@ -209,6 +211,33 @@ export default function InvoiceGenerator() {
       setCurrentWorkspaceId(null);
     };
   }, [id, setCurrentWorkspaceId]);
+
+  useEffect(() => {
+    const fetchBoardLabel = async () => {
+      try {
+        const response = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${boardId}`,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            }
+          }
+        );
+        if (response.data?.board?.label) {
+          setBoardLabel(response.data.board.label);
+        }
+      } catch (err) {
+        console.error('Error fetching board label:', err);
+      }
+    };
+
+    if (boardId) {
+      fetchBoardLabel();
+    }
+  }, [boardId]);
+
+  const isLowCatBoard = boardLabel === 'Care Management - SaH - Low Cat';
 
   const handleManualRefresh = useCallback(async (silent = false, clearFilters = false) => {
     if (!id || !boardId) {
@@ -987,7 +1016,109 @@ export default function InvoiceGenerator() {
   const totalPages = Math.ceil(summary.totalRecords / ITEMS_PER_PAGE);
   const currentItems = serviceRecords; // Use the paginated data directly from the backend
 
-  const tableColumns: TableColumn[] = [
+  const tableColumns: TableColumn[] = isLowCatBoard ? [
+    {
+      key: 'participant',
+      label: 'Participant Name',
+      className: 'min-w-[200px]',
+      render: (record) => record.participant || '-'
+    },
+    {
+      key: 'paymentStatus',
+      label: 'Payment Status',
+      className: 'min-w-[180px]',
+      render: (record) => record.paymentStatus || '-'
+    },
+    {
+      key: 'service',
+      label: 'Service',
+      className: 'min-w-[220px]',
+      render: (record) => record.service || '-'
+    },
+    {
+      key: 'scheduledServiceDate',
+      label: 'Scheduled Service Date',
+      className: 'min-w-[220px]',
+      render: (record) => formatDisplayDate(record.scheduledServiceDate)
+    },
+    {
+      key: 'serviceDeliveryDate',
+      label: 'Service Delivery Date',
+      className: 'min-w-[220px]',
+      render: (record) => formatDisplayDate(record.serviceDeliveryDate)
+    },
+    {
+      key: 'transactionStatus',
+      label: 'Transaction Status',
+      className: 'min-w-[220px]',
+      render: (record) => record.transactionStatus || '-'
+    },
+    {
+      key: 'unit',
+      label: 'Unit',
+      className: 'min-w-[140px]',
+      render: (record) => record.unit || '-'
+    },
+    {
+      key: 'quantity',
+      label: 'Quantity',
+      className: 'min-w-[120px]',
+      render: (record) => (typeof record.quantity === 'number' ? record.quantity : record.quantity ?? '-')
+    },
+    {
+      key: 'unitPrice',
+      label: 'Unit Price',
+      className: 'min-w-[150px]',
+      render: (record) => formatCurrency(record.unitPrice)
+    },
+    {
+      key: 'totalAmount',
+      label: 'Total Amount',
+      className: 'min-w-[150px]',
+      render: (record) => formatCurrency(record.totalAmount)
+    },
+    {
+      key: 'fundingSource',
+      label: 'Funding Source',
+      className: 'min-w-[200px]',
+      render: (record) => record.fundingSource || '-'
+    },
+    {
+      key: 'notes',
+      label: 'Notes',
+      className: 'min-w-[220px]',
+      render: (record) => {
+        const cleanNotes = stripHtml(record.notes);
+        return cleanNotes ? (
+          <span title={cleanNotes} className="block max-h-12 overflow-hidden text-sm text-muted-foreground">
+            {cleanNotes}
+          </span>
+        ) : '-';
+      }
+    },
+    {
+      key: 'fileUrl',
+      label: 'PDF Download',
+      className: 'min-w-[100px]',
+      render: (record) => {
+        if (record.fileUrl) {
+          return (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-2"
+              onClick={() => handleDownloadPDF(record.fileUrl!, record.invoiceNumber)}
+              title="Download PDF Invoice"
+            >
+              <Download className="h-4 w-4" />
+              {record.invoiceNumber ? `Invoice #${record.invoiceNumber}` : 'Download'}
+            </Button>
+          );
+        }
+        return '-';
+      }
+    }
+  ] : [
     {
       key: 'paymentStatus',
       label: 'Payment Status',
@@ -1517,7 +1648,8 @@ export default function InvoiceGenerator() {
         items: selectedRecords, // Keep items for backward compatibility
         participantName: participantName,
         invoiceDate: new Date(invoiceDate).toISOString(),
-        dueDate: new Date(dueDate).toISOString()
+        dueDate: new Date(dueDate).toISOString(),
+        isLowCat: isLowCatBoard // Pass Low-Cat flag to backend
       };
 
       const resp = await axios.post(apiUrl, payload, {
@@ -1715,9 +1847,13 @@ export default function InvoiceGenerator() {
             {/* Header with Export Buttons */}
             <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
               <div className="space-y-2">
-                <h1 className="text-2xl font-bold">Invoice Generator</h1>
+                <h1 className="text-2xl font-bold">
+                  {isLowCatBoard ? 'Invoice Generator (Low-Cat)' : 'Invoice Generator'}
+                </h1>
                 <p className="text-muted-foreground">
-                  Manage service records, submit claims and generate participant tax invoices.
+                  {isLowCatBoard 
+                    ? 'Manage service records, submit claims and generate participant tax invoices.'
+                    : 'Manage service records, submit claims and generate participant tax invoices.'}
                 </p>
               </div>
               <div className="flex flex-col items-end gap-3">
@@ -1765,7 +1901,7 @@ export default function InvoiceGenerator() {
                         onClick={handleOpenInvoiceModal}
                       >
                         <Receipt className="h-4 w-4" />
-                        Participant Tax Invoice
+                        {isLowCatBoard ? 'Tax Invoice' : 'Participant Tax Invoice'}
                       </Button>
                     </div>
                     <div className="flex items-start gap-2 text-sm text-muted-foreground">
@@ -1921,7 +2057,7 @@ export default function InvoiceGenerator() {
             </div>
 
             {/* Summary Cards - Under Filter Section */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+            <div className={`grid grid-cols-1 md:grid-cols-${isLowCatBoard ? '2' : '4'} gap-6 mb-6`}>
               <Card className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
@@ -1942,27 +2078,31 @@ export default function InvoiceGenerator() {
                 </div>
               </Card>
 
-              <Card className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Government Subsidy</p>
-                    <p className="text-2xl font-bold text-green-600">{formatCurrency(filteredSummary.totalGovSubsidy)}</p>
-                  </div>
-                  <CheckCircle className="h-8 w-8 text-green-600" />
-                </div>
-              </Card>
+              {!isLowCatBoard && (
+                <>
+                  <Card className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Total Government Subsidy</p>
+                        <p className="text-2xl font-bold text-green-600">{formatCurrency(filteredSummary.totalGovSubsidy)}</p>
+                      </div>
+                      <CheckCircle className="h-8 w-8 text-green-600" />
+                    </div>
+                  </Card>
 
-              <Card className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Participant Contribution</p>
-                    <p className="text-2xl font-bold text-purple-600">
-                      {formatCurrency(filteredSummary.totalParticipantContribution)}
-                    </p>
-                  </div>
-                  <Percent className="h-8 w-8 text-purple-600" />
-                </div>
-              </Card>
+                  <Card className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Total Participant Contribution</p>
+                        <p className="text-2xl font-bold text-purple-600">
+                          {formatCurrency(filteredSummary.totalParticipantContribution)}
+                        </p>
+                      </div>
+                      <Percent className="h-8 w-8 text-purple-600" />
+                    </div>
+                  </Card>
+                </>
+              )}
             </div>
 
             {/* Service Records Title */}
@@ -2181,7 +2321,9 @@ export default function InvoiceGenerator() {
                 Generate Invoice
               </DialogTitle>
               <DialogDescription>
-                Select items and enter invoice details to generate a participant tax invoice
+                {isLowCatBoard 
+                  ? 'Select items and enter invoice details to generate a participant tax invoice'
+                  : 'Select items and enter invoice details to generate a participant tax invoice'}
               </DialogDescription>
             </DialogHeader>
 
