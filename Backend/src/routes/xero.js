@@ -30,7 +30,7 @@ import {
   getContactByEmail,
   findOrCreateItem
 } from '../services/xero.js';
-import { Item } from '../dto/itemsPayload.js';
+import { Item as ItemPayloadDTO } from '../dto/itemsPayload.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
 
 dotenv.config();
@@ -201,7 +201,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
   const payload = req.body;
   const { item } = await validatePayload(payload, req);
   const mappedValues = mapInvoiceValuesToJobDTO(item.values);
-  const { error: validationError } = Item.validate('Job', mappedValues);
+  const { error: validationError } = ItemPayloadDTO.validate('Job', mappedValues);
   if (validationError) {
     await setIntegrationMessage(workspaceId, boardId, item.id,
       `ERROR: Invoice validation failed: ${JSON.stringify(validationError.details)}`);
@@ -942,7 +942,7 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
     integrationMessage: contactValues['Integration Message'],
   };
 
-  const { error: validationError } = Item.validate('Contact', mappedContact);
+  const { error: validationError } = ItemPayloadDTO.validate('Contact', mappedContact);
   if (validationError) {
     await setIntegrationMessage(workspaceId, boardId, item.id, `ERROR: Contact validation failed: ${JSON.stringify(validationError.details)}`);
     return res.status(200).json({ message: 'Contact validation failed', details: validationError.details });
