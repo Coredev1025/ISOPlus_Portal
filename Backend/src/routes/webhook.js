@@ -2176,6 +2176,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                         participantName = profileName || ' ';
 
                         if (isLowCatBoard) {
+
                             receiverName = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || ' ';
                             // Billing address should include suburb and state
                             const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || ' ';
@@ -2325,11 +2326,6 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 
             billingContact = receiverName || participantName;
             billingAddress = receiverAddress || participantAddress;
-            
-            const clientDetails = {
-                "Billing Contact": billingContact,
-                "Billing Address": billingAddress
-            };
 
             // Generate the PDF with all items
             const pdfBytes = await generate({
@@ -2340,7 +2336,10 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                         subtotal: subtotalValue,
                         totalGST: formatCurrencyValue(0),
                         total: totalAUDValue,
-                        clientDetails: JSON.stringify(clientDetails),
+                        clientDetails: JSON.stringify({
+                            "Billing Contact": billingContact,
+                            "Billing Address": billingAddress
+                        }),
                         invoiceDetails: JSON.stringify({
                             Date: new Date(invoiceDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }),
                             "Invoice Number": invoiceNumber
