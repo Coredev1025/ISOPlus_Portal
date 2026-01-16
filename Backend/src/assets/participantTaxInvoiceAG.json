@@ -42,13 +42,13 @@
             {
                 "name": "clientDetails",
                 "type": "multiVariableText",
-                "content": "{\"Address\":\"ADDRESS\",\"Suburb\":\"SUBURB\",\"State\":\"STATE\",\"Postcode\":\"POSTCODE\",\"Participant\":\"PARTICIPANT\"}",
+                "content": "{\"Billing Contact\":\"BILLING CONTACT\",\"Billing Address\":\"BILLING ADDRESS\"}",
                 "position": {
                     "x": 20.26,
                     "y": 54.78
                 },
-                "width": 45.77,
-                "height": 28.84,
+                "width": 40.22,
+                "height": 26.99,
                 "rotate": 0,
                 "alignment": "left",
                 "verticalAlignment": "middle",
@@ -66,24 +66,21 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": false,
-                "text": "Invoiced  to:\n\n{Participant}\n{Address}\n{Suburb} \n{State} {Postcode}",
+                "text": "Invoiced  to:\n\n{Billing Contact}\n{Billing Address}\n",
                 "variables": [
-                    "Address",
-                    "Suburb",
-                    "State",
-                    "Postcode",
-                    "Participant"
+                    "Billing Contact",
+                    "Billing Address"
                 ],
                 "required": false
             },
             {
                 "type": "multiVariableText",
                 "position": {
-                    "x": 85.95,
+                    "x": 82.25,
                     "y": 55.31
                 },
                 "content": "{\"Date\":\"16/02/2025\",\"Invoice Number\":\"INVOICE NUMBER\"}",
-                "width": 38.1,
+                "width": 41.8,
                 "height": 30.16,
                 "rotate": 0,
                 "alignment": "left",
@@ -553,5 +550,5 @@
             }
         ]
     },
-    "pdfmeVersion": "5.4.1"
+    "pdfmeVersion": "5.5.6"
 }

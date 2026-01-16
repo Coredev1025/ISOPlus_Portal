@@ -2318,16 +2318,17 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             }
             const gstTotal = formatValue(0); // Total GST: $ 0.00
 
-            // Map client details to match template
-            const clientDetails = isLowCatBoard ? {
-                Receiver: receiverName || participantName, // For Low-Cat: use billing contact
-                Address: receiverAddress || participantAddress, // For Low-Cat: use billing address (includes suburb and state)
-            } : {
-                Participant: participantName,
-                Address: participantAddress,
-                Suburb: participantSuburb,
-                State: participantState,
-                Postcode: participantPostcode
+            // Map client details to match template - both templates expect "Billing Contact" and "Billing Address"
+            let billingContact = '';
+            let billingAddress = '';
+            
+
+            billingContact = receiverName || participantName;
+            billingAddress = receiverAddress || participantAddress;
+            
+            const clientDetails = {
+                "Billing Contact": billingContact,
+                "Billing Address": billingAddress
             };
 
             // Generate the PDF with all items

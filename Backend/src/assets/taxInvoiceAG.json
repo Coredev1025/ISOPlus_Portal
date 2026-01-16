@@ -42,13 +42,13 @@
             {
                 "name": "clientDetails",
                 "type": "multiVariableText",
-                "content": "{\"Address\":\"ADDRESS\",\"Receiver\":\"RECEIVER\"}",
+                "content": "{\"Billing Contact\":\"BILLING CONTACT\",\"Billing Address\":\"BILLING ADDRESS\"}",
                 "position": {
                     "x": 20.26,
                     "y": 54.78
                 },
-                "width": 45.77,
-                "height": 28.84,
+                "width": 40.22,
+                "height": 26.99,
                 "rotate": 0,
                 "alignment": "left",
                 "verticalAlignment": "middle",
@@ -66,21 +66,21 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": false,
-                "text": "Invoiced  to:\n\n{Receiver}\n{Address}",
+                "text": "Invoiced  to:\n\n{Billing Contact}\n{Billing Address}\n",
                 "variables": [
-                    "Address",
-                    "Receiver"
+                    "Billing Contact",
+                    "Billing Address"
                 ],
                 "required": false
             },
             {
                 "type": "multiVariableText",
                 "position": {
-                    "x": 85.95,
+                    "x": 82.25,
                     "y": 55.31
                 },
                 "content": "{\"Date\":\"16/02/2025\",\"Invoice Number\":\"INVOICE NUMBER\"}",
-                "width": 38.1,
+                "width": 41.8,
                 "height": 30.16,
                 "rotate": 0,
                 "alignment": "left",
@@ -186,10 +186,10 @@
                 },
                 "width": 170,
                 "height": 125.08784,
-                "content": "[[\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\"]]",
+                "content": "[[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]]",
                 "showHead": true,
                 "head": [
-                    "Participant Name",
+                    "Participant",
                     "Date",
                     "Description",
                     "Unit",
@@ -199,13 +199,14 @@
                     "Total Amount"
                 ],
                 "headWidthPercentages": [
-                    20,
-                    15,
-                    20,
-                    11,
-                    13,
-                    8,
-                    13
+                    14.640947645856045,
+                    9.245719631383595,
+                    20.1632393191312,
+                    8.164414564711615,
+                    12.364999987595803,
+                    12.673995409829363,
+                    9.24695321541046,
+                    13.499730226081914
                 ],
                 "fontName": "",
                 "tableStyles": {
@@ -549,5 +550,5 @@
             }
         ]
     },
-    "pdfmeVersion": "5.4.1"
+    "pdfmeVersion": "5.5.6"
 }
