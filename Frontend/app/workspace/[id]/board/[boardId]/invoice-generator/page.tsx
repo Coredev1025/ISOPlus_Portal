@@ -1853,7 +1853,7 @@ export default function InvoiceGenerator() {
                 </h1>
                 <p className="text-muted-foreground">
                   {isLowCatBoard 
-                    ? 'Manage service records, submit claims and generate participant tax invoices.'
+                    ? 'Manage service records and generate tax invoices.'
                     : 'Manage service records, submit claims and generate participant tax invoices.'}
                 </p>
               </div>
@@ -2323,7 +2323,7 @@ export default function InvoiceGenerator() {
               </DialogTitle>
               <DialogDescription>
                 {isLowCatBoard 
-                  ? 'Select items and enter invoice details to generate a participant tax invoice'
+                  ? 'Select items and enter invoice details to generate a tax invoice'
                   : 'Select items and enter invoice details to generate a participant tax invoice'}
               </DialogDescription>
             </DialogHeader>

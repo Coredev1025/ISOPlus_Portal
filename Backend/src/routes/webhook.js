@@ -2177,7 +2177,17 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 
                         if (isLowCatBoard) {
                             receiverName = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || ' ';
-                            receiverAddress = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || ' ';
+                            // Billing address should include suburb and state
+                            const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || ' ';
+                            const addressInfo = getAddressFromProfile(participantProfileItem);
+                            const suburb = addressInfo.suburb || '';
+                            const state = addressInfo.state || '';
+                            
+                            // Construct billing address with suburb and state
+                            let billingAddressParts = [billingAddressBase.trim()];
+                            if (suburb) billingAddressParts.push(suburb.trim());
+                            if (state) billingAddressParts.push(state.trim());
+                            receiverAddress = billingAddressParts.filter(p => p).join(', ') || ' ';
                         } else {
                             const addressInfo = getAddressFromProfile(participantProfileItem);
                             participantAddress = addressInfo.address || ' ';
@@ -2308,16 +2318,17 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             }
             const gstTotal = formatValue(0); // Total GST: $ 0.00
 
-            // Map client details to match template
-            const clientDetails = isLowCatBoard ? {
-                Receiver: receiverName || participantName, // For Low-Cat: use billing contact
-                Address: receiverAddress || participantAddress, // For Low-Cat: use billing address (includes suburb and state)
-            } : {
-                Participant: participantName,
-                Address: participantAddress,
-                Suburb: participantSuburb,
-                State: participantState,
-                Postcode: participantPostcode
+            // Map client details to match template - both templates expect "Billing Contact" and "Billing Address"
+            let billingContact = '';
+            let billingAddress = '';
+            
+
+            billingContact = receiverName || participantName;
+            billingAddress = receiverAddress || participantAddress;
+            
+            const clientDetails = {
+                "Billing Contact": billingContact,
+                "Billing Address": billingAddress
             };
 
             // Generate the PDF with all items
