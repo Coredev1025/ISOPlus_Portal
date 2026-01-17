@@ -2175,26 +2175,44 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                         const profileName = getParticipantNameFromProfile(participantProfileItem);
                         participantName = profileName || ' ';
 
-                        if (isLowCatBoard) {
+                        // Always try to get billing contact and billing address from participant profile
+                        // These are the preferred fields for the PDF template
+                        receiverName = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || ' ';
+                        const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || ' ';
+                        
+                        const addressInfo = getAddressFromProfile(participantProfileItem);
+                        participantAddress = addressInfo.address || ' ';
+                        participantSuburb = addressInfo.suburb || ' ';
+                        participantState = addressInfo.state || '';
+                        participantPostcode = addressInfo.postcode || ' ';
 
-                            receiverName = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || ' ';
-                            // Billing address should include suburb and state
-                            const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || ' ';
-                            const addressInfo = getAddressFromProfile(participantProfileItem);
-                            const suburb = addressInfo.suburb || '';
-                            const state = addressInfo.state || '';
-                            
-                            // Construct billing address with suburb and state
+                        if (isLowCatBoard) {
+                            // For LowCat, construct billing address with suburb and state from address info
                             let billingAddressParts = [billingAddressBase.trim()];
-                            if (suburb) billingAddressParts.push(suburb.trim());
-                            if (state) billingAddressParts.push(state.trim());
+                            if (participantSuburb) billingAddressParts.push(participantSuburb.trim());
+                            if (participantState) billingAddressParts.push(participantState.trim());
                             receiverAddress = billingAddressParts.filter(p => p).join(', ') || ' ';
                         } else {
-                            const addressInfo = getAddressFromProfile(participantProfileItem);
-                            participantAddress = addressInfo.address || ' ';
-                            participantSuburb = addressInfo.suburb || ' ';
-                            participantState = addressInfo.state || '';
-                            participantPostcode = addressInfo.postcode || ' ';
+                            // For non-LowCat, use billing address if available, otherwise construct from address fields
+                            if (billingAddressBase && billingAddressBase.trim() !== '') {
+                                receiverAddress = billingAddressBase.trim();
+                            } else {
+                                // Construct full address from address fields
+                                let addressParts = [];
+                                if (participantAddress && participantAddress.trim() !== ' ') {
+                                    addressParts.push(participantAddress.trim());
+                                }
+                                if (participantSuburb && participantSuburb.trim() !== ' ') {
+                                    addressParts.push(participantSuburb.trim());
+                                }
+                                if (participantState && participantState.trim() !== '') {
+                                    addressParts.push(participantState.trim());
+                                }
+                                if (participantPostcode && participantPostcode.trim() !== ' ') {
+                                    addressParts.push(participantPostcode.trim());
+                                }
+                                receiverAddress = addressParts.filter(p => p).join(', ') || ' ';
+                            }
                         }
                     }
                 }
@@ -2320,12 +2338,18 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             const gstTotal = formatValue(0); // Total GST: $ 0.00
 
             // Map client details to match template - both templates expect "Billing Contact" and "Billing Address"
-            let billingContact = '';
-            let billingAddress = '';
+            // Use billing contact/address from profile if available, otherwise fall back to participant name and address
+            let billingContact = (receiverName && receiverName.trim() !== '' && receiverName.trim() !== ' ') 
+                ? receiverName.trim() 
+                : (participantName && participantName.trim() !== '' && participantName.trim() !== ' ' 
+                    ? participantName.trim() 
+                    : ' ');
             
-
-            billingContact = receiverName || participantName;
-            billingAddress = receiverAddress || participantAddress;
+            let billingAddress = (receiverAddress && receiverAddress.trim() !== '' && receiverAddress.trim() !== ' ') 
+                ? receiverAddress.trim() 
+                : (participantAddress && participantAddress.trim() !== '' && participantAddress.trim() !== ' ' 
+                    ? participantAddress.trim() 
+                    : ' ');
 
             // Generate the PDF with all items
             const pdfBytes = await generate({
