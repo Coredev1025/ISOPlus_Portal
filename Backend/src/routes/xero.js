@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import Business from '../models/Business.js';
 import InvoiceNumber from '../models/InvoiceNumber.js';
 import Board from '../models/Board.js';
+import Item from '../models/Item.js';
 import { warn, error, extractContextFromReq } from '../utils/logger.js';
 import { isEmpty } from '../utils/helpers.js';
 import {
@@ -16,6 +17,127 @@ import {
   getQuoteNDISReferencedItems,
   getNDISMasterPlanReferencedItems
 } from '../services/isoplus.js';
+
+// Import helper functions from webhook.js
+const ATTRIBUTE_NAMES = {
+    PARTICIPANT_PROFILE: 'Participant Profile',
+};
+
+const REF_ATTRIBUTE_NAMES = {
+    PROFILE_BILLING_CONTACT: 'Billing Contact',
+    PROFILE_BILLING_ADDRESS: 'Billing Address',
+    PROFILE_ADDRESS: 'Address',
+    PROFILE_SUBURB: 'Suburb',
+    PROFILE_STATE: 'State',
+    PROFILE_POSTCODE: 'Postcode',
+    PROFILE_POST_CODE: 'Post Code',
+};
+
+async function bulkFetchReferenceItemsFromDB(workspaceId, boardId, itemIds) {
+    if (!itemIds || itemIds.length === 0) return new Map();
+
+    // Remove duplicates and nulls
+    const uniqueIds = [...new Set(itemIds.filter(Boolean).map(id => {
+        if (typeof id === 'object' && id.id) return id.id.toString();
+        if (typeof id === 'object' && id) return id.toString();
+        return id?.toString();
+    }).filter(Boolean))];
+
+    if (uniqueIds.length === 0) return new Map();
+
+    // First try to fetch from the same board
+    let items = await Item.find({
+        workspaceId,
+        boardId,
+        itemId: { $in: uniqueIds }
+    }).lean();
+
+    // Build lookup map
+    const itemMap = new Map();
+    for (const item of items) {
+        itemMap.set(item.itemId, item);
+    }
+
+    // Check if we're missing any items - they might be in other boards
+    const foundIds = new Set(items.map(i => i.itemId));
+    const missingIds = uniqueIds.filter(id => !foundIds.has(id));
+
+    if (missingIds.length > 0) {
+        // Fetch missing items from ANY board in the workspace
+        const crossBoardItems = await Item.find({
+            workspaceId,
+            itemId: { $in: missingIds }
+        }).lean();
+
+        for (const item of crossBoardItems) {
+            if (!itemMap.has(item.itemId)) {
+                itemMap.set(item.itemId, item);
+            }
+        }
+    }
+
+    return itemMap;
+}
+
+function extractRefId(value) {
+    if (!value) return null;
+    if (Array.isArray(value) && value.length > 0) {
+        const first = value[0];
+        if (typeof first === 'object' && first.id) return first.id.toString();
+        if (typeof first === 'string') return first;
+        return first?.toString();
+    }
+    if (typeof value === 'object' && value.id) return value.id.toString();
+    if (typeof value === 'string') return value;
+    return value?.toString();
+}
+
+function getValueFromFlatData(item, attributeName) {
+    if (!item?.data) return null;
+
+    // Handle array of attribute names (try each until one is found)
+    const attributeNames = Array.isArray(attributeName) ? attributeName : [attributeName];
+
+    for (const attrName of attributeNames) {
+        // Check flat format (data.key)
+        if (item.data[attrName] !== undefined && item.data[attrName] !== null) {
+            return item.data[attrName];
+        }
+    }
+
+    // Check values array format (data.values) - for older format support
+    if (Array.isArray(item.data.values)) {
+        for (const attrName of attributeNames) {
+            const entry = item.data.values.find(v => v.attribute?.name === attrName);
+            if (entry?.data !== undefined && entry?.data !== null) {
+                return entry.data;
+            }
+        }
+    }
+
+    return null;
+}
+
+function getParticipantNameFromProfile(profileItem) {
+    if (!profileItem) return null;
+
+    // Try different name attributes
+    const nameAttrs = [
+        REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT,
+        'Full Name/Preferred Name',
+        'Preferred Name',
+        'First Name',
+        'Last Name',
+        'Name'
+    ];
+
+    const name = getValueFromFlatData(profileItem, nameAttrs);
+    if (!name) return null;
+
+    // Handle object format
+    if (typeof name === 'object' && name.name) return name.name;
+    return String(name);
+}
 import {
   configure,
   ensureAuthenticated,
@@ -1575,21 +1697,110 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       await validateItemBelongsToTenant(workspaceId, boardId, item.id);
     }
 
-    // Get participant name - for Low-Cat, prefer billing contact if available
-    let effectiveParticipantName = participantName || items[0].participant || '';
-    let billingContactName = req.body?.billingContact || '';
-    let billingAddress = req.body?.billingAddress || '';
+    // OPTIMIZED: Collect all reference IDs first, then bulk fetch from database
+    const participantProfileIds = new Set();
 
-    if (isLowCatBoard && billingContactName) {
-      effectiveParticipantName = billingContactName; // Use billing contact for Low-Cat
+    // Extract all reference IDs from items
+    for (const item of items) {
+      // Get participant profile ID from the actual database item
+      const dbItem = await Item.findOne({ workspaceId, boardId, itemId: item.id.toString() }).lean();
+      if (dbItem) {
+        const participantProfileValue = getValueFromFlatData(dbItem, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
+        const participantProfileId = extractRefId(participantProfileValue);
+        if (participantProfileId) participantProfileIds.add(participantProfileId);
+      }
     }
 
+    // Bulk fetch all reference items from MongoDB (NO API calls!)
+    const allRefIds = [...participantProfileIds];
+    const refItemsMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, allRefIds);
+
+    // Get participant name from first item using database lookup
+    let participantNameFromDB = ' ';
+    let receiverName = ' ';
+    let receiverAddress = ' ';
+
+    if (items.length > 0) {
+      const firstItem = await Item.findOne({ workspaceId, boardId, itemId: items[0].id.toString() }).lean();
+      if (firstItem) {
+        // Get Participant Profile reference from DB lookup map
+        const participantProfileValue = getValueFromFlatData(firstItem, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
+        const participantProfileId = extractRefId(participantProfileValue);
+
+        if (participantProfileId) {
+          const participantProfileItem = refItemsMap.get(participantProfileId);
+          if (participantProfileItem) {
+            // Use helper functions to get participant profile data
+            const profileName = getParticipantNameFromProfile(participantProfileItem);
+            participantNameFromDB = profileName || ' ';
+
+            // Always try to get billing contact and billing address from participant profile
+            // These are the preferred fields for the PDF template
+            receiverName = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || ' ';
+            const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || ' ';
+
+            // Get address info for fallback construction
+            const addressInfo = {
+              address: getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_ADDRESS) || ' ',
+              suburb: getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_SUBURB) || ' ',
+              state: getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_STATE) || '',
+              postcode: getValueFromFlatData(participantProfileItem, [REF_ATTRIBUTE_NAMES.PROFILE_POSTCODE, REF_ATTRIBUTE_NAMES.PROFILE_POST_CODE]) || ' '
+            };
+
+            if (isLowCatBoard) {
+              // For LowCat, construct billing address with suburb and state from address info
+              let billingAddressParts = [billingAddressBase.trim()];
+              if (addressInfo.suburb) billingAddressParts.push(addressInfo.suburb.trim());
+              if (addressInfo.state) billingAddressParts.push(addressInfo.state.trim());
+              receiverAddress = billingAddressParts.filter(p => p).join(', ') || ' ';
+            } else {
+              // For non-LowCat, use billing address if available, otherwise construct from address fields
+              if (billingAddressBase && billingAddressBase.trim() !== '') {
+                receiverAddress = billingAddressBase.trim();
+              } else {
+                // Construct full address from address fields
+                let addressParts = [];
+                if (addressInfo.address && addressInfo.address.trim() !== ' ') {
+                  addressParts.push(addressInfo.address.trim());
+                }
+                if (addressInfo.suburb && addressInfo.suburb.trim() !== ' ') {
+                  addressParts.push(addressInfo.suburb.trim());
+                }
+                if (addressInfo.state && addressInfo.state.trim() !== '') {
+                  addressParts.push(addressInfo.state.trim());
+                }
+                if (addressInfo.postcode && addressInfo.postcode.trim() !== ' ') {
+                  addressParts.push(addressInfo.postcode.trim());
+                }
+                receiverAddress = addressParts.filter(p => p).join(', ') || ' ';
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Get participant name - use from DB if available, fallback to request
+    let effectiveParticipantName = participantNameFromDB && participantNameFromDB.trim() !== ' '
+      ? participantNameFromDB.trim()
+      : (participantName || items[0].participant || '');
+
+    // Map client details to match template - both templates expect "Billing Contact" and "Billing Address"
+    // Use billing contact/address from profile if available, otherwise fall back to participant name and address
+    let billingContact = (receiverName && receiverName.trim() !== '' && receiverName.trim() !== ' ')
+      ? receiverName.trim()
+      : (effectiveParticipantName && effectiveParticipantName.trim() !== '' && effectiveParticipantName.trim() !== ' '
+        ? effectiveParticipantName.trim()
+        : ' ');
+
+    let billingAddress = (receiverAddress && receiverAddress.trim() !== '' && receiverAddress.trim() !== ' ')
+      ? receiverAddress.trim()
+      : ' ';
+
     // Try to find or create contact in Xero
-    // For participant tax invoices, we'll use the participant name as the contact name
-    // If email is available in request body, use it; otherwise try to find by name
     let contact = null;
     const participantEmail = req.body?.participantEmail || '';
-    
+
     if (participantEmail) {
       contact = await getContactByEmail(participantEmail);
     }
@@ -1597,37 +1808,61 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     // If contact not found by email, try to create one with available information
     if (!contact) {
       await setIntegrationMessage(workspaceId, boardId, items[0].id, "The contact does not exist in Xero, creating...");
-      
+
       // Parse participant name into first and last name
-      const nameParts = effectiveParticipantName.trim().split(/\s+/);
+      const nameParts = billingContact.trim().split(/\s+/);
       const firstName = nameParts[0] || '';
       const lastName = nameParts.slice(1).join(' ') || '';
 
-      // For Low-Cat, use billing address if available, otherwise fallback to participant address
-      const contactAddress = isLowCatBoard && billingAddress ? billingAddress : (req.body?.participantAddress || ' ');
-      const contactSuburb = (req.body?.participantSuburb || ' ');
-      const contactState = (req.body?.participantState || ' ');
-      const contactPostcode = (req.body?.participantPostcode || ' ');
+      // Use billing address for contact creation
+      let contactAddress = billingAddress;
+      let contactSuburb = '';
+      let contactState = '';
+      const contactPostcode = ' '; // Default, will be parsed from address if available
+
+      // Parse address components from billing address
+      if (billingAddress && billingAddress !== ' ') {
+        const addressParts = billingAddress.split(',').map(p => p.trim()).filter(p => p);
+        if (addressParts.length >= 3) {
+          // Format: "Address, Suburb, State Postcode" or "Address, Suburb, State"
+          contactAddress = addressParts.slice(0, -2).join(', ') || addressParts[0];
+          contactSuburb = addressParts[addressParts.length - 2] || '';
+          const lastPart = addressParts[addressParts.length - 1] || '';
+          // Try to separate state and postcode
+          const statePostcodeMatch = lastPart.match(/^([A-Z]{2,3})\s+(\d{4})$/);
+          if (statePostcodeMatch) {
+            contactState = statePostcodeMatch[1];
+            // contactPostcode = statePostcodeMatch[2]; // Keep as space for now
+          } else {
+            contactState = lastPart;
+          }
+        } else if (addressParts.length === 2) {
+          contactAddress = addressParts[0];
+          contactSuburb = addressParts[1];
+        } else {
+          contactAddress = billingAddress;
+        }
+      }
 
       contact = await createOrUpdateContact({
-        name: effectiveParticipantName,
+        name: billingContact,
         firstName: firstName,
         lastName: lastName || firstName, // Use firstName as lastName if not provided
         phones: participantEmail ? [] : [{ phoneType: 'DEFAULT', phoneNumber: req.body?.participantPhone || '' }],
         addresses: [
           {
             addressType: 'POBOX',
-            addressLine1: contactAddress,
-            city: contactSuburb,
-            region: contactState,
-            postalCode: contactPostcode.toString()
+            addressLine1: contactAddress || ' ',
+            city: contactSuburb || ' ',
+            region: contactState || ' ',
+            postalCode: contactPostcode
           },
           {
             addressType: 'STREET',
-            addressLine1: contactAddress,
-            city: contactSuburb,
-            region: contactState,
-            postalCode: contactPostcode.toString()
+            addressLine1: contactAddress || ' ',
+            city: contactSuburb || ' ',
+            region: contactState || ' ',
+            postalCode: contactPostcode
           }
         ],
         emailAddress: participantEmail || undefined
@@ -1663,7 +1898,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         // Final fallback
         description = 'Service';
       }
-      
+
       const quantity = typeof item.quantity === 'number' ? item.quantity : Number(item.quantity || 0);
       const unitPrice = typeof item.unitPrice === 'number' ? item.unitPrice : Number(item.unitPrice || 0);
       const totalItemAmount = typeof item.totalAmount === 'number' ? item.totalAmount : Number(item.totalAmount || 0);
@@ -1678,7 +1913,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       if (lineAmount > 0) {
         // Calculate unit price: if quantity > 0, divide line amount by quantity; otherwise use the unitPrice from item
         const calculatedUnitPrice = quantity > 0 ? lineAmount / quantity : (unitPrice > 0 ? unitPrice : lineAmount);
-        
+
         lineItems.push({
           description: description || 'Service',
           quantity: formatValue(quantity || 1),
@@ -1697,10 +1932,10 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     }
 
     // Create invoice in Xero
-    const invoiceReference = isLowCatBoard 
-      ? `Tax Invoice - ${effectiveParticipantName}`
-      : `Participant Tax Invoice - ${effectiveParticipantName}`;
-    
+    const invoiceReference = isLowCatBoard
+      ? `Tax Invoice - ${billingContact}`
+      : `Participant Tax Invoice - ${billingContact}`;
+
     const invoice = {
       type: 'ACCREC',
       contact: { contactID: contact.contactID },
@@ -1717,7 +1952,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     const successMessage = isLowCatBoard
       ? "Your tax invoice has been created successfully in Xero."
       : "Your participant tax invoice has been created successfully in Xero.";
-    
+
     await Promise.all(items.map(async (item) => {
       await setIntegrationMessage(workspaceId, boardId, item.id, successMessage);
       await setGeneratedField(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`);
@@ -1727,11 +1962,11 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     const auditAction = isLowCatBoard
       ? "Create Xero Tax Invoice"
       : "Create Xero Participant Tax Invoice";
-    
+
     logAuditTrail({
       workspaceId,
       action: auditAction,
-      detail: `Invoice created successfully, invoice number: ${createdInvoice.invoiceNumber}, ${isLowCatBoard ? 'receiver' : 'participant'}: ${effectiveParticipantName}, items: ${items.length}`,
+      detail: `Invoice created successfully, invoice number: ${createdInvoice.invoiceNumber}, ${isLowCatBoard ? 'receiver' : 'participant'}: ${billingContact}, items: ${items.length}`,
       req
     });
 
@@ -1745,17 +1980,17 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       invoiceId: createdInvoice.invoiceID,
       invoiceUrl: createdInvoice.url,
       itemCount: items.length,
-      participantName: effectiveParticipantName
+      participantName: billingContact
     });
   } catch (err) {
     const errorMessage = (err && err.message) ? err.message : 'Server error: An unknown error occurred. Please contact support via ISO+™ Portal.';
-    error('Xero-Service', 'Error creating participant tax invoice in Xero', { 
+    error('Xero-Service', 'Error creating participant tax invoice in Xero', {
       message: errorMessage,
       workspaceId,
       boardId,
       itemCount: items.length
     }, extractContextFromReq(req));
-    
+
     // Update integration messages for all items
     await Promise.all(items.map(async (item) => {
       await setIntegrationMessage(workspaceId, boardId, item.id, `Error: ${errorMessage}`);
