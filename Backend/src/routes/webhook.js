@@ -2153,10 +2153,6 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 
             // Fetch participant profile details from first item using database lookup
             let participantName = ' ';
-            let participantAddress = ' ';
-            let participantSuburb = ' ';
-            let participantState = ' ';
-            let participantPostcode = ' ';
             let receiverName = ' ';
             let receiverAddress = ' ';
 
@@ -2179,41 +2175,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                         // These are the preferred fields for the PDF template
                         receiverName = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || ' ';
                         const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || ' ';
-                        
-                        const addressInfo = getAddressFromProfile(participantProfileItem);
-                        participantAddress = addressInfo.address || ' ';
-                        participantSuburb = addressInfo.suburb || ' ';
-                        participantState = addressInfo.state || '';
-                        participantPostcode = addressInfo.postcode || ' ';
-
-                        if (isLowCatBoard) {
-                            // For LowCat, construct billing address with suburb and state from address info
-                            let billingAddressParts = [billingAddressBase.trim()];
-                            if (participantSuburb) billingAddressParts.push(participantSuburb.trim());
-                            if (participantState) billingAddressParts.push(participantState.trim());
-                            receiverAddress = billingAddressParts.filter(p => p).join(', ') || ' ';
-                        } else {
-                            // For non-LowCat, use billing address if available, otherwise construct from address fields
-                            if (billingAddressBase && billingAddressBase.trim() !== '') {
-                                receiverAddress = billingAddressBase.trim();
-                            } else {
-                                // Construct full address from address fields
-                                let addressParts = [];
-                                if (participantAddress && participantAddress.trim() !== ' ') {
-                                    addressParts.push(participantAddress.trim());
-                                }
-                                if (participantSuburb && participantSuburb.trim() !== ' ') {
-                                    addressParts.push(participantSuburb.trim());
-                                }
-                                if (participantState && participantState.trim() !== '') {
-                                    addressParts.push(participantState.trim());
-                                }
-                                if (participantPostcode && participantPostcode.trim() !== ' ') {
-                                    addressParts.push(participantPostcode.trim());
-                                }
-                                receiverAddress = addressParts.filter(p => p).join(', ') || ' ';
-                            }
-                        }
+                        receiverAddress = billingAddressBase.trim() || ' ';
                     }
                 }
             }
@@ -2347,9 +2309,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             
             let billingAddress = (receiverAddress && receiverAddress.trim() !== '' && receiverAddress.trim() !== ' ') 
                 ? receiverAddress.trim() 
-                : (participantAddress && participantAddress.trim() !== '' && participantAddress.trim() !== ' ' 
-                    ? participantAddress.trim() 
-                    : ' ');
+                : ' ';
 
             // Generate the PDF with all items
             const pdfBytes = await generate({
