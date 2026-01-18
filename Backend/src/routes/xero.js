@@ -1818,7 +1818,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       let contactAddress = billingAddress;
       let contactSuburb = '';
       let contactState = '';
-      const contactPostcode = ' '; // Default, will be parsed from address if available
+      let contactPostcode = ''; // Default, will be parsed from address if available
 
       // Parse address components from billing address
       if (billingAddress && billingAddress !== ' ') {
@@ -1832,7 +1832,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
           const statePostcodeMatch = lastPart.match(/^([A-Z]{2,3})\s+(\d{4})$/);
           if (statePostcodeMatch) {
             contactState = statePostcodeMatch[1];
-            // contactPostcode = statePostcodeMatch[2]; // Keep as space for now
+            contactPostcode = statePostcodeMatch[2];
           } else {
             contactState = lastPart;
           }
@@ -1855,14 +1855,14 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             addressLine1: contactAddress || ' ',
             city: contactSuburb || ' ',
             region: contactState || ' ',
-            postalCode: contactPostcode
+            postalCode: contactPostcode || ' '
           },
           {
             addressType: 'STREET',
             addressLine1: contactAddress || ' ',
             city: contactSuburb || ' ',
             region: contactState || ' ',
-            postalCode: contactPostcode
+            postalCode: contactPostcode || ' '
           }
         ],
         emailAddress: participantEmail || undefined
