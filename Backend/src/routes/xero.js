@@ -1814,6 +1814,27 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       // city/region/postalCode as optional extras when available.
       const contactAddress = billingAddress || ' ';
       
+      console.log("Contact Payload: " + JSON.stringify({
+        name: billingContact,
+        firstName: firstName,
+        lastName: lastName || firstName, // Use firstName as lastName if not provided
+        phones: participantEmail ? [] : participantPhoneNumber ? [{ phoneType: 'DEFAULT', phoneNumber: participantPhoneNumber }] : [],
+        addresses: contactAddress ? [{
+          addressType: 'POBOX',
+          addressLine1: contactAddress.split(',')[0]?.trim()?.toString() || ' ',
+          city: contactAddress.split(',')[1]?.trim()?.toString() || ' ',
+          region: contactAddress.split(',')[2]?.trim()?.toString() || ' ',
+          postalCode: contactAddress.split(',')[3]?.trim()?.toString() || ' '
+        }, {
+          addressType: 'STREET',
+          addressLine1: contactAddress.split(',')[0]?.trim()?.toString() || ' ',
+          city: contactAddress.split(',')[1]?.trim()?.toString() || ' ',
+          region: contactAddress.split(',')[2]?.trim()?.toString() || ' ',
+          postalCode: contactAddress.split(',')[3]?.trim()?.toString() || ' '
+        }] : [],
+        emailAddress: participantEmail || undefined
+      }));
+
       contact = await createOrUpdateContact({
         name: billingContact,
         firstName: firstName,
