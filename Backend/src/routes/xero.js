@@ -1821,7 +1821,10 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         phones: participantEmail ? [] : participantPhoneNumber ? [{ phoneType: 'DEFAULT', phoneNumber: participantPhoneNumber }] : [],
         addresses: contactAddress ? [{
           addressType: 'POBOX',
-          addressLine1: contactAddress || ' '
+          addressLine1: contactAddress.split(',')[0]?.trim()?.toString() || ' ',
+          city: contactAddress.split(',')[1]?.trim()?.toString() || ' ',
+          region: contactAddress.split(',')[2]?.trim()?.toString() || ' ',
+          postalCode: contactAddress.split(',')[3]?.trim()?.toString() || ' '
         }] : [],
         emailAddress: participantEmail || undefined
       });
