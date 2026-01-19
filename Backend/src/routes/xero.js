@@ -24,6 +24,7 @@ const ATTRIBUTE_NAMES = {
 };
 
 const REF_ATTRIBUTE_NAMES = {
+    PROFILE_EMAIL_ADDRESS: 'Email',
     PROFILE_BILLING_CONTACT: 'Billing Contact',
     PROFILE_BILLING_ADDRESS: 'Billing Address',
     PROFILE_ADDRESS: 'Address',
@@ -1721,6 +1722,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     let receiverName = ' ';
     let receiverAddress = ' ';
     let participantPhoneNumber = '';
+    let participantEmail = '';
 
     if (items.length > 0) {
       const firstItem = await Item.findOne({ workspaceId, boardId, itemId: items[0].id.toString() }).lean();
@@ -1741,6 +1743,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             receiverName = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || ' ';
             const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || ' ';
             participantPhoneNumber = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_PHONE_NUMBER) || ' ';
+            participantEmail = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_EMAIL_ADDRESS) || ' ';
             // Get address info for fallback construction
             const addressInfo = {
               address: getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_ADDRESS) || ' ',
@@ -1794,7 +1797,6 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 
     // Try to find or create contact in Xero
     let contact = null;
-    const participantEmail = req.body?.participantEmail || '';
 
     if (participantEmail) {
       contact = await getContactByEmail(participantEmail);
@@ -1813,27 +1815,6 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       // We keep the entire Billing Address string in addressLine1 and only use
       // city/region/postalCode as optional extras when available.
       const contactAddress = billingAddress || ' ';
-      
-      console.log("Contact Payload: " + JSON.stringify({
-        name: billingContact,
-        firstName: firstName,
-        lastName: lastName || firstName, // Use firstName as lastName if not provided
-        phones: participantEmail ? [] : participantPhoneNumber ? [{ phoneType: 'DEFAULT', phoneNumber: participantPhoneNumber }] : [],
-        addresses: contactAddress ? [{
-          addressType: 'POBOX',
-          addressLine1: contactAddress.split(',')[0]?.trim()?.toString() || ' ',
-          city: contactAddress.split(',')[1]?.trim()?.toString() || ' ',
-          region: contactAddress.split(',')[2]?.trim()?.toString() || ' ',
-          postalCode: contactAddress.split(',')[3]?.trim()?.toString() || ' '
-        }, {
-          addressType: 'STREET',
-          addressLine1: contactAddress.split(',')[0]?.trim()?.toString() || ' ',
-          city: contactAddress.split(',')[1]?.trim()?.toString() || ' ',
-          region: contactAddress.split(',')[2]?.trim()?.toString() || ' ',
-          postalCode: contactAddress.split(',')[3]?.trim()?.toString() || ' '
-        }] : [],
-        emailAddress: participantEmail || undefined
-      }));
 
       const addressParts = contactAddress ? contactAddress.split(',').map(p => p?.trim()).filter(Boolean) : [];
       const hasValidAddress = addressParts.length >= 2;
@@ -1848,17 +1829,17 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
           addressLine1: addressParts[0] || ' ',
           city: addressParts[1] || ' ',
           region: addressParts[2] || ' ',
-          postalCode: addressParts[3] || ' '
+          postalCode: addressParts[3].toString() || ' '
         }, {
           addressType: 'STREET',
           addressLine1: addressParts[0] || ' ',
           city: addressParts[1] || ' ',
           region: addressParts[2] || ' ',
-          postalCode: addressParts[3] || ' '
+          postalCode: addressParts[3].toString() || ' '
         }] : undefined,
         emailAddress: participantEmail || undefined
       });
-    }
+    } 
 
     // Calculate due date if not provided
     let effectiveDueDate = dueDate;
