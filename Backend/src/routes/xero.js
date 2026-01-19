@@ -1835,24 +1835,27 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         emailAddress: participantEmail || undefined
       }));
 
+      const addressParts = contactAddress ? contactAddress.split(',').map(p => p?.trim()).filter(Boolean) : [];
+      const hasValidAddress = addressParts.length >= 2;
+
       contact = await createOrUpdateContact({
         name: billingContact,
         firstName: firstName,
         lastName: lastName || firstName, // Use firstName as lastName if not provided
-        phones: participantEmail ? [] : participantPhoneNumber ? [{ phoneType: 'DEFAULT', phoneNumber: participantPhoneNumber }] : [],
-        addresses: contactAddress ? [{
+        phones: participantPhoneNumber ? [{phoneType:'DEFAULT', phoneNumber: participantPhoneNumber}] : undefined,
+        addresses: contactAddress && hasValidAddress ? [{
           addressType: 'POBOX',
-          addressLine1: contactAddress.split(',')[0]?.trim()?.toString() || ' ',
-          city: contactAddress.split(',')[1]?.trim()?.toString() || ' ',
-          region: contactAddress.split(',')[2]?.trim()?.toString() || ' ',
-          postalCode: contactAddress.split(',')[3]?.trim()?.toString() || ' '
+          addressLine1: addressParts[0] || ' ',
+          city: addressParts[1] || ' ',
+          region: addressParts[2] || ' ',
+          postalCode: addressParts[3] || ' '
         }, {
           addressType: 'STREET',
-          addressLine1: contactAddress.split(',')[0]?.trim()?.toString() || ' ',
-          city: contactAddress.split(',')[1]?.trim()?.toString() || ' ',
-          region: contactAddress.split(',')[2]?.trim()?.toString() || ' ',
-          postalCode: contactAddress.split(',')[3]?.trim()?.toString() || ' '
-        }] : [],
+          addressLine1: addressParts[0] || ' ',
+          city: addressParts[1] || ' ',
+          region: addressParts[2] || ' ',
+          postalCode: addressParts[3] || ' '
+        }] : undefined,
         emailAddress: participantEmail || undefined
       });
     }
