@@ -1829,7 +1829,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
           addressLine1: addressParts[0] || ' ',
           city: addressParts[1] || ' ',
           region: addressParts[2] || ' ',
-          postalCode: addressParts[3].toString() || ' '
+          postalCode: addressParts[3].toString() || ' ',
         }, {
           addressType: 'STREET',
           addressLine1: addressParts[0] || ' ',
@@ -1850,13 +1850,15 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
           addressLine1: addressParts[0] || ' ',
           city: addressParts[1] || ' ',
           region: addressParts[2] || ' ',
-          postalCode: addressParts[3].toString() || ' '
+          postalCode: addressParts[3].toString() || ' ',
+          country: 'Australia'
         }, {
           addressType: 'STREET',
           addressLine1: addressParts[0] || ' ',
           city: addressParts[1] || ' ',
           region: addressParts[2] || ' ',
-          postalCode: addressParts[3].toString() || ' '
+          postalCode: addressParts[3].toString() || ' ',
+          country: 'Australia'
         }] : undefined,
         emailAddress: participantEmail || undefined
       });

@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Header } from "@/components/ui/header";
 import { useAppContext } from "@/app/context";
 import axios from "@/app/utils/axiosConfig";
@@ -51,6 +51,43 @@ export default function WorkspaceDetail() {
   const workspace = workspaces.find(workspace => workspace.id.toString() === id);
   const [boards, setBoards] = useState<Board[]>([]);
   const [loadingBoards, setLoadingBoards] = useState<boolean>(false); // Loading state for boards
+  const ALLOWED_ADMIN_BOARD_LABELS: BoardLabel[] = ['Care Management - SaH', 'Care Management - SaH - Low Cat'];
+  const isOwnerOrSupport = user.role === "owner" || user.role === "support_admin";
+  const isWorkspaceOwner = user.role === "isoplus_user" && workspace?.user_role === "owner";
+  const isWorkspaceAdmin = user.role === "isoplus_user" && workspace?.user_role === "admin";
+  const canSeeBoardMeta = isOwnerOrSupport || isWorkspaceOwner || isWorkspaceAdmin;
+  const adminBoardIds = useMemo(() => {
+    if (!isWorkspaceAdmin) return null;
+    const boardList = (workspace as any)?.board;
+    if (!Array.isArray(boardList)) return null;
+    const ids = boardList
+      .map((b: any) => (typeof b === "object" ? b.id : b))
+      .filter(Boolean)
+      .map((b: any) => b.toString());
+    return new Set(ids);
+  }, [workspace, isWorkspaceAdmin]);
+  const visibleBoards = useMemo(() => {
+    if (isWorkspaceAdmin && adminBoardIds) {
+      return boards.filter((board) => adminBoardIds.has(board.id?.toString()));
+    }
+    return boards;
+  }, [adminBoardIds, boards, isWorkspaceAdmin]);
+  const canOpenBoard = (board: Board) => {
+    if (isOwnerOrSupport || isWorkspaceOwner) {
+      return true;
+    }
+    if (isWorkspaceAdmin) {
+      return ALLOWED_ADMIN_BOARD_LABELS.includes(board.label as BoardLabel);
+    }
+    return false;
+  };
+  const openBoardTooltip = (board: Board) => {
+    if (canOpenBoard(board)) return undefined;
+    if (isWorkspaceAdmin) {
+      return "Admins can open only boards labeled Care Management - SaH or Care Management - SaH - Low Cat.";
+    }
+    return "You don't have permission to open this board.";
+  };
 
   useEffect(() => {
     if (id) {
@@ -115,10 +152,7 @@ export default function WorkspaceDetail() {
       return;
     }
 
-    const isOwnerOrSupport = user.role === "owner" || user.role === "support_admin";
-    const isIsoPlusUserWithAdminOrOwner = user.role === "isoplus_user" && (workspace && (workspace.user_role === "admin" || workspace.user_role === "owner"));
-
-    if (!isOwnerOrSupport && !isIsoPlusUserWithAdminOrOwner) {
+    if (!isOwnerOrSupport && !isWorkspaceOwner && !isWorkspaceAdmin) {
       router.replace("/workspace/access-denied");
       return;
     }
@@ -128,7 +162,7 @@ export default function WorkspaceDetail() {
     return () => {
       abortController.abort();
     };
-  }, [id, boards.length]);
+  }, [id, boards.length, workspace, isOwnerOrSupport, isWorkspaceOwner, isWorkspaceAdmin, router]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -166,7 +200,7 @@ export default function WorkspaceDetail() {
 
           {/* Workspace Actions */}
           {
-            (user.role == "support_admin" || user.role == "owner" || workspace?.user_role == "owner" || workspace?.user_role == "admin") && (
+            (isOwnerOrSupport || isWorkspaceOwner || isWorkspaceAdmin) && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <Card className="p-6 space-y-4 card-hover">
                   <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
@@ -204,24 +238,6 @@ export default function WorkspaceDetail() {
                   </div>
                 </Card>
 
-                {false && (<Card className="p-6 space-y-4 card-hover">
-                  <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
-                    <FileText className="h-6 w-6 text-primary" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-semibold">PDF Output</h2>
-                    <p className="text-muted-foreground mb-4 text-sm">
-                      Configure PDF generation and digital signature options
-                    </p>
-                    <Button
-                      onClick={() => router.push(`/workspace/${workspace?.id}/pdf-output`)}
-                      className="w-full button-hover"
-                    >
-                      Setup PDF Output
-                    </Button>
-                  </div>
-                </Card>)}
-
                 <Card className="p-6 space-y-4 card-hover">
                   <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
                     <History className="h-6 w-6 text-primary" />
@@ -240,23 +256,25 @@ export default function WorkspaceDetail() {
                   </div>
                 </Card>
 
-                <Card className="p-6 space-y-4 card-hover">
-                  <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
-                    <Terminal className="h-6 w-6 text-primary" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-semibold">Workspace Configuration</h2>
-                    <p className="text-muted-foreground mb-4 text-sm">
-                      Configure workspace settings and manage board links
-                    </p>
-                    <Button
-                      onClick={() => router.push(`/workspace/${workspace?.id}/configuration`)}
-                      className="w-full button-hover"
-                    >
-                      Configure Workspace
-                    </Button>
-                  </div>
-                </Card>
+                {(isOwnerOrSupport || isWorkspaceOwner) && (
+                  <Card className="p-6 space-y-4 card-hover">
+                    <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                      <Terminal className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-semibold">Workspace Configuration</h2>
+                      <p className="text-muted-foreground mb-4 text-sm">
+                        Configure workspace settings and manage board links
+                      </p>
+                      <Button
+                        onClick={() => router.push(`/workspace/${workspace?.id}/configuration`)}
+                        className="w-full button-hover"
+                      >
+                        Configure Workspace
+                      </Button>
+                    </div>
+                  </Card>
+                )}
               </div>
             )
           }
@@ -269,7 +287,7 @@ export default function WorkspaceDetail() {
                 <TableRow>
                   <TableHead className="font-semibold">Board ID</TableHead>
                   <TableHead className="font-semibold">Board Name</TableHead>
-                  <TableHead className={`font-semibold ${user.role == "support_admin" || user.role == "owner" ? '' : 'hidden'}`}>
+                  <TableHead className={`font-semibold ${canSeeBoardMeta ? '' : 'hidden'}`}>
                     <div className="flex items-center gap-2">
                       Label
                       <TooltipProvider>
@@ -286,15 +304,17 @@ export default function WorkspaceDetail() {
                       </TooltipProvider>
                     </div>
                   </TableHead>
-                  <TableHead className={`font-semibold w-[100px] ${user.role == "support_admin" || user.role == "owner" ? '' : 'hidden'}`}>Actions</TableHead>
+                  <TableHead className={`font-semibold w-[100px] ${canSeeBoardMeta ? '' : 'hidden'}`}>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {boards?.map((board) => (
+                {visibleBoards?.map((board) => {
+                  const boardIsOpenable = canOpenBoard(board);
+                  return (
                   <TableRow key={board.id}>
                     <TableCell className="font-mono">{board.id}</TableCell>
                     <TableCell>{board.name}</TableCell>
-                    <TableCell className={`font-semibold ${user.role == "support_admin" || user.role == "owner" ? '' : 'hidden'}`}>
+                    <TableCell className={`font-semibold ${canSeeBoardMeta ? '' : 'hidden'}`}>
                       {board.label ? (
                         <Badge variant="outline" className={board.label ? LABEL_COLORS[board.label as NonNullable<BoardLabel>] : 'No Label'}>
                           {board.label}
@@ -306,10 +326,12 @@ export default function WorkspaceDetail() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <div className={`flex w-[100px] items-center gap-2 ${user.role == "support_admin" || user.role == "owner" ? '' : 'hidden'}`}>
+                      <div className={`flex w-[100px] items-center gap-2 ${canSeeBoardMeta ? '' : 'hidden'}`}>
                         <Button
                           variant="outline"
                           size="sm"
+                          disabled={!boardIsOpenable}
+                          title={openBoardTooltip(board)}
                           onClick={() => router.push(`/workspace/${workspace?.id}/board/${board.id}`)}
                         >
                           Open Board
@@ -317,7 +339,7 @@ export default function WorkspaceDetail() {
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                )})}
               </TableBody>
             </Table>
             {loadingBoards ?
