@@ -1819,6 +1819,27 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       const addressParts = contactAddress ? contactAddress.split(',').map(p => p?.trim()).filter(Boolean) : [];
       const hasValidAddress = addressParts.length >= 2;
 
+      console.log("Contact Payload: " + JSON.stringify({
+        name: billingContact,
+        firstName: firstName,
+        lastName: lastName || firstName, // Use firstName as lastName if not provided
+        phones: participantPhoneNumber ? [{phoneType:'DEFAULT', phoneNumber: participantPhoneNumber}] : undefined,
+        addresses: contactAddress && hasValidAddress ? [{
+          addressType: 'POBOX',
+          addressLine1: addressParts[0] || ' ',
+          city: addressParts[1] || ' ',
+          region: addressParts[2] || ' ',
+          postalCode: addressParts[3].toString() || ' '
+        }, {
+          addressType: 'STREET',
+          addressLine1: addressParts[0] || ' ',
+          city: addressParts[1] || ' ',
+          region: addressParts[2] || ' ',
+          postalCode: addressParts[3].toString() || ' '
+        }] : undefined,
+        emailAddress: participantEmail || undefined
+      }));
+
       contact = await createOrUpdateContact({
         name: billingContact,
         firstName: firstName,
