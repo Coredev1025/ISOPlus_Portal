@@ -1747,33 +1747,26 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
               postcode: getValueFromFlatData(participantProfileItem, [REF_ATTRIBUTE_NAMES.PROFILE_POSTCODE, REF_ATTRIBUTE_NAMES.PROFILE_POST_CODE]) || ' '
             };
 
-            if (isLowCatBoard) {
-              // For LowCat, construct billing address with suburb and state from address info
-              let billingAddressParts = [billingAddressBase.trim()];
-              if (addressInfo.suburb) billingAddressParts.push(addressInfo.suburb.trim());
-              if (addressInfo.state) billingAddressParts.push(addressInfo.state.trim());
-              receiverAddress = billingAddressParts.filter(p => p).join(', ') || ' ';
+            // For both SaH and SaH (Low-Cat), Billing Address in Xero must match
+            // the Billing Address field in ISO+ exactly when it is present.
+            if (billingAddressBase && billingAddressBase.trim() !== '') {
+              receiverAddress = billingAddressBase.trim();
             } else {
-              // For non-LowCat, use billing address if available, otherwise construct from address fields
-              if (billingAddressBase && billingAddressBase.trim() !== '') {
-                receiverAddress = billingAddressBase.trim();
-              } else {
-                // Construct full address from address fields
-                let addressParts = [];
-                if (addressInfo.address && addressInfo.address.trim() !== ' ') {
-                  addressParts.push(addressInfo.address.trim());
-                }
-                if (addressInfo.suburb && addressInfo.suburb.trim() !== ' ') {
-                  addressParts.push(addressInfo.suburb.trim());
-                }
-                if (addressInfo.state && addressInfo.state.trim() !== '') {
-                  addressParts.push(addressInfo.state.trim());
-                }
-                if (addressInfo.postcode && addressInfo.postcode.trim() !== ' ') {
-                  addressParts.push(addressInfo.postcode.trim());
-                }
-                receiverAddress = addressParts.filter(p => p).join(', ') || ' ';
+              // If Billing Address is not available, construct a fallback from address fields
+              let addressParts = [];
+              if (addressInfo.address && addressInfo.address.trim() !== ' ') {
+                addressParts.push(addressInfo.address.trim());
               }
+              if (addressInfo.suburb && addressInfo.suburb.trim() !== ' ') {
+                addressParts.push(addressInfo.suburb.trim());
+              }
+              if (addressInfo.state && addressInfo.state.trim() !== '') {
+                addressParts.push(addressInfo.state.trim());
+              }
+              if (addressInfo.postcode && addressInfo.postcode.trim() !== ' ') {
+                addressParts.push(addressInfo.postcode.trim());
+              }
+              receiverAddress = addressParts.filter(p => p).join(', ') || ' ';
             }
           }
         }
@@ -1814,35 +1807,10 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       const firstName = nameParts[0] || '';
       const lastName = nameParts.slice(1).join(' ') || '';
 
-      // Use billing address for contact creation
-      let contactAddress = billingAddress;
-      let contactSuburb = '';
-      let contactState = '';
-      let contactPostcode = ''; // Default, will be parsed from address if available
-
-      // Parse address components from billing address
-      if (billingAddress && billingAddress !== ' ') {
-        const addressParts = billingAddress.split(',').map(p => p.trim()).filter(p => p);
-        if (addressParts.length >= 3) {
-          // Format: "Address, Suburb, State Postcode" or "Address, Suburb, State"
-          contactAddress = addressParts.slice(0, -2).join(', ') || addressParts[0];
-          contactSuburb = addressParts[addressParts.length - 2] || '';
-          const lastPart = addressParts[addressParts.length - 1] || '';
-          // Try to separate state and postcode
-          const statePostcodeMatch = lastPart.match(/^([A-Z]{2,3})\s+(\d{4})$/);
-          if (statePostcodeMatch) {
-            contactState = statePostcodeMatch[1];
-            contactPostcode = statePostcodeMatch[2];
-          } else {
-            contactState = lastPart;
-          }
-        } else if (addressParts.length === 2) {
-          contactAddress = addressParts[0];
-          contactSuburb = addressParts[1];
-        } else {
-          contactAddress = billingAddress;
-        }
-      }
+      // Use Billing Address from ISO+ directly for the Xero contact Billing Address.
+      // We keep the entire Billing Address string in addressLine1 and only use
+      // city/region/postalCode as optional extras when available.
+      const contactAddress = billingAddress || ' ';
 
       contact = await createOrUpdateContact({
         name: billingContact,
@@ -1852,17 +1820,11 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         addresses: [
           {
             addressType: 'POBOX',
-            addressLine1: contactAddress || ' ',
-            city: contactSuburb || ' ',
-            region: contactState || ' ',
-            postalCode: contactPostcode || ' '
+            addressLine1: contactAddress || ' '
           },
           {
             addressType: 'STREET',
-            addressLine1: contactAddress || ' ',
-            city: contactSuburb || ' ',
-            region: contactState || ' ',
-            postalCode: contactPostcode || ' '
+            addressLine1: contactAddress || ' '
           }
         ],
         emailAddress: participantEmail || undefined
