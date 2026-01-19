@@ -1739,7 +1739,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             // These are the preferred fields for the PDF template
             receiverName = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || ' ';
             const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || ' ';
-            const phoneNumber = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_PHONE_NUMBER) || ' ';
+            const participantPhoneNumber = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_PHONE_NUMBER) || ' ';
             // Get address info for fallback construction
             const addressInfo = {
               address: getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_ADDRESS) || ' ',
@@ -1817,7 +1817,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         name: billingContact,
         firstName: firstName,
         lastName: lastName || firstName, // Use firstName as lastName if not provided
-        phones: phoneNumber? [{ phoneType: 'DEFAULT', phoneNumber: phoneNumber }] : [],
+        phones: participantEmail ? [] : participantPhoneNumber ? [{ phoneType: 'DEFAULT', phoneNumber: participantPhoneNumber }] : [],
         addresses: contactAddress ? [{
           addressType: 'POBOX',
           addressLine1: contactAddress || ' '
