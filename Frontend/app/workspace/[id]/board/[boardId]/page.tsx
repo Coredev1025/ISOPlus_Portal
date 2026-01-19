@@ -71,10 +71,21 @@ export default function BoardDetail() {
   const [selectedEntry, setSelectedEntry] = useState<TimeEntry | null>(null);
   const [loadingBoards, setLoadingBoards] = useState(false);
   const ITEMS_PER_PAGE = 10;
+  const ALLOWED_ADMIN_BOARD_LABELS: BoardLabel[] = ['Care Management - SaH', 'Care Management - SaH - Low Cat'];
+  const isOwnerOrSupport = user.role === "owner" || user.role === "support_admin";
+  const isWorkspaceOwner = user.role === "isoplus_user" && workspace?.user_role === "owner";
+  const isWorkspaceAdmin = user.role === "isoplus_user" && workspace?.user_role === "admin";
 
   const calcDuration = (startTime: any, endTime: any) => {
     return Math.floor((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000);
   };
+
+  useEffect(() => {
+    if (workspace === undefined) return;
+    if (!isOwnerOrSupport && !isWorkspaceOwner && !isWorkspaceAdmin) {
+      router.replace("/workspace/access-denied");
+    }
+  }, [workspace, isOwnerOrSupport, isWorkspaceOwner, isWorkspaceAdmin, router]);
 
   useEffect(() => {
     if (id) {
@@ -133,6 +144,13 @@ export default function BoardDetail() {
       abortController.abort();
     };
   }, [id, boardId, workspace])
+
+  useEffect(() => {
+    if (!board || !isWorkspaceAdmin) return;
+    if (board.label && !ALLOWED_ADMIN_BOARD_LABELS.includes(board.label as BoardLabel)) {
+      router.replace("/workspace/access-denied");
+    }
+  }, [board, isWorkspaceAdmin, router]);
 
   // First useEffect for initial data fetching
   useEffect(() => {
