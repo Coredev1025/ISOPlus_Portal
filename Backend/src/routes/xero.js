@@ -1817,13 +1817,11 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         name: billingContact,
         firstName: firstName,
         lastName: lastName || firstName, // Use firstName as lastName if not provided
-        phones: [{ phoneType: 'DEFAULT', phoneNumber: phoneNumber || '' }],
-        addresses: [
-          {
-            addressType: 'POBOX',
-            addressLine1: contactAddress || ' '
-          }
-        ],
+        phones: phoneNumber? [{ phoneType: 'DEFAULT', phoneNumber: phoneNumber }] : [],
+        addresses: contactAddress ? [{
+          addressType: 'POBOX',
+          addressLine1: contactAddress || ' '
+        }] : [],
         emailAddress: participantEmail || undefined
       });
     }
