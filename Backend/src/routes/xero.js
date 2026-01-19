@@ -31,6 +31,7 @@ const REF_ATTRIBUTE_NAMES = {
     PROFILE_STATE: 'State',
     PROFILE_POSTCODE: 'Postcode',
     PROFILE_POST_CODE: 'Post Code',
+    PROFILE_PHONE_NUMBER: 'Primary Phone Number',
 };
 
 async function bulkFetchReferenceItemsFromDB(workspaceId, boardId, itemIds) {
@@ -1738,7 +1739,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             // These are the preferred fields for the PDF template
             receiverName = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || ' ';
             const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || ' ';
-
+            const phoneNumber = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_PHONE_NUMBER) || ' ';
             // Get address info for fallback construction
             const addressInfo = {
               address: getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_ADDRESS) || ' ',
@@ -1816,7 +1817,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         name: billingContact,
         firstName: firstName,
         lastName: lastName || firstName, // Use firstName as lastName if not provided
-        phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
+        phones: [{ phoneType: 'DEFAULT', phoneNumber: phoneNumber || '' }],
         addresses: [
           {
             addressType: 'POBOX',
