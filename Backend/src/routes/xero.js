@@ -1720,6 +1720,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     let participantNameFromDB = ' ';
     let receiverName = ' ';
     let receiverAddress = ' ';
+    let participantPhoneNumber = '';
 
     if (items.length > 0) {
       const firstItem = await Item.findOne({ workspaceId, boardId, itemId: items[0].id.toString() }).lean();
@@ -1739,7 +1740,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             // These are the preferred fields for the PDF template
             receiverName = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || ' ';
             const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || ' ';
-            const participantPhoneNumber = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_PHONE_NUMBER) || ' ';
+            participantPhoneNumber = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_PHONE_NUMBER) || ' ';
             // Get address info for fallback construction
             const addressInfo = {
               address: getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_ADDRESS) || ' ',
@@ -1812,7 +1813,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       // We keep the entire Billing Address string in addressLine1 and only use
       // city/region/postalCode as optional extras when available.
       const contactAddress = billingAddress || ' ';
-
+      
       contact = await createOrUpdateContact({
         name: billingContact,
         firstName: firstName,
