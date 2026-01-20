@@ -180,39 +180,6 @@ function formatValue(val) {
   }
 }
 
-async function findOrCreateContact(workspaceId, boardId, item, contactData) {
-  let contact = null;
-
-  // First try to find by email if available
-  if (contactData.emailAddress || contactData.email) {
-    contact = await getContactByEmail(contactData.emailAddress || contactData.email, workspaceId);
-  }
-
-  // If not found by email, try to find by name
-  if (!contact && (contactData.name || contactData.client || contactData.contractor || contactData.fullName)) {
-    const contactName = contactData.name || contactData.client || contactData.contractor || contactData.fullName;
-    contact = await getContactByName(contactName, workspaceId);
-  }
-
-  // If still not found, create new contact
-  if (!contact) {
-    await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
-    contact = await createOrUpdateContact(contactData);
-  } else {
-    // Update existing contact if it was found
-    const xeroUpdatedDate = new Date(contact.updatedDateUTC);
-    const isoplusUpdatedDate = new Date(contactData.updatedAt || new Date());
-
-    if (xeroUpdatedDate < isoplusUpdatedDate) {
-      contact = await createOrUpdateContact({
-        ...contactData,
-        contactID: contact.contactID
-      });
-    }
-  }
-
-  return contact;
-}
 
 async function initializeXeroOperation(workspaceId, boardId, item) {
   const business = await Business.findOne({ workspaceId: workspaceId.toString() });
@@ -388,30 +355,66 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       throw new Error("Client information is required. Job planning is missing a client reference.");
     }
 
-    const contact = await findOrCreateContact(workspaceId, boardId, item, {
-      name: contactValues.client,
-      phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
-      firstName: contactValues.contactPersonsFirstName,
-      lastName: contactValues.contactPersonsLastName,
-      addresses: [
-        {
-          addressType: 'POBOX',
-          addressLine1: contactValues.address,
-          city: contactValues.suburb,
-          region: contactValues.state,
-          postalCode: contactValues.postcode.toString()
-        },
-        {
-          addressType: 'STREET',
-          addressLine1: contactValues.address,
-          city: contactValues.suburb,
-          region: contactValues.state,
-          postalCode: contactValues.postcode.toString()
-        }
-      ],
-      emailAddress: contactValues.emailAddress,
-      updatedAt: contactValues.updatedAt
-    });
+    let contact = await getContactByEmail(contactValues.emailAddress, workspaceId);
+    if (!contact) {
+      contact = await getContactByName(contactValues.client, workspaceId);
+    }
+    if (!contact) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
+      contact = await createOrUpdateContact({
+        name: contactValues.client,
+        phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
+        firstName: contactValues.contactPersonsFirstName,
+        lastName: contactValues.contactPersonsLastName,
+        addresses: [
+          {
+            addressType: 'POBOX',
+            addressLine1: contactValues.address,
+            city: contactValues.suburb,
+            region: contactValues.state,
+            postalCode: contactValues.postcode.toString()
+          },
+          {
+            addressType: 'STREET',
+            addressLine1: contactValues.address,
+            city: contactValues.suburb,
+            region: contactValues.state,
+            postalCode: contactValues.postcode.toString()
+          }
+        ],
+        emailAddress: contactValues.emailAddress
+      });
+    } else {
+      const xeroUpdatedDate = new Date(contact.updatedDateUTC);
+      const isoplusUpdatedDate = new Date(contactValues.updatedAt);
+
+      if (xeroUpdatedDate < isoplusUpdatedDate) {
+        contact = await createOrUpdateContact({
+          contactID: contact.contactID,
+          name: contactValues.client,
+          phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
+          firstName: contactValues.contactPersonsFirstName,
+          lastName: contactValues.contactPersonsLastName,
+          addresses: [
+            {
+              addressType: 'POBOX',
+              addressLine1: contactValues.address,
+              city: contactValues.suburb,
+              region: contactValues.state,
+              postalCode: contactValues.postcode.toString()
+            },
+            {
+              addressType: 'STREET',
+              addressLine1: contactValues.address,
+              city: contactValues.suburb,
+              region: contactValues.state,
+              postalCode: contactValues.postcode.toString()
+            }
+          ],
+          emailAddress: contactValues.emailAddress
+        });
+      }
+    }
 
     if (!jobTypeValues) {
       setIntegrationMessage(workspaceId, boardId, item.id, "Job type information is required. Job planning is missing a job type reference.");
@@ -499,36 +502,68 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
     firstName = firstName.trim();
     lastName = lastName.trim();
 
-    const contactData = {
-      name: participantProfileValues.fullName || firstName + ' ' + lastName,
-      phones: [{ phoneType: 'DEFAULT', phoneNumber: participantProfileValues.Phone }],
-      firstName: firstName,
-      lastName: lastName,
-      addresses: [
-        {
-          addressType: 'POBOX',
-          addressLine1: participantProfileValues.address || ' ',
-          city: participantProfileValues.suburb || ' ',
-          region: participantProfileValues.state || ' ',
-          postalCode: participantProfileValues.postcode?.toString() || ' '
-        },
-        {
-          addressType: 'STREET',
-          addressLine1: participantProfileValues.address || ' ',
-          city: participantProfileValues.suburb || ' ',
-          region: participantProfileValues.state || ' ',
-          postalCode: participantProfileValues.postcode?.toString() || ' '
-        }
-      ],
-      emailAddress: participantProfileValues.email,
-      updatedAt: participantProfileValues.updatedAt
-    };
-
-    if (!firstName || !lastName) {
-      throw new Error("First name and last name are required for NDIS invoice contact creation. Please ensure the participant profile contains both first and last name.");
+    let contact = await getContactByEmail(participantProfileValues.email, workspaceId);
+    if (!contact) {
+      contact = await getContactByName(participantProfileValues.fullName || firstName + ' ' + lastName, workspaceId);
     }
-
-    const contact = await findOrCreateContact(workspaceId, boardId, item, contactData);
+    if (!contact) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
+      if(!firstName || !lastName) {
+        throw new Error("First name and last name are required for NDIS invoice contact creation. Please ensure the participant profile contains both first and last name.");
+      }
+      contact = await createOrUpdateContact({
+        name: participantProfileValues.fullName || firstName + ' ' + lastName,
+        phones: [{ phoneType: 'DEFAULT', phoneNumber: participantProfileValues.Phone }],
+        firstName: firstName,
+        lastName: lastName,
+        addresses: [
+          {
+            addressType: 'POBOX',
+            addressLine1: participantProfileValues.address || ' ',
+            city: participantProfileValues.suburb || ' ',
+            region: participantProfileValues.state || ' ',
+            postalCode: participantProfileValues.postcode?.toString() || ' '
+          },
+          {
+            addressType: 'STREET',
+            addressLine1: participantProfileValues.address || ' ',
+            city: participantProfileValues.suburb || ' ',
+            region: participantProfileValues.state || ' ',
+            postalCode: participantProfileValues.postcode?.toString() || ' '
+          }
+        ],
+        emailAddress: participantProfileValues.email
+      });
+    } else {
+      const xeroUpdatedDate = new Date(contact.updatedDateUTC);
+      const isoplusUpdatedDate = new Date(participantProfileValues.updatedAt);
+      if (xeroUpdatedDate < isoplusUpdatedDate && firstName && lastName) {
+        contact = await createOrUpdateContact({
+          contactID: contact.contactID,
+          name: participantProfileValues.fullName || firstName + ' ' + lastName,
+          phones: [{ phoneType: 'DEFAULT', phoneNumber: participantProfileValues.Phone }],
+          firstName: firstName,
+          lastName: lastName,
+          addresses: [
+            {
+              addressType: 'POBOX',
+              addressLine1: participantProfileValues.address || ' ',
+              city: participantProfileValues.suburb || ' ',
+              region: participantProfileValues.state || ' ',
+              postalCode: participantProfileValues.postcode?.toString() || ' '
+            },
+            {
+              addressType: 'STREET',
+              addressLine1: participantProfileValues.address || ' ',
+              city: participantProfileValues.suburb || ' ',
+              region: participantProfileValues.state || ' ',
+              postalCode: participantProfileValues.postcode?.toString() || ' '
+            }
+          ],
+          emailAddress: participantProfileValues.email
+        });
+      }
+    }
 
     let lineItems = [];
     const gstType = "EXEMPTOUTPUT"; // GST Free for NDIS
@@ -1047,19 +1082,19 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
 
   try {
     await initializeXeroOperation(workspaceId, boardId, item);
-    const contactPayload = createContactPayload(contactValues);
+    const existingContact = await getContactByEmail(contactValues['Email Address'], workspaceId);
+    let contact;
 
-    const contact = await findOrCreateContact(workspaceId, boardId, item, {
-      ...contactPayload,
-      updatedAt: contactValues['Integration Validation'] ? new Date() : undefined
-    });
-
-    const wasExisting = contact.contactID && contact.updatedDateUTC;
-    await setIntegrationMessage(workspaceId, boardId, item.id,
-      wasExisting
-        ? "Your contact has been updated successfully in Xero."
-        : "Your contact has been created successfully in Xero."
-    );
+    if (existingContact) {
+      contact = await createOrUpdateContact({
+        ...createContactPayload(contactValues),
+        contactID: existingContact.contactID
+      });
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Your contact has been updated successfully in Xero.");
+    } else {
+      contact = await createOrUpdateContact(createContactPayload(contactValues));
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Your contact has been created successfully in Xero.");
+    }
 
     res.json(contact);
   } catch (err) {
@@ -1101,19 +1136,19 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
 
   try {
     await initializeXeroOperation(workspaceId, boardId, item);
-    const contactPayload = createContactPayload(contractorValues);
+    const existingContact = await getContactByEmail(contractorValues['Email Address'], workspaceId);
+    let contact;
 
-    const contact = await findOrCreateContact(workspaceId, boardId, item, {
-      ...contactPayload,
-      updatedAt: contractorValues['Integration Validation'] ? new Date() : undefined
-    });
-
-    const wasExisting = contact.contactID && contact.updatedDateUTC;
-    await setIntegrationMessage(workspaceId, boardId, item.id,
-      wasExisting
-        ? "Your contractor has been updated successfully in Xero."
-        : "Your contractor has been created successfully in Xero."
-    );
+    if (existingContact) {
+      contact = await createOrUpdateContact({
+        ...createContactPayload(contractorValues),
+        contactID: existingContact.contactID
+      });
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Your contractor has been updated successfully in Xero.");
+    } else {
+      contact = await createOrUpdateContact(createContactPayload(contractorValues));
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Your contractor has been created successfully in Xero.");
+    }
 
     res.json(contact);
   } catch (err) {
@@ -1141,30 +1176,66 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
       throw new Error("Job type information is required.");
     }
 
-    const contact = await findOrCreateContact(workspaceId, boardId, item, {
-      name: contactValues.client,
-      phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
-      firstName: contactValues.contactPersonsFirstName,
-      lastName: contactValues.contactPersonsLastName,
-      addresses: [
-        {
-          addressType: 'POBOX',
-          addressLine1: contactValues.address,
-          city: contactValues.suburb,
-          region: contactValues.state,
-          postalCode: contactValues.postcode.toString()
-        },
-        {
-          addressType: 'STREET',
-          addressLine1: contactValues.address,
-          city: contactValues.suburb,
-          region: contactValues.state,
-          postalCode: contactValues.postcode.toString()
-        }
-      ],
-      emailAddress: contactValues.emailAddress,
-      updatedAt: contactValues.updatedAt
-    });
+    let contact = await getContactByEmail(contactValues.emailAddress, workspaceId);
+    if (!contact) {
+      contact = await getContactByName(contactValues.client, workspaceId);
+    }
+    if (!contact) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
+      contact = await createOrUpdateContact({
+        name: contactValues.client,
+        phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
+        firstName: contactValues.contactPersonsFirstName,
+        lastName: contactValues.contactPersonsLastName,
+        addresses: [
+          {
+            addressType: 'POBOX',
+            addressLine1: contactValues.address,
+            city: contactValues.suburb,
+            region: contactValues.state,
+            postalCode: contactValues.postcode.toString()
+          },
+          {
+            addressType: 'STREET',
+            addressLine1: contactValues.address,
+            city: contactValues.suburb,
+            region: contactValues.state,
+            postalCode: contactValues.postcode.toString()
+          }
+        ],
+        emailAddress: contactValues.emailAddress
+      });
+    } else {
+      const xeroUpdatedDate = new Date(contact.updatedDateUTC);
+      const isoplusUpdatedDate = new Date(contactValues.updatedAt);
+
+      if (xeroUpdatedDate < isoplusUpdatedDate) {
+        contact = await createOrUpdateContact({
+          contactID: contact.contactID,
+          name: contactValues.client,
+          phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
+          firstName: contactValues.contactPersonsFirstName,
+          lastName: contactValues.contactPersonsLastName,
+          addresses: [
+            {
+              addressType: 'POBOX',
+              addressLine1: contactValues.address,
+              city: contactValues.suburb,
+              region: contactValues.state,
+              postalCode: contactValues.postcode.toString()
+            },
+            {
+              addressType: 'STREET',
+              addressLine1: contactValues.address,
+              city: contactValues.suburb,
+              region: contactValues.state,
+              postalCode: contactValues.postcode.toString()
+            }
+          ],
+          emailAddress: contactValues.emailAddress
+        });
+      }
+    }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
     // let rawChecklist = quoteValues['Quote Checklist'];
@@ -1246,28 +1317,62 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
       throw new Error("Service Area value is required.");
     }
 
-    const contact = await findOrCreateContact(workspaceId, boardId, item, {
-      name: NDISQuoteValues['Recipient of the Quote'],
-      phones: [{ phoneType: 'DEFAULT', phoneNumber: NDISQuoteValues['Recipient Phone Number'] }],
-      addresses: [
-        {
-          addressType: 'POBOX',
-          addressLine1: NDISQuoteValues['Recipient Address'],
-          city: NDISQuoteValues['Suburb'],
-          region: NDISQuoteValues['State'],
-          postalCode: NDISQuoteValues['Postcode'].toString()
-        },
-        {
-          addressType: 'STREET',
-          addressLine1: NDISQuoteValues['Recipient Address'],
-          city: NDISQuoteValues['Suburb'],
-          region: NDISQuoteValues['State'],
-          postalCode: NDISQuoteValues['Postcode'].toString()
-        }
-      ],
-      emailAddress: NDISQuoteValues['Recipient Email'],
-      updatedAt: NDISQuoteValues.updatedAt
-    });
+    let contact = await getContactByEmail(NDISQuoteValues['Recipient Email'], workspaceId);
+    if (!contact) {
+      contact = await getContactByName(NDISQuoteValues['Recipient of the Quote'], workspaceId);
+    }
+    if (!contact) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
+      contact = await createOrUpdateContact({
+        name: NDISQuoteValues['Recipient of the Quote'],
+        phones: [{ phoneType: 'DEFAULT', phoneNumber: NDISQuoteValues['Recipient Phone Number'] }],
+        addresses: [
+          {
+            addressType: 'POBOX',
+            addressLine1: NDISQuoteValues['Recipient Address'],
+            city: NDISQuoteValues['Suburb'],
+            region: NDISQuoteValues['State'],
+            postalCode: NDISQuoteValues['Postcode'].toString()
+          },
+          {
+            addressType: 'STREET',
+            addressLine1: NDISQuoteValues['Recipient Address'],
+            city: NDISQuoteValues['Suburb'],
+            region: NDISQuoteValues['State'],
+            postalCode: NDISQuoteValues['Postcode'].toString()
+          }
+        ],
+        emailAddress: NDISQuoteValues['Recipient Email']
+      });
+    } else {
+      const xeroUpdatedDate = new Date(contact.updatedDateUTC);
+      const isoplusUpdatedDate = new Date(NDISQuoteValues.updatedAt);
+
+      if (xeroUpdatedDate < isoplusUpdatedDate) {
+        contact = await createOrUpdateContact({
+          contactID: contact.contactID,
+          name: NDISQuoteValues['Recipient of the Quote'],
+          phones: [{ phoneType: 'DEFAULT', phoneNumber: NDISQuoteValues['Recipient Phone Number'] }],
+          addresses: [
+            {
+              addressType: 'POBOX',
+              addressLine1: NDISQuoteValues['Recipient Address'],
+              city: NDISQuoteValues['Suburb'],
+              region: NDISQuoteValues['State'],
+              postalCode: NDISQuoteValues['Postcode'].toString()
+            },
+            {
+              addressType: 'STREET',
+              addressLine1: NDISQuoteValues['Recipient Address'],
+              city: NDISQuoteValues['Suburb'],
+              region: NDISQuoteValues['State'],
+              postalCode: NDISQuoteValues['Postcode'].toString()
+            }
+          ],
+          emailAddress: NDISQuoteValues['Recipient Email']
+        });
+      }
+    }
 
     let lineItems = [];
     const gstType = "EXEMPTOUTPUT"; // GST Free for NDIS
@@ -1405,30 +1510,66 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
       throw new Error("Job type information is required. Purchase order is missing Job Type.");
     }
 
-    const contact = await findOrCreateContact(workspaceId, boardId, item, {
-      name: contractorValues.contractor,
-      phones: [{ phoneType: 'DEFAULT', phoneNumber: contractorValues.phoneNumber }],
-      firstName: contractorValues.contactPersonsFirstName,
-      lastName: contractorValues.contactPersonsLastName,
-      addresses: [
-        {
-          addressType: 'POBOX',
-          addressLine1: contractorValues.address,
-          city: contractorValues.suburb,
-          region: contractorValues.state,
-          postalCode: contractorValues.postcode.toString()
-        },
-        {
-          addressType: 'STREET',
-          addressLine1: contractorValues.address,
-          city: contractorValues.suburb,
-          region: contractorValues.state,
-          postalCode: contractorValues.postcode.toString()
-        }
-      ],
-      emailAddress: contractorValues.emailAddress,
-      updatedAt: contractorValues.updatedAt
-    });
+    let contact = await getContactByEmail(contractorValues.emailAddress, workspaceId);
+    if (!contact) {
+      contact = await getContactByName(contractorValues.contractor, workspaceId);
+    }
+    if (!contact) {
+      await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
+      contact = await createOrUpdateContact({
+        name: contractorValues.contractor,
+        phones: [{ phoneType: 'DEFAULT', phoneNumber: contractorValues.phoneNumber }],
+        firstName: contractorValues.contactPersonsFirstName,
+        lastName: contractorValues.contactPersonsLastName,
+        addresses: [
+          {
+            addressType: 'POBOX',
+            addressLine1: contractorValues.address,
+            city: contractorValues.suburb,
+            region: contractorValues.state,
+            postalCode: contractorValues.postcode.toString()
+          },
+          {
+            addressType: 'STREET',
+            addressLine1: contractorValues.address,
+            city: contractorValues.suburb,
+            region: contractorValues.state,
+            postalCode: contractorValues.postcode.toString()
+          }
+        ],
+        emailAddress: contractorValues.emailAddress
+      });
+    } else {
+      const xeroUpdatedDate = new Date(contact.updatedDateUTC);
+      const isoplusUpdatedDate = new Date(contractorValues.updatedAt);
+
+      if (xeroUpdatedDate < isoplusUpdatedDate) {
+        contact = await createOrUpdateContact({
+          contactID: contact.contactID,
+          name: contractorValues.contractor,
+          phones: [{ phoneType: 'DEFAULT', phoneNumber: contractorValues.phoneNumber }],
+          firstName: contractorValues.contactPersonsFirstName,
+          lastName: contractorValues.contactPersonsLastName,
+          addresses: [
+            {
+              addressType: 'POBOX',
+              addressLine1: contractorValues.address,
+              city: contractorValues.suburb,
+              region: contractorValues.state,
+              postalCode: contractorValues.postcode.toString()
+            },
+            {
+              addressType: 'STREET',
+              addressLine1: contractorValues.address,
+              city: contractorValues.suburb,
+              region: contractorValues.state,
+              postalCode: contractorValues.postcode.toString()
+            }
+          ],
+          emailAddress: contractorValues.emailAddress
+        });
+      }
+    }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
 
@@ -1713,7 +1854,15 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 
     console.log("Contact Payload: " + JSON.stringify(contactData));
 
-    contact = await findOrCreateContact(workspaceId, boardId, items[0], contactData); 
+    contact = await getContactByEmail(participantEmail, workspaceId);
+    if (!contact) {
+      contact = await getContactByName(billingContact, workspaceId);
+    }
+    if (!contact) {
+      await setIntegrationMessage(workspaceId, boardId, items[0].id, "The contact does not exist in Xero, creating...");
+
+      contact = await createOrUpdateContact(contactData);
+    } 
 
     // Calculate due date if not provided
     let effectiveDueDate = dueDate;
