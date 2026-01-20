@@ -500,6 +500,28 @@ export async function ensureAuthenticated(workspaceId) {
     }
 }
 
+export async function getAccounts(workspaceId) {
+    try {
+        if (!isValidWorkspaceId(workspaceId)) {
+            throw new Error('Invalid workspace Id');
+        }
+        await configure();
+        await ensureAuthenticated(workspaceId);
+
+        await xeroClient.updateTenants();
+        if (!xeroClient.tenants?.length) {
+            throw new Error('No organizations connected');
+        }
+        const tenantId = xeroClient.tenants[0].tenantId;
+
+        const response = await xeroClient.accountingApi.getAccounts(tenantId);
+        return response.body.Accounts;
+    } catch (err) {
+        error('Xero-Service', 'Error getting accounts', err);
+        throw new Error('Error getting accounts: ' + err.message);
+    }
+}
+
 export async function updateOrganizationInfo(workspaceId) {
     try {
         if (!isValidWorkspaceId(workspaceId)) {
