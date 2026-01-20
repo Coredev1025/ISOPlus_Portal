@@ -113,6 +113,11 @@ async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, ty
 }
 
 function createContactPayload(values, isUpdate = false) {
+  const postcode = values.postcode || values.Postcode;
+  const address = values.address || values.Address;
+  const suburb = values.suburb || values.Suburb;
+  const state = values.state || values.State;
+
   const basePayload = {
     name: values.client || values.Client || values.Contractor,
     phones: [{
@@ -124,17 +129,17 @@ function createContactPayload(values, isUpdate = false) {
     addresses: [
       {
         addressType: 'POBOX',
-        addressLine1: values.address || values.Address,
-        city: values.suburb || values.Suburb,
-        region: values.state || values.State,
-        postalCode: (values.postcode || values.Postcode).toString()
+        addressLine1: address || ' ',
+        city: suburb || ' ',
+        region: state || ' ',
+        postalCode: postcode ? postcode.toString() : ' '
       },
       {
         addressType: 'STREET',
-        addressLine1: values.address || values.Address,
-        city: values.suburb || values.Suburb,
-        region: values.state || values.State,
-        postalCode: (values.postcode || values.Postcode).toString()
+        addressLine1: address || ' ',
+        city: suburb || ' ',
+        region: state || ' ',
+        postalCode: postcode ? postcode.toString() : ' '
       }
     ],
     emailAddress: values.emailAddress || values['Email Address'] || values.EmailAddress
@@ -273,17 +278,17 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
         addresses: [
           {
             addressType: 'POBOX',
-            addressLine1: contactValues.address,
-            city: contactValues.suburb,
-            region: contactValues.state,
-            postalCode: contactValues.postcode.toString()
+            addressLine1: contactValues.address || ' ',
+            city: contactValues.suburb || ' ',
+            region: contactValues.state || ' ',
+            postalCode: contactValues.postcode ? contactValues.postcode.toString() : ' '
           },
           {
             addressType: 'STREET',
-            addressLine1: contactValues.address,
-            city: contactValues.suburb,
-            region: contactValues.state,
-            postalCode: contactValues.postcode.toString()
+            addressLine1: contactValues.address || ' ',
+            city: contactValues.suburb || ' ',
+            region: contactValues.state || ' ',
+            postalCode: contactValues.postcode ? contactValues.postcode.toString() : ' '
           }
         ],
         emailAddress: contactValues.emailAddress
@@ -1454,17 +1459,17 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
         addresses: [
           {
             addressType: 'POBOX',
-            addressLine1: contractorValues.address,
-            city: contractorValues.suburb,
-            region: contractorValues.state,
-            postalCode: contractorValues.postcode.toString()
+            addressLine1: contractorValues.address || ' ',
+            city: contractorValues.suburb || ' ',
+            region: contractorValues.state || ' ',
+            postalCode: contractorValues.postcode ? contractorValues.postcode.toString() : ' '
           },
           {
             addressType: 'STREET',
-            addressLine1: contractorValues.address,
-            city: contractorValues.suburb,
-            region: contractorValues.state,
-            postalCode: contractorValues.postcode.toString()
+            addressLine1: contractorValues.address || ' ',
+            city: contractorValues.suburb || ' ',
+            region: contractorValues.state || ' ',
+            postalCode: contractorValues.postcode ? contractorValues.postcode.toString() : ' '
           }
         ],
         emailAddress: contractorValues.emailAddress
@@ -1483,17 +1488,17 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
           addresses: [
             {
               addressType: 'POBOX',
-              addressLine1: contractorValues.address,
-              city: contractorValues.suburb,
-              region: contractorValues.state,
-              postalCode: contractorValues.postcode.toString()
+              addressLine1: contractorValues.address || ' ',
+              city: contractorValues.suburb || ' ',
+              region: contractorValues.state || ' ',
+              postalCode: contractorValues.postcode ? contractorValues.postcode.toString() : ' '
             },
             {
               addressType: 'STREET',
-              addressLine1: contractorValues.address,
-              city: contractorValues.suburb,
-              region: contractorValues.state,
-              postalCode: contractorValues.postcode.toString()
+              addressLine1: contractorValues.address || ' ',
+              city: contractorValues.suburb || ' ',
+              region: contractorValues.state || ' ',
+              postalCode: contractorValues.postcode ? contractorValues.postcode.toString() : ' '
             }
           ],
           emailAddress: contractorValues.emailAddress
