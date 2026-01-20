@@ -241,7 +241,11 @@ export async function getContactByEmail(email) {
             `EmailAddress=="${email}"`
         );
 
-        return response.body.Contacts[0];
+        if (response.body?.Contacts && Array.isArray(response.body.Contacts) && response.body.Contacts.length > 0) {
+            return response.body.Contacts[0];
+        }
+
+        return null; // Contact not found
     } catch (err) {
         error('Xero-Service', 'Error retrieving contact from Xero', err);
 
@@ -266,7 +270,11 @@ export async function getContactByName(name) {
             `Name=="${name.trim()}"`
         );
 
-        return response.body.Contacts[0];
+        if (response.body?.Contacts && Array.isArray(response.body.Contacts) && response.body.Contacts.length > 0) {
+            return response.body.Contacts[0];
+        }
+
+        return null; // Contact not found
     } catch (err) {
         error('Xero-Service', 'Error retrieving contact from Xero', err);
 
@@ -293,6 +301,10 @@ export async function createOrUpdateContact(contact) {
             contactData,
             true // true for upsert
         );
+
+        if (!response.body?.Contacts || !Array.isArray(response.body.Contacts) || response.body.Contacts.length === 0) {
+            throw new Error('Invalid response from Xero API: No contacts returned');
+        }
 
         return response.body.Contacts[0];
     } catch (err) {
