@@ -466,8 +466,10 @@ export async function ensureAuthenticated(workspaceId) {
 
     await xeroClient.setTokenSet(tokenSet);
 
-    if (tokenSet.expired()) {
-        if (!refreshTokenExpiresAt || refreshTokenExpiresAt < new Date().getTime()) {
+    // Check if access token is expired
+    const now = new Date().getTime();
+    if (expiresAt && expiresAt < now) {
+        if (!refreshTokenExpiresAt || refreshTokenExpiresAt < now) {
             throw new Error('Your Xero authorization token is expired.');
         }
         try {
