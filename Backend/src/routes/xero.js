@@ -3,7 +3,6 @@ import dotenv from 'dotenv';
 import Business from '../models/Business.js';
 import InvoiceNumber from '../models/InvoiceNumber.js';
 import Board from '../models/Board.js';
-import Item from '../models/Item.js';
 import { warn, error, extractContextFromReq } from '../utils/logger.js';
 import { isEmpty } from '../utils/helpers.js';
 import {
@@ -17,129 +16,6 @@ import {
   getQuoteNDISReferencedItems,
   getNDISMasterPlanReferencedItems
 } from '../services/isoplus.js';
-
-// Import helper functions from webhook.js
-const ATTRIBUTE_NAMES = {
-    PARTICIPANT_PROFILE: 'Participant Profile',
-};
-
-const REF_ATTRIBUTE_NAMES = {
-    PROFILE_EMAIL_ADDRESS: 'Email',
-    PROFILE_BILLING_CONTACT: 'Billing Contact',
-    PROFILE_BILLING_ADDRESS: 'Billing Address',
-    PROFILE_ADDRESS: 'Address',
-    PROFILE_SUBURB: 'Suburb',
-    PROFILE_STATE: 'State',
-    PROFILE_POSTCODE: 'Postcode',
-    PROFILE_POST_CODE: 'Post Code',
-    PROFILE_PHONE_NUMBER: 'Primary Phone Number',
-};
-
-async function bulkFetchReferenceItemsFromDB(workspaceId, boardId, itemIds) {
-    if (!itemIds || itemIds.length === 0) return new Map();
-
-    // Remove duplicates and nulls
-    const uniqueIds = [...new Set(itemIds.filter(Boolean).map(id => {
-        if (typeof id === 'object' && id.id) return id.id.toString();
-        if (typeof id === 'object' && id) return id.toString();
-        return id?.toString();
-    }).filter(Boolean))];
-
-    if (uniqueIds.length === 0) return new Map();
-
-    // First try to fetch from the same board
-    let items = await Item.find({
-        workspaceId,
-        boardId,
-        itemId: { $in: uniqueIds }
-    }).lean();
-
-    // Build lookup map
-    const itemMap = new Map();
-    for (const item of items) {
-        itemMap.set(item.itemId, item);
-    }
-
-    // Check if we're missing any items - they might be in other boards
-    const foundIds = new Set(items.map(i => i.itemId));
-    const missingIds = uniqueIds.filter(id => !foundIds.has(id));
-
-    if (missingIds.length > 0) {
-        // Fetch missing items from ANY board in the workspace
-        const crossBoardItems = await Item.find({
-            workspaceId,
-            itemId: { $in: missingIds }
-        }).lean();
-
-        for (const item of crossBoardItems) {
-            if (!itemMap.has(item.itemId)) {
-                itemMap.set(item.itemId, item);
-            }
-        }
-    }
-
-    return itemMap;
-}
-
-function extractRefId(value) {
-    if (!value) return null;
-    if (Array.isArray(value) && value.length > 0) {
-        const first = value[0];
-        if (typeof first === 'object' && first.id) return first.id.toString();
-        if (typeof first === 'string') return first;
-        return first?.toString();
-    }
-    if (typeof value === 'object' && value.id) return value.id.toString();
-    if (typeof value === 'string') return value;
-    return value?.toString();
-}
-
-function getValueFromFlatData(item, attributeName) {
-    if (!item?.data) return null;
-
-    // Handle array of attribute names (try each until one is found)
-    const attributeNames = Array.isArray(attributeName) ? attributeName : [attributeName];
-
-    for (const attrName of attributeNames) {
-        // Check flat format (data.key)
-        if (item.data[attrName] !== undefined && item.data[attrName] !== null) {
-            return item.data[attrName];
-        }
-    }
-
-    // Check values array format (data.values) - for older format support
-    if (Array.isArray(item.data.values)) {
-        for (const attrName of attributeNames) {
-            const entry = item.data.values.find(v => v.attribute?.name === attrName);
-            if (entry?.data !== undefined && entry?.data !== null) {
-                return entry.data;
-            }
-        }
-    }
-
-    return null;
-}
-
-function getParticipantNameFromProfile(profileItem) {
-    if (!profileItem) return null;
-
-    // Try different name attributes
-    const nameAttrs = [
-        REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT,
-        'Full Name/Preferred Name',
-        'Preferred Name',
-        'First Name',
-        'Last Name',
-        'Name'
-    ];
-
-    const name = getValueFromFlatData(profileItem, nameAttrs);
-    if (!name) return null;
-
-    // Handle object format
-    if (typeof name === 'object' && name.name) return name.name;
-    return String(name);
-}
 import {
   configure,
   ensureAuthenticated,
@@ -179,7 +55,6 @@ function formatValue(val) {
     return val;
   }
 }
-
 
 async function initializeXeroOperation(workspaceId, boardId, item) {
   const business = await Business.findOne({ workspaceId: workspaceId.toString() });
@@ -304,6 +179,13 @@ function mapInvoiceValuesToJobDTO(values) {
   };
 }
 
+const REF_ATTRIBUTE_NAMES = {
+  PROFILE_EMAIL_ADDRESS: 'Email',
+  PROFILE_BILLING_CONTACT: 'Billing Contact',
+  PROFILE_BILLING_ADDRESS: 'Billing Address',
+  PROFILE_PHONE_NUMBER: 'Primary Phone Number'
+};
+
 router.get('/services', (req, res) => {
   const services = [
     { Name: 'Create invoice', Status: 'Ready' },
@@ -355,10 +237,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       throw new Error("Client information is required. Job planning is missing a client reference.");
     }
 
-    let contact = await getContactByEmail(contactValues.emailAddress, workspaceId);
-    if (!contact) {
-      contact = await getContactByName(contactValues.client, workspaceId);
-    }
+    let contact = await getContactByEmail(contactValues.emailAddress);
     if (!contact) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
       contact = await createOrUpdateContact({
@@ -501,14 +380,10 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
     let { firstName, lastName } = participantProfileValues;
     firstName = firstName.trim();
     lastName = lastName.trim();
-
-    let contact = await getContactByEmail(participantProfileValues.email, workspaceId);
-    if (!contact) {
-      contact = await getContactByName(participantProfileValues.fullName || firstName + ' ' + lastName, workspaceId);
-    }
+    let contact = await getContactByEmail(participantProfileValues.email);
     if (!contact) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
-      if(!firstName || !lastName) {
+      if (!firstName || !lastName) {
         throw new Error("First name and last name are required for NDIS invoice contact creation. Please ensure the participant profile contains both first and last name.");
       }
       contact = await createOrUpdateContact({
@@ -1082,7 +957,7 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
 
   try {
     await initializeXeroOperation(workspaceId, boardId, item);
-    const existingContact = await getContactByEmail(contactValues['Email Address'], workspaceId);
+    const existingContact = await getContactByEmail(contactValues['Email Address']);
     let contact;
 
     if (existingContact) {
@@ -1136,7 +1011,7 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
 
   try {
     await initializeXeroOperation(workspaceId, boardId, item);
-    const existingContact = await getContactByEmail(contractorValues['Email Address'], workspaceId);
+    const existingContact = await getContactByEmail(contractorValues['Email Address']);
     let contact;
 
     if (existingContact) {
@@ -1176,10 +1051,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
       throw new Error("Job type information is required.");
     }
 
-    let contact = await getContactByEmail(contactValues.emailAddress, workspaceId);
-    if (!contact) {
-      contact = await getContactByName(contactValues.client, workspaceId);
-    }
+    let contact = await getContactByEmail(contactValues.emailAddress);
     if (!contact) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
       contact = await createOrUpdateContact({
@@ -1317,10 +1189,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
       throw new Error("Service Area value is required.");
     }
 
-    let contact = await getContactByEmail(NDISQuoteValues['Recipient Email'], workspaceId);
-    if (!contact) {
-      contact = await getContactByName(NDISQuoteValues['Recipient of the Quote'], workspaceId);
-    }
+    let contact = await getContactByEmail(NDISQuoteValues['Recipient Email']);
     if (!contact) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
       contact = await createOrUpdateContact({
@@ -1510,10 +1379,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
       throw new Error("Job type information is required. Purchase order is missing Job Type.");
     }
 
-    let contact = await getContactByEmail(contractorValues.emailAddress, workspaceId);
-    if (!contact) {
-      contact = await getContactByName(contractorValues.contractor, workspaceId);
-    }
+    let contact = await getContactByEmail(contractorValues.emailAddress);
     if (!contact) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
       contact = await createOrUpdateContact({
@@ -1682,7 +1548,6 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
   const participantName = req.body?.participantName || '';
   const invoiceDate = req.body?.invoiceDate || new Date().toISOString();
   const dueDate = req.body?.dueDate || '';
-  const isLowCat = req.body?.isLowCat || false;
 
   if (!items || items.length === 0) {
     return res.status(400).json({ message: "No items provided for invoice generation." });
@@ -1698,171 +1563,57 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       throw new Error('Business not found');
     }
 
+    const participantProfileItem = await Item.findOne({ workspaceId: workspaceId.toString(), boardId: boardId.toString(), itemId: items[0].id.toString() });
+    if (!participantProfileItem) {
+      throw new Error('Participant profile item not found');
+    }
+
     await configure();
     await ensureAuthenticated(workspaceId);
-
-    // Check if this is a Low-Cat board
-    let boardLabel = '';
-    if (!isLowCat) {
-      // Check board label from database
-      const board = await Board.findOne({ boardId: boardId.toString() }).lean();
-      if (board?.label === 'Care Management - SaH - Low Cat') {
-        boardLabel = board.label;
-      }
-    }
-    const isLowCatBoard = isLowCat || boardLabel === 'Care Management - SaH - Low Cat';
 
     // Validate all items belong to the workspace/board
     for (const item of items) {
       await validateItemBelongsToTenant(workspaceId, boardId, item.id);
     }
 
-    // OPTIMIZED: Collect all reference IDs first, then bulk fetch from database
-    const participantProfileIds = new Set();
+    // Get participant name - for Low-Cat, prefer billing contact if available
+    const receiverName = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || ' ';
+    const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || ' ';
+    const participantPhoneNumber = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_PHONE_NUMBER) || ' ';
+    const participantEmail = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_EMAIL_ADDRESS) || ' ';
+    let isLowCatBoard = req.body?.isLowCat || false;
 
-    // Extract all reference IDs from items
-    for (const item of items) {
-      // Get participant profile ID from the actual database item
-      const dbItem = await Item.findOne({ workspaceId, boardId, itemId: item.id.toString() }).lean();
-      if (dbItem) {
-        const participantProfileValue = getValueFromFlatData(dbItem, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
-        const participantProfileId = extractRefId(participantProfileValue);
-        if (participantProfileId) participantProfileIds.add(participantProfileId);
-      }
-    }
-
-    // Bulk fetch all reference items from MongoDB (NO API calls!)
-    const allRefIds = [...participantProfileIds];
-    const refItemsMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, allRefIds);
-
-    // Get participant name from first item using database lookup
-    let participantNameFromDB = ' ';
-    let receiverName = ' ';
-    let receiverAddress = ' ';
-    let participantPhoneNumber = '';
-    let participantEmail = '';
-
-    if (items.length > 0) {
-      const firstItem = await Item.findOne({ workspaceId, boardId, itemId: items[0].id.toString() }).lean();
-      if (firstItem) {
-        // Get Participant Profile reference from DB lookup map
-        const participantProfileValue = getValueFromFlatData(firstItem, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
-        const participantProfileId = extractRefId(participantProfileValue);
-
-        if (participantProfileId) {
-          const participantProfileItem = refItemsMap.get(participantProfileId);
-          if (participantProfileItem) {
-            // Use helper functions to get participant profile data
-            const profileName = getParticipantNameFromProfile(participantProfileItem);
-            participantNameFromDB = profileName || ' ';
-
-            // Always try to get billing contact and billing address from participant profile
-            // These are the preferred fields for the PDF template
-            receiverName = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || ' ';
-            const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || ' ';
-            participantPhoneNumber = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_PHONE_NUMBER) || ' ';
-            participantEmail = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_EMAIL_ADDRESS) || ' ';
-            // Get address info for fallback construction
-            const addressInfo = {
-              address: getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_ADDRESS) || ' ',
-              suburb: getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_SUBURB) || ' ',
-              state: getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_STATE) || '',
-              postcode: getValueFromFlatData(participantProfileItem, [REF_ATTRIBUTE_NAMES.PROFILE_POSTCODE, REF_ATTRIBUTE_NAMES.PROFILE_POST_CODE]) || ' '
-            };
-
-            // For both SaH and SaH (Low-Cat), Billing Address in Xero must match
-            // the Billing Address field in ISO+ exactly when it is present.
-            if (billingAddressBase && billingAddressBase.trim() !== '') {
-              receiverAddress = billingAddressBase.trim();
-            } else {
-              // If Billing Address is not available, construct a fallback from address fields
-              let addressParts = [];
-              if (addressInfo.address && addressInfo.address.trim() !== ' ') {
-                addressParts.push(addressInfo.address.trim());
-              }
-              if (addressInfo.suburb && addressInfo.suburb.trim() !== ' ') {
-                addressParts.push(addressInfo.suburb.trim());
-              }
-              if (addressInfo.state && addressInfo.state.trim() !== '') {
-                addressParts.push(addressInfo.state.trim());
-              }
-              if (addressInfo.postcode && addressInfo.postcode.trim() !== ' ') {
-                addressParts.push(addressInfo.postcode.trim());
-              }
-              receiverAddress = addressParts.filter(p => p).join(', ') || ' ';
-            }
-          }
-        }
-      }
-    }
-
-    // Get participant name - use from DB if available, fallback to request
-    let effectiveParticipantName = participantNameFromDB && participantNameFromDB.trim() !== ' '
-      ? participantNameFromDB.trim()
-      : (participantName || items[0].participant || '');
-
-    // Map client details to match template - both templates expect "Billing Contact" and "Billing Address"
-    // Use billing contact/address from profile if available, otherwise fall back to participant name and address
-    let billingContact = (receiverName && receiverName.trim() !== '' && receiverName.trim() !== ' ')
-      ? receiverName.trim()
-      : (effectiveParticipantName && effectiveParticipantName.trim() !== '' && effectiveParticipantName.trim() !== ' '
-        ? effectiveParticipantName.trim()
-        : ' ');
-
-    let billingAddress = (receiverAddress && receiverAddress.trim() !== '' && receiverAddress.trim() !== ' ')
-      ? receiverAddress.trim()
-      : ' ';
-
-    // Try to find or create contact in Xero
     let contact = null;
-
-    // Parse participant name into first and last name
-    const nameParts = billingContact.trim().split(/\s+/);
-    const firstName = nameParts[0] || '';
-    const lastName = nameParts.slice(1).join(' ') || '';
-
-    // Use Billing Address from ISO+ directly for the Xero contact Billing Address.
-    // We keep the entire Billing Address string in addressLine1 and only use
-    // city/region/postalCode as optional extras when available.
-    const contactAddress = billingAddress || ' ';
-
-    const addressParts = contactAddress ? contactAddress.split(',').map(p => p?.trim()).filter(Boolean) : [];
-    const hasValidAddress = addressParts.length >= 2;
-
-    const contactData = {
-      name: billingContact,
-      firstName: firstName,
-      lastName: lastName || firstName, // Use firstName as lastName if not provided
-      phones: participantPhoneNumber ? [{phoneType:'DEFAULT', phoneNumber: participantPhoneNumber}] : undefined,
-      addresses: contactAddress && hasValidAddress ? [{
-        addressType: 'POBOX',
-        addressLine1: addressParts[0] || ' ',
-        city: addressParts[1] || ' ',
-        region: addressParts[2] || ' ',
-        postalCode: addressParts[3].toString() || ' ',
-        country: 'Australia'
-      }, {
-        addressType: 'STREET',
-        addressLine1: addressParts[0] || ' ',
-        city: addressParts[1] || ' ',
-        region: addressParts[2] || ' ',
-        postalCode: addressParts[3].toString() || ' ',
-        country: 'Australia'
-      }] : undefined,
-      emailAddress: participantEmail || undefined
-    };
-
-    console.log("Contact Payload: " + JSON.stringify(contactData));
-
-    contact = await getContactByEmail(participantEmail, workspaceId);
-    if (!contact) {
-      contact = await getContactByName(billingContact, workspaceId);
+    if (!participantEmail) {
+      contact = await getContactByEmail(participantEmail);
+      if (!contact) {
+        contact = await getContactByName(receiverName);
+      }
+      if (!contact) {
+        contact = await createOrUpdateContact({
+          name: receiverName,
+          firstName: receiverName.split(' ')[0] || '',
+          lastName: receiverName.split(' ')[1] || '',
+          phones: participantPhoneNumber ? [{ phoneType: 'DEFAULT', phoneNumber: participantPhoneNumber }] : undefined,
+          addresses: billingAddressBase ? [
+            {
+              addressType: 'POBOX',
+              addressLine1: billingAddressBase.split(',')[0].trim(),
+              city: billingAddressBase.split(',')[1].trim(),
+              region: billingAddressBase.split(',')[2].trim(),
+              postalCode: billingAddressBase.split(',')[3].trim()
+            }, {
+              addressType: 'STREET',
+              addressLine1: billingAddressBase.split(',')[0].trim(),
+              city: billingAddressBase.split(',')[1].trim(),
+              region: billingAddressBase.split(',')[2].trim(),
+              postalCode: billingAddressBase.split(',')[3].trim()
+            }
+          ] : undefined,
+          emailAddress: participantEmail || undefined
+        });
+      }
     }
-    if (!contact) {
-      await setIntegrationMessage(workspaceId, boardId, items[0].id, "The contact does not exist in Xero, creating...");
-
-      contact = await createOrUpdateContact(contactData);
-    } 
 
     // Calculate due date if not provided
     let effectiveDueDate = dueDate;
@@ -1874,7 +1625,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 
     // Build line items from service records
     const lineItems = [];
-    const gstType = isLowCatBoard ? "OUTPUT" : "EXEMPTOUTPUT"; // GST 10% for Low-Cat, GST Free for others
+    const gstType = "EXEMPTOUTPUT"; // GST 10% for Low-Cat, GST Free for others
     let totalAmount = 0;
 
     for (const item of items) {
@@ -1897,22 +1648,21 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       const quantity = typeof item.quantity === 'number' ? item.quantity : Number(item.quantity || 0);
       const unitPrice = typeof item.unitPrice === 'number' ? item.unitPrice : Number(item.unitPrice || 0);
       const totalItemAmount = typeof item.totalAmount === 'number' ? item.totalAmount : Number(item.totalAmount || 0);
+      const participantContributionAmount = typeof item.participantContribution === 'number' ? item.participantContribution : Number(item.totalAmount || 0);
 
       // For Low-Cat, use total amount; for others, use participant contribution if available
       const lineAmount = isLowCatBoard
         ? totalItemAmount // For Low-Cat, use total amount
-        : (typeof item.participantContribution === 'number' && item.participantContribution > 0
-          ? item.participantContribution
-          : totalItemAmount); // For others, use participant contribution or total amount
+        : participantContributionAmount
+          ? participantContributionAmount
+          : totalItemAmount; // For others, use participant contribution or total amount
 
       if (lineAmount > 0) {
-        // Calculate unit price: if quantity > 0, divide line amount by quantity; otherwise use the unitPrice from item
-        const calculatedUnitPrice = quantity > 0 ? lineAmount / quantity : (unitPrice > 0 ? unitPrice : lineAmount);
 
         lineItems.push({
           description: description || 'Service',
           quantity: formatValue(quantity || 1),
-          unitAmount: formatValue(calculatedUnitPrice),
+          unitAmount: formatValue(lineAmount / quantity),
           taxType: gstType
         });
         totalAmount += lineAmount;
@@ -1928,8 +1678,8 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 
     // Create invoice in Xero
     const invoiceReference = isLowCatBoard
-      ? `Tax Invoice - ${billingContact}`
-      : `Participant Tax Invoice - ${billingContact}`;
+      ? `Tax Invoice - ${effectiveParticipantName}`
+      : `Participant Tax Invoice - ${effectiveParticipantName}`;
 
     const invoice = {
       type: 'ACCREC',
@@ -1961,7 +1711,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     logAuditTrail({
       workspaceId,
       action: auditAction,
-      detail: `Invoice created successfully, invoice number: ${createdInvoice.invoiceNumber}, ${isLowCatBoard ? 'receiver' : 'participant'}: ${billingContact}, items: ${items.length}`,
+      detail: `Invoice created successfully, invoice number: ${createdInvoice.invoiceNumber}, ${isLowCatBoard ? 'receiver' : 'participant'}: ${effectiveParticipantName}, items: ${items.length}`,
       req
     });
 
@@ -1975,7 +1725,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       invoiceId: createdInvoice.invoiceID,
       invoiceUrl: createdInvoice.url,
       itemCount: items.length,
-      participantName: billingContact
+      participantName: effectiveParticipantName
     });
   } catch (err) {
     const errorMessage = (err && err.message) ? err.message : 'Server error: An unknown error occurred. Please contact support via ISO+™ Portal.';
