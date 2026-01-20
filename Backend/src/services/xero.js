@@ -309,7 +309,36 @@ export async function createOrUpdateContact(contact) {
         return response.body.Contacts[0];
     } catch (err) {
         error('Xero-Service', 'Error creating or updating contact in Xero', err);
-        throw new Error('Error creating or updating contact in Xero');
+
+        if (err.response?.statusCode === 403) {
+            throw new Error('Permission denied. Ensure your app has accounting.contacts scope.');
+        }
+        if (err.response?.statusCode === 401) {
+            throw new Error('Authentication expired. Please re-authenticate.');
+        }
+        if (err.response?.statusCode === 400) {
+            throw new Error('Invalid contact data. Please check the contact information.');
+        }
+        if (err.response?.statusCode === 409) {
+            throw new Error('Contact already exists with conflicting data.');
+        }
+
+        // Handle Xero API validation errors
+        if (err.response?.body?.Type === 'ValidationException') {
+            let validationErrors = "";
+            if (err.response.body.Elements) {
+                err.response.body.Elements.forEach(element => {
+                    if (element.ValidationErrors) {
+                        validationErrors += element.ValidationErrors.map(error => error.Message).join(', ');
+                    }
+                });
+            }
+            if (validationErrors) {
+                throw new Error(`Contact validation failed: ${validationErrors}`);
+            }
+        }
+
+        throw new Error('Error creating or updating contact in Xero: ' + (err.message || 'Unknown error'));
     }
 }
 
