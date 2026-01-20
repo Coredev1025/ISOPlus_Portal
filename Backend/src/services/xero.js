@@ -202,6 +202,20 @@ export async function getContactByEmail(email, workspaceId) {
     }
 }
 
+export async function getContactByName(name, workspaceId) {
+    const tenantId = await ensureAuthenticated(workspaceId);
+
+    try {
+        const response = await xeroClient.accountingApi.getContacts(
+            tenantId, null, `Name=="${name}"`
+        );
+
+        return response.body.Contacts?.[0] || null;
+    } catch (err) {
+        await handleXeroError(err, 'getContactByName');
+    }
+}
+
 export async function createOrUpdateContact(contact, workspaceId) {
     const tenantId = await ensureAuthenticated(workspaceId);
 
