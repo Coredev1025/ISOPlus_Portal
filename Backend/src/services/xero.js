@@ -132,238 +132,176 @@ export async function refreshTokenSet(tokenSet) {
     }
 }
 
-export async function createToken() {
-    try {
-        if (!xeroClient) {
-            throw new Error('Xero client is not configured.');
-        }
-
-        const token = await xeroClient.readTokenSet();
-        const connections = await xeroClient.updateTenants(false) || [];
-        const xeroTenantId = connections[0]?.tenantId || null;
-
-        return { token, xeroTenantId };
-    } catch (err) {
-        error('Xero-Service', 'Error creating token', err);
-        throw new Error('Error creating token');
-    }
+export async function createToken(workspaceId) {
+    await ensureAuthenticated(workspaceId);
+    const token = xeroClient.readTokenSet();
+    const tenantId = xeroClient.tenants[0]?.tenantId;
+    return { token, xeroTenantId: tenantId };
 }
 
-export async function createInvoice(invoice) {
-    const {
-        type,
-        lineItems,
-        currencyCode,
-        lineAmountTypes,
-        date,
-        dueDate,
-        status,
-        reference,
-        customerName,
-        amount
-    } = invoice;
-    const contactID = invoice.contact?.contactID || invoice.contactID;
+export async function createInvoice(invoice, workspaceId) {
     const validationObj = {
-        type,
-        contactID,
-        lineItems,
-        currencyCode,
-        lineAmountTypes,
-        date,
-        dueDate,
-        status,
-        reference,
-        customerName,
-        amount
+        type: invoice.type,
+        contactID: invoice.contact?.contactID || invoice.contactID,
+        lineItems: invoice.lineItems,
+        currencyCode: invoice.currencyCode,
+        lineAmountTypes: invoice.lineAmountTypes,
+        date: invoice.date,
+        dueDate: invoice.dueDate,
+        status: invoice.status,
+        reference: invoice.reference,
+        customerName: invoice.customerName,
+        amount: invoice.amount
     };
-    const { error: validationError } = IsoPlusInvoiceValues.validationSchema().validate(validationObj, { abortEarly: false });
+
+    const { error: validationError } = IsoPlusInvoiceValues.validationSchema()
+        .validate(validationObj, { abortEarly: false });
     if (validationError) {
         throw new Error('Invoice validation failed: ' + validationError.details.map(d => d.message).join('; '));
     }
+
+    const tenantId = await ensureAuthenticated(workspaceId);
+
+    const invoiceData = {
+        Invoices: [{
+            Type: invoice.type || 'ACCREC',
+            Contact: { ContactID: invoice.contact?.contactID },
+            Reference: invoice.reference,
+            Date: new Date(invoice.date).toISOString().split('T')[0],
+            DueDate: new Date(invoice.dueDate).toISOString().split('T')[0],
+            LineItems: invoice.lineItems.map(item => ({
+                Description: item.description,
+                Quantity: item.quantity,
+                UnitAmount: item.unitAmount,
+                TaxType: item.taxType || 'NONE',
+                AccountCode: item.accountCode // REQUIRED field
+            })),
+            Status: invoice.status || 'AUTHORISED'
+        }]
+    };
+
     try {
-        if (!xeroClient) {
-            throw new Error('Xero client not configured');
-        }
-
-        await xeroClient.updateTenants(false);
-        if (!xeroClient.tenants?.length) {
-            throw new Error('No organizations connected');
-        }
-        const tenantId = xeroClient.tenants[0].tenantId;
-
-        const invoiceData = {
-            invoices: [{
-                type: invoice.type || 'ACCREC',
-                contact: { contactID: invoice.contact.contactID },
-                reference: invoice.reference,
-                date: new Date(invoice.date).toISOString().split('T')[0],
-                dueDate: new Date(invoice.dueDate).toISOString().split('T')[0], // YYYY-MM-DD format
-                lineItems: invoice.lineItems.map(item => ({
-                    itemCode: item.itemCode,
-                    description: item.description,
-                    quantity: item.quantity,
-                    unitAmount: item.unitAmount,
-                    taxType: item.taxType,
-                    lineAmount: item.lineAmount
-                })),
-                status: invoice.status || 'AUTHORISED'
-            }]
-        };
-
-        const response = await xeroClient.accountingApi.createInvoices(
-            tenantId,
-            invoiceData
-        );
-
-        return response.body.invoices[0];
+        const response = await xeroClient.accountingApi.createInvoices(tenantId, invoiceData);
+        return response.body.Invoices[0];
     } catch (err) {
-        let jsonString = Object.values(err).join('');
-        let errorMessage = JSON.parse(jsonString);
-        if (errorMessage.response?.statusCode === 403) {
-            throw new Error('Authentication failed. Please re-authenticate.');
-        }
-        if(errorMessage.body?.Type === 'ValidationException') {
-            let validationErrors = "";
-            errorMessage.body.Elements.forEach(element => {
-                validationErrors += element.ValidationErrors.map(error => error.Message).join(', ');
-            });
-            validationErrors = validationErrors.trim();
-            throw new Error(`Xero Invoice Validation Errors: ${validationErrors}`);
-        }
-        if (errorMessage.response?.body) {
-            throw new Error(`Xero API Error: ${JSON.stringify(errorMessage.response.body)}`);
-        }
-        throw new Error(`Xero Invoice creation failed: ${err.message}`);
+        await handleXeroError(err, 'createInvoice');
     }
 }
 
-export async function getContactByEmail(email) {
-    try {
-        const { tokenSet, xeroTenantId } = await createToken();
+export async function getContactByEmail(email, workspaceId) {
+    const tenantId = await ensureAuthenticated(workspaceId);
 
+    try {
         const response = await xeroClient.accountingApi.getContacts(
-            xeroTenantId,
-            null,
-            `EmailAddress=="${email}"`
+            tenantId, null, `EmailAddress=="${email}"`
         );
 
-        return response.body.contacts[0];
+        return response.body.Contacts?.[0] || null;
     } catch (err) {
-        error('Xero-Service', 'Error retrieving contact from Xero', err);
-
-        if (err.response?.statusCode === 403) {
-            throw new Error('Permission denied. Ensure your app has accounting.contacts scope.');
-        }
-        if (err.response?.statusCode === 401) {
-            throw new Error('Authentication expired. Please re-authenticate.');
-        }
-
-        throw new Error('Error retrieving contact from Xero: ' + err.message);
+        await handleXeroError(err, 'getContactByEmail');
     }
 }
 
-export async function createOrUpdateContact(contact) {
+export async function getContactByName(name, workspaceId) {
+    const tenantId = await ensureAuthenticated(workspaceId);
+
     try {
-        const { xeroTenantId } = await createToken();
-        const contacts = {
-            contacts: [contact],
-        };
+        const response = await xeroClient.accountingApi.getContacts(
+            tenantId, null, `Name=="${name}"`
+        );
 
-        let response;
-        if (!contact.contactID) {
-            response = await xeroClient.accountingApi.createContacts(
-                xeroTenantId,
-                contacts
-            );
-        } else {
-            response = await xeroClient.accountingApi.updateContact(
-                xeroTenantId,
-                contact.contactID,
-                contacts
-            );
-        }
-
-        return response.body.contacts[0];
+        return response.body.Contacts?.[0] || null;
     } catch (err) {
-        error('Xero-Service', 'Error creating or updating contact in Xero', err);
-        throw new Error('Error creating or updating contact in Xero');
+        await handleXeroError(err, 'getContactByName');
     }
 }
 
-export async function findOrCreateItem(itemCode, itemName) {
+export async function createOrUpdateContact(contact, workspaceId) {
+    const tenantId = await ensureAuthenticated(workspaceId);
+
+    const contactsData = { Contacts: [contact] };
+
+    try {
+        let response;
+        if (!contact.ContactID) {
+            response = await xeroClient.accountingApi.createContacts(tenantId, contactsData);
+        } else {
+            response = await xeroClient.accountingApi.updateContact(tenantId, contact.ContactID, contactsData);
+        }
+
+        return response.body.Contacts[0];
+    } catch (err) {
+        await handleXeroError(err, 'createOrUpdateContact');
+    }
+}
+
+export async function findOrCreateItem(itemCode, itemName, workspaceId) {
     if (!itemCode || typeof itemCode !== 'string' || !itemName || typeof itemName !== 'string') {
         throw new Error('Item validation failed: itemCode and itemName are required and must be strings.');
     }
+
+    const tenantId = await ensureAuthenticated(workspaceId);
+
     try {
-        if (!xeroClient) {
-            throw new Error('Xero client not configured');
-        }
-
-        await xeroClient.updateTenants(false);
-        const tenantId = xeroClient.tenants[0].tenantId;
-
         const searchResponse = await xeroClient.accountingApi.getItems(
             tenantId,
             null,
             `Code=="${itemCode}"`
         );
 
-        if (searchResponse.body.items?.length > 0) {
-            return searchResponse.body.items[0];
+        if (searchResponse.body.Items?.length > 0) {
+            return searchResponse.body.Items[0];
         }
 
         const newItem = {
-            code: itemCode,
-            name: itemName,
+            Code: itemCode,
+            Name: itemName,
         };
 
         const createResponse = await xeroClient.accountingApi.createItems(
             tenantId,
-            { items: [newItem] }
+            { Items: [newItem] }
         );
 
-        return createResponse.body.items[0];
+        return createResponse.body.Items[0];
 
     } catch (err) {
-        error('Xero-Service', 'Item operation failed:', err);
-
-        if (err.response?.statusCode === 403) {
-            throw new Error('Missing accounting.settings scope');
-        }
-        if (err.message && err.message.includes('toISOString')) {
-            throw new Error('Invalid date parameter in API request');
-        }
-
-        throw new Error(`Item operation failed: ${err.message}`);
+        await handleXeroError(err, 'findOrCreateItem');
     }
 }
 
-export async function createQuote(quote) {
+export async function createQuote(quote, workspaceId) {
+    const tenantId = await ensureAuthenticated(workspaceId);
+
+    // Quotes use Invoices endpoint with Type: 'QUOTE'
+    const quoteData = {
+        Invoices: [{
+            Type: 'QUOTE',
+            Contact: { ContactID: quote.contactID },
+            LineItems: quote.lineItems.map(item => ({
+                Description: item.description,
+                Quantity: item.quantity,
+                UnitAmount: item.unitAmount,
+                TaxType: item.taxType || 'NONE'
+            })),
+            Status: 'DRAFT'
+        }]
+    };
+
     try {
-        const { token, xeroTenantId } = await createToken();
-
-        const quotes = {
-            quotes: [quote],
-        };
-
-        const createdQuotes = await xeroClient.accountingApi.createQuotes(
-            xeroTenantId,
-            quotes
-        );
-
-        return createdQuotes.body.quotes[0];
+        const response = await xeroClient.accountingApi.createInvoices(tenantId, quoteData);
+        return response.body.Invoices[0];
     } catch (err) {
-        error('Xero-Service', 'Error creating quote in Xero', err);
-        throw new Error('Error creating quote in Xero');
+        await handleXeroError(err, 'createQuote');
     }
 }
 
-export async function quoteExists(quoteNumber) {
-    try {
-        const { token, xeroTenantId } = await createToken();
+export async function quoteExists(quoteNumber, workspaceId) {
+    const tenantId = await ensureAuthenticated(workspaceId);
 
+    try {
         const response = await xeroClient.accountingApi.getQuotes(
-            xeroTenantId,
+            tenantId,
             null,
             null,
             null,
@@ -376,55 +314,61 @@ export async function quoteExists(quoteNumber) {
             quoteNumber
         );
 
-        return response.body.quotes.length > 0;
+        return response.body.Quotes?.length > 0 || false;
     } catch (err) {
-        error('Xero-Service', 'Error checking if quote exists in Xero', err);
-        throw new Error('Error checking if quote exists in Xero');
+        await handleXeroError(err, 'quoteExists');
     }
 }
 
-export async function purchaseOrderExists(purchaseOrderNumber) {
+export async function purchaseOrderExists(purchaseOrderNumber, workspaceId) {
+    if (!purchaseOrderNumber) {
+        return false;
+    }
+
+    const tenantId = await ensureAuthenticated(workspaceId);
+
     try {
-        if (!purchaseOrderNumber) {
-            return false;
-        }
-
-        const { token, xeroTenantId } = await createToken();
-
         const response = await xeroClient.accountingApi.getPurchaseOrderByNumber(
-            xeroTenantId,
+            tenantId,
             purchaseOrderNumber
         );
 
-        return response.body.purchaseOrders.length > 0;
+        return response.body.PurchaseOrders?.length > 0 || false;
     } catch (err) {
         error('Xero-Service', 'Error checking if purchase order exists in Xero', err);
         return false;
     }
 }
 
-export async function createPurchaseOrder(purchaseOrder) {
+export async function createPurchaseOrder(purchaseOrder, workspaceId) {
+    const tenantId = await ensureAuthenticated(workspaceId);
+
+    const poData = {
+        PurchaseOrders: [{
+            Type: 'ACCPAY',
+            Contact: { ContactID: purchaseOrder.contactID },
+            Reference: purchaseOrder.reference,
+            Date: new Date(purchaseOrder.date).toISOString().split('T')[0],
+            LineItems: purchaseOrder.lineItems.map(item => ({
+                Description: item.description,
+                Quantity: item.quantity,
+                UnitAmount: item.unitAmount,
+                TaxType: item.taxType || 'NONE'
+            })),
+            Status: 'AUTHORISED'
+        }]
+    };
+
     try {
-        const { token, xeroTenantId } = await createToken();
-
-        const purchaseOrders = {
-            purchaseOrders: [purchaseOrder],
-        };
-
-        const createdPurchaseOrders = await xeroClient.accountingApi.createPurchaseOrders(
-            xeroTenantId,
-            purchaseOrders
-        );
-
-        return createdPurchaseOrders.body.purchaseOrders[0];
+        const response = await xeroClient.accountingApi.createPurchaseOrders(tenantId, poData);
+        return response.body.PurchaseOrders[0];
     } catch (err) {
-        error('Xero-Service', 'Error creating purchase order in Xero', err);
-        throw new Error('Error creating purchase order in Xero');
+        await handleXeroError(err, 'createPurchaseOrder');
     }
 }
 
 function isValidWorkspaceId(workspaceId) {
-    return typeof workspaceId === 'string';
+    return typeof workspaceId === 'string' && workspaceId.length > 0;
 }
 
 async function getLatestTokens(workspaceId) {
@@ -440,9 +384,12 @@ export async function ensureAuthenticated(workspaceId) {
     if (!isValidWorkspaceId(workspaceId)) {
         throw new Error('Invalid workspace Id');
     }
-    const { accessToken, refreshToken, expiresAt, refreshTokenExpiresAt } = await getLatestTokens(workspaceId);
 
-    if (!xeroClient) throw new Error('Xero client not configured');
+    if (!xeroClient) {
+        await configure();
+    }
+
+    const { accessToken, refreshToken, expiresAt, refreshTokenExpiresAt } = await getLatestTokens(workspaceId);
 
     await xeroClient.setTokenSet({
         access_token: accessToken,
@@ -453,46 +400,72 @@ export async function ensureAuthenticated(workspaceId) {
     });
 
     let currentTokenSet = xeroClient.readTokenSet();
-    if (currentTokenSet) {
-        if (currentTokenSet.expired() && currentTokenSet.refresh_token) {
-            if (!refreshTokenExpiresAt || refreshTokenExpiresAt < new Date().getTime()) {
-                throw new Error('Your Xero authorization token is expired.');
-            }
-            try {
-                const newTokenSet = await xeroClient.refreshWithRefreshToken(   
-                    process.env.XERO_CLIENT_ID,
-                    process.env.XERO_CLIENT_SECRET,
-                    currentTokenSet.refresh_token
-                );
-
-                const refreshTokenChanged = newTokenSet.refresh_token && newTokenSet.refresh_token !== currentTokenSet.refresh_token;
-                const now = new Date();
-                const updateFields = {
-                    'xeroTokens.accessToken': newTokenSet.access_token,
-                    'xeroTokens.refreshToken': newTokenSet.refresh_token,
-                    'xeroTokens.expiresAt': newTokenSet.expires_at
-                };
-                if (refreshTokenChanged) {
-                    updateFields['xeroTokens.refreshTokenExpiresAt'] = now.getTime() + 60 * 24 * 60 * 60 * 1000;
-                }
-                await Business.updateOne(
-                    { workspaceId },
-                    { $set: updateFields }
-                );
-                await xeroClient.setTokenSet(newTokenSet);
-            } catch (refreshError) {
-                error('Xero-Service', 'Error refreshing token', refreshError);
-                throw new Error('Your Xero authorization token is expired. Please go to ISOPlus Portal and authorize again.');
-            }
+    if (currentTokenSet?.expired() && currentTokenSet.refresh_token) {
+        if (!refreshTokenExpiresAt || refreshTokenExpiresAt < Date.now()) {
+            throw new Error('Your Xero authorization token is expired and cannot be refreshed.');
         }
-    } else {
-        throw new Error('Not authenticated with Xero');
+        try {
+            const newTokenSet = await xeroClient.refreshWithRefreshToken(
+                process.env.XERO_CLIENT_ID,
+                process.env.XERO_CLIENT_SECRET,
+                currentTokenSet.refresh_token
+            );
+
+            const refreshTokenChanged = newTokenSet.refresh_token && newTokenSet.refresh_token !== currentTokenSet.refresh_token;
+            const now = new Date();
+            const updateFields = {
+                'xeroTokens.accessToken': newTokenSet.access_token,
+                'xeroTokens.refreshToken': newTokenSet.refresh_token,
+                'xeroTokens.expiresAt': newTokenSet.expires_at
+            };
+            if (refreshTokenChanged) {
+                updateFields['xeroTokens.refreshTokenExpiresAt'] = now.getTime() + 60 * 24 * 60 * 60 * 1000;
+            }
+            await Business.updateOne({ workspaceId }, { $set: updateFields });
+            await xeroClient.setTokenSet(newTokenSet);
+        } catch (refreshError) {
+            error('Xero-Service', 'Token refresh failed', refreshError);
+            throw new Error('Xero token refresh failed. Please re-authorize.');
+        }
     }
 
     const tenants = await xeroClient.updateTenants(false);
-    if (!tenants || !tenants.length) {
+    if (!tenants?.length) {
         throw new Error('No Xero organizations connected');
     }
+
+    return tenants[0].tenantId; // Return tenantId for convenience
+}
+
+async function handleXeroError(err, operation) {
+    error('Xero-Service', `${operation} failed`, err);
+
+    // Proper error parsing for xero-node
+    if (err.statusCode === 429) {
+        throw new Error('Rate limit exceeded. Please wait and retry.');
+    }
+
+    if (err.statusCode === 401) {
+        throw new Error('Authentication expired. Please re-authenticate.');
+    }
+
+    if (err.statusCode === 403) {
+        throw new Error('Insufficient permissions. Check your scopes.');
+    }
+
+    if (err.body?.Elements) {
+        // Validation errors
+        const validationErrors = err.body.Elements.flatMap(el =>
+            el.ValidationErrors?.map(v => v.Message) || []
+        ).join('; ');
+        throw new Error(`Validation Error: ${validationErrors}`);
+    }
+
+    if (err.body?.Message) {
+        throw new Error(err.body.Message);
+    }
+
+    throw new Error(`Xero ${operation} failed: ${err.message}`);
 }
 
 export async function updateOrganizationInfo(workspaceId) {
@@ -500,23 +473,23 @@ export async function updateOrganizationInfo(workspaceId) {
         if (!isValidWorkspaceId(workspaceId)) {
             throw new Error('Invalid workspace Id');
         }
-        await configure();        
+        await configure();
         await ensureAuthenticated(workspaceId);
-        
+
         const tenants = await xeroClient.updateTenants(false);
         if (!tenants || !tenants.length) {
             throw new Error('No Xero organizations connected');
         }
-        
+
         const organizationInfo = await getOrganizationInfo(tenants[0].tenantId);
-        
+
         if (organizationInfo) {
             await Business.updateOne(
                 { workspaceId },
                 { $set: { xeroOrganization: organizationInfo } }
             );
         }
-        
+
         return organizationInfo;
     } catch (err) {
         error('Xero-Service', 'Error updating organization info', err);

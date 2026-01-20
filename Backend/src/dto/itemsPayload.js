@@ -318,15 +318,15 @@ class NDISPricingValues extends ItemValues {
 class IsoPlusLineItemValues extends ItemValues {
     constructor(data) {
         super();
-        this.description = data.description;
-        this.quantity = data.quantity;
-        this.unitAmount = data.unitAmount;
-        this.accountCode = data.accountCode;
-        this.discountRate = data.discountRate;
-        this.itemCode = data.itemCode;
-        this.taxType = data.taxType;
-        this.taxAmount = data.taxAmount;
-        this.lineAmount = data.lineAmount;
+        this.description = data.description || data.Description;
+        this.quantity = data.quantity || data.Quantity;
+        this.unitAmount = data.unitAmount || data.UnitAmount;
+        this.accountCode = data.accountCode || data.AccountCode;
+        this.discountRate = data.discountRate || data.DiscountRate;
+        this.itemCode = data.itemCode || data.ItemCode;
+        this.taxType = data.taxType || data.TaxType;
+        this.taxAmount = data.taxAmount || data.TaxAmount;
+        this.lineAmount = data.lineAmount || data.LineAmount;
     }
 
     static validationSchema() {
@@ -344,7 +344,10 @@ class IsoPlusLineItemValues extends ItemValues {
                 'number.greater': 'UnitAmount must be greater than 0',
                 'any.required': 'UnitAmount is required.'
             }),
-            accountCode: Joi.string().allow(null, ''),
+            accountCode: Joi.string().required().messages({
+                'string.empty': 'AccountCode is required for Xero API.',
+                'any.required': 'AccountCode is required for Xero API.'
+            }),
             discountRate: Joi.number().min(0).max(100).allow(null).messages({
                 'number.base': 'DiscountRate must be a number.',
                 'number.min': 'DiscountRate must be between 0 and 100',
@@ -352,7 +355,9 @@ class IsoPlusLineItemValues extends ItemValues {
                 'any.required': 'DiscountRate is required.'
             }),
             itemCode: Joi.string().allow(null, ''),
-            taxType: Joi.string().allow(null, ''),
+            taxType: Joi.string().default('NONE').messages({
+                'string.base': 'TaxType must be a string.'
+            }),
             taxAmount: Joi.number().min(0).allow(null).messages({
                 'number.base': 'TaxAmount must be a number.',
                 'number.min': 'TaxAmount must be non-negative.'
@@ -368,23 +373,23 @@ class IsoPlusLineItemValues extends ItemValues {
 class IsoPlusInvoiceValues extends ItemValues {
     constructor(data) {
         super();
-        this.type = data.type;
-        this.contactID = data.contactID;
-        this.lineItems = (data.lineItems || []).map(item => new IsoPlusLineItemValues(item));
-        this.currencyCode = data.currencyCode;
-        this.lineAmountTypes = data.lineAmountTypes;
-        this.date = data.date;
-        this.dueDate = data.dueDate;
-        this.status = data.status;
-        this.reference = data.reference;
-        this.customerName = data.customerName;
-        this.amount = data.amount;
+        this.type = data.type || data.Type;
+        this.contactID = data.contactID || data.contact?.contactID || data.contact?.ContactID || data.Contact?.ContactID;
+        this.lineItems = (data.lineItems || data.LineItems || []).map(item => new IsoPlusLineItemValues(item));
+        this.currencyCode = data.currencyCode || data.CurrencyCode;
+        this.lineAmountTypes = data.lineAmountTypes || data.LineAmountTypes;
+        this.date = data.date || data.Date;
+        this.dueDate = data.dueDate || data.DueDate;
+        this.status = data.status || data.Status;
+        this.reference = data.reference || data.Reference;
+        this.customerName = data.customerName || data.customerName;
+        this.amount = data.amount || data.Amount;
     }
 
     static validationSchema() {
         return Joi.object({
-            type: Joi.string().valid('ACCPAY', 'ACCREC').required().messages({
-                'any.only': 'Type must be either ACCPAY or ACCREC',
+            type: Joi.string().valid('ACCPAY', 'ACCREC', 'QUOTE').required().messages({
+                'any.only': 'Type must be ACCPAY, ACCREC, or QUOTE',
                 'any.required': 'Type is required.'
             }),
             contactID: Joi.string().guid({ version: ['uuidv4', 'uuidv5'] }).required().messages({
@@ -402,7 +407,7 @@ class IsoPlusInvoiceValues extends ItemValues {
             }),
             date: Joi.date().allow(null, ''),
             dueDate: Joi.date().allow(null, ''),
-            status: Joi.string().valid('AUTHORISED', 'DRAFT').allow(null, '').messages({
+            status: Joi.string().valid('AUTHORISED', 'DRAFT').default('AUTHORISED').messages({
                 'any.only': 'Status must be either AUTHORISED or DRAFT'
             }),
             reference: Joi.string().allow(null, ''),
