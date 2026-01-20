@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import Business from '../models/Business.js';
 import InvoiceNumber from '../models/InvoiceNumber.js';
 import Board from '../models/Board.js';
+import Item from '../models/Item.js';
 import { warn, error, extractContextFromReq } from '../utils/logger.js';
 import { isEmpty } from '../utils/helpers.js';
 import {
@@ -28,7 +29,8 @@ import {
   callback,
   getContactByEmail,
   getContactByName,
-  findOrCreateItem
+  findOrCreateItem,
+  getAccounts
 } from '../services/xero.js';
 import { Item as ItemPayloadDTO } from '../dto/itemsPayload.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
@@ -186,6 +188,29 @@ const REF_ATTRIBUTE_NAMES = {
   PROFILE_PHONE_NUMBER: 'Primary Phone Number'
 };
 
+const getValueFromFlatData = (item, attributeName) => {
+  if (!item?.data) return null;
+
+  const attributeNames = Array.isArray(attributeName) ? attributeName : [attributeName];
+
+  for (const attrName of attributeNames) {
+      if (item.data[attrName] !== undefined && item.data[attrName] !== null) {
+          return item.data[attrName];
+      }
+  }
+
+  if (Array.isArray(item.data.values)) {
+      for (const attrName of attributeNames) {
+          const entry = item.data.values.find(v => v.attribute?.name === attrName);
+          if (entry?.data !== undefined && entry?.data !== null) {
+              return entry.data;
+          }
+      }
+  }
+
+  return null;
+};
+
 router.get('/services', (req, res) => {
   const services = [
     { Name: 'Create invoice', Status: 'Ready' },
@@ -302,6 +327,13 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
     let gst = item.values["GST"] == "10%" ? "10%" : "0%";
+
+    // Get valid account codes
+    const accounts = await getAccounts(workspaceId);
+    const salesAccountCode = accounts.find(acc =>
+      acc.Type === 'REVENUE'
+    )?.Code || '200'; // Default to '200' if no revenue account found
+
     const invoice = {
       type: 'ACCREC',
       contact: { contactID: contact.contactID },
@@ -319,6 +351,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       quantity: 1,
       unitAmount: item.values['Payable Service Fee($) - GST Excl.'],
       taxType: gst == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
+      accountCode: salesAccountCode
     });
 
     if (item.values['Payable Material Fee($) - GST Excl.'] > 0) {
@@ -327,6 +360,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
         quantity: 1,
         unitAmount: item.values['Payable Material Fee($) - GST Excl.'],
         taxType: gst == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
+        accountCode: salesAccountCode
       });
     }
 
@@ -336,6 +370,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
         quantity: 1,
         unitAmount: item.values['Other Payable Fee($) - GST Excl.'],
         taxType: gst == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
+        accountCode: salesAccountCode
       });
     }
 
@@ -445,6 +480,12 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
     const nowISO = new Date().toISOString();
     const groupSize = Number(invoiceValues['Group Size']) || 1;
 
+    // Get valid account codes
+    const accounts = await getAccounts(workspaceId);
+    const salesAccountCode = accounts.find(acc =>
+      acc.Type === 'REVENUE'
+    )?.Code || '200'; // Default to '200' if no revenue account found
+
     const invoice = {
       type: 'ACCREC',
       contact: { contactID: contact.contactID },
@@ -498,7 +539,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             description: desc1,
             quantity: formatValue(qty1),
             unitAmount: unitPrice1,
-            taxType: gstType
+            taxType: gstType,
+            accountCode: salesAccountCode
           });
         }
       }
@@ -786,7 +828,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             description: desc1,
             quantity: formatValue(qty1),
             unitAmount: unitPrice1,
-            taxType: gstType
+            taxType: gstType,
+            accountCode: salesAccountCode
           });
           totalCancellationFee += Number(amount1);
         }
@@ -1110,6 +1153,13 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
+
+    // Get valid account codes
+    const accounts = await getAccounts(workspaceId);
+    const salesAccountCode = accounts.find(acc =>
+      acc.Type === 'REVENUE'
+    )?.Code || '200'; // Default to '200' if no revenue account found
+
     // let rawChecklist = quoteValues['Quote Checklist'];
     // let quoteChecklist = [];
     // if (Array.isArray(rawChecklist)) {
@@ -1139,6 +1189,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
           quantity: quoteValues.Quantity,
           unitAmount: quoteValues['Unit Price($) - GST Excl.'],
           taxType: quoteValues['GST'] == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
+          accountCode: salesAccountCode
         }
       ]
     };
@@ -1243,6 +1294,12 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
       }
     }
 
+    // Get valid account codes
+    const accounts = await getAccounts(workspaceId);
+    const salesAccountCode = accounts.find(acc =>
+      acc.Type === 'REVENUE'
+    )?.Code || '200'; // Default to '200' if no revenue account found
+
     let lineItems = [];
     const gstType = "EXEMPTOUTPUT"; // GST Free for NDIS
 
@@ -1253,6 +1310,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
         quantity: Number(NDISQuoteValues['Quantity (Direct Support)']) || 0,
         unitAmount: Number(NDISQuoteValues['Unit Price for Direct Support($)']) || 0,
         taxType: gstType,
+        accountCode: salesAccountCode
       });
     }
     // 2. Provider Travel - Non-Labour Cost
@@ -1262,6 +1320,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
         quantity: Number(NDISQuoteValues['Quantity (Provider Travel)']) || 0,
         unitAmount: Number(NDISQuoteValues['Unit Price for Provider Travel($)']) || 0,
         taxType: gstType,
+        accountCode: salesAccountCode
       });
     }
     // 3. Activity Based Transport
@@ -1271,6 +1330,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
         quantity: Number(NDISQuoteValues['Quantity (Activity Based Transport)']) || 0,
         unitAmount: Number(NDISQuoteValues['Unit Price for Activity Based Transport($)']) || 0,
         taxType: gstType,
+        accountCode: salesAccountCode
       });
     }
     // 4. Centre Capital Costs
@@ -1280,6 +1340,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
         quantity: Number(NDISQuoteValues['Quantity (Centre Capital Costs)']) || 0,
         unitAmount: Number(NDISQuoteValues['Unit Price for Centre Capital Costs($)']) || 0,
         taxType: gstType,
+        accountCode: salesAccountCode
       });
     }
     // 5. Provider Travel - Labour Travel Time Costs
@@ -1289,6 +1350,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
         quantity: Number(NDISQuoteValues['Quantity (Labour Travel Time)']) || 0,
         unitAmount: Number(NDISQuoteValues['Unit Price for Labour Travel Time ($)']) || 1,
         taxType: gstType,
+        accountCode: salesAccountCode
       });
     }
     // 6. Allowances
@@ -1298,6 +1360,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
         quantity: 1,
         unitAmount: Number(NDISQuoteValues['Allowances Amount($)']) || 0,
         taxType: gstType,
+        accountCode: salesAccountCode
       });
     }
     // 7. Non-Face-to-Face Support
@@ -1307,6 +1370,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
         quantity: Number(NDISQuoteValues['Quantity (Non-Face-to-Face Support)']) || 0,
         unitAmount: Number(NDISQuoteValues['Unit Price for Non-Face-to-Face Support ($)']) || 1,
         taxType: gstType,
+        accountCode: salesAccountCode
       });
     }
 
@@ -1439,6 +1503,12 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
 
+    // Get valid account codes
+    const accounts = await getAccounts(workspaceId);
+    const expenseAccountCode = accounts.find(acc =>
+      acc.Type === 'EXPENSE'
+    )?.Code || '400'; // Default to '400' if no expense account found
+
     const mappedPO = {
       clientsOrderNumber: purchaseOrderValues["Client's Order Number"],
       issueDate: purchaseOrderValues['Issue Date'],
@@ -1463,6 +1533,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
           quantity: purchaseOrderValues.Quantity,
           unitAmount: purchaseOrderValues['Unit Price($) - GST Excl.'],
           taxType: purchaseOrderValues['GST'] == "10%" ? "INPUT" : "EXEMPTEXPENSES",
+          accountCode: expenseAccountCode
         }
       ]
     };
@@ -1577,42 +1648,45 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     }
 
     // Get participant name - for Low-Cat, prefer billing contact if available
-    const receiverName = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || ' ';
+    const receiverName = (getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || '').trim() || '';
     const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || ' ';
     const participantPhoneNumber = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_PHONE_NUMBER) || ' ';
-    const participantEmail = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_EMAIL_ADDRESS) || ' ';
+    const participantEmail = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_EMAIL_ADDRESS) || '';
     let isLowCatBoard = req.body?.isLowCat || false;
 
+    // Define effective participant name for use in invoice reference
+    const effectiveParticipantName = receiverName || ' ';
+
     let contact = null;
-    if (!participantEmail) {
+    if (participantEmail && participantEmail.trim()) {
       contact = await getContactByEmail(participantEmail);
-      if (!contact) {
-        contact = await getContactByName(receiverName);
-      }
-      if (!contact) {
-        contact = await createOrUpdateContact({
-          name: receiverName,
-          firstName: receiverName.split(' ')[0] || '',
-          lastName: receiverName.split(' ')[1] || '',
-          phones: participantPhoneNumber ? [{ phoneType: 'DEFAULT', phoneNumber: participantPhoneNumber }] : undefined,
-          addresses: billingAddressBase ? [
-            {
-              addressType: 'POBOX',
-              addressLine1: billingAddressBase.split(',')[0].trim(),
-              city: billingAddressBase.split(',')[1].trim(),
-              region: billingAddressBase.split(',')[2].trim(),
-              postalCode: billingAddressBase.split(',')[3].trim()
-            }, {
-              addressType: 'STREET',
-              addressLine1: billingAddressBase.split(',')[0].trim(),
-              city: billingAddressBase.split(',')[1].trim(),
-              region: billingAddressBase.split(',')[2].trim(),
-              postalCode: billingAddressBase.split(',')[3].trim()
-            }
-          ] : undefined,
-          emailAddress: participantEmail || undefined
-        });
-      }
+    }
+    if (!contact) {
+      contact = await getContactByName(receiverName);
+    }
+    if (!contact) {
+      contact = await createOrUpdateContact({
+        name: receiverName,
+        firstName: receiverName.split(' ')[0] || '',
+        lastName: receiverName.split(' ')[1] || '',
+        phones: participantPhoneNumber ? [{ phoneType: 'DEFAULT', phoneNumber: participantPhoneNumber }] : undefined,
+        addresses: billingAddressBase ? [
+          {
+            addressType: 'POBOX',
+            addressLine1: billingAddressBase.split(',')[0]?.trim(),
+            city: billingAddressBase.split(',')[1]?.trim(),
+            region: billingAddressBase.split(',')[2]?.trim(),
+            postalCode: billingAddressBase.split(',')[3]?.trim()
+          }, {
+            addressType: 'STREET',
+            addressLine1: billingAddressBase.split(',')[0]?.trim(),
+            city: billingAddressBase.split(',')[1]?.trim(),
+            region: billingAddressBase.split(',')[2]?.trim(),
+            postalCode: billingAddressBase.split(',')[3]?.trim()
+          }
+        ] : undefined,
+        emailAddress: participantEmail || undefined
+      });
     }
 
     // Calculate due date if not provided
@@ -1622,6 +1696,12 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       d.setDate(d.getDate() + 14);
       effectiveDueDate = d.toISOString();
     }
+
+    // Get valid account codes
+    const accounts = await getAccounts(workspaceId);
+    const salesAccountCode = accounts.find(acc =>
+      acc.Type === 'REVENUE'
+    )?.Code || '200'; // Default to '200' if no revenue account found
 
     // Build line items from service records
     const lineItems = [];
@@ -1663,7 +1743,8 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
           description: description || 'Service',
           quantity: formatValue(quantity || 1),
           unitAmount: formatValue(lineAmount / quantity),
-          taxType: gstType
+          taxType: gstType,
+          accountCode: salesAccountCode
         });
         totalAmount += lineAmount;
       }
