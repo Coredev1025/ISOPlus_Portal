@@ -140,6 +140,8 @@ export async function createToken(workspaceId) {
 }
 
 export async function createInvoice(invoice, workspaceId) {
+    workspaceId = normalizeWorkspaceId(workspaceId);
+
     const validationObj = {
         type: invoice.type,
         contactID: invoice.contact?.contactID || invoice.contactID,
@@ -189,6 +191,7 @@ export async function createInvoice(invoice, workspaceId) {
 }
 
 export async function getContactByEmail(email, workspaceId) {
+    workspaceId = normalizeWorkspaceId(workspaceId);
     const tenantId = await ensureAuthenticated(workspaceId);
 
     try {
@@ -203,6 +206,7 @@ export async function getContactByEmail(email, workspaceId) {
 }
 
 export async function getContactByName(name, workspaceId) {
+    workspaceId = normalizeWorkspaceId(workspaceId);
     const tenantId = await ensureAuthenticated(workspaceId);
 
     try {
@@ -217,6 +221,7 @@ export async function getContactByName(name, workspaceId) {
 }
 
 export async function createOrUpdateContact(contact, workspaceId) {
+    workspaceId = normalizeWorkspaceId(workspaceId);
     const tenantId = await ensureAuthenticated(workspaceId);
 
     const contactsData = { Contacts: [contact] };
@@ -240,6 +245,7 @@ export async function findOrCreateItem(itemCode, itemName, workspaceId) {
         throw new Error('Item validation failed: itemCode and itemName are required and must be strings.');
     }
 
+    workspaceId = normalizeWorkspaceId(workspaceId);
     const tenantId = await ensureAuthenticated(workspaceId);
 
     try {
@@ -271,6 +277,7 @@ export async function findOrCreateItem(itemCode, itemName, workspaceId) {
 }
 
 export async function createQuote(quote, workspaceId) {
+    workspaceId = normalizeWorkspaceId(workspaceId);
     const tenantId = await ensureAuthenticated(workspaceId);
 
     // Quotes use Invoices endpoint with Type: 'QUOTE'
@@ -297,6 +304,7 @@ export async function createQuote(quote, workspaceId) {
 }
 
 export async function quoteExists(quoteNumber, workspaceId) {
+    workspaceId = normalizeWorkspaceId(workspaceId);
     const tenantId = await ensureAuthenticated(workspaceId);
 
     try {
@@ -325,6 +333,7 @@ export async function purchaseOrderExists(purchaseOrderNumber, workspaceId) {
         return false;
     }
 
+    workspaceId = normalizeWorkspaceId(workspaceId);
     const tenantId = await ensureAuthenticated(workspaceId);
 
     try {
@@ -341,6 +350,7 @@ export async function purchaseOrderExists(purchaseOrderNumber, workspaceId) {
 }
 
 export async function createPurchaseOrder(purchaseOrder, workspaceId) {
+    workspaceId = normalizeWorkspaceId(workspaceId);
     const tenantId = await ensureAuthenticated(workspaceId);
 
     const poData = {
@@ -368,7 +378,11 @@ export async function createPurchaseOrder(purchaseOrder, workspaceId) {
 }
 
 function isValidWorkspaceId(workspaceId) {
-    return typeof workspaceId === 'string' && workspaceId.length > 0;
+    return workspaceId && typeof workspaceId === 'string' && workspaceId.trim().length > 0;
+}
+
+function normalizeWorkspaceId(workspaceId) {
+    return String(workspaceId || '').trim();
 }
 
 async function getLatestTokens(workspaceId) {
@@ -381,8 +395,10 @@ async function getLatestTokens(workspaceId) {
 }
 
 export async function ensureAuthenticated(workspaceId) {
+    workspaceId = normalizeWorkspaceId(workspaceId);
+
     if (!isValidWorkspaceId(workspaceId)) {
-        throw new Error('Invalid workspace Id');
+        throw new Error(`Invalid workspace Id: "${workspaceId}"`);
     }
 
     if (!xeroClient) {
@@ -470,6 +486,7 @@ async function handleXeroError(err, operation) {
 
 export async function updateOrganizationInfo(workspaceId) {
     try {
+        workspaceId = normalizeWorkspaceId(workspaceId);
         if (!isValidWorkspaceId(workspaceId)) {
             throw new Error('Invalid workspace Id');
         }
