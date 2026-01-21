@@ -1763,11 +1763,15 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       throw new Error('Business not found');
     }
 
-    const participantProfileItem = await Item.findOne({ workspaceId: workspaceId.toString(), boardId: boardId.toString(), itemId: items[0].id.toString() });
+    const participantProfileItem = await Item.findOne({ workspaceId: workspaceId.toString(), boardId: boardId.toString(), 'Full Name/Preferred Name': participantName || items[0]?.participant });
     if (!participantProfileItem) {
       throw new Error('Participant profile item not found');
     }
-    console.log(`Participant Profile Data: ${participantProfileItem.data}`);
+    let participantProfileData = '';
+    participantProfileItem.data.forEach(({key, value}) => {
+      participantProfileData += key.toString() + ":" + value.toString() + " \n ";
+    });
+    console.log(`Participant Profile Data: ${participantProfileData}`);
 
     await configure();
     await ensureAuthenticated(workspaceId);
