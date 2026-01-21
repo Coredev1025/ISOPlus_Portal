@@ -1778,20 +1778,13 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 
     // Get participant name - for Low-Cat, prefer billing contact if available
     const receiverName = (getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || '').trim() || '';
-    const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || ' ';
-    const participantPhoneNumber = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_PHONE_NUMBER) || ' ';
+    const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || '';
+    const participantPhoneNumber = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_PHONE_NUMBER) || '';
     const participantEmail = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_EMAIL_ADDRESS) || '';
     let isLowCatBoard = req.body?.isLowCat || false;
 
-    console.log(`isLowCatBoard: ${isLowCatBoard}`);
-    console.log(`receiverName: ${receiverName}`);
-    console.log(`participantName: ${participantName}`);
-    console.log(`billingAddressBase: ${billingAddressBase}`);
-    console.log(`participantPhoneNumber: ${participantPhoneNumber}`);
-    console.log(`participantEmail: ${participantEmail}`);
-
     // Define effective participant name for use in invoice reference
-    const effectiveParticipantName = receiverName || ' ';
+    const effectiveParticipantName = receiverName || 'Unknown Participant';
 
     let contact = null;
     if (participantEmail && participantEmail.trim()) {
@@ -1801,28 +1794,54 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       contact = await getContactByName(receiverName);
     }
     if (!contact && receiverName && receiverName.trim()) {
-      contact = await createOrUpdateContact({
+      // Format phone number to E.164 format if present
+      let formattedPhone = null;
+      if (participantPhoneNumber && typeof participantPhoneNumber === 'string' && participantPhoneNumber.trim()) {
+        const phoneStr = participantPhoneNumber.trim();
+        // Add + prefix if missing
+        formattedPhone = phoneStr.startsWith('+') ? phoneStr : `+${phoneStr}`;
+      }
+
+      // Parse address safely - format: "line1, city, region, postcode"
+      const addressParts = billingAddressBase && billingAddressBase.trim() 
+        ? billingAddressBase.split(',').map(p => p.trim()).filter(p => p)
+        : [];
+
+      // Build contact payload with validated data
+      const contactPayload = {
         name: receiverName,
         firstName: receiverName.split(' ')[0] || '',
-        lastName: receiverName.split(' ')[1] || '',
-        phones: participantPhoneNumber ? [{ phoneType: 'DEFAULT', phoneNumber: participantPhoneNumber }] : undefined,
-        addresses: billingAddressBase ? [
-          {
-            addressType: 'POBOX',
-            addressLine1: billingAddressBase.split(',')[0]?.trim(),
-            city: billingAddressBase.split(',')[1]?.trim(),
-            region: billingAddressBase.split(',')[2]?.trim(),
-            postalCode: billingAddressBase.split(',')[3]?.trim()
-          }, {
-            addressType: 'STREET',
-            addressLine1: billingAddressBase.split(',')[0]?.trim(),
-            city: billingAddressBase.split(',')[1]?.trim(),
-            region: billingAddressBase.split(',')[2]?.trim(),
-            postalCode: billingAddressBase.split(',')[3]?.trim()
-          }
-        ] : undefined,
-        emailAddress: participantEmail || undefined
-      });
+        lastName: receiverName.split(' ').slice(1).join(' ') || '',
+        contactStatus: 'ACTIVE',
+        emailAddress: participantEmail && participantEmail.trim() ? participantEmail : undefined
+      };
+
+      // Only add phone if properly formatted
+      if (formattedPhone) {
+        contactPayload.phones = [{
+          phoneType: 'DEFAULT',
+          phoneNumber: formattedPhone
+        }];
+      }
+
+      // Only add address if we have sufficient data (at least address line)
+      if (addressParts.length >= 1) {
+        const addressLine1 = addressParts[0];
+        const city = addressParts[1];
+        const region = addressParts[2];
+        const postalCode = addressParts[3];
+
+        // Create addresses only if we have all required fields or omit optional ones
+        contactPayload.addresses = [{
+          addressType: 'STREET',
+          addressLine1: addressLine1,
+          city: city || undefined,
+          region: region || undefined,
+          postalCode: postalCode || undefined
+        }];
+      }
+
+      contact = await createOrUpdateContact(contactPayload);
     }
 
     if (!contact) {
