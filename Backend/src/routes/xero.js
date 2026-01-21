@@ -252,18 +252,18 @@ const getValueFromFlatData = (item, attributeName) => {
   const attributeNames = Array.isArray(attributeName) ? attributeName : [attributeName];
 
   for (const attrName of attributeNames) {
-      if (item.data[attrName] !== undefined && item.data[attrName] !== null) {
-          return item.data[attrName];
-      }
+    if (item.data[attrName] !== undefined && item.data[attrName] !== null) {
+      return item.data[attrName];
+    }
   }
 
   if (Array.isArray(item.data.values)) {
-      for (const attrName of attributeNames) {
-          const entry = item.data.values.find(v => v.attribute?.name === attrName);
-          if (entry?.data !== undefined && entry?.data !== null) {
-              return entry.data;
-          }
+    for (const attrName of attributeNames) {
+      const entry = item.data.values.find(v => v.attribute?.name === attrName);
+      if (entry?.data !== undefined && entry?.data !== null) {
+        return entry.data;
       }
+    }
   }
 
   return null;
@@ -323,7 +323,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     let contact = await getContactByEmail(contactValues.emailAddress);
     if (!contact) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
-      
+
       // Validate required contact fields
       if (!contactValues.client) {
         throw new Error('Client name is required for contact creation');
@@ -331,7 +331,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       if (!contactValues.phoneNumber) {
         throw new Error('Phone number is required for contact creation');
       }
-      
+
       contact = await createOrUpdateContact({
         name: contactValues.client,
         phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
@@ -1068,7 +1068,7 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
 
   try {
     await initializeXeroOperation(workspaceId, boardId, item);
-    
+
     // Validate email exists before attempting contact operations
     const email = contactValues['Email Address'];
     if (!email) {
@@ -1084,7 +1084,7 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
         contactID: existingContact.contactID
       });
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your contact has been updated successfully in Xero.");
-      
+
       logAuditTrail({
         workspaceId,
         action: "Update Xero Contact",
@@ -1094,7 +1094,7 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
     } else {
       contact = await createOrUpdateContact(createContactPayload(contactValues));
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your contact has been created successfully in Xero.");
-      
+
       logAuditTrail({
         workspaceId,
         action: "Create Xero Contact",
@@ -1143,7 +1143,7 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
 
   try {
     await initializeXeroOperation(workspaceId, boardId, item);
-    
+
     // Validate email exists before attempting contact operations
     const email = contractorValues['Email Address'];
     if (!email) {
@@ -1159,7 +1159,7 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
         contactID: existingContact.contactID
       });
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your contractor has been updated successfully in Xero.");
-      
+
       logAuditTrail({
         workspaceId,
         action: "Update Xero Contractor",
@@ -1169,7 +1169,7 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
     } else {
       contact = await createOrUpdateContact(createContactPayload(contractorValues));
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your contractor has been created successfully in Xero.");
-      
+
       logAuditTrail({
         workspaceId,
         action: "Create Xero Contractor",
@@ -1685,7 +1685,7 @@ router.get("/redirect", async (req, res) => {
 router.get('/callback', async (req, res) => {
   try {
     const { code } = req.query;
-    
+
     if (!code) {
       return res.status(400).send(`
             <html>
@@ -1698,7 +1698,7 @@ router.get('/callback', async (req, res) => {
             </html>
         `);
     }
-    
+
     const result = await callback(code, req.url);
     res.send(`
             <html>
@@ -1728,11 +1728,11 @@ router.get('/callback', async (req, res) => {
 router.post('/refresh', async (req, res) => {
   try {
     const { tokenSet } = req.body;
-    
+
     if (!tokenSet) {
       return res.status(400).json({ message: 'Token set is required', error: 'Missing tokenSet in request body' });
     }
-    
+
     await configure();
     const newTokenSet = await refreshTokenSet(tokenSet);
     res.json({ tokenSet: newTokenSet });
@@ -1763,12 +1763,12 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       throw new Error('Business not found');
     }
 
-    const participantProfileItem = await Item.findOne({ workspaceId: workspaceId.toString(), boardId: boardId.toString(), 'Full Name/Preferred Name': participantName || items[0]?.participant });
+    const participantProfileItem = await Item.findOne({ workspaceId: workspaceId.toString(), boardId: boardId.toString(), 'data.Full Name/Preferred Name': participantName || items[0]?.participant });
     if (!participantProfileItem) {
       throw new Error('Participant profile item not found');
     }
     let participantProfileData = '';
-    participantProfileItem.data.forEach(({key, value}) => {
+    participantProfileItem.data.forEach(({ key, value }) => {
       participantProfileData += key.toString() + ":" + value.toString() + " \n ";
     });
     console.log(`Participant Profile Data: ${participantProfileData}`);
@@ -1829,7 +1829,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         emailAddress: participantEmail || undefined
       });
     }
-    
+
     if (!contact) {
       throw new Error('Unable to create or retrieve contact. Participant name or email is required.');
     }
