@@ -112,38 +112,91 @@ async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, ty
   }
 }
 
+function getFieldValue(values, fieldNames) {
+  const names = Array.isArray(fieldNames) ? fieldNames : [fieldNames];
+  for (const name of names) {
+    if (values[name] && String(values[name]).trim() !== '') {
+      return String(values[name]).trim();
+    }
+  }
+  return null;
+}
+
+function validateEmail(email) {
+  if (!email) return false;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+}
+
+function validatePhoneNumber(phone) {
+  if (!phone) return null;
+  // Remove all non-digit characters except + at the start
+  const cleaned = String(phone).replace(/[^\d+]/g, '');
+  if (cleaned.length < 7) return null; // Too short
+  if (cleaned.length > 15) return null; // Too long (E.164 standard)
+  return cleaned;
+}
+
 function createContactPayload(values, isUpdate = false) {
-  const postcode = values.postcode || values.Postcode;
-  const address = values.address || values.Address;
-  const suburb = values.suburb || values.Suburb;
-  const state = values.state || values.State;
+  const name = getFieldValue(values, ['client', 'Client', 'Contractor']) || '';
+  const firstName = getFieldValue(values, ['contactPersonsFirstName', "Contact Person's First Name", 'ContactPersonsFirstName']) || '';
+  const lastName = getFieldValue(values, ['contactPersonsLastName', "Contact Person's Last Name", 'ContactPersonsLastName']) || '';
+  const email = getFieldValue(values, ['emailAddress', 'Email Address', 'EmailAddress']) || '';
+  const phone = getFieldValue(values, ['phoneNumber', 'Phone Number', 'PhoneNumber']);
+  const address = getFieldValue(values, ['address', 'Address']) || '';
+  const suburb = getFieldValue(values, ['suburb', 'Suburb']) || '';
+  const state = getFieldValue(values, ['state', 'State']) || '';
+  const postcode = getFieldValue(values, ['postcode', 'Postcode']);
+
+  // Validate required fields
+  if (!name) {
+    throw new Error('Contact name is required');
+  }
+  if (email && !validateEmail(email)) {
+    throw new Error(`Invalid email address: ${email}`);
+  }
+
+  const validatedPhone = phone ? validatePhoneNumber(phone) : null;
+  if (phone && !validatedPhone) {
+    throw new Error(`Invalid phone number: ${phone}`);
+  }
 
   const basePayload = {
-    name: values.client || values.Client || values.Contractor,
-    phones: [{
+    name: name,
+    contactStatus: 'ACTIVE', // Set status for new contacts
+    emailAddress: email,
+    firstName: firstName,
+    lastName: lastName,
+    addresses: []
+  };
+
+  // Only add phone if valid
+  if (validatedPhone) {
+    basePayload.phones = [{
       phoneType: 'DEFAULT',
-      phoneNumber: values.phoneNumber || values['Phone Number'] || values.PhoneNumber
-    }],
-    firstName: values.contactPersonsFirstName || values["Contact Person's First Name"] || values.ContactPersonsFirstName,
-    lastName: values.contactPersonsLastName || values["Contact Person's Last Name"] || values.ContactPersonsLastName,
-    addresses: [
+      phoneNumber: validatedPhone
+    }];
+  }
+
+  // Only add address information if at least address line 1 is provided
+  if (address) {
+    basePayload.addresses = [
       {
         addressType: 'POBOX',
-        addressLine1: address || ' ',
-        city: suburb || ' ',
-        region: state || ' ',
-        postalCode: postcode ? postcode.toString() : ' '
+        addressLine1: address,
+        city: suburb || 'Unknown',
+        region: state || 'Unknown',
+        postalCode: postcode ? postcode.toString() : ''
       },
       {
         addressType: 'STREET',
-        addressLine1: address || ' ',
-        city: suburb || ' ',
-        region: state || ' ',
-        postalCode: postcode ? postcode.toString() : ' '
+        addressLine1: address,
+        city: suburb || 'Unknown',
+        region: state || 'Unknown',
+        postalCode: postcode ? postcode.toString() : ''
       }
-    ],
-    emailAddress: values.emailAddress || values['Email Address'] || values.EmailAddress
-  };
+    ];
+  }
 
   return basePayload;
 }
@@ -270,28 +323,38 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     let contact = await getContactByEmail(contactValues.emailAddress);
     if (!contact) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
+      
+      // Validate required contact fields
+      if (!contactValues.client) {
+        throw new Error('Client name is required for contact creation');
+      }
+      if (!contactValues.phoneNumber) {
+        throw new Error('Phone number is required for contact creation');
+      }
+      
       contact = await createOrUpdateContact({
         name: contactValues.client,
         phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
         firstName: contactValues.contactPersonsFirstName,
         lastName: contactValues.contactPersonsLastName,
-        addresses: [
+        addresses: contactValues.address ? [
           {
             addressType: 'POBOX',
-            addressLine1: contactValues.address || ' ',
-            city: contactValues.suburb || ' ',
-            region: contactValues.state || ' ',
-            postalCode: contactValues.postcode ? contactValues.postcode.toString() : ' '
+            addressLine1: contactValues.address,
+            city: contactValues.suburb || 'Unknown',
+            region: contactValues.state || 'Unknown',
+            postalCode: contactValues.postcode ? contactValues.postcode.toString() : ''
           },
           {
             addressType: 'STREET',
-            addressLine1: contactValues.address || ' ',
-            city: contactValues.suburb || ' ',
-            region: contactValues.state || ' ',
-            postalCode: contactValues.postcode ? contactValues.postcode.toString() : ' '
+            addressLine1: contactValues.address,
+            city: contactValues.suburb || 'Unknown',
+            region: contactValues.state || 'Unknown',
+            postalCode: contactValues.postcode ? contactValues.postcode.toString() : ''
           }
-        ],
-        emailAddress: contactValues.emailAddress
+        ] : [],
+        emailAddress: contactValues.emailAddress,
+        contactStatus: 'ACTIVE'
       });
     } else {
       const xeroUpdatedDate = new Date(contact.updatedDateUTC);
@@ -304,22 +367,22 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
           phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
           firstName: contactValues.contactPersonsFirstName,
           lastName: contactValues.contactPersonsLastName,
-          addresses: [
+          addresses: contactValues.address ? [
             {
               addressType: 'POBOX',
               addressLine1: contactValues.address,
-              city: contactValues.suburb,
-              region: contactValues.state,
-              postalCode: contactValues.postcode.toString()
+              city: contactValues.suburb || 'Unknown',
+              region: contactValues.state || 'Unknown',
+              postalCode: contactValues.postcode ? contactValues.postcode.toString() : ''
             },
             {
               addressType: 'STREET',
               addressLine1: contactValues.address,
-              city: contactValues.suburb,
-              region: contactValues.state,
-              postalCode: contactValues.postcode.toString()
+              city: contactValues.suburb || 'Unknown',
+              region: contactValues.state || 'Unknown',
+              postalCode: contactValues.postcode ? contactValues.postcode.toString() : ''
             }
-          ],
+          ] : [],
           emailAddress: contactValues.emailAddress
         });
       }
@@ -1005,7 +1068,14 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
 
   try {
     await initializeXeroOperation(workspaceId, boardId, item);
-    const existingContact = await getContactByEmail(contactValues['Email Address']);
+    
+    // Validate email exists before attempting contact operations
+    const email = contactValues['Email Address'];
+    if (!email) {
+      throw new Error('Email address is required for contact creation');
+    }
+
+    const existingContact = await getContactByEmail(email);
     let contact;
 
     if (existingContact) {
@@ -1014,9 +1084,23 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
         contactID: existingContact.contactID
       });
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your contact has been updated successfully in Xero.");
+      
+      logAuditTrail({
+        workspaceId,
+        action: "Update Xero Contact",
+        detail: `Contact updated successfully: ${contact.name} (${contact.contactID})`,
+        req
+      });
     } else {
       contact = await createOrUpdateContact(createContactPayload(contactValues));
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your contact has been created successfully in Xero.");
+      
+      logAuditTrail({
+        workspaceId,
+        action: "Create Xero Contact",
+        detail: `Contact created successfully: ${contact.name} (${contact.contactID})`,
+        req
+      });
     }
 
     res.json(contact);
@@ -1059,7 +1143,14 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
 
   try {
     await initializeXeroOperation(workspaceId, boardId, item);
-    const existingContact = await getContactByEmail(contractorValues['Email Address']);
+    
+    // Validate email exists before attempting contact operations
+    const email = contractorValues['Email Address'];
+    if (!email) {
+      throw new Error('Email address is required for contractor creation');
+    }
+
+    const existingContact = await getContactByEmail(email);
     let contact;
 
     if (existingContact) {
@@ -1068,9 +1159,23 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
         contactID: existingContact.contactID
       });
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your contractor has been updated successfully in Xero.");
+      
+      logAuditTrail({
+        workspaceId,
+        action: "Update Xero Contractor",
+        detail: `Contractor updated successfully: ${contact.name} (${contact.contactID})`,
+        req
+      });
     } else {
       contact = await createOrUpdateContact(createContactPayload(contractorValues));
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your contractor has been created successfully in Xero.");
+      
+      logAuditTrail({
+        workspaceId,
+        action: "Create Xero Contractor",
+        detail: `Contractor created successfully: ${contact.name} (${contact.contactID})`,
+        req
+      });
     }
 
     res.json(contact);
@@ -1580,6 +1685,20 @@ router.get("/redirect", async (req, res) => {
 router.get('/callback', async (req, res) => {
   try {
     const { code } = req.query;
+    
+    if (!code) {
+      return res.status(400).send(`
+            <html>
+                <body>
+                    <script>
+                        window.opener.postMessage(${JSON.stringify({ success: false, message: 'Authorization code is missing', type: 'XERO_AUTH' })}, '*');
+                        window.close();
+                    </script>
+                </body>
+            </html>
+        `);
+    }
+    
     const result = await callback(code, req.url);
     res.send(`
             <html>
@@ -1597,7 +1716,7 @@ router.get('/callback', async (req, res) => {
             <html>
                 <body>
                     <script>
-                        window.opener.postMessage(${JSON.stringify({ success: false, message: 'Authentication failed', type: 'XERO_AUTH' })}, '*');
+                        window.opener.postMessage(${JSON.stringify({ success: false, message: 'Authentication failed: ' + (err.message || 'Unknown error'), type: 'XERO_AUTH' })}, '*');
                         window.close();
                     </script>
                 </body>
@@ -1609,6 +1728,11 @@ router.get('/callback', async (req, res) => {
 router.post('/refresh', async (req, res) => {
   try {
     const { tokenSet } = req.body;
+    
+    if (!tokenSet) {
+      return res.status(400).json({ message: 'Token set is required', error: 'Missing tokenSet in request body' });
+    }
+    
     await configure();
     const newTokenSet = await refreshTokenSet(tokenSet);
     res.json({ tokenSet: newTokenSet });

@@ -117,12 +117,21 @@ export async function refreshTokenSet(tokenSet) {
         if (!xeroClient) {
             throw new Error('Xero client is not configured.');
         }
+        
+        if (!tokenSet) {
+            throw new Error('Token set is required for refresh');
+        }
 
         const newTokenSet = await xeroClient.refreshToken(tokenSet);
+        
+        if (!newTokenSet) {
+            throw new Error('Failed to refresh token: No token set returned');
+        }
+        
         return newTokenSet;
     } catch (err) {
         error('Xero-Service', 'Error refreshing token', err);
-        throw new Error('Error refreshing token');
+        throw new Error('Error refreshing token: ' + err.message);
     }
 }
 
@@ -211,34 +220,63 @@ export async function createInvoice(invoice) {
 
         return response.body.Invoices[0];
     } catch (err) {
-        let jsonString = Object.values(err).join('');
-        let errorMessage = JSON.parse(jsonString);
-        if (errorMessage.response?.statusCode === 403) {
-            throw new Error('Authentication failed. Please re-authenticate.');
+        // Improved error handling
+        if (err.message?.includes('Invoice validation failed')) {
+            throw err; // Re-throw validation errors
         }
-        if(errorMessage.body?.Type === 'ValidationException') {
-            let validationErrors = "";
-            errorMessage.body.Elements.forEach(element => {
-                validationErrors += element.ValidationErrors.map(error => error.Message).join(', ');
-            });
-            validationErrors = validationErrors.trim();
-            throw new Error(`Xero Invoice Validation Errors: ${validationErrors}`);
+
+        try {
+            // Attempt to parse error object safely
+            let errorMessage = err;
+            if (err.response) {
+                errorMessage = err.response;
+            } else if (typeof err === 'object' && Object.keys(err).length > 0) {
+                const jsonString = Object.values(err).join('');
+                errorMessage = JSON.parse(jsonString);
+            }
+
+            // Handle specific error scenarios
+            if (errorMessage.statusCode === 403 || errorMessage.response?.statusCode === 403) {
+                throw new Error('Authentication failed. Please re-authenticate.');
+            }
+            if (errorMessage.body?.Type === 'ValidationException' || errorMessage.response?.body?.Type === 'ValidationException') {
+                const elements = errorMessage.body?.Elements || errorMessage.response?.body?.Elements || [];
+                let validationErrors = "";
+                elements.forEach(element => {
+                    if (element.ValidationErrors) {
+                        validationErrors += element.ValidationErrors.map(error => error.Message).join(', ');
+                    }
+                });
+                if (validationErrors) {
+                    throw new Error(`Xero Invoice Validation Errors: ${validationErrors.trim()}`);
+                }
+            }
+            if (errorMessage.response?.body) {
+                throw new Error(`Xero API Error: ${JSON.stringify(errorMessage.response.body)}`);
+            }
+        } catch (parseErr) {
+            // If error parsing fails, use original message
+            if (parseErr.message) {
+                throw parseErr;
+            }
         }
-        if (errorMessage.response?.body) {
-            throw new Error(`Xero API Error: ${JSON.stringify(errorMessage.response.body)}`);
-        }
+
         throw new Error(`Xero Invoice creation failed: ${err.message}`);
     }
 }
 
 export async function getContactByEmail(email) {
     try {
-        const { tokenSet, xeroTenantId } = await createToken();
+        if (!email || typeof email !== 'string') {
+            throw new Error('Email address is required and must be a string');
+        }
+
+        const { xeroTenantId } = await createToken();
 
         const response = await xeroClient.accountingApi.getContacts(
             xeroTenantId,
             null,
-            `EmailAddress=="${email}"`
+            `EmailAddress=="${email.trim()}"`
         );
 
         if (response.body?.Contacts && Array.isArray(response.body.Contacts) && response.body.Contacts.length > 0) {
@@ -262,7 +300,11 @@ export async function getContactByEmail(email) {
 
 export async function getContactByName(name) {
     try {
-        const { tokenSet, xeroTenantId } = await createToken();
+        if (!name || typeof name !== 'string') {
+            throw new Error('Contact name is required and must be a string');
+        }
+
+        const { xeroTenantId } = await createToken();
 
         const response = await xeroClient.accountingApi.getContacts(
             xeroTenantId,
@@ -291,6 +333,15 @@ export async function getContactByName(name) {
 
 export async function createOrUpdateContact(contact) {
     try {
+        // Validate contact object before sending
+        if (!contact) {
+            throw new Error('Contact object is required');
+        }
+        
+        if (!contact.name || typeof contact.name !== 'string' || !contact.name.trim()) {
+            throw new Error('Contact name is required and must be a non-empty string');
+        }
+
         const { xeroTenantId } = await createToken();
         const contactData = {
             Contacts: [contact],
@@ -310,6 +361,12 @@ export async function createOrUpdateContact(contact) {
     } catch (err) {
         error('Xero-Service', 'Error creating or updating contact in Xero', err);
 
+        // Handle custom validation errors from createContactPayload
+        if (err.message?.includes('Invalid email') || err.message?.includes('Invalid phone') || 
+            err.message?.includes('Contact name is required') || err.message?.includes('required')) {
+            throw err; // Re-throw validation errors as-is
+        }
+
         if (err.response?.statusCode === 403) {
             throw new Error('Permission denied. Ensure your app has accounting.contacts scope.');
         }
@@ -317,6 +374,19 @@ export async function createOrUpdateContact(contact) {
             throw new Error('Authentication expired. Please re-authenticate.');
         }
         if (err.response?.statusCode === 400) {
+            // Try to extract more specific error info from Xero
+            const errorBody = err.response?.body;
+            if (errorBody?.Type === 'ValidationException' && errorBody?.Elements) {
+                let validationErrors = "";
+                errorBody.Elements.forEach(element => {
+                    if (element.ValidationErrors) {
+                        validationErrors += element.ValidationErrors.map(error => error.Message).join(', ');
+                    }
+                });
+                if (validationErrors) {
+                    throw new Error(`Contact validation failed: ${validationErrors}`);
+                }
+            }
             throw new Error('Invalid contact data. Please check the contact information.');
         }
         if (err.response?.statusCode === 409) {
@@ -352,21 +422,24 @@ export async function findOrCreateItem(itemCode, itemName) {
         }
 
         await xeroClient.updateTenants();
+        if (!xeroClient.tenants?.length) {
+            throw new Error('No organizations connected');
+        }
         const tenantId = xeroClient.tenants[0].tenantId;
 
         const searchResponse = await xeroClient.accountingApi.getItems(
             tenantId,
             null,
-            `Code=="${itemCode}"`
+            `Code=="${itemCode.trim()}"`
         );
 
-        if (searchResponse.body.Items?.length > 0) {
+        if (searchResponse.body?.Items && Array.isArray(searchResponse.body.Items) && searchResponse.body.Items.length > 0) {
             return searchResponse.body.Items[0];
         }
 
         const newItem = {
-            Code: itemCode,
-            Name: itemName,
+            Code: itemCode.trim(),
+            Name: itemName.trim(),
         };
 
         const createResponse = await xeroClient.accountingApi.createItems(
@@ -374,16 +447,26 @@ export async function findOrCreateItem(itemCode, itemName) {
             { Items: [newItem] }
         );
 
+        if (!createResponse.body?.Items || !Array.isArray(createResponse.body.Items) || createResponse.body.Items.length === 0) {
+            throw new Error('Invalid response from Xero API: No items returned');
+        }
+
         return createResponse.body.Items[0];
 
     } catch (err) {
         error('Xero-Service', 'Item operation failed:', err);
 
+        if (err.message?.includes('Item validation failed')) {
+            throw err; // Re-throw validation errors
+        }
         if (err.response?.statusCode === 403) {
             throw new Error('Missing accounting.settings scope');
         }
-        if (err.message && err.message.includes('toISOString')) {
+        if (err.message?.includes('toISOString')) {
             throw new Error('Invalid date parameter in API request');
+        }
+        if (err.response?.statusCode === 401) {
+            throw new Error('Authentication expired. Please re-authenticate.');
         }
 
         throw new Error(`Item operation failed: ${err.message}`);
@@ -392,7 +475,11 @@ export async function findOrCreateItem(itemCode, itemName) {
 
 export async function createQuote(quote) {
     try {
-        const { token, xeroTenantId } = await createToken();
+        if (!quote) {
+            throw new Error('Quote object is required');
+        }
+
+        const { xeroTenantId } = await createToken();
 
         const quoteData = {
             Quotes: [quote],
@@ -404,16 +491,45 @@ export async function createQuote(quote) {
             true // true for upsert
         );
 
+        if (!response.body?.Quotes || !Array.isArray(response.body.Quotes) || response.body.Quotes.length === 0) {
+            throw new Error('Invalid response from Xero API: No quotes returned');
+        }
+
         return response.body.Quotes[0];
     } catch (err) {
         error('Xero-Service', 'Error creating quote in Xero', err);
-        throw new Error('Error creating quote in Xero');
+        
+        if (err.response?.statusCode === 403) {
+            throw new Error('Permission denied. Ensure your app has accounting.transactions scope.');
+        }
+        if (err.response?.statusCode === 401) {
+            throw new Error('Authentication expired. Please re-authenticate.');
+        }
+        if (err.response?.body?.Type === 'ValidationException') {
+            let validationErrors = "";
+            if (err.response.body.Elements) {
+                err.response.body.Elements.forEach(element => {
+                    if (element.ValidationErrors) {
+                        validationErrors += element.ValidationErrors.map(error => error.Message).join(', ');
+                    }
+                });
+            }
+            if (validationErrors) {
+                throw new Error(`Quote validation failed: ${validationErrors}`);
+            }
+        }
+        
+        throw new Error('Error creating quote in Xero: ' + err.message);
     }
 }
 
 export async function quoteExists(quoteNumber) {
     try {
-        const { token, xeroTenantId } = await createToken();
+        if (!quoteNumber) {
+            return false;
+        }
+
+        const { xeroTenantId } = await createToken();
 
         const response = await xeroClient.accountingApi.getQuotes(
             xeroTenantId,
@@ -429,36 +545,42 @@ export async function quoteExists(quoteNumber) {
             quoteNumber
         );
 
-        return response.body.Quotes.length > 0;
+        return response.body?.Quotes && Array.isArray(response.body.Quotes) && response.body.Quotes.length > 0;
     } catch (err) {
         error('Xero-Service', 'Error checking if quote exists in Xero', err);
-        throw new Error('Error checking if quote exists in Xero');
+        // Return false on error instead of throwing
+        return false;
     }
 }
 
 export async function purchaseOrderExists(purchaseOrderNumber) {
     try {
-        if (!purchaseOrderNumber) {
+        if (!purchaseOrderNumber || typeof purchaseOrderNumber !== 'string') {
             return false;
         }
 
-        const { token, xeroTenantId } = await createToken();
+        const { xeroTenantId } = await createToken();
 
         const response = await xeroClient.accountingApi.getPurchaseOrderByNumber(
             xeroTenantId,
-            purchaseOrderNumber
+            purchaseOrderNumber.trim()
         );
 
-        return response.body.PurchaseOrders.length > 0;
+        return response.body?.PurchaseOrders && Array.isArray(response.body.PurchaseOrders) && response.body.PurchaseOrders.length > 0;
     } catch (err) {
         error('Xero-Service', 'Error checking if purchase order exists in Xero', err);
+        // Return false on error instead of throwing
         return false;
     }
 }
 
 export async function createPurchaseOrder(purchaseOrder) {
     try {
-        const { token, xeroTenantId } = await createToken();
+        if (!purchaseOrder) {
+            throw new Error('Purchase order object is required');
+        }
+
+        const { xeroTenantId } = await createToken();
 
         const poData = {
             PurchaseOrders: [purchaseOrder],
@@ -469,10 +591,35 @@ export async function createPurchaseOrder(purchaseOrder) {
             poData
         );
 
+        if (!response.body?.PurchaseOrders || !Array.isArray(response.body.PurchaseOrders) || response.body.PurchaseOrders.length === 0) {
+            throw new Error('Invalid response from Xero API: No purchase orders returned');
+        }
+
         return response.body.PurchaseOrders[0];
     } catch (err) {
         error('Xero-Service', 'Error creating purchase order in Xero', err);
-        throw new Error('Error creating purchase order in Xero');
+        
+        if (err.response?.statusCode === 403) {
+            throw new Error('Permission denied. Ensure your app has accounting.transactions scope.');
+        }
+        if (err.response?.statusCode === 401) {
+            throw new Error('Authentication expired. Please re-authenticate.');
+        }
+        if (err.response?.body?.Type === 'ValidationException') {
+            let validationErrors = "";
+            if (err.response.body.Elements) {
+                err.response.body.Elements.forEach(element => {
+                    if (element.ValidationErrors) {
+                        validationErrors += element.ValidationErrors.map(error => error.Message).join(', ');
+                    }
+                });
+            }
+            if (validationErrors) {
+                throw new Error(`Purchase order validation failed: ${validationErrors}`);
+            }
+        }
+        
+        throw new Error('Error creating purchase order in Xero: ' + err.message);
     }
 }
 
@@ -497,6 +644,11 @@ export async function ensureAuthenticated(workspaceId) {
 
     if (!xeroClient) throw new Error('Xero client not configured');
 
+    // Validate token fields
+    if (!accessToken || !refreshToken) {
+        throw new Error('Invalid token data stored in database');
+    }
+
     const tokenSet = {
         access_token: accessToken,
         refresh_token: refreshToken,
@@ -516,15 +668,19 @@ export async function ensureAuthenticated(workspaceId) {
         try {
             const newTokenSet = await xeroClient.refreshToken();
 
+            if (!newTokenSet || !newTokenSet.access_token) {
+                throw new Error('Failed to refresh token: Invalid token response');
+            }
+
             const refreshTokenChanged = newTokenSet.refresh_token && newTokenSet.refresh_token !== tokenSet.refresh_token;
-            const now = new Date();
+            const nowDate = new Date();
             const updateFields = {
                 'xeroTokens.accessToken': newTokenSet.access_token,
                 'xeroTokens.refreshToken': newTokenSet.refresh_token,
                 'xeroTokens.expiresAt': newTokenSet.expires_at
             };
             if (refreshTokenChanged) {
-                updateFields['xeroTokens.refreshTokenExpiresAt'] = now.getTime() + 60 * 24 * 60 * 60 * 1000;
+                updateFields['xeroTokens.refreshTokenExpiresAt'] = nowDate.getTime() + 60 * 24 * 60 * 60 * 1000;
             }
             await Business.updateOne(
                 { workspaceId },
@@ -558,9 +714,22 @@ export async function getAccounts(workspaceId) {
         const tenantId = xeroClient.tenants[0].tenantId;
 
         const response = await xeroClient.accountingApi.getAccounts(tenantId);
+        
+        if (!response.body?.Accounts || !Array.isArray(response.body.Accounts)) {
+            throw new Error('Invalid response from Xero API: No accounts returned');
+        }
+        
         return response.body.Accounts;
     } catch (err) {
         error('Xero-Service', 'Error getting accounts', err);
+        
+        if (err.response?.statusCode === 403) {
+            throw new Error('Permission denied. Ensure your app has accounting.settings scope.');
+        }
+        if (err.response?.statusCode === 401) {
+            throw new Error('Authentication expired. Please re-authenticate.');
+        }
+        
         throw new Error('Error getting accounts: ' + err.message);
     }
 }
