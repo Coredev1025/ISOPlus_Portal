@@ -197,7 +197,7 @@ export async function createInvoice(invoice) {
         const invoiceData = {
             invoices: [{
                 Type: invoice.type || 'ACCREC',
-                Contact: { ContactID: invoice.contact.contactID },
+                Contact: { ContactID: invoice.contact.ContactID },
                 Reference: invoice.reference,
                 Date: new Date(invoice.date).toISOString().split('T')[0],
                 DueDate: new Date(invoice.dueDate).toISOString().split('T')[0],
