@@ -1783,6 +1783,13 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     const participantEmail = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_EMAIL_ADDRESS) || '';
     let isLowCatBoard = req.body?.isLowCat || false;
 
+    console.log(`isLowCatBoard: ${isLowCatBoard}`);
+    console.log(`receiverName: ${receiverName}`);
+    console.log(`participantName: ${participantName}`);
+    console.log(`billingAddressBase: ${billingAddressBase}`);
+    console.log(`participantPhoneNumber: ${participantPhoneNumber}`);
+    console.log(`participantEmail: ${participantEmail}`);
+
     // Define effective participant name for use in invoice reference
     const effectiveParticipantName = receiverName || ' ';
 
@@ -1790,10 +1797,10 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     if (participantEmail && participantEmail.trim()) {
       contact = await getContactByEmail(participantEmail);
     }
-    if (!contact) {
+    if (!contact && receiverName && receiverName.trim()) {
       contact = await getContactByName(receiverName);
     }
-    if (!contact) {
+    if (!contact && receiverName && receiverName.trim()) {
       contact = await createOrUpdateContact({
         name: receiverName,
         firstName: receiverName.split(' ')[0] || '',
@@ -1816,6 +1823,10 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         ] : undefined,
         emailAddress: participantEmail || undefined
       });
+    }
+    
+    if (!contact) {
+      throw new Error('Unable to create or retrieve contact. Participant name or email is required.');
     }
 
     // Calculate due date if not provided
