@@ -1767,6 +1767,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     if (!participantProfileItem) {
       throw new Error('Participant profile item not found');
     }
+    console.log(`Participant Profile Data: ${participantProfileItem.data}`);
 
     await configure();
     await ensureAuthenticated(workspaceId);
