@@ -192,7 +192,7 @@ function WorkspacesList() {
           setWorkspaces(sortedWorkspace);
           showFetchSuccessToast("Workspaces");
 
-          if (sortedWorkspace.length === 1) {
+          if (user.role === "isoplus_user" && sortedWorkspace.length === 1) {
             router.push(`/workspace/${sortedWorkspace[0].id}`);
           }
         } catch (error: any) {
