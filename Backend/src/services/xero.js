@@ -338,7 +338,9 @@ export async function createOrUpdateContact(contact) {
             throw new Error('Contact object is required');
         }
         
-        if (!contact.name || typeof contact.name !== 'string' || !contact.name.trim()) {
+        // Support both camelCase (legacy) and PascalCase (xero-node v13.3.1)
+        const contactName = contact.Name || contact.name;
+        if (!contactName || typeof contactName !== 'string' || !contactName.trim()) {
             throw new Error('Contact name is required and must be a non-empty string');
         }
 
