@@ -320,7 +320,7 @@ export default function BoardDetail() {
                   {board.name}
                 </h1>
                 <div className="flex items-center gap-2">
-                  <p className="text-muted-foreground font-mono text-sm">ID: {board.id}</p>
+                  <p className="text-muted-foreground font-mono text-sm">ID: {boardId}</p>
                   {board.label && board.label !== 'No Label' && (
                     <Badge variant="outline" className={LABEL_COLORS[board.label as NonNullable<BoardLabel>]}>
                       {board.label}
@@ -375,62 +375,44 @@ export default function BoardDetail() {
               </Card>
 
               {/* Invoice Generator Card */}
-              {board.label === 'Care Management - SaH - Low Cat' ? (
+              <Card className="p-6 space-y-4 card-hover">
+                <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                  <FileText className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-semibold">Invoice Generator</h2>
+                  <p className="text-muted-foreground mb-4 text-sm">
+                    Generate professional service invoices
+                  </p>
+                  <Button
+                    onClick={() => router.push(`/workspace/${id}/board/${board.id}/invoice-generator`)}
+                    className="w-full"
+                  >
+                    Generate Invoice
+                  </Button>
+                </div>
+              </Card>
+
+              {/* Monthly Statement Card */}
+              {!(board.label && board.label?.toString().includes('SaH - Low Cat')) && (
                 <Card className="p-6 space-y-4 card-hover">
                   <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
-                    <FileText className="h-6 w-6 text-primary" />
+                    <FileBarChart className="h-6 w-6 text-primary" />
                   </div>
                   <div>
-                    <h2 className="text-xl font-semibold">Invoice Generator (Low-Cat)</h2>
+                    <h2 className="text-xl font-semibold">Monthly Statement</h2>
                     <p className="text-muted-foreground mb-4 text-sm">
-                      Generate professional service invoices
+                      View detailed monthly service statements
                     </p>
                     <Button
-                      onClick={() => router.push(`/workspace/${id}/board/${board.id}/invoice-generator`)}
+                      onClick={() => router.push(`/workspace/${id}/board/${board.id}/monthly-statement`)}
                       className="w-full"
                     >
-                      Generate Invoice
-                    </Button>
-                  </div>
-                </Card>
-              ) : (
-                <Card className="p-6 space-y-4 card-hover">
-                  <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
-                    <FileText className="h-6 w-6 text-primary" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-semibold">Invoice Generator</h2>
-                    <p className="text-muted-foreground mb-4 text-sm">
-                      Generate professional service invoices
-                    </p>
-                    <Button
-                      onClick={() => router.push(`/workspace/${id}/board/${board.id}/invoice-generator`)}
-                      className="w-full"
-                    >
-                      Generate Invoice
+                      View Statement
                     </Button>
                   </div>
                 </Card>
               )}
-
-              {/* Monthly Statement Card */}
-              <Card className="p-6 space-y-4 card-hover">
-                <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
-                  <FileBarChart className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-semibold">Monthly Statement</h2>
-                  <p className="text-muted-foreground mb-4 text-sm">
-                    View detailed monthly service statements
-                  </p>
-                  <Button
-                    onClick={() => router.push(`/workspace/${id}/board/${board.id}/monthly-statement`)}
-                    className="w-full"
-                  >
-                    View Statement
-                  </Button>
-                </div>
-              </Card>
 
               {/* Time Tracking Card */}
               {false && (<Card className="p-6 space-y-4 card-hover">
