@@ -346,7 +346,7 @@ export default function BoardDetail() {
                       Configure board settings and options
                     </p>
                     <Button
-                      onClick={() => router.push(`/workspace/${id}/board/${board.id}/configuration`)}
+                      onClick={() => router.push(`/workspace/${id}/board/${boardId}/configuration`)}
                       className="w-full"
                     >
                       Configure Board
@@ -366,7 +366,7 @@ export default function BoardDetail() {
                     Create QR codes for your forms
                   </p>
                   <Button
-                    onClick={() => router.push(`/workspace/${id}/board/${board.id}/qr-generator`)}
+                    onClick={() => router.push(`/workspace/${id}/board/${boardId}/qr-generator`)}
                     className="w-full"
                   >
                     Generate QR Code
@@ -385,7 +385,7 @@ export default function BoardDetail() {
                     Generate professional service invoices
                   </p>
                   <Button
-                    onClick={() => router.push(`/workspace/${id}/board/${board.id}/invoice-generator`)}
+                    onClick={() => router.push(`/workspace/${id}/board/${boardId}/invoice-generator`)}
                     className="w-full"
                   >
                     Generate Invoice
@@ -405,7 +405,7 @@ export default function BoardDetail() {
                       View detailed monthly service statements
                     </p>
                     <Button
-                      onClick={() => router.push(`/workspace/${id}/board/${board.id}/monthly-statement`)}
+                      onClick={() => router.push(`/workspace/${id}/board/${boardId}/monthly-statement`)}
                       className="w-full"
                     >
                       View Statement
@@ -554,7 +554,7 @@ export default function BoardDetail() {
                                 variant="ghost"
                                 size="sm"
                                 className="gap-1 text-primary"
-                                onClick={() => router.push(`/workspace/${id}/board/${board.id}/location/${entry.id}`)}
+                                onClick={() => router.push(`/workspace/${id}/board/${boardId}/location/${entry.id}`)}
                               >
                                 <MapPin className="h-3 w-3" />
                                 View Location
@@ -567,7 +567,7 @@ export default function BoardDetail() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => router.push(`/workspace/${id}/board/${board.id}/location/${entry.id}`)}
+                              onClick={() => router.push(`/workspace/${id}/board/${boardId}/location/${entry.id}`)}
                             >
                               View Details
                             </Button>
@@ -640,7 +640,7 @@ export default function BoardDetail() {
                         <p className="text-muted-foreground mb-2">Map View</p>
                         <Button
                           variant="outline"
-                          onClick={() => router.push(`/workspace/${id}/board/${board.id}/map-view`)}
+                          onClick={() => router.push(`/workspace/${id}/board/${boardId}/map-view`)}
                         >
                           View Full Map
                         </Button>
