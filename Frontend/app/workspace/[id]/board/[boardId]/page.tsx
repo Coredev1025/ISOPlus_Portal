@@ -101,17 +101,17 @@ export default function BoardDetail() {
 
     const fetchBoardData = async () => {
       try {
-        // Fetch boards data
+        // Fetch board data
         setLoadingBoards(true);
         const boardsResponse = await axios.get(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`,
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${boardId}`,
           {
             signal: abortController.signal
           }
         );
 
         if (!abortController.signal.aborted) {
-          const boardData: Board = boardsResponse.data.board.find((b: any) => b.id == boardId);
+          const boardData: Board = boardsResponse.data.board;
           setBoard(boardData);
 
           // Store current board and workspace data in session storage
