@@ -19,13 +19,38 @@ router.post('/board/enable', authenticateToken, async (req, res) => {
   try {
     const { workspaceId, boardId } = req.body;
     
-    if (!workspaceId || !boardId) {
+    // Enhanced validation to handle edge cases
+    const isValidWorkspaceId = workspaceId && 
+      typeof workspaceId === 'string' && 
+      workspaceId.trim() !== '' && 
+      workspaceId !== 'undefined' && 
+      workspaceId !== 'null';
+    
+    const isValidBoardId = boardId && 
+      typeof boardId === 'string' && 
+      boardId.trim() !== '' && 
+      boardId !== 'undefined' && 
+      boardId !== 'null';
+    
+    if (!isValidWorkspaceId || !isValidBoardId) {
+      const context = extractContextFromReq(req);
+      error('Sync-Route', 'Invalid request parameters for board sync enable', { 
+        workspaceId: workspaceId || 'missing',
+        boardId: boardId || 'missing',
+        workspaceIdType: typeof workspaceId,
+        boardIdType: typeof boardId
+      }, context);
+      
       return res.status(400).json({ 
-        message: 'workspaceId and boardId are required' 
+        message: 'workspaceId and boardId are required and must be valid non-empty strings',
+        received: {
+          workspaceId: workspaceId || null,
+          boardId: boardId || null
+        }
       });
     }
 
-    const result = await enableBoardSync(req.session.Authorization, workspaceId, boardId);
+    const result = await enableBoardSync(req.session.Authorization, workspaceId.trim(), boardId.trim());
     
     info('Sync-Route', 'Board sync enable requested', { 
       workspaceId, 
@@ -36,9 +61,20 @@ router.post('/board/enable', authenticateToken, async (req, res) => {
     const statusCode = result.success ? 202 : 409; // 202 Accepted, 409 Conflict
     res.status(statusCode).json(result);
   } catch (err) {
+    const context = extractContextFromReq(req);
     error('Sync-Route', 'Failed to enable board sync', { 
-      error: err.message
-    }, extractContextFromReq(req));
+      error: err.message,
+      stack: err.stack
+    }, context);
+    
+    // Return appropriate status code based on error type
+    if (err.message === 'Board not found' || err.message.includes('Board not found')) {
+      return res.status(404).json({ 
+        message: 'Board not found',
+        error: err.message 
+      });
+    }
+    
     res.status(500).json({ 
       message: 'Failed to enable sync', 
       error: err.message 
@@ -78,13 +114,38 @@ router.post('/board/manual', authenticateToken, async (req, res) => {
   try {
     const { workspaceId, boardId } = req.body;
     
-    if (!workspaceId || !boardId) {
+    // Enhanced validation to handle edge cases
+    const isValidWorkspaceId = workspaceId && 
+      typeof workspaceId === 'string' && 
+      workspaceId.trim() !== '' && 
+      workspaceId !== 'undefined' && 
+      workspaceId !== 'null';
+    
+    const isValidBoardId = boardId && 
+      typeof boardId === 'string' && 
+      boardId.trim() !== '' && 
+      boardId !== 'undefined' && 
+      boardId !== 'null';
+    
+    if (!isValidWorkspaceId || !isValidBoardId) {
+      const context = extractContextFromReq(req);
+      error('Sync-Route', 'Invalid request parameters for manual sync', { 
+        workspaceId: workspaceId || 'missing',
+        boardId: boardId || 'missing',
+        workspaceIdType: typeof workspaceId,
+        boardIdType: typeof boardId
+      }, context);
+      
       return res.status(400).json({ 
-        message: 'workspaceId and boardId are required' 
+        message: 'workspaceId and boardId are required and must be valid non-empty strings',
+        received: {
+          workspaceId: workspaceId || null,
+          boardId: boardId || null
+        }
       });
     }
 
-    const result = await triggerManualSync(req.session.Authorization, workspaceId, boardId);
+    const result = await triggerManualSync(req.session.Authorization, workspaceId.trim(), boardId.trim());
     
     info('Sync-Route', 'Manual sync triggered', { 
       workspaceId, 
@@ -95,9 +156,20 @@ router.post('/board/manual', authenticateToken, async (req, res) => {
     const statusCode = result.success ? 202 : 409;
     res.status(statusCode).json(result);
   } catch (err) {
+    const context = extractContextFromReq(req);
     error('Sync-Route', 'Failed to trigger manual sync', { 
-      error: err.message
-    }, extractContextFromReq(req));
+      error: err.message,
+      stack: err.stack
+    }, context);
+    
+    // Return appropriate status code based on error type
+    if (err.message === 'Board not found' || err.message.includes('Board not found')) {
+      return res.status(404).json({ 
+        message: 'Board not found',
+        error: err.message 
+      });
+    }
+    
     res.status(500).json({ 
       message: 'Failed to trigger manual sync', 
       error: err.message 
@@ -109,13 +181,38 @@ router.post('/board/retry', authenticateToken, async (req, res) => {
   try {
     const { workspaceId, boardId } = req.body;
     
-    if (!workspaceId || !boardId) {
+    // Enhanced validation to handle edge cases
+    const isValidWorkspaceId = workspaceId && 
+      typeof workspaceId === 'string' && 
+      workspaceId.trim() !== '' && 
+      workspaceId !== 'undefined' && 
+      workspaceId !== 'null';
+    
+    const isValidBoardId = boardId && 
+      typeof boardId === 'string' && 
+      boardId.trim() !== '' && 
+      boardId !== 'undefined' && 
+      boardId !== 'null';
+    
+    if (!isValidWorkspaceId || !isValidBoardId) {
+      const context = extractContextFromReq(req);
+      error('Sync-Route', 'Invalid request parameters for sync retry', { 
+        workspaceId: workspaceId || 'missing',
+        boardId: boardId || 'missing',
+        workspaceIdType: typeof workspaceId,
+        boardIdType: typeof boardId
+      }, context);
+      
       return res.status(400).json({ 
-        message: 'workspaceId and boardId are required' 
+        message: 'workspaceId and boardId are required and must be valid non-empty strings',
+        received: {
+          workspaceId: workspaceId || null,
+          boardId: boardId || null
+        }
       });
     }
 
-    const result = await retrySyncAfterFailure(req.session.Authorization, workspaceId, boardId);
+    const result = await retrySyncAfterFailure(req.session.Authorization, workspaceId.trim(), boardId.trim());
     
     info('Sync-Route', 'Sync retry triggered', { 
       workspaceId, 
@@ -127,9 +224,20 @@ router.post('/board/retry', authenticateToken, async (req, res) => {
     const statusCode = result.success ? 202 : 409;
     res.status(statusCode).json(result);
   } catch (err) {
+    const context = extractContextFromReq(req);
     error('Sync-Route', 'Failed to retry sync', { 
-      error: err.message
-    }, extractContextFromReq(req));
+      error: err.message,
+      stack: err.stack
+    }, context);
+    
+    // Return appropriate status code based on error type
+    if (err.message === 'Board not found' || err.message.includes('Board not found')) {
+      return res.status(404).json({ 
+        message: 'Board not found',
+        error: err.message 
+      });
+    }
+    
     res.status(500).json({ 
       message: 'Failed to retry sync', 
       error: err.message 

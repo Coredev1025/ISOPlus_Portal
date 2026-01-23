@@ -76,7 +76,7 @@ export default function ExportPage() {
             response.data.board.map(async (board: any) => {
               try {
                 const boardResponse = await axios.get(
-                  `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`,
+                  `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${boardId}`,
                   {
                     signal: abortController.signal
                   }
