@@ -1451,15 +1451,39 @@ export default function InvoiceGenerator() {
   };
 
   const handleManualSync = async () => {
-    if (!id || !boardId) {
-      showErrorToast('Workspace or board missing', { description: 'Please navigate back and select a workspace again.' });
+    // Enhanced validation to handle edge cases
+    const isValidWorkspaceId = id && 
+      typeof id === 'string' && 
+      id.trim() !== '' && 
+      id !== 'undefined' && 
+      id !== 'null';
+    
+    const isValidBoardId = boardId && 
+      typeof boardId === 'string' && 
+      boardId.trim() !== '' && 
+      boardId !== 'undefined' && 
+      boardId !== 'null';
+    
+    if (!isValidWorkspaceId || !isValidBoardId) {
+      console.error('Invalid parameters for manual sync:', { 
+        workspaceId: id, 
+        boardId,
+        workspaceIdType: typeof id,
+        boardIdType: typeof boardId
+      });
+      showErrorToast('Workspace or board missing', { 
+        description: 'Please navigate back and select a workspace and board again. The current URL may be invalid.' 
+      });
       return;
     }
 
     try {
       setIsManualSyncing(true);
       const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/sync/board/manual`;
-      const response = await axios.post(apiUrl, { workspaceId: id, boardId }, {
+      const response = await axios.post(apiUrl, { 
+        workspaceId: id.trim(), 
+        boardId: boardId.trim() 
+      }, {
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
@@ -1556,12 +1580,25 @@ export default function InvoiceGenerator() {
     } catch (err: any) {
       console.error('Error triggering manual sync:', err);
       const errorMessage = err.response?.data?.message || err.message || 'Unknown error';
+      const statusCode = err.response?.status;
 
       // Check if the error response indicates sync is already running
       if (err.response?.data?.alreadyRunning) {
         showWarningToast('Sync already running', {
           description: err.response.data?.message || 'A manual sync is already in progress. Please wait for it to complete.',
           duration: 5000
+        });
+      } else if (statusCode === 404 || errorMessage.toLowerCase().includes('board not found')) {
+        // Handle board not found error specifically
+        showErrorToast('Board not found', {
+          description: 'The board could not be found. Please navigate back and select a valid board, or check if the board ID is correct.',
+          duration: 7000
+        });
+      } else if (statusCode === 400) {
+        // Handle validation errors
+        showErrorToast('Invalid request', {
+          description: errorMessage || 'Please check that workspace and board IDs are valid.',
+          duration: 7000
         });
       } else {
         showErrorToast('Failed to trigger manual sync', {

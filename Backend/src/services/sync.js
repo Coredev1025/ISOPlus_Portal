@@ -184,10 +184,23 @@ export async function retrySyncAfterFailure(authorization, workspaceId, boardId)
   try {
     info('Sync-Service', 'Retrying sync after failure', { workspaceId, boardId });
     
-    const board = await Board.findOne({ boardId }).select('syncData syncStatus label syncStats').lean();
+    // Query board with both boardId and workspaceId for accuracy
+    const board = await Board.findOne({ 
+      boardId,
+      workspaceId 
+    }).select('syncData syncStatus label syncStats workspaceId boardId name').lean();
     
     if (!board) {
-      throw new Error('Board not found');
+      // Check if board exists but in different workspace
+      const boardInOtherWorkspace = await Board.findOne({ boardId })
+        .select('workspaceId boardId name')
+        .lean();
+      
+      if (boardInOtherWorkspace) {
+        throw new Error(`Board not found in workspace ${workspaceId}. Board exists in workspace ${boardInOtherWorkspace.workspaceId}`);
+      }
+      
+      throw new Error(`Board not found: ${boardId}`);
     }
 
     if (!board.syncData) {
@@ -292,10 +305,23 @@ export async function triggerManualSync(authorization, workspaceId, boardId) {
   try {
     info('Sync-Service', 'Triggering manual sync for board', { workspaceId, boardId });
     
-    const board = await Board.findOne({ boardId }).select('syncData syncStatus syncJobId hookId').lean();
+    // Query board with both boardId and workspaceId for accuracy
+    const board = await Board.findOne({ 
+      boardId,
+      workspaceId 
+    }).select('syncData syncStatus syncJobId hookId workspaceId boardId name').lean();
     
     if (!board) {
-      throw new Error('Board not found');
+      // Check if board exists but in different workspace
+      const boardInOtherWorkspace = await Board.findOne({ boardId })
+        .select('workspaceId boardId name')
+        .lean();
+      
+      if (boardInOtherWorkspace) {
+        throw new Error(`Board not found in workspace ${workspaceId}. Board exists in workspace ${boardInOtherWorkspace.workspaceId}`);
+      }
+      
+      throw new Error(`Board not found: ${boardId}`);
     }
 
     if (!board.syncData) {
