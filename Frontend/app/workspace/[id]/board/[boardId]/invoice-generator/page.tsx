@@ -1745,7 +1745,7 @@ export default function InvoiceGenerator() {
 
         setShowInvoiceModal(false);
         showSuccessToast('Participant Tax Invoice generated', {
-          description: `Invoice ${invoiceNumber} for ${participantName} (${itemCount} item${itemCount === 1 ? '' : 's'}) created.`
+          description: `Invoice ${invoiceNumber} for ${participantName} (${itemCount} item${itemCount === 1 ? '' : 's'}) created. You can download it from the PDF Download column in the table below.`
         });
         // Refresh data to show updated invoice numbers (silent mode to avoid showing another toast)
         setTimeout(() => {
