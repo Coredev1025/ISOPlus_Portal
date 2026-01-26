@@ -1879,7 +1879,7 @@ export default function MonthlyStatement() {
                 Monthly Statement Generator
               </h1>
               <p className="text-muted-foreground">
-                Manage participants&apos; budget and service records, and generate the Support at Home monthly state
+                Manage participants&apos; budget and service records, and generate the Support at Home monthly statement.
               </p>
             </div>
 
@@ -2039,7 +2039,7 @@ export default function MonthlyStatement() {
                   <Spinner />
                 </div>
               ) : chartConfigs.length > 0 ? (
-                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
                   {chartConfigs.map((chart) => (
                     <div key={chart.code} className="rounded-lg border border-border/60 bg-card p-5 space-y-4 shadow-sm">
                       <div className="flex items-start justify-between gap-3">
