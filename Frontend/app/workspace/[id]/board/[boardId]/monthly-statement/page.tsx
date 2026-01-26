@@ -142,6 +142,8 @@ interface BudgetCategory {
   previousMonthSpending?: number;
   fundAmount?: number;
   shouldDisplay?: boolean;
+  deliveredAmount?: number;
+  totalAvailableBudget?: number;
 }
 
 interface MonthlyStatementData {
@@ -442,7 +444,7 @@ export default function MonthlyStatement() {
     postcode: "",
     companyRegistrationId: "",
   });
-  const [exportingSection, setExportingSection] = useState<null | 'budget-csv' | 'service-csv' | 'statement-pdf'>(null);
+  const [exportingSection, setExportingSection] = useState<null | 'budget-csv' | 'service-csv' | 'statement-pdf' | 'budget-HSQ' | 'budget-ATS' | 'budget-ATO' | 'budget-HMB' | 'budget-RCP' | 'budget-EOL' | 'budget-hscm'>(null);
   const [businessDetailsErrors, setBusinessDetailsErrors] = useState<string[]>([]);
 
 
@@ -1180,6 +1182,213 @@ export default function MonthlyStatement() {
     }
   };
 
+  // Export CSV for a specific budget category
+  const handleBudgetCategoryExportCSV = async (categoryCode: string, categoryTitle: string) => {
+    if (!statementData) {
+      showErrorToast('Please load a statement before exporting.');
+      return;
+    }
+
+    const dateRange = getSelectedMonthDateRange();
+    if (!dateRange) {
+      showErrorToast('Please choose a valid month and year before exporting.');
+      return;
+    }
+
+    try {
+      const exportState = `budget-${categoryCode}` as const;
+      setExportingSection(exportState as any);
+
+      // Use optimized export endpoint for faster CSV generation
+      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/export/${id}/${boardId}/monthly-statement-csv`;
+      const response = await axios.get(apiUrl, {
+        params: {
+          participant: selectedParticipant,
+          month: selectedMonth,
+          year: selectedYear,
+          startDate: dateRange.startDate,
+          endDate: dateRange.endDate,
+          type: 'budget',
+          categoryCode: categoryCode
+        },
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+
+      const allItems: BudgetRecord[] = response.data?.items || [];
+      const exportDuration = response.data?.exportDurationMs;
+
+      if (allItems.length === 0) {
+        showErrorToast('No budget items to export for this category.');
+        setExportingSection(null);
+        return;
+      }
+
+      const items = allItems;
+
+      const headers = [
+        'Funding Source',
+        'Participant',
+        'Month',
+        'Year',
+        'FY Quarter',
+        'Funding Start',
+        'Funding End',
+        'Fund Start Balance',
+        'Total Available Budget',
+        'Quarterly Adjustment',
+        'Carryover Funding',
+        'Unspent Returned',
+        'Previous Month Spending',
+        'Delivered Amount',
+        'Adjustments',
+        'Remaining Balance',
+        'Committed Funds',
+        'Fund Classification'
+      ];
+
+      const rows = items.map((item) => [
+        item.folderName || BUDGET_CATEGORY_LABELS[item.categoryCode] || 'Budget',
+        item.participantName || statementData.participant || 'N/A',
+        item.month || '',
+        item.year || '',
+        item.quarter || '',
+        formatDateForCsv(item.fundingStartDate),
+        formatDateForCsv(item.fundingEndDate),
+        Number(item.availableFundStart ?? 0).toFixed(2),
+        Number(item.totalAvailableBudget ?? 0).toFixed(2),
+        Number(item.quarterlyAdjustment ?? 0).toFixed(2),
+        Number(item.carryoverFunding ?? 0).toFixed(2),
+        Number(item.unspentReturned ?? 0).toFixed(2),
+        Number(item.previousMonthSpending ?? 0).toFixed(2),
+        Number(item.deliveredAmount ?? 0).toFixed(2),
+        Number(item.adjustmentAmount ?? 0).toFixed(2),
+        Number(item.remainingBalance ?? 0).toFixed(2),
+        Number(item.committedFunds ?? 0).toFixed(2),
+        item.fundClassification || item.fund || ''
+      ]);
+
+      const csvContent = [headers, ...rows]
+        .map((row) => row.map(escapeForCsv).join(','))
+        .join('\n');
+
+      const participantSlug = sanitizeForFileName(statementData.participant || 'participant');
+      const monthSlug = sanitizeForFileName(statementData.monthNumber || selectedMonth || '01');
+      const categorySlug = sanitizeForFileName(categoryTitle || categoryCode);
+      const filename = `Budget_${categorySlug}_${participantSlug}_${statementData.year}_${monthSlug}.csv`;
+      downloadCsv(csvContent, filename);
+      const durationText = exportDuration ? ` (${(exportDuration / 1000).toFixed(1)}s)` : '';
+      showSuccessToast(`Exported ${items.length} ${categoryTitle} item${items.length === 1 ? '' : 's'} to CSV${durationText}.`);
+    } catch (err: any) {
+      console.error(`Error exporting budget items for ${categoryCode}:`, err);
+      showErrorToast(`Failed to export ${categoryTitle} budget items`, { description: err?.message || 'Unknown error' });
+    } finally {
+      setExportingSection(null);
+    }
+  };
+
+  // Export CSV for Home Support Care Management Budget
+  const handleHomeSupportCareManagementExportCSV = async () => {
+    if (!statementData) {
+      showErrorToast('Please load a statement before exporting.');
+      return;
+    }
+
+    const dateRange = getSelectedMonthDateRange();
+    if (!dateRange) {
+      showErrorToast('Please choose a valid month and year before exporting.');
+      return;
+    }
+
+    try {
+      setExportingSection('budget-hscm');
+
+      // Use optimized export endpoint for faster CSV generation
+      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/export/${id}/${boardId}/monthly-statement-csv`;
+      const response = await axios.get(apiUrl, {
+        params: {
+          participant: selectedParticipant,
+          month: selectedMonth,
+          year: selectedYear,
+          startDate: dateRange.startDate,
+          endDate: dateRange.endDate,
+          type: 'budget',
+          categoryCode: 'HSCM'
+        },
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+
+      const allItems: BudgetRecord[] = response.data?.items || [];
+      const exportDuration = response.data?.exportDurationMs;
+
+      if (allItems.length === 0) {
+        showErrorToast('No care management budget items to export.');
+        setExportingSection(null);
+        return;
+      }
+
+      const items = allItems;
+
+      const headers = [
+        'Funding Source',
+        'Participant',
+        'Month',
+        'Year',
+        'Funding Start',
+        'Funding End',
+        'Fund Start Balance',
+        'Total Available Budget',
+        'Quarterly Adjustment',
+        'Carryover Funding',
+        'Previous Month Spending',
+        'Delivered Amount',
+        'Adjustments',
+        'Remaining Balance',
+        'Committed Funds',
+        'Fund Classification'
+      ];
+
+      const rows = items.map((item) => [
+        item.folderName || '📊 Home Support Care Management Budget',
+        item.participantName || statementData.participant || 'N/A',
+        item.month || '',
+        item.year || '',
+        formatDateForCsv(item.fundingStartDate),
+        formatDateForCsv(item.fundingEndDate),
+        Number(item.availableFundStart ?? 0).toFixed(2),
+        Number(item.totalAvailableBudget ?? 0).toFixed(2),
+        Number(item.quarterlyAdjustment ?? 0).toFixed(2),
+        Number(item.carryoverFunding ?? 0).toFixed(2),
+        Number(item.previousMonthSpending ?? 0).toFixed(2),
+        Number(item.deliveredAmount ?? 0).toFixed(2),
+        Number(item.adjustmentAmount ?? 0).toFixed(2),
+        Number(item.remainingBalance ?? 0).toFixed(2),
+        Number(item.committedFunds ?? 0).toFixed(2),
+        item.fundClassification || item.fund || ''
+      ]);
+
+      const csvContent = [headers, ...rows]
+        .map((row) => row.map(escapeForCsv).join(','))
+        .join('\n');
+
+      const participantSlug = sanitizeForFileName(statementData.participant || 'participant');
+      const monthSlug = sanitizeForFileName(statementData.monthNumber || selectedMonth || '01');
+      const filename = `Budget_HomeSupportCareManagement_${participantSlug}_${statementData.year}_${monthSlug}.csv`;
+      downloadCsv(csvContent, filename);
+      const durationText = exportDuration ? ` (${(exportDuration / 1000).toFixed(1)}s)` : '';
+      showSuccessToast(`Exported ${items.length} care management budget item${items.length === 1 ? '' : 's'} to CSV${durationText}.`);
+    } catch (err: any) {
+      console.error('Error exporting care management budget items:', err);
+      showErrorToast('Failed to export care management budget items', { description: err?.message || 'Unknown error' });
+    } finally {
+      setExportingSection(null);
+    }
+  };
 
   const handleServiceExportCSV = async () => {
     if (!statementData) {
@@ -1229,29 +1438,29 @@ export default function MonthlyStatement() {
         'Service',
         'Service Provider',
         'Scheduled Service Date',
-        'Actual Service Date',
+        'Service Delivery Date',
         'Transaction Status',
         'Committed AT-HM for Delivery',
         'Unit',
         'Quantity',
-        'Unit Price (AUD)',
-        'Total Amount (AUD)',
-        'Gov Subsidy (AUD)',
-        'Participant Contribution (AUD)',
+        'Unit Price ($)',
+        'Total Amount ($)',
+        'Gov Subsidy ($)',
+        'Participant Contribution ($)',
         'Funding Source',
         'Notes'
       ];
 
       const rows = items.map((service) => [
-        service.participant || '',
+        service.participant || service.participantName || '',
         service.service || service.taskName || '',
-        service.serviceProvider || '',
-        formatDateForCsv(service.scheduledServiceDate),
-        formatDateForCsv(service.serviceDeliveryDate),
+        service.serviceProvider || service.associatedProvider || service.loanedByOrganisationName || '',
+        formatDateForCsv(service.scheduledServiceDate || service.scheduledShiftStart),
+        formatDateForCsv(service.serviceDeliveryDate || service.actualShiftEndDateTime),
         service.transactionStatus || '',
-        service.committedAtHmForDelivery && service.committedAtHmForDelivery > 0 ? 'True' : 'False',
+        service.committedAtHmForDelivery && service.committedAtHmForDelivery > 0 ? 'Yes' : 'No',
         service.unit || '',
-        service.quantity ?? 0,
+        Number(service.quantity ?? 0).toFixed(2),
         Number(service.unitPrice ?? 0).toFixed(2),
         Number(service.totalAmount ?? 0).toFixed(2),
         Number(service.govSubsidy ?? 0).toFixed(2),
@@ -1410,23 +1619,38 @@ export default function MonthlyStatement() {
     return `${sign}$${abs.toFixed(0)}`;
   };
 
-  const toNumber = (value: unknown): number => {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return value;
-    }
-    if (typeof value === 'string' && value.trim() !== '') {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : 0;
-    }
-    return 0;
-  };
-
-  const positive = (value: unknown): number => Math.max(0, toNumber(value));
-
   const chartConfigs = useMemo(() => {
     if (!statementData?.budgetCategories?.length) {
       return [];
     }
+
+    const toNumber = (value: unknown): number => {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+      }
+      if (typeof value === 'string' && value.trim() !== '') {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : 0;
+      }
+      return 0;
+    };
+
+    const positive = (value: unknown): number => Math.max(0, toNumber(value));
+
+    const localMonths = [
+      { value: "01", label: "January" },
+      { value: "02", label: "February" },
+      { value: "03", label: "March" },
+      { value: "04", label: "April" },
+      { value: "05", label: "May" },
+      { value: "06", label: "June" },
+      { value: "07", label: "July" },
+      { value: "08", label: "August" },
+      { value: "09", label: "September" },
+      { value: "10", label: "October" },
+      { value: "11", label: "November" },
+      { value: "12", label: "December" },
+    ];
 
     const charts: ChartCardConfig[] = [];
     const categoryLookup = new Map<string, BudgetCategory>();
@@ -1435,12 +1659,21 @@ export default function MonthlyStatement() {
     });
 
     const normalizedMonthNumber = statementData.monthNumber?.padStart(2, '0') || '01';
-    const monthIndex = months.findIndex((monthOption) => monthOption.value === normalizedMonthNumber);
+    const monthIndex = localMonths.findIndex((monthOption) => monthOption.value === normalizedMonthNumber);
     const nextMonthLabel = monthIndex >= 0
-      ? months[(monthIndex + 1) % months.length].label
+      ? localMonths[(monthIndex + 1) % localMonths.length].label
       : statementData.month;
-    const selectedMonthLabel = statementData.month || months[monthIndex]?.label || 'Selected month';
+    const selectedMonthLabel = statementData.month || localMonths[monthIndex]?.label || 'Selected month';
 
+    // Helper function to calculate expenditure as Delivered Amount + Adjustment Amount
+    const calculateExpenditure = (category?: BudgetCategory) => {
+      if (!category) return 0;
+      const delivered = positive(category.deliveredAmount ?? 0);
+      const adjustment = positive(category.adjustmentAmount ?? 0);
+      return delivered + adjustment;
+    };
+
+    // Helper function to get previous spending value
     const getPreviousSpendingValue = (category?: BudgetCategory) => {
       if (!category) return 0;
       if (category.previousMonthSpending && category.previousMonthSpending !== 0) {
@@ -1481,11 +1714,12 @@ export default function MonthlyStatement() {
 
     const defaultQuarterRange = getQuarterRange();
 
+    // 1st Chart: Home Support Quarterly Budget (HSQ)
     const homeSupport = categoryLookup.get('HSQ') ?? ({ code: 'HSQ' } as BudgetCategory);
     {
       const available = positive(homeSupport.availableFunds);
+      const expenditure = calculateExpenditure(homeSupport);
       const remaining = positive(homeSupport.remainingBudget);
-      const expenditure = Math.max(0, available - remaining);
       const quarterStart = homeSupport.quarterStartMonth ?? defaultQuarterRange.start;
       const quarterEnd = homeSupport.quarterEndMonth ?? defaultQuarterRange.end;
       const balanceLabel = quarterEnd
@@ -1502,14 +1736,14 @@ export default function MonthlyStatement() {
             label: `${selectedMonthLabel} expenditure`,
             shortLabel: 'Expenditure',
             value: expenditure,
-            color: '#dc2626'
+            color: '#dc2626' // Red
           },
           {
             name: 'hsq-balance',
             label: `Available balance ${balanceLabel}`,
             shortLabel: 'Balance',
             value: remaining,
-            color: '#2563eb'
+            color: '#2563eb' // Blue
           }
         ],
         metrics: [
@@ -1520,11 +1754,12 @@ export default function MonthlyStatement() {
       });
     }
 
+    // 2nd, 3rd, 4th Charts: Assistive Technology & Home Modification
     const addAssistiveOrModificationChart = (code: 'ATS' | 'ATO' | 'HMB', title: string) => {
       const category = categoryLookup.get(code) ?? ({ code } as BudgetCategory);
       const available = positive(category.availableFunds);
+      const expenditure = calculateExpenditure(category);
       const remaining = positive(category.remainingBudget);
-      const expenditure = Math.max(0, available - remaining);
       const committed = positive(category.committedFunds);
 
       pushChartConfig({
@@ -1537,26 +1772,27 @@ export default function MonthlyStatement() {
             label: `${selectedMonthLabel} expenditure`,
             shortLabel: 'Expenditure',
             value: expenditure,
-            color: '#dc2626'
+            color: '#dc2626' // Red
           },
           {
             name: `${code}-committed`,
             label: 'Committed funds',
             shortLabel: 'Committed',
             value: committed,
-            color: '#16a34a'
+            color: '#16a34a' // Green
           },
           {
             name: `${code}-balance`,
             label: `Remaining budget ${formatDate(category.fundingEndDate)}`,
             shortLabel: 'Balance',
             value: remaining,
-            color: '#2563eb'
+            color: '#2563eb' // Blue
           }
         ],
         metrics: [
           { label: 'Available funds', value: available },
           { label: 'Remaining budget', value: remaining },
+          { label: 'Committed funds', value: committed },
         ],
         serviceCount: category.serviceCount
       });
@@ -1566,13 +1802,14 @@ export default function MonthlyStatement() {
     addAssistiveOrModificationChart('ATO', 'Assistive Technology - Ongoing');
     addAssistiveOrModificationChart('HMB', 'Home Modification Budget');
 
+    // 5th, 6th Charts: Restorative Care & End-of-Life
     const addRestorativeChart = (code: 'RCP' | 'EOL', title: string) => {
       const category = categoryLookup.get(code) ?? ({ code } as BudgetCategory);
       const previousSpending = getPreviousSpendingValue(category);
       const available = positive(category.availableFunds);
-      const totalAvailable = positive(category.availableFunds);
+      const totalAvailable = positive(category.totalAvailableBudget ?? category.availableFunds ?? 0);
+      const expenditure = calculateExpenditure(category);
       const remaining = positive(category.remainingBudget);
-      const expenditure = Math.max(0, available - remaining);
 
       pushChartConfig({
         code,
@@ -1584,25 +1821,26 @@ export default function MonthlyStatement() {
             label: 'Spending from previous months',
             shortLabel: 'Prev. spend',
             value: previousSpending,
-            color: '#7c3aed'
+            color: '#7c3aed' // Purple
           },
           {
             name: `${code}-expenditure`,
             label: `${selectedMonthLabel} expenditure`,
             shortLabel: 'Expenditure',
             value: expenditure,
-            color: '#dc2626'
+            color: '#dc2626' // Red
           },
           {
             name: `${code}-balance`,
-            label: `Remaining budget ${formatDate(category.fundingEndDate)}`,
-            shortLabel: 'Balance',
+            label: `Total available budget ${formatDate(category.fundingEndDate)}`,
+            shortLabel: 'Total Budget',
             value: totalAvailable,
-            color: '#2563eb'
+            color: '#2563eb' // Blue
           }
         ],
         metrics: [
-          { label: 'Available funds', value: totalAvailable },
+          { label: 'Total available budget', value: totalAvailable },
+          { label: 'Previous spending', value: previousSpending },
           { label: 'Remaining balance', value: remaining },
         ],
         serviceCount: category.serviceCount
@@ -1641,7 +1879,7 @@ export default function MonthlyStatement() {
                 Monthly Statement Generator
               </h1>
               <p className="text-muted-foreground">
-                Generate comprehensive monthly service records and budget statements for Support at Home participants
+                Manage participants&apos; budget and service records, and generate the Support at Home monthly state
               </p>
             </div>
 
@@ -1793,7 +2031,7 @@ export default function MonthlyStatement() {
               <div className="mb-6">
                 <h3 className="text-xl font-semibold">Budget Mini Charts</h3>
                 <p className="text-sm text-muted-foreground">
-                  Visual summaries for each funding stream showing the ordered Support at Home layout.
+                  Visual summaries for each funding stream, including Expenditure, remaining budget, etc.
                 </p>
               </div>
               {loadingServiceItems ? (
@@ -1869,170 +2107,264 @@ export default function MonthlyStatement() {
             </Card>
 
             {/* Individualised Budgets */}
-            <Card className="p-6 shadow-lg print:shadow-none">
-              <div className="flex flex-col gap-2 mb-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <h3 className="text-xl font-semibold">Budget Items</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Items from: Home Support Quarterly Budget, Restorative Care Pathway Budget, End-of-Life Pathway Budget, Assistive Technology - Short-term Budget, Assistive Technology - Ongoing Budget, Home Modification Budget
-                  </p>
-                </div>
-                <div className="print:hidden">
-                  <Button
-                    variant="outline"
-                    className="gap-2"
-                    onClick={handleSaHMonthlyStatement}
-                    disabled={!statementData || exportingSection === 'budget-csv'}
-                  >
-                    <FileSpreadsheet className="h-4 w-4" />
-                    Export to CSV
-                  </Button>
+            <Card className="shadow-lg print:shadow-none">
+              <div className="p-6 border-b">
+                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h3 className="text-xl font-semibold">Individualised Budgets</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Budget allocation and spending records for each funding stream
+                    </p>
+                  </div>
                 </div>
               </div>
-              <div className="overflow-x-auto">
-                {loadingServiceItems ? (
-                  <div className="text-center py-8">
-                    <Spinner />
-                  </div>
-                ) : budgetItems.length > 0 ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Funding Stream</TableHead>
-                        <TableHead>Participant</TableHead>
-                        <TableHead>Month</TableHead>
-                        <TableHead>Year</TableHead>
-                        <TableHead>FY Quarter</TableHead>
-                        <TableHead className="text-right">Total Available</TableHead>
-                        <TableHead className="text-right">Delivered (Selected Month)</TableHead>
-                        <TableHead className="text-right">Adjustments</TableHead>
-                        <TableHead className="text-right">Remaining Balance</TableHead>
-                        <TableHead>Funding Start</TableHead>
-                        <TableHead>Funding End</TableHead>
-                        <TableHead>Fund</TableHead>
-                        <TableHead className="text-right">Committed Funds</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {budgetItems.map((item) => (
-                        <TableRow key={item.id}>
-                          <TableCell className="whitespace-nowrap">
-                            {item.folderName || BUDGET_CATEGORY_LABELS[item.categoryCode] || 'Budget'}
-                          </TableCell>
-                          <TableCell>{item.participantName || 'N/A'}</TableCell>
-                          <TableCell>{item.month || 'N/A'}</TableCell>
-                          <TableCell>{item.year || 'N/A'}</TableCell>
-                          <TableCell>{item.quarter || 'N/A'}</TableCell>
-                          <TableCell className="text-right font-medium">{formatCurrency(item.totalAvailableBudget || 0)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(item.deliveredAmount || 0)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(item.adjustmentAmount || 0)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(item.remainingBalance || 0)}</TableCell>
-                          <TableCell className="whitespace-nowrap">{formatDate(item.fundingStartDate)}</TableCell>
-                          <TableCell className="whitespace-nowrap">{formatDate(item.fundingEndDate)}</TableCell>
-                          <TableCell>{item.fund || 'N/A'}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(item.committedFunds || 0)}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <AlertCircle className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    <p>No budget items found</p>
-                  </div>
-                )}
-              </div>
+
+              {/* Budget Streams Subsections */}
+              {loadingServiceItems ? (
+                <div className="p-6 text-center">
+                  <Spinner />
+                </div>
+              ) : budgetItems.length > 0 ? (
+                <div className="space-y-6 p-6">
+                  {/* Helper function to group budget items by categoryCode */}
+                  {(() => {
+                    const groupedByCategory = budgetItems.reduce((acc, item) => {
+                      const code = item.categoryCode || 'HSQ';
+                      if (!acc[code]) {
+                        acc[code] = [];
+                      }
+                      acc[code].push(item);
+                      return acc;
+                    }, {} as Record<string, BudgetRecord[]>);
+
+                    const categoryOrder = ['HSQ', 'ATS', 'ATO', 'HMB', 'RCP', 'EOL'];
+                    const categoryTitles: Record<string, string> = {
+                      'HSQ': 'Home Support Quarterly Budget',
+                      'ATS': 'Assistive Technology - Short-term',
+                      'ATO': 'Assistive Technology - Ongoing',
+                      'HMB': 'Home Modification Budget',
+                      'RCP': 'Restorative Care Pathway Budget',
+                      'EOL': 'End-of-Life Pathway Budget',
+                    };
+
+                    return (
+                      <>
+                        {categoryOrder.map((code) => {
+                          const items = groupedByCategory[code] || [];
+                          if (items.length === 0) return null;
+
+                          return (
+                            <div key={code} className="border rounded-lg p-4">
+                              <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                                <div>
+                                  <h4 className="text-lg font-semibold">{categoryTitles[code]}</h4>
+                                </div>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-2 print:hidden"
+                                  onClick={() => handleBudgetCategoryExportCSV(code, categoryTitles[code])}
+                                  disabled={exportingSection === `budget-${code}`}
+                                >
+                                  <FileSpreadsheet className="h-4 w-4" />
+                                  Export CSV
+                                </Button>
+                              </div>
+                              <div className="overflow-x-auto">
+                                <Table className="text-sm">
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead>Funding Source</TableHead>
+                                      <TableHead>Participant</TableHead>
+                                      <TableHead>Month</TableHead>
+                                      <TableHead>Year</TableHead>
+                                      <TableHead>FY Quarter</TableHead>
+                                      <TableHead className="text-right">Funding Start</TableHead>
+                                      <TableHead className="text-right">Funding End</TableHead>
+                                      <TableHead className="text-right">Fund Start Balance</TableHead>
+                                      <TableHead className="text-right">Total Available Budget</TableHead>
+                                      <TableHead className="text-right">Quarterly Adjustment</TableHead>
+                                      <TableHead className="text-right">Carryover Funding</TableHead>
+                                      <TableHead className="text-right">Unspent Returned</TableHead>
+                                      <TableHead className="text-right">Previous Month Spending</TableHead>
+                                      <TableHead className="text-right">Delivered Amount</TableHead>
+                                      <TableHead className="text-right">Adjustments</TableHead>
+                                      <TableHead className="text-right">Remaining Balance</TableHead>
+                                      <TableHead className="text-right">Committed Funds</TableHead>
+                                      <TableHead>Fund Classification</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {items.map((item) => (
+                                      <TableRow key={item.id} className="text-xs">
+                                        <TableCell className="whitespace-nowrap font-medium">
+                                          {item.folderName || BUDGET_CATEGORY_LABELS[code] || 'Budget'}
+                                        </TableCell>
+                                        <TableCell>{item.participantName || 'N/A'}</TableCell>
+                                        <TableCell>{item.month || 'N/A'}</TableCell>
+                                        <TableCell>{item.year || 'N/A'}</TableCell>
+                                        <TableCell>{item.quarter || 'N/A'}</TableCell>
+                                        <TableCell className="text-right whitespace-nowrap">{formatDate(item.fundingStartDate)}</TableCell>
+                                        <TableCell className="text-right whitespace-nowrap">{formatDate(item.fundingEndDate)}</TableCell>
+                                        <TableCell className="text-right">{formatCurrency(item.availableFundStart || 0)}</TableCell>
+                                        <TableCell className="text-right font-medium">{formatCurrency(item.totalAvailableBudget || 0)}</TableCell>
+                                        <TableCell className="text-right">{formatCurrency(item.quarterlyAdjustment || 0)}</TableCell>
+                                        <TableCell className="text-right">{formatCurrency(item.carryoverFunding || 0)}</TableCell>
+                                        <TableCell className="text-right">{formatCurrency(item.unspentReturned || 0)}</TableCell>
+                                        <TableCell className="text-right">{formatCurrency(item.previousMonthSpending || 0)}</TableCell>
+                                        <TableCell className="text-right">{formatCurrency(item.deliveredAmount || 0)}</TableCell>
+                                        <TableCell className="text-right">{formatCurrency(item.adjustmentAmount || 0)}</TableCell>
+                                        <TableCell className="text-right font-medium">{formatCurrency(item.remainingBalance || 0)}</TableCell>
+                                        <TableCell className="text-right">{formatCurrency(item.committedFunds || 0)}</TableCell>
+                                        <TableCell className="whitespace-nowrap">{item.fundClassification || item.fund || 'N/A'}</TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {/* 📊 Home Support Care Management Budget Subsection */}
+                        <div className="border rounded-lg p-4 bg-blue-50 dark:bg-blue-950">
+                          <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                            <div>
+                              <h4 className="text-lg font-semibold">📊 Home Support Care Management Budget</h4>
+                              <p className="text-sm text-muted-foreground">
+                                Care management and coordination budget allocation
+                              </p>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-2 print:hidden"
+                              onClick={() => handleHomeSupportCareManagementExportCSV()}
+                              disabled={exportingSection === 'budget-hscm'}
+                            >
+                              <FileSpreadsheet className="h-4 w-4" />
+                              Export CSV
+                            </Button>
+                          </div>
+                          <div className="text-sm text-muted-foreground p-4 text-center">
+                            Care management budget data will be synced from the Home Support Care Management Budget subfolder
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <div className="p-6 text-center text-muted-foreground">
+                  <AlertCircle className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                  <p>No budget items found</p>
+                </div>
+              )}
             </Card>
 
             {/* Service Records */}
-            <Card className="p-6 shadow-lg print:shadow-none">
-              <div className="flex flex-col gap-2 mb-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <h3 className="text-xl font-semibold">Service Records</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Items from: Master Plan, Shift Planning and Reporting
-                  </p>
-                </div>
-                <div className="print:hidden">
-                  <Button
-                    variant="outline"
-                    className="gap-2"
-                    onClick={handleSaHMonthlyStatement}
-                    disabled={!statementData || exportingSection === 'statement-pdf'}
-                  >
-                    <FileSpreadsheet className="h-4 w-4" />
-                    Export to PDF
-                  </Button>
+            <Card className="shadow-lg print:shadow-none">
+              <div className="p-6 border-b">
+                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h3 className="text-xl font-semibold">Service Records</h3>
+                    <p className="text-sm text-muted-foreground">
+                      The services scheduled for the participants and their status
+                    </p>
+                  </div>
+                  <div className="print:hidden">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                      onClick={handleServiceExportCSV}
+                      disabled={!statementData || exportingSection === 'service-csv'}
+                    >
+                      <FileSpreadsheet className="h-4 w-4" />
+                      Export CSV
+                    </Button>
+                  </div>
                 </div>
               </div>
               <div className="overflow-x-auto">
                 {loadingServiceItems ? (
-                  <div className="text-center py-8">
+                  <div className="p-6 text-center">
                     <Spinner />
                   </div>
                 ) : serviceItems.length > 0 ? (
-                  <Table>
+                  <Table className="text-sm">
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Participant</TableHead>
-                        <TableHead>Service</TableHead>
-                        <TableHead>Service Provider</TableHead>
-                        <TableHead>Scheduled Service Date</TableHead>
-                        <TableHead>Service Delivery Date</TableHead>
-                        <TableHead>Transaction Status</TableHead>
-                        <TableHead>Committed AT-HM for Delivery</TableHead>
-                        <TableHead>Unit</TableHead>
-                        <TableHead className="text-right">Quantity</TableHead>
-                        <TableHead className="text-right">Unit Price ($)</TableHead>
-                        <TableHead className="text-right">Total Amount</TableHead>
-                        <TableHead className="text-right">Gov Subsidy</TableHead>
-                        <TableHead className="text-right">Participant Contribution</TableHead>
+                        <TableHead className="whitespace-nowrap">Participant</TableHead>
+                        <TableHead className="whitespace-nowrap">Service</TableHead>
+                        <TableHead className="whitespace-nowrap">Service Provider</TableHead>
+                        <TableHead className="whitespace-nowrap">Scheduled Service Date</TableHead>
+                        <TableHead className="whitespace-nowrap">Service Delivery Date</TableHead>
+                        <TableHead className="whitespace-nowrap">Transaction Status</TableHead>
+                        <TableHead className="whitespace-nowrap">Committed AT-HM for Delivery</TableHead>
+                        <TableHead className="whitespace-nowrap">Unit</TableHead>
+                        <TableHead className="text-right whitespace-nowrap">Quantity</TableHead>
+                        <TableHead className="text-right whitespace-nowrap">Unit Price ($)</TableHead>
+                        <TableHead className="text-right whitespace-nowrap">Total Amount ($)</TableHead>
+                        <TableHead className="text-right whitespace-nowrap">Gov Subsidy ($)</TableHead>
+                        <TableHead className="text-right whitespace-nowrap">Participant Contribution ($)</TableHead>
                         <TableHead>Funding Source</TableHead>
                         <TableHead>Notes</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {serviceItems.map((service) => (
-                        <TableRow key={service.id}>
+                        <TableRow key={service.id} className="text-xs">
                           <TableCell className="whitespace-nowrap">
-                            {service.participant || '-'}
+                            {service.participant || service.participantName || '-'}
                           </TableCell>
-                          <TableCell className="min-w-[250px] text-xs">
-                            {service.service || '-'}
+                          <TableCell className="min-w-[250px]">
+                            {service.service || service.taskName || '-'}
                           </TableCell>
-                          <TableCell>{service.serviceProvider || 'N/A'}</TableCell>
-                          <TableCell className="whitespace-nowrap text-xs">
-                            {service.scheduledServiceDate ? formatDate(service.scheduledServiceDate) : 'N/A'}
+                          <TableCell className="min-w-[180px]">
+                            {service.serviceProvider || service.associatedProvider || service.loanedByOrganisationName || 'N/A'}
                           </TableCell>
-                          <TableCell className="whitespace-nowrap text-xs">
-                            {service.serviceDeliveryDate ? formatDate(service.serviceDeliveryDate) : 'N/A'}
+                          <TableCell className="whitespace-nowrap">
+                            {service.scheduledServiceDate ? formatDate(service.scheduledServiceDate) : (service.scheduledShiftStart ? formatDate(service.scheduledShiftStart) : 'N/A')}
                           </TableCell>
-                          <TableCell className="w-fit">
-                            {service.transactionStatus !== undefined && service.transactionStatus.trim() !== '' &&
-                              <Badge variant={service.transactionStatus?.includes('Cancelled') ? 'default' : 'secondary'} className="text-xs w-max">
+                          <TableCell className="whitespace-nowrap">
+                            {service.serviceDeliveryDate ? formatDate(service.serviceDeliveryDate) : (service.actualShiftEndDateTime ? formatDate(service.actualShiftEndDateTime) : 'N/A')}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            {service.transactionStatus && service.transactionStatus.trim() !== '' ? (
+                              <Badge
+                                variant={service.transactionStatus?.toLowerCase().includes('cancelled') ? 'destructive' : service.transactionStatus?.toLowerCase().includes('delivered') ? 'default' : 'secondary'}
+                                className="text-xs w-max"
+                              >
                                 {service.transactionStatus}
                               </Badge>
-                            }
+                            ) : (
+                              'N/A'
+                            )}
                           </TableCell>
-                          <TableCell className="text-right">
-                            {service.committedAtHmForDelivery && service.committedAtHmForDelivery > 0 ? 'True' : 'False'}
+                          <TableCell className="text-center">
+                            {service.committedAtHmForDelivery && service.committedAtHmForDelivery > 0 ? (
+                              <Badge variant="outline" className="text-xs">Yes</Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-xs">No</Badge>
+                            )}
                           </TableCell>
-                          <TableCell className="text-xs">{service.unit}</TableCell>
-                          <TableCell className="text-right">{service.quantity}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(service.unitPrice)}</TableCell>
-                          <TableCell className="text-right font-medium">{formatCurrency(service.totalAmount)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(service.govSubsidy)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(service.participantContribution)}</TableCell>
-                          <TableCell className="text-xs min-w-[200px]">{service.fundingSource}</TableCell>
-                          <TableCell className="max-w-[200px] truncate text-xs">{service.notes || 'N/A'}</TableCell>
+                          <TableCell className="whitespace-nowrap">{service.unit || '-'}</TableCell>
+                          <TableCell className="text-right">{Number(service.quantity ?? 0).toFixed(2)}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(service.unitPrice ?? 0)}</TableCell>
+                          <TableCell className="text-right font-medium">{formatCurrency(service.totalAmount ?? 0)}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(service.govSubsidy ?? 0)}</TableCell>
+                          <TableCell className="text-right">{formatCurrency(service.participantContribution ?? 0)}</TableCell>
+                          <TableCell className="min-w-[150px]">{service.fundingSource || 'N/A'}</TableCell>
+                          <TableCell className="max-w-[250px]">{service.notes || 'N/A'}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
                 ) : (
-                  <div className="text-center py-8 text-muted-foreground">
+                  <div className="p-6 text-center text-muted-foreground">
                     <AlertCircle className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    <p>No services found for the selected period</p>
+                    <p>No service records found for the selected period</p>
                   </div>
                 )}
               </div>
