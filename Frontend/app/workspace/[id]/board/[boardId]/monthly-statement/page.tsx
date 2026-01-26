@@ -422,7 +422,7 @@ export default function MonthlyStatement() {
   const [loadingParticipants, setLoadingParticipants] = useState(false);
   const [loadingServiceItems, setLoadingServiceItems] = useState(false);
   const [statementData, setStatementData] = useState<MonthlyStatementData | null>(null);
-  const [budgetItems, setBudgetItems] = useState<BudgetRecord[]>([]);
+  const [budgetItems, setBudgetItems] = useState<Record<string, BudgetRecord[]>>({});
   const [serviceItems, setServiceItems] = useState<ServiceRecord[]>([]);
   const [budgetPagination, setBudgetPagination] = useState({ page: 1, limit: 10, total: 0 });
   const [servicePagination, setServicePagination] = useState({ page: 1, limit: 10, total: 0 });
@@ -902,15 +902,25 @@ export default function MonthlyStatement() {
       const data = response.data;
 
       // Handle budget items
-      if (data?.budgetItems) {
-        setBudgetItems(data.budgetItems.items as BudgetRecord[]);
+      if (data?.budgetItems?.items) {
+        const groupedItems = Object.entries(data.budgetItems.items).reduce(
+          (acc, [folderName, group]) => {
+            const groupItems = Array.isArray((group as any)?.items) ? (group as any).items : [];
+            if (groupItems.length > 0) {
+              acc[folderName] = groupItems as BudgetRecord[];
+            }
+            return acc;
+          },
+          {} as Record<string, BudgetRecord[]>
+        );
+        setBudgetItems(groupedItems);
         setBudgetPagination({
           page: data.budgetItems.page || budgetPagination.page,
           limit: data.budgetItems.limit || budgetPagination.limit,
           total: data.budgetItems.total || 0
         });
       } else {
-        setBudgetItems([]);
+        setBudgetItems({});
       }
 
       // Handle service items
@@ -976,7 +986,7 @@ export default function MonthlyStatement() {
         monthNumber: effectiveMonthNumber,
         services,
         budgetCategories,
-        budgetItems: data?.budgetItems?.items ?? [],
+        budgetItems: [],
         serviceItems: services,
         summary,
         participantAddress: data?.participantAddress ?? '',
@@ -2124,47 +2134,49 @@ export default function MonthlyStatement() {
                 <div className="p-6 text-center">
                   <Spinner />
                 </div>
-              ) : budgetItems.length > 0 ? (
+              ) : Object.keys(budgetItems).length > 0 ? (
                 <div className="space-y-6 p-6">
                   {/* Helper function to group budget items by categoryCode */}
                   {(() => {
-                    const groupedByCategory = budgetItems.reduce((acc, item) => {
-                      const code = item.categoryCode || 'HSQ';
-                      if (!acc[code]) {
-                        acc[code] = [];
-                      }
-                      acc[code].push(item);
-                      return acc;
-                    }, {} as Record<string, BudgetRecord[]>);
-
                     const categoryOrder = ['HSQ', 'ATS', 'ATO', 'HMB', 'RCP', 'EOL'];
-                    const categoryTitles: Record<string, string> = {
-                      'HSQ': 'Home Support Quarterly Budget',
-                      'ATS': 'Assistive Technology - Short-term',
-                      'ATO': 'Assistive Technology - Ongoing',
-                      'HMB': 'Home Modification Budget',
-                      'RCP': 'Restorative Care Pathway Budget',
-                      'EOL': 'End-of-Life Pathway Budget',
+                    const getCategoryOrderIndex = (code?: string) => {
+                      const normalizedCode = (code || 'HSQ').toString();
+                      const idx = categoryOrder.indexOf(normalizedCode);
+                      return idx === -1 ? categoryOrder.length : idx;
                     };
+
+                    const groupedEntries = Object.entries(budgetItems)
+                      .map(([folderName, items]) => ({
+                        folderName,
+                        items,
+                        categoryCode: items[0]?.categoryCode || 'HSQ',
+                      }))
+                      .sort((a, b) => {
+                        const orderDiff = getCategoryOrderIndex(a.categoryCode) - getCategoryOrderIndex(b.categoryCode);
+                        if (orderDiff !== 0) return orderDiff;
+                        return a.folderName.localeCompare(b.folderName);
+                      });
 
                     return (
                       <>
-                        {categoryOrder.map((code) => {
-                          const items = groupedByCategory[code] || [];
+                        {groupedEntries.map((group) => {
+                          const items = group.items || [];
                           if (items.length === 0) return null;
+                          const categoryCode = group.categoryCode || 'HSQ';
+                          const sectionTitle = group.folderName || BUDGET_CATEGORY_LABELS[categoryCode] || 'Budget';
 
                           return (
-                            <div key={code} className="border rounded-lg p-4">
+                            <div key={group.folderName} className="border rounded-lg p-4">
                               <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                                 <div>
-                                  <h4 className="text-lg font-semibold">{categoryTitles[code]}</h4>
+                                  <h4 className="text-lg font-semibold">{sectionTitle}</h4>
                                 </div>
                                 <Button
                                   variant="outline"
                                   size="sm"
                                   className="gap-2 print:hidden"
-                                  onClick={() => handleBudgetCategoryExportCSV(code, categoryTitles[code])}
-                                  disabled={exportingSection === `budget-${code}`}
+                                  onClick={() => handleBudgetCategoryExportCSV(categoryCode, sectionTitle)}
+                                  disabled={exportingSection === `budget-${categoryCode}`}
                                 >
                                   <FileSpreadsheet className="h-4 w-4" />
                                   Export CSV
@@ -2198,7 +2210,7 @@ export default function MonthlyStatement() {
                                     {items.map((item) => (
                                       <TableRow key={item.id} className="text-xs">
                                         <TableCell className="whitespace-nowrap font-medium">
-                                          {item.folderName || BUDGET_CATEGORY_LABELS[code] || 'Budget'}
+                                          {item.folderName || BUDGET_CATEGORY_LABELS[categoryCode] || 'Budget'}
                                         </TableCell>
                                         <TableCell>{item.participantName || 'N/A'}</TableCell>
                                         <TableCell>{item.month || 'N/A'}</TableCell>
