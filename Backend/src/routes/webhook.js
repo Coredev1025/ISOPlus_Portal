@@ -2499,12 +2499,11 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 setMultiValueField(templateInputs, field, subtitlePayload);
             });
 
-            const phoneLine = safeBusinessDetails.companyRegistrationId
-                ? `${safeBusinessDetails.phoneNumber || ''}${safeBusinessDetails.phoneNumber ? ' | ' : ''}Reg ID: ${safeBusinessDetails.companyRegistrationId}`
-                : (safeBusinessDetails.phoneNumber || '');
+            const companyNamePhone = `${safeBusinessDetails.companyName || 'Service Provider'}${safeBusinessDetails.phoneNumber ? ' | ' + safeBusinessDetails.phoneNumber : ''}`;
 
             setMultiValueField(templateInputs, 'Disclaimer 2a', {
-                'Phone Number': phoneLine.trim(),
+                'Company Name': companyNamePhone.trim(),
+                'Company Registration ID': safeBusinessDetails.companyRegistrationId || '',
                 'Business Email': safeBusinessDetails.businessEmail || ''
             });
 
