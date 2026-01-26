@@ -1600,7 +1600,8 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             'End-of-Life Pathway Budget',
             'Assistive Technology - Short-term Budget',
             'Assistive Technology - Ongoing Budget',
-            'Home Modification Budget'
+            'Home Modification Budget',
+            'Home Support Care Management Budget'
         ].join(',');
 
         const budgetFolderIds = await getFolderIdsForQuery(budgetFolderNames);
@@ -1981,10 +1982,28 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         const budgetSkip = hasBudgetLimit && budgetLimitNumber
             ? (budgetPageNumber - 1) * budgetLimitNumber
             : 0;
-        const paginatedBudgetItems = hasBudgetLimit && budgetLimitNumber
-            ? filteredBudgetItems.slice(budgetSkip, budgetSkip + budgetLimitNumber)
-            : filteredBudgetItems;
+        
+        const groupedBudgetItems = filteredBudgetItems.reduce((acc, item) => {
+            const folderName = item.folderName || 'Uncategorized';
+            if (!acc[folderName]) {
+                acc[folderName] = [];
+            }
+            acc[folderName].push(item);
+            return acc;
+        }, {});
 
+        const paginatedGroupedBudgetItems = {};
+        Object.keys(groupedBudgetItems).forEach(folderName => {
+            const itemsInGroup = groupedBudgetItems[folderName];
+            const totalItems = itemsInGroup.length;
+            const paginatedItems = itemsInGroup.slice((budgetPageNumber - 1) * budgetLimitNumber, budgetPageNumber * budgetLimitNumber);
+            paginatedGroupedBudgetItems[folderName] = {
+                items: paginatedItems,
+                total: totalItems,
+                page: budgetPageNumber,
+                limit: budgetLimitNumber
+            };
+        });
         // Fetch service items (second table) from Master Plan,Shift Planning and Reporting using find()
         const serviceFolderIds = await getFolderIdsForQuery('Master Plan,Shift Planning and Reporting');
         const serviceBaseQuery = { workspaceId, boardId };
@@ -2792,7 +2811,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
 
         res.status(200).json({
             budgetItems: {
-                items: paginatedBudgetItems,
+                items: paginatedGroupedBudgetItems,
                 total: budgetTotal,
                 page: budgetPageNumber,
                 limit: budgetLimitNumber

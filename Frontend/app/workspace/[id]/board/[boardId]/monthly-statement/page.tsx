@@ -1021,7 +1021,7 @@ export default function MonthlyStatement() {
 
       // Use optimized export endpoints to fetch all data in parallel
       const exportBaseUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/export/${id}/${boardId}/monthly-statement-csv`;
-      
+
       const [budgetResponse, serviceResponse] = await Promise.all([
         axios.get(exportBaseUrl, {
           params: {
@@ -1504,35 +1504,35 @@ export default function MonthlyStatement() {
   const handleSaveBusinessDetails = async () => {
     // Clear previous errors
     setBusinessDetailsErrors([]);
-    
+
     // Validation
     const errors: string[] = [];
-    
+
     if (!businessDetails.companyName?.trim()) {
       errors.push('Company Name is required');
     }
-    
+
     if (!businessDetails.companyRegistrationId?.trim()) {
       errors.push('Company Registration ID is required');
     }
-    
+
     if (!businessDetails.phoneNumber?.trim()) {
       errors.push('Phone Number is required');
     }
-    
+
     if (!businessDetails.businessEmail?.trim()) {
       errors.push('Business Email is required');
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(businessDetails.businessEmail)) {
       errors.push('Business Email must be a valid email address');
     }
-    
+
     // Validate postcode if provided (should be numeric and max 8 characters)
     if (businessDetails.postcode && businessDetails.postcode.trim()) {
       if (!/^\d{1,8}$/.test(businessDetails.postcode)) {
         errors.push('Postcode must be numeric and maximum 8 digits');
       }
     }
-    
+
     if (errors.length > 0) {
       setBusinessDetailsErrors(errors);
       showErrorToast('Please correct the validation errors');
@@ -2057,7 +2057,7 @@ export default function MonthlyStatement() {
                         )}
                       </div>
 
-                      <ChartContainer config={chart.chartConfig} className="h-56">
+                      <ChartContainer config={chart.chartConfig} className="w-full h-56">
                         <BarChart data={chart.data} margin={{ left: 0, right: 0, top: 10 }}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} />
                           <XAxis dataKey="shortLabel" axisLine={false} tickLine={false} />
@@ -2620,8 +2620,8 @@ export default function MonthlyStatement() {
                     !businessDetails.country
                       ? "Select country first"
                       : countryStates[businessDetails.country]?.length === 0
-                      ? "No states available"
-                      : "Select state"
+                        ? "No states available"
+                        : "Select state"
                   } />
                 </SelectTrigger>
                 <SelectContent>
