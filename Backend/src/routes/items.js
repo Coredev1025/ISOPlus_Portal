@@ -1561,18 +1561,51 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             }, extractContextFromReq(req));
         }
 
-        // DATABASE-ONLY: Work without folder API - determine categories from items directly
-        // We'll build folderId to code mapping from items as we process them
+        // Fetch folder metadata once so we can group by real folder names
+        let folders = [];
+        try {
+            const { folder } = await getFolder(workspaceId, boardId);
+            folders = Array.isArray(folder) ? folder : [];
+        } catch (folderErr) {
+            warn('Items-Service', 'Failed to fetch folders', {
+                message: folderErr.message,
+                workspaceId,
+                boardId
+            }, extractContextFromReq(req));
+        }
+
         const folderIdToName = new Map();
         const folderIdToCode = {};
+        const budgetFolderConfig = [
+            ...BUDGET_CATEGORY_CONFIG,
+            { code: 'HSCM', folderName: 'Home Support Care Management Budget' }
+        ];
 
-        // Helper function to get folder IDs for a query (database-only version)
-        // Since we don't have folder names from API, we'll query items directly
-        // and filter by category in JavaScript based on item data
+        folders.forEach(folderElement => {
+            if (!folderElement?.id) return;
+            const folderName = folderElement.name || '';
+            folderIdToName.set(folderElement.id, folderName);
+
+            const normalized = folderName.toLowerCase();
+            const matchedConfig = budgetFolderConfig.find(cfg =>
+                normalized.includes(cfg.folderName.toLowerCase())
+            );
+            if (matchedConfig) {
+                folderIdToCode[folderElement.id] = matchedConfig.code;
+            }
+        });
+
+        // Helper function to get folder IDs for a query
         const getFolderIdsForQuery = async (folderName) => {
-            // Return empty array - we'll query all items and filter by category later
-            // This avoids needing folder API calls
-            return [];
+            if (!folders || folders.length === 0) return [];
+            const folderNames = folderName.toLowerCase().split(',').map(name => name.trim()).filter(Boolean);
+            if (folderNames.length === 0) return [];
+            return folders
+                .filter(folderElement => {
+                    const folderNameLower = (folderElement.name || '').toLowerCase();
+                    return folderNames.some(name => folderNameLower.includes(name));
+                })
+                .map(folderElement => folderElement.id);
         };
 
         // Helper function to extract value from flat item data
@@ -1778,6 +1811,24 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             return 'HSQ';
         };
 
+        const getMonthLabelFromDate = (dateValue) => {
+            if (!dateValue) return '';
+            const date = new Date(dateValue);
+            if (isNaN(date.getTime())) return '';
+            const monthLabelLookupLocal = [
+                'January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'
+            ];
+            return monthLabelLookupLocal[date.getMonth()] || '';
+        };
+
+        const getYearFromDate = (dateValue) => {
+            if (!dateValue) return '';
+            const date = new Date(dateValue);
+            if (isNaN(date.getTime())) return '';
+            return date.getFullYear().toString();
+        };
+
         const determineCategoryCodeForService = (service = {}) => {
             const normalize = (value) => (value || '').toString().toLowerCase();
             const fundingSource = normalize(service.fundingSource);
@@ -1817,8 +1868,71 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             }
 
             const categoryCode = determineCategoryCodeForBudget(item);
-            // DATABASE-ONLY: Folder names not available without API, use category code as fallback
             const folderName = folderIdToName.get(item.folderId) || BUDGET_CATEGORY_CONFIG.find(cfg => cfg.code === categoryCode)?.folderName || '';
+
+            const isCareManagement = folderName.toLowerCase().includes('home support care management budget');
+            if (isCareManagement) {
+                const participantProfileIdValue = getFirstReferenceId(item, 'Associated Participant');
+                const participantName = resolveParticipantName(participantProfileIdValue);
+                const dateValue = getValueFromItemMulti(item, 'Date');
+                const transactionTypeValue = getValueFromItemMulti(item, 'Transaction Type');
+                const receivedAmount = getNumberFromItem(item, 'Received Amount ($)');
+                const allocatedTime = getNumberFromItem(item, 'Allocated Time (Hr.)');
+                const allocatedAmount = getNumberFromItem(item, 'Allocated Amount ($-)');
+                const currentBalanceValue = getNumberFromItem(item, 'Current Balance ($)');
+                const currentBalance = Number.isFinite(currentBalanceValue) && currentBalanceValue !== 0
+                    ? currentBalanceValue
+                    : (receivedAmount || 0) + (allocatedAmount || 0);
+                const transactionType = (() => {
+                    if (!transactionTypeValue) return '';
+                    if (typeof transactionTypeValue === 'object' && transactionTypeValue.name) {
+                        return transactionTypeValue.name;
+                    }
+                    if (typeof transactionTypeValue === 'string') return transactionTypeValue;
+                    return transactionTypeValue.toString ? transactionTypeValue.toString() : '';
+                })();
+
+                const transformedData = {
+                    id: item.itemId,
+                    categoryCode: 'HSCM',
+                    folderName: folderName || 'Home Support Care Management Budget',
+                    participantName,
+                    participantProfileId: participantProfileIdValue ? participantProfileIdValue.toString() : null,
+                    month: getMonthLabelFromDate(dateValue),
+                    year: getYearFromDate(dateValue),
+                    quarter: '',
+                    fundingStartDate: null,
+                    fundingEndDate: null,
+                    totalAvailableBudget: receivedAmount || 0,
+                    availableFundStart: receivedAmount || 0,
+                    quarterlyAdjustment: 0,
+                    primarySupplementAmount: 0,
+                    carryoverFunding: 0,
+                    unspentReturned: 0,
+                    commonwealthUnspent: 0,
+                    providerUnspent: 0,
+                    participantUnspent: 0,
+                    previousMonthSpending: 0,
+                    deliveredAmount: Math.abs(allocatedAmount) || 0,
+                    deliveredAmountRaw: allocatedAmount,
+                    adjustmentAmount: 0,
+                    remainingBalance: Math.max(0, currentBalance),
+                    fundClassification: 'Care Management',
+                    fundAmount: 0,
+                    fund: '',
+                    committedFunds: 0,
+                    fundingStreamId: null,
+                    hscmDate: dateValue || null,
+                    hscmTransactionType: transactionType,
+                    hscmReceivedAmount: receivedAmount || 0,
+                    hscmAllocatedTime: allocatedTime || 0,
+                    hscmAllocatedAmount: allocatedAmount || 0,
+                    hscmCurrentBalance: currentBalance || 0
+                };
+
+                setCachedMSBudget(workspaceId, boardId, itemId, transformedData);
+                return transformedData;
+            }
 
             const participantProfileIdValue = getFirstReferenceId(item, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
             const participantName = resolveParticipantName(participantProfileIdValue);
@@ -1996,12 +2110,14 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         Object.keys(groupedBudgetItems).forEach(folderName => {
             const itemsInGroup = groupedBudgetItems[folderName];
             const totalItems = itemsInGroup.length;
-            const paginatedItems = itemsInGroup.slice((budgetPageNumber - 1) * budgetLimitNumber, budgetPageNumber * budgetLimitNumber);
+            const paginatedItems = hasBudgetLimit && budgetLimitNumber
+                ? itemsInGroup.slice((budgetPageNumber - 1) * budgetLimitNumber, budgetPageNumber * budgetLimitNumber)
+                : itemsInGroup;
             paginatedGroupedBudgetItems[folderName] = {
                 items: paginatedItems,
                 total: totalItems,
                 page: budgetPageNumber,
-                limit: budgetLimitNumber
+                limit: budgetLimitNumber || totalItems
             };
         });
         // Fetch service items (second table) from Master Plan,Shift Planning and Reporting using find()
@@ -2814,7 +2930,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 items: paginatedGroupedBudgetItems,
                 total: budgetTotal,
                 page: budgetPageNumber,
-                limit: budgetLimitNumber
+                limit: budgetLimitNumber || budgetTotal
             },
             serviceItems: {
                 items: transformedServiceItems,

@@ -112,6 +112,12 @@ interface BudgetRecord {
   fund?: string;
   committedFunds?: number;
   fundingStreamId?: string | null;
+  hscmDate?: string | null;
+  hscmTransactionType?: string;
+  hscmReceivedAmount?: number;
+  hscmAllocatedTime?: number;
+  hscmAllocatedAmount?: number;
+  hscmCurrentBalance?: number;
 }
 
 interface BudgetCategory {
@@ -1315,7 +1321,6 @@ export default function MonthlyStatement() {
     try {
       setExportingSection('budget-hscm');
 
-      // Use optimized export endpoint for faster CSV generation
       const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/export/${id}/${boardId}/monthly-statement-csv`;
       const response = await axios.get(apiUrl, {
         params: {
@@ -1342,8 +1347,6 @@ export default function MonthlyStatement() {
         return;
       }
 
-      const items = allItems;
-
       const headers = [
         'Funding Source',
         'Participant',
@@ -1363,8 +1366,8 @@ export default function MonthlyStatement() {
         'Fund Classification'
       ];
 
-      const rows = items.map((item) => [
-        item.folderName || '📊 Home Support Care Management Budget',
+      const rows = allItems.map((item) => [
+        item.folderName || 'Home Support Care Management Budget',
         item.participantName || statementData.participant || 'N/A',
         item.month || '',
         item.year || '',
@@ -1391,7 +1394,7 @@ export default function MonthlyStatement() {
       const filename = `Budget_HomeSupportCareManagement_${participantSlug}_${statementData.year}_${monthSlug}.csv`;
       downloadCsv(csvContent, filename);
       const durationText = exportDuration ? ` (${(exportDuration / 1000).toFixed(1)}s)` : '';
-      showSuccessToast(`Exported ${items.length} care management budget item${items.length === 1 ? '' : 's'} to CSV${durationText}.`);
+      showSuccessToast(`Exported ${allItems.length} care management budget item${allItems.length === 1 ? '' : 's'} to CSV${durationText}.`);
     } catch (err: any) {
       console.error('Error exporting care management budget items:', err);
       showErrorToast('Failed to export care management budget items', { description: err?.message || 'Unknown error' });
@@ -1596,6 +1599,16 @@ export default function MonthlyStatement() {
   const formatDate = (dateString: string | null | undefined) => {
     if (!dateString) return 'N/A';
     try {
+      if (typeof dateString === 'string') {
+        const trimmed = dateString.trim();
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
+          return trimmed;
+        }
+        const parsedLocal = parse(trimmed, 'dd/MM/yyyy', new Date());
+        if (isValid(parsedLocal)) {
+          return format(parsedLocal, 'dd/MM/yyyy');
+        }
+      }
       // Handle date-only strings (YYYY-MM-DD) by adding time component if needed
       let dateStr = dateString;
       if (dateStr && !dateStr.includes('T') && !dateStr.includes(' ')) {
@@ -1614,6 +1627,28 @@ export default function MonthlyStatement() {
     } catch (e) {
       return 'N/A';
     }
+  };
+
+  const getServiceProviderLabel = (service: ServiceRecord) => {
+    const candidates = [
+      service.serviceProvider,
+      service.associatedProvider,
+      service.loanedByOrganisationName
+    ];
+    const first = candidates.find((value) => typeof value === 'string' && value.trim() !== '');
+    const looksLikeUuid =
+      typeof first === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(first.trim());
+    if (first && !looksLikeUuid) {
+      return first;
+    }
+    if (service.deliveredBy && service.deliveredBy.trim() !== '') {
+      return service.deliveredBy;
+    }
+    if (first) {
+      return first;
+    }
+    return 'N/A';
   };
 
   const formatAxisCurrency = (value: number) => {
@@ -1678,7 +1713,9 @@ export default function MonthlyStatement() {
     // Helper function to calculate expenditure as Delivered Amount + Adjustment Amount
     const calculateExpenditure = (category?: BudgetCategory) => {
       if (!category) return 0;
-      const delivered = positive(category.deliveredAmount ?? 0);
+      const delivered = positive(
+        category.serviceDeliveredAmount ?? category.deliveredAmount ?? 0
+      );
       const adjustment = positive(category.adjustmentAmount ?? 0);
       return delivered + adjustment;
     };
@@ -2138,7 +2175,7 @@ export default function MonthlyStatement() {
                 <div className="space-y-6 p-6">
                   {/* Helper function to group budget items by categoryCode */}
                   {(() => {
-                    const categoryOrder = ['HSQ', 'ATS', 'ATO', 'HMB', 'RCP', 'EOL'];
+                    const categoryOrder = ['HSQ', 'ATS', 'ATO', 'HMB', 'RCP', 'EOL', 'HSCM'];
                     const getCategoryOrderIndex = (code?: string) => {
                       const normalizedCode = (code || 'HSQ').toString();
                       const idx = categoryOrder.indexOf(normalizedCode);
@@ -2149,7 +2186,10 @@ export default function MonthlyStatement() {
                       .map(([folderName, items]) => ({
                         folderName,
                         items,
-                        categoryCode: items[0]?.categoryCode || 'HSQ',
+                        categoryCode:
+                          /home support care management budget/i.test(folderName)
+                            ? 'HSCM'
+                            : items[0]?.categoryCode || 'HSQ',
                       }))
                       .sort((a, b) => {
                         const orderDiff = getCategoryOrderIndex(a.categoryCode) - getCategoryOrderIndex(b.categoryCode);
@@ -2175,93 +2215,115 @@ export default function MonthlyStatement() {
                                   variant="outline"
                                   size="sm"
                                   className="gap-2 print:hidden"
-                                  onClick={() => handleBudgetCategoryExportCSV(categoryCode, sectionTitle)}
-                                  disabled={exportingSection === `budget-${categoryCode}`}
+                                  onClick={() =>
+                                    categoryCode === 'HSCM'
+                                      ? handleHomeSupportCareManagementExportCSV()
+                                      : handleBudgetCategoryExportCSV(categoryCode, sectionTitle)
+                                  }
+                                  disabled={
+                                    categoryCode === 'HSCM'
+                                      ? exportingSection === 'budget-hscm'
+                                      : exportingSection === `budget-${categoryCode}`
+                                  }
                                 >
                                   <FileSpreadsheet className="h-4 w-4" />
                                   Export CSV
                                 </Button>
                               </div>
                               <div className="overflow-x-auto">
-                                <Table className="text-sm">
-                                  <TableHeader>
-                                    <TableRow>
-                                      <TableHead>Funding Source</TableHead>
-                                      <TableHead>Participant</TableHead>
-                                      <TableHead>Month</TableHead>
-                                      <TableHead>Year</TableHead>
-                                      <TableHead>FY Quarter</TableHead>
-                                      <TableHead className="text-right">Funding Start</TableHead>
-                                      <TableHead className="text-right">Funding End</TableHead>
-                                      <TableHead className="text-right">Fund Start Balance</TableHead>
-                                      <TableHead className="text-right">Total Available Budget</TableHead>
-                                      <TableHead className="text-right">Quarterly Adjustment</TableHead>
-                                      <TableHead className="text-right">Carryover Funding</TableHead>
-                                      <TableHead className="text-right">Unspent Returned</TableHead>
-                                      <TableHead className="text-right">Previous Month Spending</TableHead>
-                                      <TableHead className="text-right">Delivered Amount</TableHead>
-                                      <TableHead className="text-right">Adjustments</TableHead>
-                                      <TableHead className="text-right">Remaining Balance</TableHead>
-                                      <TableHead className="text-right">Committed Funds</TableHead>
-                                      <TableHead>Fund Classification</TableHead>
-                                    </TableRow>
-                                  </TableHeader>
-                                  <TableBody>
-                                    {items.map((item) => (
-                                      <TableRow key={item.id} className="text-xs">
-                                        <TableCell className="whitespace-nowrap font-medium">
-                                          {item.folderName || BUDGET_CATEGORY_LABELS[categoryCode] || 'Budget'}
-                                        </TableCell>
-                                        <TableCell>{item.participantName || 'N/A'}</TableCell>
-                                        <TableCell>{item.month || 'N/A'}</TableCell>
-                                        <TableCell>{item.year || 'N/A'}</TableCell>
-                                        <TableCell>{item.quarter || 'N/A'}</TableCell>
-                                        <TableCell className="text-right whitespace-nowrap">{formatDate(item.fundingStartDate)}</TableCell>
-                                        <TableCell className="text-right whitespace-nowrap">{formatDate(item.fundingEndDate)}</TableCell>
-                                        <TableCell className="text-right">{formatCurrency(item.availableFundStart || 0)}</TableCell>
-                                        <TableCell className="text-right font-medium">{formatCurrency(item.totalAvailableBudget || 0)}</TableCell>
-                                        <TableCell className="text-right">{formatCurrency(item.quarterlyAdjustment || 0)}</TableCell>
-                                        <TableCell className="text-right">{formatCurrency(item.carryoverFunding || 0)}</TableCell>
-                                        <TableCell className="text-right">{formatCurrency(item.unspentReturned || 0)}</TableCell>
-                                        <TableCell className="text-right">{formatCurrency(item.previousMonthSpending || 0)}</TableCell>
-                                        <TableCell className="text-right">{formatCurrency(item.deliveredAmount || 0)}</TableCell>
-                                        <TableCell className="text-right">{formatCurrency(item.adjustmentAmount || 0)}</TableCell>
-                                        <TableCell className="text-right font-medium">{formatCurrency(item.remainingBalance || 0)}</TableCell>
-                                        <TableCell className="text-right">{formatCurrency(item.committedFunds || 0)}</TableCell>
-                                        <TableCell className="whitespace-nowrap">{item.fundClassification || item.fund || 'N/A'}</TableCell>
+                                {categoryCode === 'HSCM' ? (
+                                  <Table className="text-sm">
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>Date</TableHead>
+                                        <TableHead>Transaction Type</TableHead>
+                                        <TableHead>Associated Participant</TableHead>
+                                        <TableHead className="text-right">Received Amount ($)</TableHead>
+                                        <TableHead className="text-right">Allocated Time (Hr.)</TableHead>
+                                        <TableHead className="text-right">Allocated Amount ($-)</TableHead>
+                                        <TableHead className="text-right">Current Balance ($)</TableHead>
                                       </TableRow>
-                                    ))}
-                                  </TableBody>
-                                </Table>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {items.map((item) => (
+                                        <TableRow key={item.id} className="text-xs">
+                                          <TableCell className="whitespace-nowrap">
+                                            {item.hscmDate ? formatDate(item.hscmDate) : 'N/A'}
+                                          </TableCell>
+                                          <TableCell>{item.hscmTransactionType || 'N/A'}</TableCell>
+                                          <TableCell>{item.participantName || 'N/A'}</TableCell>
+                                          <TableCell className="text-right">
+                                            {formatCurrency(item.hscmReceivedAmount ?? 0)}
+                                          </TableCell>
+                                          <TableCell className="text-right">
+                                            {Number(item.hscmAllocatedTime ?? 0).toFixed(1)}
+                                          </TableCell>
+                                          <TableCell className="text-right">
+                                            {formatCurrency(item.hscmAllocatedAmount ?? 0)}
+                                          </TableCell>
+                                          <TableCell className="text-right font-medium">
+                                            {formatCurrency(item.hscmCurrentBalance ?? item.remainingBalance ?? 0)}
+                                          </TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                ) : (
+                                  <Table className="text-sm">
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>Funding Source</TableHead>
+                                        <TableHead>Participant</TableHead>
+                                        <TableHead>Month</TableHead>
+                                        <TableHead>Year</TableHead>
+                                        <TableHead>FY Quarter</TableHead>
+                                        <TableHead className="text-right">Funding Start</TableHead>
+                                        <TableHead className="text-right">Funding End</TableHead>
+                                        <TableHead className="text-right">Fund Start Balance</TableHead>
+                                        <TableHead className="text-right">Total Available Budget</TableHead>
+                                        <TableHead className="text-right">Quarterly Adjustment</TableHead>
+                                        <TableHead className="text-right">Carryover Funding</TableHead>
+                                        <TableHead className="text-right">Unspent Returned</TableHead>
+                                        <TableHead className="text-right">Previous Month Spending</TableHead>
+                                        <TableHead className="text-right">Delivered Amount</TableHead>
+                                        <TableHead className="text-right">Adjustments</TableHead>
+                                        <TableHead className="text-right">Remaining Balance</TableHead>
+                                        <TableHead className="text-right">Committed Funds</TableHead>
+                                        <TableHead>Fund Classification</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {items.map((item) => (
+                                        <TableRow key={item.id} className="text-xs">
+                                          <TableCell className="whitespace-nowrap font-medium">
+                                            {item.folderName || BUDGET_CATEGORY_LABELS[categoryCode] || 'Budget'}
+                                          </TableCell>
+                                          <TableCell>{item.participantName || 'N/A'}</TableCell>
+                                          <TableCell>{item.month || 'N/A'}</TableCell>
+                                          <TableCell>{item.year || 'N/A'}</TableCell>
+                                          <TableCell>{item.quarter || 'N/A'}</TableCell>
+                                          <TableCell className="text-right whitespace-nowrap">{formatDate(item.fundingStartDate)}</TableCell>
+                                          <TableCell className="text-right whitespace-nowrap">{formatDate(item.fundingEndDate)}</TableCell>
+                                          <TableCell className="text-right">{formatCurrency(item.availableFundStart || 0)}</TableCell>
+                                          <TableCell className="text-right font-medium">{formatCurrency(item.totalAvailableBudget || 0)}</TableCell>
+                                          <TableCell className="text-right">{formatCurrency(item.quarterlyAdjustment || 0)}</TableCell>
+                                          <TableCell className="text-right">{formatCurrency(item.carryoverFunding || 0)}</TableCell>
+                                          <TableCell className="text-right">{formatCurrency(item.unspentReturned || 0)}</TableCell>
+                                          <TableCell className="text-right">{formatCurrency(item.previousMonthSpending || 0)}</TableCell>
+                                          <TableCell className="text-right">{formatCurrency(item.deliveredAmount || 0)}</TableCell>
+                                          <TableCell className="text-right">{formatCurrency(item.adjustmentAmount || 0)}</TableCell>
+                                          <TableCell className="text-right font-medium">{formatCurrency(item.remainingBalance || 0)}</TableCell>
+                                          <TableCell className="text-right">{formatCurrency(item.committedFunds || 0)}</TableCell>
+                                          <TableCell className="whitespace-nowrap">{item.fundClassification || item.fund || 'N/A'}</TableCell>
+                                        </TableRow>
+                                      ))}
+                                    </TableBody>
+                                  </Table>
+                                )}
                               </div>
                             </div>
                           );
                         })}
-
-                        {/* 📊 Home Support Care Management Budget Subsection */}
-                        <div className="border rounded-lg p-4 bg-blue-50 dark:bg-blue-950">
-                          <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                            <div>
-                              <h4 className="text-lg font-semibold">📊 Home Support Care Management Budget</h4>
-                              <p className="text-sm text-muted-foreground">
-                                Care management and coordination budget allocation
-                              </p>
-                            </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-2 print:hidden"
-                              onClick={() => handleHomeSupportCareManagementExportCSV()}
-                              disabled={exportingSection === 'budget-hscm'}
-                            >
-                              <FileSpreadsheet className="h-4 w-4" />
-                              Export CSV
-                            </Button>
-                          </div>
-                          <div className="text-sm text-muted-foreground p-4 text-center">
-                            Care management budget data will be synced from the Home Support Care Management Budget subfolder
-                          </div>
-                        </div>
                       </>
                     );
                   })()}
@@ -2334,7 +2396,7 @@ export default function MonthlyStatement() {
                             {service.service || service.taskName || '-'}
                           </TableCell>
                           <TableCell className="min-w-[180px]">
-                            {service.serviceProvider || service.associatedProvider || service.loanedByOrganisationName || 'N/A'}
+                            {getServiceProviderLabel(service)}
                           </TableCell>
                           <TableCell className="whitespace-nowrap">
                             {service.scheduledServiceDate ? formatDate(service.scheduledServiceDate) : (service.scheduledShiftStart ? formatDate(service.scheduledShiftStart) : 'N/A')}
