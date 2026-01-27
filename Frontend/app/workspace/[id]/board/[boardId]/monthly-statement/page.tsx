@@ -111,6 +111,7 @@ interface BudgetRecord {
   fundAmount?: number;
   fund?: string;
   committedFunds?: number;
+  primarySupplementLabel?: string;
   fundingStreamId?: string | null;
   hscmDate?: string | null;
   hscmTransactionType?: string;
@@ -118,6 +119,7 @@ interface BudgetRecord {
   hscmAllocatedTime?: number;
   hscmAllocatedAmount?: number;
   hscmCurrentBalance?: number;
+  rawData?: Record<string, unknown>;
 }
 
 interface BudgetCategory {
@@ -131,6 +133,7 @@ interface BudgetCategory {
   quarterStartMonth?: string;
   quarterEndMonth?: string;
   serviceDeliveredAmount?: number;
+  serviceDeliveredAmountRaw?: number;
   govSubsidyAmount?: number;
   participantContributionAmount?: number;
   adjustmentAmount?: number;
@@ -217,6 +220,171 @@ const BUDGET_CATEGORY_LABELS: Record<string, string> = {
   ATS: 'Assistive Technology - Short-term Budget',
   ATO: 'Assistive Technology - Ongoing Budget',
   HMB: 'Home Modification Budget',
+};
+
+const HSCM_SECTION_TITLE = '🧑‍⚕️ Home Support Care Management Budget Sheet';
+
+const BUDGET_TABLE_COLUMNS: Record<string, string[]> = {
+  HSQ: [
+    'Funding Stream',
+    'Participant Profile',
+    'Fund',
+    'Year',
+    'FY Quarter',
+    'Month',
+    'Funding Start Date',
+    'Funding End Date',
+    'Fund Classification',
+    'Fund Amount ($)',
+    'Quarterly Budget ($)',
+    'Available Fund at the Start of the Month ($)',
+    'Classification Quarterly Budget Adjustment ($)',
+    'Primary Supplement',
+    'Primary Supplement ($)',
+    'Carryover Funding from the Previous Quarter ($)',
+    'Unspent Budget at the End of the Quarter-Returned ($-)',
+    'Unspent HCP Funds Commonwealth Portion (Provider-held) ($)',
+    'Commonwealth-held HCP Unspent Funds (Notional Home Care Account) ($)',
+    'Unspent HCP Funds-Participant Portion (Provider-held) ($)',
+    'Spending from Previous Month(s) within same Quarter ($)',
+    'Total Available Budget for Home Support ($)',
+    'Home Support Delivered During the Month ($-)',
+    'Adjustments from Previous Months [Charges($-)/Refund($)]',
+    'Remaining Home Support Balance as at the End of the Month ($)',
+    'Notes'
+  ],
+  ATS: [
+    'Funding Stream',
+    'Participant Profile',
+    'Fund',
+    'Year',
+    'Month',
+    'Funding Start Date',
+    'Funding End Date',
+    'Fund Amount ($)',
+    'Available Fund at the Start of the Month ($)',
+    'Primary Supplement',
+    'Primary Supplement ($)',
+    'Additional amount approved (AT high tier) ($)',
+    'Spending from Previous Month(s) within Allocated Period ($)',
+    'Total Available Fund for AT - Short-term ($)',
+    'AT - Short-term Delivered During the Month ($-)',
+    'Adjustments from Previous Months [Charges($-)/Refund($)]',
+    'Remaining AT - Short-term Balance as at the End of the Month ($)',
+    'Committed AT Short-term Funds - to be delivered ($-)',
+    'Remaining AT - Short-term Balance for Allocation Period ($)',
+    'Notes'
+  ],
+  ATO: [
+    'Funding Stream',
+    'Participant Profile',
+    'Fund',
+    'Year',
+    'Month',
+    'Funding Start Date',
+    'Funding End Date',
+    'Fund Amount ($)',
+    'Available Fund at the Start of the Month ($)',
+    'Primary Supplement',
+    'Primary Supplement ($)',
+    'Spending from Previous Month(s) within Allocated Period ($)',
+    'Total Available Fund for AT Ongoing ($)',
+    'AT - Ongoing Delivered During the Month ($-)',
+    'Adjustments from Previous Months [Charges($-)/Refund($)]',
+    'Remaining AT - Ongoing Balance as at the End of the Month ($)',
+    'Committed AT Ongoing Funds - to be delivered ($-)',
+    'Remaining AT - Ongoing Balance for Allocation Period ($)',
+    'Notes'
+  ],
+  HMB: [
+    'Funding Stream',
+    'Participant Profile',
+    'Fund',
+    'Year',
+    'Month',
+    'Funding Start Date',
+    'Funding End Date',
+    'Fund Amount ($)',
+    'Available Fund at the Start of the Month ($)',
+    'Primary Supplement',
+    'Primary Supplement ($)',
+    'Spending from Previous Month(s) within Allocated Period ($)',
+    'Total Available Fund for HM ($)',
+    'Home Modification Delivered During the Month ($-)',
+    'Adjustments from Previous Months [Charges($-)/Refund($)]',
+    'Remaining HM Balance as at the End of the Month ($)',
+    'Committed HM Funds - to be delivered ($-)',
+    'Remaining HM Balance for Allocation Period ($)',
+    'Notes'
+  ],
+  RCP: [
+    'Funding Stream',
+    'Participant Profile',
+    'Fund',
+    'Year',
+    'Month',
+    'Funding Start Date',
+    'Funding End Date',
+    'Fund Amount ($)',
+    'Available Fund at the Start of the Month ($)',
+    'Primary Supplement',
+    'Primary Supplement ($)',
+    'Spending from Previous Month(s) within Allocated Period ($)',
+    'Total Available Budget for Restorative Care ($)',
+    'Restorative Care Delivered During the Month ($-)',
+    'Adjustments from Previous Months [Charges($-)/Refund($)]',
+    'Remaining Restorative Care Balance as at the End of the Month ($)',
+    'Notes'
+  ],
+  EOL: [
+    'Funding Stream',
+    'Participant Profile',
+    'Fund',
+    'Year',
+    'Month',
+    'Funding Start Date',
+    'Funding End Date',
+    'Fund Amount ($)',
+    'Available Fund at the Start of the Month ($)',
+    'Primary Supplement',
+    'Primary Supplement ($)',
+    'Spending from Previous Month(s) within Allocated Period ($)',
+    'Total Available Budget for End-of-Life Care ($)',
+    'End-of-Life Care Delivered During the Month ($-)',
+    'Adjustments from Previous Months [Charges($-)/Refund($)]',
+    'Remaining End-of-Life Care Balance as at the End of the Month ($)',
+    'Notes'
+  ],
+  HSCM: [
+    'Date',
+    'Transaction Type',
+    'Associated Participant',
+    'Received Amount ($)',
+    'Allocated Time (Hr.)',
+    'Allocated Amount ($-)',
+    'Current Balance ($)'
+  ]
+};
+
+const BUDGET_COLUMN_ALIASES: Record<string, string[]> = {
+  'Funding Stream': ['Funding Stream', 'Funding Source'],
+  'Participant Profile': ['Participant Profile', 'Participant'],
+  'Unspent Budget at the End of the Quarter-Returned ($-)': [
+    'Unspent Budget at the End of the Quarter – Returned ($-)',
+    'Unspent Budget at the End of the Quarter-Returned ($-)',
+    'Unspent Budget at the End of the Quarter - Returned ($-)'
+  ],
+  'Unspent HCP Funds Commonwealth Portion (Provider-held) ($)': [
+    'Unspent HCP Funds - Commonwealth Portion (Provider-held) ($)'
+  ],
+  'Commonwealth-held HCP Unspent Funds (Notional Home Care Account) ($)': [
+    'Commonwealth-held HCP Unspent Funds (Notional Home Care Account) ($)',
+    'Commonwealth-held HCP Unspent Funds ($)'
+  ],
+  'Unspent HCP Funds-Participant Portion (Provider-held) ($)': [
+    'Unspent HCP Funds - Participant Portion (Provider-held) ($)',
+    'Participant Portion HCP Unspent Funds ($)'
+  ]
 };
 
 const countryStates: { [key: string]: string[] } = {
@@ -450,7 +618,7 @@ export default function MonthlyStatement() {
     postcode: "",
     companyRegistrationId: "",
   });
-  const [exportingSection, setExportingSection] = useState<null | 'budget-csv' | 'service-csv' | 'statement-pdf' | 'budget-HSQ' | 'budget-ATS' | 'budget-ATO' | 'budget-HMB' | 'budget-RCP' | 'budget-EOL' | 'budget-hscm'>(null);
+  const [exportingSection, setExportingSection] = useState<null | 'budget-csv' | 'service-csv' | 'statement-pdf' | 'budget-HSQ' | 'budget-ATS' | 'budget-ATO' | 'budget-HMB' | 'budget-RCP' | 'budget-EOL' | 'budget-HSCM'>(null);
   const [businessDetailsErrors, setBusinessDetailsErrors] = useState<string[]>([]);
 
 
@@ -1205,88 +1373,34 @@ export default function MonthlyStatement() {
       return;
     }
 
-    const dateRange = getSelectedMonthDateRange();
-    if (!dateRange) {
-      showErrorToast('Please choose a valid month and year before exporting.');
-      return;
-    }
-
     try {
       const exportState = `budget-${categoryCode}` as const;
       setExportingSection(exportState as any);
 
-      // Use optimized export endpoint for faster CSV generation
-      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/export/${id}/${boardId}/monthly-statement-csv`;
-      const response = await axios.get(apiUrl, {
-        params: {
-          participant: selectedParticipant,
-          month: selectedMonth,
-          year: selectedYear,
-          startDate: dateRange.startDate,
-          endDate: dateRange.endDate,
-          type: 'budget',
-          categoryCode: categoryCode
-        },
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
-      });
+      const groupedEntries = Object.entries(budgetItems).map(([folderName, items]) => ({
+        folderName,
+        items,
+        categoryCode:
+          /home support care management budget/i.test(folderName)
+            ? 'HSCM'
+            : items[0]?.categoryCode || 'HSQ',
+      }));
+      const items = groupedEntries
+        .filter((group) => group.categoryCode === categoryCode)
+        .flatMap((group) => group.items);
 
-      const allItems: BudgetRecord[] = response.data?.items || [];
-      const exportDuration = response.data?.exportDurationMs;
-
-      if (allItems.length === 0) {
+      if (items.length === 0) {
         showErrorToast('No budget items to export for this category.');
         setExportingSection(null);
         return;
       }
 
-      const items = allItems;
+      const columns = getBudgetColumnsForCode(categoryCode);
+      const rows = items.map((item) =>
+        columns.map((column) => formatBudgetCellCsv(column, item))
+      );
 
-      const headers = [
-        'Funding Source',
-        'Participant',
-        'Month',
-        'Year',
-        'FY Quarter',
-        'Funding Start',
-        'Funding End',
-        'Fund Start Balance',
-        'Total Available Budget',
-        'Quarterly Adjustment',
-        'Carryover Funding',
-        'Unspent Returned',
-        'Previous Month Spending',
-        'Delivered Amount',
-        'Adjustments',
-        'Remaining Balance',
-        'Committed Funds',
-        'Fund Classification'
-      ];
-
-      const rows = items.map((item) => [
-        item.folderName || BUDGET_CATEGORY_LABELS[item.categoryCode] || 'Budget',
-        item.participantName || statementData.participant || 'N/A',
-        item.month || '',
-        item.year || '',
-        item.quarter || '',
-        formatDateForCsv(item.fundingStartDate),
-        formatDateForCsv(item.fundingEndDate),
-        Number(item.availableFundStart ?? 0).toFixed(2),
-        Number(item.totalAvailableBudget ?? 0).toFixed(2),
-        Number(item.quarterlyAdjustment ?? 0).toFixed(2),
-        Number(item.carryoverFunding ?? 0).toFixed(2),
-        Number(item.unspentReturned ?? 0).toFixed(2),
-        Number(item.previousMonthSpending ?? 0).toFixed(2),
-        Number(item.deliveredAmount ?? 0).toFixed(2),
-        Number(item.adjustmentAmount ?? 0).toFixed(2),
-        Number(item.remainingBalance ?? 0).toFixed(2),
-        Number(item.committedFunds ?? 0).toFixed(2),
-        item.fundClassification || item.fund || ''
-      ]);
-
-      const csvContent = [headers, ...rows]
+      const csvContent = [columns, ...rows]
         .map((row) => row.map(escapeForCsv).join(','))
         .join('\n');
 
@@ -1295,8 +1409,7 @@ export default function MonthlyStatement() {
       const categorySlug = sanitizeForFileName(categoryTitle || categoryCode);
       const filename = `Budget_${categorySlug}_${participantSlug}_${statementData.year}_${monthSlug}.csv`;
       downloadCsv(csvContent, filename);
-      const durationText = exportDuration ? ` (${(exportDuration / 1000).toFixed(1)}s)` : '';
-      showSuccessToast(`Exported ${items.length} ${categoryTitle} item${items.length === 1 ? '' : 's'} to CSV${durationText}.`);
+      showSuccessToast(`Exported ${items.length} ${categoryTitle} item${items.length === 1 ? '' : 's'} to CSV.`);
     } catch (err: any) {
       console.error(`Error exporting budget items for ${categoryCode}:`, err);
       showErrorToast(`Failed to export ${categoryTitle} budget items`, { description: err?.message || 'Unknown error' });
@@ -1306,103 +1419,6 @@ export default function MonthlyStatement() {
   };
 
   // Export CSV for Home Support Care Management Budget
-  const handleHomeSupportCareManagementExportCSV = async () => {
-    if (!statementData) {
-      showErrorToast('Please load a statement before exporting.');
-      return;
-    }
-
-    const dateRange = getSelectedMonthDateRange();
-    if (!dateRange) {
-      showErrorToast('Please choose a valid month and year before exporting.');
-      return;
-    }
-
-    try {
-      setExportingSection('budget-hscm');
-
-      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/export/${id}/${boardId}/monthly-statement-csv`;
-      const response = await axios.get(apiUrl, {
-        params: {
-          participant: selectedParticipant,
-          month: selectedMonth,
-          year: selectedYear,
-          startDate: dateRange.startDate,
-          endDate: dateRange.endDate,
-          type: 'budget',
-          categoryCode: 'HSCM'
-        },
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
-      });
-
-      const allItems: BudgetRecord[] = response.data?.items || [];
-      const exportDuration = response.data?.exportDurationMs;
-
-      if (allItems.length === 0) {
-        showErrorToast('No care management budget items to export.');
-        setExportingSection(null);
-        return;
-      }
-
-      const headers = [
-        'Funding Source',
-        'Participant',
-        'Month',
-        'Year',
-        'Funding Start',
-        'Funding End',
-        'Fund Start Balance',
-        'Total Available Budget',
-        'Quarterly Adjustment',
-        'Carryover Funding',
-        'Previous Month Spending',
-        'Delivered Amount',
-        'Adjustments',
-        'Remaining Balance',
-        'Committed Funds',
-        'Fund Classification'
-      ];
-
-      const rows = allItems.map((item) => [
-        item.folderName || 'Home Support Care Management Budget',
-        item.participantName || statementData.participant || 'N/A',
-        item.month || '',
-        item.year || '',
-        formatDateForCsv(item.fundingStartDate),
-        formatDateForCsv(item.fundingEndDate),
-        Number(item.availableFundStart ?? 0).toFixed(2),
-        Number(item.totalAvailableBudget ?? 0).toFixed(2),
-        Number(item.quarterlyAdjustment ?? 0).toFixed(2),
-        Number(item.carryoverFunding ?? 0).toFixed(2),
-        Number(item.previousMonthSpending ?? 0).toFixed(2),
-        Number(item.deliveredAmount ?? 0).toFixed(2),
-        Number(item.adjustmentAmount ?? 0).toFixed(2),
-        Number(item.remainingBalance ?? 0).toFixed(2),
-        Number(item.committedFunds ?? 0).toFixed(2),
-        item.fundClassification || item.fund || ''
-      ]);
-
-      const csvContent = [headers, ...rows]
-        .map((row) => row.map(escapeForCsv).join(','))
-        .join('\n');
-
-      const participantSlug = sanitizeForFileName(statementData.participant || 'participant');
-      const monthSlug = sanitizeForFileName(statementData.monthNumber || selectedMonth || '01');
-      const filename = `Budget_HomeSupportCareManagement_${participantSlug}_${statementData.year}_${monthSlug}.csv`;
-      downloadCsv(csvContent, filename);
-      const durationText = exportDuration ? ` (${(exportDuration / 1000).toFixed(1)}s)` : '';
-      showSuccessToast(`Exported ${allItems.length} care management budget item${allItems.length === 1 ? '' : 's'} to CSV${durationText}.`);
-    } catch (err: any) {
-      console.error('Error exporting care management budget items:', err);
-      showErrorToast('Failed to export care management budget items', { description: err?.message || 'Unknown error' });
-    } finally {
-      setExportingSection(null);
-    }
-  };
-
   const handleServiceExportCSV = async () => {
     if (!statementData) {
       showErrorToast('Please load a statement before exporting.');
@@ -1629,6 +1645,200 @@ export default function MonthlyStatement() {
     }
   };
 
+  const getBudgetColumnsForCode = (code?: string) =>
+    BUDGET_TABLE_COLUMNS[code || 'HSQ'] || BUDGET_TABLE_COLUMNS.HSQ;
+
+  const isCurrencyColumn = (label: string) => label.includes('($');
+  const isHourColumn = (label: string) => label.includes('(Hr.)');
+  const isDateColumn = (label: string) => label.toLowerCase().includes('date');
+
+  const parseBudgetNumber = (value: unknown) => {
+    if (value === null || value === undefined) return 0;
+    if (Array.isArray(value) && value.length > 0) {
+      return parseBudgetNumber(value[0]);
+    }
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : 0;
+    }
+    if (typeof value === 'string') {
+      const normalized = value.replace(/[^0-9.\-]/g, '');
+      const parsed = Number.parseFloat(normalized);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    return 0;
+  };
+
+  const normalizeBudgetValue = (value: unknown): string => {
+    if (value === null || value === undefined) return '';
+    if (Array.isArray(value)) {
+      return value.map(normalizeBudgetValue).filter(Boolean).join(', ');
+    }
+    if (typeof value === 'object') {
+      const maybeName = (value as { name?: string }).name;
+      if (maybeName) return String(maybeName);
+      const maybeId = (value as { id?: string }).id;
+      if (maybeId) return String(maybeId);
+      return value.toString ? value.toString() : '';
+    }
+    return String(value);
+  };
+
+  const looksLikeId = (value: unknown) =>
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+
+  const isIdArray = (value: unknown) =>
+    Array.isArray(value) && value.some((entry) => looksLikeId(entry));
+
+  const getBudgetRawValue = (item: BudgetRecord, columnLabel: string) => {
+    const rawData = item.rawData || {};
+    const aliases = BUDGET_COLUMN_ALIASES[columnLabel] || [columnLabel];
+    for (const key of aliases) {
+      const value = (rawData as Record<string, unknown>)[key];
+      if (value !== undefined && value !== null && value !== '') {
+        return value;
+      }
+    }
+    return undefined;
+  };
+
+  const getBudgetFallbackValue = (item: BudgetRecord, columnLabel: string) => {
+    switch (columnLabel) {
+      case 'Funding Stream':
+        return item.folderName || '';
+      case 'Participant Profile':
+      case 'Associated Participant':
+        return item.participantName || '';
+      case 'Month':
+        return item.month || '';
+      case 'Year':
+        return item.year || '';
+      case 'FY Quarter':
+        return item.quarter || '';
+      case 'Funding Start Date':
+        return item.fundingStartDate || '';
+      case 'Funding End Date':
+        return item.fundingEndDate || '';
+      case 'Fund':
+        return item.fund || '';
+      case 'Fund Classification':
+        return item.fundClassification || '';
+      case 'Fund Amount ($)':
+        return item.fundAmount ?? 0;
+      case 'Quarterly Budget ($)':
+        return 0;
+      case 'Available Fund at the Start of the Month ($)':
+        return item.availableFundStart ?? 0;
+      case 'Classification Quarterly Budget Adjustment ($)':
+        return item.quarterlyAdjustment ?? 0;
+      case 'Primary Supplement ($)':
+        return item.primarySupplementAmount ?? 0;
+      case 'Carryover Funding from the Previous Quarter ($)':
+        return item.carryoverFunding ?? 0;
+      case 'Unspent Budget at the End of the Quarter-Returned ($-)':
+        return item.unspentReturned ?? 0;
+      case 'Unspent HCP Funds Commonwealth Portion (Provider-held) ($)':
+        return item.commonwealthUnspent ?? 0;
+      case 'Commonwealth-held HCP Unspent Funds (Notional Home Care Account) ($)':
+        return item.providerUnspent ?? 0;
+      case 'Unspent HCP Funds-Participant Portion (Provider-held) ($)':
+        return item.participantUnspent ?? 0;
+      case 'Spending from Previous Month(s) within same Quarter ($)':
+      case 'Spending from Previous Month(s) within Allocated Period ($)':
+        return item.previousMonthSpending ?? 0;
+      case 'Total Available Budget for Home Support ($)':
+      case 'Total Available Fund for AT - Short-term ($)':
+      case 'Total Available Fund for AT Ongoing ($)':
+      case 'Total Available Fund for HM ($)':
+      case 'Total Available Budget for Restorative Care ($)':
+      case 'Total Available Budget for End-of-Life Care ($)':
+        return item.totalAvailableBudget ?? 0;
+      case 'Home Support Delivered During the Month ($-)':
+      case 'AT - Short-term Delivered During the Month ($-)':
+      case 'AT - Ongoing Delivered During the Month ($-)':
+      case 'Home Modification Delivered During the Month ($-)':
+      case 'Restorative Care Delivered During the Month ($-)':
+      case 'End-of-Life Care Delivered During the Month ($-)':
+        return item.deliveredAmountRaw ?? item.deliveredAmount ?? 0;
+      case 'Adjustments from Previous Months [Charges($-)/Refund($)]':
+        return item.adjustmentAmount ?? 0;
+      case 'Remaining Home Support Balance as at the End of the Month ($)':
+      case 'Remaining AT - Short-term Balance as at the End of the Month ($)':
+      case 'Remaining AT - Ongoing Balance as at the End of the Month ($)':
+      case 'Remaining HM Balance as at the End of the Month ($)':
+      case 'Remaining Restorative Care Balance as at the End of the Month ($)':
+      case 'Remaining End-of-Life Care Balance as at the End of the Month ($)':
+      case 'Remaining AT - Short-term Balance for Allocation Period ($)':
+      case 'Remaining AT - Ongoing Balance for Allocation Period ($)':
+      case 'Remaining HM Balance for Allocation Period ($)':
+        return item.remainingBalance ?? 0;
+      case 'Committed AT Short-term Funds - to be delivered ($-)':
+      case 'Committed AT Ongoing Funds - to be delivered ($-)':
+      case 'Committed HM Funds - to be delivered ($-)':
+        return item.committedFunds ?? 0;
+      case 'Date':
+        return item.hscmDate || '';
+      case 'Transaction Type':
+        return item.hscmTransactionType || '';
+      case 'Received Amount ($)':
+        return item.hscmReceivedAmount ?? 0;
+      case 'Allocated Time (Hr.)':
+        return item.hscmAllocatedTime ?? 0;
+      case 'Allocated Amount ($-)':
+        return item.hscmAllocatedAmount ?? 0;
+      case 'Current Balance ($)':
+        return item.hscmCurrentBalance ?? item.remainingBalance ?? 0;
+      default:
+        return '';
+    }
+  };
+
+  const getBudgetCellValue = (item: BudgetRecord, columnLabel: string) => {
+    const rawValue = getBudgetRawValue(item, columnLabel);
+    if (rawValue !== undefined) {
+      if (columnLabel === 'Funding Stream' && (looksLikeId(rawValue) || isIdArray(rawValue))) {
+        return item.folderName || '';
+      }
+      if (columnLabel === 'Participant Profile' && (looksLikeId(rawValue) || isIdArray(rawValue))) {
+        return item.participantName || '';
+      }
+      if (columnLabel === 'Associated Participant' && (looksLikeId(rawValue) || isIdArray(rawValue))) {
+        return item.participantName || '';
+      }
+      if (columnLabel === 'Primary Supplement' && (looksLikeId(rawValue) || isIdArray(rawValue))) {
+        return item.primarySupplementLabel || '';
+      }
+      return rawValue;
+    }
+    return getBudgetFallbackValue(item, columnLabel);
+  };
+
+  const formatBudgetCellDisplay = (columnLabel: string, item: BudgetRecord) => {
+    const rawValue = getBudgetCellValue(item, columnLabel);
+    if (isDateColumn(columnLabel)) {
+      return formatDate(normalizeBudgetValue(rawValue));
+    }
+    if (isHourColumn(columnLabel)) {
+      return parseBudgetNumber(rawValue).toFixed(2);
+    }
+    if (isCurrencyColumn(columnLabel)) {
+      return formatCurrency(parseBudgetNumber(rawValue));
+    }
+    const normalized = normalizeBudgetValue(rawValue);
+    return normalized || 'N/A';
+  };
+
+  const formatBudgetCellCsv = (columnLabel: string, item: BudgetRecord) => {
+    const rawValue = getBudgetCellValue(item, columnLabel);
+    if (isDateColumn(columnLabel)) {
+      return formatDateForCsv(normalizeBudgetValue(rawValue));
+    }
+    if (isHourColumn(columnLabel) || isCurrencyColumn(columnLabel)) {
+      return parseBudgetNumber(rawValue).toFixed(2);
+    }
+    return normalizeBudgetValue(rawValue);
+  };
+
   const getServiceProviderLabel = (service: ServiceRecord) => {
     const candidates = [
       service.serviceProvider,
@@ -1711,13 +1921,23 @@ export default function MonthlyStatement() {
     const selectedMonthLabel = statementData.month || localMonths[monthIndex]?.label || 'Selected month';
 
     // Helper function to calculate expenditure as Delivered Amount + Adjustment Amount
-    const calculateExpenditure = (category?: BudgetCategory) => {
+    const calculateExpenditure = (
+      category?: BudgetCategory,
+      options: { signed?: boolean } = {}
+    ) => {
       if (!category) return 0;
-      const delivered = positive(
-        category.serviceDeliveredAmount ?? category.deliveredAmount ?? 0
-      );
-      const adjustment = positive(category.adjustmentAmount ?? 0);
-      return delivered + adjustment;
+      const delivered = options.signed
+        ? toNumber(
+          category.serviceDeliveredAmountRaw ??
+            category.serviceDeliveredAmount ??
+            category.deliveredAmount ??
+            0
+        )
+        : positive(category.serviceDeliveredAmount ?? category.deliveredAmount ?? 0);
+      const adjustment = options.signed
+        ? toNumber(category.adjustmentAmount ?? 0)
+        : positive(category.adjustmentAmount ?? 0);
+      return Math.abs(delivered + adjustment);
     };
 
     // Helper function to get previous spending value
@@ -1765,30 +1985,31 @@ export default function MonthlyStatement() {
     const homeSupport = categoryLookup.get('HSQ') ?? ({ code: 'HSQ' } as BudgetCategory);
     {
       const available = positive(homeSupport.availableFunds);
-      const expenditure = calculateExpenditure(homeSupport);
+      const expenditure = calculateExpenditure(homeSupport, { signed: true });
       const remaining = positive(homeSupport.remainingBudget);
       const quarterStart = homeSupport.quarterStartMonth ?? defaultQuarterRange.start;
       const quarterEnd = homeSupport.quarterEndMonth ?? defaultQuarterRange.end;
       const balanceLabel = quarterEnd
         ? (nextMonthLabel === quarterEnd ? 'Next quarter' : `${nextMonthLabel} - ${quarterEnd}`)
         : nextMonthLabel;
+      const hsqBalanceLabel = `Available balance ${balanceLabel}`;
 
       pushChartConfig({
         code: 'HSQ',
         subtitle: 'Quarterly Budget',
-        title: `Home Support ${quarterStart} - ${quarterEnd} ${statementData.year}`,
+        title: `Home Support Quarterly Budget ${quarterStart} - ${quarterEnd} ${statementData.year}`,
         data: [
           {
             name: 'hsq-expenditure',
             label: `${selectedMonthLabel} expenditure`,
-            shortLabel: 'Expenditure',
+            shortLabel: `${selectedMonthLabel} expenditure`,
             value: expenditure,
             color: '#dc2626' // Red
           },
           {
             name: 'hsq-balance',
-            label: `Available balance ${balanceLabel}`,
-            shortLabel: 'Balance',
+            label: hsqBalanceLabel,
+            shortLabel: hsqBalanceLabel,
             value: remaining,
             color: '#2563eb' // Blue
           }
@@ -1805,33 +2026,48 @@ export default function MonthlyStatement() {
     const addAssistiveOrModificationChart = (code: 'ATS' | 'ATO' | 'HMB', title: string) => {
       const category = categoryLookup.get(code) ?? ({ code } as BudgetCategory);
       const available = positive(category.availableFunds);
-      const expenditure = calculateExpenditure(category);
+      const isAssistive = code === 'ATS' || code === 'ATO';
+      const isHomeModification = code === 'HMB';
+      const expenditure = calculateExpenditure(category, { signed: isAssistive || isHomeModification });
       const remaining = positive(category.remainingBudget);
-      const committed = positive(category.committedFunds);
+      const committed = Math.abs(toNumber(category.committedFunds ?? 0));
+      const committedLabel =
+        code === 'ATS'
+          ? 'Committed AT Short-term Funds'
+          : code === 'ATO'
+            ? 'Committed AT Ongoing Funds'
+            : 'Committed HM Funds';
+      const remainingLabel = `Remaining budget ${formatDate(category.fundingEndDate)}`;
+      const subtitle = isAssistive
+        ? 'Assistive Technology'
+        : isHomeModification
+          ? 'Home Modification'
+          : title;
+      const chartTitle = isAssistive || isHomeModification ? title : `${title} (${statementData.year})`;
 
       pushChartConfig({
         code,
-        subtitle: title,
-        title: `${title} (${statementData.year})`,
+        subtitle,
+        title: chartTitle,
         data: [
           {
             name: `${code}-expenditure`,
             label: `${selectedMonthLabel} expenditure`,
-            shortLabel: 'Expenditure',
+            shortLabel: `${selectedMonthLabel} expenditure`,
             value: expenditure,
             color: '#dc2626' // Red
           },
           {
             name: `${code}-committed`,
-            label: 'Committed funds',
-            shortLabel: 'Committed',
+            label: committedLabel,
+            shortLabel: committedLabel,
             value: committed,
             color: '#16a34a' // Green
           },
           {
             name: `${code}-balance`,
-            label: `Remaining budget ${formatDate(category.fundingEndDate)}`,
-            shortLabel: 'Balance',
+            label: remainingLabel,
+            shortLabel: remainingLabel,
             value: remaining,
             color: '#2563eb' // Blue
           }
@@ -1845,8 +2081,8 @@ export default function MonthlyStatement() {
       });
     };
 
-    addAssistiveOrModificationChart('ATS', 'Assistive Technology - Short-term');
-    addAssistiveOrModificationChart('ATO', 'Assistive Technology - Ongoing');
+    addAssistiveOrModificationChart('ATS', 'Assistive Technology - Short-term Budget');
+    addAssistiveOrModificationChart('ATO', 'Assistive Technology - Ongoing Budget');
     addAssistiveOrModificationChart('HMB', 'Home Modification Budget');
 
     // 5th, 6th Charts: Restorative Care & End-of-Life
@@ -1858,6 +2094,8 @@ export default function MonthlyStatement() {
       const expenditure = calculateExpenditure(category);
       const remaining = positive(category.remainingBudget);
 
+      const remainingLabel = `Remaining budget ${formatDate(category.fundingEndDate)}`;
+
       pushChartConfig({
         code,
         subtitle: title,
@@ -1866,21 +2104,21 @@ export default function MonthlyStatement() {
           {
             name: `${code}-previous`,
             label: 'Spending from previous months',
-            shortLabel: 'Prev. spend',
+            shortLabel: 'Spending from previous months',
             value: previousSpending,
             color: '#7c3aed' // Purple
           },
           {
             name: `${code}-expenditure`,
             label: `${selectedMonthLabel} expenditure`,
-            shortLabel: 'Expenditure',
+            shortLabel: `${selectedMonthLabel} expenditure`,
             value: expenditure,
             color: '#dc2626' // Red
           },
           {
             name: `${code}-balance`,
-            label: `Total available budget ${formatDate(category.fundingEndDate)}`,
-            shortLabel: 'Total Budget',
+            label: remainingLabel,
+            shortLabel: remainingLabel,
             value: totalAvailable,
             color: '#2563eb' // Blue
           }
@@ -1904,6 +2142,32 @@ export default function MonthlyStatement() {
     if (!statementData) return [];
     return statementData.budgetCategories.filter((category) => category.shouldDisplay !== false);
   }, [statementData]);
+
+  const ChartXAxisTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value?: string } }) => {
+    const raw = payload?.value ?? '';
+    const lines = String(raw)
+      .split(/\s+/)
+      .reduce<string[]>((acc, word) => {
+        if (acc.length === 0) return [word];
+        const last = acc[acc.length - 1];
+        if ((last + ' ' + word).length <= 18) {
+          acc[acc.length - 1] = `${last} ${word}`;
+        } else {
+          acc.push(word);
+        }
+        return acc;
+      }, []);
+
+    return (
+      <text x={x} y={y} textAnchor="middle" fill="currentColor" className="text-[10px]">
+        {lines.map((line, index) => (
+          <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 10 : 12}>
+            {line}
+          </tspan>
+        ))}
+      </text>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -2107,7 +2371,14 @@ export default function MonthlyStatement() {
                       <ChartContainer config={chart.chartConfig} className="w-full h-56">
                         <BarChart data={chart.data} margin={{ left: 0, right: 0, top: 10 }}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                          <XAxis dataKey="shortLabel" axisLine={false} tickLine={false} />
+                          <XAxis
+                            dataKey="shortLabel"
+                            axisLine={false}
+                            tickLine={false}
+                            interval={0}
+                            height={48}
+                            tick={<ChartXAxisTick />}
+                          />
                           <YAxis tickFormatter={formatAxisCurrency} axisLine={false} tickLine={false} />
                           <ChartTooltip
                             content={
@@ -2171,42 +2442,46 @@ export default function MonthlyStatement() {
                 <div className="p-6 text-center">
                   <Spinner />
                 </div>
-              ) : Object.keys(budgetItems).length > 0 ? (
+              ) : (
                 <div className="space-y-6 p-6">
                   {/* Helper function to group budget items by categoryCode */}
                   {(() => {
                     const categoryOrder = ['HSQ', 'ATS', 'ATO', 'HMB', 'RCP', 'EOL', 'HSCM'];
-                    const getCategoryOrderIndex = (code?: string) => {
-                      const normalizedCode = (code || 'HSQ').toString();
-                      const idx = categoryOrder.indexOf(normalizedCode);
-                      return idx === -1 ? categoryOrder.length : idx;
-                    };
+                    const groupedEntries = Object.entries(budgetItems).map(([folderName, items]) => ({
+                      folderName,
+                      items,
+                      categoryCode:
+                        /home support care management budget/i.test(folderName)
+                          ? 'HSCM'
+                          : items[0]?.categoryCode || 'HSQ',
+                    }));
 
-                    const groupedEntries = Object.entries(budgetItems)
-                      .map(([folderName, items]) => ({
-                        folderName,
-                        items,
-                        categoryCode:
-                          /home support care management budget/i.test(folderName)
-                            ? 'HSCM'
-                            : items[0]?.categoryCode || 'HSQ',
-                      }))
-                      .sort((a, b) => {
-                        const orderDiff = getCategoryOrderIndex(a.categoryCode) - getCategoryOrderIndex(b.categoryCode);
-                        if (orderDiff !== 0) return orderDiff;
-                        return a.folderName.localeCompare(b.folderName);
-                      });
+                    const groupedByCode = new Map<string, { folderName: string; items: BudgetRecord[] }>();
+                    groupedEntries.forEach((group) => {
+                      const existing = groupedByCode.get(group.categoryCode);
+                      if (existing) {
+                        existing.items.push(...group.items);
+                      } else {
+                        groupedByCode.set(group.categoryCode, {
+                          folderName: group.folderName,
+                          items: [...group.items],
+                        });
+                      }
+                    });
 
                     return (
                       <>
-                        {groupedEntries.map((group) => {
-                          const items = group.items || [];
-                          if (items.length === 0) return null;
-                          const categoryCode = group.categoryCode || 'HSQ';
-                          const sectionTitle = group.folderName || BUDGET_CATEGORY_LABELS[categoryCode] || 'Budget';
+                        {categoryOrder.map((categoryCode) => {
+                          const group = groupedByCode.get(categoryCode);
+                          const items = group?.items || [];
+                          const sectionTitle =
+                            categoryCode === 'HSCM'
+                              ? HSCM_SECTION_TITLE
+                              : group?.folderName || BUDGET_CATEGORY_LABELS[categoryCode] || 'Budget';
+                          const columns = getBudgetColumnsForCode(categoryCode);
 
                           return (
-                            <div key={group.folderName} className="border rounded-lg p-4">
+                            <div key={categoryCode} className="border rounded-lg p-4">
                               <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                                 <div>
                                   <h4 className="text-lg font-semibold">{sectionTitle}</h4>
@@ -2215,106 +2490,43 @@ export default function MonthlyStatement() {
                                   variant="outline"
                                   size="sm"
                                   className="gap-2 print:hidden"
-                                  onClick={() =>
-                                    categoryCode === 'HSCM'
-                                      ? handleHomeSupportCareManagementExportCSV()
-                                      : handleBudgetCategoryExportCSV(categoryCode, sectionTitle)
-                                  }
-                                  disabled={
-                                    categoryCode === 'HSCM'
-                                      ? exportingSection === 'budget-hscm'
-                                      : exportingSection === `budget-${categoryCode}`
-                                  }
+                                  onClick={() => handleBudgetCategoryExportCSV(categoryCode, sectionTitle)}
+                                  disabled={exportingSection === `budget-${categoryCode}`}
                                 >
                                   <FileSpreadsheet className="h-4 w-4" />
                                   Export CSV
                                 </Button>
                               </div>
                               <div className="overflow-x-auto">
-                                {categoryCode === 'HSCM' ? (
-                                  <Table className="text-sm">
-                                    <TableHeader>
-                                      <TableRow>
-                                        <TableHead>Date</TableHead>
-                                        <TableHead>Transaction Type</TableHead>
-                                        <TableHead>Associated Participant</TableHead>
-                                        <TableHead className="text-right">Received Amount ($)</TableHead>
-                                        <TableHead className="text-right">Allocated Time (Hr.)</TableHead>
-                                        <TableHead className="text-right">Allocated Amount ($-)</TableHead>
-                                        <TableHead className="text-right">Current Balance ($)</TableHead>
-                                      </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                      {items.map((item) => (
-                                        <TableRow key={item.id} className="text-xs">
-                                          <TableCell className="whitespace-nowrap">
-                                            {item.hscmDate ? formatDate(item.hscmDate) : 'N/A'}
-                                          </TableCell>
-                                          <TableCell>{item.hscmTransactionType || 'N/A'}</TableCell>
-                                          <TableCell>{item.participantName || 'N/A'}</TableCell>
-                                          <TableCell className="text-right">
-                                            {formatCurrency(item.hscmReceivedAmount ?? 0)}
-                                          </TableCell>
-                                          <TableCell className="text-right">
-                                            {Number(item.hscmAllocatedTime ?? 0).toFixed(1)}
-                                          </TableCell>
-                                          <TableCell className="text-right">
-                                            {formatCurrency(item.hscmAllocatedAmount ?? 0)}
-                                          </TableCell>
-                                          <TableCell className="text-right font-medium">
-                                            {formatCurrency(item.hscmCurrentBalance ?? item.remainingBalance ?? 0)}
-                                          </TableCell>
-                                        </TableRow>
-                                      ))}
-                                    </TableBody>
-                                  </Table>
+                                {items.length === 0 ? (
+                                  <div className="py-4 text-center text-sm text-muted-foreground">
+                                    No budget items found for this stream.
+                                  </div>
                                 ) : (
-                                  <Table className="text-sm">
+                                  <Table className="text-sm min-w-max">
                                     <TableHeader>
                                       <TableRow>
-                                        <TableHead>Funding Source</TableHead>
-                                        <TableHead>Participant</TableHead>
-                                        <TableHead>Month</TableHead>
-                                        <TableHead>Year</TableHead>
-                                        <TableHead>FY Quarter</TableHead>
-                                        <TableHead className="text-right">Funding Start</TableHead>
-                                        <TableHead className="text-right">Funding End</TableHead>
-                                        <TableHead className="text-right">Fund Start Balance</TableHead>
-                                        <TableHead className="text-right">Total Available Budget</TableHead>
-                                        <TableHead className="text-right">Quarterly Adjustment</TableHead>
-                                        <TableHead className="text-right">Carryover Funding</TableHead>
-                                        <TableHead className="text-right">Unspent Returned</TableHead>
-                                        <TableHead className="text-right">Previous Month Spending</TableHead>
-                                        <TableHead className="text-right">Delivered Amount</TableHead>
-                                        <TableHead className="text-right">Adjustments</TableHead>
-                                        <TableHead className="text-right">Remaining Balance</TableHead>
-                                        <TableHead className="text-right">Committed Funds</TableHead>
-                                        <TableHead>Fund Classification</TableHead>
+                                        {columns.map((column) => (
+                                          <TableHead
+                                            key={`${categoryCode}-${column}`}
+                                            className={isCurrencyColumn(column) || isHourColumn(column) ? 'text-right whitespace-nowrap' : 'whitespace-normal break-words'}
+                                          >
+                                            {column}
+                                          </TableHead>
+                                        ))}
                                       </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                       {items.map((item) => (
                                         <TableRow key={item.id} className="text-xs">
-                                          <TableCell className="whitespace-nowrap font-medium">
-                                            {item.folderName || BUDGET_CATEGORY_LABELS[categoryCode] || 'Budget'}
-                                          </TableCell>
-                                          <TableCell>{item.participantName || 'N/A'}</TableCell>
-                                          <TableCell>{item.month || 'N/A'}</TableCell>
-                                          <TableCell>{item.year || 'N/A'}</TableCell>
-                                          <TableCell>{item.quarter || 'N/A'}</TableCell>
-                                          <TableCell className="text-right whitespace-nowrap">{formatDate(item.fundingStartDate)}</TableCell>
-                                          <TableCell className="text-right whitespace-nowrap">{formatDate(item.fundingEndDate)}</TableCell>
-                                          <TableCell className="text-right">{formatCurrency(item.availableFundStart || 0)}</TableCell>
-                                          <TableCell className="text-right font-medium">{formatCurrency(item.totalAvailableBudget || 0)}</TableCell>
-                                          <TableCell className="text-right">{formatCurrency(item.quarterlyAdjustment || 0)}</TableCell>
-                                          <TableCell className="text-right">{formatCurrency(item.carryoverFunding || 0)}</TableCell>
-                                          <TableCell className="text-right">{formatCurrency(item.unspentReturned || 0)}</TableCell>
-                                          <TableCell className="text-right">{formatCurrency(item.previousMonthSpending || 0)}</TableCell>
-                                          <TableCell className="text-right">{formatCurrency(item.deliveredAmount || 0)}</TableCell>
-                                          <TableCell className="text-right">{formatCurrency(item.adjustmentAmount || 0)}</TableCell>
-                                          <TableCell className="text-right font-medium">{formatCurrency(item.remainingBalance || 0)}</TableCell>
-                                          <TableCell className="text-right">{formatCurrency(item.committedFunds || 0)}</TableCell>
-                                          <TableCell className="whitespace-nowrap">{item.fundClassification || item.fund || 'N/A'}</TableCell>
+                                          {columns.map((column) => (
+                                            <TableCell
+                                              key={`${item.id}-${column}`}
+                                              className={isCurrencyColumn(column) || isHourColumn(column) ? 'text-right whitespace-nowrap' : 'whitespace-normal break-words'}
+                                            >
+                                              {formatBudgetCellDisplay(column, item)}
+                                            </TableCell>
+                                          ))}
                                         </TableRow>
                                       ))}
                                     </TableBody>
@@ -2327,11 +2539,6 @@ export default function MonthlyStatement() {
                       </>
                     );
                   })()}
-                </div>
-              ) : (
-                <div className="p-6 text-center text-muted-foreground">
-                  <AlertCircle className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                  <p>No budget items found</p>
                 </div>
               )}
             </Card>

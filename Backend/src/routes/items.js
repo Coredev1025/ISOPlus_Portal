@@ -73,6 +73,20 @@ const ATTRIBUTE_NAMES = {
     TOTAL_AVAILABLE_HOME_SUPPORT: 'Total Available Budget for Home Support ($)',
     FUND_TEXT: 'Fund',
     HOME_SUPPORT_DELIVERED: 'Home Support Delivered During the Month ($-)',
+    AT_SHORT_TERM_DELIVERED: [
+        'AT - Short-term Delivered During the Month ($-)',
+        'Assistive Technology - Short-term Delivered During the Month ($-)',
+        'Assistive Technology - Short-term Delivered During the Month'
+    ],
+    AT_ONGOING_DELIVERED: [
+        'AT - Ongoing Delivered During the Month ($-)',
+        'Assistive Technology - Ongoing Delivered During the Month ($-)',
+        'Assistive Technology - Ongoing Delivered During the Month'
+    ],
+    HOME_MODIFICATION_DELIVERED: [
+        'Home Modification Delivered During the Month ($-)',
+        'Home Modification Delivered During the Month'
+    ],
     HOME_SUPPORT_ADJUSTMENTS: 'Adjustments from Previous Months [Charges($-)/Refund($)]',
     REMAINING_HOME_SUPPORT_BALANCE: 'Remaining Home Support Balance as at the End of the Month ($)',
     COMMITTED_AT_SHORT_TERM: 'Committed AT Short-term Funds - to be delivered ($-)',
@@ -649,6 +663,30 @@ const getFundingSourceNameFromItem = (fsItem) => {
 
     if (typeof name === 'object' && name.name) return name.name;
     return String(name).trim();
+};
+
+const isUuidLike = (value) =>
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+
+const getReferenceDisplayName = (refItem) => {
+    if (!refItem) return '';
+    const fundingName = getFundingSourceNameFromItem(refItem);
+    if (fundingName) return fundingName;
+    const participantName = getParticipantNameFromProfile(refItem);
+    if (participantName) return participantName;
+    const genericName = getValueFromFlatData(refItem, [
+        'Name',
+        REF_ATTRIBUTE_NAMES.FS_NAME,
+        REF_ATTRIBUTE_NAMES.FS_DEFINITION,
+        REF_ATTRIBUTE_NAMES.FULL_NAME,
+        REF_ATTRIBUTE_NAMES.PROFILE_FULL_NAME
+    ]);
+    if (genericName) {
+        if (typeof genericName === 'object' && genericName.name) return genericName.name;
+        return String(genericName);
+    }
+    return '';
 };
 
 const formatLabelValueFromData = (value, labels = []) => {
@@ -1764,6 +1802,23 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             return null;
         };
 
+        const resolveReferenceValue = (value, refMap) => {
+            if (!value) return '';
+            if (Array.isArray(value)) {
+                return value.map(v => resolveReferenceValue(v, refMap)).filter(Boolean).join(', ');
+            }
+            if (typeof value === 'object') {
+                if (value.name) return value.name;
+                if (value.id) return resolveReferenceValue(value.id, refMap);
+                return value.toString ? value.toString() : '';
+            }
+            const valueStr = String(value);
+            if (isUuidLike(valueStr) && refMap?.has(valueStr)) {
+                return getReferenceDisplayName(refMap.get(valueStr)) || valueStr;
+            }
+            return valueStr;
+        };
+
         // DATABASE-ONLY: Bulk fetch all participant profiles needed for budget items
         const budgetParticipantProfileIds = new Set();
         for (const item of allBudgetItems) {
@@ -1775,6 +1830,17 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         }
 
         const budgetProfilesMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, [...budgetParticipantProfileIds]);
+
+        const primarySupplementRefIds = new Set();
+        for (const item of allBudgetItems) {
+            const primarySupplementValue = getValueFromItemMulti(item, 'Primary Supplement');
+            const refIds = extractAllRefIds(primarySupplementValue).filter(isUuidLike);
+            refIds.forEach(id => primarySupplementRefIds.add(id));
+        }
+
+        const primarySupplementMap = primarySupplementRefIds.size > 0
+            ? await bulkFetchReferenceItemsFromDB(workspaceId, boardId, [...primarySupplementRefIds])
+            : new Map();
 
         info('Items-Service', 'Bulk fetched participant profiles from DB (monthly-statement budget)', {
             profileIds: budgetParticipantProfileIds.size,
@@ -1927,7 +1993,8 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                     hscmReceivedAmount: receivedAmount || 0,
                     hscmAllocatedTime: allocatedTime || 0,
                     hscmAllocatedAmount: allocatedAmount || 0,
-                    hscmCurrentBalance: currentBalance || 0
+                    hscmCurrentBalance: currentBalance || 0,
+                    rawData: item.data || {}
                 };
 
                 setCachedMSBudget(workspaceId, boardId, itemId, transformedData);
@@ -1969,9 +2036,25 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                     unspentReturned;
             }
 
-            const deliveredAmountRaw = getNumberFromItem(item, ATTRIBUTE_NAMES.HOME_SUPPORT_DELIVERED);
+            const deliveredAmountRaw = (() => {
+                if (categoryCode === 'ATS') {
+                    return getNumberFromItem(item, ATTRIBUTE_NAMES.AT_SHORT_TERM_DELIVERED);
+                }
+                if (categoryCode === 'ATO') {
+                    return getNumberFromItem(item, ATTRIBUTE_NAMES.AT_ONGOING_DELIVERED);
+                }
+                if (categoryCode === 'HMB') {
+                    return getNumberFromItem(item, ATTRIBUTE_NAMES.HOME_MODIFICATION_DELIVERED);
+                }
+                return getNumberFromItem(item, ATTRIBUTE_NAMES.HOME_SUPPORT_DELIVERED);
+            })();
             const adjustmentAmount = getNumberFromItem(item, ATTRIBUTE_NAMES.HOME_SUPPORT_ADJUSTMENTS);
-            const remainingBalance = getNumberFromItem(item, ATTRIBUTE_NAMES.REMAINING_HOME_SUPPORT_BALANCE);
+            const primarySupplementValue = getValueFromItemMulti(item, 'Primary Supplement');
+            const primarySupplementLabel = resolveReferenceValue(primarySupplementValue, primarySupplementMap);
+            const remainingBalanceRawValue = getValueFromItemMulti(item, ATTRIBUTE_NAMES.REMAINING_HOME_SUPPORT_BALANCE);
+            const remainingBalance = (remainingBalanceRawValue === null || remainingBalanceRawValue === undefined)
+                ? (totalAvailableBudget + deliveredAmountRaw + adjustmentAmount)
+                : parseNumberValue(remainingBalanceRawValue);
             const fundClassification = getLabelFromItem(item, ATTRIBUTE_NAMES.FUND_CLASSIFICATION);
             const fundAmount = getNumberFromItem(item, ATTRIBUTE_NAMES.FUND_AMOUNT);
             const fund = getTextFromItem(item, ATTRIBUTE_NAMES.FUND_TEXT);
@@ -2014,11 +2097,13 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 deliveredAmountRaw,
                 adjustmentAmount,
                 remainingBalance,
+                primarySupplementLabel,
                 fundClassification,
                 fundAmount,
                 fund,
                 committedFunds,
-                fundingStreamId: getFirstReferenceId(item, ATTRIBUTE_NAMES.FUNDING_STREAM)
+                fundingStreamId: getFirstReferenceId(item, ATTRIBUTE_NAMES.FUNDING_STREAM),
+                rawData: item.data || {}
             };
 
             // Store transformed data in cache for future requests
@@ -2520,6 +2605,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             availableFunds: 0,
             remainingBudget: 0,
             serviceDeliveredAmount: 0,
+            serviceDeliveredAmountRaw: 0,
             adjustmentAmount: 0,
             govSubsidyAmount: 0,
             participantContributionAmount: 0,
@@ -2620,6 +2706,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             aggregate.availableFunds += item.totalAvailableBudget || 0;
             aggregate.remainingBudget += item.remainingBalance || 0;
             aggregate.serviceDeliveredAmount += item.deliveredAmount || 0;
+            aggregate.serviceDeliveredAmountRaw += item.deliveredAmountRaw || 0;
             aggregate.adjustmentAmount += item.adjustmentAmount || 0;
             aggregate.govSubsidyAmount += item.govSubsidyAmount || 0;
             aggregate.participantContributionAmount += item.participantContributionAmount || 0;
@@ -2895,6 +2982,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 fundingEndDate: budgetAggregate.fundingEndDate || profileData.fundingEndDate || defaultFundingEndDate,
                 committedFunds: budgetAggregate.committedFunds || profileData.committedFunds || 0,
                 serviceDeliveredAmount: budgetAggregate.serviceDeliveredAmount || 0,
+                serviceDeliveredAmountRaw: budgetAggregate.serviceDeliveredAmountRaw || 0,
                 govSubsidyAmount: budgetAggregate.govSubsidyAmount || 0,
                 participantContributionAmount: budgetAggregate.participantContributionAmount || 0,
                 adjustmentAmount: budgetAggregate.adjustmentAmount || 0,
