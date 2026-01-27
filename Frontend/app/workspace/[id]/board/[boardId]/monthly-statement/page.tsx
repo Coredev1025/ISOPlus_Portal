@@ -1652,7 +1652,7 @@ export default function MonthlyStatement() {
   const isHourColumn = (label: string) => label.includes('(Hr.)');
   const isDateColumn = (label: string) => label.toLowerCase().includes('date');
 
-  const parseBudgetNumber = (value: unknown) => {
+  const parseBudgetNumber = (value: unknown): number => {
     if (value === null || value === undefined) return 0;
     if (Array.isArray(value) && value.length > 0) {
       return parseBudgetNumber(value[0]);
