@@ -82,6 +82,52 @@ const parseDate = (value) => {
     return null;
 };
 
+const isUuidLike = (value) =>
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+
+const getReferenceDisplayName = (refItem) => {
+    if (!refItem || !refItem.data) return '';
+    const fundingStream = refItem.data['Funding Stream'];
+    if (fundingStream) {
+        if (typeof fundingStream === 'object' && fundingStream.name) return fundingStream.name;
+        return String(fundingStream);
+    }
+    const definition = refItem.data['Definition'];
+    if (definition) {
+        if (typeof definition === 'object' && definition.name) return definition.name;
+        return String(definition);
+    }
+    const fullName = refItem.data['Full Name/Preferred Name'];
+    if (fullName) {
+        if (typeof fullName === 'object' && fullName.name) return fullName.name;
+        return String(fullName);
+    }
+    const name = refItem.data['Name'];
+    if (name) {
+        if (typeof name === 'object' && name.name) return name.name;
+        return String(name);
+    }
+    return '';
+};
+
+const resolveReferenceValue = (value, refMap) => {
+    if (!value) return '';
+    if (Array.isArray(value)) {
+        return value.map(v => resolveReferenceValue(v, refMap)).filter(Boolean).join(', ');
+    }
+    if (typeof value === 'object') {
+        if (value.name) return value.name;
+        if (value.id) return resolveReferenceValue(value.id, refMap);
+        return value.toString ? value.toString() : '';
+    }
+    const valueStr = String(value);
+    if (isUuidLike(valueStr) && refMap?.has(valueStr)) {
+        return getReferenceDisplayName(refMap.get(valueStr)) || valueStr;
+    }
+    return valueStr;
+};
+
 const formatStatus = (value) => {
     if (!value) return undefined;
     if (Array.isArray(value) && value.length > 0) {
@@ -842,7 +888,8 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
             endDate,
             month,
             year,
-            type = 'service' // 'service' or 'budget'
+            type = 'service',
+            categoryCode
         } = req.query;
 
         if (!workspaceId || !boardId) {
@@ -858,16 +905,50 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
             .lean();
 
         if (type === 'budget') {
+            let folders = [];
+            try {
+                const { folder } = await getFolder(workspaceId, boardId);
+                folders = Array.isArray(folder) ? folder : [];
+            } catch (err) {
+                folders = [];
+            }
+
+            const folderIdToName = new Map();
+            const folderIdToCode = {};
+            const budgetFolderConfig = [
+                { code: 'HSQ', folderName: 'Home Support Quarterly Budget' },
+                { code: 'ATS', folderName: 'Assistive Technology - Short-term Budget' },
+                { code: 'ATO', folderName: 'Assistive Technology - Ongoing Budget' },
+                { code: 'HMB', folderName: 'Home Modification Budget' },
+                { code: 'RCP', folderName: 'Restorative Care Pathway Budget' },
+                { code: 'EOL', folderName: 'End-of-Life Pathway Budget' },
+                { code: 'HSCM', folderName: 'Home Support Care Management Budget' }
+            ];
+
+            folders.forEach(folderElement => {
+                if (!folderElement?.id) return;
+                const folderName = folderElement.name || '';
+                folderIdToName.set(folderElement.id, folderName);
+                const normalized = folderName.toLowerCase();
+                const matchedConfig = budgetFolderConfig.find(cfg =>
+                    normalized.includes(cfg.folderName.toLowerCase())
+                );
+                if (matchedConfig) {
+                    folderIdToCode[folderElement.id] = matchedConfig.code;
+                }
+            });
+
             const budgetFolderNames = [
                 'Home Support Quarterly Budget',
                 'Restorative Care Pathway Budget',
                 'End-of-Life Pathway Budget',
                 'Assistive Technology - Short-term Budget',
                 'Assistive Technology - Ongoing Budget',
-                'Home Modification Budget'
+                'Home Modification Budget',
+                'Home Support Care Management Budget'
             ].join(',');
 
-            const folderIds = await getFolderIds(budgetFolderNames, workspaceId, boardId);
+            const folderIds = await getFolderIds(budgetFolderNames, workspaceId, boardId, folders);
             const baseQuery = { workspaceId, boardId };
             if (folderIds.length > 0) {
                 baseQuery.folderId = { $in: folderIds };
@@ -875,14 +956,30 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
 
             const allBudgetItems = await Item.find(baseQuery).lean();
 
+            const primarySupplementRefIds = new Set();
+            allBudgetItems.forEach(item => {
+                const primarySupplementValue = getValue(item, 'Primary Supplement');
+                const refIds = extractAllRefIds(primarySupplementValue).filter(isUuidLike);
+                refIds.forEach(id => primarySupplementRefIds.add(id));
+            });
+            const primarySupplementMap = primarySupplementRefIds.size > 0
+                ? await Item.find({ workspaceId, boardId, itemId: { $in: [...primarySupplementRefIds] } }).lean()
+                      .then(items => new Map(items.map(entry => [entry.itemId, entry])))
+                : new Map();
+
             const transformedBudgetItems = allBudgetItems.map(item => {
                 const participantName = getValue(item, ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
                 const monthLabel = formatStatus(getValue(item, 'Month'));
                 const yearLabel = formatStatus(getValue(item, 'Year'));
+                const folderName = folderIdToName.get(item.folderId) || '';
+                const resolvedCategoryCode = folderIdToCode[item.folderId] || 'HSQ';
+                const primarySupplementValue = getValue(item, 'Primary Supplement');
+                const primarySupplementLabel = resolveReferenceValue(primarySupplementValue, primarySupplementMap);
 
                 return {
                     id: item.itemId,
-                    folderName: item.folderId || '',
+                    folderName,
+                    categoryCode: resolvedCategoryCode,
                     participantName,
                     month: monthLabel,
                     year: yearLabel,
@@ -890,12 +987,14 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
                     deliveredAmount: Math.abs(parseNumber(getValue(item, 'Home Support Delivered During the Month ($-)'))),
                     adjustmentAmount: parseNumber(getValue(item, 'Adjustments from Previous Months [Charges($-)/Refund($)]')),
                     remainingBalance: parseNumber(getValue(item, 'Remaining Home Support Balance as at the End of the Month ($)')),
+                    primarySupplementLabel,
                     fundingStartDate: getValue(item, 'Funding Start Date'),
                     fundingEndDate: getValue(item, 'Funding End Date'),
                     fund: getValue(item, 'Fund'),
                     committedFunds: parseNumber(getValue(item, 'Committed AT Short-term Funds - to be delivered ($-)')) +
                         parseNumber(getValue(item, 'Committed AT Ongoing Funds - to be delivered ($-)')) +
-                        parseNumber(getValue(item, 'Committed HM Funds - to be delivered ($-)'))
+                        parseNumber(getValue(item, 'Committed HM Funds - to be delivered ($-)')),
+                    rawData: item.data || {}
                 };
             });
 
@@ -919,6 +1018,9 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
             }
             if (year) {
                 filteredItems = filteredItems.filter(item => item.year === year);
+            }
+            if (categoryCode) {
+                filteredItems = filteredItems.filter(item => item.categoryCode === categoryCode);
             }
 
             const duration = Date.now() - startTime;
