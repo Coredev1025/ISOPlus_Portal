@@ -112,92 +112,33 @@ async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, ty
   }
 }
 
-function getFieldValue(values, fieldNames) {
-  const names = Array.isArray(fieldNames) ? fieldNames : [fieldNames];
-  for (const name of names) {
-    if (values[name] && String(values[name]).trim() !== '') {
-      return String(values[name]).trim();
-    }
-  }
-  return null;
-}
-
-function validateEmail(email) {
-  if (!email) return false;
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-}
-
-function validatePhoneNumber(phone) {
-  if (!phone) return null;
-  // Remove all non-digit characters except + at the start
-  const cleaned = String(phone).replace(/[^\d+]/g, '');
-  if (cleaned.length < 7) return null; // Too short
-  if (cleaned.length > 15) return null; // Too long (E.164 standard)
-  return cleaned;
-}
-
 function createContactPayload(values, isUpdate = false) {
-  const name = getFieldValue(values, ['client', 'Client', 'Contractor']) || '';
-  const firstName = getFieldValue(values, ['contactPersonsFirstName', "Contact Person's First Name", 'ContactPersonsFirstName']) || '';
-  const lastName = getFieldValue(values, ['contactPersonsLastName', "Contact Person's Last Name", 'ContactPersonsLastName']) || '';
-  const email = getFieldValue(values, ['emailAddress', 'Email Address', 'EmailAddress']) || '';
-  const phone = getFieldValue(values, ['phoneNumber', 'Phone Number', 'PhoneNumber']);
-  const address = getFieldValue(values, ['address', 'Address']) || '';
-  const suburb = getFieldValue(values, ['suburb', 'Suburb']) || '';
-  const state = getFieldValue(values, ['state', 'State']) || '';
-  const postcode = getFieldValue(values, ['postcode', 'Postcode']);
-
-  // Validate required fields
-  if (!name) {
-    throw new Error('Contact name is required');
-  }
-  if (email && !validateEmail(email)) {
-    throw new Error(`Invalid email address: ${email}`);
-  }
-
-  const validatedPhone = phone ? validatePhoneNumber(phone) : null;
-  if (phone && !validatedPhone) {
-    throw new Error(`Invalid phone number: ${phone}`);
-  }
-
-  // Use PascalCase field names for xero-node v13.3.1 API compatibility
   const basePayload = {
-    Name: name,
-    ContactStatus: 'ACTIVE',
-    EmailAddress: email,
-    FirstName: firstName,
-    LastName: lastName,
-    Addresses: []
-  };
-
-  // Only add phone if valid
-  if (validatedPhone) {
-    basePayload.Phones = [{
-      PhoneType: 'DEFAULT',
-      PhoneNumber: validatedPhone
-    }];
-  }
-
-  // Only add address information if at least address line 1 is provided
-  if (address) {
-    basePayload.Addresses = [
+    name: values.client || values.Client || values.Contractor,
+    phones: [{
+      phoneType: 'DEFAULT',
+      phoneNumber: values.phoneNumber || values['Phone Number'] || values.PhoneNumber
+    }],
+    firstName: values.contactPersonsFirstName || values["Contact Person's First Name"] || values.ContactPersonsFirstName,
+    lastName: values.contactPersonsLastName || values["Contact Person's Last Name"] || values.ContactPersonsLastName,
+    addresses: [
       {
-        AddressType: 'POBOX',
-        AddressLine1: address,
-        City: suburb || 'Unknown',
-        Region: state || 'Unknown',
-        PostalCode: postcode ? postcode.toString() : ''
+        addressType: 'POBOX',
+        addressLine1: values.address || values.Address,
+        city: values.suburb || values.Suburb,
+        region: values.state || values.State,
+        postalCode: (values.postcode || values.Postcode).toString()
       },
       {
-        AddressType: 'STREET',
-        AddressLine1: address,
-        City: suburb || 'Unknown',
-        Region: state || 'Unknown',
-        PostalCode: postcode ? postcode.toString() : ''
+        addressType: 'STREET',
+        addressLine1: values.address || values.Address,
+        city: values.suburb || values.Suburb,
+        region: values.state || values.State,
+        postalCode: (values.postcode || values.Postcode).toString()
       }
-    ];
-  }
+    ],
+    emailAddress: values.emailAddress || values['Email Address'] || values.EmailAddress
+  };
 
   return basePayload;
 }
@@ -324,38 +265,28 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     let contact = await getContactByEmail(contactValues.emailAddress);
     if (!contact) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
-
-      // Validate required contact fields
-      if (!contactValues.client) {
-        throw new Error('Client name is required for contact creation');
-      }
-      if (!contactValues.phoneNumber) {
-        throw new Error('Phone number is required for contact creation');
-      }
-
       contact = await createOrUpdateContact({
-        Name: contactValues.client,
-        Phones: [{ PhoneType: 'DEFAULT', PhoneNumber: contactValues.phoneNumber }],
-        FirstName: contactValues.contactPersonsFirstName,
-        LastName: contactValues.contactPersonsLastName,
-        Addresses: contactValues.address ? [
+        name: contactValues.client,
+        phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
+        firstName: contactValues.contactPersonsFirstName,
+        lastName: contactValues.contactPersonsLastName,
+        addresses: [
           {
-            AddressType: 'POBOX',
-            AddressLine1: contactValues.address,
-            City: contactValues.suburb || 'Unknown',
-            Region: contactValues.state || 'Unknown',
-            PostalCode: contactValues.postcode ? contactValues.postcode.toString() : ''
+            addressType: 'POBOX',
+            addressLine1: contactValues.address,
+            city: contactValues.suburb,
+            region: contactValues.state,
+            postalCode: contactValues.postcode.toString()
           },
           {
-            AddressType: 'STREET',
-            AddressLine1: contactValues.address,
-            City: contactValues.suburb || 'Unknown',
-            Region: contactValues.state || 'Unknown',
-            PostalCode: contactValues.postcode ? contactValues.postcode.toString() : ''
+            addressType: 'STREET',
+            addressLine1: contactValues.address,
+            city: contactValues.suburb,
+            region: contactValues.state,
+            postalCode: contactValues.postcode.toString()
           }
-        ] : [],
-        EmailAddress: contactValues.emailAddress,
-        ContactStatus: 'ACTIVE'
+        ],
+        emailAddress: contactValues.emailAddress
       });
     } else {
       const xeroUpdatedDate = new Date(contact.updatedDateUTC);
@@ -368,22 +299,22 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
           phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
           firstName: contactValues.contactPersonsFirstName,
           lastName: contactValues.contactPersonsLastName,
-          addresses: contactValues.address ? [
+          addresses: [
             {
               addressType: 'POBOX',
               addressLine1: contactValues.address,
-              city: contactValues.suburb || 'Unknown',
-              region: contactValues.state || 'Unknown',
-              postalCode: contactValues.postcode ? contactValues.postcode.toString() : ''
+              city: contactValues.suburb,
+              region: contactValues.state,
+              postalCode: contactValues.postcode.toString()
             },
             {
               addressType: 'STREET',
               addressLine1: contactValues.address,
-              city: contactValues.suburb || 'Unknown',
-              region: contactValues.state || 'Unknown',
-              postalCode: contactValues.postcode ? contactValues.postcode.toString() : ''
+              city: contactValues.suburb,
+              region: contactValues.state,
+              postalCode: contactValues.postcode.toString()
             }
-          ] : [],
+          ],
           emailAddress: contactValues.emailAddress
         });
       }
@@ -405,7 +336,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
 
     const invoice = {
       type: 'ACCREC',
-      contact: { ContactID: contact.ContactID },
+      contact: { contactID: contact.contactID },
       reference: jobPlanningValues.jobNumber,
       lineItems: [],
       date: new Date().toISOString().split('T')[0],
@@ -487,59 +418,59 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
     let contact = await getContactByEmail(participantProfileValues.email);
     if (!contact) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
-      if (!firstName || !lastName) {
+      if(!firstName || !lastName) {
         throw new Error("First name and last name are required for NDIS invoice contact creation. Please ensure the participant profile contains both first and last name.");
       }
       contact = await createOrUpdateContact({
-        Name: participantProfileValues.fullName || firstName + ' ' + lastName,
-        Phones: [{ PhoneType: 'DEFAULT', PhoneNumber: participantProfileValues.Phone }],
-        FirstName: firstName,
-        LastName: lastName,
-        Addresses: [
+        name: participantProfileValues.fullName || firstName + ' ' + lastName,
+        phones: [{ phoneType: 'DEFAULT', phoneNumber: participantProfileValues.Phone }],
+        firstName: firstName,
+        lastName: lastName,
+        addresses: [
           {
-            AddressType: 'POBOX',
-            AddressLine1: participantProfileValues.address || ' ',
-            City: participantProfileValues.suburb || ' ',
-            Region: participantProfileValues.state || ' ',
-            PostalCode: participantProfileValues.postcode?.toString() || ' '
+            addressType: 'POBOX',
+            addressLine1: participantProfileValues.address || ' ',
+            city: participantProfileValues.suburb || ' ',
+            region: participantProfileValues.state || ' ',
+            postalCode: participantProfileValues.postcode?.toString() || ' '
           },
           {
-            AddressType: 'STREET',
-            AddressLine1: participantProfileValues.address || ' ',
-            City: participantProfileValues.suburb || ' ',
-            Region: participantProfileValues.state || ' ',
-            PostalCode: participantProfileValues.postcode?.toString() || ' '
+            addressType: 'STREET',
+            addressLine1: participantProfileValues.address || ' ',
+            city: participantProfileValues.suburb || ' ',
+            region: participantProfileValues.state || ' ',
+            postalCode: participantProfileValues.postcode?.toString() || ' '
           }
         ],
-        EmailAddress: participantProfileValues.email
+        emailAddress: participantProfileValues.email
       });
     } else {
       const xeroUpdatedDate = new Date(contact.updatedDateUTC);
       const isoplusUpdatedDate = new Date(participantProfileValues.updatedAt);
       if (xeroUpdatedDate < isoplusUpdatedDate && firstName && lastName) {
         contact = await createOrUpdateContact({
-          ContactID: contact.ContactID,
-          Name: participantProfileValues.fullName || firstName + ' ' + lastName,
-          Phones: [{ PhoneType: 'DEFAULT', PhoneNumber: participantProfileValues.Phone }],
-          FirstName: firstName,
-          LastName: lastName,
-          Addresses: [
+          contactID: contact.contactID,
+          name: participantProfileValues.fullName || firstName + ' ' + lastName,
+          phones: [{ phoneType: 'DEFAULT', phoneNumber: participantProfileValues.Phone }],
+          firstName: firstName,
+          lastName: lastName,
+          addresses: [
             {
-              AddressType: 'POBOX',
-              AddressLine1: participantProfileValues.address || ' ',
-              City: participantProfileValues.suburb || ' ',
-              Region: participantProfileValues.state || ' ',
-              PostalCode: participantProfileValues.postcode?.toString() || ' '
+              addressType: 'POBOX',
+              addressLine1: participantProfileValues.address || ' ',
+              city: participantProfileValues.suburb || ' ',
+              region: participantProfileValues.state || ' ',
+              postalCode: participantProfileValues.postcode?.toString() || ' '
             },
             {
-              AddressType: 'STREET',
-              AddressLine1: participantProfileValues.address || ' ',
-              City: participantProfileValues.suburb || ' ',
-              Region: participantProfileValues.state || ' ',
-              PostalCode: participantProfileValues.postcode?.toString() || ' '
+              addressType: 'STREET',
+              addressLine1: participantProfileValues.address || ' ',
+              city: participantProfileValues.suburb || ' ',
+              region: participantProfileValues.state || ' ',
+              postalCode: participantProfileValues.postcode?.toString() || ' '
             }
           ],
-          EmailAddress: participantProfileValues.email
+          emailAddress: participantProfileValues.email
         });
       }
     }
@@ -557,7 +488,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
 
     const invoice = {
       type: 'ACCREC',
-      contact: { ContactID: contact.ContactID },
+      contact: { contactID: contact.contactID },
       reference: item.values["Invoice Number"],
       lineItems: [],
       date: invoiceDate || nowISO,
@@ -649,7 +580,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             description: desc2,
             quantity: formatValue(qty2),
             unitAmount: unitPrice2,
-            taxType: gstType
+            taxType: gstType,
+            accountCode: salesAccountCode
           });
         }
       }
@@ -691,7 +623,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           description: desc3,
           quantity: formatValue(qty3),
           unitAmount: unitPrice3,
-          taxType: gstType
+          taxType: gstType,
+          accountCode: salesAccountCode
         });
       }
 
@@ -732,7 +665,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           description: desc4,
           quantity: formatValue(qty4),
           unitAmount: unitPrice4,
-          taxType: gstType
+          taxType: gstType,
+          accountCode: salesAccountCode
         });
       }
 
@@ -769,7 +703,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           description: desc5,
           quantity: formatValue(qty5),
           unitAmount: unitPrice5,
-          taxType: gstType
+          taxType: gstType,
+          accountCode: salesAccountCode
         });
       }
 
@@ -794,7 +729,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           description: desc6,
           quantity: formatValue(qty6),
           unitAmount: unitPrice6,
-          taxType: gstType
+          taxType: gstType,
+          accountCode: salesAccountCode
         });
       }
 
@@ -820,7 +756,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           description: desc7,
           quantity: formatValue(qty7),
           unitAmount: unitPrice7,
-          taxType: gstType
+          taxType: gstType,
+          accountCode: salesAccountCode
         });
       }
 
@@ -845,7 +782,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           description: desc8,
           quantity: formatValue(qty8),
           unitAmount: unitPrice8,
-          taxType: gstType
+          taxType: gstType,
+          accountCode: salesAccountCode
         });
       }
     } else {
@@ -930,7 +868,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             description: desc3,
             quantity: formatValue(qty3),
             unitAmount: unitPrice3,
-            taxType: gstType
+            taxType: gstType,
+            accountCode: salesAccountCode
           });
           totalCancellationFee += Number(amount3);
         }
@@ -962,7 +901,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             description: desc4,
             quantity: formatValue(qty4),
             unitAmount: unitPrice4,
-            taxType: gstType
+            taxType: gstType,
+            accountCode: salesAccountCode
           });
           totalCancellationFee += Number(amount4);
         }
@@ -994,7 +934,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             description: desc5,
             quantity: formatValue(qty5),
             unitAmount: unitPrice5,
-            taxType: gstType
+            taxType: gstType,
+            accountCode: salesAccountCode
           });
           totalCancellationFee += Number(amount5);
         }
@@ -1069,39 +1010,18 @@ router.post('/:workspaceId/:boardId/contact', async (req, res) => {
 
   try {
     await initializeXeroOperation(workspaceId, boardId, item);
-
-    // Validate email exists before attempting contact operations
-    const email = contactValues['Email Address'];
-    if (!email) {
-      throw new Error('Email address is required for contact creation');
-    }
-
-    const existingContact = await getContactByEmail(email);
+    const existingContact = await getContactByEmail(contactValues['Email Address']);
     let contact;
 
     if (existingContact) {
       contact = await createOrUpdateContact({
         ...createContactPayload(contactValues),
-        ContactID: existingContact.ContactID
+        contactID: existingContact.contactID
       });
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your contact has been updated successfully in Xero.");
-
-      logAuditTrail({
-        workspaceId,
-        action: "Update Xero Contact",
-        detail: `Contact updated successfully: ${contact.Name} (${contact.ContactID})`,
-        req
-      });
     } else {
       contact = await createOrUpdateContact(createContactPayload(contactValues));
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your contact has been created successfully in Xero.");
-
-      logAuditTrail({
-        workspaceId,
-        action: "Create Xero Contact",
-        detail: `Contact created successfully: ${contact.Name} (${contact.ContactID})`,
-        req
-      });
     }
 
     res.json(contact);
@@ -1144,39 +1064,18 @@ router.post('/:workspaceId/:boardId/contractor', async (req, res) => {
 
   try {
     await initializeXeroOperation(workspaceId, boardId, item);
-
-    // Validate email exists before attempting contact operations
-    const email = contractorValues['Email Address'];
-    if (!email) {
-      throw new Error('Email address is required for contractor creation');
-    }
-
-    const existingContact = await getContactByEmail(email);
+    const existingContact = await getContactByEmail(contractorValues['Email Address']);
     let contact;
 
     if (existingContact) {
       contact = await createOrUpdateContact({
         ...createContactPayload(contractorValues),
-        ContactID: existingContact.ContactID
+        contactID: existingContact.contactID
       });
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your contractor has been updated successfully in Xero.");
-
-      logAuditTrail({
-        workspaceId,
-        action: "Update Xero Contractor",
-        detail: `Contractor updated successfully: ${contact.Name} (${contact.ContactID})`,
-        req
-      });
     } else {
       contact = await createOrUpdateContact(createContactPayload(contractorValues));
       await setIntegrationMessage(workspaceId, boardId, item.id, "Your contractor has been created successfully in Xero.");
-
-      logAuditTrail({
-        workspaceId,
-        action: "Create Xero Contractor",
-        detail: `Contractor created successfully: ${contact.Name} (${contact.ContactID})`,
-        req
-      });
     }
 
     res.json(contact);
@@ -1209,68 +1108,61 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     if (!contact) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
       contact = await createOrUpdateContact({
-        Name: contactValues.client,
-        Phones: [{ PhoneType: 'DEFAULT', PhoneNumber: contactValues.phoneNumber }],
-        FirstName: contactValues.contactPersonsFirstName,
-        LastName: contactValues.contactPersonsLastName,
-        Addresses: [
+        name: contactValues.client,
+        phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
+        firstName: contactValues.contactPersonsFirstName,
+        lastName: contactValues.contactPersonsLastName,
+        addresses: [
           {
-            AddressType: 'POBOX',
-            AddressLine1: contactValues.address,
-            City: contactValues.suburb,
-            Region: contactValues.state,
-            PostalCode: contactValues.postcode.toString()
+            addressType: 'POBOX',
+            addressLine1: contactValues.address,
+            city: contactValues.suburb,
+            region: contactValues.state,
+            postalCode: contactValues.postcode.toString()
           },
           {
-            AddressType: 'STREET',
-            AddressLine1: contactValues.address,
-            City: contactValues.suburb,
-            Region: contactValues.state,
-            PostalCode: contactValues.postcode.toString()
+            addressType: 'STREET',
+            addressLine1: contactValues.address,
+            city: contactValues.suburb,
+            region: contactValues.state,
+            postalCode: contactValues.postcode.toString()
           }
         ],
-        EmailAddress: contactValues.emailAddress
+        emailAddress: contactValues.emailAddress
       });
     } else {
-      const xeroUpdatedDate = new Date(contact.UpdatedDateUTC);
+      const xeroUpdatedDate = new Date(contact.updatedDateUTC);
       const isoplusUpdatedDate = new Date(contactValues.updatedAt);
 
       if (xeroUpdatedDate < isoplusUpdatedDate) {
         contact = await createOrUpdateContact({
-          ContactID: contact.ContactID,
-          Name: contactValues.client,
-          Phones: [{ PhoneType: 'DEFAULT', PhoneNumber: contactValues.phoneNumber }],
-          FirstName: contactValues.contactPersonsFirstName,
-          LastName: contactValues.contactPersonsLastName,
-          Addresses: [
+          contactID: contact.contactID,
+          name: contactValues.client,
+          phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
+          firstName: contactValues.contactPersonsFirstName,
+          lastName: contactValues.contactPersonsLastName,
+          addresses: [
             {
-              AddressType: 'POBOX',
-              AddressLine1: contactValues.address,
-              City: contactValues.suburb,
-              Region: contactValues.state,
-              PostalCode: contactValues.postcode.toString()
+              addressType: 'POBOX',
+              addressLine1: contactValues.address,
+              city: contactValues.suburb,
+              region: contactValues.state,
+              postalCode: contactValues.postcode.toString()
             },
             {
-              AddressType: 'STREET',
-              AddressLine1: contactValues.address,
-              City: contactValues.suburb,
-              Region: contactValues.state,
-              PostalCode: contactValues.postcode.toString()
+              addressType: 'STREET',
+              addressLine1: contactValues.address,
+              city: contactValues.suburb,
+              region: contactValues.state,
+              postalCode: contactValues.postcode.toString()
             }
           ],
-          EmailAddress: contactValues.emailAddress
+          emailAddress: contactValues.emailAddress
         });
       }
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
-
-    // Get valid account codes
-    const accounts = await getAccounts(workspaceId);
-    const salesAccountCode = accounts.find(acc =>
-      acc.Type === 'REVENUE'
-    )?.Code || '200'; // Default to '200' if no revenue account found
-
     // let rawChecklist = quoteValues['Quote Checklist'];
     // let quoteChecklist = [];
     // if (Array.isArray(rawChecklist)) {
@@ -1288,7 +1180,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
       quoteChecklist: lineItems,
     };
     const xeroQuote = {
-      contact: { ContactID: contact.ContactID },
+      contact: { contactID: contact.contactID },
       date: quoteValues['Issue Date'],
       expiryDate: quoteValues['Expiry Date'],
       title: quoteValues['Job Title'],
@@ -1300,7 +1192,6 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
           quantity: quoteValues.Quantity,
           unitAmount: quoteValues['Unit Price($) - GST Excl.'],
           taxType: quoteValues['GST'] == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
-          accountCode: salesAccountCode
         }
       ]
     };
@@ -1355,61 +1246,55 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
     if (!contact) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
       contact = await createOrUpdateContact({
-        Name: NDISQuoteValues['Recipient of the Quote'],
-        Phones: [{ PhoneType: 'DEFAULT', PhoneNumber: NDISQuoteValues['Recipient Phone Number'] }],
-        Addresses: [
+        name: NDISQuoteValues['Recipient of the Quote'],
+        phones: [{ phoneType: 'DEFAULT', phoneNumber: NDISQuoteValues['Recipient Phone Number'] }],
+        addresses: [
           {
-            AddressType: 'POBOX',
-            AddressLine1: NDISQuoteValues['Recipient Address'],
-            City: NDISQuoteValues['Suburb'],
-            Region: NDISQuoteValues['State'],
-            PostalCode: NDISQuoteValues['Postcode'].toString()
+            addressType: 'POBOX',
+            addressLine1: NDISQuoteValues['Recipient Address'],
+            city: NDISQuoteValues['Suburb'],
+            region: NDISQuoteValues['State'],
+            postalCode: NDISQuoteValues['Postcode'].toString()
           },
           {
-            AddressType: 'STREET',
-            AddressLine1: NDISQuoteValues['Recipient Address'],
-            City: NDISQuoteValues['Suburb'],
-            Region: NDISQuoteValues['State'],
-            PostalCode: NDISQuoteValues['Postcode'].toString()
+            addressType: 'STREET',
+            addressLine1: NDISQuoteValues['Recipient Address'],
+            city: NDISQuoteValues['Suburb'],
+            region: NDISQuoteValues['State'],
+            postalCode: NDISQuoteValues['Postcode'].toString()
           }
         ],
-        EmailAddress: NDISQuoteValues['Recipient Email']
+        emailAddress: NDISQuoteValues['Recipient Email']
       });
     } else {
-      const xeroUpdatedDate = new Date(contact.UpdatedDateUTC);
+      const xeroUpdatedDate = new Date(contact.updatedDateUTC);
       const isoplusUpdatedDate = new Date(NDISQuoteValues.updatedAt);
 
       if (xeroUpdatedDate < isoplusUpdatedDate) {
         contact = await createOrUpdateContact({
-          ContactID: contact.ContactID,
-          Name: NDISQuoteValues['Recipient of the Quote'],
-          Phones: [{ PhoneType: 'DEFAULT', PhoneNumber: NDISQuoteValues['Recipient Phone Number'] }],
-          Addresses: [
+          contactID: contact.contactID,
+          name: NDISQuoteValues['Recipient of the Quote'],
+          phones: [{ phoneType: 'DEFAULT', phoneNumber: NDISQuoteValues['Recipient Phone Number'] }],
+          addresses: [
             {
-              AddressType: 'POBOX',
-              AddressLine1: NDISQuoteValues['Recipient Address'],
-              City: NDISQuoteValues['Suburb'],
-              Region: NDISQuoteValues['State'],
-              PostalCode: NDISQuoteValues['Postcode'].toString()
+              addressType: 'POBOX',
+              addressLine1: NDISQuoteValues['Recipient Address'],
+              city: NDISQuoteValues['Suburb'],
+              region: NDISQuoteValues['State'],
+              postalCode: NDISQuoteValues['Postcode'].toString()
             },
             {
-              AddressType: 'STREET',
-              AddressLine1: NDISQuoteValues['Recipient Address'],
-              City: NDISQuoteValues['Suburb'],
-              Region: NDISQuoteValues['State'],
-              PostalCode: NDISQuoteValues['Postcode'].toString()
+              addressType: 'STREET',
+              addressLine1: NDISQuoteValues['Recipient Address'],
+              city: NDISQuoteValues['Suburb'],
+              region: NDISQuoteValues['State'],
+              postalCode: NDISQuoteValues['Postcode'].toString()
             }
           ],
-          EmailAddress: NDISQuoteValues['Recipient Email']
+          emailAddress: NDISQuoteValues['Recipient Email']
         });
       }
     }
-
-    // Get valid account codes
-    const accounts = await getAccounts(workspaceId);
-    const salesAccountCode = accounts.find(acc =>
-      acc.Type === 'REVENUE'
-    )?.Code || '200'; // Default to '200' if no revenue account found
 
     let lineItems = [];
     const gstType = "EXEMPTOUTPUT"; // GST Free for NDIS
@@ -1421,7 +1306,6 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
         quantity: Number(NDISQuoteValues['Quantity (Direct Support)']) || 0,
         unitAmount: Number(NDISQuoteValues['Unit Price for Direct Support($)']) || 0,
         taxType: gstType,
-        accountCode: salesAccountCode
       });
     }
     // 2. Provider Travel - Non-Labour Cost
@@ -1431,7 +1315,6 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
         quantity: Number(NDISQuoteValues['Quantity (Provider Travel)']) || 0,
         unitAmount: Number(NDISQuoteValues['Unit Price for Provider Travel($)']) || 0,
         taxType: gstType,
-        accountCode: salesAccountCode
       });
     }
     // 3. Activity Based Transport
@@ -1441,7 +1324,6 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
         quantity: Number(NDISQuoteValues['Quantity (Activity Based Transport)']) || 0,
         unitAmount: Number(NDISQuoteValues['Unit Price for Activity Based Transport($)']) || 0,
         taxType: gstType,
-        accountCode: salesAccountCode
       });
     }
     // 4. Centre Capital Costs
@@ -1451,7 +1333,6 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
         quantity: Number(NDISQuoteValues['Quantity (Centre Capital Costs)']) || 0,
         unitAmount: Number(NDISQuoteValues['Unit Price for Centre Capital Costs($)']) || 0,
         taxType: gstType,
-        accountCode: salesAccountCode
       });
     }
     // 5. Provider Travel - Labour Travel Time Costs
@@ -1461,7 +1342,6 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
         quantity: Number(NDISQuoteValues['Quantity (Labour Travel Time)']) || 0,
         unitAmount: Number(NDISQuoteValues['Unit Price for Labour Travel Time ($)']) || 1,
         taxType: gstType,
-        accountCode: salesAccountCode
       });
     }
     // 6. Allowances
@@ -1471,7 +1351,6 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
         quantity: 1,
         unitAmount: Number(NDISQuoteValues['Allowances Amount($)']) || 0,
         taxType: gstType,
-        accountCode: salesAccountCode
       });
     }
     // 7. Non-Face-to-Face Support
@@ -1481,7 +1360,6 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
         quantity: Number(NDISQuoteValues['Quantity (Non-Face-to-Face Support)']) || 0,
         unitAmount: Number(NDISQuoteValues['Unit Price for Non-Face-to-Face Support ($)']) || 1,
         taxType: gstType,
-        accountCode: salesAccountCode
       });
     }
 
@@ -1500,7 +1378,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
     };
 
     const xeroQuote = {
-      contact: { ContactID: contact.ContactID },
+      contact: { contactID: contact.contactID },
       date: NDISQuoteValues['Issue Date'] || nowISO,
       expiryDate: NDISQuoteValues['Expiry Date'] || nowISO,
       // title: NDISQuoteValues['Job Title'] || firstLine.description || '',
@@ -1558,67 +1436,61 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     if (!contact) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
       contact = await createOrUpdateContact({
-        Name: contractorValues.contractor,
-        Phones: [{ PhoneType: 'DEFAULT', PhoneNumber: contractorValues.phoneNumber }],
-        FirstName: contractorValues.contactPersonsFirstName,
-        LastName: contractorValues.contactPersonsLastName,
-        Addresses: [
+        name: contractorValues.contractor,
+        phones: [{ phoneType: 'DEFAULT', phoneNumber: contractorValues.phoneNumber }],
+        firstName: contractorValues.contactPersonsFirstName,
+        lastName: contractorValues.contactPersonsLastName,
+        addresses: [
           {
-            AddressType: 'POBOX',
-            AddressLine1: contractorValues.address || ' ',
-            City: contractorValues.suburb || ' ',
-            Region: contractorValues.state || ' ',
-            PostalCode: contractorValues.postcode ? contractorValues.postcode.toString() : ' '
+            addressType: 'POBOX',
+            addressLine1: contractorValues.address,
+            city: contractorValues.suburb,
+            region: contractorValues.state,
+            postalCode: contractorValues.postcode.toString()
           },
           {
-            AddressType: 'STREET',
-            AddressLine1: contractorValues.address || ' ',
-            City: contractorValues.suburb || ' ',
-            Region: contractorValues.state || ' ',
-            PostalCode: contractorValues.postcode ? contractorValues.postcode.toString() : ' '
+            addressType: 'STREET',
+            addressLine1: contractorValues.address,
+            city: contractorValues.suburb,
+            region: contractorValues.state,
+            postalCode: contractorValues.postcode.toString()
           }
         ],
-        EmailAddress: contractorValues.emailAddress
+        emailAddress: contractorValues.emailAddress
       });
     } else {
-      const xeroUpdatedDate = new Date(contact.UpdatedDateUTC);
+      const xeroUpdatedDate = new Date(contact.updatedDateUTC);
       const isoplusUpdatedDate = new Date(contractorValues.updatedAt);
 
       if (xeroUpdatedDate < isoplusUpdatedDate) {
         contact = await createOrUpdateContact({
-          ContactID: contact.ContactID,
-          Name: contractorValues.contractor,
-          Phones: [{ PhoneType: 'DEFAULT', PhoneNumber: contractorValues.phoneNumber }],
-          FirstName: contractorValues.contactPersonsFirstName,
-          LastName: contractorValues.contactPersonsLastName,
-          Addresses: [
+          contactID: contact.contactID,
+          name: contractorValues.contractor,
+          phones: [{ phoneType: 'DEFAULT', phoneNumber: contractorValues.phoneNumber }],
+          firstName: contractorValues.contactPersonsFirstName,
+          lastName: contractorValues.contactPersonsLastName,
+          addresses: [
             {
-              AddressType: 'POBOX',
-              AddressLine1: contractorValues.address || ' ',
-              City: contractorValues.suburb || ' ',
-              Region: contractorValues.state || ' ',
-              PostalCode: contractorValues.postcode ? contractorValues.postcode.toString() : ' '
+              addressType: 'POBOX',
+              addressLine1: contractorValues.address,
+              city: contractorValues.suburb,
+              region: contractorValues.state,
+              postalCode: contractorValues.postcode.toString()
             },
             {
-              AddressType: 'STREET',
-              AddressLine1: contractorValues.address || ' ',
-              City: contractorValues.suburb || ' ',
-              Region: contractorValues.state || ' ',
-              PostalCode: contractorValues.postcode ? contractorValues.postcode.toString() : ' '
+              addressType: 'STREET',
+              addressLine1: contractorValues.address,
+              city: contractorValues.suburb,
+              region: contractorValues.state,
+              postalCode: contractorValues.postcode.toString()
             }
           ],
-          EmailAddress: contractorValues.emailAddress
+          emailAddress: contractorValues.emailAddress
         });
       }
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
-
-    // Get valid account codes
-    const accounts = await getAccounts(workspaceId);
-    const expenseAccountCode = accounts.find(acc =>
-      acc.Type === 'EXPENSE'
-    )?.Code || '400'; // Default to '400' if no expense account found
 
     const mappedPO = {
       clientsOrderNumber: purchaseOrderValues["Client's Order Number"],
@@ -1630,7 +1502,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
       jobDescription: purchaseOrderValues['Job Description'],
     };
     const purchaseOrder = {
-      contact: { ContactID: contact.ContactID },
+      contact: { contactID: contact.contactID },
       date: purchaseOrderValues['Issue Date'],
       deliveryDate: purchaseOrderValues['Delivery Date'],
       attentionTo: `${contractorValues.contactPersonsFirstName} ${contractorValues.contactPersonsLastName}`,
@@ -1644,7 +1516,6 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
           quantity: purchaseOrderValues.Quantity,
           unitAmount: purchaseOrderValues['Unit Price($) - GST Excl.'],
           taxType: purchaseOrderValues['GST'] == "10%" ? "INPUT" : "EXEMPTEXPENSES",
-          accountCode: expenseAccountCode
         }
       ]
     };
@@ -1686,20 +1557,6 @@ router.get("/redirect", async (req, res) => {
 router.get('/callback', async (req, res) => {
   try {
     const { code } = req.query;
-
-    if (!code) {
-      return res.status(400).send(`
-            <html>
-                <body>
-                    <script>
-                        window.opener.postMessage(${JSON.stringify({ success: false, message: 'Authorization code is missing', type: 'XERO_AUTH' })}, '*');
-                        window.close();
-                    </script>
-                </body>
-            </html>
-        `);
-    }
-
     const result = await callback(code, req.url);
     res.send(`
             <html>
@@ -1717,7 +1574,7 @@ router.get('/callback', async (req, res) => {
             <html>
                 <body>
                     <script>
-                        window.opener.postMessage(${JSON.stringify({ success: false, message: 'Authentication failed: ' + (err.message || 'Unknown error'), type: 'XERO_AUTH' })}, '*');
+                        window.opener.postMessage(${JSON.stringify({ success: false, message: 'Authentication failed', type: 'XERO_AUTH' })}, '*');
                         window.close();
                     </script>
                 </body>
@@ -1729,11 +1586,6 @@ router.get('/callback', async (req, res) => {
 router.post('/refresh', async (req, res) => {
   try {
     const { tokenSet } = req.body;
-
-    if (!tokenSet) {
-      return res.status(400).json({ message: 'Token set is required', error: 'Missing tokenSet in request body' });
-    }
-
     await configure();
     const newTokenSet = await refreshTokenSet(tokenSet);
     res.json({ tokenSet: newTokenSet });
@@ -1746,9 +1598,10 @@ router.post('/refresh', async (req, res) => {
 router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => {
   const { workspaceId, boardId } = req.params;
   const items = req.body.items || [];
-  const participantName = req.body?.participantName || '';
+    const participantName = req.body?.participantName || '';
   const invoiceDate = req.body?.invoiceDate || new Date().toISOString();
   const dueDate = req.body?.dueDate || '';
+  const isLowCat = req.body?.isLowCat || false;
 
   if (!items || items.length === 0) {
     return res.status(400).json({ message: "No items provided for invoice generation." });
@@ -1845,10 +1698,6 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       contact = await createOrUpdateContact(contactPayload);
     }
 
-    if (!contact) {
-      throw new Error('Unable to create or retrieve contact. Participant name or email is required.');
-    }
-
     // Calculate due date if not provided
     let effectiveDueDate = dueDate;
     if (!effectiveDueDate) {
@@ -1856,12 +1705,6 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       d.setDate(d.getDate() + 14);
       effectiveDueDate = d.toISOString();
     }
-
-    // Get valid account codes
-    const accounts = await getAccounts(workspaceId);
-    const salesAccountCode = accounts.find(acc =>
-      acc.Type === 'REVENUE'
-    )?.Code || '200'; // Default to '200' if no revenue account found
 
     // Build line items from service records
     const lineItems = [];
@@ -1884,27 +1727,29 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         // Final fallback
         description = 'Service';
       }
-
+      
       const quantity = typeof item.quantity === 'number' ? item.quantity : Number(item.quantity || 0);
       const unitPrice = typeof item.unitPrice === 'number' ? item.unitPrice : Number(item.unitPrice || 0);
       const totalItemAmount = typeof item.totalAmount === 'number' ? item.totalAmount : Number(item.totalAmount || 0);
       const participantContributionAmount = typeof item.participantContribution === 'number' ? item.participantContribution : Number(item.totalAmount || 0);
 
       // For Low-Cat, use total amount; for others, use participant contribution if available
-      const lineAmount = isLowCatBoard
-        ? totalItemAmount // For Low-Cat, use total amount
-        : participantContributionAmount
-          ? participantContributionAmount
-          : totalItemAmount; // For others, use participant contribution or total amount
+      const lineAmount = isLowCatBoard? totalItemAmount : participantContributionAmount;
+      // Get valid account codes
+      const accounts = await getAccounts(workspaceId);
+      const salesAccountCode = accounts.find(acc =>
+        acc.Type === 'REVENUE'
+      )?.Code || '200'; // Default to '200' if no revenue account found
 
       if (lineAmount > 0) {
-
+        const calculatedUnitPrice = quantity > 0 ? lineAmount / quantity : (unitPrice > 0 ? unitPrice : lineAmount);
+        
         lineItems.push({
           description: description || 'Service',
           quantity: formatValue(quantity || 1),
-          unitAmount: formatValue(lineAmount / quantity),
-          taxType: gstType,
-          accountCode: salesAccountCode
+          unitAmount: formatValue(calculatedUnitPrice),
+          accountCode: salesAccountCode,
+          taxType: gstType
         });
         totalAmount += lineAmount;
       }
@@ -1918,13 +1763,13 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     }
 
     // Create invoice in Xero
-    const invoiceReference = isLowCatBoard
+    const invoiceReference = isLowCatBoard 
       ? `Tax Invoice - ${effectiveParticipantName}`
       : `Participant Tax Invoice - ${effectiveParticipantName}`;
-
+    
     const invoice = {
       type: 'ACCREC',
-      contact: { ContactID: contact.ContactID },
+      contact: { contactID: contact.contactID },
       reference: invoiceReference,
       lineItems: lineItems,
       date: invoiceDate,
@@ -1938,7 +1783,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     const successMessage = isLowCatBoard
       ? "Your tax invoice has been created successfully in Xero."
       : "Your participant tax invoice has been created successfully in Xero.";
-
+    
     await Promise.all(items.map(async (item) => {
       await setIntegrationMessage(workspaceId, boardId, item.id, successMessage);
       await setGeneratedField(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`);
@@ -1948,7 +1793,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     const auditAction = isLowCatBoard
       ? "Create Xero Tax Invoice"
       : "Create Xero Participant Tax Invoice";
-
+    
     logAuditTrail({
       workspaceId,
       action: auditAction,
@@ -1970,13 +1815,13 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     });
   } catch (err) {
     const errorMessage = (err && err.message) ? err.message : 'Server error: An unknown error occurred. Please contact support via ISO+™ Portal.';
-    error('Xero-Service', 'Error creating participant tax invoice in Xero', {
+    error('Xero-Service', 'Error creating participant tax invoice in Xero', { 
       message: errorMessage,
       workspaceId,
       boardId,
       itemCount: items.length
     }, extractContextFromReq(req));
-
+    
     // Update integration messages for all items
     await Promise.all(items.map(async (item) => {
       await setIntegrationMessage(workspaceId, boardId, item.id, `Error: ${errorMessage}`);
