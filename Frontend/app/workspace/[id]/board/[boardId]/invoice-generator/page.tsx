@@ -116,6 +116,7 @@ interface ServiceRecord {
   loanedByInvoiceNumber?: string;
   healthProfessionalTypeCode?: string;
   healthProfessionalTypeOther?: string;
+  values?: Array<{ attribute: { name: string }; data?: unknown }>;
 }
 
 interface InvoiceSummary {
