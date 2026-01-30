@@ -115,10 +115,6 @@ async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, ty
 function createContactPayload(values, isUpdate = false) {
   const basePayload = {
     name: values.client || values.Client || values.Contractor,
-    phones: [{
-      phoneType: 'DEFAULT',
-      phoneNumber: values.phoneNumber || values['Phone Number'] || values.PhoneNumber
-    }],
     firstName: values.contactPersonsFirstName || values["Contact Person's First Name"] || values.ContactPersonsFirstName,
     lastName: values.contactPersonsLastName || values["Contact Person's Last Name"] || values.ContactPersonsLastName,
     addresses: [
@@ -248,17 +244,17 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
 
     const [jobPlanningValues, serviceFeeTypeValues] = await getJobReportingReferencedItems(workspaceId, boardId, item.id);
     if (!jobPlanningValues) {
-      setIntegrationMessage(workspaceId, boardId, item.id, "Job planning information is required. Job reporting is missing a job planning reference.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Job planning information is required. Job reporting is missing a job planning reference.");
       throw new Error("Job planning information is required. Job reporting is missing a job planning reference.");
     }
     if (!serviceFeeTypeValues) {
-      setIntegrationMessage(workspaceId, boardId, item.id, "Service fee type information is required. Job reporting is missing a service fee type reference.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Service fee type information is required. Job reporting is missing a service fee type reference.");
       throw new Error("Service fee type information is required. Job reporting is missing a service fee type reference.");
     }
 
     const [contactValues, jobTypeValues] = await getJobPlanningReferencedItems(workspaceId, boardId, jobPlanningValues.id);
     if (!contactValues) {
-      setIntegrationMessage(workspaceId, boardId, item.id, "Client information is required. Job planning is missing a client reference.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Client information is required. Job planning is missing a client reference.");
       throw new Error("Client information is required. Job planning is missing a client reference.");
     }
 
@@ -267,7 +263,6 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
       contact = await createOrUpdateContact({
         name: contactValues.client,
-        phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
         firstName: contactValues.contactPersonsFirstName,
         lastName: contactValues.contactPersonsLastName,
         addresses: [
@@ -296,7 +291,6 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
         contact = await createOrUpdateContact({
           contactID: contact.contactID,
           name: contactValues.client,
-          phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
           firstName: contactValues.contactPersonsFirstName,
           lastName: contactValues.contactPersonsLastName,
           addresses: [
@@ -321,7 +315,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     }
 
     if (!jobTypeValues) {
-      setIntegrationMessage(workspaceId, boardId, item.id, "Job type information is required. Job planning is missing a job type reference.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Job type information is required. Job planning is missing a job type reference.");
       throw new Error("Job type information is required. Job planning is missing a job type reference.");
     }
 
@@ -408,13 +402,16 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
 
     const [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues] = await getNDISMasterPlanReferencedItems(workspaceId, boardId, item.id);
     if (!servicePlanValues) {
-      setIntegrationMessage(workspaceId, boardId, item.id, "Master plan information is required. Master plan is missing a master plan reference.");
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Master plan information is required. Master plan is missing a master plan reference.");
       throw new Error("Master plan information is required. Master plan is missing a master plan reference.");
     }
+    if (!participantProfileValues || typeof participantProfileValues !== 'object') {
+      await setIntegrationMessage(workspaceId, boardId, item.id, "Participant profile information is required. Master plan is missing a participant profile reference.");
+      throw new Error("Participant profile information is required. Master plan is missing a participant profile reference.");
+    }
 
-    let { firstName, lastName } = participantProfileValues;
-    firstName = firstName.trim();
-    lastName = lastName.trim();
+    let firstName = (participantProfileValues.firstName || '').toString().trim();
+    let lastName = (participantProfileValues.lastName || '').toString().trim();
     let contact = await getContactByEmail(participantProfileValues.email);
     if (!contact) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
@@ -423,7 +420,6 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       }
       contact = await createOrUpdateContact({
         name: participantProfileValues.fullName || firstName + ' ' + lastName,
-        phones: [{ phoneType: 'DEFAULT', phoneNumber: participantProfileValues.Phone }],
         firstName: firstName,
         lastName: lastName,
         addresses: [
@@ -451,7 +447,6 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         contact = await createOrUpdateContact({
           contactID: contact.contactID,
           name: participantProfileValues.fullName || firstName + ' ' + lastName,
-          phones: [{ phoneType: 'DEFAULT', phoneNumber: participantProfileValues.Phone }],
           firstName: firstName,
           lastName: lastName,
           addresses: [
@@ -531,7 +526,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           }
 
           if (parseFloat(formatValue(amountValue1)) != parseFloat(formatValue(amount1))) {
-            setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+            await setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
             throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
           }
 
@@ -572,7 +567,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
           }
 
           if (parseFloat(formatValue(amountValue2)) != parseFloat(formatValue(amount2))) {
-            setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+            await setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
             throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
           }
 
@@ -615,7 +610,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         }
 
         if (parseFloat(formatValue(amountValue3)) != parseFloat(formatValue(amount3))) {
-          setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+          await setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
           throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
         }
 
@@ -657,7 +652,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         }
 
         if (parseFloat(formatValue(amountValue4)) != parseFloat(formatValue(amount4))) {
-          setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+          await setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
           throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
         }
 
@@ -695,7 +690,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         }
 
         if (parseFloat(formatValue(amountValue5)) != parseFloat(formatValue(amount5))) {
-          setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+          await setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
           throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
         }
 
@@ -721,7 +716,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         }
 
         if (parseFloat(formatValue(amountValue6)) != parseFloat(formatValue(amount6))) {
-          setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+          await setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
           throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
         }
 
@@ -747,7 +742,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         }
 
         if (parseFloat(formatValue(amountValue7)) != parseFloat(formatValue(amount7))) {
-          setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+          await setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
           throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
         }
 
@@ -774,7 +769,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         }
 
         if (parseFloat(formatValue(amountValue8)) != parseFloat(formatValue(amount8))) {
-          setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+          await setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
           throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
         }
 
@@ -788,7 +783,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       }
     } else {
       if (!cancellationTypeValues) {
-        setIntegrationMessage(workspaceId, boardId, item.id, "Cancellation Type Item not found");
+        await setIntegrationMessage(workspaceId, boardId, item.id, "Cancellation Type Item not found");
         throw new Error("Cancellation Type Item not found");
       }
       const cancellationPercentage1 = Number(cancellationTypeValues?.billableToClient) || 0;
@@ -941,7 +936,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         }
       }
       if (parseFloat(formatValue(amountValue1)) != parseFloat(formatValue(totalCancellationFee))) {
-        setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
+        await setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
         throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
       }
     }
@@ -1109,7 +1104,6 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
       await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
       contact = await createOrUpdateContact({
         name: contactValues.client,
-        phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
         firstName: contactValues.contactPersonsFirstName,
         lastName: contactValues.contactPersonsLastName,
         addresses: [
@@ -1138,7 +1132,6 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
         contact = await createOrUpdateContact({
           contactID: contact.contactID,
           name: contactValues.client,
-          phones: [{ phoneType: 'DEFAULT', phoneNumber: contactValues.phoneNumber }],
           firstName: contactValues.contactPersonsFirstName,
           lastName: contactValues.contactPersonsLastName,
           addresses: [
@@ -1177,7 +1170,15 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
       unitPrice: quoteValues['Unit Price($) - GST Excl.'],
       quantity: quoteValues.Quantity,
       jobDescription: quoteValues['Job Description'] ? quoteValues['Job Description'].toString().replace(/<[^>]*>/g, '') : '',
-      quoteChecklist: lineItems,
+      quoteChecklist: [
+        {
+          itemCode: jobType.code,
+          description: `${quoteValues['Job Title']} - ${quoteValues['Job Description'].toString().replace(/<[^>]*>/g, '')}`,
+          quantity: quoteValues.Quantity,
+          unitAmount: quoteValues['Unit Price($) - GST Excl.'],
+          taxType: quoteValues['GST'] == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
+        }
+      ],
     };
     const xeroQuote = {
       contact: { contactID: contact.contactID },
@@ -1247,7 +1248,6 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
       await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
       contact = await createOrUpdateContact({
         name: NDISQuoteValues['Recipient of the Quote'],
-        phones: [{ phoneType: 'DEFAULT', phoneNumber: NDISQuoteValues['Recipient Phone Number'] }],
         addresses: [
           {
             addressType: 'POBOX',
@@ -1274,7 +1274,6 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
         contact = await createOrUpdateContact({
           contactID: contact.contactID,
           name: NDISQuoteValues['Recipient of the Quote'],
-          phones: [{ phoneType: 'DEFAULT', phoneNumber: NDISQuoteValues['Recipient Phone Number'] }],
           addresses: [
             {
               addressType: 'POBOX',
@@ -1437,7 +1436,6 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
       await setIntegrationMessage(workspaceId, boardId, item.id, "The contact does not exist in Xero, creating...");
       contact = await createOrUpdateContact({
         name: contractorValues.contractor,
-        phones: [{ phoneType: 'DEFAULT', phoneNumber: contractorValues.phoneNumber }],
         firstName: contractorValues.contactPersonsFirstName,
         lastName: contractorValues.contactPersonsLastName,
         addresses: [
@@ -1466,7 +1464,6 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
         contact = await createOrUpdateContact({
           contactID: contact.contactID,
           name: contractorValues.contractor,
-          phones: [{ phoneType: 'DEFAULT', phoneNumber: contractorValues.phoneNumber }],
           firstName: contractorValues.contactPersonsFirstName,
           lastName: contractorValues.contactPersonsLastName,
           addresses: [
@@ -1633,7 +1630,6 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     // Get participant name - for Low-Cat, prefer billing contact if available
     const receiverName = (getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || '').trim() || '';
     const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || '';
-    const participantPhoneNumber = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_PHONE_NUMBER) || '';
     const participantEmail = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_EMAIL_ADDRESS) || '';
     let isLowCatBoard = req.body?.isLowCat || false;
 
@@ -1648,20 +1644,11 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       contact = await getContactByName(receiverName);
     }
     if (!contact && receiverName && receiverName.trim()) {
-      // Format phone number to E.164 format if present
-      let formattedPhone = null;
-      if (participantPhoneNumber && typeof participantPhoneNumber === 'string' && participantPhoneNumber.trim()) {
-        const phoneStr = participantPhoneNumber.trim();
-        // Add + prefix if missing
-        formattedPhone = phoneStr.startsWith('+') ? phoneStr : `+${phoneStr}`;
-      }
-
       // Parse address safely - format: "line1, city, region, postcode"
       const addressParts = billingAddressBase && billingAddressBase.trim() 
         ? billingAddressBase.split(',').map(p => p.trim()).filter(p => p)
         : [];
 
-      // Build contact payload with validated data - use PascalCase for xero-node v13.3.1
       const contactPayload = {
         Name: receiverName,
         FirstName: receiverName.split(' ')[0] || '',
@@ -1669,14 +1656,6 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         ContactStatus: 'ACTIVE',
         EmailAddress: participantEmail && participantEmail.trim() ? participantEmail : undefined
       };
-
-      // Only add phone if properly formatted
-      if (formattedPhone) {
-        contactPayload.Phones = [{
-          PhoneType: 'DEFAULT',
-          PhoneNumber: formattedPhone
-        }];
-      }
 
       // Only add address if we have sufficient data (at least address line)
       if (addressParts.length >= 1) {
@@ -1711,6 +1690,9 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
     const gstType = "EXEMPTOUTPUT"; // GST 10% for Low-Cat, GST Free for others
     let totalAmount = 0;
 
+    const accounts = await getAccounts(workspaceId);
+    const salesAccountCode = accounts.find(acc => acc.Type === 'REVENUE')?.Code || '200';
+
     for (const item of items) {
       // Use service from Service Records table (item.service) as the primary source for description
       // This matches what's shown in the Service Records table
@@ -1735,11 +1717,6 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 
       // For Low-Cat, use total amount; for others, use participant contribution if available
       const lineAmount = isLowCatBoard? totalItemAmount : participantContributionAmount;
-      // Get valid account codes
-      const accounts = await getAccounts(workspaceId);
-      const salesAccountCode = accounts.find(acc =>
-        acc.Type === 'REVENUE'
-      )?.Code || '200'; // Default to '200' if no revenue account found
 
       if (lineAmount > 0) {
         const calculatedUnitPrice = quantity > 0 ? lineAmount / quantity : (unitPrice > 0 ? unitPrice : lineAmount);

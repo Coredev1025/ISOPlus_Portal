@@ -191,10 +191,14 @@ export async function createInvoice(invoice) {
         }
         const tenantId = xeroClient.tenants[0].tenantId;
 
+        const contactID = invoice.contact?.contactID || invoice.contactID;
+        if (!contactID) {
+            throw new Error('Invoice validation failed: contactID is required.');
+        }
         const invoiceData = {
             invoices: [{
                 type: invoice.type || 'ACCREC',
-                contact: { contactID: invoice.contact.contactID },
+                contact: { contactID },
                 reference: invoice.reference,
                 date: new Date(invoice.date).toISOString().split('T')[0],
                 dueDate: new Date(invoice.dueDate).toISOString().split('T')[0], // YYYY-MM-DD format
@@ -218,23 +222,25 @@ export async function createInvoice(invoice) {
 
         return response.body.invoices[0];
     } catch (err) {
-        let jsonString = Object.values(err).join('');
-        let errorMessage = JSON.parse(jsonString);
-        if (errorMessage.response?.statusCode === 403) {
+        const statusCode = err.response?.statusCode ?? err.response?.body?.statusCode;
+        const body = err.response?.body ?? (typeof err.body === 'object' ? err.body : null);
+
+        if (statusCode === 403) {
             throw new Error('Authentication failed. Please re-authenticate.');
         }
-        if(errorMessage.body?.Type === 'ValidationException') {
-            let validationErrors = "";
-            errorMessage.body.Elements.forEach(element => {
-                validationErrors += element.ValidationErrors.map(error => error.Message).join(', ');
-            });
-            validationErrors = validationErrors.trim();
-            throw new Error(`Xero Invoice Validation Errors: ${validationErrors}`);
+        if (body?.Type === 'ValidationException' && Array.isArray(body.Elements)) {
+            const validationErrors = body.Elements
+                .flatMap((element) => (element.ValidationErrors || []).map((e) => e.Message))
+                .filter(Boolean)
+                .join(', ');
+            if (validationErrors) {
+                throw new Error(`Xero Invoice Validation Errors: ${validationErrors}`);
+            }
         }
-        if (errorMessage.response?.body) {
-            throw new Error(`Xero API Error: ${JSON.stringify(errorMessage.response.body)}`);
+        if (body && typeof body === 'object') {
+            throw new Error(`Xero API Error: ${JSON.stringify(body)}`);
         }
-        throw new Error(`Xero Invoice creation failed: ${err.message}`);
+        throw new Error(`Xero Invoice creation failed: ${err?.message || String(err)}`);
     }
 }
 
@@ -288,17 +294,51 @@ export async function getContactByName(name) {
     }
 }
 
+function buildContactPayload(contact) {
+    const get = (obj, ...keys) => {
+        for (const k of keys) {
+            const v = obj?.[k];
+            if (v !== undefined && v !== null) return v;
+        }
+        return undefined;
+    };
+    const payload = {};
+    const contactID = get(contact, 'contactID', 'ContactID');
+    if (contactID) payload.contactID = contactID;
+    const name = get(contact, 'name', 'Name');
+    if (name !== undefined) payload.name = name;
+    const firstName = get(contact, 'firstName', 'FirstName');
+    if (firstName !== undefined) payload.firstName = firstName;
+    const lastName = get(contact, 'lastName', 'LastName');
+    if (lastName !== undefined) payload.lastName = lastName;
+    const emailAddress = get(contact, 'emailAddress', 'EmailAddress');
+    if (emailAddress !== undefined) payload.emailAddress = emailAddress;
+    const addresses = get(contact, 'addresses', 'Addresses');
+    if (addresses !== undefined && Array.isArray(addresses) && addresses.length > 0) {
+        payload.addresses = addresses.map(addr => {
+            if (typeof addr !== 'object' || addr === null) return addr;
+            return {
+                addressType: addr.addressType ?? addr.AddressType,
+                addressLine1: addr.addressLine1 ?? addr.AddressLine1,
+                city: addr.city ?? addr.City,
+                region: addr.region ?? addr.Region,
+                postalCode: addr.postalCode ?? addr.PostalCode
+            };
+        });
+    }
+    return payload;
+}
+
 export async function createOrUpdateContact(contact) {
     try {
+        const payload = buildContactPayload(contact);
         const { xeroTenantId } = await createToken();
         const contacts = {
-            contacts: [contact],
+            contacts: [payload],
         };
 
-        console.log(contact);
-
         let response;
-        if (!contact.contactID) {
+        if (!payload.contactID) {
             response = await xeroClient.accountingApi.createContacts(
                 xeroTenantId,
                 contacts
@@ -306,7 +346,7 @@ export async function createOrUpdateContact(contact) {
         } else {
             response = await xeroClient.accountingApi.updateContact(
                 xeroTenantId,
-                contact.contactID,
+                payload.contactID,
                 contacts
             );
         }
@@ -314,18 +354,37 @@ export async function createOrUpdateContact(contact) {
         return response.body.contacts[0];
     } catch (err) {
         error('Xero-Service', 'Error creating or updating contact in Xero', err);
+
+        const statusCode = err.response?.statusCode;
+        if (statusCode === 403) {
+            throw new Error('Error creating or updating contact in Xero: Permission denied. Ensure your app has accounting.contacts scope.');
+        }
+        if (statusCode === 401) {
+            throw new Error('Error creating or updating contact in Xero: Authentication expired. Please re-authenticate.');
+        }
+
         let detail = '';
+        let rawBody = null;
         try {
-            const errObj = typeof err.response?.body === 'object' ? err.response.body : null;
+            const body = err.response?.body ?? err.body;
+            const errObj = typeof body === 'object' ? body : (typeof body === 'string' ? (() => { try { return JSON.parse(body); } catch { return null; } })() : null);
+            rawBody = errObj ?? body;
+
             if (errObj?.Type === 'ValidationException' && errObj.Elements?.length) {
-                detail = errObj.Elements
+                const validationMessages = errObj.Elements
                     .flatMap((el) => (el.ValidationErrors || []).map((e) => e.Message))
-                    .filter(Boolean)
-                    .join('; ') || '';
+                    .filter(Boolean);
+                if (validationMessages.length) {
+                    detail = validationMessages.join('; ');
+                }
             }
         } catch (_) { /* ignore parse errors */ }
-        const message = detail || err?.message || '';
-        throw new Error(message ? `Error creating or updating contact in Xero: ${message}` : 'Error creating or updating contact in Xero');
+
+        const statusPart = statusCode != null ? ` [HTTP ${statusCode}]` : '';
+        const detailPart = detail || err?.message || '';
+        const apiDetailPart = rawBody != null ? ` Xero API response: ${typeof rawBody === 'object' ? JSON.stringify(rawBody) : String(rawBody)}` : '';
+        const message = `Error creating or updating contact in Xero${statusPart}. ${detailPart}${apiDetailPart}`.trim();
+        throw new Error(message);
     }
 }
 
@@ -539,9 +598,7 @@ export async function getAccounts(workspaceId) {
         if (!isValidWorkspaceId(workspaceId)) {
             throw new Error('Invalid workspace Id');
         }
-        
-        await configure();
-        
+        if (!xeroClient) await configure();
         await ensureAuthenticated(workspaceId);
 
         await xeroClient.updateTenants();
