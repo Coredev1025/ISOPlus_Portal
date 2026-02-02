@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Calendar, User, FileText, AlertCircle, FileCheck, FileSpreadsheet } from "lucide-react";
+import { ArrowLeft, Calendar, User, FileText, AlertCircle, FileCheck, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useState, useEffect, useMemo } from "react";
@@ -107,6 +107,10 @@ interface BudgetRecord {
   deliveredAmountRaw?: number;
   adjustmentAmount: number;
   remainingBalance: number;
+  /** Remaining ... as at End of Month ($) - from formula: Total Available + Delivered ($-) + Adjustments */
+  remainingBalanceEndOfMonth?: number;
+  /** Remaining ... for Allocation Period ($) - for ATS/ATO/HMB: End of Month + Committed - to be delivered */
+  remainingBalanceAllocationPeriod?: number;
   fundClassification?: string | null;
   fundAmount?: number;
   fund?: string;
@@ -127,8 +131,10 @@ interface BudgetCategory {
   code: string;
   availableFunds: number;
   remainingBudget: number;
+  /** For ATS/ATO/HMB: Remaining ... Balance for Allocation Period ($) - used for blue bar */
+  remainingBalanceAllocationPeriod?: number;
   services?: ServiceRecord[];
-  fundingEndDate?: string;
+  fundingEndDate?: string | null;
   committedFunds?: number;
   quarterStartMonth?: string;
   quarterEndMonth?: string;
@@ -620,6 +626,8 @@ export default function MonthlyStatement() {
   });
   const [exportingSection, setExportingSection] = useState<null | 'budget-csv' | 'service-csv' | 'statement-pdf' | 'budget-HSQ' | 'budget-ATS' | 'budget-ATO' | 'budget-HMB' | 'budget-RCP' | 'budget-EOL' | 'budget-HSCM'>(null);
   const [businessDetailsErrors, setBusinessDetailsErrors] = useState<string[]>([]);
+  const [serviceSortBy, setServiceSortBy] = useState<'scheduledServiceDate' | 'serviceDeliveryDate' | ''>('scheduledServiceDate');
+  const [serviceSortOrder, setServiceSortOrder] = useState<'asc' | 'desc'>('asc');
 
 
   // Budget data will come from the API response
@@ -767,11 +775,14 @@ export default function MonthlyStatement() {
   };
 
   const downloadCsv = (content: string, filename: string) => {
-    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    // Prepend BOM for Excel to recognise UTF-8
+    const bom = '\uFEFF';
+    const blob = new Blob([bom + content], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
     link.setAttribute('download', filename);
+    link.style.display = 'none';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -798,7 +809,7 @@ export default function MonthlyStatement() {
 
   const serviceTotalPages = Math.max(1, Math.ceil((servicePagination.total || 0) / (servicePagination.limit || 1)));
 
-  const fetchServiceItems = async (page: number = 1, limit: number = servicePagination.limit) => {
+  const fetchServiceItems = async (page: number = 1, limit: number = servicePagination.limit, sortBy?: 'scheduledServiceDate' | 'serviceDeliveryDate' | '', sortOrder?: 'asc' | 'desc') => {
     if (!selectedParticipant || !selectedMonth || !selectedYear) {
       return;
     }
@@ -823,6 +834,7 @@ export default function MonthlyStatement() {
             year: selectedYear,
             servicePage: page,
             serviceLimit: limit,
+            ...((sortBy ?? serviceSortBy) ? { serviceSortBy: sortBy ?? serviceSortBy, serviceSortOrder: (sortOrder ?? serviceSortOrder) || 'asc' } : {}),
           },
           headers: {
             'Content-Type': 'application/json',
@@ -1064,7 +1076,8 @@ export default function MonthlyStatement() {
             budgetPage: budgetPagination.page,
             budgetLimit: budgetPagination.limit,
             servicePage: servicePagination.page,
-            serviceLimit: servicePagination.limit
+            serviceLimit: servicePagination.limit,
+            ...(serviceSortBy ? { serviceSortBy, serviceSortOrder: serviceSortOrder || 'asc' } : {}),
           },
           headers: {
             'Content-Type': 'application/json',
@@ -1768,10 +1781,11 @@ export default function MonthlyStatement() {
       case 'Remaining HM Balance as at the End of the Month ($)':
       case 'Remaining Restorative Care Balance as at the End of the Month ($)':
       case 'Remaining End-of-Life Care Balance as at the End of the Month ($)':
+        return item.remainingBalanceEndOfMonth ?? item.remainingBalance ?? 0;
       case 'Remaining AT - Short-term Balance for Allocation Period ($)':
       case 'Remaining AT - Ongoing Balance for Allocation Period ($)':
       case 'Remaining HM Balance for Allocation Period ($)':
-        return item.remainingBalance ?? 0;
+        return item.remainingBalanceAllocationPeriod ?? item.remainingBalance ?? 0;
       case 'Committed AT Short-term Funds - to be delivered ($-)':
       case 'Committed AT Ongoing Funds - to be delivered ($-)':
       case 'Committed HM Funds - to be delivered ($-)':
@@ -1837,6 +1851,15 @@ export default function MonthlyStatement() {
       return parseBudgetNumber(rawValue).toFixed(2);
     }
     return normalizeBudgetValue(rawValue);
+  };
+
+  // Sanitize HTML for safe display in Notes (allow common inline/block tags, strip scripts and event handlers)
+  const sanitizeNotesHtml = (html: string): string => {
+    if (!html || typeof html !== 'string') return '';
+    return html
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      .replace(/\s*on\w+\s*=\s*["'][^"']*["']/gi, '')
+      .replace(/\s*on\w+\s*=\s*[^\s>]*/gi, '');
   };
 
   const getServiceProviderLabel = (service: ServiceRecord) => {
@@ -1979,19 +2002,39 @@ export default function MonthlyStatement() {
       return { start: 'October', end: 'December' };
     };
 
+    // When last month of quarter is selected, Blue bar shows next quarter's range (e.g. April - June).
+    const getNextQuarterRange = () => {
+      const monthNum = parseInt(normalizedMonthNumber, 10) || 1;
+      if (monthNum <= 3) return { start: 'April', end: 'June' };
+      if (monthNum <= 6) return { start: 'July', end: 'September' };
+      if (monthNum <= 9) return { start: 'October', end: 'December' };
+      return { start: 'January', end: 'March' };
+    };
+
     const defaultQuarterRange = getQuarterRange();
 
     // 1st Chart: Home Support Quarterly Budget (HSQ)
     const homeSupport = categoryLookup.get('HSQ') ?? ({ code: 'HSQ' } as BudgetCategory);
     {
-      const available = positive(homeSupport.availableFunds);
+      // Available fund = Available Fund at Start of Month + Classification Quarterly Budget Adjustment (per spec)
+      const available = positive(
+        toNumber(homeSupport.availableFundStart) + toNumber(homeSupport.quarterlyAdjustment)
+      );
       const expenditure = calculateExpenditure(homeSupport, { signed: true });
       const remaining = positive(homeSupport.remainingBudget);
       const quarterStart = homeSupport.quarterStartMonth ?? defaultQuarterRange.start;
       const quarterEnd = homeSupport.quarterEndMonth ?? defaultQuarterRange.end;
-      const balanceLabel = quarterEnd
-        ? (nextMonthLabel === quarterEnd ? 'Next quarter' : `${nextMonthLabel} - ${quarterEnd}`)
-        : nextMonthLabel;
+      const selectedMonthNum = parseInt(normalizedMonthNumber, 10) || 1;
+      const isLastMonthOfQuarter = [3, 6, 9, 12].includes(selectedMonthNum);
+      // Blue bar label: when last month of quarter, show next quarter range (e.g. "April - June"); otherwise "W - Y" where W is month after selected, Y is quarter end
+      const balanceLabel = isLastMonthOfQuarter
+        ? (() => {
+            const nextQ = getNextQuarterRange();
+            return `${nextQ.start} - ${nextQ.end}`;
+          })()
+        : quarterEnd
+          ? (nextMonthLabel === quarterEnd ? 'Next quarter' : `${nextMonthLabel} - ${quarterEnd}`)
+          : nextMonthLabel;
       const hsqBalanceLabel = `Available balance ${balanceLabel}`;
 
       pushChartConfig({
@@ -2017,8 +2060,7 @@ export default function MonthlyStatement() {
         metrics: [
           { label: 'Available funds', value: available },
           { label: 'Remaining budget', value: remaining },
-        ],
-        serviceCount: homeSupport.serviceCount
+        ]
       });
     }
 
@@ -2029,7 +2071,10 @@ export default function MonthlyStatement() {
       const isAssistive = code === 'ATS' || code === 'ATO';
       const isHomeModification = code === 'HMB';
       const expenditure = calculateExpenditure(category, { signed: isAssistive || isHomeModification });
-      const remaining = positive(category.remainingBudget);
+      // Blue bar: ATS/ATO use Remaining ... Balance for Allocation Period ($) per spec
+      const remaining = positive(
+        category.remainingBalanceAllocationPeriod ?? category.remainingBudget
+      );
       const committed = Math.abs(toNumber(category.committedFunds ?? 0));
       const committedLabel =
         code === 'ATS'
@@ -2037,7 +2082,11 @@ export default function MonthlyStatement() {
           : code === 'ATO'
             ? 'Committed AT Ongoing Funds'
             : 'Committed HM Funds';
-      const remainingLabel = `Remaining budget ${formatDate(category.fundingEndDate)}`;
+      // Date A = Funding End Date for selected month/year; show N/A when not available (dynamic per selection)
+      const fundingEndDisplay = category.fundingEndDate != null && String(category.fundingEndDate).trim() !== ''
+        ? formatDate(category.fundingEndDate)
+        : 'N/A';
+      const remainingLabel = `Remaining budget ${fundingEndDisplay}`;
       const subtitle = isAssistive
         ? 'Assistive Technology'
         : isHomeModification
@@ -2076,8 +2125,7 @@ export default function MonthlyStatement() {
           { label: 'Available funds', value: available },
           { label: 'Remaining budget', value: remaining },
           { label: 'Committed funds', value: committed },
-        ],
-        serviceCount: category.serviceCount
+        ]
       });
     };
 
@@ -2085,13 +2133,16 @@ export default function MonthlyStatement() {
     addAssistiveOrModificationChart('ATO', 'Assistive Technology - Ongoing Budget');
     addAssistiveOrModificationChart('HMB', 'Home Modification Budget');
 
-    // 5th, 6th Charts: Restorative Care & End-of-Life
+    // 5th, 6th Charts: Restorative Care & End-of-Life (per spec: Purple = Spending from previous months, Red = expenditure, Blue = Total Available Budget)
     const addRestorativeChart = (code: 'RCP' | 'EOL', title: string) => {
       const category = categoryLookup.get(code) ?? ({ code } as BudgetCategory);
+      // Purple: Spending from previous month(s) = Fund Amount ($) - Available Fund at the Start of the Month ($)
       const previousSpending = getPreviousSpendingValue(category);
       const available = positive(category.availableFunds);
+      // Blue bar per spec: value = Total Available Budget for Restorative Care ($) / End-of-Life Care ($)
       const totalAvailable = positive(category.totalAvailableBudget ?? category.availableFunds ?? 0);
-      const expenditure = calculateExpenditure(category);
+      // Red: [Month] expenditure = Service Delivered During the Month ($-) + Adjustments from Previous Months (signed then abs)
+      const expenditure = calculateExpenditure(category, { signed: true });
       const remaining = positive(category.remainingBudget);
 
       const remainingLabel = `Remaining budget ${formatDate(category.fundingEndDate)}`;
@@ -2120,15 +2171,14 @@ export default function MonthlyStatement() {
             label: remainingLabel,
             shortLabel: remainingLabel,
             value: totalAvailable,
-            color: '#2563eb' // Blue
+            color: '#2563eb' // Blue - per spec: height = Total Available Budget
           }
         ],
         metrics: [
           { label: 'Total available budget', value: totalAvailable },
           { label: 'Previous spending', value: previousSpending },
           { label: 'Remaining balance', value: remaining },
-        ],
-        serviceCount: category.serviceCount
+        ]
       });
     };
 
@@ -2358,18 +2408,10 @@ export default function MonthlyStatement() {
                           <p className="text-xs uppercase text-muted-foreground tracking-wide">{chart.subtitle}</p>
                           <h4 className="text-base font-semibold leading-tight">{chart.title}</h4>
                         </div>
-                        {(chart.serviceCount ?? 0) > 0 && (
-                          <Badge
-                            variant="secondary"
-                            className="text-[11px] px-2 py-1 font-medium"
-                          >
-                            {(chart.serviceCount ?? 0).toLocaleString()} services
-                          </Badge>
-                        )}
                       </div>
 
-                      <ChartContainer config={chart.chartConfig} className="w-full h-56">
-                        <BarChart data={chart.data} margin={{ left: 0, right: 0, top: 10 }}>
+                      <ChartContainer config={chart.chartConfig} className="w-full min-h-[14rem] h-56">
+                        <BarChart data={chart.data} margin={{ left: 0, right: 0, top: 10 }} barCategoryGap="12%">
                           <CartesianGrid strokeDasharray="3 3" vertical={false} />
                           <XAxis
                             dataKey="shortLabel"
@@ -2401,17 +2443,6 @@ export default function MonthlyStatement() {
                         <p className="text-xs text-muted-foreground text-center">
                           No data available for this period.
                         </p>
-                      )}
-
-                      {chart.metrics.length > 0 && (
-                        <div className="grid grid-cols-2 gap-3">
-                          {chart.metrics.map((metric) => (
-                            <div key={`${chart.code}-${metric.label}`}>
-                              <p className="text-xs text-muted-foreground">{metric.label}</p>
-                              <p className="text-sm font-semibold text-foreground">{formatCurrency(metric.value)}</p>
-                            </div>
-                          ))}
-                        </div>
                       )}
                     </div>
                   ))}
@@ -2579,8 +2610,38 @@ export default function MonthlyStatement() {
                         <TableHead className="whitespace-nowrap">Participant</TableHead>
                         <TableHead className="whitespace-nowrap">Service</TableHead>
                         <TableHead className="whitespace-nowrap">Service Provider</TableHead>
-                        <TableHead className="whitespace-nowrap">Scheduled Service Date</TableHead>
-                        <TableHead className="whitespace-nowrap">Service Delivery Date</TableHead>
+                        <TableHead className="whitespace-nowrap">
+                          <button
+                            type="button"
+                            className={`inline-flex items-center gap-1 hover:text-foreground ${serviceSortBy === 'scheduledServiceDate' ? 'text-red-600' : 'text-muted-foreground'}`}
+                            onClick={() => {
+                              const isActive = serviceSortBy === 'scheduledServiceDate';
+                              const nextOrder = isActive && serviceSortOrder === 'asc' ? 'desc' : 'asc';
+                              setServiceSortBy('scheduledServiceDate');
+                              setServiceSortOrder(nextOrder);
+                              fetchServiceItems(1, servicePagination.limit, 'scheduledServiceDate', nextOrder);
+                            }}
+                          >
+                            Scheduled Service Date
+                            {serviceSortBy === 'scheduledServiceDate' ? (serviceSortOrder === 'asc' ? <ArrowUp className="h-3.5 w-3.5 shrink-0" /> : <ArrowDown className="h-3.5 w-3.5 shrink-0" />) : <ArrowUpDown className="h-3.5 w-3.5 shrink-0" />}
+                          </button>
+                        </TableHead>
+                        <TableHead className="whitespace-nowrap">
+                          <button
+                            type="button"
+                            className={`inline-flex items-center gap-1 hover:text-foreground ${serviceSortBy === 'serviceDeliveryDate' ? 'text-red-600' : 'text-muted-foreground'}`}
+                            onClick={() => {
+                              const nextBy = 'serviceDeliveryDate';
+                              const nextOrder = serviceSortBy === 'serviceDeliveryDate' && serviceSortOrder === 'asc' ? 'desc' : 'asc';
+                              setServiceSortBy(nextBy);
+                              setServiceSortOrder(nextOrder);
+                              fetchServiceItems(1, servicePagination.limit, nextBy, nextOrder);
+                            }}
+                          >
+                            Service Delivery Date
+                            {serviceSortBy === 'serviceDeliveryDate' ? (serviceSortOrder === 'asc' ? <ArrowUp className="h-3.5 w-3.5 shrink-0" /> : <ArrowDown className="h-3.5 w-3.5 shrink-0" />) : <ArrowUpDown className="h-3.5 w-3.5 shrink-0" />}
+                          </button>
+                        </TableHead>
                         <TableHead className="whitespace-nowrap">Transaction Status</TableHead>
                         <TableHead className="whitespace-nowrap">Committed AT-HM for Delivery</TableHead>
                         <TableHead className="whitespace-nowrap">Unit</TableHead>
@@ -2625,9 +2686,9 @@ export default function MonthlyStatement() {
                           </TableCell>
                           <TableCell className="text-center">
                             {service.committedAtHmForDelivery && service.committedAtHmForDelivery > 0 ? (
-                              <Badge variant="outline" className="text-xs">Yes</Badge>
+                              <span className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-blue-500 text-white">Yes</span>
                             ) : (
-                              <Badge variant="secondary" className="text-xs">No</Badge>
+                              <span className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-white text-foreground border border-input">No</span>
                             )}
                           </TableCell>
                           <TableCell className="whitespace-nowrap">{service.unit || '-'}</TableCell>
@@ -2637,7 +2698,16 @@ export default function MonthlyStatement() {
                           <TableCell className="text-right">{formatCurrency(service.govSubsidy ?? 0)}</TableCell>
                           <TableCell className="text-right">{formatCurrency(service.participantContribution ?? 0)}</TableCell>
                           <TableCell className="min-w-[150px]">{service.fundingSource || 'N/A'}</TableCell>
-                          <TableCell className="max-w-[250px]">{service.notes || 'N/A'}</TableCell>
+                          <TableCell className="max-w-[250px]">
+                            {service.notes && service.notes.trim() ? (
+                              <div
+                                className="notes-cell text-sm prose prose-p:my-0.5 prose-p:leading-tight max-w-none"
+                                dangerouslySetInnerHTML={{ __html: sanitizeNotesHtml(service.notes) }}
+                              />
+                            ) : (
+                              'N/A'
+                            )}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

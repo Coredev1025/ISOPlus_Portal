@@ -74,12 +74,6 @@ export async function enableBoardSync(authorization, workspaceId, boardId) {
   }
 }
 
-/**
- * Disable sync for a board
- * @param {string} boardId - Board ID
- * @param {string} authorization - ISO+ authorization token (optional, for webhook removal)
- * @returns {Promise<Object>} Result
- */
 export async function disableBoardSync(boardId, authorization = null) {
   try {
     info('Sync-Service', 'Disabling sync for board', { boardId });
@@ -430,13 +424,6 @@ export async function triggerManualSync(authorization, workspaceId, boardId) {
   }
 }
 
-/**
- * Cancel sync for a board
- * This cancels any running sync jobs and sets status to cancelled
- * @param {string} boardId - Board ID
- * @param {string} authorization - ISO+ authorization token (optional, for webhook removal)
- * @returns {Promise<Object>} Result
- */
 export async function cancelBoardSync(boardId, authorization = null) {
   try {
     info('Sync-Service', 'Cancelling sync for board', { boardId });
@@ -538,14 +525,6 @@ export async function cancelBoardSync(boardId, authorization = null) {
   }
 }
 
-/**
- * Start backlog sync after successful validation
- * This is called automatically by the worker after validation succeeds
- * @param {string} authorization - ISO+ authorization token
- * @param {string} workspaceId - Workspace ID
- * @param {string} boardId - Board ID
- * @returns {Promise<Object>} Result
- */
 export async function startBacklogSync(authorization, workspaceId, boardId) {
   try {
     info('Sync-Service', 'Starting backlog sync for board', { workspaceId, boardId });
@@ -586,12 +565,6 @@ export async function startBacklogSync(authorization, workspaceId, boardId) {
   }
 }
 
-/**
- * Enable sync for all boards in a workspace
- * @param {string} authorization - ISO+ authorization token
- * @param {string} workspaceId - Workspace ID
- * @returns {Promise<Object>} Result
- */
 export async function enableWorkspaceSync(authorization, workspaceId) {
   try {
     info('Sync-Service', 'Enabling sync for all boards in workspace', { workspaceId });
