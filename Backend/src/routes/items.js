@@ -65,6 +65,7 @@ const ATTRIBUTE_NAMES = {
         'Participant Portion HCP Unspent Funds ($)'
     ],
     PREVIOUS_MONTH_SPENDING: 'Spending from Previous Month(s) within same Quarter ($)',
+    PREVIOUS_MONTH_SPENDING_ALLOCATED_PERIOD: 'Spending from Previous Month(s) within Allocated Period ($)',
     MONTH_LABEL: 'Month',
     FUNDING_START_DATE: 'Funding Start Date',
     FUNDING_END_DATE: 'Funding End Date',
@@ -87,6 +88,8 @@ const ATTRIBUTE_NAMES = {
         'Home Modification Delivered During the Month ($-)',
         'Home Modification Delivered During the Month'
     ],
+    RESTORATIVE_CARE_DELIVERED: 'Restorative Care Delivered During the Month ($-)',
+    END_OF_LIFE_DELIVERED: 'End-of-Life Care Delivered During the Month ($-)',
     HOME_SUPPORT_ADJUSTMENTS: 'Adjustments from Previous Months [Charges($-)/Refund($)]',
     REMAINING_HOME_SUPPORT_BALANCE: 'Remaining Home Support Balance as at the End of the Month ($)',
     COMMITTED_AT_SHORT_TERM: 'Committed AT Short-term Funds - to be delivered ($-)',
@@ -255,15 +258,23 @@ const REF_ATTRIBUTE_NAMES = {
     TOTAL_BUDGET_HOME_SUPPORT: 'Total Available Budget for Home Support ($)',
     REMAINING_HOME_SUPPORT: 'Remaining Home Support Balance as at the End of the Month ($)',
     TOTAL_BUDGET_RESTORATIVE: 'Total Available Budget for Restorative Care ($)',
+    TOTAL_FUND_RESTORATIVE: 'Total Available Fund for Restorative Care ($)',
     REMAINING_RESTORATIVE: 'Remaining Balance for Allocation Period ($)',
     TOTAL_BUDGET_END_OF_LIFE: 'Total Available Budget for End-of-Life Care ($)',
+    TOTAL_FUND_END_OF_LIFE: 'Total Available Fund for End-of-Life Care ($)',
     TOTAL_BUDGET_AT_SHORT_TERM: 'Total Available Budget for Assistive Technology - Short-term ($)',
+    TOTAL_FUND_AT_SHORT_TERM: 'Total Available Fund for AT - Short-term ($)',
+    REMAINING_AT_SHORT_TERM_END_OF_MONTH: 'Remaining AT - Short-term Balance as at the End of the Month ($)',
     REMAINING_AT_SHORT_TERM: 'Remaining AT - Short-term Balance for Allocation Period ($)',
     COMMITTED_AT_SHORT_TERM: 'Committed AT Short-term Funds - to be delivered ($-)',
     TOTAL_BUDGET_AT_ONGOING: 'Total Available Budget for Assistive Technology - Ongoing ($)',
+    TOTAL_FUND_AT_ONGOING: 'Total Available Fund for AT Ongoing ($)',
+    REMAINING_AT_ONGOING_END_OF_MONTH: 'Remaining AT - Ongoing Balance as at the End of the Month ($)',
     REMAINING_AT_ONGOING: 'Remaining AT - Ongoing Balance for Allocation Period ($)',
     COMMITTED_AT_ONGOING: 'Committed AT Ongoing Funds - to be delivered ($-)',
     TOTAL_BUDGET_HOME_MOD: 'Total Available Budget for Home Modification ($)',
+    TOTAL_FUND_HM: 'Total Available Fund for HM ($)',
+    REMAINING_HM_END_OF_MONTH: 'Remaining HM Balance as at the End of the Month ($)',
     REMAINING_HOME_MOD: 'Remaining HM Balance for Allocation Period ($)',
     COMMITTED_HOME_MOD: 'Committed HM Funds - to be delivered ($-)',
     FUNDING_END_DATE: 'Funding End Date',
@@ -430,22 +441,24 @@ const getServiceFromServicePlan = (servicePlanItem) => {
     if (!servicePlanItem) return null;
 
     const servicePlanIdValue = getValueFromFlatData(servicePlanItem, REF_ATTRIBUTE_NAMES.SERVICE_PLAN_ID);
-    if (!servicePlanIdValue) {
-        if (servicePlanItem.data) {
-            warn('Items-Service', 'No Service Plan ID found in service plan item', {
-                itemId: servicePlanItem.itemId,
-                availableKeys: Object.keys(servicePlanItem.data).slice(0, 10)
-            });
+    if (servicePlanIdValue) {
+        const servicePlanIdStr = String(servicePlanIdValue).trim();
+        if (servicePlanIdStr.includes('-')) {
+            const parts = servicePlanIdStr.split('-');
+            const fromId = parts.length >= 2 ? parts.slice(1).join('-').trim() : servicePlanIdStr;
+            if (fromId) return fromId;
+        } else if (servicePlanIdStr) {
+            return servicePlanIdStr;
         }
-        return null;
     }
 
-    const servicePlanIdStr = String(servicePlanIdValue).trim();
-    if (servicePlanIdStr.includes('-')) {
-        const parts = servicePlanIdStr.split('-');
-        return parts.length >= 2 ? parts.slice(1).join('-').trim() : servicePlanIdStr;
+    // Fallback: use "Service" attribute from the service plan item (fixes blank Service for some rows)
+    const serviceAttr = getValueFromFlatData(servicePlanItem, [REF_ATTRIBUTE_NAMES.SERVICE, 'Service']);
+    if (serviceAttr) {
+        if (typeof serviceAttr === 'object' && serviceAttr.name) return serviceAttr.name;
+        return String(serviceAttr).trim();
     }
-    return servicePlanIdStr;
+    return null;
 };
 
 const getServiceIdentifierFromServicePlan = (servicePlanItem, refItemsMap) => {
@@ -1576,7 +1589,9 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             budgetPage = 1,
             budgetLimit: budgetLimitParam,
             servicePage = 1,
-            serviceLimit: serviceLimitParam
+            serviceLimit: serviceLimitParam,
+            serviceSortBy,
+            serviceSortOrder = 'asc'
         } = req.query;
 
         if (!workspaceId || !boardId) {
@@ -2023,7 +2038,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
 
             const totalAvailableBudgetHomeSupport = getNumberFromItem(item, ATTRIBUTE_NAMES.TOTAL_AVAILABLE_HOME_SUPPORT);
             let totalAvailableBudget = totalAvailableBudgetHomeSupport;
-            if (!totalAvailableBudget) {
+            if (!totalAvailableBudget && categoryCode === 'HSQ') {
                 totalAvailableBudget =
                     availableFundStart +
                     quarterlyAdjustment +
@@ -2034,6 +2049,29 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                     participantUnspent +
                     previousMonthSpending +
                     unspentReturned;
+            }
+            if (!totalAvailableBudget && categoryCode !== 'HSQ') {
+                // Try both long (Budget) and short (Fund) attribute names used by boards
+                const totalAttrs = (() => {
+                    if (categoryCode === 'RCP') return [REF_ATTRIBUTE_NAMES.TOTAL_BUDGET_RESTORATIVE, REF_ATTRIBUTE_NAMES.TOTAL_FUND_RESTORATIVE];
+                    if (categoryCode === 'EOL') return [REF_ATTRIBUTE_NAMES.TOTAL_BUDGET_END_OF_LIFE, REF_ATTRIBUTE_NAMES.TOTAL_FUND_END_OF_LIFE];
+                    if (categoryCode === 'ATS') return [REF_ATTRIBUTE_NAMES.TOTAL_BUDGET_AT_SHORT_TERM, REF_ATTRIBUTE_NAMES.TOTAL_FUND_AT_SHORT_TERM];
+                    if (categoryCode === 'ATO') return [REF_ATTRIBUTE_NAMES.TOTAL_BUDGET_AT_ONGOING, REF_ATTRIBUTE_NAMES.TOTAL_FUND_AT_ONGOING];
+                    if (categoryCode === 'HMB') return [REF_ATTRIBUTE_NAMES.TOTAL_BUDGET_HOME_MOD, REF_ATTRIBUTE_NAMES.TOTAL_FUND_HM];
+                    return null;
+                })();
+                if (totalAttrs && totalAttrs.length) {
+                    totalAvailableBudget = getNumberFromItem(item, totalAttrs) || 0;
+                }
+                // Fallback for RCP/EOL: Total Available = Available Fund at Start + Primary Supplement + Spending from Previous Month(s) within Allocated Period (per formula)
+                if (!totalAvailableBudget && (categoryCode === 'RCP' || categoryCode === 'EOL')) {
+                    const previousSpendingAllocated = getNumberFromItem(item, ATTRIBUTE_NAMES.PREVIOUS_MONTH_SPENDING_ALLOCATED_PERIOD) || 0;
+                    totalAvailableBudget = availableFundStart + primarySupplementAmount + previousSpendingAllocated;
+                }
+                // Fallback for other categories: use Available Fund at Start of Month
+                if (!totalAvailableBudget && availableFundStart) {
+                    totalAvailableBudget = availableFundStart;
+                }
             }
 
             const deliveredAmountRaw = (() => {
@@ -2046,15 +2084,17 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 if (categoryCode === 'HMB') {
                     return getNumberFromItem(item, ATTRIBUTE_NAMES.HOME_MODIFICATION_DELIVERED);
                 }
+                if (categoryCode === 'RCP') {
+                    return getNumberFromItem(item, ATTRIBUTE_NAMES.RESTORATIVE_CARE_DELIVERED);
+                }
+                if (categoryCode === 'EOL') {
+                    return getNumberFromItem(item, ATTRIBUTE_NAMES.END_OF_LIFE_DELIVERED);
+                }
                 return getNumberFromItem(item, ATTRIBUTE_NAMES.HOME_SUPPORT_DELIVERED);
             })();
             const adjustmentAmount = getNumberFromItem(item, ATTRIBUTE_NAMES.HOME_SUPPORT_ADJUSTMENTS);
             const primarySupplementValue = getValueFromItemMulti(item, 'Primary Supplement');
             const primarySupplementLabel = resolveReferenceValue(primarySupplementValue, primarySupplementMap);
-            const remainingBalanceRawValue = getValueFromItemMulti(item, ATTRIBUTE_NAMES.REMAINING_HOME_SUPPORT_BALANCE);
-            const remainingBalance = (remainingBalanceRawValue === null || remainingBalanceRawValue === undefined)
-                ? (totalAvailableBudget + deliveredAmountRaw + adjustmentAmount)
-                : parseNumberValue(remainingBalanceRawValue);
             const fundClassification = getLabelFromItem(item, ATTRIBUTE_NAMES.FUND_CLASSIFICATION);
             const fundAmount = getNumberFromItem(item, ATTRIBUTE_NAMES.FUND_AMOUNT);
             const fund = getTextFromItem(item, ATTRIBUTE_NAMES.FUND_TEXT);
@@ -2071,6 +2111,39 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             } else if (categoryCode === 'HMB') {
                 committedFunds = committedHM;
             }
+
+            // Remaining as at End of Month = Total Available + Delivered ($-) + Adjustments (per formula)
+            const remainingEndOfMonthAttr = (() => {
+                if (categoryCode === 'HSQ') return ATTRIBUTE_NAMES.REMAINING_HOME_SUPPORT_BALANCE;
+                if (categoryCode === 'ATS') return REF_ATTRIBUTE_NAMES.REMAINING_AT_SHORT_TERM_END_OF_MONTH;
+                if (categoryCode === 'ATO') return REF_ATTRIBUTE_NAMES.REMAINING_AT_ONGOING_END_OF_MONTH;
+                if (categoryCode === 'HMB') return REF_ATTRIBUTE_NAMES.REMAINING_HM_END_OF_MONTH;
+                if (categoryCode === 'RCP' || categoryCode === 'EOL') return null; // RCP/EOL use single remaining
+                return ATTRIBUTE_NAMES.REMAINING_HOME_SUPPORT_BALANCE;
+            })();
+            const remainingBalanceEndOfMonthRaw = remainingEndOfMonthAttr
+                ? getValueFromItemMulti(item, remainingEndOfMonthAttr)
+                : (categoryCode === 'RCP' || categoryCode === 'EOL' ? getValueFromItemMulti(item, REF_ATTRIBUTE_NAMES.REMAINING_RESTORATIVE) : null);
+            const remainingBalanceEndOfMonth = (remainingBalanceEndOfMonthRaw !== null && remainingBalanceEndOfMonthRaw !== undefined)
+                ? Math.max(0, parseNumberValue(remainingBalanceEndOfMonthRaw))
+                : Math.max(0, totalAvailableBudget + deliveredAmountRaw + adjustmentAmount);
+
+            // For ATS/ATO/HMB: Remaining for Allocation Period = End of Month + Committed - to be delivered ($-) (per formula)
+            let remainingBalanceAllocationPeriod = null;
+            if (categoryCode === 'ATS' || categoryCode === 'ATO' || categoryCode === 'HMB') {
+                const allocationAttr = categoryCode === 'ATS' ? REF_ATTRIBUTE_NAMES.REMAINING_AT_SHORT_TERM
+                    : categoryCode === 'ATO' ? REF_ATTRIBUTE_NAMES.REMAINING_AT_ONGOING
+                        : REF_ATTRIBUTE_NAMES.REMAINING_HOME_MOD;
+                const allocationRaw = getValueFromItemMulti(item, allocationAttr);
+                remainingBalanceAllocationPeriod = (allocationRaw !== null && allocationRaw !== undefined)
+                    ? Math.max(0, parseNumberValue(allocationRaw))
+                    : Math.max(0, remainingBalanceEndOfMonth + committedFunds);
+            }
+
+            // Single remainingBalance: End of Month for HSQ/RCP/EOL; Allocation Period for ATS/ATO/HMB (for table/aggregate)
+            const effectiveRemainingBalance = (categoryCode === 'ATS' || categoryCode === 'ATO' || categoryCode === 'HMB')
+                ? remainingBalanceAllocationPeriod
+                : remainingBalanceEndOfMonth;
 
             const transformedData = {
                 id: item.itemId,
@@ -2096,7 +2169,9 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 deliveredAmount: Math.abs(deliveredAmountRaw) || 0,
                 deliveredAmountRaw,
                 adjustmentAmount,
-                remainingBalance,
+                remainingBalance: effectiveRemainingBalance,
+                remainingBalanceEndOfMonth,
+                ...(remainingBalanceAllocationPeriod !== null && { remainingBalanceAllocationPeriod }),
                 primarySupplementLabel,
                 fundClassification,
                 fundAmount,
@@ -2324,8 +2399,19 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             );
         }
 
-        // Sort service items
+        // Sort service items (by date column if requested, else by updatedAt)
+        const sortByDate = serviceSortBy === 'scheduledServiceDate' || serviceSortBy === 'serviceDeliveryDate';
+        const useDeliveryDate = serviceSortBy === 'serviceDeliveryDate';
         filteredServiceItems.sort((a, b) => {
+            if (sortByDate) {
+                const aDate = useDeliveryDate ? a.actualEndDate : a.scheduledStartDate;
+                const bDate = useDeliveryDate ? b.actualEndDate : b.scheduledStartDate;
+                if (!aDate && !bDate) return 0;
+                if (!aDate) return 1;
+                if (!bDate) return -1;
+                const cmp = aDate < bDate ? -1 : (aDate > bDate ? 1 : 0);
+                return serviceSortOrder === 'desc' ? -cmp : cmp;
+            }
             const aUpdated = a.item.updatedAt || a.item.createdAt || new Date(0);
             const bUpdated = b.item.updatedAt || b.item.createdAt || new Date(0);
             if (aUpdated < bUpdated) return 1;
@@ -2521,17 +2607,32 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const govSubsidy = Number(getValue(ATTRIBUTE_NAMES.GOV_SUBSIDY)) || 0;
             const participantContribution = Number(getValue(ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)) || 0;
 
+            // DATABASE-ONLY: Get Service Category from Service Plan (for Funding Source items 7 & 8: Primary Supplements / Unspent HCP)
+            const serviceCategoryRaw = servicePlanItem ? getValueFromFlatData(servicePlanItem, ['Service Category', ATTRIBUTE_NAMES.SERVICE_CATEGORY]) : null;
+            const serviceCategory = serviceCategoryRaw
+                ? (typeof serviceCategoryRaw === 'object' && serviceCategoryRaw.name ? serviceCategoryRaw.name : String(serviceCategoryRaw).trim())
+                : '';
+
             // DATABASE-ONLY: Get Funding Source names from pre-fetched lookup map
             let fundingSource;
             const fundingSourceData = getValue(ATTRIBUTE_NAMES.FUNDING_SOURCE);
             if (fundingSourceData) {
                 const fsIds = extractAllRefIds(fundingSourceData);
                 const fundingSourceNames = [];
+                const stripEmoji = (str) => (str || '').replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
+                const isPrimarySupplementOrUnspentHcp = (name) => {
+                    const n = (name || '').toLowerCase();
+                    return n.includes('primary supplement') || n.includes('unspent home care package') || n.includes('unspent hcp');
+                };
 
                 for (const fsId of fsIds) {
                     const fsItem = msRefItemsMap.get(fsId);
-                    const fsName = getFundingSourceNameFromItem(fsItem);
+                    let fsName = getFundingSourceNameFromItem(fsItem);
                     if (fsName) {
+                        fsName = stripEmoji(fsName);
+                        if (serviceCategory && isPrimarySupplementOrUnspentHcp(fsName)) {
+                            fsName = `${fsName} - ${serviceCategory}`;
+                        }
                         fundingSourceNames.push(fsName);
                     }
                 }
@@ -2604,6 +2705,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         const createBudgetAggregate = () => ({
             availableFunds: 0,
             remainingBudget: 0,
+            remainingBalanceAllocationPeriod: 0,
             serviceDeliveredAmount: 0,
             serviceDeliveredAmountRaw: 0,
             adjustmentAmount: 0,
@@ -2705,6 +2807,9 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const aggregate = budgetCategoryAggregates[code];
             aggregate.availableFunds += item.totalAvailableBudget || 0;
             aggregate.remainingBudget += item.remainingBalance || 0;
+            if (code === 'ATS' || code === 'ATO' || code === 'HMB') {
+                aggregate.remainingBalanceAllocationPeriod += (item.remainingBalanceAllocationPeriod ?? item.remainingBalance) || 0;
+            }
             aggregate.serviceDeliveredAmount += item.deliveredAmount || 0;
             aggregate.serviceDeliveredAmountRaw += item.deliveredAmountRaw || 0;
             aggregate.adjustmentAmount += item.adjustmentAmount || 0;
@@ -2974,12 +3079,23 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 ? `Home Support Quarterly Budget ${quarterMonths.start} ~ ${quarterMonths.end} ${yearStr}`
                 : config.folderName;
 
+            // For ATS/ATO/HMB, funding end date must be dynamic (from budget rows for selected month only)
+            const useDynamicFundingEndDate = ['ATS', 'ATO', 'HMB'].includes(config.code);
+            const fundingEndDate = useDynamicFundingEndDate
+                ? (budgetAggregate.fundingEndDate || null)
+                : (budgetAggregate.fundingEndDate || profileData.fundingEndDate || defaultFundingEndDate);
+            // For ATS/ATO/HMB, blue bar uses "Remaining ... Balance for Allocation Period" (calculated per formula)
+            const remainingBalanceAllocationPeriod = ['ATS', 'ATO', 'HMB'].includes(config.code)
+                ? (budgetAggregate.remainingBalanceAllocationPeriod ?? budgetAggregate.remainingBudget ?? profileData.remainingBalance ?? 0)
+                : undefined;
+
             return {
                 name: categoryName,
                 code: config.code,
                 availableFunds: budgetAggregate.availableFunds || profileData.totalAvailableBudget || 0,
                 remainingBudget: budgetAggregate.remainingBudget || profileData.remainingBalance || 0,
-                fundingEndDate: budgetAggregate.fundingEndDate || profileData.fundingEndDate || defaultFundingEndDate,
+                ...(remainingBalanceAllocationPeriod !== undefined && { remainingBalanceAllocationPeriod }),
+                fundingEndDate,
                 committedFunds: budgetAggregate.committedFunds || profileData.committedFunds || 0,
                 serviceDeliveredAmount: budgetAggregate.serviceDeliveredAmount || 0,
                 serviceDeliveredAmountRaw: budgetAggregate.serviceDeliveredAmountRaw || 0,
