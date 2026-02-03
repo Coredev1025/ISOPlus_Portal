@@ -1,10 +1,6 @@
 import { getFolder } from '../isoplus.js';
 import { info, warn, error } from '../../utils/logger.js';
 
-/**
- * Board validation rules based on label
- * Each label defines expected folder structure and attributes
- */
 const labelValidationRules = {
   'Job Reporting': {
     requiredFolders: ['Jobs', 'Clients'],
@@ -43,13 +39,6 @@ const labelValidationRules = {
   }
 };
 
-/**
- * Validate board structure based on its label
- * @param {string} workspaceId - Workspace ID
- * @param {string} boardId - Board ID
- * @param {string} label - Board label
- * @returns {Promise<Object>} Validation result
- */
 export async function validateBoard(workspaceId, boardId, label) {
   const validationErrors = [];
   
@@ -149,11 +138,6 @@ export async function validateBoard(workspaceId, boardId, label) {
   }
 }
 
-/**
- * Get validation rules for a label
- * @param {string} label - Board label
- * @returns {Object} Validation rules
- */
 export function getValidationRulesForLabel(label) {
   return labelValidationRules[label] || labelValidationRules['Default'];
 }
