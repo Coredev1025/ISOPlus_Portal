@@ -131,6 +131,9 @@ const DELIVERED_BY_TYPES = {
     ASSOCIATED_PROVIDERS: 'associated providers'
 };
 
+// Transaction status that uses Actual Shift End Date & Time for month filtering; others use Scheduled Shift Start
+const TRANSACTION_STATUS_USE_ACTUAL_END = 'Delivered - To be claimed and invoiced';
+
 // Attribute names for referenced item types (Participant Profiles, Service Plans, Funding Sources)
 const REF_ATTRIBUTE_NAMES = {
     // Participant Profile attributes
@@ -655,6 +658,8 @@ const getHealthProfessionalFromServicePlan = (servicePlanItem, refItemsMap) => {
     return { typeCode: '', typeOther: '' };
 };
 
+const stripEmojiFromFundingSource = (str) => (str || '').replace(/[\u{1F300}-\u{1F9FF}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
+
 const getFundingSourceNameFromItem = (fsItem) => {
     if (!fsItem) return null;
 
@@ -674,8 +679,8 @@ const getFundingSourceNameFromItem = (fsItem) => {
         return null;
     }
 
-    if (typeof name === 'object' && name.name) return name.name;
-    return String(name).trim();
+    const raw = typeof name === 'object' && name.name ? name.name : String(name).trim();
+    return stripEmojiFromFundingSource(raw) || null;
 };
 
 const isUuidLike = (value) =>
@@ -2328,12 +2333,28 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             foundProfiles: serviceProfilesMap.size
         }, extractContextFromReq(req));
 
+        // Format transaction status to string (same logic as formatStatus used in transform)
+        const formatStatusLabel = (value) => {
+            if (!value) return '';
+            if (Array.isArray(value) && value.length > 0) {
+                return value.map(v => (typeof v === 'object' && v && v.name ? v.name : String(v))).filter(Boolean).join(', ');
+            }
+            if (typeof value === 'object' && value !== null && value.name) return value.name;
+            return String(value);
+        };
+
         // Process and filter service items in JavaScript
         const processedServiceItems = allServiceItems.map(item => {
             const scheduledStart = getValueFromItem(item, ATTRIBUTE_NAMES.SCHEDULED_START);
             const actualEnd = getValueFromItem(item, ATTRIBUTE_NAMES.ACTUAL_END);
             const participantProfileValue = getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
-            
+            const transactionStatusRaw = getValueFromItem(item, ATTRIBUTE_NAMES.TRANSACTION_STATUS);
+            const transactionStatusFormatted = formatStatusLabel(transactionStatusRaw);
+            const useActualEndForFilter = normalizeString(transactionStatusFormatted) === normalizeString(TRANSACTION_STATUS_USE_ACTUAL_END);
+            const scheduledStartDate = parseDate(scheduledStart);
+            const actualEndDate = parseDate(actualEnd);
+            const filterDate = useActualEndForFilter ? actualEndDate : scheduledStartDate;
+
             // Get participant name from profile (like invoice generator endpoint)
             let participantName = '';
             const participantId = extractRefId(participantProfileValue);
@@ -2343,16 +2364,15 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                     participantName = getParticipantNameFromProfile(participantProfileItem) || '';
                 }
             }
-            
-            // Fallback to direct field if profile lookup didn't work
             if (!participantName) {
                 participantName = getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
             }
 
             return {
                 item,
-                scheduledStartDate: parseDate(scheduledStart),
-                actualEndDate: parseDate(actualEnd),
+                scheduledStartDate,
+                actualEndDate,
+                filterDate,
                 participantName: String(participantName),
                 participantProfileValue,
                 totalAmountNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.TOTAL_AMOUNT)),
@@ -2388,14 +2408,14 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         if (startDate) {
             const startDateObj = new Date(startDate);
             filteredServiceItems = filteredServiceItems.filter(p =>
-                p.actualEndDate && p.actualEndDate >= startDateObj
+                p.filterDate && p.filterDate >= startDateObj
             );
         }
 
         if (endDate) {
             const endDateObj = new Date(endDate);
             filteredServiceItems = filteredServiceItems.filter(p =>
-                p.actualEndDate && p.actualEndDate <= endDateObj
+                p.filterDate && p.filterDate <= endDateObj
             );
         }
 
@@ -2519,7 +2539,6 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             return String(value);
         };
 
-        const stripEmoji = (str) => (str || '').replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
         const isPrimarySupplementOrUnspentHcp = (name) => {
             const n = (name || '').toLowerCase();
             return n.includes('primary supplement') || n.includes('unspent home care package') || n.includes('unspent hcp');
@@ -2628,9 +2647,8 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                     const fsItem = msRefItemsMap.get(fsId);
                     let fsName = getFundingSourceNameFromItem(fsItem);
                     if (fsName) {
-                        fsName = stripEmoji(fsName);
                         if (serviceCategory && isPrimarySupplementOrUnspentHcp(fsName)) {
-                            fsName = `${fsName} - ${serviceCategory}`;
+                            fsName = `${fsName} - ${stripEmojiFromFundingSource(serviceCategory)}`;
                         }
                         fundingSourceNames.push(fsName);
                     }

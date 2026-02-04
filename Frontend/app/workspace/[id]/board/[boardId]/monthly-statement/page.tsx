@@ -2166,7 +2166,15 @@ export default function MonthlyStatement() {
       const expenditure = calculateExpenditure(category, { signed: true });
       const remaining = positive(category.remainingBudget);
 
-      const remainingLabel = `Remaining budget ${formatDate(category.fundingEndDate)}`;
+      // RCP fifth chart: blue bar = Remaining Restorative Care Balance as at the End of the Month ($)
+      // EOL sixth chart: blue bar = Remaining End-of-Life Care Balance as at the End of the Month ($)
+      const blueBarLabel =
+        code === 'RCP'
+          ? 'Remaining Restorative Care Balance as at the End of the Month ($)'
+          : code === 'EOL'
+            ? 'Remaining End-of-Life Care Balance as at the End of the Month ($)'
+            : `Remaining budget ${formatDate(category.fundingEndDate)}`;
+      const blueBarValueForChart = code === 'RCP' || code === 'EOL' ? remaining : blueBarValue;
 
       pushChartConfig({
         code,
@@ -2189,14 +2197,14 @@ export default function MonthlyStatement() {
           },
           {
             name: `${code}-balance`,
-            label: remainingLabel,
-            shortLabel: remainingLabel,
-            value: blueBarValue,
-            color: '#2563eb' // Blue - RCP: Total Available Budget; EOL: Remaining Restorative Care Balance as at End of Month
+            label: blueBarLabel,
+            shortLabel: blueBarLabel,
+            value: blueBarValueForChart,
+            color: '#2563eb' // Blue - RCP: Remaining Restorative Care Balance as at End of Month; EOL: Remaining End-of-Life Care Balance as at End of Month
           }
         ],
         metrics: [
-          { label: code === 'EOL' ? 'Remaining restorative care balance' : 'Total available budget', value: blueBarValue },
+          { label: code === 'EOL' ? 'Remaining End-of-Life Care Balance as at the End of the Month ($)' : code === 'RCP' ? 'Remaining Restorative Care Balance as at the End of the Month ($)' : 'Total available budget', value: code === 'RCP' || code === 'EOL' ? remaining : blueBarValue },
           { label: 'Previous spending', value: previousSpending },
           { label: 'Remaining balance', value: remaining },
         ]
