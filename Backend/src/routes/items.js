@@ -131,6 +131,9 @@ const DELIVERED_BY_TYPES = {
     ASSOCIATED_PROVIDERS: 'associated providers'
 };
 
+// Transaction status that uses Actual Shift End Date & Time for month filtering; others use Scheduled Shift Start
+const TRANSACTION_STATUS_USE_ACTUAL_END = 'Delivered - To be claimed and invoiced';
+
 // Attribute names for referenced item types (Participant Profiles, Service Plans, Funding Sources)
 const REF_ATTRIBUTE_NAMES = {
     // Participant Profile attributes
@@ -655,6 +658,8 @@ const getHealthProfessionalFromServicePlan = (servicePlanItem, refItemsMap) => {
     return { typeCode: '', typeOther: '' };
 };
 
+const stripEmojiFromFundingSource = (str) => (str || '').replace(/[\u{1F300}-\u{1F9FF}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
+
 const getFundingSourceNameFromItem = (fsItem) => {
     if (!fsItem) return null;
 
@@ -674,8 +679,8 @@ const getFundingSourceNameFromItem = (fsItem) => {
         return null;
     }
 
-    if (typeof name === 'object' && name.name) return name.name;
-    return String(name).trim();
+    const raw = typeof name === 'object' && name.name ? name.name : String(name).trim();
+    return stripEmojiFromFundingSource(raw) || null;
 };
 
 const isUuidLike = (value) =>
@@ -2328,12 +2333,28 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             foundProfiles: serviceProfilesMap.size
         }, extractContextFromReq(req));
 
+        // Format transaction status to string (same logic as formatStatus used in transform)
+        const formatStatusLabel = (value) => {
+            if (!value) return '';
+            if (Array.isArray(value) && value.length > 0) {
+                return value.map(v => (typeof v === 'object' && v && v.name ? v.name : String(v))).filter(Boolean).join(', ');
+            }
+            if (typeof value === 'object' && value !== null && value.name) return value.name;
+            return String(value);
+        };
+
         // Process and filter service items in JavaScript
         const processedServiceItems = allServiceItems.map(item => {
             const scheduledStart = getValueFromItem(item, ATTRIBUTE_NAMES.SCHEDULED_START);
             const actualEnd = getValueFromItem(item, ATTRIBUTE_NAMES.ACTUAL_END);
             const participantProfileValue = getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
-            
+            const transactionStatusRaw = getValueFromItem(item, ATTRIBUTE_NAMES.TRANSACTION_STATUS);
+            const transactionStatusFormatted = formatStatusLabel(transactionStatusRaw);
+            const useActualEndForFilter = normalizeString(transactionStatusFormatted) === normalizeString(TRANSACTION_STATUS_USE_ACTUAL_END);
+            const scheduledStartDate = parseDate(scheduledStart);
+            const actualEndDate = parseDate(actualEnd);
+            const filterDate = useActualEndForFilter ? actualEndDate : scheduledStartDate;
+
             // Get participant name from profile (like invoice generator endpoint)
             let participantName = '';
             const participantId = extractRefId(participantProfileValue);
@@ -2343,16 +2364,15 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                     participantName = getParticipantNameFromProfile(participantProfileItem) || '';
                 }
             }
-            
-            // Fallback to direct field if profile lookup didn't work
             if (!participantName) {
                 participantName = getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
             }
 
             return {
                 item,
-                scheduledStartDate: parseDate(scheduledStart),
-                actualEndDate: parseDate(actualEnd),
+                scheduledStartDate,
+                actualEndDate,
+                filterDate,
                 participantName: String(participantName),
                 participantProfileValue,
                 totalAmountNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.TOTAL_AMOUNT)),
@@ -2388,14 +2408,14 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         if (startDate) {
             const startDateObj = new Date(startDate);
             filteredServiceItems = filteredServiceItems.filter(p =>
-                p.actualEndDate && p.actualEndDate >= startDateObj
+                p.filterDate && p.filterDate >= startDateObj
             );
         }
 
         if (endDate) {
             const endDateObj = new Date(endDate);
             filteredServiceItems = filteredServiceItems.filter(p =>
-                p.actualEndDate && p.actualEndDate <= endDateObj
+                p.filterDate && p.filterDate <= endDateObj
             );
         }
 
@@ -2443,6 +2463,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         const msServicePlanIds = new Set();
         const msParticipantProfileIds = new Set();
         const msFundingSourceIds = new Set();
+        const msAssociatedProviderIds = new Set();
 
         for (const item of serviceItems) {
             const getValue = (attributeName) => {
@@ -2464,12 +2485,17 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const fundingSourceValue = getValue(ATTRIBUTE_NAMES.FUNDING_SOURCE);
             const fsIds = extractAllRefIds(fundingSourceValue);
             fsIds.forEach(id => msFundingSourceIds.add(id));
+
+            // Associated provider ID (reference item for Business/Individual)
+            const associatedProviderValue = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
+            const apId = extractRefId(associatedProviderValue);
+            if (apId) msAssociatedProviderIds.add(apId);
         }
 
         // Bulk fetch ALL service reference items from database in a single query
         // Filter out participant profiles we already fetched to avoid duplicate queries
         const msParticipantProfileIdsToFetch = [...msParticipantProfileIds].filter(id => !serviceProfilesMap.has(id));
-        const msAllRefIds = [...msServicePlanIds, ...msParticipantProfileIdsToFetch, ...msFundingSourceIds];
+        const msAllRefIds = [...msServicePlanIds, ...msParticipantProfileIdsToFetch, ...msFundingSourceIds, ...msAssociatedProviderIds];
         const msRefItemsMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, msAllRefIds);
         
         // Merge already-fetched participant profiles into the reference map
@@ -2513,6 +2539,11 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             return String(value);
         };
 
+        const isPrimarySupplementOrUnspentHcp = (name) => {
+            const n = (name || '').toLowerCase();
+            return n.includes('primary supplement') || n.includes('unspent home care package') || n.includes('unspent hcp');
+        };
+
         // OPTIMIZED: Transform service items synchronously without rate limiting (like invoice generator endpoint)
         // This eliminates the massive delays from batchProcess rate limiting
         const transformedServiceItems = serviceItems.map((item) => {
@@ -2551,30 +2582,23 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
 
             let service = getServiceFromServicePlan(servicePlanItem);
 
-            // Get Service Provider based on Delivered by
+            // Get Service Provider and Delivered By (single computation for both)
             const deliveredByRaw = getValue(ATTRIBUTE_NAMES.DELIVERED_BY);
+            const deliveredByName = deliveredByRaw == null
+                ? null
+                : (typeof deliveredByRaw === 'object' ? (deliveredByRaw.name || deliveredByRaw.toString()) : String(deliveredByRaw));
             let serviceProvider = undefined;
-            if (deliveredByRaw) {
-                let deliveredByName = null;
-                if (typeof deliveredByRaw === 'object' && deliveredByRaw !== null) {
-                    deliveredByName = deliveredByRaw.name || deliveredByRaw.toString();
-                } else {
-                    deliveredByName = String(deliveredByRaw);
-                }
-
-                if (deliveredByName && typeof deliveredByName === 'string') {
-                    const deliveredByLower = deliveredByName.toLowerCase();
-
-                    if (deliveredByLower.includes('company workforce')) {
-                        // Use company name from Business Configuration
-                        serviceProvider = businessProfile?.name || undefined;
-                    } else if (deliveredByLower.includes('associated')) {
-                        // Use Associated Provider (If Applicable)
-                        const associatedProvider = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
-                        serviceProvider = associatedProvider
-                            ? (typeof associatedProvider === 'object' ? associatedProvider.name : associatedProvider.toString())
-                            : undefined;
-                    }
+            if (deliveredByName && typeof deliveredByName === 'string') {
+                const deliveredByLower = deliveredByName.toLowerCase();
+                if (deliveredByLower.includes('company workforce')) {
+                    serviceProvider = businessProfile?.name || undefined;
+                } else if (deliveredByLower.includes('associated')) {
+                    const apRefId = extractRefId(getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER));
+                    const providerRefItem = apRefId ? msRefItemsMap.get(apRefId) : null;
+                    const businessIndividual = providerRefItem ? getValueFromFlatData(providerRefItem, 'Business/Individual') : null;
+                    serviceProvider = (businessIndividual != null && businessIndividual !== '')
+                        ? (typeof businessIndividual === 'object' && businessIndividual.name ? businessIndividual.name : String(businessIndividual))
+                        : (apRefId || undefined);
                 }
             }
             // Get dates
@@ -2619,19 +2643,12 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             if (fundingSourceData) {
                 const fsIds = extractAllRefIds(fundingSourceData);
                 const fundingSourceNames = [];
-                const stripEmoji = (str) => (str || '').replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
-                const isPrimarySupplementOrUnspentHcp = (name) => {
-                    const n = (name || '').toLowerCase();
-                    return n.includes('primary supplement') || n.includes('unspent home care package') || n.includes('unspent hcp');
-                };
-
                 for (const fsId of fsIds) {
                     const fsItem = msRefItemsMap.get(fsId);
                     let fsName = getFundingSourceNameFromItem(fsItem);
                     if (fsName) {
-                        fsName = stripEmoji(fsName);
                         if (serviceCategory && isPrimarySupplementOrUnspentHcp(fsName)) {
-                            fsName = `${fsName} - ${serviceCategory}`;
+                            fsName = `${fsName} - ${stripEmojiFromFundingSource(serviceCategory)}`;
                         }
                         fundingSourceNames.push(fsName);
                     }
@@ -2641,27 +2658,6 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             }
 
             const notes = getValue(ATTRIBUTE_NAMES.ADDITIONAL_NOTES) || '';
-
-            // Get Delivered By raw value for PDF generation
-            let deliveredByName = null;
-            if (deliveredByRaw) {
-                if (typeof deliveredByRaw === 'object' && deliveredByRaw !== null) {
-                    deliveredByName = deliveredByRaw.name || deliveredByRaw.toString();
-                } else {
-                    deliveredByName = String(deliveredByRaw);
-                }
-            }
-
-            // Get Associated Provider raw value for PDF generation
-            const associatedProviderValue = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
-            let associatedProviderName = null;
-            if (associatedProviderValue) {
-                if (typeof associatedProviderValue === 'object' && associatedProviderValue !== null) {
-                    associatedProviderName = associatedProviderValue.name || associatedProviderValue.toString();
-                } else {
-                    associatedProviderName = String(associatedProviderValue);
-                }
-            }
 
             // Get allocated time if available
             const allocatedTimeValue = getValue(ATTRIBUTE_NAMES.ALLOCATED_TIME);
@@ -2674,7 +2670,6 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 service,
                 serviceProvider,
                 deliveredBy: deliveredByName,
-                associatedProvider: associatedProviderName,
                 scheduledStart,
                 scheduledServiceDate,
                 scheduledShiftStart: scheduledStart,
