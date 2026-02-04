@@ -100,6 +100,39 @@ async function getLogoData(business) {
     return `data:image/${type};base64,${Buffer.from(buffer).toString('base64')}`;
 }
 
+async function fetchImageUrlAsBase64(url) {
+    if (!url || typeof url !== 'string' || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+        return '';
+    }
+    try {
+        const response = await fetch(url);
+        if (!response.ok) return '';
+        const buffer = await response.arrayBuffer();
+        const contentType = response.headers.get('content-type') || '';
+        const type = contentType.includes('png') ? 'png' : 'jpeg';
+        return `data:image/${type};base64,${Buffer.from(buffer).toString('base64')}`;
+    } catch (e) {
+        console.warn('[fetchImageUrlAsBase64]', url, e.message);
+        return '';
+    }
+}
+
+async function resolveTemplateImageUrls(template, templateInputs) {
+    const pages = template.schemas;
+    if (!Array.isArray(pages)) return;
+    for (const pageSchemas of pages) {
+        if (!Array.isArray(pageSchemas)) continue;
+        for (const schema of pageSchemas) {
+            if (schema.type !== 'image' || !schema.name) continue;
+            const content = schema.content;
+            if (typeof content === 'string' && (content.startsWith('http://') || content.startsWith('https://'))) {
+                const base64 = await fetchImageUrlAsBase64(content);
+                if (base64) templateInputs[schema.name] = base64;
+            }
+        }
+    }
+}
+
 // Attribute names for referenced item types
 const REF_ATTRIBUTE_NAMES = {
     // Participant Profile attributes
@@ -2400,7 +2433,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
     try {
         const { workspaceId, boardId } = req.params;
-        const { statementData, businessDetails } = req.body;
+        const { statementData, businessDetails, chartImage } = req.body;
 
         if (!statementData) {
             return res.status(400).json({ message: "No statement data provided." });
@@ -2450,7 +2483,31 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             };
 
             const templateInputs = {};
-            templateInputs.logo = logoBase64;
+            await resolveTemplateImageUrls(template, templateInputs);
+            templateInputs.logo = logoBase64 || templateInputs.logo || '';
+
+            // Summary Table: use chart image from frontend when provided, otherwise mini-chart.png
+            const hasChartFromFrontend = chartImage && typeof chartImage === 'string' && chartImage.length > 50;
+            if (hasChartFromFrontend) {
+                templateInputs['Summary Table'] = chartImage.startsWith('data:') ? chartImage : `data:image/png;base64,${chartImage}`;
+                info('Webhook-Service', 'Monthly statement PDF: using chart image from frontend', { sizeChars: chartImage.length }, extractContextFromReq(req));
+            } else {
+                const miniChartPath = path.join(__dirname, '..', 'assets', 'mini-chart.png');
+                try {
+                    const miniChartBuffer = await fs.readFile(miniChartPath);
+                    templateInputs['Summary Table'] = `data:image/png;base64,${miniChartBuffer.toString('base64')}`;
+                } catch (miniChartErr) {
+                    warn('Webhook-Service', 'Monthly statement mini-chart not found, using template default for Summary Table', { path: miniChartPath }, extractContextFromReq(req));
+                }
+            }
+
+            const footerImagePath = path.join(__dirname, '..', 'assets', 'monthly-statement-footer.png');
+            try {
+                const footerBuffer = await fs.readFile(footerImagePath);
+                templateInputs['Image 13-1'] = `data:image/png;base64,${footerBuffer.toString('base64')}`;
+            } catch (footerErr) {
+                warn('Webhook-Service', 'Monthly statement footer image not found, using template default', { path: footerImagePath }, extractContextFromReq(req));
+            }
 
             setMultiValueField(templateInputs, 'companyName', { 'Company Name': safeBusinessDetails.companyName });
 
@@ -2640,7 +2697,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
 
             allTemplateTables.forEach(({ name, columns }) => {
                 const emptyRow = Array(columns).fill('');
-                emptyRow[1] = 'No services recorded';
+                emptyRow[1] = 'No services recorded for this period';
                 templateInputs[name] = JSON.stringify([emptyRow]);
             });
 

@@ -5,7 +5,8 @@ import { Card } from "@/components/ui/card";
 import { ArrowLeft, Calendar, User, FileText, AlertCircle, FileCheck, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { toPng } from "html-to-image";
 import {
   Table,
   TableBody,
@@ -628,6 +629,7 @@ export default function MonthlyStatement() {
   const [businessDetailsErrors, setBusinessDetailsErrors] = useState<string[]>([]);
   const [serviceSortBy, setServiceSortBy] = useState<'scheduledServiceDate' | 'serviceDeliveryDate' | ''>('scheduledServiceDate');
   const [serviceSortOrder, setServiceSortOrder] = useState<'asc' | 'desc'>('asc');
+  const chartContainerRef = useRef<HTMLDivElement | null>(null);
 
 
   // Budget data will come from the API response
@@ -1255,12 +1257,28 @@ export default function MonthlyStatement() {
         services: allServiceItems, // Also update services for backward compatibility
       };
 
+      let chartImage: string | undefined;
+      if (chartContainerRef.current && chartConfigs.length > 0) {
+        try {
+          chartImage = await toPng(chartContainerRef.current, {
+            pixelRatio: 1,
+            cacheBust: true,
+            backgroundColor: "white",
+            style: { borderRadius: "8px" },
+            width: chartContainerRef.current.offsetWidth,
+          });
+        } catch (e) {
+          console.warn("Chart capture for PDF failed:", e);
+        }
+      }
+
       // Call backend PDF generation endpoint
       const response = await axios.post(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/${id}/${boardId}/monthly-statement`,
         {
           statementData: fullStatementData,
           businessDetails,
+          ...(chartImage ? { chartImage } : {}),
         }
       );
 
@@ -2400,7 +2418,7 @@ export default function MonthlyStatement() {
                   <Spinner />
                 </div>
               ) : chartConfigs.length > 0 ? (
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-3" ref={chartContainerRef}>
                   {chartConfigs.map((chart) => (
                     <div key={chart.code} className="rounded-lg border border-border/60 bg-card p-5 space-y-4 shadow-sm">
                       <div className="flex items-start justify-between gap-3">
