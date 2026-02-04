@@ -2222,14 +2222,16 @@ export default function MonthlyStatement() {
     return statementData.budgetCategories.filter((category) => category.shouldDisplay !== false);
   }, [statementData]);
 
+  // X-axis tick: wrap into short lines so each label stays in its bar slot (no overlap) and full text is visible (no clip)
   const ChartXAxisTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value?: string } }) => {
     const raw = payload?.value ?? '';
+    const maxCharsPerLine = 14;
     const lines = String(raw)
       .split(/\s+/)
       .reduce<string[]>((acc, word) => {
         if (acc.length === 0) return [word];
         const last = acc[acc.length - 1];
-        if ((last + ' ' + word).length <= 18) {
+        if ((last + ' ' + word).length <= maxCharsPerLine) {
           acc[acc.length - 1] = `${last} ${word}`;
         } else {
           acc.push(word);
@@ -2238,9 +2240,9 @@ export default function MonthlyStatement() {
       }, []);
 
     return (
-      <text x={x} y={y} textAnchor="middle" fill="currentColor" className="text-[10px]">
+      <text x={x} y={y} textAnchor="middle" fill="currentColor" className="text-[9px] leading-tight" style={{ overflow: 'visible' }}>
         {lines.map((line, index) => (
-          <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 10 : 12}>
+          <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 9 : 11}>
             {line}
           </tspan>
         ))}
@@ -2438,16 +2440,17 @@ export default function MonthlyStatement() {
                         </div>
                       </div>
 
-                      <ChartContainer config={chart.chartConfig} className="w-full min-h-[14rem] h-56">
-                        <BarChart data={chart.data} margin={{ left: 0, right: 0, top: 28 }} barCategoryGap="12%">
+                      <ChartContainer config={chart.chartConfig} className="w-full min-h-[18rem] h-72 overflow-visible">
+                        <BarChart data={chart.data} margin={{ left: 0, right: 0, top: 28, bottom: 24 }} barCategoryGap="22%">
                           <CartesianGrid strokeDasharray="3 3" vertical={false} />
                           <XAxis
                             dataKey="shortLabel"
                             axisLine={false}
                             tickLine={false}
                             interval={0}
-                            height={48}
+                            height={110}
                             tick={<ChartXAxisTick />}
+                            allowDataOverflow={false}
                           />
                           <YAxis tickFormatter={formatAxisCurrency} axisLine={false} tickLine={false} />
                           <ChartTooltip
