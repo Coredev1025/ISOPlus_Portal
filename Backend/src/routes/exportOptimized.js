@@ -141,6 +141,10 @@ const formatStatus = (value) => {
     return String(value);
 };
 
+// Match items.js: use Actual End for date filter only when status is "Delivered - To be claimed and invoiced"
+const TRANSACTION_STATUS_USE_ACTUAL_END = 'Delivered - To be claimed and invoiced';
+const normalizeString = (value) => (value || '').toString().trim().toLowerCase();
+
 const getValue = (item, attributeName) => {
     if (!item?.data) return null;
     return item.data[attributeName] ?? null;
@@ -490,6 +494,8 @@ const getHealthProfessionalFromServicePlan = (servicePlanItem, refItemsMap) => {
     return { typeCode: '', typeOther: '' };
 };
 
+const stripEmojiFromFundingSource = (str) => (str || '').replace(/[\u{1F300}-\u{1F9FF}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
+
 const getFundingSourceNameFromItem = (fsItem) => {
     if (!fsItem) return null;
     const name = getValueMulti(fsItem, [
@@ -501,10 +507,13 @@ const getFundingSourceNameFromItem = (fsItem) => {
     ]);
     if (!name) return null;
 
+    let raw;
     if (typeof name === 'object' && name !== null) {
-        return name.name ? String(name.name).trim() : String(name).trim();
+        raw = name.name ? String(name.name).trim() : String(name).trim();
+    } else {
+        raw = String(name).trim();
     }
-    return String(name).trim();
+    return stripEmojiFromFundingSource(raw) || null;
 };
 
 router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, res) => {
@@ -1035,7 +1044,7 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
                 exportDurationMs: duration
             });
         } else {
-            // Export service items
+            // Export service items (logic aligned with items.js monthly-statement endpoint)
             const folderIds = await getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
             const baseQuery = { workspaceId, boardId };
             if (folderIds.length > 0) {
@@ -1044,30 +1053,77 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
 
             const allServiceItems = await Item.find(baseQuery).lean();
 
+            // Collect participant profile IDs and bulk fetch (same as items.js)
+            const participantProfileIds = new Set();
+            for (const item of allServiceItems) {
+                const participantProfileValue = getValue(item, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
+                const ppId = extractRefId(participantProfileValue);
+                if (ppId) participantProfileIds.add(ppId);
+            }
+            const participantProfilesMap = [...participantProfileIds].length > 0
+                ? await bulkFetchItemsFromDB(workspaceId, boardId, [...participantProfileIds])
+                : new Map();
+
+            // Process items with same date and participant logic as items.js
             let processedItems = allServiceItems.map(item => {
+                const scheduledStart = getValue(item, ATTRIBUTE_NAMES.SCHEDULED_START);
                 const actualEnd = getValue(item, ATTRIBUTE_NAMES.ACTUAL_END);
-                const participantName = getValue(item, ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
+                const transactionStatusRaw = getValue(item, ATTRIBUTE_NAMES.TRANSACTION_STATUS);
+                const transactionStatusFormatted = formatStatus(transactionStatusRaw);
+                const useActualEndForFilter = normalizeString(transactionStatusFormatted) === normalizeString(TRANSACTION_STATUS_USE_ACTUAL_END);
+                const scheduledStartDate = parseDate(scheduledStart);
+                const actualEndDate = parseDate(actualEnd);
+                const filterDate = useActualEndForFilter ? actualEndDate : scheduledStartDate;
+
+                const participantProfileValue = getValue(item, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
+                const participantId = extractRefId(participantProfileValue);
+                let participantName = '';
+                if (participantId) {
+                    const profileItem = participantProfilesMap.get(participantId);
+                    if (profileItem) {
+                        participantName = getParticipantNameFromProfile(profileItem) || '';
+                    }
+                }
+                if (!participantName) {
+                    participantName = getValue(item, ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
+                }
 
                 return {
                     item,
-                    actualEndDate: parseDate(actualEnd),
+                    scheduledStartDate,
+                    actualEndDate,
+                    filterDate,
                     participantName: String(participantName),
+                    participantProfileValue,
                     servicePlanId: extractRefId(getValue(item, ATTRIBUTE_NAMES.SERVICE_PLAN)),
                     fundingSourceIds: extractAllRefIds(getValue(item, ATTRIBUTE_NAMES.FUNDING_SOURCE))
                 };
             });
 
+            // Filter by participant (same logic as items.js: regex on name or profile value)
             if (participant && participant !== 'all') {
-                const participantRegex = new RegExp(participant, 'i');
-                processedItems = processedItems.filter(p => participantRegex.test(p.participantName));
+                try {
+                    const participantRegex = new RegExp(participant, 'i');
+                    processedItems = processedItems.filter(p =>
+                        participantRegex.test(p.participantName) ||
+                        (p.participantProfileValue && (
+                            (typeof p.participantProfileValue === 'string' && participantRegex.test(p.participantProfileValue)) ||
+                            (Array.isArray(p.participantProfileValue) && p.participantProfileValue.some(v => participantRegex.test(String(v)))) ||
+                            (typeof p.participantProfileValue === 'object' && p.participantProfileValue.id && participantRegex.test(String(p.participantProfileValue.id)))
+                        ))
+                    );
+                } catch (regexErr) {
+                    warn('Export-Service', 'Invalid participant regex pattern', { pattern: participant, error: regexErr.message }, extractContextFromReq(req));
+                }
             }
+            // Filter by date using filterDate (Actual End for "Delivered...", else Scheduled Start)
             if (startDate) {
                 const startDateObj = new Date(startDate);
-                processedItems = processedItems.filter(p => p.actualEndDate && p.actualEndDate >= startDateObj);
+                processedItems = processedItems.filter(p => p.filterDate && p.filterDate >= startDateObj);
             }
             if (endDate) {
                 const endDateObj = new Date(endDate);
-                processedItems = processedItems.filter(p => p.actualEndDate && p.actualEndDate <= endDateObj);
+                processedItems = processedItems.filter(p => p.filterDate && p.filterDate <= endDateObj);
             }
 
             const servicePlanIds = new Set();
@@ -1085,7 +1141,7 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
 
             const transformedItems = processedItems.map(p => {
                 const item = p.item;
-                const participantNameValue = getValue(item, ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
+                const participantNameValue = p.participantName;
                 const scheduledStart = getValue(item, ATTRIBUTE_NAMES.SCHEDULED_START);
                 const actualEnd = getValue(item, ATTRIBUTE_NAMES.ACTUAL_END);
                 const unit = getValue(item, ATTRIBUTE_NAMES.UNIT) || 'Hour';
