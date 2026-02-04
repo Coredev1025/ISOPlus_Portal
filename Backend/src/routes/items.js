@@ -2443,6 +2443,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         const msServicePlanIds = new Set();
         const msParticipantProfileIds = new Set();
         const msFundingSourceIds = new Set();
+        const msAssociatedProviderIds = new Set();
 
         for (const item of serviceItems) {
             const getValue = (attributeName) => {
@@ -2464,12 +2465,17 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const fundingSourceValue = getValue(ATTRIBUTE_NAMES.FUNDING_SOURCE);
             const fsIds = extractAllRefIds(fundingSourceValue);
             fsIds.forEach(id => msFundingSourceIds.add(id));
+
+            // Associated provider ID (reference item for Business/Individual)
+            const associatedProviderValue = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
+            const apId = extractRefId(associatedProviderValue);
+            if (apId) msAssociatedProviderIds.add(apId);
         }
 
         // Bulk fetch ALL service reference items from database in a single query
         // Filter out participant profiles we already fetched to avoid duplicate queries
         const msParticipantProfileIdsToFetch = [...msParticipantProfileIds].filter(id => !serviceProfilesMap.has(id));
-        const msAllRefIds = [...msServicePlanIds, ...msParticipantProfileIdsToFetch, ...msFundingSourceIds];
+        const msAllRefIds = [...msServicePlanIds, ...msParticipantProfileIdsToFetch, ...msFundingSourceIds, ...msAssociatedProviderIds];
         const msRefItemsMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, msAllRefIds);
         
         // Merge already-fetched participant profiles into the reference map
@@ -2513,6 +2519,12 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             return String(value);
         };
 
+        const stripEmoji = (str) => (str || '').replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
+        const isPrimarySupplementOrUnspentHcp = (name) => {
+            const n = (name || '').toLowerCase();
+            return n.includes('primary supplement') || n.includes('unspent home care package') || n.includes('unspent hcp');
+        };
+
         // OPTIMIZED: Transform service items synchronously without rate limiting (like invoice generator endpoint)
         // This eliminates the massive delays from batchProcess rate limiting
         const transformedServiceItems = serviceItems.map((item) => {
@@ -2551,30 +2563,23 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
 
             let service = getServiceFromServicePlan(servicePlanItem);
 
-            // Get Service Provider based on Delivered by
+            // Get Service Provider and Delivered By (single computation for both)
             const deliveredByRaw = getValue(ATTRIBUTE_NAMES.DELIVERED_BY);
+            const deliveredByName = deliveredByRaw == null
+                ? null
+                : (typeof deliveredByRaw === 'object' ? (deliveredByRaw.name || deliveredByRaw.toString()) : String(deliveredByRaw));
             let serviceProvider = undefined;
-            if (deliveredByRaw) {
-                let deliveredByName = null;
-                if (typeof deliveredByRaw === 'object' && deliveredByRaw !== null) {
-                    deliveredByName = deliveredByRaw.name || deliveredByRaw.toString();
-                } else {
-                    deliveredByName = String(deliveredByRaw);
-                }
-
-                if (deliveredByName && typeof deliveredByName === 'string') {
-                    const deliveredByLower = deliveredByName.toLowerCase();
-
-                    if (deliveredByLower.includes('company workforce')) {
-                        // Use company name from Business Configuration
-                        serviceProvider = businessProfile?.name || undefined;
-                    } else if (deliveredByLower.includes('associated')) {
-                        // Use Associated Provider (If Applicable)
-                        const associatedProvider = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
-                        serviceProvider = associatedProvider
-                            ? (typeof associatedProvider === 'object' ? associatedProvider.name : associatedProvider.toString())
-                            : undefined;
-                    }
+            if (deliveredByName && typeof deliveredByName === 'string') {
+                const deliveredByLower = deliveredByName.toLowerCase();
+                if (deliveredByLower.includes('company workforce')) {
+                    serviceProvider = businessProfile?.name || undefined;
+                } else if (deliveredByLower.includes('associated')) {
+                    const apRefId = extractRefId(getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER));
+                    const providerRefItem = apRefId ? msRefItemsMap.get(apRefId) : null;
+                    const businessIndividual = providerRefItem ? getValueFromFlatData(providerRefItem, 'Business/Individual') : null;
+                    serviceProvider = (businessIndividual != null && businessIndividual !== '')
+                        ? (typeof businessIndividual === 'object' && businessIndividual.name ? businessIndividual.name : String(businessIndividual))
+                        : (apRefId || undefined);
                 }
             }
             // Get dates
@@ -2619,12 +2624,6 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             if (fundingSourceData) {
                 const fsIds = extractAllRefIds(fundingSourceData);
                 const fundingSourceNames = [];
-                const stripEmoji = (str) => (str || '').replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
-                const isPrimarySupplementOrUnspentHcp = (name) => {
-                    const n = (name || '').toLowerCase();
-                    return n.includes('primary supplement') || n.includes('unspent home care package') || n.includes('unspent hcp');
-                };
-
                 for (const fsId of fsIds) {
                     const fsItem = msRefItemsMap.get(fsId);
                     let fsName = getFundingSourceNameFromItem(fsItem);
@@ -2642,27 +2641,6 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
 
             const notes = getValue(ATTRIBUTE_NAMES.ADDITIONAL_NOTES) || '';
 
-            // Get Delivered By raw value for PDF generation
-            let deliveredByName = null;
-            if (deliveredByRaw) {
-                if (typeof deliveredByRaw === 'object' && deliveredByRaw !== null) {
-                    deliveredByName = deliveredByRaw.name || deliveredByRaw.toString();
-                } else {
-                    deliveredByName = String(deliveredByRaw);
-                }
-            }
-
-            // Get Associated Provider raw value for PDF generation
-            const associatedProviderValue = getValue(ATTRIBUTE_NAMES.ASSOCIATED_PROVIDER);
-            let associatedProviderName = null;
-            if (associatedProviderValue) {
-                if (typeof associatedProviderValue === 'object' && associatedProviderValue !== null) {
-                    associatedProviderName = associatedProviderValue.name || associatedProviderValue.toString();
-                } else {
-                    associatedProviderName = String(associatedProviderValue);
-                }
-            }
-
             // Get allocated time if available
             const allocatedTimeValue = getValue(ATTRIBUTE_NAMES.ALLOCATED_TIME);
             const allocatedTime = allocatedTimeValue !== null && allocatedTimeValue !== undefined
@@ -2674,7 +2652,6 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 service,
                 serviceProvider,
                 deliveredBy: deliveredByName,
-                associatedProvider: associatedProviderName,
                 scheduledStart,
                 scheduledServiceDate,
                 scheduledShiftStart: scheduledStart,

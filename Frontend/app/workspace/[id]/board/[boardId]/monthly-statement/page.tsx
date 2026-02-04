@@ -29,7 +29,7 @@ import { format, startOfMonth, endOfMonth, isValid, parse } from "date-fns";
 import Spinner from "@/components/ui/spin";
 import { showSuccessToast, showErrorToast } from "@/lib/toast-utils";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
-import { Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from "recharts";
 import {
   Dialog,
   DialogContent,
@@ -77,7 +77,6 @@ interface ServiceRecord {
   serviceCategory?: string;
   serviceProvider?: string;
   deliveredBy?: string;
-  associatedProvider?: string;
   loanedByOrganisationName?: string;
   committedAtHmForDelivery?: number;
   allocatedTime?: number;
@@ -1514,7 +1513,7 @@ export default function MonthlyStatement() {
       const rows = items.map((service) => [
         service.participant || service.participantName || '',
         service.service || service.taskName || '',
-        service.serviceProvider || service.associatedProvider || service.loanedByOrganisationName || '',
+        service.serviceProvider || service.loanedByOrganisationName || '',
         formatDateForCsv(service.scheduledServiceDate || service.scheduledShiftStart),
         formatDateForCsv(service.serviceDeliveryDate || service.actualShiftEndDateTime),
         service.transactionStatus || '',
@@ -1883,7 +1882,6 @@ export default function MonthlyStatement() {
   const getServiceProviderLabel = (service: ServiceRecord) => {
     const candidates = [
       service.serviceProvider,
-      service.associatedProvider,
       service.loanedByOrganisationName
     ];
     const first = candidates.find((value) => typeof value === 'string' && value.trim() !== '');
@@ -2154,11 +2152,16 @@ export default function MonthlyStatement() {
     // 5th, 6th Charts: Restorative Care & End-of-Life (per spec: Purple = Spending from previous months, Red = expenditure, Blue = Total Available Budget)
     const addRestorativeChart = (code: 'RCP' | 'EOL', title: string) => {
       const category = categoryLookup.get(code) ?? ({ code } as BudgetCategory);
+      const rcpCategory = categoryLookup.get('RCP');
       // Purple: Spending from previous month(s) = Fund Amount ($) - Available Fund at the Start of the Month ($)
       const previousSpending = getPreviousSpendingValue(category);
       const available = positive(category.availableFunds);
       // Blue bar per spec: value = Total Available Budget for Restorative Care ($) / End-of-Life Care ($)
       const totalAvailable = positive(category.totalAvailableBudget ?? category.availableFunds ?? 0);
+      const blueBarValue =
+        code === 'EOL'
+          ? positive(rcpCategory?.remainingBudget ?? 0)
+          : totalAvailable;
       // Red: [Month] expenditure = Service Delivered During the Month ($-) + Adjustments from Previous Months (signed then abs)
       const expenditure = calculateExpenditure(category, { signed: true });
       const remaining = positive(category.remainingBudget);
@@ -2188,12 +2191,12 @@ export default function MonthlyStatement() {
             name: `${code}-balance`,
             label: remainingLabel,
             shortLabel: remainingLabel,
-            value: totalAvailable,
-            color: '#2563eb' // Blue - per spec: height = Total Available Budget
+            value: blueBarValue,
+            color: '#2563eb' // Blue - RCP: Total Available Budget; EOL: Remaining Restorative Care Balance as at End of Month
           }
         ],
         metrics: [
-          { label: 'Total available budget', value: totalAvailable },
+          { label: code === 'EOL' ? 'Remaining restorative care balance' : 'Total available budget', value: blueBarValue },
           { label: 'Previous spending', value: previousSpending },
           { label: 'Remaining balance', value: remaining },
         ]
@@ -2423,13 +2426,12 @@ export default function MonthlyStatement() {
                     <div key={chart.code} className="rounded-lg border border-border/60 bg-card p-5 space-y-4 shadow-sm">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-xs uppercase text-muted-foreground tracking-wide">{chart.subtitle}</p>
                           <h4 className="text-base font-semibold leading-tight">{chart.title}</h4>
                         </div>
                       </div>
 
                       <ChartContainer config={chart.chartConfig} className="w-full min-h-[14rem] h-56">
-                        <BarChart data={chart.data} margin={{ left: 0, right: 0, top: 10 }} barCategoryGap="12%">
+                        <BarChart data={chart.data} margin={{ left: 0, right: 0, top: 28 }} barCategoryGap="12%">
                           <CartesianGrid strokeDasharray="3 3" vertical={false} />
                           <XAxis
                             dataKey="shortLabel"
@@ -2451,6 +2453,12 @@ export default function MonthlyStatement() {
                             }
                           />
                           <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={42}>
+                            <LabelList
+                              dataKey="value"
+                              position="top"
+                              formatter={(value: number) => (Number.isFinite(value) ? formatCurrency(value) : '')}
+                              className="fill-muted-foreground text-[10px] font-medium"
+                            />
                             {chart.data.map((entry) => (
                               <Cell key={`${chart.code}-${entry.name}`} fill={`var(--color-${entry.name})`} />
                             ))}
