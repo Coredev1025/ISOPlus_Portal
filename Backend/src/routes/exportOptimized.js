@@ -898,7 +898,8 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
             month,
             year,
             type = 'service',
-            categoryCode
+            categoryCode,
+            serviceTransactionStatus: serviceTransactionStatusFilter = ''
         } = req.query;
 
         if (!workspaceId || !boardId) {
@@ -930,8 +931,7 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
                 { code: 'ATO', folderName: 'Assistive Technology - Ongoing Budget' },
                 { code: 'HMB', folderName: 'Home Modification Budget' },
                 { code: 'RCP', folderName: 'Restorative Care Pathway Budget' },
-                { code: 'EOL', folderName: 'End-of-Life Pathway Budget' },
-                { code: 'HSCM', folderName: 'Home Support Care Management Budget' }
+                { code: 'EOL', folderName: 'End-of-Life Pathway Budget' }
             ];
 
             folders.forEach(folderElement => {
@@ -953,8 +953,7 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
                 'End-of-Life Pathway Budget',
                 'Assistive Technology - Short-term Budget',
                 'Assistive Technology - Ongoing Budget',
-                'Home Modification Budget',
-                'Home Support Care Management Budget'
+                'Home Modification Budget'
             ].join(',');
 
             const folderIds = await getFolderIds(budgetFolderNames, workspaceId, boardId, folders);
@@ -1064,7 +1063,7 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
                 ? await bulkFetchItemsFromDB(workspaceId, boardId, [...participantProfileIds])
                 : new Map();
 
-            // Process items with same date and participant logic as items.js
+            // Process items with same date, participant and transaction status logic as items.js
             let processedItems = allServiceItems.map(item => {
                 const scheduledStart = getValue(item, ATTRIBUTE_NAMES.SCHEDULED_START);
                 const actualEnd = getValue(item, ATTRIBUTE_NAMES.ACTUAL_END);
@@ -1095,6 +1094,7 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
                     filterDate,
                     participantName: String(participantName),
                     participantProfileValue,
+                    transactionStatusFormatted: transactionStatusFormatted || '',
                     servicePlanId: extractRefId(getValue(item, ATTRIBUTE_NAMES.SERVICE_PLAN)),
                     fundingSourceIds: extractAllRefIds(getValue(item, ATTRIBUTE_NAMES.FUNDING_SOURCE))
                 };
@@ -1124,6 +1124,12 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
             if (endDate) {
                 const endDateObj = new Date(endDate);
                 processedItems = processedItems.filter(p => p.filterDate && p.filterDate <= endDateObj);
+            }
+            if (serviceTransactionStatusFilter && String(serviceTransactionStatusFilter).trim() !== '' && String(serviceTransactionStatusFilter).toLowerCase() !== 'all') {
+                const filterValue = String(serviceTransactionStatusFilter).trim();
+                processedItems = processedItems.filter(p =>
+                    p.transactionStatusFormatted && p.transactionStatusFormatted === filterValue
+                );
             }
 
             const servicePlanIds = new Set();
