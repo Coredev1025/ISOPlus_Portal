@@ -1596,7 +1596,8 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             servicePage = 1,
             serviceLimit: serviceLimitParam,
             serviceSortBy,
-            serviceSortOrder = 'asc'
+            serviceSortOrder = 'asc',
+            serviceTransactionStatus: serviceTransactionStatusFilter = ''
         } = req.query;
 
         if (!workspaceId || !boardId) {
@@ -1634,10 +1635,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
 
         const folderIdToName = new Map();
         const folderIdToCode = {};
-        const budgetFolderConfig = [
-            ...BUDGET_CATEGORY_CONFIG,
-            { code: 'HSCM', folderName: 'Home Support Care Management Budget' }
-        ];
+        const budgetFolderConfig = [...BUDGET_CATEGORY_CONFIG];
 
         folders.forEach(folderElement => {
             if (!folderElement?.id) return;
@@ -1691,8 +1689,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             'End-of-Life Pathway Budget',
             'Assistive Technology - Short-term Budget',
             'Assistive Technology - Ongoing Budget',
-            'Home Modification Budget',
-            'Home Support Care Management Budget'
+            'Home Modification Budget'
         ].join(',');
 
         const budgetFolderIds = await getFolderIdsForQuery(budgetFolderNames);
@@ -2375,6 +2372,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 filterDate,
                 participantName: String(participantName),
                 participantProfileValue,
+                transactionStatusFormatted: transactionStatusFormatted || '',
                 totalAmountNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.TOTAL_AMOUNT)),
                 govSubsidyNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.GOV_SUBSIDY)),
                 participantContributionNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)),
@@ -2416,6 +2414,20 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const endDateObj = new Date(endDate);
             filteredServiceItems = filteredServiceItems.filter(p =>
                 p.filterDate && p.filterDate <= endDateObj
+            );
+        }
+
+        // Collect distinct transaction statuses for filter dropdown (before applying transaction status filter)
+        const distinctTransactionStatuses = [...new Set(
+            filteredServiceItems
+                .map(p => p.transactionStatusFormatted)
+                .filter(Boolean)
+        )].sort();
+
+        if (serviceTransactionStatusFilter && String(serviceTransactionStatusFilter).trim() !== '' && String(serviceTransactionStatusFilter).toLowerCase() !== 'all') {
+            const filterValue = String(serviceTransactionStatusFilter).trim();
+            filteredServiceItems = filteredServiceItems.filter(p =>
+                p.transactionStatusFormatted && p.transactionStatusFormatted === filterValue
             );
         }
 
@@ -3135,7 +3147,8 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 items: transformedServiceItems,
                 total: serviceTotal,
                 page: servicePageNumber,
-                limit: serviceLimitNumber
+                limit: serviceLimitNumber,
+                distinctTransactionStatuses: distinctTransactionStatuses
             },
             budgetCategories,
             participant: participantNameForResponse,

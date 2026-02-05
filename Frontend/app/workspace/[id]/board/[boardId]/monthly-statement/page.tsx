@@ -228,8 +228,6 @@ const BUDGET_CATEGORY_LABELS: Record<string, string> = {
   HMB: 'Home Modification Budget',
 };
 
-const HSCM_SECTION_TITLE = '🧑‍⚕️ Home Support Care Management Budget Sheet';
-
 const BUDGET_TABLE_COLUMNS: Record<string, string[]> = {
   HSQ: [
     'Funding Stream',
@@ -360,15 +358,6 @@ const BUDGET_TABLE_COLUMNS: Record<string, string[]> = {
     'Adjustments from Previous Months [Charges($-)/Refund($)]',
     'Remaining End-of-Life Care Balance as at the End of the Month ($)',
     'Notes'
-  ],
-  HSCM: [
-    'Date',
-    'Transaction Type',
-    'Associated Participant',
-    'Received Amount ($)',
-    'Allocated Time (Hr.)',
-    'Allocated Amount ($-)',
-    'Current Balance ($)'
   ]
 };
 
@@ -624,10 +613,12 @@ export default function MonthlyStatement() {
     postcode: "",
     companyRegistrationId: "",
   });
-  const [exportingSection, setExportingSection] = useState<null | 'budget-csv' | 'service-csv' | 'statement-pdf' | 'budget-HSQ' | 'budget-ATS' | 'budget-ATO' | 'budget-HMB' | 'budget-RCP' | 'budget-EOL' | 'budget-HSCM'>(null);
+  const [exportingSection, setExportingSection] = useState<null | 'budget-csv' | 'service-csv' | 'statement-pdf' | 'budget-HSQ' | 'budget-ATS' | 'budget-ATO' | 'budget-HMB' | 'budget-RCP' | 'budget-EOL'>(null);
   const [businessDetailsErrors, setBusinessDetailsErrors] = useState<string[]>([]);
   const [serviceSortBy, setServiceSortBy] = useState<'scheduledServiceDate' | 'serviceDeliveryDate' | ''>('scheduledServiceDate');
   const [serviceSortOrder, setServiceSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [serviceTransactionStatusFilter, setServiceTransactionStatusFilter] = useState<string>('all');
+  const [distinctTransactionStatuses, setDistinctTransactionStatuses] = useState<string[]>([]);
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
 
 
@@ -810,7 +801,7 @@ export default function MonthlyStatement() {
 
   const serviceTotalPages = Math.max(1, Math.ceil((servicePagination.total || 0) / (servicePagination.limit || 1)));
 
-  const fetchServiceItems = async (page: number = 1, limit: number = servicePagination.limit, sortBy?: 'scheduledServiceDate' | 'serviceDeliveryDate' | '', sortOrder?: 'asc' | 'desc') => {
+  const fetchServiceItems = async (page: number = 1, limit: number = servicePagination.limit, sortBy?: 'scheduledServiceDate' | 'serviceDeliveryDate' | '', sortOrder?: 'asc' | 'desc', transactionStatus?: string) => {
     if (!selectedParticipant || !selectedMonth || !selectedYear) {
       return;
     }
@@ -836,6 +827,7 @@ export default function MonthlyStatement() {
             servicePage: page,
             serviceLimit: limit,
             ...((sortBy ?? serviceSortBy) ? { serviceSortBy: sortBy ?? serviceSortBy, serviceSortOrder: (sortOrder ?? serviceSortOrder) || 'asc' } : {}),
+            ...(transactionStatus !== undefined ? { serviceTransactionStatus: transactionStatus } : { serviceTransactionStatus: serviceTransactionStatusFilter }),
           },
           headers: {
             'Content-Type': 'application/json',
@@ -852,6 +844,9 @@ export default function MonthlyStatement() {
           limit: serviceData.limit || limit,
           total: serviceData.total || 0,
         });
+        if (Array.isArray(serviceData.distinctTransactionStatuses)) {
+          setDistinctTransactionStatuses(serviceData.distinctTransactionStatuses);
+        }
       } else {
         setServiceItems([]);
         setServicePagination({ page: 1, limit, total: 0 });
@@ -1054,6 +1049,7 @@ export default function MonthlyStatement() {
 
     setLoading(true);
     setLoadingServiceItems(true);
+    setServiceTransactionStatusFilter('all');
     try {
       // Calculate date range for selected month using date-fns for better timezone handling
       const monthDate = new Date(yearNum, monthNum - 1, 1);
@@ -1079,6 +1075,7 @@ export default function MonthlyStatement() {
             servicePage: servicePagination.page,
             serviceLimit: servicePagination.limit,
             ...(serviceSortBy ? { serviceSortBy, serviceSortOrder: serviceSortOrder || 'asc' } : {}),
+            ...(serviceTransactionStatusFilter && serviceTransactionStatusFilter !== 'all' ? { serviceTransactionStatus: serviceTransactionStatusFilter } : {}),
           },
           headers: {
             'Content-Type': 'application/json',
@@ -1120,9 +1117,11 @@ export default function MonthlyStatement() {
           limit: data.serviceItems.limit || servicePagination.limit,
           total: data.serviceItems.total || 0
         });
+        setDistinctTransactionStatuses(Array.isArray(data.serviceItems.distinctTransactionStatuses) ? data.serviceItems.distinctTransactionStatuses : []);
       } else {
         setServiceItems([]);
         setServicePagination({ page: 1, limit: 10, total: 0 });
+        setDistinctTransactionStatuses([]);
       }
 
       // Derive summary figures (prefer backend-provided values)
@@ -1410,10 +1409,7 @@ export default function MonthlyStatement() {
       const groupedEntries = Object.entries(budgetItems).map(([folderName, items]) => ({
         folderName,
         items,
-        categoryCode:
-          /home support care management budget/i.test(folderName)
-            ? 'HSCM'
-            : items[0]?.categoryCode || 'HSQ',
+        categoryCode: items[0]?.categoryCode || 'HSQ',
       }));
       const items = groupedEntries
         .filter((group) => group.categoryCode === categoryCode)
@@ -1473,7 +1469,8 @@ export default function MonthlyStatement() {
           year: selectedYear,
           startDate: dateRange.startDate,
           endDate: dateRange.endDate,
-          type: 'service'
+          type: 'service',
+          ...(serviceTransactionStatusFilter && serviceTransactionStatusFilter !== 'all' ? { serviceTransactionStatus: serviceTransactionStatusFilter } : {}),
         },
         headers: {
           'Content-Type': 'application/json',
@@ -2514,14 +2511,11 @@ export default function MonthlyStatement() {
                 <div className="space-y-6 p-6">
                   {/* Helper function to group budget items by categoryCode */}
                   {(() => {
-                    const categoryOrder = ['HSQ', 'ATS', 'ATO', 'HMB', 'RCP', 'EOL', 'HSCM'];
+                    const categoryOrder = ['HSQ', 'ATS', 'ATO', 'HMB', 'RCP', 'EOL'];
                     const groupedEntries = Object.entries(budgetItems).map(([folderName, items]) => ({
                       folderName,
                       items,
-                      categoryCode:
-                        /home support care management budget/i.test(folderName)
-                          ? 'HSCM'
-                          : items[0]?.categoryCode || 'HSQ',
+                      categoryCode: items[0]?.categoryCode || 'HSQ',
                     }));
 
                     const groupedByCode = new Map<string, { folderName: string; items: BudgetRecord[] }>();
@@ -2542,10 +2536,7 @@ export default function MonthlyStatement() {
                         {categoryOrder.map((categoryCode) => {
                           const group = groupedByCode.get(categoryCode);
                           const items = group?.items || [];
-                          const sectionTitle =
-                            categoryCode === 'HSCM'
-                              ? HSCM_SECTION_TITLE
-                              : group?.folderName || BUDGET_CATEGORY_LABELS[categoryCode] || 'Budget';
+                          const sectionTitle = group?.folderName || BUDGET_CATEGORY_LABELS[categoryCode] || 'Budget';
                           const columns = getBudgetColumnsForCode(categoryCode);
 
                           return (
@@ -2621,7 +2612,30 @@ export default function MonthlyStatement() {
                       The services scheduled for the participants and their status
                     </p>
                   </div>
-                  <div className="print:hidden">
+                  <div className="print:hidden flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="transaction-status-filter" className="text-sm whitespace-nowrap">Transaction Status</Label>
+                      <Select
+                        value={serviceTransactionStatusFilter}
+                        onValueChange={(value) => {
+                          setServiceTransactionStatusFilter(value);
+                          fetchServiceItems(1, servicePagination.limit, serviceSortBy, serviceSortOrder, value);
+                        }}
+                        disabled={!statementData || loadingServiceItems}
+                      >
+                        <SelectTrigger id="transaction-status-filter" className="w-[220px]">
+                          <SelectValue placeholder="All" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All</SelectItem>
+                          {distinctTransactionStatuses.map((status) => (
+                            <SelectItem key={status} value={status}>
+                              {status}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <Button
                       variant="outline"
                       size="sm"
