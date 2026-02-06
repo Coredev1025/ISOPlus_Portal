@@ -1321,7 +1321,7 @@ export default function MonthlyStatement() {
             }
           }
           if (imageDataUrls.length > 0) {
-            chartImage = await compositeChartImages(imageDataUrls, 2);
+            chartImage = await compositeChartImages(imageDataUrls, 3);
           }
         } catch (e) {
           console.warn("Chart capture for PDF failed:", e);
