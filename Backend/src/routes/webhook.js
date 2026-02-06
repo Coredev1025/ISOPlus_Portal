@@ -766,15 +766,14 @@ const SERVICE_TABLE_CONFIG = {
     EOL: {
         delivered: {
             tableName: 'Table P9-1',
-            // Template table has 9 columns: Date, Provider, Service, Unit, Quantity, Unit Price, Total Price, Gov. Sub., Cont.
-            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            // Provider column removed per spec; ", by {Associated Provider}" is shown in Service when Delivered by = Associated Providers
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P9-1', '$P9-2', '$P9-3'],
             rowType: 'delivered'
         },
         adjustment: {
             tableName: 'Table P9-2',
-            // Template table has 9 columns: Date, Provider, Service, Unit, Quantity, Unit Price, Total Price, Gov. Sub., Cont.
-            columns: ['date', 'provider', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P9-4', '$P9-5', '$P9-6'],
             rowType: 'adjustment'
         }
@@ -2486,11 +2485,21 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             await resolveTemplateImageUrls(template, templateInputs);
             templateInputs.logo = logoBase64 || templateInputs.logo || '';
 
-            // Summary Table: use chart image from frontend when provided, otherwise mini-chart.png
+            // Summary Table: use chart image from frontend when provided; hide if all values $0.00; else mini-chart
             const hasChartFromFrontend = chartImage && typeof chartImage === 'string' && chartImage.length > 50;
+            const budgetCats = statementData.budgetCategories || [];
+            const allCategoriesZero = budgetCats.length === 0 || budgetCats.every((c) => {
+                const avail = Number(c.availableFunds ?? 0);
+                const rem = Number(c.remainingBudget ?? 0);
+                const del = Number(c.serviceDeliveredAmount ?? 0);
+                return avail === 0 && rem === 0 && del === 0;
+            });
             if (hasChartFromFrontend) {
                 templateInputs['Summary Table'] = chartImage.startsWith('data:') ? chartImage : `data:image/png;base64,${chartImage}`;
                 info('Webhook-Service', 'Monthly statement PDF: using chart image from frontend', { sizeChars: chartImage.length }, extractContextFromReq(req));
+            } else if (!hasChartFromFrontend && allCategoriesZero) {
+                // Hide bar chart section when not applicable (all values $0.00)
+                templateInputs['Summary Table'] = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
             } else {
                 const miniChartPath = path.join(__dirname, '..', 'assets', 'mini-chart.png');
                 try {
@@ -2512,19 +2521,20 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             setMultiValueField(templateInputs, 'companyName', { 'Company Name': safeBusinessDetails.companyName });
 
             const participantName = statementData.participant || statementData.participantProfile || 'Participant';
-            const participantAddress = statementData.participantAddress || safeBusinessDetails.address || '';
-            const participantSuburb = statementData.participantSuburb || safeBusinessDetails.suburb || '';
-            const participantState = statementData.participantState || safeBusinessDetails.state || '';
-            const participantPostcode = statementData.participantPostcode || safeBusinessDetails.postcode || '';
+            const participantAddress = statementData.participantAddress || '';
+            const participantSuburb = statementData.participantSuburb || '';
+            const participantState = statementData.participantState || '';
+            const participantPostcode = statementData.participantPostcode || '';
 
+            // Organisation block: Provider ID = Company Registration ID, Location = Street Address (Business Details)
             setMultiValueField(templateInputs, 'Organisation', {
                 'Participant': participantName,
                 'My Aged Care ID Number': statementData.myAgedCareIdNumber || '',
-                'Provider ID': statementData.providerId || '',
-                'Address': participantAddress,
-                'Suburb': participantSuburb,
-                'Post Code': participantPostcode,
-                'State': participantState
+                'Provider ID': statementData.providerId || safeBusinessDetails.companyRegistrationId || '',
+                'Address': safeBusinessDetails.address || '',
+                'Suburb': safeBusinessDetails.suburb || '',
+                'Post Code': safeBusinessDetails.postcode || '',
+                'State': safeBusinessDetails.state || ''
             });
 
             setMultiValueField(templateInputs, 'Recipient', {
@@ -2556,11 +2566,9 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 setMultiValueField(templateInputs, field, subtitlePayload);
             });
 
-            const companyNamePhone = `${safeBusinessDetails.companyName || 'Service Provider'}${safeBusinessDetails.phoneNumber ? ' | ' + safeBusinessDetails.phoneNumber : ''}`;
-
+            // Page 1 contact: Phone Number and Business Email from Business Details (ISO+ Portal)
             setMultiValueField(templateInputs, 'Disclaimer 2a', {
-                'Company Name': companyNamePhone.trim(),
-                'Company Registration ID': safeBusinessDetails.companyRegistrationId || '',
+                'Phone Number': safeBusinessDetails.phoneNumber || '',
                 'Business Email': safeBusinessDetails.businessEmail || ''
             });
 
@@ -2680,8 +2688,8 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 { name: 'Table P6-1 copy', columns: 8 },
                 { name: 'Table P6-1 copy copy copy', columns: 8 },
                 { name: 'Table P7-1 copy', columns: 8 },
-                { name: 'Table P9-1', columns: 9 },
-                { name: 'Table P9-2', columns: 9 },
+                { name: 'Table P9-1', columns: 8 },
+                { name: 'Table P9-2', columns: 8 },
                 { name: 'Table P10-1  copy', columns: 8 },
                 { name: 'Table P10-2 copy', columns: 8 },
                 { name: 'Table P10-3 copy', columns: 8 },

@@ -1606,12 +1606,11 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             });
         }
 
-        // Fetch business name once for all items
+        // Fetch business details once for all items (Provider ID, name, address for monthly statement)
         let businessProfile = null;
         try {
-            // Only select name field to reduce memory usage
             businessProfile = await Business.findOne({ workspaceId: workspaceId.toString() })
-                .select('name')
+                .select('name phone email companyRegistrationId address')
                 .lean();
         } catch (err) {
             warn('Items-Service', 'Failed to fetch business name', {

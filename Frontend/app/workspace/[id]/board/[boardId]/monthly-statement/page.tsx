@@ -619,7 +619,10 @@ export default function MonthlyStatement() {
   const [serviceSortOrder, setServiceSortOrder] = useState<'asc' | 'desc'>('asc');
   const [serviceTransactionStatusFilter, setServiceTransactionStatusFilter] = useState<string>('all');
   const [distinctTransactionStatuses, setDistinctTransactionStatuses] = useState<string[]>([]);
+  const [serviceFundingSourceFilter, setServiceFundingSourceFilter] = useState<string>('all');
+  const [distinctFundingSources, setDistinctFundingSources] = useState<string[]>([]);
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
+  const chartCardRefs = useRef<(HTMLDivElement | null)[]>([]);
 
 
   // Budget data will come from the API response
@@ -801,7 +804,7 @@ export default function MonthlyStatement() {
 
   const serviceTotalPages = Math.max(1, Math.ceil((servicePagination.total || 0) / (servicePagination.limit || 1)));
 
-  const fetchServiceItems = async (page: number = 1, limit: number = servicePagination.limit, sortBy?: 'scheduledServiceDate' | 'serviceDeliveryDate' | '', sortOrder?: 'asc' | 'desc', transactionStatus?: string) => {
+  const fetchServiceItems = async (page: number = 1, limit: number = servicePagination.limit, sortBy?: 'scheduledServiceDate' | 'serviceDeliveryDate' | '', sortOrder?: 'asc' | 'desc', transactionStatus?: string, fundingSource?: string) => {
     if (!selectedParticipant || !selectedMonth || !selectedYear) {
       return;
     }
@@ -828,6 +831,7 @@ export default function MonthlyStatement() {
             serviceLimit: limit,
             ...((sortBy ?? serviceSortBy) ? { serviceSortBy: sortBy ?? serviceSortBy, serviceSortOrder: (sortOrder ?? serviceSortOrder) || 'asc' } : {}),
             ...(transactionStatus !== undefined ? { serviceTransactionStatus: transactionStatus } : { serviceTransactionStatus: serviceTransactionStatusFilter }),
+            ...(fundingSource !== undefined ? { serviceFundingSource: fundingSource } : { serviceFundingSource: serviceFundingSourceFilter }),
           },
           headers: {
             'Content-Type': 'application/json',
@@ -846,6 +850,9 @@ export default function MonthlyStatement() {
         });
         if (Array.isArray(serviceData.distinctTransactionStatuses)) {
           setDistinctTransactionStatuses(serviceData.distinctTransactionStatuses);
+        }
+        if (Array.isArray(serviceData.distinctFundingSources)) {
+          setDistinctFundingSources(serviceData.distinctFundingSources);
         }
       } else {
         setServiceItems([]);
@@ -1050,6 +1057,7 @@ export default function MonthlyStatement() {
     setLoading(true);
     setLoadingServiceItems(true);
     setServiceTransactionStatusFilter('all');
+    setServiceFundingSourceFilter('all');
     try {
       // Calculate date range for selected month using date-fns for better timezone handling
       const monthDate = new Date(yearNum, monthNum - 1, 1);
@@ -1076,6 +1084,7 @@ export default function MonthlyStatement() {
             serviceLimit: servicePagination.limit,
             ...(serviceSortBy ? { serviceSortBy, serviceSortOrder: serviceSortOrder || 'asc' } : {}),
             ...(serviceTransactionStatusFilter && serviceTransactionStatusFilter !== 'all' ? { serviceTransactionStatus: serviceTransactionStatusFilter } : {}),
+            ...(serviceFundingSourceFilter && serviceFundingSourceFilter !== 'all' ? { serviceFundingSource: serviceFundingSourceFilter } : {}),
           },
           headers: {
             'Content-Type': 'application/json',
@@ -1118,10 +1127,12 @@ export default function MonthlyStatement() {
           total: data.serviceItems.total || 0
         });
         setDistinctTransactionStatuses(Array.isArray(data.serviceItems.distinctTransactionStatuses) ? data.serviceItems.distinctTransactionStatuses : []);
+        setDistinctFundingSources(Array.isArray(data.serviceItems.distinctFundingSources) ? data.serviceItems.distinctFundingSources : []);
       } else {
         setServiceItems([]);
         setServicePagination({ page: 1, limit: 10, total: 0 });
         setDistinctTransactionStatuses([]);
+        setDistinctFundingSources([]);
       }
 
       // Derive summary figures (prefer backend-provided values)
@@ -1194,6 +1205,39 @@ export default function MonthlyStatement() {
     }
   };
 
+  // Composite separate chart images into one image (cols per row) for PDF export.
+  // PDF: only charts with data, 2 per row. Web page: shows all charts, 3 per row.
+  const compositeChartImages = async (dataUrls: string[], cols: number): Promise<string> => {
+    if (dataUrls.length === 0) return '';
+    const gap = 16;
+    const loadImage = (src: string): Promise<HTMLImageElement> =>
+      new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = src;
+      });
+    const images = await Promise.all(dataUrls.map(loadImage));
+    const w = Math.max(...images.map((img) => img.width));
+    const h = Math.max(...images.map((img) => img.height));
+    const rows = Math.ceil(images.length / cols);
+    const canvas = document.createElement("canvas");
+    canvas.width = cols * w + (cols - 1) * gap;
+    canvas.height = rows * h + (rows - 1) * gap;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return dataUrls[0];
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    images.forEach((img, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = col * (w + gap);
+      const y = row * (h + gap);
+      ctx.drawImage(img, x, y, w, h);
+    });
+    return canvas.toDataURL("image/png");
+  };
+
   // Handle PDF generation/export (consolidated function)
   const handlePDFAction = async (action: 'generate' | 'export' = 'generate') => {
     if (!statementData) {
@@ -1255,16 +1299,30 @@ export default function MonthlyStatement() {
         services: allServiceItems, // Also update services for backward compatibility
       };
 
+      // PDF: capture only charts that have data in the associated month; composite as separate images into one (2 per row)
       let chartImage: string | undefined;
-      if (chartContainerRef.current && chartConfigs.length > 0) {
+      const chartsWithData = chartConfigs.filter((c) => c.hasData);
+      if (chartsWithData.length > 0 && chartCardRefs.current.length > 0) {
         try {
-          chartImage = await toPng(chartContainerRef.current, {
-            pixelRatio: 1,
-            cacheBust: true,
-            backgroundColor: "white",
-            style: { borderRadius: "8px" },
-            width: chartContainerRef.current.offsetWidth,
-          });
+          const chartIndicesWithData = chartsWithData.map((c) => chartConfigs.indexOf(c));
+          const imageDataUrls: string[] = [];
+          for (let i = 0; i < chartIndicesWithData.length; i++) {
+            const idx = chartIndicesWithData[i];
+            const el = chartCardRefs.current[idx];
+            if (el) {
+              const dataUrl = await toPng(el, {
+                pixelRatio: 1,
+                cacheBust: true,
+                backgroundColor: "white",
+                style: { borderRadius: "8px" },
+                width: el.offsetWidth,
+              });
+              imageDataUrls.push(dataUrl);
+            }
+          }
+          if (imageDataUrls.length > 0) {
+            chartImage = await compositeChartImages(imageDataUrls, 2);
+          }
         } catch (e) {
           console.warn("Chart capture for PDF failed:", e);
         }
@@ -1471,6 +1529,7 @@ export default function MonthlyStatement() {
           endDate: dateRange.endDate,
           type: 'service',
           ...(serviceTransactionStatusFilter && serviceTransactionStatusFilter !== 'all' ? { serviceTransactionStatus: serviceTransactionStatusFilter } : {}),
+          ...(serviceFundingSourceFilter && serviceFundingSourceFilter !== 'all' ? { serviceFundingSource: serviceFundingSourceFilter } : {}),
         },
         headers: {
           'Content-Type': 'application/json',
@@ -2428,9 +2487,14 @@ export default function MonthlyStatement() {
                   <Spinner />
                 </div>
               ) : chartConfigs.length > 0 ? (
+                // Web page: show all charts (3 per row). PDF: only charts with data, 2 per row.
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-3" ref={chartContainerRef}>
-                  {chartConfigs.map((chart) => (
-                    <div key={chart.code} className="rounded-lg border border-border/60 bg-card p-5 space-y-4 shadow-sm">
+                  {chartConfigs.map((chart, chartIndex) => (
+                    <div
+                      key={chart.code}
+                      ref={(el) => { chartCardRefs.current[chartIndex] = el; }}
+                      className="rounded-lg border border-border/60 bg-card p-5 space-y-4 shadow-sm"
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <h4 className="text-base font-semibold leading-tight">{chart.title}</h4>
@@ -2619,7 +2683,7 @@ export default function MonthlyStatement() {
                         value={serviceTransactionStatusFilter}
                         onValueChange={(value) => {
                           setServiceTransactionStatusFilter(value);
-                          fetchServiceItems(1, servicePagination.limit, serviceSortBy, serviceSortOrder, value);
+                          fetchServiceItems(1, servicePagination.limit, serviceSortBy, serviceSortOrder, value, serviceFundingSourceFilter);
                         }}
                         disabled={!statementData || loadingServiceItems}
                       >
@@ -2631,6 +2695,29 @@ export default function MonthlyStatement() {
                           {distinctTransactionStatuses.map((status) => (
                             <SelectItem key={status} value={status}>
                               {status}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="funding-source-filter" className="text-sm whitespace-nowrap">Funding Source</Label>
+                      <Select
+                        value={serviceFundingSourceFilter}
+                        onValueChange={(value) => {
+                          setServiceFundingSourceFilter(value);
+                          fetchServiceItems(1, servicePagination.limit, serviceSortBy, serviceSortOrder, serviceTransactionStatusFilter, value);
+                        }}
+                        disabled={!statementData || loadingServiceItems}
+                      >
+                        <SelectTrigger id="funding-source-filter" className="w-[220px]">
+                          <SelectValue placeholder="All" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All</SelectItem>
+                          {distinctFundingSources.map((source) => (
+                            <SelectItem key={source} value={source}>
+                              {source}
                             </SelectItem>
                           ))}
                         </SelectContent>
