@@ -185,6 +185,7 @@ interface MonthlyStatementData {
   participantPostcode?: string;
   myAgedCareIdNumber?: string;
   providerId?: string;
+  fundingSources: string[]; // Add fundingSources to the interface
 }
 
 interface BusinessDetails {
@@ -1193,6 +1194,7 @@ export default function MonthlyStatement() {
         participantPostcode: data?.participantPostcode ?? '',
         myAgedCareIdNumber: data?.myAgedCareIdNumber ?? '',
         providerId: providerIdValue,
+        fundingSources: data.fundingSources, // Set fundingSources dynamically
       });
 
       showSuccessToast('Statement loaded successfully');
