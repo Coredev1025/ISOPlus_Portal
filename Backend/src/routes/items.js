@@ -1598,7 +1598,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             serviceSortBy,
             serviceSortOrder = 'asc',
             serviceTransactionStatus: serviceTransactionStatusFilter = '',
-            fundingSource: fundingSourceFilter = ''
+            serviceFundingSource: fundingSourceFilter = ''
         } = req.query;
 
         if (!workspaceId || !boardId) {
@@ -2317,17 +2317,32 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         };
 
         const serviceParticipantProfileIds = new Set();
+        const serviceFundingSourceIds = new Set();
         for (const item of allServiceItems) {
             const participantProfileValue = getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
             const ppId = extractRefId(participantProfileValue);
             if (ppId) serviceParticipantProfileIds.add(ppId);
+
+            const fundingSourceValue = getValueFromItem(item, ATTRIBUTE_NAMES.FUNDING_SOURCE);
+            const fsIds = extractAllRefIds(fundingSourceValue);
+            fsIds.forEach(id => serviceFundingSourceIds.add(id));
         }
 
-        const serviceProfilesMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, [...serviceParticipantProfileIds]);
+        const earlyRefIds = [...serviceParticipantProfileIds, ...serviceFundingSourceIds];
+        const serviceProfilesAndFsMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, earlyRefIds);
 
-        info('Items-Service', 'Bulk fetched participant profiles from DB (monthly-statement service processing)', {
+        const serviceProfilesMap = new Map();
+        const fundingSourceRefMap = new Map();
+        for (const [key, value] of serviceProfilesAndFsMap) {
+            if (serviceParticipantProfileIds.has(key)) serviceProfilesMap.set(key, value);
+            if (serviceFundingSourceIds.has(key)) fundingSourceRefMap.set(key, value);
+        }
+
+        info('Items-Service', 'Bulk fetched participant profiles and funding sources from DB (monthly-statement service processing)', {
             profileIds: serviceParticipantProfileIds.size,
-            foundProfiles: serviceProfilesMap.size
+            foundProfiles: serviceProfilesMap.size,
+            fundingSourceIds: serviceFundingSourceIds.size,
+            foundFundingSources: fundingSourceRefMap.size
         }, extractContextFromReq(req));
 
         // Format transaction status to string (same logic as formatStatus used in transform)
@@ -2365,6 +2380,21 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 participantName = getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
             }
 
+            let fundingSourceResolved = '';
+            const fundingSourceValue = getValueFromItem(item, ATTRIBUTE_NAMES.FUNDING_SOURCE);
+            const fsIds = extractAllRefIds(fundingSourceValue);
+            if (fsIds.length > 0) {
+                const fundingSourceNames = [];
+                for (const fsId of fsIds) {
+                    const fsItem = fundingSourceRefMap.get(fsId);
+                    const fsName = getFundingSourceNameFromItem(fsItem);
+                    if (fsName) {
+                        fundingSourceNames.push(fsName);
+                    }
+                }
+                fundingSourceResolved = fundingSourceNames.join(', ');
+            }
+
             return {
                 item,
                 scheduledStartDate,
@@ -2373,6 +2403,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 participantName: String(participantName),
                 participantProfileValue,
                 transactionStatusFormatted: transactionStatusFormatted || '',
+                fundingSourceResolved: fundingSourceResolved || '',
                 totalAmountNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.TOTAL_AMOUNT)),
                 govSubsidyNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.GOV_SUBSIDY)),
                 participantContributionNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)),
@@ -2424,19 +2455,17 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 .filter(Boolean)
         )].sort();
 
-        // Collect distinct funding sources for filter dropdown
         const distinctFundingSources = [...new Set(
-            allServiceItems
-                .map((item) => getValueFromItem(item, ATTRIBUTE_NAMES.FUNDING_SOURCE))
+            filteredServiceItems
+                .map(p => p.fundingSourceResolved)
                 .filter(Boolean)
         )].sort();
 
-        // Apply Funding Source filter
         if (fundingSourceFilter && fundingSourceFilter !== 'all') {
-            filteredServiceItems = filteredServiceItems.filter((item) => {
-                const fundingSource = getValueFromItem(item, ATTRIBUTE_NAMES.FUNDING_SOURCE);
-                return fundingSource && fundingSource === fundingSourceFilter;
-            });
+            const fsFilterValue = String(fundingSourceFilter).trim();
+            filteredServiceItems = filteredServiceItems.filter(p =>
+                p.fundingSourceResolved && p.fundingSourceResolved === fsFilterValue
+            );
         }
 
         if (serviceTransactionStatusFilter && String(serviceTransactionStatusFilter).trim() !== '' && String(serviceTransactionStatusFilter).toLowerCase() !== 'all') {
@@ -3163,7 +3192,8 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 total: serviceTotal,
                 page: servicePageNumber,
                 limit: serviceLimitNumber,
-                distinctTransactionStatuses: distinctTransactionStatuses
+                distinctTransactionStatuses: distinctTransactionStatuses,
+                distinctFundingSources: distinctFundingSources
             },
             budgetCategories,
             participant: participantNameForResponse,
