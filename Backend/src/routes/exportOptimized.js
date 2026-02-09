@@ -601,15 +601,6 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
             processedItems = processedItems.filter(p => p.paymentStatus === paymentStatusFilter);
         }
 
-        // Apply Funding Source filter
-        if (fundingSourceFilter && fundingSourceFilter !== 'all') {
-            processedItems = processedItems.filter((item) => {
-                const fundingSource = item.fundingSourceIds
-                    .map((fsId) => getFundingSourceNameFromItem(refItemsMap.get(fsId)))
-                    .join(', ');
-                return fundingSource && fundingSource.includes(fundingSourceFilter);
-            });
-        }
 
         let totals = processedItems.reduce((acc, p) => ({
             totalAmount: acc.totalAmount + p.totalAmountNum,
@@ -677,14 +668,25 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
         if (participant && participant !== 'all') {
             const participantRegex = new RegExp(participant, 'i');
             processedItems = processedItems.filter(p => participantRegex.test(p.participantName));
-            // Recalculate totals after participant filtering
-            totals = processedItems.reduce((acc, p) => ({
-                totalAmount: acc.totalAmount + p.totalAmountNum,
-                totalGovSubsidy: acc.totalGovSubsidy + p.govSubsidyNum,
-                totalParticipantContribution: acc.totalParticipantContribution + p.participantContributionNum,
-                total: acc.total + 1
-            }), { totalAmount: 0, totalGovSubsidy: 0, totalParticipantContribution: 0, total: 0 });
         }
+
+        // Apply Funding Source filter (now that refItemsMap is populated)
+        if (fundingSourceFilter && fundingSourceFilter !== 'all') {
+            processedItems = processedItems.filter((item) => {
+                const fundingSource = item.fundingSourceIds
+                    .map((fsId) => getFundingSourceNameFromItem(refItemsMap.get(fsId)))
+                    .join(', ');
+                return fundingSource && fundingSource.includes(fundingSourceFilter);
+            });
+        }
+
+        // Recalculate totals after participant and funding source filtering
+        totals = processedItems.reduce((acc, p) => ({
+            totalAmount: acc.totalAmount + p.totalAmountNum,
+            totalGovSubsidy: acc.totalGovSubsidy + p.govSubsidyNum,
+            totalParticipantContribution: acc.totalParticipantContribution + p.participantContributionNum,
+            total: acc.total + 1
+        }), { totalAmount: 0, totalGovSubsidy: 0, totalParticipantContribution: 0, total: 0 });
 
         const nestedRefIds = new Set();
         const serviceRefAttrs = [
@@ -910,7 +912,8 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
             year,
             type = 'service',
             categoryCode,
-            serviceTransactionStatus: serviceTransactionStatusFilter = ''
+            serviceTransactionStatus: serviceTransactionStatusFilter = '',
+            serviceFundingSource: serviceFundingSourceFilter = ''
         } = req.query;
 
         if (!workspaceId || !boardId) {
@@ -1155,6 +1158,22 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
 
             const allRefIds = [...servicePlanIds, ...fundingSourceIds];
             const refItemsMap = await bulkFetchItemsFromDB(workspaceId, boardId, allRefIds);
+
+            // Apply Funding Source filter (now that refItemsMap is populated)
+            if (serviceFundingSourceFilter && serviceFundingSourceFilter !== 'all') {
+                const fsFilterValue = String(serviceFundingSourceFilter).trim();
+                processedItems = processedItems.filter(p => {
+                    if (p.fundingSourceIds.length === 0) return false;
+                    const fundingSourceNames = [];
+                    for (const fsId of p.fundingSourceIds) {
+                        const fsItem = refItemsMap.get(fsId);
+                        const fsName = getFundingSourceNameFromItem(fsItem);
+                        if (fsName) fundingSourceNames.push(fsName);
+                    }
+                    const resolved = fundingSourceNames.join(', ');
+                    return resolved && resolved === fsFilterValue;
+                });
+            }
 
             const transformedItems = processedItems.map(p => {
                 const item = p.item;
