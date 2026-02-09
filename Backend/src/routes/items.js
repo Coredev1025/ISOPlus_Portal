@@ -1597,7 +1597,8 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             serviceLimit: serviceLimitParam,
             serviceSortBy,
             serviceSortOrder = 'asc',
-            serviceTransactionStatus: serviceTransactionStatusFilter = ''
+            serviceTransactionStatus: serviceTransactionStatusFilter = '',
+            fundingSource: fundingSourceFilter = ''
         } = req.query;
 
         if (!workspaceId || !boardId) {
@@ -2423,6 +2424,21 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 .filter(Boolean)
         )].sort();
 
+        // Collect distinct funding sources for filter dropdown
+        const distinctFundingSources = [...new Set(
+            allServiceItems
+                .map((item) => getValueFromItem(item, ATTRIBUTE_NAMES.FUNDING_SOURCE))
+                .filter(Boolean)
+        )].sort();
+
+        // Apply Funding Source filter
+        if (fundingSourceFilter && fundingSourceFilter !== 'all') {
+            filteredServiceItems = filteredServiceItems.filter((item) => {
+                const fundingSource = getValueFromItem(item, ATTRIBUTE_NAMES.FUNDING_SOURCE);
+                return fundingSource && fundingSource === fundingSourceFilter;
+            });
+        }
+
         if (serviceTransactionStatusFilter && String(serviceTransactionStatusFilter).trim() !== '' && String(serviceTransactionStatusFilter).toLowerCase() !== 'all') {
             const filterValue = String(serviceTransactionStatusFilter).trim();
             filteredServiceItems = filteredServiceItems.filter(p =>
@@ -2436,7 +2452,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         filteredServiceItems.sort((a, b) => {
             if (sortByDate) {
                 const aDate = useDeliveryDate ? a.actualEndDate : a.scheduledStartDate;
-                const bDate = useDeliveryDate ? b.actualEndDate : b.scheduledStartDate;
+                const bDate = useDeliveryDate ? b.actualEndDate : a.scheduledStartDate;
                 if (!aDate && !bDate) return 0;
                 if (!aDate) return 1;
                 if (!bDate) return -1;
@@ -3161,7 +3177,8 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             month: monthLabelForResponse,
             monthNumber: monthNumberForResponse,
             year: yearStr,
-            summary
+            summary,
+            fundingSources: distinctFundingSources // Include distinct funding sources in the response
         });
     } catch (err) {
         error('Items-Service', 'Failed to fetch monthly statement data', {

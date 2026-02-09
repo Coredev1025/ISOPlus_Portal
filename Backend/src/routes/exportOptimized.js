@@ -530,7 +530,8 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
             paymentStatus: paymentStatusFilter = '',
             sortBy = 'scheduledServiceDate',
             sortOrder = 'asc',
-            limit = 'all'
+            limit = 'all',
+            fundingSource: fundingSourceFilter = ''
         } = req.query;
 
         if (!workspaceId || !boardId) {
@@ -598,6 +599,16 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
         }
         if (paymentStatusFilter && paymentStatusFilter !== 'all') {
             processedItems = processedItems.filter(p => p.paymentStatus === paymentStatusFilter);
+        }
+
+        // Apply Funding Source filter
+        if (fundingSourceFilter && fundingSourceFilter !== 'all') {
+            processedItems = processedItems.filter((item) => {
+                const fundingSource = item.fundingSourceIds
+                    .map((fsId) => getFundingSourceNameFromItem(refItemsMap.get(fsId)))
+                    .join(', ');
+                return fundingSource && fundingSource.includes(fundingSourceFilter);
+            });
         }
 
         let totals = processedItems.reduce((acc, p) => ({
