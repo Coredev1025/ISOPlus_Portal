@@ -1228,12 +1228,9 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
                     }
                 }
 
-                const serviceDeliveryDate = actualEnd && typeof actualEnd === 'string'
-                    ? (actualEnd.includes('T') ? actualEnd.split('T')[0] : actualEnd.split(' ')[0])
-                    : null;
-                const scheduledServiceDate = scheduledStart && typeof scheduledStart === 'string'
-                    ? (scheduledStart.includes('T') ? scheduledStart.split('T')[0] : scheduledStart.split(' ')[0])
-                    : null;
+                // Return raw ISO datetime strings so the frontend can format them in the user's local timezone
+                const serviceDeliveryDate = actualEnd || null;
+                const scheduledServiceDate = scheduledStart || null;
 
                 const committedAtHmForDelivery = committedAtHm !== null && committedAtHm !== undefined
                     ? (typeof committedAtHm === 'number' ? committedAtHm : Number(committedAtHm) || 0)
