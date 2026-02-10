@@ -560,6 +560,8 @@ function initializeBudgetAggregate() {
         adjustmentAmount: 0,
         remainingBalance: 0,
         committedFunds: 0,
+        remainingBalanceEndOfMonth: 0,
+        remainingBalanceAllocationPeriod: 0,
         fundAmount: 0,
         govSubsidyAmount: 0,
         participantContributionAmount: 0,
@@ -597,6 +599,8 @@ function calculateBudgetAggregates(items = []) {
         aggregate.adjustmentAmount += parseNumberValue(item.adjustmentAmount);
         aggregate.remainingBalance += parseNumberValue(item.remainingBalance);
         aggregate.committedFunds += parseNumberValue(item.committedFunds);
+        aggregate.remainingBalanceEndOfMonth += parseNumberValue(item.remainingBalanceEndOfMonth);
+        aggregate.remainingBalanceAllocationPeriod += parseNumberValue(item.remainingBalanceAllocationPeriod);
         aggregate.fundAmount += parseNumberValue(item.fundAmount);
         aggregate.govSubsidyAmount += parseNumberValue(item.govSubsidyAmount);
         aggregate.participantContributionAmount += parseNumberValue(item.participantContributionAmount);
@@ -2609,7 +2613,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 { type: 'currency', field: '$P2-2', value: (agg) => agg.quarterlyAdjustment },
                 { type: 'currency', field: '$P2-3', value: (agg) => agg.primarySupplementAmount },
                 { type: 'currency', field: '$P2-4', value: (agg) => agg.carryoverFunding + agg.unspentReturned },
-                { type: 'currency', field: '$P2-6', value: (agg) => agg.commonwealthUnspent },
+                { type: 'currency', field: '$P2-6', value: (agg) => agg.commonwealthUnspent + agg.providerUnspent + agg.participantUnspent },
                 { type: 'currency', field: '$P2-6 copy copy', value: (agg) => agg.commonwealthUnspent },
                 { type: 'currency', field: '$P2-7 copy copy', value: (agg) => agg.providerUnspent },
                 { type: 'currency', field: '$P2-8 copy copy', value: (agg) => agg.participantUnspent },
@@ -2671,7 +2675,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 { type: 'currency', field: '$P4-10 copy', value: (agg) => agg.adjustmentAmount },
                 { type: 'currency', field: '$P4-11 copy', value: (agg) => agg.remainingBalance },
                 { type: 'currency', field: '$P4-12 copy', value: (agg) => agg.committedFunds },
-                { type: 'currency', field: '$P4-13 copy', value: (agg) => agg.remainingBalance },
+                { type: 'currency', field: '$P4-13 copy', value: (agg) => agg.remainingBalanceAllocationPeriod || (agg.remainingBalance - Math.abs(agg.committedFunds)) },
                 { type: 'multi', field: 'P4 Footer 2 copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
             ]);
 
@@ -2688,7 +2692,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 { type: 'currency', field: '$P4-22 copy', value: (agg) => agg.adjustmentAmount },
                 { type: 'currency', field: '$P4-23 copy', value: (agg) => agg.remainingBalance },
                 { type: 'currency', field: '$P4-24 copy', value: (agg) => agg.committedFunds },
-                { type: 'currency', field: '$P4-25 copy', value: (agg) => agg.remainingBalance },
+                { type: 'currency', field: '$P4-25 copy', value: (agg) => agg.remainingBalanceAllocationPeriod || (agg.remainingBalance - Math.abs(agg.committedFunds)) },
                 { type: 'multi', field: 'P4 Footer 1 copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
             ]);
 
@@ -2705,7 +2709,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 { type: 'currency', field: '$P5-9 copy', value: (agg) => agg.adjustmentAmount },
                 { type: 'currency', field: '$P5-10 copy', value: (agg) => agg.remainingBalance },
                 { type: 'currency', field: '$P5-11 copy', value: (agg) => agg.committedFunds },
-                { type: 'currency', field: '$P5-12 copy', value: (agg) => agg.remainingBalance },
+                { type: 'currency', field: '$P5-12 copy', value: (agg) => agg.remainingBalanceAllocationPeriod || (agg.remainingBalance - Math.abs(agg.committedFunds)) },
                 { type: 'multi', field: 'P4 Footer 2 copy copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) },
                 { type: 'multi', field: 'P4 Footer 3 copy copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
             ]);
