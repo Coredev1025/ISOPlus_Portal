@@ -1038,6 +1038,11 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
                 participantUnspent: [
                     'Unspent HCP Funds - Participant Portion (Provider-held) ($)',
                     'Participant Portion HCP Unspent Funds ($)'
+                ],
+                remainingAllocationPeriod: [
+                    'Remaining AT - Short-term Balance for Allocation Period ($)',
+                    'Remaining AT - Ongoing Balance for Allocation Period ($)',
+                    'Remaining HM Balance for Allocation Period ($)'
                 ]
             };
 
@@ -1066,8 +1071,10 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
                     quarterlyAdjustment: parseNumber(getValue(item, 'Classification Quarterly Budget Adjustment ($)')),
                     primarySupplementAmount: parseNumber(getValue(item, 'Primary Supplement ($)')),
                     carryoverFunding: parseNumber(getValue(item, 'Carryover Funding from the Previous Quarter ($)')),
-                    unspentReturned: parseNumber(getValue(item, 'Unspent Budget at the End of the Quarter \u2013 Returned ($-)') ||
-                        getValue(item, 'Unspent Budget at the End of the Quarter - Returned ($-)')),
+                    unspentReturned: parseNumber(getValueMulti(item, [
+                        'Unspent Budget at the End of the Quarter \u2013 Returned ($-)',
+                        'Unspent Budget at the End of the Quarter - Returned ($-)'
+                    ])),
                     commonwealthUnspent: parseNumber(getValueMulti(item, BUDGET_FIELD_NAMES.commonwealthUnspent)),
                     providerUnspent: parseNumber(getValueMulti(item, BUDGET_FIELD_NAMES.providerUnspent)),
                     participantUnspent: parseNumber(getValueMulti(item, BUDGET_FIELD_NAMES.participantUnspent)),
@@ -1081,6 +1088,8 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
                     committedFunds: parseNumber(getValue(item, 'Committed AT Short-term Funds - to be delivered ($-)')) +
                         parseNumber(getValue(item, 'Committed AT Ongoing Funds - to be delivered ($-)')) +
                         parseNumber(getValue(item, 'Committed HM Funds - to be delivered ($-)')),
+                    remainingBalanceEndOfMonth: parseNumber(getValueMulti(item, BUDGET_FIELD_NAMES.remaining)),
+                    remainingBalanceAllocationPeriod: parseNumber(getValueMulti(item, BUDGET_FIELD_NAMES.remainingAllocationPeriod)),
                     rawData: item.data || {}
                 };
             });
