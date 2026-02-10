@@ -993,6 +993,54 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
                       .then(items => new Map(items.map(entry => [entry.itemId, entry])))
                 : new Map();
 
+            const BUDGET_FIELD_NAMES = {
+                totalAvailable: [
+                    'Total Available Budget for Home Support ($)',
+                    'Total Available Fund for AT - Short-term ($)',
+                    'Total Available Fund for AT Ongoing ($)',
+                    'Total Available Fund for HM ($)',
+                    'Total Available Budget for Restorative Care ($)',
+                    'Total Available Budget for End-of-Life Care ($)'
+                ],
+                delivered: [
+                    'Home Support Delivered During the Month ($-)',
+                    'AT - Short-term Delivered During the Month ($-)',
+                    'Assistive Technology - Short-term Delivered During the Month ($-)',
+                    'Assistive Technology - Short-term Delivered During the Month',
+                    'AT - Ongoing Delivered During the Month ($-)',
+                    'Assistive Technology - Ongoing Delivered During the Month ($-)',
+                    'Assistive Technology - Ongoing Delivered During the Month',
+                    'Home Modification Delivered During the Month ($-)',
+                    'Home Modification Delivered During the Month',
+                    'Restorative Care Delivered During the Month ($-)',
+                    'End-of-Life Care Delivered During the Month ($-)'
+                ],
+                remaining: [
+                    'Remaining Home Support Balance as at the End of the Month ($)',
+                    'Remaining AT - Short-term Balance as at the End of the Month ($)',
+                    'Remaining AT - Ongoing Balance as at the End of the Month ($)',
+                    'Remaining HM Balance as at the End of the Month ($)',
+                    'Remaining Restorative Care Balance as at the End of the Month ($)',
+                    'Remaining End-of-Life Care Balance as at the End of the Month ($)'
+                ],
+                previousMonthSpending: [
+                    'Spending from Previous Month(s) within same Quarter ($)',
+                    'Spending from Previous Month(s) within Allocated Period ($)'
+                ],
+                commonwealthUnspent: [
+                    'Unspent HCP Funds - Commonwealth Portion (Provider-held) ($)',
+                    'Commonwealth-held HCP Unspent Funds ($)'
+                ],
+                providerUnspent: [
+                    'Commonwealth-held HCP Unspent Funds (Notional Home Care Account) ($)',
+                    'Provider-held HCP Unspent Funds ($)'
+                ],
+                participantUnspent: [
+                    'Unspent HCP Funds - Participant Portion (Provider-held) ($)',
+                    'Participant Portion HCP Unspent Funds ($)'
+                ]
+            };
+
             const transformedBudgetItems = allBudgetItems.map(item => {
                 const participantName = getValue(item, ATTRIBUTE_NAMES.PARTICIPANT_FULL_NAME) || '';
                 const monthLabel = formatStatus(getValue(item, 'Month'));
@@ -1009,10 +1057,23 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
                     participantName,
                     month: monthLabel,
                     year: yearLabel,
-                    totalAvailableBudget: parseNumber(getValue(item, 'Total Available Budget for Home Support ($)')),
-                    deliveredAmount: Math.abs(parseNumber(getValue(item, 'Home Support Delivered During the Month ($-)'))),
+                    quarter: formatStatus(getValue(item, 'FY Quarter')) || '',
+                    totalAvailableBudget: parseNumber(getValueMulti(item, BUDGET_FIELD_NAMES.totalAvailable)),
+                    deliveredAmount: Math.abs(parseNumber(getValueMulti(item, BUDGET_FIELD_NAMES.delivered))),
                     adjustmentAmount: parseNumber(getValue(item, 'Adjustments from Previous Months [Charges($-)/Refund($)]')),
-                    remainingBalance: parseNumber(getValue(item, 'Remaining Home Support Balance as at the End of the Month ($)')),
+                    remainingBalance: parseNumber(getValueMulti(item, BUDGET_FIELD_NAMES.remaining)),
+                    availableFundStart: parseNumber(getValue(item, 'Available Fund at the Start of the Month ($)')),
+                    quarterlyAdjustment: parseNumber(getValue(item, 'Classification Quarterly Budget Adjustment ($)')),
+                    primarySupplementAmount: parseNumber(getValue(item, 'Primary Supplement ($)')),
+                    carryoverFunding: parseNumber(getValue(item, 'Carryover Funding from the Previous Quarter ($)')),
+                    unspentReturned: parseNumber(getValue(item, 'Unspent Budget at the End of the Quarter \u2013 Returned ($-)') ||
+                        getValue(item, 'Unspent Budget at the End of the Quarter - Returned ($-)')),
+                    commonwealthUnspent: parseNumber(getValueMulti(item, BUDGET_FIELD_NAMES.commonwealthUnspent)),
+                    providerUnspent: parseNumber(getValueMulti(item, BUDGET_FIELD_NAMES.providerUnspent)),
+                    participantUnspent: parseNumber(getValueMulti(item, BUDGET_FIELD_NAMES.participantUnspent)),
+                    previousMonthSpending: parseNumber(getValueMulti(item, BUDGET_FIELD_NAMES.previousMonthSpending)),
+                    fundAmount: parseNumber(getValue(item, 'Fund Amount ($)')),
+                    fundClassification: getValue(item, 'Fund Classification') || '',
                     primarySupplementLabel,
                     fundingStartDate: getValue(item, 'Funding Start Date'),
                     fundingEndDate: getValue(item, 'Funding End Date'),
