@@ -2674,18 +2674,9 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             // Get dates
             const scheduledStart = getValue(ATTRIBUTE_NAMES.SCHEDULED_START) || null;
             const actualEnd = getValue(ATTRIBUTE_NAMES.ACTUAL_END) || null;
-            const scheduledServiceDate = scheduledStart
-                ? (() => {
-                    const date = new Date(scheduledStart);
-                    return isNaN(date.getTime()) ? null : date.toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                })()
-                : null;
-            const serviceDeliveryDate = actualEnd
-                ? (() => {
-                    const date = new Date(actualEnd);
-                    return isNaN(date.getTime()) ? null : date.toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                })()
-                : null;
+            // Return raw ISO datetime strings so the frontend can format them in the user's local timezone
+            const scheduledServiceDate = scheduledStart || null;
+            const serviceDeliveryDate = actualEnd || null;
 
             // Get Transaction Status from flat data format
             const transactionStatusValue = getValue(ATTRIBUTE_NAMES.TRANSACTION_STATUS);

@@ -1330,12 +1330,13 @@ export default function MonthlyStatement() {
         }
       }
 
-      // Call backend PDF generation endpoint
+      // Call backend PDF generation endpoint, sending browser timezone so dates are formatted correctly
       const response = await axios.post(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/${id}/${boardId}/monthly-statement`,
         {
           statementData: fullStatementData,
           businessDetails,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           ...(chartImage ? { chartImage } : {}),
         }
       );
