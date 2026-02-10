@@ -2626,8 +2626,8 @@ export default function MonthlyStatement() {
 
             {/* Filters */}
             <Card className="p-6 mb-6 shadow-lg print:hidden">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="space-y-2">
+              <div className="flex flex-nowrap items-end gap-4 overflow-x-auto pb-2">
+                <div className="space-y-2 flex-shrink-0 min-w-[200px]">
                   <label className="text-sm font-medium">Participant</label>
                   <Select value={selectedParticipant} onValueChange={setSelectedParticipant} disabled={loadingParticipants}>
                     <SelectTrigger>
@@ -2649,7 +2649,7 @@ export default function MonthlyStatement() {
                   </Select>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-2 flex-shrink-0 min-w-[160px]">
                   <label className="text-sm font-medium">Month</label>
                   <Select value={selectedMonth} onValueChange={setSelectedMonth}>
                     <SelectTrigger>
@@ -2665,7 +2665,7 @@ export default function MonthlyStatement() {
                   </Select>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-2 flex-shrink-0 min-w-[120px]">
                   <label className="text-sm font-medium">Year</label>
                   <Select value={selectedYear} onValueChange={setSelectedYear}>
                     <SelectTrigger>
@@ -2681,23 +2681,13 @@ export default function MonthlyStatement() {
                   </Select>
                 </div>
 
-                <div className="flex items-end">
-                  <Button
-                    onClick={fetchStatementData}
-                    className="w-full"
-                    disabled={loading || !selectedParticipant || !selectedMonth || !selectedYear}
-                  >
-                    {loading ? <Spinner /> : 'Load Statement'}
-                  </Button>
-                </div>
-
-                <div className="flex items-end">
+                <div className="flex-shrink-0">
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
                           variant="secondary"
-                          className="w-full gap-2"
+                          className="gap-2"
                           onClick={handleManualSync}
                           disabled={isManualSyncing || syncStatuses.some(sync => sync.boardId === boardId && (sync.status === 'started' || sync.status === 'in-progress'))}
                         >
@@ -2719,6 +2709,15 @@ export default function MonthlyStatement() {
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
+                </div>
+
+                <div className="flex-shrink-0">
+                  <Button
+                    onClick={fetchStatementData}
+                    disabled={loading || !selectedParticipant || !selectedMonth || !selectedYear}
+                  >
+                    {loading ? <Spinner /> : 'Load Statement'}
+                  </Button>
                 </div>
 
               </div>
