@@ -534,14 +534,13 @@ function formatDateToAU(value, timezone) {
     if (Number.isNaN(date.getTime())) {
         return '';
     }
+    const effectiveTimezone = timezone || 'Australia/Sydney';
     const options = {
         day: '2-digit',
         month: '2-digit',
-        year: 'numeric'
+        year: 'numeric',
+        timeZone: effectiveTimezone
     };
-    if (timezone) {
-        options.timeZone = timezone;
-    }
     return new Intl.DateTimeFormat('en-AU', options).format(date);
 }
 
@@ -955,11 +954,31 @@ function createPlaceholderRow(columns, rowType) {
     });
 }
 
+function getServiceSortDate(service, rowType = 'delivered') {
+    if (rowType === 'committed') return null;
+    const status = normalizeStatus(service.transactionStatus);
+    const dateStr = status.includes('cancelled')
+        ? (service.scheduledServiceDate || service.scheduledStart || service.scheduledShiftStart)
+        : (service.serviceDeliveryDate || service.actualEnd || service.actualStart || service.scheduledServiceDate || service.scheduledStart);
+    if (!dateStr) return null;
+    const d = new Date(dateStr);
+    return Number.isNaN(d.getTime()) ? null : d;
+}
+
 function buildServiceTableRows(services = [], config = {}, business, timezone) {
     const { columns = [], rowType = 'delivered' } = config;
     const totals = { amount: 0, gov: 0, participant: 0 };
 
-    const rawRows = services.map((service) => {
+    const sortedServices = [...services].sort((a, b) => {
+        const dateA = getServiceSortDate(a, rowType);
+        const dateB = getServiceSortDate(b, rowType);
+        if (!dateA && !dateB) return 0;
+        if (!dateA) return 1;
+        if (!dateB) return -1;
+        return dateA.getTime() - dateB.getTime();
+    });
+
+    const rawRows = sortedServices.map((service) => {
         const totalAmount = rowType === 'committed'
             ? parseNumberValue(service.committedAtHmForDelivery || service.totalAmount)
             : parseNumberValue(service.totalAmount);
