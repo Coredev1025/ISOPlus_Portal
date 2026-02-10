@@ -71,11 +71,11 @@ const parseNumber = (value) => {
 };
 
 const parseDate = (value) => {
-    if (!value) return null;
+    if (value === null || value === undefined || value === '') return null;
     if (value instanceof Date) {
         return isNaN(value.getTime()) ? null : value;
     }
-    if (typeof value === 'string') {
+    if (typeof value === 'string' || typeof value === 'number') {
         const date = new Date(value);
         return isNaN(date.getTime()) ? null : date;
     }
@@ -141,9 +141,9 @@ const formatStatus = (value) => {
     return String(value);
 };
 
-// Match items.js: use Actual End for date filter only when status is "Delivered - To be claimed and invoiced"
-const TRANSACTION_STATUS_USE_ACTUAL_END = 'Delivered - To be claimed and invoiced';
-const normalizeString = (value) => (value || '').toString().trim().toLowerCase();
+// Match items.js: use Actual End for date filter only when status is "Delivered - To be claimed and invoiced."
+const TRANSACTION_STATUS_USE_ACTUAL_END = 'Delivered - To be claimed and invoiced.';
+const normalizeString = (value) => (value || '').toString().trim().toLowerCase().replace(/\.+$/, '');
 
 const getValue = (item, attributeName) => {
     if (!item?.data) return null;
@@ -619,9 +619,13 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
         processedItems.sort((a, b) => {
             const aVal = a[selectedSortField];
             const bVal = b[selectedSortField];
+            if (aVal === null && bVal === null) return 0;
             if (aVal === null) return 1;
             if (bVal === null) return -1;
-            return (aVal < bVal ? -1 : aVal > bVal ? 1 : 0) * sortMultiplier;
+            // Use getTime() for reliable Date comparison
+            const aTime = aVal instanceof Date ? aVal.getTime() : aVal;
+            const bTime = bVal instanceof Date ? bVal.getTime() : bVal;
+            return (aTime < bTime ? -1 : aTime > bTime ? 1 : 0) * sortMultiplier;
         });
 
         const servicePlanIds = new Set();
