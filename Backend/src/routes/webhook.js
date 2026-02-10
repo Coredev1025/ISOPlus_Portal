@@ -524,17 +524,25 @@ function formatCurrencyValue(value) {
     return `$${formatValue(parseNumberValue(value))}`;
 }
 
-function formatDateToAU(value) {
+function formatDateToAU(value, timezone) {
     if (!value) return '';
+    // If the value is already a dd/MM/yyyy formatted string, return it as-is
+    if (typeof value === 'string' && /^\d{2}\/\d{2}\/\d{4}$/.test(value.trim())) {
+        return value.trim();
+    }
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) {
         return '';
     }
-    return new Intl.DateTimeFormat('en-AU', {
+    const options = {
         day: '2-digit',
         month: '2-digit',
         year: 'numeric'
-    }).format(date);
+    };
+    if (timezone) {
+        options.timeZone = timezone;
+    }
+    return new Intl.DateTimeFormat('en-AU', options).format(date);
 }
 
 function initializeBudgetAggregate() {
@@ -624,7 +632,7 @@ function calculateBudgetAggregates(items = []) {
     return aggregates;
 }
 
-function getQuarterMetadata(monthNumber, year, fallbackQuarterLabel) {
+function getQuarterMetadata(monthNumber, year, fallbackQuarterLabel, timezone) {
     const monthIndex = Number(monthNumber) || 1;
     const effectiveYear = Number(year) || new Date().getFullYear();
     const monthNo = ((monthIndex - 1) % 3) + 1;
@@ -635,8 +643,8 @@ function getQuarterMetadata(monthNumber, year, fallbackQuarterLabel) {
     return {
         monthNo,
         quarterLabel: fallbackQuarterLabel || `Q${quarterNumber}`,
-        firstDay: formatDateToAU(firstDay),
-        lastDay: formatDateToAU(lastDay)
+        firstDay: formatDateToAU(firstDay, timezone),
+        lastDay: formatDateToAU(lastDay, timezone)
     };
 }
 
@@ -865,27 +873,28 @@ function resolveServiceProviderName(service = {}, business) {
     return '';
 }
 
-function resolveServiceDateValue(service = {}, rowType = 'delivered') {
+function resolveServiceDateValue(service = {}, rowType = 'delivered', timezone) {
     if (rowType === 'committed') {
         return 'To be delivered';
     }
     const status = normalizeStatus(service.transactionStatus);
     if (status.includes('cancelled')) {
-        return formatDateToAU(service.scheduledServiceDate || service.scheduledStart || service.scheduledShiftStart);
+        return formatDateToAU(service.scheduledServiceDate || service.scheduledStart || service.scheduledShiftStart, timezone);
     }
     return formatDateToAU(
         service.serviceDeliveryDate ||
         service.actualEnd ||
         service.actualStart ||
         service.scheduledServiceDate ||
-        service.scheduledStart
+        service.scheduledStart,
+        timezone
     );
 }
 
-function mapServiceColumnValue(service, column, rowType, business) {
+function mapServiceColumnValue(service, column, rowType, business, timezone) {
     switch (column) {
         case 'date': {
-            return resolveServiceDateValue(service, rowType);
+            return resolveServiceDateValue(service, rowType, timezone);
         }
         case 'provider': {
             const provider = resolveServiceProviderName(service, business) || service.worker || business?.name || '';
@@ -946,7 +955,7 @@ function createPlaceholderRow(columns, rowType) {
     });
 }
 
-function buildServiceTableRows(services = [], config = {}, business) {
+function buildServiceTableRows(services = [], config = {}, business, timezone) {
     const { columns = [], rowType = 'delivered' } = config;
     const totals = { amount: 0, gov: 0, participant: 0 };
 
@@ -961,7 +970,7 @@ function buildServiceTableRows(services = [], config = {}, business) {
         totals.gov += gov;
         totals.participant += participant;
 
-        return columns.map((column) => mapServiceColumnValue(service, column, rowType, business));
+        return columns.map((column) => mapServiceColumnValue(service, column, rowType, business, timezone));
     });
 
     const baseRows = rawRows.length > 0 ? rawRows : [createPlaceholderRow(columns, rowType)];
@@ -2432,7 +2441,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
     try {
         const { workspaceId, boardId } = req.params;
-        const { statementData, businessDetails, chartImage } = req.body;
+        const { statementData, businessDetails, chartImage, timezone } = req.body;
 
         if (!statementData) {
             return res.status(400).json({ message: "No statement data provided." });
@@ -2472,7 +2481,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             const yearValue = statementData.year || new Date().getFullYear().toString();
             const firstAggregate = Object.values(budgetAggregates)[0] || {};
             const quarterLabel = statementData.summary?.quarter || firstAggregate.quarterLabel || '';
-            const quarterMeta = getQuarterMetadata(monthNumber, yearValue, quarterLabel);
+            const quarterMeta = getQuarterMetadata(monthNumber, yearValue, quarterLabel, timezone);
 
             const subtitlePayload = {
                 'Month No.': quarterMeta.monthNo.toString(),
@@ -2612,7 +2621,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 { type: 'currency', field: '$P3-8', value: (agg) => agg.deliveredAmount },
                 { type: 'currency', field: '$P3-9', value: (agg) => agg.adjustmentAmount },
                 { type: 'currency', field: '$P3-10', value: (agg) => agg.remainingBalance },
-                { type: 'multi', field: 'P3 Footer 1', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate) || 'N/A' }) }
+                { type: 'multi', field: 'P3 Footer 1', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
             ]);
 
             const endOfLifeAggregate = budgetAggregates.EOL ? { ...budgetAggregates.EOL } : initializeBudgetAggregate();
@@ -2644,7 +2653,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 { type: 'currency', field: '$P4-11 copy', value: (agg) => agg.remainingBalance },
                 { type: 'currency', field: '$P4-12 copy', value: (agg) => agg.committedFunds },
                 { type: 'currency', field: '$P4-13 copy', value: (agg) => agg.remainingBalance },
-                { type: 'multi', field: 'P4 Footer 2 copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate) || 'N/A' }) }
+                { type: 'multi', field: 'P4 Footer 2 copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
             ]);
 
             const assistiveOngoingAggregate = budgetAggregates.ATO ? { ...budgetAggregates.ATO } : initializeBudgetAggregate();
@@ -2661,7 +2670,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 { type: 'currency', field: '$P4-23 copy', value: (agg) => agg.remainingBalance },
                 { type: 'currency', field: '$P4-24 copy', value: (agg) => agg.committedFunds },
                 { type: 'currency', field: '$P4-25 copy', value: (agg) => agg.remainingBalance },
-                { type: 'multi', field: 'P4 Footer 1 copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate) || 'N/A' }) }
+                { type: 'multi', field: 'P4 Footer 1 copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
             ]);
 
             const homeModificationAggregate = budgetAggregates.HMB ? { ...budgetAggregates.HMB } : initializeBudgetAggregate();
@@ -2678,8 +2687,8 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 { type: 'currency', field: '$P5-10 copy', value: (agg) => agg.remainingBalance },
                 { type: 'currency', field: '$P5-11 copy', value: (agg) => agg.committedFunds },
                 { type: 'currency', field: '$P5-12 copy', value: (agg) => agg.remainingBalance },
-                { type: 'multi', field: 'P4 Footer 2 copy copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate) || 'N/A' }) },
-                { type: 'multi', field: 'P4 Footer 3 copy copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate) || 'N/A' }) }
+                { type: 'multi', field: 'P4 Footer 2 copy copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) },
+                { type: 'multi', field: 'P4 Footer 3 copy copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
             ]);
 
             // Pre-initialize ALL template tables with empty rows to prevent pdfme errors
@@ -2752,7 +2761,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
 
                 Object.values(tableConfig).forEach((config) => {
                     const sourceServices = bucket[config.rowType] || [];
-                    const tableData = buildServiceTableRows(sourceServices, config, business);
+                    const tableData = buildServiceTableRows(sourceServices, config, business, timezone);
                     templateInputs[config.tableName] = JSON.stringify(tableData.rows);
                     tableColumnCounts[config.tableName] = config.columns.length;
 
