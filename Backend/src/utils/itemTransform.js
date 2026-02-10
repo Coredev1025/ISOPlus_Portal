@@ -200,13 +200,13 @@ export function parseNumber(value) {
 }
 
 export function parseDate(value) {
-  if (!value) {
+  if (value === null || value === undefined || value === '') {
     return null;
   }
   if (value instanceof Date) {
     return isNaN(value.getTime()) ? null : value;
   }
-  if (typeof value === 'string') {
+  if (typeof value === 'string' || typeof value === 'number') {
     const date = new Date(value);
     return isNaN(date.getTime()) ? null : date;
   }

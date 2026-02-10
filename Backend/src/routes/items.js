@@ -132,7 +132,7 @@ const DELIVERED_BY_TYPES = {
 };
 
 // Transaction status that uses Actual Shift End Date & Time for month filtering; others use Scheduled Shift Start
-const TRANSACTION_STATUS_USE_ACTUAL_END = 'Delivered - To be claimed and invoiced';
+const TRANSACTION_STATUS_USE_ACTUAL_END = 'Delivered - To be claimed and invoiced.';
 
 // Attribute names for referenced item types (Participant Profiles, Service Plans, Funding Sources)
 const REF_ATTRIBUTE_NAMES = {
@@ -1004,9 +1004,9 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
         // Helper function to parse date from value
         const parseDate = (value) => {
-            if (!value) return null;
-            if (value instanceof Date) return value;
-            if (typeof value === 'string') {
+            if (value === null || value === undefined || value === '') return null;
+            if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+            if (typeof value === 'string' || typeof value === 'number') {
                 const date = new Date(value);
                 return isNaN(date.getTime()) ? null : date;
             }
@@ -1214,18 +1214,27 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 bVal = b[selectedSortField];
             }
 
-            if (aVal === null || aVal === undefined) return 1;
-            if (bVal === null || bVal === undefined) return -1;
+            const aIsNull = aVal === null || aVal === undefined;
+            const bIsNull = bVal === null || bVal === undefined;
+            if (aIsNull && bIsNull) return 0;
+            if (aIsNull) return 1;
+            if (bIsNull) return -1;
 
-            if (aVal < bVal) return -1 * selectedSortOrder;
-            if (aVal > bVal) return 1 * selectedSortOrder;
+            // Use getTime() for reliable Date comparison
+            const aTime = aVal instanceof Date ? aVal.getTime() : aVal;
+            const bTime = bVal instanceof Date ? bVal.getTime() : bVal;
+
+            if (aTime < bTime) return -1 * selectedSortOrder;
+            if (aTime > bTime) return 1 * selectedSortOrder;
 
             // Secondary sort by updatedAt if not primary sort field
             if (selectedSortField !== 'updatedAt') {
                 const aUpdated = a.item.updatedAt || a.item.createdAt || new Date(0);
                 const bUpdated = b.item.updatedAt || b.item.createdAt || new Date(0);
-                if (aUpdated < bUpdated) return 1;
-                if (aUpdated > bUpdated) return -1;
+                const aUpdTime = aUpdated instanceof Date ? aUpdated.getTime() : new Date(aUpdated).getTime();
+                const bUpdTime = bUpdated instanceof Date ? bUpdated.getTime() : new Date(bUpdated).getTime();
+                if (aUpdTime < bUpdTime) return 1;
+                if (aUpdTime > bUpdTime) return -1;
             }
 
             return 0;
@@ -1673,9 +1682,9 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
 
         // Helper function to parse date from value
         const parseDate = (value) => {
-            if (!value) return null;
-            if (value instanceof Date) return value;
-            if (typeof value === 'string') {
+            if (value === null || value === undefined || value === '') return null;
+            if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+            if (typeof value === 'string' || typeof value === 'number') {
                 const date = new Date(value);
                 return isNaN(date.getTime()) ? null : date;
             }
@@ -2193,7 +2202,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         // This eliminates the massive delays from batchProcess rate limiting
         const transformedAllBudgetItems = allBudgetItems.map(transformBudgetItem);
 
-        const normalizeString = (value) => (value || '').toString().trim().toLowerCase();
+        const normalizeString = (value) => (value || '').toString().trim().toLowerCase().replace(/\.+$/, '');
         const isIdLike = (value) => typeof value === 'string' && value.includes('-');
         const normalizedParticipant = normalizeString(participant);
 
@@ -2481,17 +2490,22 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         filteredServiceItems.sort((a, b) => {
             if (sortByDate) {
                 const aDate = useDeliveryDate ? a.actualEndDate : a.scheduledStartDate;
-                const bDate = useDeliveryDate ? b.actualEndDate : a.scheduledStartDate;
+                const bDate = useDeliveryDate ? b.actualEndDate : b.scheduledStartDate;
                 if (!aDate && !bDate) return 0;
                 if (!aDate) return 1;
                 if (!bDate) return -1;
-                const cmp = aDate < bDate ? -1 : (aDate > bDate ? 1 : 0);
+                // Use getTime() for reliable Date comparison
+                const aTime = aDate instanceof Date ? aDate.getTime() : aDate;
+                const bTime = bDate instanceof Date ? bDate.getTime() : bDate;
+                const cmp = aTime < bTime ? -1 : (aTime > bTime ? 1 : 0);
                 return serviceSortOrder === 'desc' ? -cmp : cmp;
             }
             const aUpdated = a.item.updatedAt || a.item.createdAt || new Date(0);
             const bUpdated = b.item.updatedAt || b.item.createdAt || new Date(0);
-            if (aUpdated < bUpdated) return 1;
-            if (aUpdated > bUpdated) return -1;
+            const aUpdTime = aUpdated instanceof Date ? aUpdated.getTime() : new Date(aUpdated).getTime();
+            const bUpdTime = bUpdated instanceof Date ? bUpdated.getTime() : new Date(bUpdated).getTime();
+            if (aUpdTime < bUpdTime) return 1;
+            if (aUpdTime > bUpdTime) return -1;
             return 0;
         });
 
