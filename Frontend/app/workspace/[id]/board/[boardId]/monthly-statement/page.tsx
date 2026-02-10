@@ -2,10 +2,10 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Calendar, User, FileText, AlertCircle, FileCheck, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { ArrowLeft, Calendar, User, FileText, AlertCircle, FileCheck, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown, HelpCircle, Download } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { toPng } from "html-to-image";
 import {
   Table,
@@ -24,10 +24,11 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import axios from "@/app/utils/axiosConfig";
+import { useAppContext } from "@/app/context";
 import { fetchMonthlyStatementItems } from "@/app/utils/items";
 import { format, startOfMonth, endOfMonth, isValid, parse } from "date-fns";
 import Spinner from "@/components/ui/spin";
-import { showSuccessToast, showErrorToast } from "@/lib/toast-utils";
+import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast } from "@/lib/toast-utils";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from "recharts";
 import {
@@ -49,6 +50,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface ServiceRecord {
   id: string;
@@ -588,6 +590,8 @@ export default function MonthlyStatement() {
   const id = pathname.split('/')[2];
   const boardId = pathname.split('/')[4];
 
+  const { syncStatuses, setSyncStatuses } = useAppContext();
+
   const [loading, setLoading] = useState(false);
   const [loadingParticipants, setLoadingParticipants] = useState(false);
   const [loadingServiceItems, setLoadingServiceItems] = useState(false);
@@ -624,6 +628,10 @@ export default function MonthlyStatement() {
   const [distinctFundingSources, setDistinctFundingSources] = useState<string[]>([]);
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartCardRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const [isManualSyncing, setIsManualSyncing] = useState(false);
+  const [showHelpDialog, setShowHelpDialog] = useState(false);
+  const syncCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const previousSyncStatusRef = useRef<{ boardId: string; status: string; startTime?: number; seenInContext?: boolean } | null>(null);
 
 
   // Budget data will come from the API response
@@ -1024,6 +1032,288 @@ export default function MonthlyStatement() {
         serviceCount: 0,
       },
     ];
+  };
+
+  const stopSyncChecking = useCallback(() => {
+    if (syncCheckIntervalRef.current) {
+      clearInterval(syncCheckIntervalRef.current);
+      syncCheckIntervalRef.current = null;
+    }
+    previousSyncStatusRef.current = null;
+  }, []);
+
+  const checkSyncStatus = useCallback(async () => {
+    if (!id || !boardId) {
+      return;
+    }
+
+    try {
+      const previousSync = previousSyncStatusRef.current;
+      const wasActive = previousSync &&
+        previousSync.boardId === boardId &&
+        (previousSync.status === 'started' || previousSync.status === 'in-progress');
+
+      if (!wasActive) {
+        return;
+      }
+
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/sync/workspace/status/${id}`
+      );
+
+      if (response.data && response.data.boards) {
+        const board = response.data.boards.find((b: any) => b.boardId === boardId);
+
+        if (board) {
+          const isManualSync = board.jobStatus &&
+            (board.jobStatus.state === 'active' || board.jobStatus.state === 'waiting' || board.jobStatus.state === 'failed');
+
+          const isFailed = (board.syncExecution && (board.syncExecution.status === 'failed' || board.syncExecution.status === 'timeout')) ||
+            (board.jobStatus && board.jobStatus.state === 'failed');
+
+          const isActive = (board.syncExecution && (board.syncExecution.status === 'started' || board.syncExecution.status === 'in-progress')) ||
+            (board.jobStatus && (board.jobStatus.state === 'active' || board.jobStatus.state === 'waiting'));
+
+          const isCompleted = !isActive && !isFailed && wasActive;
+
+          if (isManualSync) {
+            const jobProgress = board.jobStatus?.progress || {};
+            const syncStats = board.syncStats || {};
+
+            const foldersProcessed = jobProgress.foldersProcessed ?? syncStats.foldersProcessed ?? 0;
+            const totalFolders = jobProgress.totalFolders ?? 0;
+            const currentFolder = jobProgress.currentFolder || null;
+            const itemsProcessed = jobProgress.itemsProcessed ?? syncStats.itemsSynced ?? 0;
+
+            const updatedSyncStatus = {
+              boardId: board.boardId,
+              boardName: board.boardName || board.boardId,
+              status: board.jobStatus.state === 'active' ? 'in-progress' as const :
+                board.jobStatus.state === 'failed' ? 'failed' as const : 'started' as const,
+              syncType: board.syncStatus || 'manual_triggered_sync',
+              startTime: board.jobStatus.processedOn
+                ? new Date(board.jobStatus.processedOn).toISOString()
+                : previousSync?.startTime ? new Date(previousSync.startTime).toISOString() : new Date().toISOString(),
+              progress: {
+                foldersProcessed,
+                totalFolders,
+                currentFolder,
+                itemsProcessed
+              },
+              isManualSync: true,
+              error: isFailed ? {
+                message: board.jobStatus?.failedReason || board.lastSyncError || 'Sync failed with unknown error',
+                stack: null,
+                details: null
+              } : null
+            };
+
+            setSyncStatuses(prev => {
+              const existingIndex = prev.findIndex(s => s.boardId === boardId);
+              if (existingIndex >= 0) {
+                const updated = [...prev];
+                updated[existingIndex] = updatedSyncStatus;
+                return updated;
+              } else {
+                return [...prev, updatedSyncStatus];
+              }
+            });
+
+            previousSyncStatusRef.current = {
+              boardId: board.boardId,
+              status: updatedSyncStatus.status,
+              startTime: previousSync?.startTime || Date.now()
+            };
+          }
+
+          if (isFailed && wasActive) {
+            const errorMessage = board.jobStatus?.failedReason ||
+              board.lastSyncError ||
+              board.syncExecution?.error?.message ||
+              'The sync job encountered an error. Please try again.';
+
+            showErrorToast('Sync job failed', {
+              description: errorMessage
+            });
+
+            stopSyncChecking();
+          } else if (isCompleted) {
+            showSuccessToast('Sync completed', {
+              description: 'The sync job has finished successfully.'
+            });
+
+            setSyncStatuses(prev => prev.filter(s => s.boardId !== boardId));
+
+            stopSyncChecking();
+          }
+        } else {
+          const timeSinceStart = previousSync?.startTime ? Date.now() - previousSync.startTime : 0;
+
+          if (timeSinceStart > 15000 && wasActive) {
+            showSuccessToast('Sync completed', {
+              description: 'The sync job has finished successfully.'
+            });
+
+            setSyncStatuses(prev => prev.filter(s => s.boardId !== boardId));
+
+            stopSyncChecking();
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error('Error checking sync status:', err);
+    }
+  }, [id, boardId, stopSyncChecking, setSyncStatuses]);
+
+  useEffect(() => {
+    return () => {
+      stopSyncChecking();
+    };
+  }, [stopSyncChecking]);
+
+  const handleManualSync = async () => {
+    const isValidWorkspaceId = id &&
+      typeof id === 'string' &&
+      id.trim() !== '' &&
+      id !== 'undefined' &&
+      id !== 'null';
+
+    const isValidBoardId = boardId &&
+      typeof boardId === 'string' &&
+      boardId.trim() !== '' &&
+      boardId !== 'undefined' &&
+      boardId !== 'null';
+
+    if (!isValidWorkspaceId || !isValidBoardId) {
+      console.error('Invalid parameters for manual sync:', {
+        workspaceId: id,
+        boardId,
+        workspaceIdType: typeof id,
+        boardIdType: typeof boardId
+      });
+      showErrorToast('Workspace or board missing', {
+        description: 'Please navigate back and select a workspace and board again. The current URL may be invalid.'
+      });
+      return;
+    }
+
+    try {
+      setIsManualSyncing(true);
+      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/sync/board/manual`;
+      const response = await axios.post(apiUrl, {
+        workspaceId: id.trim(),
+        boardId: boardId.trim()
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+
+      if (response.data?.success) {
+        showSuccessToast('Manual sync queued', {
+          description: 'Your job is in the queue and will be processed shortly. Data will refresh automatically when complete. You can track progress in the sync indicator.'
+        });
+
+        if (syncCheckIntervalRef.current) {
+          clearInterval(syncCheckIntervalRef.current);
+          syncCheckIntervalRef.current = null;
+        }
+
+        let boardName = boardId;
+        try {
+          const currentBoardData = sessionStorage.getItem('currentBoard');
+          if (currentBoardData) {
+            const boardData = JSON.parse(currentBoardData);
+            boardName = boardData.boardName || boardId;
+          }
+        } catch (e) {
+          // Use boardId as fallback
+        }
+
+        const initialSyncStatus = {
+          boardId: boardId,
+          boardName: boardName,
+          status: 'started' as const,
+          syncType: 'manual_triggered_sync',
+          startTime: new Date().toISOString(),
+          progress: {
+            foldersProcessed: 0,
+            totalFolders: 0,
+            currentFolder: undefined,
+            itemsProcessed: 0
+          },
+          isManualSync: true
+        };
+
+        setSyncStatuses(prev => {
+          const existingIndex = prev.findIndex(s => s.boardId === boardId);
+          if (existingIndex >= 0) {
+            const updated = [...prev];
+            updated[existingIndex] = {
+              ...initialSyncStatus,
+              ...updated[existingIndex],
+              status: 'started' as const,
+              startTime: new Date().toISOString()
+            };
+            return updated;
+          } else {
+            return [...prev, initialSyncStatus];
+          }
+        });
+
+        previousSyncStatusRef.current = {
+          boardId: boardId,
+          status: 'started',
+          startTime: Date.now(),
+          seenInContext: false
+        };
+
+        setTimeout(() => {
+          checkSyncStatus();
+        }, 10000);
+
+        syncCheckIntervalRef.current = setInterval(() => {
+          checkSyncStatus();
+        }, 10000);
+      } else if (response.data?.alreadyRunning) {
+        showWarningToast('Sync already running', {
+          description: response.data?.message || 'A manual sync is already in progress. Please wait for it to complete.',
+          duration: 5000
+        });
+      } else {
+        showErrorToast('Sync not started', {
+          description: response.data?.message || 'Sync could not be started. It may already be in progress.'
+        });
+      }
+    } catch (err: any) {
+      console.error('Error triggering manual sync:', err);
+      const errorMessage = err.response?.data?.message || err.message || 'Unknown error';
+      const statusCode = err.response?.status;
+
+      if (err.response?.data?.alreadyRunning) {
+        showWarningToast('Sync already running', {
+          description: err.response.data?.message || 'A manual sync is already in progress. Please wait for it to complete.',
+          duration: 5000
+        });
+      } else if (statusCode === 404 || errorMessage.toLowerCase().includes('board not found')) {
+        showErrorToast('Board not found', {
+          description: 'The board could not be found. Please navigate back and select a valid board, or check if the board ID is correct.',
+          duration: 7000
+        });
+      } else if (statusCode === 400) {
+        showErrorToast('Invalid request', {
+          description: errorMessage || 'Please check that workspace and board IDs are valid.',
+          duration: 7000
+        });
+      } else {
+        showErrorToast('Failed to trigger manual sync', {
+          description: errorMessage
+        });
+      }
+    } finally {
+      setIsManualSyncing(false);
+    }
   };
 
   // Fetch statement data
@@ -2401,6 +2691,36 @@ export default function MonthlyStatement() {
                   </Button>
                 </div>
 
+                <div className="flex items-end">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="secondary"
+                          className="w-full gap-2"
+                          onClick={handleManualSync}
+                          disabled={isManualSyncing || syncStatuses.some(sync => sync.boardId === boardId && (sync.status === 'started' || sync.status === 'in-progress'))}
+                        >
+                          {isManualSyncing ? (
+                            <>
+                              <Spinner className="h-4 w-4" />
+                              Syncing...
+                            </>
+                          ) : (
+                            <>
+                              Resync Data
+                            </>
+                          )}
+                          <HelpCircle className="h-4 w-4" aria-label="Learn more about Resync Data" onClick={(e) => { e.stopPropagation(); setShowHelpDialog(true); }} />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        It downloads brand-new data from the server, including any edits and new records.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+
               </div>
             </Card>
           </>
@@ -2987,6 +3307,36 @@ export default function MonthlyStatement() {
           </Card>
         )}
       </div>
+
+      <Dialog open={showHelpDialog} onOpenChange={setShowHelpDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <HelpCircle className="h-5 w-5" />
+              Resync Data
+            </DialogTitle>
+            <DialogDescription>
+              Understanding how resync works
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <div className="flex items-start gap-3">
+                <Download className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                <div>
+                  <h3 className="font-semibold text-sm">Resync Data</h3>
+                  <p className="text-sm text-muted-foreground">
+                    It downloads brand-new data from the server, including any edits and new records. The button will be disabled while a sync is in progress.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setShowHelpDialog(false)}>Got it</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Business Details Dialog */}
       <Dialog open={showBusinessDialog} onOpenChange={setShowBusinessDialog}>
