@@ -1544,8 +1544,6 @@ export default function MonthlyStatement() {
     }
 
     try {
-      setLoading(true);
-
       const dateRange = getSelectedMonthDateRange();
       if (!dateRange) {
         showErrorToast('Please choose a valid month and year before generating PDF.');
@@ -1633,12 +1631,38 @@ export default function MonthlyStatement() {
 
       const fileUrl = response.data?.fileUrl;
       if (fileUrl) {
-        window.open(fileUrl, '_blank', 'noopener,noreferrer');
-        showSuccessToast(
-          action === 'generate'
-            ? 'Monthly statement PDF generated successfully'
-            : 'PDF exported successfully'
-        );
+        try {
+          const pdfResponse = await fetch(fileUrl);
+          const pdfBlob = await pdfResponse.blob();
+          const pdfObjectUrl = URL.createObjectURL(pdfBlob);
+          const link = document.createElement('a');
+          link.href = pdfObjectUrl;
+          const participantSlug = (statementData.participant || 'statement').replace(/\s+/g, '_');
+          const monthSlug = statementData.month || selectedMonth || '';
+          const yearSlug = statementData.year || selectedYear || '';
+          link.download = `Monthly_Statement_${participantSlug}_${monthSlug}_${yearSlug}.pdf`;
+          link.style.display = 'none';
+          document.body.appendChild(link);
+          link.click();
+
+          setTimeout(() => {
+            document.body.removeChild(link);
+            URL.revokeObjectURL(pdfObjectUrl);
+          }, 100);
+
+          showSuccessToast(
+            action === 'generate'
+              ? 'Monthly statement PDF downloaded successfully'
+              : 'PDF exported successfully'
+          );
+        } catch (downloadErr: any) {
+          console.error('Error downloading PDF:', downloadErr);
+
+          window.open(fileUrl, '_blank');
+          showInfoToast('PDF opened in new tab', {
+            description: 'Download failed, opened PDF in new tab instead.'
+          });
+        }
         return fileUrl;
       } else {
         showErrorToast('Failed to retrieve PDF link from server.');
@@ -1648,8 +1672,6 @@ export default function MonthlyStatement() {
       console.error(`Error ${action === 'generate' ? 'generating' : 'exporting'} PDF:`, err);
       showErrorToast('Failed to generate PDF. Please try again.');
       return null;
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -2714,9 +2736,9 @@ export default function MonthlyStatement() {
                 <div className="flex-shrink-0">
                   <Button
                     onClick={fetchStatementData}
-                    disabled={loading || !selectedParticipant || !selectedMonth || !selectedYear}
+                    disabled={loading || exportingSection === 'statement-pdf' || !selectedParticipant || !selectedMonth || !selectedYear}
                   >
-                    {loading ? <Spinner /> : 'Load Statement'}
+                    {loading || exportingSection === 'statement-pdf' ? <Spinner /> : 'Load Statement'}
                   </Button>
                 </div>
 
@@ -2752,8 +2774,17 @@ export default function MonthlyStatement() {
                     onClick={handleSaHMonthlyStatement}
                     disabled={!statementData || exportingSection === 'statement-pdf' || loading}
                   >
-                    <FileCheck className="h-4 w-4" />
-                    Generate Monthly Statement
+                    {exportingSection === 'statement-pdf' ? (
+                      <>
+                        <Spinner className="h-4 w-4" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <FileCheck className="h-4 w-4" />
+                        Generate Monthly Statement
+                      </>
+                    )}
                   </Button>
                 </div>
               </div>
