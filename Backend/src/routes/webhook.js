@@ -26,6 +26,7 @@ import {
     getItemValues
 } from '../services/isoplus.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
+import { fetchBudgetItems, fetchServiceItems } from '../services/monthlyStatementData.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2491,13 +2492,65 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 postcode: businessDetails?.postcode || business.address?.postcode || ''
             };
 
-            const services = Array.isArray(statementData.serviceItems) && statementData.serviceItems.length
+            // Resolve service and budget items: use request data if available, otherwise fetch from DB
+            let services = Array.isArray(statementData.serviceItems) && statementData.serviceItems.length
                 ? statementData.serviceItems
-                : Array.isArray(statementData.services)
+                : Array.isArray(statementData.services) && statementData.services.length
                     ? statementData.services
                     : [];
 
-            const budgetItems = Array.isArray(statementData.budgetItems) ? statementData.budgetItems : [];
+            let budgetItems = Array.isArray(statementData.budgetItems) && statementData.budgetItems.length
+                ? statementData.budgetItems
+                : [];
+
+            // Fetch from database when budget items or service items are missing
+            const participantFilter = statementData.participant || statementData.participantProfile || '';
+            const monthFilter = statementData.monthNumber || '';
+            const yearFilter = statementData.year || '';
+
+            if (!budgetItems.length || !services.length) {
+                // Compute date range for service items filter when fetching from DB
+                let startDate, endDate;
+                if (monthFilter && yearFilter) {
+                    const monthIdx = Number(monthFilter) - 1;
+                    const yearNum = Number(yearFilter);
+                    if (!isNaN(monthIdx) && !isNaN(yearNum)) {
+                        startDate = new Date(Date.UTC(yearNum, monthIdx, 1)).toISOString();
+                        endDate = new Date(Date.UTC(yearNum, monthIdx + 1, 0, 23, 59, 59, 999)).toISOString();
+                    }
+                }
+
+                const [dbBudgetItems, dbServiceItems] = await Promise.all([
+                    !budgetItems.length
+                        ? fetchBudgetItems(workspaceId, boardId, {
+                            participant: participantFilter,
+                            month: monthFilter,
+                            year: yearFilter
+                        })
+                        : Promise.resolve(budgetItems),
+                    !services.length
+                        ? fetchServiceItems(workspaceId, boardId, {
+                            participant: participantFilter,
+                            startDate,
+                            endDate
+                        })
+                        : Promise.resolve(services)
+                ]);
+
+                if (!budgetItems.length) {
+                    budgetItems = dbBudgetItems;
+                    info('Webhook-Service', 'Fetched budget items from DB for monthly statement PDF', {
+                        count: budgetItems.length, participant: participantFilter, month: monthFilter, year: yearFilter
+                    }, extractContextFromReq(req));
+                }
+                if (!services.length) {
+                    services = dbServiceItems;
+                    info('Webhook-Service', 'Fetched service items from DB for monthly statement PDF', {
+                        count: services.length, participant: participantFilter
+                    }, extractContextFromReq(req));
+                }
+            }
+
             const budgetAggregates = calculateBudgetAggregates(budgetItems);
 
             const monthNumber = statementData.monthNumber || '1';
@@ -2866,6 +2919,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                     month: statementData.month,
                     year: statementData.year,
                     servicesCount: services.length,
+                    budgetItemsCount: budgetItems.length,
                     fileUrl
                 }, extractContextFromReq(req));
 
