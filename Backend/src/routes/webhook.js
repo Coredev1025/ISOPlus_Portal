@@ -2493,62 +2493,37 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             };
 
             // Resolve service and budget items: use request data if available, otherwise fetch from DB
-            let services = Array.isArray(statementData.serviceItems) && statementData.serviceItems.length
-                ? statementData.serviceItems
-                : Array.isArray(statementData.services) && statementData.services.length
-                    ? statementData.services
-                    : [];
+            const hasServices = (Array.isArray(statementData.serviceItems) && statementData.serviceItems.length)
+                || (Array.isArray(statementData.services) && statementData.services.length);
+            const hasBudget = Array.isArray(statementData.budgetItems) && statementData.budgetItems.length;
 
-            let budgetItems = Array.isArray(statementData.budgetItems) && statementData.budgetItems.length
-                ? statementData.budgetItems
-                : [];
+            let services = hasServices ? (statementData.serviceItems || statementData.services) : [];
+            let budgetItems = hasBudget ? statementData.budgetItems : [];
 
-            // Fetch from database when budget items or service items are missing
-            const participantFilter = statementData.participant || statementData.participantProfile || '';
-            const monthFilter = statementData.monthNumber || '';
-            const yearFilter = statementData.year || '';
-
-            if (!budgetItems.length || !services.length) {
-                // Compute date range for service items filter when fetching from DB
+            if (!hasBudget || !hasServices) {
+                const participant = statementData.participant || statementData.participantProfile || '';
+                const monthNum = statementData.monthNumber || '';
+                const yearVal = statementData.year || '';
                 let startDate, endDate;
-                if (monthFilter && yearFilter) {
-                    const monthIdx = Number(monthFilter) - 1;
-                    const yearNum = Number(yearFilter);
-                    if (!isNaN(monthIdx) && !isNaN(yearNum)) {
-                        startDate = new Date(Date.UTC(yearNum, monthIdx, 1)).toISOString();
-                        endDate = new Date(Date.UTC(yearNum, monthIdx + 1, 0, 23, 59, 59, 999)).toISOString();
+                if (monthNum && yearVal) {
+                    const mi = Number(monthNum) - 1, yi = Number(yearVal);
+                    if (!isNaN(mi) && !isNaN(yi)) {
+                        startDate = new Date(Date.UTC(yi, mi, 1)).toISOString();
+                        endDate = new Date(Date.UTC(yi, mi + 1, 0, 23, 59, 59, 999)).toISOString();
                     }
                 }
 
-                const [dbBudgetItems, dbServiceItems] = await Promise.all([
-                    !budgetItems.length
-                        ? fetchBudgetItems(workspaceId, boardId, {
-                            participant: participantFilter,
-                            month: monthFilter,
-                            year: yearFilter
-                        })
-                        : Promise.resolve(budgetItems),
-                    !services.length
-                        ? fetchServiceItems(workspaceId, boardId, {
-                            participant: participantFilter,
-                            startDate,
-                            endDate
-                        })
-                        : Promise.resolve(services)
+                const [dbBudget, dbService] = await Promise.all([
+                    !hasBudget ? fetchBudgetItems(workspaceId, boardId, { participant, month: monthNum, year: yearVal }) : Promise.resolve(null),
+                    !hasServices ? fetchServiceItems(workspaceId, boardId, { participant, startDate, endDate }) : Promise.resolve(null)
                 ]);
 
-                if (!budgetItems.length) {
-                    budgetItems = dbBudgetItems;
-                    info('Webhook-Service', 'Fetched budget items from DB for monthly statement PDF', {
-                        count: budgetItems.length, participant: participantFilter, month: monthFilter, year: yearFilter
-                    }, extractContextFromReq(req));
-                }
-                if (!services.length) {
-                    services = dbServiceItems;
-                    info('Webhook-Service', 'Fetched service items from DB for monthly statement PDF', {
-                        count: services.length, participant: participantFilter
-                    }, extractContextFromReq(req));
-                }
+                if (dbBudget) budgetItems = dbBudget;
+                if (dbService) services = dbService;
+
+                info('Webhook-Service', 'DB fallback for monthly statement PDF', {
+                    budgetCount: budgetItems.length, serviceCount: services.length, participant
+                }, extractContextFromReq(req));
             }
 
             const budgetAggregates = calculateBudgetAggregates(budgetItems);
