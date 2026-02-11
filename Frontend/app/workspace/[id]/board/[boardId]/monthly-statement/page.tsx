@@ -2738,7 +2738,7 @@ export default function MonthlyStatement() {
                     onClick={fetchStatementData}
                     disabled={loading || exportingSection === 'statement-pdf' || !selectedParticipant || !selectedMonth || !selectedYear}
                   >
-                    {loading ? <Spinner /> : 'Load Statement'}
+                    {loading && exportingSection !== 'statement-pdf' ? <Spinner /> : 'Load Statement'}
                   </Button>
                 </div>
 
