@@ -262,20 +262,36 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
 
     const rawItems = await Item.find(query).lean();
 
+    const profileIds = new Set();
     const psRefIds = new Set();
     rawItems.forEach(item => {
+        const ppId = extractRefId(getValue(item, ATTR.PARTICIPANT_PROFILE));
+        if (ppId) profileIds.add(ppId);
         extractAllRefIds(getValue(item, 'Primary Supplement')).filter(isUuidLike).forEach(id => psRefIds.add(id));
     });
-    const psMap = psRefIds.size > 0
-        ? await Item.find({ workspaceId, boardId, itemId: { $in: [...psRefIds] } }).lean()
-            .then(items => new Map(items.map(e => [e.itemId, e])))
-        : new Map();
+
+    const [profileMap, psMap] = await Promise.all([
+        profileIds.size > 0 ? bulkFetchItems(workspaceId, boardId, [...profileIds]) : Promise.resolve(new Map()),
+        psRefIds.size > 0
+            ? Item.find({ workspaceId, boardId, itemId: { $in: [...psRefIds] } }).lean()
+                .then(items => new Map(items.map(e => [e.itemId, e])))
+            : Promise.resolve(new Map())
+    ]);
+
+    const resolveParticipant = (item) => {
+        const ppId = extractRefId(getValue(item, ATTR.PARTICIPANT_PROFILE));
+        if (ppId) {
+            const name = getParticipantName(profileMap.get(ppId));
+            if (name) return name;
+        }
+        return getValue(item, ATTR.PARTICIPANT_FULL_NAME) || '';
+    };
 
     const transformed = rawItems.map(item => ({
         id: item.itemId,
         folderName: folderIdToName.get(item.folderId) || '',
         categoryCode: folderIdToCode[item.folderId] || 'HSQ',
-        participantName: getValue(item, ATTR.PARTICIPANT_FULL_NAME) || '',
+        participantName: resolveParticipant(item),
         month: formatStatus(getValue(item, 'Month')),
         year: formatStatus(getValue(item, 'Year')),
         quarter: formatStatus(getValue(item, 'FY Quarter')) || '',
