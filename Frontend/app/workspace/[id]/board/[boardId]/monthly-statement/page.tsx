@@ -1498,7 +1498,6 @@ export default function MonthlyStatement() {
   };
 
   // Composite separate chart images into one image (cols per row) for PDF export.
-  // PDF: only charts with data, 2 per row. Web page: shows all charts, 3 per row.
   const compositeChartImages = async (dataUrls: string[], cols: number): Promise<string> => {
     if (dataUrls.length === 0) return '';
     const gap = 16;
@@ -1589,7 +1588,6 @@ export default function MonthlyStatement() {
         services: allServiceItems, // Also update services for backward compatibility
       };
 
-      // PDF: capture only charts that have data in the associated month; composite as separate images into one (2 per row)
       let chartImage: string | undefined;
       const chartsWithData = chartConfigs.filter((c) => c.hasData);
       if (chartsWithData.length > 0 && chartCardRefs.current.length > 0) {
@@ -1611,7 +1609,8 @@ export default function MonthlyStatement() {
             }
           }
           if (imageDataUrls.length > 0) {
-            chartImage = await compositeChartImages(imageDataUrls, 3);
+            const pdfCols = chartsWithData.length <= 4 ? 2 : 3;
+            chartImage = await compositeChartImages(imageDataUrls, pdfCols);
           }
         } catch (e) {
           console.warn("Chart capture for PDF failed:", e);
@@ -2840,7 +2839,6 @@ export default function MonthlyStatement() {
                   <Spinner />
                 </div>
               ) : chartConfigs.length > 0 ? (
-                // Web page: show all charts (3 per row). PDF: only charts with data, 2 per row.
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-3" ref={chartContainerRef}>
                   {chartConfigs.map((chart, chartIndex) => (
                     <div
@@ -2854,7 +2852,7 @@ export default function MonthlyStatement() {
                         </div>
                       </div>
 
-                      <ChartContainer config={chart.chartConfig} className="w-full min-h-[18rem] h-72 overflow-visible">
+                      <ChartContainer config={chart.chartConfig} className="w-full aspect-auto min-h-[18rem] h-72 overflow-visible">
                         <BarChart data={chart.data} margin={{ left: 0, right: 0, top: 28, bottom: 24 }} barCategoryGap="22%">
                           <CartesianGrid strokeDasharray="3 3" vertical={false} />
                           <XAxis

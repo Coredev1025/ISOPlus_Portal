@@ -545,6 +545,13 @@ function formatDateToAU(value, timezone) {
     return new Intl.DateTimeFormat('en-AU', options).format(date);
 }
 
+function safeString(value) {
+    if (!value) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'object') return value.name || value.id || '';
+    return String(value);
+}
+
 function initializeBudgetAggregate() {
     return {
         availableFundStart: 0,
@@ -607,10 +614,13 @@ function calculateBudgetAggregates(items = []) {
         aggregate.participantContributionAmount += parseNumberValue(item.participantContributionAmount);
 
         if (!aggregate.primarySupplementLabel) {
-            aggregate.primarySupplementLabel = item.fundClassification || item.fund || '';
+            aggregate.primarySupplementLabel = safeString(item.primarySupplementLabel) || safeString(item.fundClassification) || safeString(item.fund) || '';
         }
         if (!aggregate.fund) {
-            aggregate.fund = item.fund || '';
+            aggregate.fund = safeString(item.fund) || '';
+        }
+        if (!aggregate.fundClassification) {
+            aggregate.fundClassification = safeString(item.fundClassification) || '';
         }
         if (!aggregate.quarterLabel && item.quarter) {
             aggregate.quarterLabel = item.quarter;
@@ -634,6 +644,82 @@ function calculateBudgetAggregates(items = []) {
     });
 
     return aggregates;
+}
+
+/**
+ * Enrich a budget aggregate with values from a frontend budgetCategory object.
+ * The budgetCategories (from the items endpoint) include profile-data fallbacks,
+ * so they always reflect the correct values shown on the web page.
+ * For each numeric field, if the aggregate value is 0, the category value is used.
+ * For label/date fields, the category value is used if the aggregate value is empty.
+ */
+function enrichAggregateFromCategory(aggregate, category) {
+    if (!category || !aggregate) return;
+
+    const numericFields = {
+        availableFundStart: 'availableFundStart',
+        quarterlyAdjustment: 'quarterlyAdjustment',
+        primarySupplementAmount: 'primarySupplementAmount',
+        carryoverFunding: 'carryoverFunding',
+        unspentReturned: 'unspentReturned',
+        commonwealthUnspent: 'commonwealthUnspent',
+        providerUnspent: 'providerUnspent',
+        participantUnspent: 'participantUnspent',
+        previousMonthSpending: 'previousMonthSpending',
+        fundAmount: 'fundAmount',
+        adjustmentAmount: 'adjustmentAmount',
+        committedFunds: 'committedFunds',
+        govSubsidyAmount: 'govSubsidyAmount',
+        participantContributionAmount: 'participantContributionAmount',
+        remainingBalanceAllocationPeriod: 'remainingBalanceAllocationPeriod'
+    };
+
+    // Fields with different names between category and aggregate
+    const mappedFields = [
+        { aggField: 'totalAvailableBudget', catFields: ['totalAvailableBudget', 'availableFunds'] },
+        { aggField: 'deliveredAmount', catFields: ['deliveredAmount', 'serviceDeliveredAmount'] },
+        { aggField: 'remainingBalance', catFields: ['remainingBalance', 'remainingBudget'] }
+    ];
+
+    // Enrich same-named numeric fields
+    for (const [aggKey, catKey] of Object.entries(numericFields)) {
+        if (Math.abs(aggregate[aggKey] || 0) < 0.001) {
+            const catVal = parseNumberValue(category[catKey]);
+            if (Math.abs(catVal) >= 0.001) {
+                aggregate[aggKey] = catVal;
+            }
+        }
+    }
+
+    // Enrich mapped fields (different names between category and aggregate)
+    for (const { aggField, catFields } of mappedFields) {
+        if (Math.abs(aggregate[aggField] || 0) < 0.001) {
+            for (const catField of catFields) {
+                const catVal = parseNumberValue(category[catField]);
+                if (Math.abs(catVal) >= 0.001) {
+                    aggregate[aggField] = catVal;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Enrich label/date fields
+    if (!aggregate.primarySupplementLabel) {
+        aggregate.primarySupplementLabel = safeString(category.primarySupplementLabel) || '';
+    }
+    if (!aggregate.fund) {
+        aggregate.fund = safeString(category.fund) || '';
+    }
+    if (!aggregate.fundClassification) {
+        aggregate.fundClassification = safeString(category.fundClassification) || '';
+    }
+    if (!aggregate.fundingStartDate && category.fundingStartDate) {
+        aggregate.fundingStartDate = category.fundingStartDate;
+    }
+    if (!aggregate.fundingEndDate && category.fundingEndDate) {
+        aggregate.fundingEndDate = category.fundingEndDate;
+    }
 }
 
 function getQuarterMetadata(monthNumber, year, fallbackQuarterLabel, timezone) {
@@ -797,17 +883,19 @@ const SERVICE_TABLE_CONFIG = {
             totals: ['$P10-1  copy', '$P10-3 copy', '$P10-3  copy'],
             rowType: 'delivered'
         },
-        committed: {
+        adjustment: {
+            // Adjustment table placed right after delivered (middle position on page)
             tableName: 'Table P10-2 copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P10-4 copy', '$P10-5 copy', '$P10-6 copy'],
-            rowType: 'committed'
+            rowType: 'adjustment'
         },
-        adjustment: {
+        committed: {
+            // Committed table at the bottom of the page (after adjustment section)
             tableName: 'Table P10-3 copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P10-7 copy', '$P10-8 copy', '$P10-9 copy'],
-            rowType: 'adjustment'
+            rowType: 'committed'
         }
     },
     ATO: {
@@ -817,17 +905,19 @@ const SERVICE_TABLE_CONFIG = {
             totals: ['$P11-1 copy', '$P11-3  copy', '$P11-3 copy'],
             rowType: 'delivered'
         },
-        committed: {
+        adjustment: {
+            // Adjustment table placed right after delivered (middle position on page)
             tableName: 'Table P11-3  copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P11-4 copy', '$P11-5 copy', '$P11-6 copy'],
-            rowType: 'committed'
+            rowType: 'adjustment'
         },
-        adjustment: {
+        committed: {
+            // Committed table at the bottom of the page (after adjustment section)
             tableName: 'Table P11-2 copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P11-7  copy', '$P11-8 copy', '$P11-9 1 copy'],
-            rowType: 'adjustment'
+            rowType: 'committed'
         }
     },
     HMB: {
@@ -837,17 +927,19 @@ const SERVICE_TABLE_CONFIG = {
             totals: ['$P12-1  copy', '$P11-3   copy', '$P12-3  copy'],
             rowType: 'delivered'
         },
-        committed: {
+        adjustment: {
+            // Adjustment table placed right after delivered (middle position on page)
             tableName: 'Table P12-3  copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P12-4  copy', '$P11-5 copy copy', '$P11-6  copy'],
-            rowType: 'committed'
+            rowType: 'adjustment'
         },
-        adjustment: {
+        committed: {
+            // Committed table at the bottom of the page (after adjustment section)
             tableName: 'Table P11-2 copy copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P12-7  copy', '$P11-8 copy copy', '$P11-9 1 copy copy'],
-            rowType: 'adjustment'
+            rowType: 'committed'
         }
     }
 };
@@ -2528,6 +2620,21 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
 
             const budgetAggregates = calculateBudgetAggregates(budgetItems);
 
+            // Enrich aggregates with budgetCategories from the frontend (which include profile-data fallbacks).
+            // This ensures PDF values match the values shown on the web page.
+            const budgetCats = Array.isArray(statementData.budgetCategories) ? statementData.budgetCategories : [];
+            if (budgetCats.length > 0) {
+                const categoryByCode = {};
+                budgetCats.forEach((cat) => { if (cat && cat.code) categoryByCode[cat.code] = cat; });
+
+                for (const code of Object.keys(categoryByCode)) {
+                    if (!budgetAggregates[code]) {
+                        budgetAggregates[code] = initializeBudgetAggregate();
+                    }
+                    enrichAggregateFromCategory(budgetAggregates[code], categoryByCode[code]);
+                }
+            }
+
             const monthNumber = statementData.monthNumber || '1';
             const yearValue = statementData.year || new Date().getFullYear().toString();
             const firstAggregate = Object.values(budgetAggregates)[0] || {};
@@ -2547,8 +2654,8 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
 
             // Summary Table: use chart image from frontend when provided; hide if all values $0.00; else mini-chart
             const hasChartFromFrontend = chartImage && typeof chartImage === 'string' && chartImage.length > 50;
-            const budgetCats = statementData.budgetCategories || [];
-            const allCategoriesZero = budgetCats.length === 0 || budgetCats.every((c) => {
+            const chartBudgetCats = statementData.budgetCategories || [];
+            const allCategoriesZero = chartBudgetCats.length === 0 || chartBudgetCats.every((c) => {
                 const avail = Number(c.availableFunds ?? 0);
                 const rem = Number(c.remainingBudget ?? 0);
                 const del = Number(c.serviceDeliveredAmount ?? 0);
@@ -2632,8 +2739,27 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 'Business Email': safeBusinessDetails.businessEmail || ''
             });
 
+            const firstDayPayload = { 'first day': quarterMeta.firstDay };
+            const lastDayPayload = { 'last day': quarterMeta.lastDay };
+            [
+                'P2-10', 'P2-11',
+                'P2-11 copy', 'P2-14 copy',
+                'P4-8 copy',
+                'P4-20 copy',
+                'P5-7 copy',
+                'P3-7'
+            ].forEach((f) => setMultiValueField(templateInputs, f, firstDayPayload));
+            [
+                'P2-14',
+                'P4-11 copy',
+                'P4-23 copy',
+                'P5-10 copy',
+                'P3-10',
+                'P3-20 copy'
+            ].forEach((f) => setMultiValueField(templateInputs, f, lastDayPayload));
+
             const homeSupportAggregate = budgetAggregates.HSQ ? { ...budgetAggregates.HSQ } : initializeBudgetAggregate();
-            homeSupportAggregate.primarySupplementLabel = homeSupportAggregate.primarySupplementLabel || homeSupportAggregate.fund || homeSupportAggregate.fundClassification || '';
+            homeSupportAggregate.primarySupplementLabel = safeString(homeSupportAggregate.primarySupplementLabel) || safeString(homeSupportAggregate.fund) || safeString(homeSupportAggregate.fundClassification) || '';
 
             applyBudgetMapping(templateInputs, homeSupportAggregate, [
                 { type: 'multi', field: 'P2-3', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
@@ -2658,25 +2784,24 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             ]);
 
             const restorativeAggregate = budgetAggregates.RCP ? { ...budgetAggregates.RCP } : initializeBudgetAggregate();
-            restorativeAggregate.primarySupplementLabel = restorativeAggregate.primarySupplementLabel || restorativeAggregate.fund || restorativeAggregate.fundClassification || '';
+            restorativeAggregate.primarySupplementLabel = safeString(restorativeAggregate.primarySupplementLabel) || safeString(restorativeAggregate.fund) || safeString(restorativeAggregate.fundClassification) || '';
 
             applyBudgetMapping(templateInputs, restorativeAggregate, [
                 { type: 'multi', field: 'P3-2', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
                 { type: 'currency', field: '$P3-1', value: (agg) => agg.availableFundStart },
                 { type: 'currency', field: '$P3-2', value: (agg) => agg.primarySupplementAmount },
-                { type: 'currency', field: '$P3-3', value: (agg) => agg.commonwealthUnspent },
-                { type: 'currency', field: '$P3-4', value: (agg) => agg.providerUnspent },
-                { type: 'currency', field: '$P3-5', value: (agg) => agg.participantUnspent },
+                // Note: $P3-3, $P3-4, $P3-5 (unspent HCP funds) are not in the RCP template page
+                // (Restorative Care Pathway does not have 10% care management deduction)
                 { type: 'currency', field: '$P3-6', value: (agg) => agg.previousMonthSpending },
                 { type: 'currency', field: '$P3-7', value: (agg) => agg.totalAvailableBudget },
                 { type: 'currency', field: '$P3-8', value: (agg) => agg.deliveredAmount },
                 { type: 'currency', field: '$P3-9', value: (agg) => agg.adjustmentAmount },
-                { type: 'currency', field: '$P3-10', value: (agg) => agg.remainingBalance },
-                { type: 'multi', field: 'P3 Footer 1', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
+                { type: 'currency', field: '$P3-10', value: (agg) => agg.remainingBalance }
+                // Note: P3 Footer 1 does not exist in template; RCP funding dates are in P3 Subtitle
             ]);
 
             const endOfLifeAggregate = budgetAggregates.EOL ? { ...budgetAggregates.EOL } : initializeBudgetAggregate();
-            endOfLifeAggregate.primarySupplementLabel = endOfLifeAggregate.primarySupplementLabel || endOfLifeAggregate.fund || endOfLifeAggregate.fundClassification || '';
+            endOfLifeAggregate.primarySupplementLabel = safeString(endOfLifeAggregate.primarySupplementLabel) || safeString(endOfLifeAggregate.fund) || safeString(endOfLifeAggregate.fundClassification) || '';
 
             applyBudgetMapping(templateInputs, endOfLifeAggregate, [
                 { type: 'multi', field: 'P3-12 copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
@@ -2690,7 +2815,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             ]);
 
             const assistiveShortAggregate = budgetAggregates.ATS ? { ...budgetAggregates.ATS } : initializeBudgetAggregate();
-            assistiveShortAggregate.primarySupplementLabel = assistiveShortAggregate.primarySupplementLabel || assistiveShortAggregate.fund || assistiveShortAggregate.fundClassification || '';
+            assistiveShortAggregate.primarySupplementLabel = safeString(assistiveShortAggregate.primarySupplementLabel) || safeString(assistiveShortAggregate.fund) || safeString(assistiveShortAggregate.fundClassification) || '';
 
             applyBudgetMapping(templateInputs, assistiveShortAggregate, [
                 { type: 'multi', field: 'P4-2 copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
@@ -2708,7 +2833,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             ]);
 
             const assistiveOngoingAggregate = budgetAggregates.ATO ? { ...budgetAggregates.ATO } : initializeBudgetAggregate();
-            assistiveOngoingAggregate.primarySupplementLabel = assistiveOngoingAggregate.primarySupplementLabel || assistiveOngoingAggregate.fund || assistiveOngoingAggregate.fundClassification || '';
+            assistiveOngoingAggregate.primarySupplementLabel = safeString(assistiveOngoingAggregate.primarySupplementLabel) || safeString(assistiveOngoingAggregate.fund) || safeString(assistiveOngoingAggregate.fundClassification) || '';
 
             applyBudgetMapping(templateInputs, assistiveOngoingAggregate, [
                 { type: 'multi', field: 'P4-15 copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
@@ -2725,7 +2850,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             ]);
 
             const homeModificationAggregate = budgetAggregates.HMB ? { ...budgetAggregates.HMB } : initializeBudgetAggregate();
-            homeModificationAggregate.primarySupplementLabel = homeModificationAggregate.primarySupplementLabel || homeModificationAggregate.fund || homeModificationAggregate.fundClassification || '';
+            homeModificationAggregate.primarySupplementLabel = safeString(homeModificationAggregate.primarySupplementLabel) || safeString(homeModificationAggregate.fund) || safeString(homeModificationAggregate.fundClassification) || '';
 
             applyBudgetMapping(templateInputs, homeModificationAggregate, [
                 { type: 'multi', field: 'P5- copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },

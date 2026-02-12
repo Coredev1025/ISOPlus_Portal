@@ -312,11 +312,11 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
         participantUnspent: parseNumber(getValueMulti(item, BUDGET_FIELDS.participantUnspent)),
         previousMonthSpending: parseNumber(getValueMulti(item, BUDGET_FIELDS.previousMonthSpending)),
         fundAmount: parseNumber(getValue(item, 'Fund Amount ($)')),
-        fundClassification: getValue(item, 'Fund Classification') || '',
+        fundClassification: formatStatus(getValue(item, 'Fund Classification')) || '',
         primarySupplementLabel: resolveReferenceValue(getValue(item, 'Primary Supplement'), psMap),
         fundingStartDate: getValue(item, 'Funding Start Date'),
         fundingEndDate: getValue(item, 'Funding End Date'),
-        fund: getValue(item, 'Fund'),
+        fund: formatStatus(getValue(item, 'Fund')) || '',
         committedFunds: parseNumber(getValue(item, 'Committed AT Short-term Funds - to be delivered ($-)')) +
             parseNumber(getValue(item, 'Committed AT Ongoing Funds - to be delivered ($-)')) +
             parseNumber(getValue(item, 'Committed HM Funds - to be delivered ($-)')),
