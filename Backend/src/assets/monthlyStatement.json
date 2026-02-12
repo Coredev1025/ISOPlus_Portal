@@ -37,7 +37,12 @@
                 "readOnly": true,
                 "fontName": "",
                 "name": "title",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 34,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "companyName",
@@ -105,7 +110,12 @@
                     "State"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 11,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "Recipient",
@@ -137,7 +147,12 @@
                     "Post Code"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 11,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -145,7 +160,7 @@
                     "x": 20,
                     "y": 88.02
                 },
-                "content": "This is not an invoice \u2013 no payment is required. ",
+                "content": "This is not an invoice – no payment is required. ",
                 "width": 170,
                 "height": 7.94,
                 "rotate": 0,
@@ -160,7 +175,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "Disclaimer 1",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 13,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -183,7 +203,12 @@
                 "readOnly": true,
                 "fontName": "",
                 "name": "Disclaimer 2",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 11,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "Text title",
@@ -213,7 +238,12 @@
                     "year"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 13,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "image",
@@ -258,7 +288,12 @@
                     "Business Email"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             }
         ],
         [
@@ -283,7 +318,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P2-1",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -306,7 +346,12 @@
                 "fontName": "",
                 "name": "$P2-1",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -329,7 +374,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P2 title ",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 15,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P2 Subtitle",
@@ -361,7 +411,12 @@
                     "Last Day"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P2-2",
@@ -388,7 +443,12 @@
                 "text": " Classification Quarterly Budget Adjustment",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -411,7 +471,12 @@
                 "fontName": "",
                 "name": "$P2-2",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -434,7 +499,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P2-1 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P2-3",
@@ -463,7 +533,12 @@
                     "Primary Supplement"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -486,7 +561,12 @@
                 "fontName": "",
                 "name": "$P2-3",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P2-4",
@@ -513,7 +593,12 @@
                 "text": " Unspent Funds Carry Forwards",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -536,7 +621,12 @@
                 "fontName": "",
                 "name": "$P2-4",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P2-6",
@@ -563,7 +653,12 @@
                 "text": " Unspent funds accrued under HCP Program (if applicable)",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -586,7 +681,12 @@
                 "fontName": "",
                 "name": "$P2-6",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P2-9",
@@ -613,7 +713,12 @@
                 "text": " Spending from Previous Month(s) within same Quarter",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -636,7 +741,12 @@
                 "fontName": "",
                 "name": "$P2-9",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -659,14 +769,19 @@
                 "fontName": "",
                 "name": "$P2-10",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P2-10",
                 "type": "multiVariableText",
                 "content": "{\"first day\":\"FIRST DAY\"}",
                 "position": {
-                    "x": 20.67,
+                    "x": 20,
                     "y": 101.43
                 },
                 "width": 140,
@@ -688,7 +803,12 @@
                     "first day"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P2-11",
@@ -717,7 +837,12 @@
                     "first day"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -740,7 +865,12 @@
                 "fontName": "",
                 "name": "$P2-11",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P2-12",
@@ -767,7 +897,12 @@
                 "text": " Service Delivered (including your contribution)",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -790,7 +925,12 @@
                 "fontName": "",
                 "name": "$P2-12",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P2-13",
@@ -817,7 +957,12 @@
                 "text": " Adjustments from Previous Months [Charges($-)/Refund($)]",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -840,7 +985,12 @@
                 "fontName": "",
                 "name": "$P2-13",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P2-14",
@@ -869,7 +1019,12 @@
                     "last day"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -892,7 +1047,12 @@
                 "fontName": "",
                 "name": "$P2-14",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P7 Subtitle  2 copy copy",
@@ -916,10 +1076,15 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": true,
-                "text": "*This total reflects your ongoing classification amount after 10% was deducted by government for care management. Participants accessing the End-of-Life Pathway or the Restorative Care Pathway will not have 10% deducted from their budget. Care management services and restorative care services respectively will be managed as part of the participant\u2019s budget.",
+                "text": "*This total reflects your ongoing classification amount after 10% was deducted by government for care management. Participants accessing the End-of-Life Pathway or the Restorative Care Pathway will not have 10% deducted from their budget. Care management services and restorative care services respectively will be managed as part of the participant’s budget.",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             }
         ],
         [
@@ -944,7 +1109,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P6 title 1 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 15,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "Table P6-1 copy",
@@ -968,14 +1138,14 @@
                     "Cont."
                 ],
                 "headWidthPercentages": [
-                    8.846104110702568,
-                    27.891944164637923,
+                    8.346104,
+                    24.891944,
                     8.931950399315337,
                     11.31123108699917,
                     9.765764897439134,
                     11.127238841640313,
-                    10.749738356252598,
-                    11.376028143012968
+                    14.249738,
+                    11.376028
                 ],
                 "tableStyles": {
                     "borderWidth": 0,
@@ -984,7 +1154,7 @@
                 "headStyles": {
                     "fontName": "Roboto",
                     "fontSize": 11,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.5,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1.2,
@@ -1007,7 +1177,7 @@
                 "bodyStyles": {
                     "fontName": "Roboto",
                     "fontSize": 10,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.3,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1,
@@ -1031,7 +1201,7 @@
                 "columnStyles": {
                     "alignment": {
                         "0": "center",
-                        "1": "center",
+                        "1": "left",
                         "2": "center",
                         "3": "center",
                         "4": "center",
@@ -1051,8 +1221,8 @@
                     "y": 259
                 },
                 "content": " Total",
-                "width": 114.04,
-                "height": 6.88,
+                "width": 107.51989045238119,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "left",
                 "verticalAlignment": "middle",
@@ -1065,19 +1235,24 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "Total P6 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P3-3 ",
                 "position": {
-                    "x": 133.62,
+                    "x": 127.52,
                     "y": 259
                 },
-                "width": 18.79,
-                "height": 6.88,
+                "width": 18.92,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -1088,19 +1263,24 @@
                 "fontName": "",
                 "name": "$P6-1  copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P3-4 ",
                 "position": {
-                    "x": 152.41,
+                    "x": 146.44,
                     "y": 259
                 },
-                "width": 17.99,
-                "height": 6.88,
+                "width": 24.22,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -1111,19 +1291,24 @@
                 "fontName": "",
                 "name": "$P6-2 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P3-5 ",
                 "position": {
-                    "x": 170.4,
+                    "x": 170.66,
                     "y": 259
                 },
-                "width": 19.599999999999994,
-                "height": 6.88,
+                "width": 19.34,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -1134,7 +1319,12 @@
                 "fontName": "",
                 "name": "$P6-3 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -1157,7 +1347,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P6 title 2 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "Table P6-1 copy copy copy",
@@ -1209,7 +1404,7 @@
                 },
                 "bodyStyles": {
                     "fontName": "Roboto",
-                    "fontSize": 12,
+                    "fontSize": 9,
                     "characterSpacing": 0,
                     "alignment": "center",
                     "verticalAlignment": "middle",
@@ -1268,7 +1463,12 @@
                 "text": "The following information relates to any incorrect or missing charges for services from previous months. Please contact us if you have any concerns or questions.",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "Table P7-1 copy",
@@ -1292,14 +1492,14 @@
                     "Cont."
                 ],
                 "headWidthPercentages": [
-                    8.846104110702564,
-                    27.891944164637923,
+                    8.346104,
+                    24.891944,
                     8.931950399315335,
                     11.31123108699917,
                     9.765764897439134,
                     11.127238841640313,
-                    10.749738356252598,
-                    11.376028143012968
+                    14.249738,
+                    11.376028
                 ],
                 "tableStyles": {
                     "borderWidth": 0,
@@ -1308,7 +1508,7 @@
                 "headStyles": {
                     "fontName": "Roboto",
                     "fontSize": 11,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.5,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1.2,
@@ -1331,7 +1531,7 @@
                 "bodyStyles": {
                     "fontName": "Roboto",
                     "fontSize": 10,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.3,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1,
@@ -1355,7 +1555,7 @@
                 "columnStyles": {
                     "alignment": {
                         "0": "center",
-                        "1": "center",
+                        "1": "left",
                         "2": "center",
                         "3": "center",
                         "4": "center",
@@ -1375,8 +1575,8 @@
                     "y": 113.01392
                 },
                 "content": " Total",
-                "width": 114,
-                "height": 6.88,
+                "width": 107.51989045238119,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "left",
                 "verticalAlignment": "middle",
@@ -1389,7 +1589,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "Total P7-1 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -1412,19 +1617,24 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P7 title 1 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P4-2 ",
                 "position": {
-                    "x": 134,
+                    "x": 127.52,
                     "y": 113.01392
                 },
-                "width": 18.5,
-                "height": 6.88,
+                "width": 18.92,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -1435,19 +1645,24 @@
                 "fontName": "",
                 "name": "$P7-1 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P4-3 ",
                 "position": {
-                    "x": 152.5,
+                    "x": 146.44,
                     "y": 113.01392
                 },
-                "width": 18.5,
-                "height": 6.88,
+                "width": 24.22,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -1458,19 +1673,24 @@
                 "fontName": "",
                 "name": "$P7-2 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P4-4 ",
                 "position": {
-                    "x": 171,
+                    "x": 170.66,
                     "y": 113.01392
                 },
-                "width": 19,
-                "height": 6.88,
+                "width": 19.34,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -1481,7 +1701,12 @@
                 "fontName": "",
                 "name": "$P7-3 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P7 Subtitle  2 copy",
@@ -1508,7 +1733,12 @@
                 "text": "This information is for your reference only and no action is required from you.\nThe maximum amount of funds you can carry into the next quarter is $1000 or 10% of your ongoing quarterly budget as a $ figure (whichever is higher).",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -1517,8 +1747,8 @@
                     "y": 181.38
                 },
                 "content": " Total",
-                "width": 142.61,
-                "height": 6.88,
+                "width": 139.81,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "left",
                 "verticalAlignment": "middle",
@@ -1531,7 +1761,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "Total P7-2 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -1554,7 +1789,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P7 title 2 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -1564,9 +1804,9 @@
                     "y": 181.38
                 },
                 "width": 30.159999999999997,
-                "height": 6.88,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -1577,7 +1817,12 @@
                 "fontName": "",
                 "name": "$P7-6 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -1600,7 +1845,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P7-2 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -1614,7 +1864,7 @@
                 "rotate": 0,
                 "alignment": "right",
                 "verticalAlignment": "middle",
-                "fontSize": 14,
+                "fontSize": 11,
                 "lineHeight": 1,
                 "characterSpacing": 0,
                 "fontColor": "#fffefe",
@@ -1622,8 +1872,13 @@
                 "opacity": 1,
                 "fontName": "",
                 "name": "P7-3 copy",
-                "readOnly": false,
-                "required": false
+                "readOnly": true,
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 7,
+                    "max": 11,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P7-5 copy",
@@ -1647,10 +1902,15 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": true,
-                "text": " Unspent Budget at the End of the Quarter \u2013 Returned",
+                "text": " Unspent Budget at the End of the Quarter – Returned",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -1673,7 +1933,12 @@
                 "fontName": "",
                 "name": "$P7-5 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P7-4 copy",
@@ -1700,7 +1965,12 @@
                 "text": " Carryover Funding from the Previous Quarter ",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -1723,7 +1993,12 @@
                 "fontName": "",
                 "name": "$P7-4 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P2-6 copy copy",
@@ -1750,7 +2025,12 @@
                 "text": " Unspent HCP Funds - Commonwealth Portion (Provider-held)",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -1773,7 +2053,12 @@
                 "fontName": "",
                 "name": "$P2-6 copy copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P2-7 copy copy",
@@ -1800,7 +2085,12 @@
                 "text": " Commonwealth-held HCP Unspent Funds (Notional Home Care Account)",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -1823,7 +2113,12 @@
                 "fontName": "",
                 "name": "$P2-7 copy copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P2-8 copy copy",
@@ -1850,7 +2145,12 @@
                 "text": " Unspent HCP Funds - Participant Portion (Provider-held)",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -1873,7 +2173,12 @@
                 "fontName": "",
                 "name": "$P2-8 copy copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -1896,7 +2201,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P7 title 2 copy 2",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P7 Subtitle  2 copy 2",
@@ -1923,7 +2233,12 @@
                 "text": "Participants can continue to use HCP Commonwealth unspent funds for Home Support services.",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P2-11 copy",
@@ -1952,7 +2267,12 @@
                     "first day"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P2-14 copy",
@@ -1981,7 +2301,12 @@
                     "first day"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -2004,7 +2329,12 @@
                 "fontName": "",
                 "name": "$P2-14 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             }
         ],
         [
@@ -2029,7 +2359,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P4-1  copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -2052,7 +2387,12 @@
                 "fontName": "",
                 "name": "$P4-1  copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -2075,7 +2415,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P4 title copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 15,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4 Subtitle copy",
@@ -2105,7 +2450,12 @@
                     "Last Day"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4-7 copy",
@@ -2132,7 +2482,12 @@
                 "text": " Spending from Previous Month(s) within Allocated Period",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -2155,7 +2510,12 @@
                 "fontName": "",
                 "name": "$P4-7 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4-8 copy",
@@ -2184,7 +2544,12 @@
                     "first day"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -2207,7 +2572,12 @@
                 "fontName": "",
                 "name": "$P4-8 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4-9 copy",
@@ -2234,7 +2604,12 @@
                 "text": " Assistive Technology - Short-term Delivered During the Month",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -2257,7 +2632,12 @@
                 "fontName": "",
                 "name": "$P4-9 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4-10 copy",
@@ -2284,7 +2664,12 @@
                 "text": " Adjustments from Previous Months [Charges($-)/Refund($)]",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -2307,7 +2692,12 @@
                 "fontName": "",
                 "name": "$P4-10 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4-11 copy",
@@ -2336,7 +2726,12 @@
                     "last day"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -2359,7 +2754,12 @@
                 "fontName": "",
                 "name": "$P4-11 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4 Footer 1 copy",
@@ -2388,7 +2788,12 @@
                     "Funding End Date"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4-2 copy",
@@ -2417,7 +2822,12 @@
                     "Primary Supplement"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -2440,7 +2850,12 @@
                 "fontName": "",
                 "name": "$P4-2 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4-3 copy",
@@ -2467,7 +2882,12 @@
                 "text": " Additional amount approved (AT high tier, if applicable)",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -2490,7 +2910,12 @@
                 "fontName": "",
                 "name": "$P4-3 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4-13 copy",
@@ -2517,7 +2942,12 @@
                 "text": " Remaining Balance for Allocation Period",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -2540,7 +2970,12 @@
                 "fontName": "",
                 "name": "$P4-13 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4-12 copy",
@@ -2567,7 +3002,12 @@
                 "text": " Committed AT Short-term Funds (to be delivered) *",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -2590,7 +3030,12 @@
                 "fontName": "",
                 "name": "$P4-12 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -2613,7 +3058,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P4-14 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -2636,7 +3086,12 @@
                 "fontName": "",
                 "name": "$P4-14 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4-19 copy",
@@ -2663,7 +3118,12 @@
                 "text": " Spending from Previous Month(s) within Allocated Period",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -2686,14 +3146,19 @@
                 "fontName": "",
                 "name": "$P4-19 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4-20 copy",
                 "type": "multiVariableText",
                 "content": "{\"first day\":\"FIRST DAY\"}",
                 "position": {
-                    "x": 20.53,
+                    "x": 20,
                     "y": 175.44
                 },
                 "width": 140,
@@ -2715,7 +3180,12 @@
                     "first day"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -2738,7 +3208,12 @@
                 "fontName": "",
                 "name": "$P4-20 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4-21 copy",
@@ -2765,7 +3240,12 @@
                 "text": " Assistive Technology - Ongoing Delivered During the Month",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -2788,7 +3268,12 @@
                 "fontName": "",
                 "name": "$P4-21 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4-22 copy",
@@ -2815,7 +3300,12 @@
                 "text": " Adjustments from Previous Months [Charges($-)/Refund($)]",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -2838,14 +3328,19 @@
                 "fontName": "",
                 "name": "$P4-22 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4-23 copy",
                 "type": "multiVariableText",
                 "content": "{\"last day\":\"LAST DAY\"}",
                 "position": {
-                    "x": 20.74,
+                    "x": 20,
                     "y": 198.67
                 },
                 "width": 140,
@@ -2867,7 +3362,12 @@
                     "last day"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -2890,7 +3390,12 @@
                 "fontName": "",
                 "name": "$P4-23 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4 Footer 2 copy",
@@ -2919,7 +3424,12 @@
                     "Funding End Date"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4-15 copy",
@@ -2948,7 +3458,12 @@
                     "Primary Supplement"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -2971,14 +3486,19 @@
                 "fontName": "",
                 "name": "$P4-15 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4-25 copy",
                 "type": "multiVariableText",
                 "content": "{}",
                 "position": {
-                    "x": 20.53,
+                    "x": 20,
                     "y": 213.96
                 },
                 "width": 140,
@@ -2998,7 +3518,12 @@
                 "text": " Remaining Balance or Allocation Period",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -3021,7 +3546,12 @@
                 "fontName": "",
                 "name": "$P4-25 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4-24 copy",
@@ -3048,7 +3578,12 @@
                 "text": " Committed AT Ongoing Funds (to be delivered) *",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -3071,7 +3606,12 @@
                 "fontName": "",
                 "name": "$P4-24 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -3094,7 +3634,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P4 Footer 3 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             }
         ],
         [
@@ -3119,7 +3664,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P10 title copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 15,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P10 Subtitle copy",
@@ -3146,7 +3696,12 @@
                 "text": "The following information relates to the specific equipment, products and services provided to you during the statement calendar month and your contribution. It also shows any administrative or coordination charges and any adjustments made from previous calendar months.",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -3169,7 +3724,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P10 table title 1 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "Table P10-1  copy",
@@ -3193,14 +3753,14 @@
                     "Cont."
                 ],
                 "headWidthPercentages": [
-                    9.164390557918797,
-                    31.395026352611538,
+                    8.664391,
+                    28.395026,
                     8.392411637445138,
                     10.627970730294207,
                     9.175859169583363,
                     10.45509262505219,
-                    10.100395238135228,
-                    10.688853688959549
+                    13.600395,
+                    10.688854
                 ],
                 "tableStyles": {
                     "borderWidth": 0,
@@ -3209,7 +3769,7 @@
                 "headStyles": {
                     "fontName": "Roboto",
                     "fontSize": 11,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.5,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1.2,
@@ -3232,7 +3792,7 @@
                 "bodyStyles": {
                     "fontName": "Roboto",
                     "fontSize": 10,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.3,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1,
@@ -3256,7 +3816,7 @@
                 "columnStyles": {
                     "alignment": {
                         "0": "center",
-                        "1": "center",
+                        "1": "left",
                         "2": "center",
                         "3": "center",
                         "4": "center",
@@ -3276,8 +3836,8 @@
                     "y": 170.98
                 },
                 "content": " Total",
-                "width": 117,
-                "height": 6.88,
+                "width": 110.93461951344861,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "left",
                 "verticalAlignment": "middle",
@@ -3290,19 +3850,24 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "Total P10-1  copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P6-1 ",
                 "position": {
-                    "x": 137,
+                    "x": 130.93,
                     "y": 170.97592
                 },
-                "width": 17.8,
-                "height": 6.88,
+                "width": 17.77,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -3313,19 +3878,24 @@
                 "fontName": "",
                 "name": "$P10-1  copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P6-2 ",
                 "position": {
-                    "x": 154.8,
+                    "x": 148.71,
                     "y": 170.97592
                 },
-                "width": 17,
-                "height": 6.88,
+                "width": 23.12,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -3336,19 +3906,24 @@
                 "fontName": "",
                 "name": "$P10-3 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P6-3 ",
                 "position": {
-                    "x": 171.8,
+                    "x": 171.83,
                     "y": 170.97592
                 },
-                "width": 18.19999999999999,
-                "height": 6.88,
+                "width": 18.17,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -3359,7 +3934,12 @@
                 "fontName": "",
                 "name": "$P10-3  copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -3382,7 +3962,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P10 title 2 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P10 Subtitle-2 copy",
@@ -3409,7 +3994,12 @@
                 "text": "The following information relates to any incorrect or missing charges from previous months. Please contact us if you have any concerns or questions.",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "Table P10-3 copy",
@@ -3433,14 +4023,14 @@
                     "Cont."
                 ],
                 "headWidthPercentages": [
-                    8.846104110702564,
-                    27.891944164637923,
+                    8.346104,
+                    24.891944,
                     8.931950399315335,
                     11.31123108699917,
                     9.765764897439134,
                     11.127238841640313,
-                    10.749738356252598,
-                    11.376028143012968
+                    14.249738,
+                    11.376028
                 ],
                 "tableStyles": {
                     "borderWidth": 0,
@@ -3449,7 +4039,7 @@
                 "headStyles": {
                     "fontName": "Roboto",
                     "fontSize": 11,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.5,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1.2,
@@ -3472,7 +4062,7 @@
                 "bodyStyles": {
                     "fontName": "Roboto",
                     "fontSize": 10,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.3,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1,
@@ -3496,7 +4086,7 @@
                 "columnStyles": {
                     "alignment": {
                         "0": "center",
-                        "1": "center",
+                        "1": "left",
                         "2": "center",
                         "3": "center",
                         "4": "center",
@@ -3516,8 +4106,8 @@
                     "y": 269.27992
                 },
                 "content": " Total",
-                "width": 114,
-                "height": 6.88,
+                "width": 107.51989045238119,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "left",
                 "verticalAlignment": "middle",
@@ -3530,7 +4120,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "Total P10-3 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -3538,7 +4133,7 @@
                     "x": 20,
                     "y": 213.72
                 },
-                "content": "Adjustments (Charges/Refunds) from Previous Calendar Months",
+                "content": "Committed AT Services (to be delivered)",
                 "width": 170,
                 "height": 7.94,
                 "rotate": 0,
@@ -3553,19 +4148,24 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P10 title 3 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P6-7 ",
                 "position": {
-                    "x": 134,
+                    "x": 127.52,
                     "y": 269.27992
                 },
-                "width": 18.5,
-                "height": 6.88,
+                "width": 18.92,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -3576,19 +4176,24 @@
                 "fontName": "",
                 "name": "$P10-7 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P6-8 ",
                 "position": {
-                    "x": 152.5,
+                    "x": 146.44,
                     "y": 269.27992
                 },
-                "width": 17.8,
-                "height": 6.88,
+                "width": 24.22,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -3599,19 +4204,24 @@
                 "fontName": "",
                 "name": "$P10-8 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P6-9 ",
                 "position": {
-                    "x": 170.2,
+                    "x": 170.66,
                     "y": 269.27992
                 },
-                "width": 19.8,
-                "height": 6.88,
+                "width": 19.34,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -3622,7 +4232,12 @@
                 "fontName": "",
                 "name": "$P10-9 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "Table P10-2 copy",
@@ -3646,14 +4261,14 @@
                     "Cont. *"
                 ],
                 "headWidthPercentages": [
-                    9.348159771670666,
-                    31.573685678404026,
+                    8.84816,
+                    28.573686,
                     8.095190964368504,
                     10.641823539041694,
                     9.431061123460397,
                     10.290479406693468,
-                    10.247682695284489,
-                    10.371916821076766
+                    13.747683,
+                    10.371917
                 ],
                 "tableStyles": {
                     "borderWidth": 0,
@@ -3662,7 +4277,7 @@
                 "headStyles": {
                     "fontName": "Roboto",
                     "fontSize": 0,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.5,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1.2,
@@ -3685,7 +4300,7 @@
                 "bodyStyles": {
                     "fontName": "Roboto",
                     "fontSize": 10,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.3,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1,
@@ -3709,7 +4324,7 @@
                 "columnStyles": {
                     "alignment": {
                         "0": "center",
-                        "1": "center",
+                        "1": "left",
                         "2": "center",
                         "3": "center",
                         "4": "center",
@@ -3729,8 +4344,8 @@
                     "y": 197.01600000000002
                 },
                 "content": " Total",
-                "width": 117,
-                "height": 6.88,
+                "width": 111.50286676568004,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "left",
                 "verticalAlignment": "middle",
@@ -3743,19 +4358,24 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "Total P10-2  copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P6-4 ",
                 "position": {
-                    "x": 137,
+                    "x": 131.5,
                     "y": 197.01600000000002
                 },
-                "width": 17.8,
-                "height": 6.88,
+                "width": 17.49,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -3766,19 +4386,24 @@
                 "fontName": "",
                 "name": "$P10-4 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P6-5 ",
                 "position": {
-                    "x": 154.8,
+                    "x": 149,
                     "y": 197.01600000000002
                 },
-                "width": 17,
-                "height": 6.88,
+                "width": 23.37,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -3789,19 +4414,24 @@
                 "fontName": "",
                 "name": "$P10-5 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P6-6 ",
                 "position": {
-                    "x": 171.8,
+                    "x": 172.37,
                     "y": 197.01600000000002
                 },
-                "width": 18.19999999999999,
-                "height": 6.88,
+                "width": 17.63,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -3812,7 +4442,12 @@
                 "fontName": "",
                 "name": "$P10-6 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             }
         ],
         [
@@ -3837,7 +4472,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P11 title copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 15,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P11 Subtitle copy",
@@ -3864,7 +4504,12 @@
                 "text": "The following information relates to the specific equipment, products and services provided to you during the statement calendar month and your contribution. It also shows any administrative or coordination charges and any adjustments made from previous calendar months.",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -3887,7 +4532,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P11 table title 1  copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "Table P11-1  copy",
@@ -3911,14 +4561,14 @@
                     "Cont. "
                 ],
                 "headWidthPercentages": [
-                    8.176696562745091,
-                    28.5613517125954,
+                    7.676697,
+                    25.561352,
                     8.931950399315337,
                     11.31123108699917,
                     9.765764897439134,
                     11.127238841640313,
-                    10.749738356252598,
-                    11.376028143012968
+                    14.249738,
+                    11.376028
                 ],
                 "tableStyles": {
                     "borderWidth": 0,
@@ -3927,7 +4577,7 @@
                 "headStyles": {
                     "fontName": "Roboto",
                     "fontSize": 11,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.5,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1.2,
@@ -3950,7 +4600,7 @@
                 "bodyStyles": {
                     "fontName": "Roboto",
                     "fontSize": 10,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.3,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1,
@@ -3974,7 +4624,7 @@
                 "columnStyles": {
                     "alignment": {
                         "0": "center",
-                        "1": "center",
+                        "1": "left",
                         "2": "center",
                         "3": "center",
                         "4": "center",
@@ -3994,8 +4644,8 @@
                     "y": 169.33592
                 },
                 "content": " Total",
-                "width": 113.7,
-                "height": 6.88,
+                "width": 107.51989215238117,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "left",
                 "verticalAlignment": "middle",
@@ -4008,19 +4658,24 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "Total P11-1 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P7-1 ",
                 "position": {
-                    "x": 133.96,
+                    "x": 127.52,
                     "y": 169.33592
                 },
-                "width": 18.75,
-                "height": 6.88,
+                "width": 18.92,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -4031,19 +4686,24 @@
                 "fontName": "",
                 "name": "$P11-1 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P7-2 ",
                 "position": {
-                    "x": 152.61,
+                    "x": 146.44,
                     "y": 169.33592
                 },
-                "width": 17.73,
-                "height": 6.88,
+                "width": 24.22,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -4054,19 +4714,24 @@
                 "fontName": "",
                 "name": "$P11-3  copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P7-3 ",
                 "position": {
-                    "x": 170.33,
+                    "x": 170.66,
                     "y": 169.33592
                 },
-                "width": 19.669999999999987,
-                "height": 6.88,
+                "width": 19.34,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -4077,7 +4742,12 @@
                 "fontName": "",
                 "name": "$P11-3 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -4100,7 +4770,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P11 title 2 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P11 Subtitle-2 copy",
@@ -4127,7 +4802,12 @@
                 "text": "The following information relates to any incorrect or missing charges from previous months. Please contact us if you have any concerns or questions.",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "Table P11-3  copy",
@@ -4151,14 +4831,14 @@
                     "Cont."
                 ],
                 "headWidthPercentages": [
-                    8.009344675755722,
-                    28.728703599584765,
+                    7.509345,
+                    25.728704,
                     8.931950399315335,
                     11.31123108699917,
                     9.765764897439134,
                     11.127238841640313,
-                    10.749738356252598,
-                    11.376028143012968
+                    14.249738,
+                    11.376028
                 ],
                 "tableStyles": {
                     "borderWidth": 0,
@@ -4167,7 +4847,7 @@
                 "headStyles": {
                     "fontName": "Roboto",
                     "fontSize": 11,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.5,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1.2,
@@ -4190,7 +4870,7 @@
                 "bodyStyles": {
                     "fontName": "Roboto",
                     "fontSize": 10,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.3,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1,
@@ -4214,7 +4894,7 @@
                 "columnStyles": {
                     "alignment": {
                         "0": "center",
-                        "1": "center",
+                        "1": "left",
                         "2": "center",
                         "3": "center",
                         "4": "center",
@@ -4234,8 +4914,8 @@
                     "y": 269.63992
                 },
                 "content": " Total",
-                "width": 113.77,
-                "height": 6.88,
+                "width": 107.5198921523812,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "left",
                 "verticalAlignment": "middle",
@@ -4248,7 +4928,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "Total P11-3  copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -4256,7 +4941,7 @@
                     "x": 20,
                     "y": 212.78
                 },
-                "content": "Adjustments (Charges/Refunds) from Previous Calendar Months",
+                "content": "Committed AT Services (to be delivered)",
                 "width": 170,
                 "height": 7.94,
                 "rotate": 0,
@@ -4271,19 +4956,24 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P11 title 3 copy copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P7-7 ",
                 "position": {
-                    "x": 133.59,
+                    "x": 127.52,
                     "y": 269.63992
                 },
-                "width": 19.05,
-                "height": 6.88,
+                "width": 18.92,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -4294,19 +4984,24 @@
                 "fontName": "",
                 "name": "$P11-7  copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P7-8 ",
                 "position": {
-                    "x": 152.58,
+                    "x": 146.44,
                     "y": 269.63992
                 },
-                "width": 17.99,
-                "height": 6.88,
+                "width": 24.22,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -4317,19 +5012,24 @@
                 "fontName": "",
                 "name": "$P11-8 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P7-9 ",
                 "position": {
-                    "x": 170.57,
+                    "x": 170.66,
                     "y": 269.63992
                 },
-                "width": 19.43,
-                "height": 6.88,
+                "width": 19.34,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -4340,7 +5040,12 @@
                 "fontName": "",
                 "name": "$P11-9 1 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "Table P11-2 copy",
@@ -4364,14 +5069,14 @@
                     "Cont. *"
                 ],
                 "headWidthPercentages": [
-                    8.846104110702568,
-                    27.891944164637923,
+                    8.346104,
+                    24.891944,
                     8.931950399315337,
                     11.31123108699917,
                     9.765764897439134,
                     11.127238841640313,
-                    10.749738356252598,
-                    11.376028143012968
+                    14.249738,
+                    11.376028
                 ],
                 "tableStyles": {
                     "borderWidth": 0,
@@ -4380,7 +5085,7 @@
                 "headStyles": {
                     "fontName": "Roboto",
                     "fontSize": 0,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.5,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1.2,
@@ -4403,7 +5108,7 @@
                 "bodyStyles": {
                     "fontName": "Roboto",
                     "fontSize": 10,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.3,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1,
@@ -4427,7 +5132,7 @@
                 "columnStyles": {
                     "alignment": {
                         "0": "center",
-                        "1": "center",
+                        "1": "left",
                         "2": "center",
                         "3": "center",
                         "4": "center",
@@ -4447,8 +5152,8 @@
                     "y": 195.376
                 },
                 "content": " Total",
-                "width": 113.7,
-                "height": 6.88,
+                "width": 107.51989045238119,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "left",
                 "verticalAlignment": "middle",
@@ -4461,19 +5166,24 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "Total P11-2 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P7-4 ",
                 "position": {
-                    "x": 133.74,
+                    "x": 127.52,
                     "y": 195.376
                 },
-                "width": 18.75,
-                "height": 6.88,
+                "width": 18.92,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -4484,19 +5194,24 @@
                 "fontName": "",
                 "name": "$P11-4 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P7-5 ",
                 "position": {
-                    "x": 152.61,
+                    "x": 146.44,
                     "y": 195.376
                 },
-                "width": 17.73,
-                "height": 6.88,
+                "width": 24.22,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -4507,19 +5222,24 @@
                 "fontName": "",
                 "name": "$P11-5 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P7-6 ",
                 "position": {
-                    "x": 170.33,
+                    "x": 170.66,
                     "y": 195.376
                 },
-                "width": 19.669999999999987,
-                "height": 6.88,
+                "width": 19.34,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -4530,7 +5250,12 @@
                 "fontName": "",
                 "name": "$P11-6 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             }
         ],
         [
@@ -4555,7 +5280,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P5-1 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -4578,7 +5308,12 @@
                 "fontName": "",
                 "name": "$P5-1 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P5-6 copy",
@@ -4605,7 +5340,12 @@
                 "text": " Spending from Previous Month(s) within Allocated Period",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -4628,7 +5368,12 @@
                 "fontName": "",
                 "name": "$P5-6 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P5-7 copy",
@@ -4657,7 +5402,12 @@
                     "first day"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -4680,7 +5430,12 @@
                 "fontName": "",
                 "name": "$P5-7 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P5-8 copy",
@@ -4707,7 +5462,12 @@
                 "text": " Home Modification Delivered During the Month",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -4730,7 +5490,12 @@
                 "fontName": "",
                 "name": "$P5-8 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P5-9 copy",
@@ -4757,7 +5522,12 @@
                 "text": " Adjustments from Previous Months [Charges($-)/Refund($)]",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -4780,7 +5550,12 @@
                 "fontName": "",
                 "name": "$P5-9 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P5-10 copy",
@@ -4809,7 +5584,12 @@
                     "last day"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -4832,7 +5612,12 @@
                 "fontName": "",
                 "name": "$P5-10 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P4 Footer 2 copy copy",
@@ -4861,7 +5646,12 @@
                     "Funding End Date"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P5- copy",
@@ -4890,7 +5680,12 @@
                     "Primary Supplement"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -4913,7 +5708,12 @@
                 "fontName": "",
                 "name": "$P5-2 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P5-12 copy",
@@ -4940,7 +5740,12 @@
                 "text": " Remaining Balance or Allocation Period",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -4963,7 +5768,12 @@
                 "fontName": "",
                 "name": "$P5-12 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P5-11 copy",
@@ -4990,7 +5800,12 @@
                 "text": " Committed Home Modification Funds (to be delivered) *",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -5013,7 +5828,12 @@
                 "fontName": "",
                 "name": "$P5-11 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -5036,7 +5856,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P4 Footer 3 copy copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -5059,7 +5884,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P5 title  copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 15,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P5 Subtitle copy",
@@ -5089,7 +5919,12 @@
                     "Last Day"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             }
         ],
         [
@@ -5114,7 +5949,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P12 title copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 15,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P12 Subtitle  copy",
@@ -5141,7 +5981,12 @@
                 "text": "The following information relates to the home modifications and services provided to you during the statement calendar month and your contribution. It also shows any administrative or coordination charges and any adjustments made from previous calendar months.",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -5164,7 +6009,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P12 table title 1   copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "Table P12-1  copy",
@@ -5188,14 +6038,14 @@
                     "Cont. "
                 ],
                 "headWidthPercentages": [
-                    8.846104110702568,
-                    27.891944164637923,
+                    8.346104,
+                    24.891944,
                     8.931950399315337,
                     11.31123108699917,
                     9.765764897439134,
                     11.127238841640313,
-                    10.749738356252598,
-                    11.376028143012968
+                    14.249738,
+                    11.376028
                 ],
                 "tableStyles": {
                     "borderWidth": 0,
@@ -5204,7 +6054,7 @@
                 "headStyles": {
                     "fontName": "Roboto",
                     "fontSize": 11,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.5,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1.2,
@@ -5227,7 +6077,7 @@
                 "bodyStyles": {
                     "fontName": "Roboto",
                     "fontSize": 10,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.3,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1,
@@ -5251,7 +6101,7 @@
                 "columnStyles": {
                     "alignment": {
                         "0": "center",
-                        "1": "center",
+                        "1": "left",
                         "2": "center",
                         "3": "center",
                         "4": "center",
@@ -5271,8 +6121,8 @@
                     "y": 171.13592
                 },
                 "content": " Total",
-                "width": 114,
-                "height": 6.88,
+                "width": 107.51989045238119,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "left",
                 "verticalAlignment": "middle",
@@ -5285,19 +6135,24 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "Total P12-1  copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P9-1 ",
                 "position": {
-                    "x": 134,
+                    "x": 127.52,
                     "y": 171.14
                 },
-                "width": 18.75,
-                "height": 6.88,
+                "width": 18.92,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -5308,19 +6163,24 @@
                 "fontName": "",
                 "name": "$P12-1  copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P9-2 ",
                 "position": {
-                    "x": 152.75,
+                    "x": 146.44,
                     "y": 171.13592
                 },
-                "width": 18.25,
-                "height": 6.88,
+                "width": 24.22,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -5331,19 +6191,24 @@
                 "fontName": "",
                 "name": "$P11-3   copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P9-3 ",
                 "position": {
-                    "x": 171,
+                    "x": 170.66,
                     "y": 171.13592
                 },
-                "width": 19,
-                "height": 6.88,
+                "width": 19.34,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -5354,7 +6219,12 @@
                 "fontName": "",
                 "name": "$P12-3  copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -5377,7 +6247,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P12 title 2  copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P12 Subtitle-2  copy",
@@ -5404,7 +6279,12 @@
                 "text": "The following information relates to any incorrect or missing charges from previous months. Please contact us if you have any concerns or questions.",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "Table P12-3  copy",
@@ -5428,14 +6308,14 @@
                     "Cont."
                 ],
                 "headWidthPercentages": [
-                    8.846104110702564,
-                    27.891944164637923,
+                    8.346104,
+                    24.891944,
                     8.931950399315335,
                     11.31123108699917,
                     9.765764897439134,
                     11.127238841640313,
-                    10.749738356252598,
-                    11.376028143012968
+                    14.249738,
+                    11.376028
                 ],
                 "tableStyles": {
                     "borderWidth": 0,
@@ -5444,7 +6324,7 @@
                 "headStyles": {
                     "fontName": "Roboto",
                     "fontSize": 11,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.5,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1.2,
@@ -5467,7 +6347,7 @@
                 "bodyStyles": {
                     "fontName": "Roboto",
                     "fontSize": 10,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.3,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1,
@@ -5491,7 +6371,7 @@
                 "columnStyles": {
                     "alignment": {
                         "0": "center",
-                        "1": "center",
+                        "1": "left",
                         "2": "center",
                         "3": "center",
                         "4": "center",
@@ -5511,8 +6391,8 @@
                     "y": 269.43992
                 },
                 "content": " Total",
-                "width": 114,
-                "height": 6.8799999999999955,
+                "width": 107.51989045238119,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "left",
                 "verticalAlignment": "middle",
@@ -5525,7 +6405,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "Total P12-3   copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -5533,7 +6418,7 @@
                     "x": 20,
                     "y": 213.58
                 },
-                "content": "Adjustments (Charges/Refunds) from Previous Calendar Months",
+                "content": "Committed Home Modification Services (to be delivered)",
                 "width": 170,
                 "height": 7.94,
                 "rotate": 0,
@@ -5548,19 +6433,24 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P12 title 3 y copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P9-7 ",
                 "position": {
-                    "x": 134,
+                    "x": 127.52,
                     "y": 269.43992
                 },
-                "width": 18.75,
-                "height": 6.8799999999999955,
+                "width": 18.92,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -5571,19 +6461,24 @@
                 "fontName": "",
                 "name": "$P12-7  copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P9-8 ",
                 "position": {
-                    "x": 152.75,
+                    "x": 146.44,
                     "y": 269.43992
                 },
-                "width": 18.25,
-                "height": 6.8799999999999955,
+                "width": 24.22,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -5594,19 +6489,24 @@
                 "fontName": "",
                 "name": "$P11-8 copy copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P9-9 ",
                 "position": {
-                    "x": 171,
+                    "x": 170.66,
                     "y": 269.43992
                 },
-                "width": 19,
-                "height": 6.8799999999999955,
+                "width": 19.34,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -5617,7 +6517,12 @@
                 "fontName": "",
                 "name": "$P11-9 1 copy copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "Table P11-2 copy copy",
@@ -5641,14 +6546,14 @@
                     "Cont. *"
                 ],
                 "headWidthPercentages": [
-                    8.846104110702568,
-                    27.891944164637923,
+                    8.346104,
+                    24.891944,
                     8.931950399315337,
                     11.31123108699917,
                     9.765764897439134,
                     11.127238841640313,
-                    10.749738356252598,
-                    11.376028143012968
+                    14.249738,
+                    11.376028
                 ],
                 "tableStyles": {
                     "borderWidth": 0,
@@ -5657,7 +6562,7 @@
                 "headStyles": {
                     "fontName": "Roboto",
                     "fontSize": 0,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.5,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1.2,
@@ -5680,7 +6585,7 @@
                 "bodyStyles": {
                     "fontName": "Roboto",
                     "fontSize": 10,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.3,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1,
@@ -5704,7 +6609,7 @@
                 "columnStyles": {
                     "alignment": {
                         "0": "center",
-                        "1": "center",
+                        "1": "left",
                         "2": "center",
                         "3": "center",
                         "4": "center",
@@ -5724,8 +6629,8 @@
                     "y": 197.17600000000002
                 },
                 "content": " Total",
-                "width": 114,
-                "height": 6.88,
+                "width": 107.51989045238119,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "left",
                 "verticalAlignment": "middle",
@@ -5738,19 +6643,24 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "Total P11-2 copy copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P9-4 ",
                 "position": {
-                    "x": 134,
+                    "x": 127.52,
                     "y": 197.17600000000002
                 },
-                "width": 18.75,
-                "height": 6.88,
+                "width": 18.92,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -5761,19 +6671,24 @@
                 "fontName": "",
                 "name": "$P12-4  copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P9-5 ",
                 "position": {
-                    "x": 152.75,
+                    "x": 146.44,
                     "y": 197.17600000000002
                 },
-                "width": 18.25,
-                "height": 6.88,
+                "width": 24.22,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -5784,19 +6699,24 @@
                 "fontName": "",
                 "name": "$P11-5 copy copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P9-6 ",
                 "position": {
-                    "x": 171,
+                    "x": 170.66,
                     "y": 197.17600000000002
                 },
-                "width": 19,
-                "height": 6.88,
+                "width": 19.34,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -5807,7 +6727,12 @@
                 "fontName": "",
                 "name": "$P11-6  copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             }
         ],
         [
@@ -5832,7 +6757,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P3-1",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -5855,7 +6785,12 @@
                 "fontName": "",
                 "name": "$P3-1",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -5878,7 +6813,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P3 title",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 15,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P3 Subtitle",
@@ -5908,7 +6848,12 @@
                     " Funding end date"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P3-6",
@@ -5935,7 +6880,12 @@
                 "text": " Spending from Previous Month(s) within Allocated Period",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -5958,7 +6908,12 @@
                 "fontName": "",
                 "name": "$P3-6",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P3-7",
@@ -5987,7 +6942,12 @@
                     "first day"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -6010,7 +6970,12 @@
                 "fontName": "",
                 "name": "$P3-7",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P3-8",
@@ -6037,7 +7002,12 @@
                 "text": " Restorative Care Delivered During the Month",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -6060,7 +7030,12 @@
                 "fontName": "",
                 "name": "$P3-8",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P3-9",
@@ -6087,7 +7062,12 @@
                 "text": " Adjustments from Previous Months [Charges($-)/Refund($)]",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -6110,7 +7090,12 @@
                 "fontName": "",
                 "name": "$P3-9",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P3-10",
@@ -6139,7 +7124,12 @@
                     "last day"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -6162,7 +7152,12 @@
                 "fontName": "",
                 "name": "$P3-10",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P3-2",
@@ -6191,7 +7186,12 @@
                     "Primary Supplement"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -6214,7 +7214,12 @@
                 "fontName": "",
                 "name": "$P3-2",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             }
         ],
         [
@@ -6239,7 +7244,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P8 title 1 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 15,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P8 Subtitle  copy",
@@ -6266,7 +7276,12 @@
                 "text": "The following information relates to the specific items and services provided to you during the statement calendar month and your contribution.",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -6289,7 +7304,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P8 table title 1  copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -6312,7 +7332,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P8 title 2  copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "Table P12-1  copy copy",
@@ -6336,14 +7361,14 @@
                     "Cont. "
                 ],
                 "headWidthPercentages": [
-                    8.846104110702568,
-                    27.891944164637923,
+                    8.346104,
+                    24.891944,
                     8.931950399315337,
                     11.31123108699917,
                     9.765764897439134,
                     11.127238841640313,
-                    10.749738356252598,
-                    11.376028143012968
+                    14.249738,
+                    11.376028
                 ],
                 "tableStyles": {
                     "borderWidth": 0,
@@ -6352,7 +7377,7 @@
                 "headStyles": {
                     "fontName": "Roboto",
                     "fontSize": 11,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.5,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1.2,
@@ -6375,7 +7400,7 @@
                 "bodyStyles": {
                     "fontName": "Roboto",
                     "fontSize": 10,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.3,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1,
@@ -6399,7 +7424,7 @@
                 "columnStyles": {
                     "alignment": {
                         "0": "center",
-                        "1": "center",
+                        "1": "left",
                         "2": "center",
                         "3": "center",
                         "4": "center",
@@ -6419,8 +7444,8 @@
                     "y": 180.87392
                 },
                 "content": " Total",
-                "width": 114,
-                "height": 6.88,
+                "width": 107.51989045238119,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "left",
                 "verticalAlignment": "middle",
@@ -6433,19 +7458,24 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "Total P12-1  copy copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P11-1 ",
                 "position": {
-                    "x": 134,
+                    "x": 127.52,
                     "y": 180.87392
                 },
-                "width": 18.75,
-                "height": 6.88,
+                "width": 18.92,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -6456,19 +7486,24 @@
                 "fontName": "",
                 "name": "$P12-1  copy copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P11-2 ",
                 "position": {
-                    "x": 152.61,
+                    "x": 146.44,
                     "y": 180.87392
                 },
-                "width": 18.39,
-                "height": 6.88,
+                "width": 24.22,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -6479,19 +7514,24 @@
                 "fontName": "",
                 "name": "$P11-3   copy copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P11-3 ",
                 "position": {
-                    "x": 171,
+                    "x": 170.66,
                     "y": 180.87392
                 },
-                "width": 19,
-                "height": 6.88,
+                "width": 19.34,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -6502,7 +7542,12 @@
                 "fontName": "",
                 "name": "$P12-3  copy copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P12 Subtitle-2  copy copy",
@@ -6529,7 +7574,12 @@
                 "text": "The following information relates to any incorrect or missing charges from previous months. Please contact us if you have any concerns or questions.",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "Table P12-3  copy copy",
@@ -6553,14 +7603,14 @@
                     "Cont."
                 ],
                 "headWidthPercentages": [
-                    8.846104110702564,
-                    27.891944164637923,
+                    8.346104,
+                    24.891944,
                     8.931950399315335,
                     11.31123108699917,
                     9.765764897439134,
                     11.127238841640313,
-                    10.749738356252598,
-                    11.376028143012968
+                    14.249738,
+                    11.376028
                 ],
                 "tableStyles": {
                     "borderWidth": 0,
@@ -6569,7 +7619,7 @@
                 "headStyles": {
                     "fontName": "Roboto",
                     "fontSize": 11,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.5,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1.2,
@@ -6592,7 +7642,7 @@
                 "bodyStyles": {
                     "fontName": "Roboto",
                     "fontSize": 10,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.3,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1,
@@ -6616,7 +7666,7 @@
                 "columnStyles": {
                     "alignment": {
                         "0": "center",
-                        "1": "center",
+                        "1": "left",
                         "2": "center",
                         "3": "center",
                         "4": "center",
@@ -6636,8 +7686,8 @@
                     "y": 270.2
                 },
                 "content": " Total",
-                "width": 113.9,
-                "height": 6.8,
+                "width": 107.51989045238119,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "left",
                 "verticalAlignment": "middle",
@@ -6650,7 +7700,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "Total P12-3   copy copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -6673,19 +7728,24 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P12 title 3 y copy copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P11-7 ",
                 "position": {
-                    "x": 134,
+                    "x": 127.52,
                     "y": 270.2
                 },
-                "width": 18.75,
-                "height": 6.8,
+                "width": 18.92,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -6696,19 +7756,24 @@
                 "fontName": "",
                 "name": "$P12-7  copy copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P11-8 ",
                 "position": {
-                    "x": 152.62,
+                    "x": 146.44,
                     "y": 270.17792
                 },
-                "width": 17.99,
-                "height": 6.8799999999999955,
+                "width": 24.22,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -6719,19 +7784,24 @@
                 "fontName": "",
                 "name": "$P11-8 copy copy copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P11-9 ",
                 "position": {
-                    "x": 170.61,
+                    "x": 170.66,
                     "y": 270.2
                 },
-                "width": 19.389999999999986,
-                "height": 6.8,
+                "width": 19.34,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -6742,7 +7812,12 @@
                 "fontName": "",
                 "name": "$P11-9 1 copy copy copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             }
         ],
         [
@@ -6767,7 +7842,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P3-11 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -6790,7 +7870,12 @@
                 "fontName": "",
                 "name": "$P3-11 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P3-16 copy",
@@ -6817,7 +7902,12 @@
                 "text": " Spending from Previous Month(s) within Allocated Period",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -6840,7 +7930,12 @@
                 "fontName": "",
                 "name": "$P3-16 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P3-17 copy",
@@ -6869,7 +7964,12 @@
                     "first day"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -6892,7 +7992,12 @@
                 "fontName": "",
                 "name": "$P3-17 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P3-18 copy",
@@ -6919,7 +8024,12 @@
                 "text": " End-of-Life Delivered During the Month",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -6942,7 +8052,12 @@
                 "fontName": "",
                 "name": "$P3-18 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P3-19 copy",
@@ -6969,7 +8084,12 @@
                 "text": " Adjustments from Previous Months [Charges($-)/Refund($)]",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -6992,14 +8112,19 @@
                 "fontName": "",
                 "name": "$P3-19 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P3-20 copy",
                 "type": "multiVariableText",
                 "content": "{\"last day\":\"LAST DAY\"}",
                 "position": {
-                    "x": 20.59,
+                    "x": 20,
                     "y": 98.31
                 },
                 "width": 140,
@@ -7021,7 +8146,12 @@
                     "last day"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -7044,7 +8174,12 @@
                 "fontName": "",
                 "name": "$P3-20 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P3-12 copy",
@@ -7073,7 +8208,12 @@
                     "Primary Supplement"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -7096,7 +8236,12 @@
                 "fontName": "",
                 "name": "$P3-12 copy",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P3 Subtitle copy",
@@ -7126,7 +8271,12 @@
                     " Funding end date"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -7149,7 +8299,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P3 title copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 15,
+                    "fit": "vertical"
+                }
             }
         ],
         [
@@ -7174,7 +8329,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P9 title",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 15,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P9 Subtitle",
@@ -7201,7 +8361,12 @@
                 "text": "The following information relates to the specific items and services provided to you during the statement calendar month and your contribution.",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -7224,7 +8389,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P9 table title 1",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "Table P9-1",
@@ -7248,13 +8418,13 @@
                     "Cont. *"
                 ],
                 "headWidthPercentages": [
-                    8.84,
-                    27.89,
+                    8.34,
+                    24.89,
                     8.93,
                     11.31,
                     9.76,
                     11.12,
-                    10.75,
+                    14.25,
                     11.38
                 ],
                 "tableStyles": {
@@ -7264,7 +8434,7 @@
                 "headStyles": {
                     "fontName": "Roboto",
                     "fontSize": 11,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.5,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1.2,
@@ -7287,7 +8457,7 @@
                 "bodyStyles": {
                     "fontName": "Roboto",
                     "fontSize": 10,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.3,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1,
@@ -7311,7 +8481,7 @@
                 "columnStyles": {
                     "alignment": {
                         "0": "center",
-                        "1": "center",
+                        "1": "left",
                         "2": "center",
                         "3": "center",
                         "4": "center",
@@ -7330,8 +8500,8 @@
                     "y": 175.49392
                 },
                 "content": " Total",
-                "width": 114,
-                "height": 6.88,
+                "width": 107.491,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "left",
                 "verticalAlignment": "middle",
@@ -7344,19 +8514,24 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "Total P9",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P13-1 ",
                 "position": {
-                    "x": 134,
+                    "x": 127.49,
                     "y": 175.49392
                 },
-                "width": 18.75,
-                "height": 6.88,
+                "width": 18.9,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -7367,19 +8542,24 @@
                 "fontName": "",
                 "name": "$P9-1",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P13-2 ",
                 "position": {
-                    "x": 152.75,
+                    "x": 146.4,
                     "y": 175.49392
                 },
-                "width": 18.25,
-                "height": 6.88,
+                "width": 24.23,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -7390,19 +8570,24 @@
                 "fontName": "",
                 "name": "$P9-2",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P13-3 ",
                 "position": {
-                    "x": 171,
+                    "x": 170.62,
                     "y": 175.49392
                 },
-                "width": 19,
-                "height": 6.88,
+                "width": 19.35,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -7413,7 +8598,12 @@
                 "fontName": "",
                 "name": "$P9-3",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P9 Subtitle copy",
@@ -7440,7 +8630,12 @@
                 "text": "*Government subsidy and contribution rate calculated at the full pensioner rate for this template.",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -7463,7 +8658,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P9 title 2 ",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "P9 Subtitle-2",
@@ -7490,7 +8690,12 @@
                 "text": "The following information relates to any incorrect or missing charges from previous months. Please contact us if you have any concerns or questions.",
                 "variables": [],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "Table P9-2",
@@ -7514,13 +8719,13 @@
                     "Cont."
                 ],
                 "headWidthPercentages": [
-                    8.84,
-                    27.89,
+                    8.34,
+                    24.89,
                     8.93,
                     11.31,
                     9.76,
                     11.12,
-                    10.75,
+                    14.25,
                     11.38
                 ],
                 "tableStyles": {
@@ -7530,7 +8735,7 @@
                 "headStyles": {
                     "fontName": "Roboto",
                     "fontSize": 11,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.5,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1.2,
@@ -7553,7 +8758,7 @@
                 "bodyStyles": {
                     "fontName": "Roboto",
                     "fontSize": 10,
-                    "characterSpacing": 0,
+                    "characterSpacing": 0.3,
                     "alignment": "center",
                     "verticalAlignment": "middle",
                     "lineHeight": 1,
@@ -7577,7 +8782,7 @@
                 "columnStyles": {
                     "alignment": {
                         "0": "center",
-                        "1": "center",
+                        "1": "left",
                         "2": "center",
                         "3": "center",
                         "4": "center",
@@ -7596,8 +8801,8 @@
                     "y": 269.79792
                 },
                 "content": " Total",
-                "width": 114,
-                "height": 6.88,
+                "width": 107.491,
+                "height": 7,
                 "rotate": 0,
                 "alignment": "left",
                 "verticalAlignment": "middle",
@@ -7610,7 +8815,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "Total P9-1",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -7633,19 +8843,24 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P9 title 3",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P13-4 ",
                 "position": {
-                    "x": 134,
+                    "x": 127.49,
                     "y": 269.79792
                 },
-                "width": 18.75,
-                "height": 6.8799999999999955,
+                "width": 18.9,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -7656,19 +8871,24 @@
                 "fontName": "",
                 "name": "$P9-4",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P13-5 ",
                 "position": {
-                    "x": 152.75,
+                    "x": 146.4,
                     "y": 269.79792
                 },
-                "width": 18.25,
-                "height": 6.88,
+                "width": 24.23,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -7679,19 +8899,24 @@
                 "fontName": "",
                 "name": "$P9-5",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
                 "content": "$ P13-6 ",
                 "position": {
-                    "x": 171,
+                    "x": 170.62,
                     "y": 269.79792
                 },
-                "width": 19,
-                "height": 6.88,
+                "width": 19.35,
+                "height": 7,
                 "rotate": 0,
-                "alignment": "right",
+                "alignment": "center",
                 "verticalAlignment": "middle",
                 "fontSize": 12,
                 "lineHeight": 1,
@@ -7702,7 +8927,12 @@
                 "fontName": "",
                 "name": "$P9-6",
                 "readOnly": false,
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             }
         ],
         [
@@ -7727,7 +8957,12 @@
                 "readOnly": true,
                 "fontName": "",
                 "name": "Text 13-1",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 11,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "Text 13-",
@@ -7757,7 +8992,12 @@
                     "Business Email"
                 ],
                 "required": false,
-                "fontName": "Roboto"
+                "fontName": "Roboto",
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 12,
+                    "fit": "vertical"
+                }
             },
             {
                 "type": "text",
@@ -7780,7 +9020,12 @@
                 "readOnly": true,
                 "fontName": "",
                 "name": "Text 13-3",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 11,
+                    "fit": "vertical"
+                }
             },
             {
                 "name": "Image 13-1",
@@ -7818,7 +9063,12 @@
                 "readOnly": true,
                 "fontName": "Roboto",
                 "name": "P9 title 3 copy",
-                "required": false
+                "required": false,
+                "dynamicFontSize": {
+                    "min": 4,
+                    "max": 14,
+                    "fit": "vertical"
+                }
             }
         ]
     ],
