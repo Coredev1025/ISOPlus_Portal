@@ -1636,10 +1636,7 @@ export default function MonthlyStatement() {
           const pdfObjectUrl = URL.createObjectURL(pdfBlob);
           const link = document.createElement('a');
           link.href = pdfObjectUrl;
-          const participantSlug = (statementData.participant || 'statement').replace(/\s+/g, '_');
-          const monthSlug = statementData.month || selectedMonth || '';
-          const yearSlug = statementData.year || selectedYear || '';
-          link.download = `Monthly_Statement_${participantSlug}_${monthSlug}_${yearSlug}.pdf`;
+          link.download = response.data?.filename
           link.style.display = 'none';
           document.body.appendChild(link);
           link.click();
