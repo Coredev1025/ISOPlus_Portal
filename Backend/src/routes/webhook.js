@@ -1088,13 +1088,9 @@ function buildServiceTableRows(services = [], config = {}, business, timezone) {
     });
 
     const rawRows = sortedServices.map((service) => {
-        // For committed services, totalAmount may be unreliable (e.g. storing the committedAtHmForDelivery flag value).
-        // Calculate from quantity * unitPrice to ensure correct total.
-        const totalAmount = rowType === 'committed'
-            ? parseNumberValue(service.quantity) * parseNumberValue(service.unitPrice)
-            : parseNumberValue(service.totalAmount);
-        const gov = rowType === 'committed' ? 0 : parseNumberValue(service.govSubsidy);
-        const participant = rowType === 'committed' ? 0 : parseNumberValue(service.participantContribution);
+        const totalAmount = parseNumberValue(service.totalAmount);
+        const gov = parseNumberValue(service.govSubsidy);
+        const participant = parseNumberValue(service.participantContribution);
 
         totals.amount += totalAmount;
         totals.gov += gov;
@@ -2961,14 +2957,6 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 }
 
                 if (hasCommittedBucket && Array.isArray(bucket.committed)) {
-                    info('Webhook-Service', 'Committed service bucketed for PDF', {
-                        code,
-                        service: service.service || service.taskName,
-                        totalAmount: service.totalAmount,
-                        quantity: service.quantity,
-                        unitPrice: service.unitPrice,
-                        committedAtHmForDelivery: service.committedAtHmForDelivery
-                    }, extractContextFromReq(req));
                     bucket.committed.push(service);
                     return;
                 }
