@@ -2056,7 +2056,7 @@ export default function MonthlyStatement() {
     BUDGET_TABLE_COLUMNS[code || 'HSQ'] || BUDGET_TABLE_COLUMNS.HSQ;
 
   // Shared category order used for rendering and export
-  const CATEGORY_ORDER = ['HSQ', 'HSCM', 'ATS', 'ATO', 'HMB', 'RCP', 'EOL'] as const;
+  const CATEGORY_ORDER = ['HSQ', 'ATS', 'ATO', 'HMB', 'RCP', 'EOL', 'HSCM'] as const;
 
   // Determine budget category code from item data or folder name
   const resolveBudgetCategoryCode = useCallback((folderName: string, items: BudgetRecord[]): string => {
