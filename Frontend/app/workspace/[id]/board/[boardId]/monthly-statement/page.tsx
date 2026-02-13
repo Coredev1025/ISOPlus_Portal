@@ -632,7 +632,7 @@ export default function MonthlyStatement() {
     postcode: "",
     companyRegistrationId: "",
   });
-  const [exportingSection, setExportingSection] = useState<null | 'budget-csv' | 'service-csv' | 'statement-pdf' | 'budget-HSQ' | 'budget-ATS' | 'budget-ATO' | 'budget-HMB' | 'budget-RCP' | 'budget-EOL'>(null);
+  const [exportingSection, setExportingSection] = useState<null | 'budget-csv' | 'service-csv' | 'statement-pdf' | 'budget-HSQ' | 'budget-HSCM' | 'budget-ATS' | 'budget-ATO' | 'budget-HMB' | 'budget-RCP' | 'budget-EOL'>(null);
   const [businessDetailsErrors, setBusinessDetailsErrors] = useState<string[]>([]);
   const [serviceSortBy, setServiceSortBy] = useState<'scheduledServiceDate' | 'serviceDeliveryDate' | ''>('scheduledServiceDate');
   const [serviceSortOrder, setServiceSortOrder] = useState<'asc' | 'desc'>('asc');
@@ -1786,8 +1786,8 @@ export default function MonthlyStatement() {
     }
 
     try {
-      const exportState = `budget-${categoryCode}` as const;
-      setExportingSection(exportState as any);
+      const exportState = `budget-${categoryCode}` as typeof exportingSection;
+      setExportingSection(exportState);
 
       const groupedEntries = Object.entries(budgetItems).map(([folderName, items]) => ({
         folderName,
