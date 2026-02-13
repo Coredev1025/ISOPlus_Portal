@@ -1029,11 +1029,11 @@ function mapServiceColumnValue(service, column, rowType, business, timezone) {
             return formatCurrencyValue(totalAmount);
         }
         case 'govSubsidy': {
-            const gov = rowType === 'committed' ? 0 : parseNumberValue(service.govSubsidy);
+            const gov = parseNumberValue(service.govSubsidy);
             return formatCurrencyValue(gov);
         }
         case 'participantContribution': {
-            const participant = rowType === 'committed' ? 0 : parseNumberValue(service.participantContribution);
+            const participant = parseNumberValue(service.participantContribution);
             return formatCurrencyValue(participant);
         }
         default:
@@ -2912,11 +2912,10 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 // Table has 3 columns: Care Management (service name), Unit, Quantity
                 // Each HSCM item represents a care management transaction with allocated time
                 const hscmRows = hscmBudgetItems.map(item => {
-                    const transactionType = safeString(item.hscmTransactionType || item.fundClassification || 'Care Management');
                     const unit = 'Hours';
                     const allocatedTime = parseNumberValue(item.hscmAllocatedTime || 0);
                     return [
-                        transactionType || 'Care Management',
+                        'Care Management',
                         unit,
                         allocatedTime !== 0 ? allocatedTime.toFixed(1) : '0.0'
                     ];
