@@ -1021,14 +1021,14 @@ function mapServiceColumnValue(service, column, rowType, business, timezone) {
             return formatValue(quantity);
         }
         case 'unitPrice': {
-            const unitPrice = rowType === 'committed'
-                ? parseNumberValue(service.unitPrice || service.committedAtHmForDelivery)
-                : parseNumberValue(service.unitPrice);
+            const unitPrice = parseNumberValue(service.unitPrice);
             return formatCurrencyValue(unitPrice);
         }
         case 'totalAmount': {
+            // For committed services, totalAmount may be unreliable (e.g. storing the committedAtHmForDelivery flag value).
+            // Calculate from quantity * unitPrice to ensure correct total.
             const totalAmount = rowType === 'committed'
-                ? parseNumberValue(service.committedAtHmForDelivery || service.totalAmount)
+                ? parseNumberValue(service.quantity) * parseNumberValue(service.unitPrice)
                 : parseNumberValue(service.totalAmount);
             return formatCurrencyValue(totalAmount);
         }
@@ -1088,8 +1088,10 @@ function buildServiceTableRows(services = [], config = {}, business, timezone) {
     });
 
     const rawRows = sortedServices.map((service) => {
+        // For committed services, totalAmount may be unreliable (e.g. storing the committedAtHmForDelivery flag value).
+        // Calculate from quantity * unitPrice to ensure correct total.
         const totalAmount = rowType === 'committed'
-            ? parseNumberValue(service.committedAtHmForDelivery || service.totalAmount)
+            ? parseNumberValue(service.quantity) * parseNumberValue(service.unitPrice)
             : parseNumberValue(service.totalAmount);
         const gov = rowType === 'committed' ? 0 : parseNumberValue(service.govSubsidy);
         const participant = rowType === 'committed' ? 0 : parseNumberValue(service.participantContribution);
@@ -2959,6 +2961,14 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 }
 
                 if (hasCommittedBucket && Array.isArray(bucket.committed)) {
+                    info('Webhook-Service', 'Committed service bucketed for PDF', {
+                        code,
+                        service: service.service || service.taskName,
+                        totalAmount: service.totalAmount,
+                        quantity: service.quantity,
+                        unitPrice: service.unitPrice,
+                        committedAtHmForDelivery: service.committedAtHmForDelivery
+                    }, extractContextFromReq(req));
                     bucket.committed.push(service);
                     return;
                 }
