@@ -1401,6 +1401,7 @@ export default function MonthlyStatement() {
       const data = response.data;
 
       // Handle budget items
+      let allBudgetItemsFlat: BudgetRecord[] = [];
       if (data?.budgetItems?.items) {
         const groupedItems = Object.entries(data.budgetItems.items).reduce(
           (acc, [folderName, group]) => {
@@ -1413,6 +1414,7 @@ export default function MonthlyStatement() {
           {} as Record<string, BudgetRecord[]>
         );
         setBudgetItems(groupedItems);
+        allBudgetItemsFlat = Object.values(groupedItems).flat();
         setBudgetPagination({
           page: data.budgetItems.page || budgetPagination.page,
           limit: data.budgetItems.limit || budgetPagination.limit,
@@ -1489,7 +1491,7 @@ export default function MonthlyStatement() {
         monthNumber: effectiveMonthNumber,
         services,
         budgetCategories,
-        budgetItems: [],
+        budgetItems: allBudgetItemsFlat,
         serviceItems: services,
         summary,
         participantAddress: data?.participantAddress ?? '',
