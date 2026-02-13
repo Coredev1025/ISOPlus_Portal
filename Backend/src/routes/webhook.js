@@ -2935,14 +2935,15 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 }
 
                 const status = (service.transactionStatus || '').toString().toLowerCase();
-                const committedAmount = parseNumberValue(service.committedAtHmForDelivery);
-                const hasCommittedBucket = committedAmount > 0 && Array.isArray(bucket.committed);
+                const isCommitted = !!service.committedAtHmForDelivery;
+                const hasCommittedBucket = isCommitted && Array.isArray(bucket.committed);
                 const isAdjustment = status.includes('adjustment') && Array.isArray(bucket.adjustment);
                 const isDelivered = (status.includes('delivered') || status.includes('cancelled')) && Array.isArray(bucket.delivered);
                 const canRecordDelivery = Array.isArray(bucket.delivered);
 
                 if (hasCommittedBucket) {
                     bucket.committed.push(service);
+                    return;
                 }
 
                 if (isAdjustment) {
@@ -2952,10 +2953,6 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
 
                 if (isDelivered) {
                     bucket.delivered.push(service);
-                    return;
-                }
-
-                if (hasCommittedBucket) {
                     return;
                 }
 
