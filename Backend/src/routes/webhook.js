@@ -1025,11 +1025,7 @@ function mapServiceColumnValue(service, column, rowType, business, timezone) {
             return formatCurrencyValue(unitPrice);
         }
         case 'totalAmount': {
-            // For committed services, totalAmount may be unreliable (e.g. storing the committedAtHmForDelivery flag value).
-            // Calculate from quantity * unitPrice to ensure correct total.
-            const totalAmount = rowType === 'committed'
-                ? parseNumberValue(service.quantity) * parseNumberValue(service.unitPrice)
-                : parseNumberValue(service.totalAmount);
+            const totalAmount = parseNumberValue(service.totalAmount);
             return formatCurrencyValue(totalAmount);
         }
         case 'govSubsidy': {
