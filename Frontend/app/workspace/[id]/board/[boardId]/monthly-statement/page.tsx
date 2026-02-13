@@ -161,6 +161,10 @@ interface BudgetCategory {
   shouldDisplay?: boolean;
   deliveredAmount?: number;
   totalAvailableBudget?: number;
+  hscmTotalAllocatedTime?: number;
+  hscmTotalReceivedAmount?: number;
+  hscmTotalAllocatedAmount?: number;
+  hscmItemCount?: number;
 }
 
 interface MonthlyStatementData {
@@ -224,6 +228,7 @@ interface ChartCardConfig {
 
 const BUDGET_CATEGORY_LABELS: Record<string, string> = {
   HSQ: 'Home Support Quarterly Budget',
+  HSCM: 'Home Support Care Management Budget',
   RCP: 'Restorative Care Pathway Budget',
   EOL: 'End-of-Life Pathway Budget',
   ATS: 'Assistive Technology - Short-term Budget',
@@ -361,6 +366,15 @@ const BUDGET_TABLE_COLUMNS: Record<string, string[]> = {
     'Adjustments from Previous Months [Charges($-)/Refund($)]',
     'Remaining End-of-Life Care Balance as at the End of the Month ($)',
     'Notes'
+  ],
+  HSCM: [
+    'Date',
+    'Transaction Type',
+    'Associated Participant',
+    'Received Amount ($)',
+    'Allocated Time (Hr.)',
+    'Allocated Amount ($-)',
+    'Current Balance ($)'
   ]
 };
 
@@ -939,7 +953,7 @@ export default function MonthlyStatement() {
       });
 
       // Return categories in the correct order
-      const categoryOrder = ['HSQ', 'ATS', 'ATO', 'HMB', 'RCP', 'EOL'];
+      const categoryOrder = ['HSQ', 'HSCM', 'ATS', 'ATO', 'HMB', 'RCP', 'EOL'];
       return categoryOrder
         .map(code => categoryMap.get(code))
         .filter((cat): cat is BudgetCategory => cat !== undefined);
@@ -2923,7 +2937,7 @@ export default function MonthlyStatement() {
                 <div className="space-y-6 p-6">
                   {/* Helper function to group budget items by categoryCode */}
                   {(() => {
-                    const categoryOrder = ['HSQ', 'ATS', 'ATO', 'HMB', 'RCP', 'EOL'];
+                    const categoryOrder = ['HSQ', 'HSCM', 'ATS', 'ATO', 'HMB', 'RCP', 'EOL'];
                     const groupedEntries = Object.entries(budgetItems).map(([folderName, items]) => ({
                       folderName,
                       items,
