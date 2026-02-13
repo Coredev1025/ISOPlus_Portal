@@ -114,6 +114,7 @@ const ATTR = {
 
 const BUDGET_FOLDER_CONFIG = [
     { code: 'HSQ', folderName: 'Home Support Quarterly Budget' },
+    { code: 'HSCM', folderName: 'Home Support Care Management Budget' },
     { code: 'ATS', folderName: 'Assistive Technology - Short-term Budget' },
     { code: 'ATO', folderName: 'Assistive Technology - Ongoing Budget' },
     { code: 'HMB', folderName: 'Home Modification Budget' },
@@ -267,6 +268,9 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
     rawItems.forEach(item => {
         const ppId = extractRefId(getValue(item, ATTR.PARTICIPANT_PROFILE));
         if (ppId) profileIds.add(ppId);
+        // Also collect Associated Participant IDs for HSCM items
+        const apId = extractRefId(getValue(item, 'Associated Participant'));
+        if (apId) profileIds.add(apId);
         extractAllRefIds(getValue(item, 'Primary Supplement')).filter(isUuidLike).forEach(id => psRefIds.add(id));
     });
 
@@ -287,43 +291,135 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
         return getValue(item, ATTR.PARTICIPANT_FULL_NAME) || '';
     };
 
-    const transformed = rawItems.map(item => ({
-        id: item.itemId,
-        folderName: folderIdToName.get(item.folderId) || '',
-        categoryCode: folderIdToCode[item.folderId] || 'HSQ',
-        participantName: resolveParticipant(item),
-        month: formatStatus(getValue(item, 'Month')),
-        year: formatStatus(getValue(item, 'Year')),
-        quarter: formatStatus(getValue(item, 'FY Quarter')) || '',
-        totalAvailableBudget: parseNumber(getValueMulti(item, BUDGET_FIELDS.totalAvailable)),
-        deliveredAmount: Math.abs(parseNumber(getValueMulti(item, BUDGET_FIELDS.delivered))),
-        adjustmentAmount: parseNumber(getValue(item, 'Adjustments from Previous Months [Charges($-)/Refund($)]')),
-        remainingBalance: parseNumber(getValueMulti(item, BUDGET_FIELDS.remaining)),
-        availableFundStart: parseNumber(getValue(item, 'Available Fund at the Start of the Month ($)')),
-        quarterlyAdjustment: parseNumber(getValue(item, 'Classification Quarterly Budget Adjustment ($)')),
-        primarySupplementAmount: parseNumber(getValue(item, 'Primary Supplement ($)')),
-        carryoverFunding: parseNumber(getValue(item, 'Carryover Funding from the Previous Quarter ($)')),
-        unspentReturned: parseNumber(getValueMulti(item, [
-            'Unspent Budget at the End of the Quarter \u2013 Returned ($-)',
-            'Unspent Budget at the End of the Quarter - Returned ($-)'
-        ])),
-        commonwealthUnspent: parseNumber(getValueMulti(item, BUDGET_FIELDS.commonwealthUnspent)),
-        providerUnspent: parseNumber(getValueMulti(item, BUDGET_FIELDS.providerUnspent)),
-        participantUnspent: parseNumber(getValueMulti(item, BUDGET_FIELDS.participantUnspent)),
-        previousMonthSpending: parseNumber(getValueMulti(item, BUDGET_FIELDS.previousMonthSpending)),
-        fundAmount: parseNumber(getValue(item, 'Fund Amount ($)')),
-        fundClassification: formatStatus(getValue(item, 'Fund Classification')) || '',
-        primarySupplementLabel: resolveReferenceValue(getValue(item, 'Primary Supplement'), psMap),
-        fundingStartDate: getValue(item, 'Funding Start Date'),
-        fundingEndDate: getValue(item, 'Funding End Date'),
-        fund: formatStatus(getValue(item, 'Fund')) || '',
-        committedFunds: parseNumber(getValue(item, 'Committed AT Short-term Funds - to be delivered ($-)')) +
-            parseNumber(getValue(item, 'Committed AT Ongoing Funds - to be delivered ($-)')) +
-            parseNumber(getValue(item, 'Committed HM Funds - to be delivered ($-)')),
-        remainingBalanceEndOfMonth: parseNumber(getValueMulti(item, BUDGET_FIELDS.remaining)),
-        remainingBalanceAllocationPeriod: parseNumber(getValueMulti(item, BUDGET_FIELDS.remainingAllocationPeriod)),
-        rawData: item.data || {}
-    }));
+    const resolveParticipantForHSCM = (item) => {
+        const ppId = extractRefId(getValue(item, 'Associated Participant'));
+        if (ppId) {
+            const name = getParticipantName(profileMap.get(ppId));
+            if (name) return name;
+        }
+        return getValue(item, ATTR.PARTICIPANT_FULL_NAME) || '';
+    };
+
+    const getMonthLabelFromDate = (dateValue) => {
+        if (!dateValue) return '';
+        const date = new Date(dateValue);
+        if (isNaN(date.getTime())) return '';
+        const monthLabels = [
+            'January', 'February', 'March', 'April', 'May', 'June',
+            'July', 'August', 'September', 'October', 'November', 'December'
+        ];
+        return monthLabels[date.getMonth()] || '';
+    };
+
+    const getYearFromDate = (dateValue) => {
+        if (!dateValue) return '';
+        const date = new Date(dateValue);
+        if (isNaN(date.getTime())) return '';
+        return date.getFullYear().toString();
+    };
+
+    const transformed = rawItems.map(item => {
+        const code = folderIdToCode[item.folderId] || 'HSQ';
+        const folderName = folderIdToName.get(item.folderId) || '';
+        const isCareManagement = code === 'HSCM' || folderName.toLowerCase().includes('home support care management budget');
+
+        if (isCareManagement) {
+            const participantName = resolveParticipantForHSCM(item);
+            const dateValue = getValueMulti(item, ['Date']);
+            const transactionTypeValue = getValueMulti(item, ['Transaction Type']);
+            const receivedAmount = parseNumber(getValue(item, 'Received Amount ($)'));
+            const allocatedTime = parseNumber(getValue(item, 'Allocated Time (Hr.)'));
+            const allocatedAmount = parseNumber(getValue(item, 'Allocated Amount ($-)'));
+            const currentBalanceValue = parseNumber(getValue(item, 'Current Balance ($)'));
+            const currentBalance = (Number.isFinite(currentBalanceValue) && currentBalanceValue !== 0)
+                ? currentBalanceValue
+                : (receivedAmount || 0) + (allocatedAmount || 0);
+            const transactionType = (() => {
+                if (!transactionTypeValue) return '';
+                if (typeof transactionTypeValue === 'object' && transactionTypeValue.name) return transactionTypeValue.name;
+                if (typeof transactionTypeValue === 'string') return transactionTypeValue;
+                return transactionTypeValue.toString ? transactionTypeValue.toString() : '';
+            })();
+
+            return {
+                id: item.itemId,
+                categoryCode: 'HSCM',
+                folderName: folderName || 'Home Support Care Management Budget',
+                participantName,
+                month: getMonthLabelFromDate(dateValue),
+                year: getYearFromDate(dateValue),
+                quarter: '',
+                totalAvailableBudget: receivedAmount || 0,
+                availableFundStart: receivedAmount || 0,
+                quarterlyAdjustment: 0,
+                primarySupplementAmount: 0,
+                carryoverFunding: 0,
+                unspentReturned: 0,
+                commonwealthUnspent: 0,
+                providerUnspent: 0,
+                participantUnspent: 0,
+                previousMonthSpending: 0,
+                deliveredAmount: Math.abs(allocatedAmount) || 0,
+                deliveredAmountRaw: allocatedAmount,
+                adjustmentAmount: 0,
+                remainingBalance: Math.max(0, currentBalance),
+                fundClassification: 'Care Management',
+                fundAmount: 0,
+                fund: '',
+                committedFunds: 0,
+                fundingStartDate: null,
+                fundingEndDate: null,
+                primarySupplementLabel: '',
+                remainingBalanceEndOfMonth: Math.max(0, currentBalance),
+                remainingBalanceAllocationPeriod: 0,
+                hscmDate: dateValue || null,
+                hscmTransactionType: transactionType,
+                hscmReceivedAmount: receivedAmount || 0,
+                hscmAllocatedTime: allocatedTime || 0,
+                hscmAllocatedAmount: allocatedAmount || 0,
+                hscmCurrentBalance: currentBalance || 0,
+                rawData: item.data || {}
+            };
+        }
+
+        return {
+            id: item.itemId,
+            folderName,
+            categoryCode: code,
+            participantName: resolveParticipant(item),
+            month: formatStatus(getValue(item, 'Month')),
+            year: formatStatus(getValue(item, 'Year')),
+            quarter: formatStatus(getValue(item, 'FY Quarter')) || '',
+            totalAvailableBudget: parseNumber(getValueMulti(item, BUDGET_FIELDS.totalAvailable)),
+            deliveredAmount: Math.abs(parseNumber(getValueMulti(item, BUDGET_FIELDS.delivered))),
+            adjustmentAmount: parseNumber(getValue(item, 'Adjustments from Previous Months [Charges($-)/Refund($)]')),
+            remainingBalance: parseNumber(getValueMulti(item, BUDGET_FIELDS.remaining)),
+            availableFundStart: parseNumber(getValue(item, 'Available Fund at the Start of the Month ($)')),
+            quarterlyAdjustment: parseNumber(getValue(item, 'Classification Quarterly Budget Adjustment ($)')),
+            primarySupplementAmount: parseNumber(getValue(item, 'Primary Supplement ($)')),
+            carryoverFunding: parseNumber(getValue(item, 'Carryover Funding from the Previous Quarter ($)')),
+            unspentReturned: parseNumber(getValueMulti(item, [
+                'Unspent Budget at the End of the Quarter \u2013 Returned ($-)',
+                'Unspent Budget at the End of the Quarter - Returned ($-)'
+            ])),
+            commonwealthUnspent: parseNumber(getValueMulti(item, BUDGET_FIELDS.commonwealthUnspent)),
+            providerUnspent: parseNumber(getValueMulti(item, BUDGET_FIELDS.providerUnspent)),
+            participantUnspent: parseNumber(getValueMulti(item, BUDGET_FIELDS.participantUnspent)),
+            previousMonthSpending: parseNumber(getValueMulti(item, BUDGET_FIELDS.previousMonthSpending)),
+            fundAmount: parseNumber(getValue(item, 'Fund Amount ($)')),
+            fundClassification: formatStatus(getValue(item, 'Fund Classification')) || '',
+            primarySupplementLabel: resolveReferenceValue(getValue(item, 'Primary Supplement'), psMap),
+            fundingStartDate: getValue(item, 'Funding Start Date'),
+            fundingEndDate: getValue(item, 'Funding End Date'),
+            fund: formatStatus(getValue(item, 'Fund')) || '',
+            committedFunds: parseNumber(getValue(item, 'Committed AT Short-term Funds - to be delivered ($-)')) +
+                parseNumber(getValue(item, 'Committed AT Ongoing Funds - to be delivered ($-)')) +
+                parseNumber(getValue(item, 'Committed HM Funds - to be delivered ($-)')),
+            remainingBalanceEndOfMonth: parseNumber(getValueMulti(item, BUDGET_FIELDS.remaining)),
+            remainingBalanceAllocationPeriod: parseNumber(getValueMulti(item, BUDGET_FIELDS.remainingAllocationPeriod)),
+            rawData: item.data || {}
+        };
+    });
 
     let result = transformed;
     if (participant && participant !== 'all') {

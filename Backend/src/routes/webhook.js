@@ -579,7 +579,11 @@ function initializeBudgetAggregate() {
         quarterLabel: '',
         months: new Set(),
         fundingStartDate: null,
-        fundingEndDate: null
+        fundingEndDate: null,
+        hscmTotalAllocatedTime: 0,
+        hscmTotalReceivedAmount: 0,
+        hscmTotalAllocatedAmount: 0,
+        hscmItemCount: 0
     };
 }
 
@@ -612,6 +616,14 @@ function calculateBudgetAggregates(items = []) {
         aggregate.fundAmount += parseNumberValue(item.fundAmount);
         aggregate.govSubsidyAmount += parseNumberValue(item.govSubsidyAmount);
         aggregate.participantContributionAmount += parseNumberValue(item.participantContributionAmount);
+
+        // Track HSCM-specific aggregates
+        if (code === 'HSCM') {
+            aggregate.hscmTotalAllocatedTime += parseNumberValue(item.hscmAllocatedTime);
+            aggregate.hscmTotalReceivedAmount += parseNumberValue(item.hscmReceivedAmount);
+            aggregate.hscmTotalAllocatedAmount += parseNumberValue(item.hscmAllocatedAmount);
+            aggregate.hscmItemCount += 1;
+        }
 
         if (!aggregate.primarySupplementLabel) {
             aggregate.primarySupplementLabel = safeString(item.primarySupplementLabel) || safeString(item.fundClassification) || safeString(item.fund) || '';
@@ -2890,9 +2902,36 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
 
             allTemplateTables.forEach(({ name, columns }) => {
                 const emptyRow = Array(columns).fill('');
-                emptyRow[1] = 'No services recorded for this period';
+                if (columns === 3) {
+                    emptyRow[0] = '';
+                    emptyRow[1] = 'No services recorded for this period';
+                    emptyRow[2] = '';
+                } else {
+                    emptyRow[1] = 'No services recorded for this period';
+                }
                 templateInputs[name] = JSON.stringify([emptyRow]);
             });
+
+            // Fill Table P6-1 copy copy copy (Care Management table - Table 3-1) with HSCM budget data
+            const hscmBudgetItems = budgetItems.filter(item => item.categoryCode === 'HSCM');
+            if (hscmBudgetItems.length > 0) {
+                // Table has 3 columns: Care Management (service name), Unit, Quantity
+                // Each HSCM item represents a care management transaction with allocated time
+                const hscmRows = hscmBudgetItems.map(item => {
+                    const transactionType = safeString(item.hscmTransactionType || item.fundClassification || 'Care Management');
+                    const unit = 'Hours';
+                    const allocatedTime = parseNumberValue(item.hscmAllocatedTime || 0);
+                    return [
+                        transactionType || 'Care Management',
+                        unit,
+                        allocatedTime !== 0 ? allocatedTime.toFixed(1) : '0.0'
+                    ];
+                });
+                templateInputs['Table P6-1 copy copy copy'] = JSON.stringify(hscmRows);
+            } else {
+                // No HSCM items - show empty message
+                templateInputs['Table P6-1 copy copy copy'] = JSON.stringify([['', 'No services recorded for this period', '']]);
+            }
 
             const serviceBuckets = createServiceBuckets();
             services.forEach((service) => {

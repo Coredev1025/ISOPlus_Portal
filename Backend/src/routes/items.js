@@ -117,6 +117,7 @@ const FUNDING_SOURCE_TYPES = {
 
 const BUDGET_CATEGORY_CONFIG = [
     { code: 'HSQ', folderName: FUNDING_SOURCE_TYPES.HOME_SUPPORT, profileKey: 'homeSupport' },
+    { code: 'HSCM', folderName: 'Home Support Care Management Budget', profileKey: 'careManagement' },
     { code: 'ATS', folderName: FUNDING_SOURCE_TYPES.ASSISTIVE_TECH_SHORT, profileKey: 'assistiveTechShortTerm' },
     { code: 'ATO', folderName: FUNDING_SOURCE_TYPES.ASSISTIVE_TECH_ONGOING, profileKey: 'assistiveTechOngoing' },
     { code: 'HMB', folderName: FUNDING_SOURCE_TYPES.HOME_MODIFICATION, profileKey: 'homeModification' },
@@ -1698,7 +1699,8 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             'End-of-Life Pathway Budget',
             'Assistive Technology - Short-term Budget',
             'Assistive Technology - Ongoing Budget',
-            'Home Modification Budget'
+            'Home Modification Budget',
+            'Home Support Care Management Budget'
         ].join(',');
 
         const budgetFolderIds = await getFolderIdsForQuery(budgetFolderNames);
@@ -1851,6 +1853,12 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const participantProfileId = getFirstReferenceId(item, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
             if (participantProfileId) {
                 const id = extractRefId(participantProfileId);
+                if (id) budgetParticipantProfileIds.add(id);
+            }
+            // Also collect Associated Participant IDs for HSCM items
+            const associatedParticipantId = getFirstReferenceId(item, 'Associated Participant');
+            if (associatedParticipantId) {
+                const id = extractRefId(associatedParticipantId);
                 if (id) budgetParticipantProfileIds.add(id);
             }
         }
@@ -2782,7 +2790,11 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             participantUnspent: 0,
             previousMonthSpending: 0,
             fundAmount: 0,
-            shouldDisplay: false
+            shouldDisplay: false,
+            hscmTotalAllocatedTime: 0,
+            hscmTotalReceivedAmount: 0,
+            hscmTotalAllocatedAmount: 0,
+            hscmItemCount: 0
         });
 
         // Calculate summary from all filtered service items (before pagination) - following invoice generator pattern
@@ -2883,6 +2895,14 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             aggregate.previousMonthSpending += item.previousMonthSpending || 0;
             aggregate.fundAmount += item.fundAmount || 0;
 
+            // Track HSCM-specific aggregates
+            if (code === 'HSCM') {
+                aggregate.hscmTotalAllocatedTime += item.hscmAllocatedTime || 0;
+                aggregate.hscmTotalReceivedAmount += item.hscmReceivedAmount || 0;
+                aggregate.hscmTotalAllocatedAmount += item.hscmAllocatedAmount || 0;
+                aggregate.hscmItemCount += 1;
+            }
+
             if (item.fundingStartDate) {
                 if (!aggregate.fundingStartDate || new Date(item.fundingStartDate) < new Date(aggregate.fundingStartDate)) {
                     aggregate.fundingStartDate = item.fundingStartDate;
@@ -2915,7 +2935,11 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 aggregate.adjustmentAmount,
                 aggregate.committedFunds,
                 aggregate.previousMonthSpending,
-                aggregate.fundAmount
+                aggregate.fundAmount,
+                aggregate.hscmTotalAllocatedTime,
+                aggregate.hscmTotalReceivedAmount,
+                aggregate.hscmTotalAllocatedAmount,
+                aggregate.hscmItemCount
             ];
             aggregate.shouldDisplay = visibilityFields.some(value => Math.abs(value || 0) > 0.009);
             delete aggregate.months;
@@ -3173,7 +3197,15 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 participantUnspent: budgetAggregate.participantUnspent || profileData.participantUnspent || 0,
                 previousMonthSpending: budgetAggregate.previousMonthSpending || profileData.previousMonthSpending || 0,
                 fundAmount: budgetAggregate.fundAmount || profileData.fundAmount || 0,
-                shouldDisplay: Boolean(budgetAggregate.shouldDisplay)
+                shouldDisplay: Boolean(budgetAggregate.shouldDisplay),
+                ...(config.code === 'HSCM' && {
+                    hscmTotalAllocatedTime: budgetAggregate.hscmTotalAllocatedTime || 0,
+                    hscmTotalReceivedAmount: budgetAggregate.hscmTotalReceivedAmount || 0,
+                    hscmTotalAllocatedAmount: budgetAggregate.hscmTotalAllocatedAmount || 0,
+                    hscmItemCount: budgetAggregate.hscmItemCount || 0
+                }),
+                deliveredAmount: budgetAggregate.serviceDeliveredAmount || 0,
+                totalAvailableBudget: budgetAggregate.availableFunds || profileData.totalAvailableBudget || 0
             };
         });
 
