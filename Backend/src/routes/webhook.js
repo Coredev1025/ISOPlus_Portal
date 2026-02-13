@@ -919,14 +919,14 @@ const SERVICE_TABLE_CONFIG = {
         },
         adjustment: {
             // Adjustment table placed right after delivered (middle position on page)
-            tableName: 'Table P11-3  copy',
+            tableName: 'Table P11-2 copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P11-4 copy', '$P11-5 copy', '$P11-6 copy'],
             rowType: 'adjustment'
         },
         committed: {
             // Committed table at the bottom of the page (after adjustment section)
-            tableName: 'Table P11-2 copy',
+            tableName: 'Table P11-3  copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P11-7  copy', '$P11-8 copy', '$P11-9 1 copy'],
             rowType: 'committed'
@@ -941,14 +941,14 @@ const SERVICE_TABLE_CONFIG = {
         },
         adjustment: {
             // Adjustment table placed right after delivered (middle position on page)
-            tableName: 'Table P12-3  copy',
+            tableName: 'Table P11-2 copy copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P12-4  copy', '$P11-5 copy copy', '$P11-6  copy'],
             rowType: 'adjustment'
         },
         committed: {
             // Committed table at the bottom of the page (after adjustment section)
-            tableName: 'Table P11-2 copy copy',
+            tableName: 'Table P12-3  copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P12-7  copy', '$P11-8 copy copy', '$P11-9 1 copy copy'],
             rowType: 'committed'
