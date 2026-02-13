@@ -2940,10 +2940,27 @@ export default function MonthlyStatement() {
                   {/* Helper function to group budget items by categoryCode */}
                   {(() => {
                     const categoryOrder = ['HSQ', 'HSCM', 'ATS', 'ATO', 'HMB', 'RCP', 'EOL'];
+
+                    // Determine category code from item or folder name for robustness
+                    const resolveCategoryCode = (folderName: string, items: BudgetRecord[]): string => {
+                      // First, check if items have an explicit categoryCode
+                      const itemCode = items[0]?.categoryCode;
+                      if (itemCode && categoryOrder.includes(itemCode)) return itemCode;
+                      // Fallback: infer from folder name
+                      const fn = (folderName || '').toLowerCase();
+                      if (fn.includes('care management')) return 'HSCM';
+                      if (fn.includes('restorative')) return 'RCP';
+                      if (fn.includes('end-of-life') || fn.includes('end of life')) return 'EOL';
+                      if (fn.includes('short-term') || fn.includes('short term')) return 'ATS';
+                      if (fn.includes('ongoing')) return 'ATO';
+                      if (fn.includes('home modification')) return 'HMB';
+                      return 'HSQ';
+                    };
+
                     const groupedEntries = Object.entries(budgetItems).map(([folderName, items]) => ({
                       folderName,
                       items,
-                      categoryCode: items[0]?.categoryCode || 'HSQ',
+                      categoryCode: resolveCategoryCode(folderName, items),
                     }));
 
                     const groupedByCode = new Map<string, { folderName: string; items: BudgetRecord[] }>();
