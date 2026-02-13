@@ -1791,14 +1791,8 @@ export default function MonthlyStatement() {
       const exportState = `budget-${categoryCode}` as typeof exportingSection;
       setExportingSection(exportState);
 
-      const groupedEntries = Object.entries(budgetItems).map(([folderName, items]) => ({
-        folderName,
-        items,
-        categoryCode: items[0]?.categoryCode || 'HSQ',
-      }));
-      const items = groupedEntries
-        .filter((group) => group.categoryCode === categoryCode)
-        .flatMap((group) => group.items);
+      const matchingSection = categorizedBudgetSections.find((s) => s.categoryCode === categoryCode);
+      const items = matchingSection?.items || [];
 
       if (items.length === 0) {
         showErrorToast('No budget items to export for this category.');
@@ -2060,6 +2054,50 @@ export default function MonthlyStatement() {
 
   const getBudgetColumnsForCode = (code?: string) =>
     BUDGET_TABLE_COLUMNS[code || 'HSQ'] || BUDGET_TABLE_COLUMNS.HSQ;
+
+  // Shared category order used for rendering and export
+  const CATEGORY_ORDER = ['HSQ', 'HSCM', 'ATS', 'ATO', 'HMB', 'RCP', 'EOL'] as const;
+
+  // Determine budget category code from item data or folder name
+  const resolveBudgetCategoryCode = useCallback((folderName: string, items: BudgetRecord[]): string => {
+    const itemCode = items[0]?.categoryCode;
+    if (itemCode && (CATEGORY_ORDER as readonly string[]).includes(itemCode)) return itemCode;
+    const fn = (folderName || '').toLowerCase();
+    if (fn.includes('care management')) return 'HSCM';
+    if (fn.includes('restorative')) return 'RCP';
+    if (fn.includes('end-of-life') || fn.includes('end of life')) return 'EOL';
+    if (fn.includes('short-term') || fn.includes('short term')) return 'ATS';
+    if (fn.includes('ongoing')) return 'ATO';
+    if (fn.includes('home modification')) return 'HMB';
+    return 'HSQ';
+  }, []);
+
+  // Pre-compute categorized budget items grouped by category code
+  const categorizedBudgetSections = useMemo(() => {
+    const groupedByCode = new Map<string, { folderName: string; items: BudgetRecord[] }>();
+
+    // Group all budget items by their resolved category code
+    Object.entries(budgetItems).forEach(([folderName, items]) => {
+      const code = resolveBudgetCategoryCode(folderName, items);
+      const existing = groupedByCode.get(code);
+      if (existing) {
+        existing.items.push(...items);
+      } else {
+        groupedByCode.set(code, { folderName, items: [...items] });
+      }
+    });
+
+    // Build the ordered sections array
+    return CATEGORY_ORDER.map((code) => {
+      const group = groupedByCode.get(code);
+      return {
+        categoryCode: code,
+        sectionTitle: group?.folderName || BUDGET_CATEGORY_LABELS[code] || 'Budget',
+        items: group?.items || [],
+        columns: getBudgetColumnsForCode(code),
+      };
+    });
+  }, [budgetItems, resolveBudgetCategoryCode]);
 
   const isCurrencyColumn = (label: string) => label.includes('($');
   const isHourColumn = (label: string) => label.includes('(Hr.)');
@@ -2937,112 +2975,61 @@ export default function MonthlyStatement() {
                 </div>
               ) : (
                 <div className="space-y-6 p-6">
-                  {/* Helper function to group budget items by categoryCode */}
-                  {(() => {
-                    const categoryOrder = ['HSQ', 'HSCM', 'ATS', 'ATO', 'HMB', 'RCP', 'EOL'];
-
-                    // Determine category code from item or folder name for robustness
-                    const resolveCategoryCode = (folderName: string, items: BudgetRecord[]): string => {
-                      // First, check if items have an explicit categoryCode
-                      const itemCode = items[0]?.categoryCode;
-                      if (itemCode && categoryOrder.includes(itemCode)) return itemCode;
-                      // Fallback: infer from folder name
-                      const fn = (folderName || '').toLowerCase();
-                      if (fn.includes('care management')) return 'HSCM';
-                      if (fn.includes('restorative')) return 'RCP';
-                      if (fn.includes('end-of-life') || fn.includes('end of life')) return 'EOL';
-                      if (fn.includes('short-term') || fn.includes('short term')) return 'ATS';
-                      if (fn.includes('ongoing')) return 'ATO';
-                      if (fn.includes('home modification')) return 'HMB';
-                      return 'HSQ';
-                    };
-
-                    const groupedEntries = Object.entries(budgetItems).map(([folderName, items]) => ({
-                      folderName,
-                      items,
-                      categoryCode: resolveCategoryCode(folderName, items),
-                    }));
-
-                    const groupedByCode = new Map<string, { folderName: string; items: BudgetRecord[] }>();
-                    groupedEntries.forEach((group) => {
-                      const existing = groupedByCode.get(group.categoryCode);
-                      if (existing) {
-                        existing.items.push(...group.items);
-                      } else {
-                        groupedByCode.set(group.categoryCode, {
-                          folderName: group.folderName,
-                          items: [...group.items],
-                        });
-                      }
-                    });
-
-                    return (
-                      <>
-                        {categoryOrder.map((categoryCode) => {
-                          const group = groupedByCode.get(categoryCode);
-                          const items = group?.items || [];
-                          const sectionTitle = group?.folderName || BUDGET_CATEGORY_LABELS[categoryCode] || 'Budget';
-                          const columns = getBudgetColumnsForCode(categoryCode);
-
-                          return (
-                            <div key={categoryCode} className="border rounded-lg p-4">
-                              <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                                <div>
-                                  <h4 className="text-lg font-semibold">{sectionTitle}</h4>
-                                </div>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="gap-2 print:hidden"
-                                  onClick={() => handleBudgetCategoryExportCSV(categoryCode, sectionTitle)}
-                                  disabled={exportingSection === `budget-${categoryCode}`}
-                                >
-                                  <FileSpreadsheet className="h-4 w-4" />
-                                  Export CSV
-                                </Button>
-                              </div>
-                              <div className="overflow-x-auto">
-                                {items.length === 0 ? (
-                                  <div className="py-4 text-center text-sm text-muted-foreground">
-                                    No budget items found for this stream.
-                                  </div>
-                                ) : (
-                                  <Table className="text-sm min-w-max">
-                                    <TableHeader>
-                                      <TableRow>
-                                        {columns.map((column) => (
-                                          <TableHead
-                                            key={`${categoryCode}-${column}`}
-                                            className={isCurrencyColumn(column) || isHourColumn(column) ? 'text-right whitespace-nowrap' : 'whitespace-normal break-words'}
-                                          >
-                                            {column}
-                                          </TableHead>
-                                        ))}
-                                      </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                      {items.map((item) => (
-                                        <TableRow key={item.id} className="text-xs">
-                                          {columns.map((column) => (
-                                            <TableCell
-                                              key={`${item.id}-${column}`}
-                                              className={isCurrencyColumn(column) || isHourColumn(column) ? 'text-right whitespace-nowrap' : 'whitespace-normal break-words'}
-                                            >
-                                              {formatBudgetCellDisplay(column, item)}
-                                            </TableCell>
-                                          ))}
-                                        </TableRow>
-                                      ))}
-                                    </TableBody>
-                                  </Table>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </>
-                    );
-                  })()}
+                  {categorizedBudgetSections.map((section) => (
+                    <div key={section.categoryCode} className="border rounded-lg p-4">
+                      <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <h4 className="text-lg font-semibold">{section.sectionTitle}</h4>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-2 print:hidden"
+                          onClick={() => handleBudgetCategoryExportCSV(section.categoryCode, section.sectionTitle)}
+                          disabled={exportingSection === `budget-${section.categoryCode}`}
+                        >
+                          <FileSpreadsheet className="h-4 w-4" />
+                          Export CSV
+                        </Button>
+                      </div>
+                      <div className="overflow-x-auto">
+                        {section.items.length === 0 ? (
+                          <div className="py-4 text-center text-sm text-muted-foreground">
+                            No budget items found for this stream.
+                          </div>
+                        ) : (
+                          <Table className="text-sm min-w-max">
+                            <TableHeader>
+                              <TableRow>
+                                {section.columns.map((column) => (
+                                  <TableHead
+                                    key={`${section.categoryCode}-${column}`}
+                                    className={isCurrencyColumn(column) || isHourColumn(column) ? 'text-right whitespace-nowrap' : 'whitespace-normal break-words'}
+                                  >
+                                    {column}
+                                  </TableHead>
+                                ))}
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {section.items.map((item) => (
+                                <TableRow key={item.id} className="text-xs">
+                                  {section.columns.map((column) => (
+                                    <TableCell
+                                      key={`${item.id}-${column}`}
+                                      className={isCurrencyColumn(column) || isHourColumn(column) ? 'text-right whitespace-nowrap' : 'whitespace-normal break-words'}
+                                    >
+                                      {formatBudgetCellDisplay(column, item)}
+                                    </TableCell>
+                                  ))}
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </Card>
