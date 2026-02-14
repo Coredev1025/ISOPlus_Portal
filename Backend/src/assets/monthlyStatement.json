@@ -2277,7 +2277,7 @@
             {
                 "name": "P2-14 copy",
                 "type": "multiVariableText",
-                "content": "{\"first day\":\"FIRST DAY\"}",
+                "content": "{\"last day\":\"LAST DAY\"}",
                 "position": {
                     "x": 20,
                     "y": 252.04
@@ -2296,9 +2296,9 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": false,
-                "text": " Total Available Balance on {first day}",
+                "text": " Total Available Balance as of {last day}",
                 "variables": [
-                    "first day"
+                    "last day"
                 ],
                 "required": false,
                 "fontName": "Roboto",
@@ -3991,7 +3991,7 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": true,
-                "text": "The following information relates to any incorrect or missing charges from previous months. Please contact us if you have any concerns or questions.",
+                "text": "* Committed funds are costs which the participant has agreed to for the provision of the scheme and for which the provider has begun arrangements; however, these items or services have not yet been delivered in the calendar month.",
                 "variables": [],
                 "required": false,
                 "fontName": "Roboto",
@@ -4799,7 +4799,7 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": true,
-                "text": "The following information relates to any incorrect or missing charges from previous months. Please contact us if you have any concerns or questions.",
+                "text": "* Committed funds are costs which the participant has agreed to for the provision of the scheme and for which the provider has begun arrangements; however, these items or services have not yet been delivered in the calendar month.",
                 "variables": [],
                 "required": false,
                 "fontName": "Roboto",
@@ -6276,7 +6276,7 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": true,
-                "text": "The following information relates to any incorrect or missing charges from previous months. Please contact us if you have any concerns or questions.",
+                "text": "* Committed funds are costs which the participant has agreed to for the provision of the scheme and for which the provider has begun arrangements; however, these items or services have not yet been delivered in the calendar month.",
                 "variables": [],
                 "required": false,
                 "fontName": "Roboto",
@@ -7959,7 +7959,7 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": false,
-                "text": " Available Budget onf {first day}",
+                "text": " Available Budget on {first day}",
                 "variables": [
                     "first day"
                 ],

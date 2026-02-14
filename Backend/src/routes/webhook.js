@@ -970,13 +970,12 @@ function normalizeStatus(value) {
 }
 
 function resolveServiceProviderName(service = {}, business) {
-    const deliveredByRaw = service.serviceProvider || service.deliveredBy;
-    const deliveredBy = deliveredByRaw ? deliveredByRaw.toString().toLowerCase() : '';
-    if (deliveredBy.includes('associated')) {
-        return service.associatedProvider || service.loanedByOrganisationName || '';
+    const deliveredByStr = (service.deliveredBy || '').toString().toLowerCase();
+    if (deliveredByStr.includes('associated')) {
+        return service.serviceProvider || service.associatedProvider || '';
     }
-    if (deliveredBy.includes('company workforce')) {
-        return business?.name || '';
+    if (deliveredByStr.includes('company workforce')) {
+        return business?.name || service.serviceProvider || '';
     }
     return '';
 }
@@ -2749,14 +2748,14 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             const lastDayPayload = { 'last day': quarterMeta.lastDay };
             [
                 'P2-10', 'P2-11',
-                'P2-11 copy', 'P2-14 copy',
+                'P2-11 copy',
                 'P4-8 copy',
                 'P4-20 copy',
                 'P5-7 copy',
                 'P3-7'
             ].forEach((f) => setMultiValueField(templateInputs, f, firstDayPayload));
             [
-                'P2-14',
+                'P2-14', 'P2-14 copy',
                 'P4-11 copy',
                 'P4-23 copy',
                 'P5-10 copy',
@@ -2806,6 +2805,12 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 // Note: P3 Footer 1 does not exist in template; RCP funding dates are in P3 Subtitle
             ]);
 
+            // Explicitly set RCP subtitle variables (template uses different var names than generic subtitle)
+            setMultiValueField(templateInputs, 'P3 Subtitle', {
+                ' Funding Start Date': formatDateToAU(restorativeAggregate.fundingStartDate, timezone) || 'N/A',
+                ' Funding end date': formatDateToAU(restorativeAggregate.fundingEndDate, timezone) || 'N/A'
+            });
+
             const endOfLifeAggregate = budgetAggregates.EOL ? { ...budgetAggregates.EOL } : initializeBudgetAggregate();
             endOfLifeAggregate.primarySupplementLabel = safeString(endOfLifeAggregate.primarySupplementLabel) || safeString(endOfLifeAggregate.fund) || safeString(endOfLifeAggregate.fundClassification) || '';
 
@@ -2819,6 +2824,12 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 { type: 'currency', field: '$P3-19 copy', value: (agg) => agg.adjustmentAmount },
                 { type: 'currency', field: '$P3-20 copy', value: (agg) => agg.remainingBalance }
             ]);
+
+            // Explicitly set EOL subtitle variables (template uses different var names than generic subtitle)
+            setMultiValueField(templateInputs, 'P3 Subtitle copy', {
+                ' Funding Start Date': formatDateToAU(endOfLifeAggregate.fundingStartDate, timezone) || 'N/A',
+                ' Funding end date': formatDateToAU(endOfLifeAggregate.fundingEndDate, timezone) || 'N/A'
+            });
 
             const assistiveShortAggregate = budgetAggregates.ATS ? { ...budgetAggregates.ATS } : initializeBudgetAggregate();
             assistiveShortAggregate.primarySupplementLabel = safeString(assistiveShortAggregate.primarySupplementLabel) || safeString(assistiveShortAggregate.fund) || safeString(assistiveShortAggregate.fundClassification) || '';
@@ -2835,7 +2846,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 { type: 'currency', field: '$P4-11 copy', value: (agg) => agg.remainingBalance },
                 { type: 'currency', field: '$P4-12 copy', value: (agg) => agg.committedFunds },
                 { type: 'currency', field: '$P4-13 copy', value: (agg) => agg.remainingBalanceAllocationPeriod || (agg.remainingBalance - Math.abs(agg.committedFunds)) },
-                { type: 'multi', field: 'P4 Footer 2 copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
+                { type: 'multi', field: 'P4 Footer 1 copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
             ]);
 
             const assistiveOngoingAggregate = budgetAggregates.ATO ? { ...budgetAggregates.ATO } : initializeBudgetAggregate();
@@ -2852,7 +2863,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 { type: 'currency', field: '$P4-23 copy', value: (agg) => agg.remainingBalance },
                 { type: 'currency', field: '$P4-24 copy', value: (agg) => agg.committedFunds },
                 { type: 'currency', field: '$P4-25 copy', value: (agg) => agg.remainingBalanceAllocationPeriod || (agg.remainingBalance - Math.abs(agg.committedFunds)) },
-                { type: 'multi', field: 'P4 Footer 1 copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
+                { type: 'multi', field: 'P4 Footer 2 copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
             ]);
 
             const homeModificationAggregate = budgetAggregates.HMB ? { ...budgetAggregates.HMB } : initializeBudgetAggregate();
@@ -2877,7 +2888,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             // These are all table field names from monthlyStatement.json
             const allTemplateTables = [
                 { name: 'Table P6-1 copy', columns: 8 },
-                { name: 'Table P6-1 copy copy copy', columns: 8 },
+                { name: 'Table P6-1 copy copy copy', columns: 3 },
                 { name: 'Table P7-1 copy', columns: 8 },
                 { name: 'Table P9-1', columns: 8 },
                 { name: 'Table P9-2', columns: 8 },
@@ -2907,19 +2918,13 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             });
 
             // Fill Table P6-1 copy copy copy (Care Management table - Table 3-1) with HSCM budget data
+            // Aggregate all HSCM items into a single row with total hours for the month
             const hscmBudgetItems = budgetItems.filter(item => item.categoryCode === 'HSCM');
             if (hscmBudgetItems.length > 0) {
                 // Table has 3 columns: Care Management (service name), Unit, Quantity
-                // Each HSCM item represents a care management transaction with allocated time
-                const hscmRows = hscmBudgetItems.map(item => {
-                    const unit = 'Hours';
-                    const allocatedTime = parseNumberValue(item.hscmAllocatedTime || 0);
-                    return [
-                        'Care Management',
-                        unit,
-                        allocatedTime !== 0 ? allocatedTime.toFixed(1) : '0.0'
-                    ];
-                });
+                const totalAllocatedTime = hscmBudgetItems.reduce((sum, item) =>
+                    sum + parseNumberValue(item.hscmAllocatedTime || 0), 0);
+                const hscmRows = [['Care Management', 'Hours', totalAllocatedTime !== 0 ? totalAllocatedTime.toFixed(1) : '0.0']];
                 templateInputs['Table P6-1 copy copy copy'] = JSON.stringify(hscmRows);
             } else {
                 // No HSCM items - show empty message
@@ -2958,6 +2963,16 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
 
                 if (!status && canRecordDelivery) {
                     bucket.delivered.push(service);
+                }
+            });
+
+            // For codes with committed buckets (ATS, ATO, HMB), merge adjustment/refund rows
+            // into the delivered table so they appear at the bottom of the delivered section
+            ['ATS', 'ATO', 'HMB'].forEach(code => {
+                const bucket = serviceBuckets[code];
+                if (bucket?.adjustment?.length > 0 && bucket?.delivered) {
+                    bucket.delivered.push(...bucket.adjustment);
+                    bucket.adjustment = [];
                 }
             });
 

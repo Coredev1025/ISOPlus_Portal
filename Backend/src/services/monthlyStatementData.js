@@ -70,7 +70,7 @@ const stripEmoji = (str) =>
 
 const resolveDisplayName = (refItem) => {
     if (!refItem?.data) return '';
-    for (const key of ['Funding Stream', 'Definition', 'Full Name/Preferred Name', 'Name']) {
+    for (const key of ['Funding Stream', 'Name', 'Full Name/Preferred Name', 'Definition']) {
         const val = refItem.data[key];
         if (val) return (typeof val === 'object' && val.name) ? val.name : String(val);
     }
@@ -359,7 +359,7 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
                 providerUnspent: 0,
                 participantUnspent: 0,
                 previousMonthSpending: 0,
-                deliveredAmount: Math.abs(allocatedAmount) || 0,
+                deliveredAmount: allocatedAmount || 0,
                 deliveredAmountRaw: allocatedAmount,
                 adjustmentAmount: 0,
                 remainingBalance: Math.max(0, currentBalance),
@@ -391,7 +391,7 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
             year: formatStatus(getValue(item, 'Year')),
             quarter: formatStatus(getValue(item, 'FY Quarter')) || '',
             totalAvailableBudget: parseNumber(getValueMulti(item, BUDGET_FIELDS.totalAvailable)),
-            deliveredAmount: Math.abs(parseNumber(getValueMulti(item, BUDGET_FIELDS.delivered))),
+            deliveredAmount: parseNumber(getValueMulti(item, BUDGET_FIELDS.delivered)),
             adjustmentAmount: parseNumber(getValue(item, 'Adjustments from Previous Months [Charges($-)/Refund($)]')),
             remainingBalance: parseNumber(getValueMulti(item, BUDGET_FIELDS.remaining)),
             availableFundStart: parseNumber(getValue(item, 'Available Fund at the Start of the Month ($)')),
@@ -559,6 +559,7 @@ export async function fetchServiceItems(workspaceId, boardId, options = {}) {
             participant: p.participantName,
             service,
             serviceProvider,
+            deliveredBy: deliveredBy ? (typeof deliveredBy === 'object' ? deliveredBy.name : String(deliveredBy)) : '',
             scheduledServiceDate: scheduledStart || null,
             serviceDeliveryDate: actualEnd || null,
             transactionStatus: formatStatus(getValue(item, ATTR.TRANSACTION_STATUS)),
