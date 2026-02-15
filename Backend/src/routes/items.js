@@ -690,16 +690,23 @@ const isUuidLike = (value) =>
 
 const getReferenceDisplayName = (refItem) => {
     if (!refItem) return '';
+    // Prefer short 'Name' (e.g. Veterans, Remote) over Definition for Primary Supplement and similar refs (per spec: "after the dash use the value of the Primary Supplement attribute")
+    const shortName = getValueFromFlatData(refItem, [
+        'Name',
+        REF_ATTRIBUTE_NAMES.FS_NAME,
+        REF_ATTRIBUTE_NAMES.FULL_NAME,
+        REF_ATTRIBUTE_NAMES.PROFILE_FULL_NAME
+    ]);
+    if (shortName) {
+        const raw = typeof shortName === 'object' && shortName.name ? shortName.name : String(shortName).trim();
+        if (raw) return stripEmojiFromFundingSource(raw);
+    }
     const fundingName = getFundingSourceNameFromItem(refItem);
     if (fundingName) return fundingName;
     const participantName = getParticipantNameFromProfile(refItem);
     if (participantName) return participantName;
     const genericName = getValueFromFlatData(refItem, [
-        'Name',
-        REF_ATTRIBUTE_NAMES.FS_NAME,
-        REF_ATTRIBUTE_NAMES.FS_DEFINITION,
-        REF_ATTRIBUTE_NAMES.FULL_NAME,
-        REF_ATTRIBUTE_NAMES.PROFILE_FULL_NAME
+        REF_ATTRIBUTE_NAMES.FS_DEFINITION
     ]);
     if (genericName) {
         if (typeof genericName === 'object' && genericName.name) return genericName.name;
