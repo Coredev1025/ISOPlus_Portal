@@ -898,18 +898,16 @@ const SERVICE_TABLE_CONFIG = {
             rowType: 'delivered'
         },
         adjustment: {
-            // Adjustment table placed right after delivered (middle position on page)
             tableName: 'Table P10-2 copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P10-4 copy', '$P10-5 copy', '$P10-6 copy'],
-            rowType: 'adjustment'
+            rowType: 'committed'
         },
         committed: {
-            // Committed table at the bottom of the page (after adjustment section)
             tableName: 'Table P10-3 copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P10-7 copy', '$P10-8 copy', '$P10-9 copy'],
-            rowType: 'committed'
+            rowType: 'adjustment'
         }
     },
     ATO: {
@@ -920,18 +918,16 @@ const SERVICE_TABLE_CONFIG = {
             rowType: 'delivered'
         },
         adjustment: {
-            // Adjustment table placed right after delivered (middle position on page)
             tableName: 'Table P11-2 copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P11-4 copy', '$P11-5 copy', '$P11-6 copy'],
-            rowType: 'adjustment'
+            rowType: 'committed'
         },
         committed: {
-            // Committed table at the bottom of the page (after adjustment section)
             tableName: 'Table P11-3  copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P11-7  copy', '$P11-8 copy', '$P11-9 1 copy'],
-            rowType: 'committed'
+            rowType: 'adjustment'
         }
     },
     HMB: {
@@ -942,18 +938,16 @@ const SERVICE_TABLE_CONFIG = {
             rowType: 'delivered'
         },
         adjustment: {
-            // Adjustment table placed right after delivered (middle position on page)
             tableName: 'Table P11-2 copy copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P12-4  copy', '$P11-5 copy copy', '$P11-6  copy'],
-            rowType: 'adjustment'
+            rowType: 'committed'
         },
         committed: {
-            // Committed table at the bottom of the page (after adjustment section)
             tableName: 'Table P12-3  copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P12-7  copy', '$P11-8 copy copy', '$P11-9 1 copy copy'],
-            rowType: 'committed'
+            rowType: 'adjustment'
         }
     }
 };
@@ -2770,13 +2764,13 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             ].forEach((f) => setMultiValueField(templateInputs, f, lastDayPayload));
 
             const homeSupportAggregate = budgetAggregates.HSQ ? { ...budgetAggregates.HSQ } : initializeBudgetAggregate();
-            homeSupportAggregate.primarySupplementLabel = safeString(homeSupportAggregate.primarySupplementLabel) || safeString(homeSupportAggregate.fund) || safeString(homeSupportAggregate.fundClassification) || '';
+            homeSupportAggregate.primarySupplementLabel = safeString(homeSupportAggregate.primarySupplementValue) || safeString(homeSupportAggregate.fund) || safeString(homeSupportAggregate.fundClassification) || '';
 
             applyBudgetMapping(templateInputs, homeSupportAggregate, [
                 { type: 'multi', field: 'P2-3', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
                 { type: 'currency', field: '$P2-1', value: (agg) => agg.availableFundStart },
                 { type: 'currency', field: '$P2-2', value: (agg) => agg.quarterlyAdjustment },
-                { type: 'currency', field: '$P2-3', value: (agg) => agg.primarySupplementAmount },
+                { type: 'currency', field: '$P2-3', value: (agg) => (agg.primarySupplementAmount ?? 0) },
                 { type: 'currency', field: '$P2-4', value: (agg) => agg.carryoverFunding + agg.unspentReturned },
                 { type: 'currency', field: '$P2-6', value: (agg) => agg.commonwealthUnspent + agg.providerUnspent + agg.participantUnspent },
                 { type: 'currency', field: '$P2-6 copy copy', value: (agg) => agg.commonwealthUnspent },
@@ -2795,12 +2789,12 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             ]);
 
             const restorativeAggregate = budgetAggregates.RCP ? { ...budgetAggregates.RCP } : initializeBudgetAggregate();
-            restorativeAggregate.primarySupplementLabel = safeString(restorativeAggregate.primarySupplementLabel) || safeString(restorativeAggregate.fund) || safeString(restorativeAggregate.fundClassification) || '';
+            restorativeAggregate.primarySupplementLabel = safeString(restorativeAggregate.primarySupplementValue) || safeString(restorativeAggregate.fund) || safeString(restorativeAggregate.fundClassification) || '';
 
             applyBudgetMapping(templateInputs, restorativeAggregate, [
                 { type: 'multi', field: 'P3-2', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
                 { type: 'currency', field: '$P3-1', value: (agg) => agg.availableFundStart },
-                { type: 'currency', field: '$P3-2', value: (agg) => agg.primarySupplementAmount },
+                { type: 'currency', field: '$P3-2', value: (agg) => (agg.primarySupplementAmount ?? 0) },
                 // Note: $P3-3, $P3-4, $P3-5 (unspent HCP funds) are not in the RCP template page
                 // (Restorative Care Pathway does not have 10% care management deduction)
                 { type: 'currency', field: '$P3-6', value: (agg) => agg.previousMonthSpending },
@@ -2818,12 +2812,12 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             });
 
             const endOfLifeAggregate = budgetAggregates.EOL ? { ...budgetAggregates.EOL } : initializeBudgetAggregate();
-            endOfLifeAggregate.primarySupplementLabel = safeString(endOfLifeAggregate.primarySupplementLabel) || safeString(endOfLifeAggregate.fund) || safeString(endOfLifeAggregate.fundClassification) || '';
+            endOfLifeAggregate.primarySupplementLabel = safeString(endOfLifeAggregate.primarySupplementValue) || safeString(endOfLifeAggregate.fund) || safeString(endOfLifeAggregate.fundClassification) || '';
 
             applyBudgetMapping(templateInputs, endOfLifeAggregate, [
                 { type: 'multi', field: 'P3-12 copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
                 { type: 'currency', field: '$P3-11 copy', value: (agg) => agg.availableFundStart },
-                { type: 'currency', field: '$P3-12 copy', value: (agg) => agg.primarySupplementAmount },
+                { type: 'currency', field: '$P3-12 copy', value: (agg) => (agg.primarySupplementAmount ?? 0) },
                 { type: 'currency', field: '$P3-16 copy', value: (agg) => agg.previousMonthSpending },
                 { type: 'currency', field: '$P3-17 copy', value: (agg) => agg.totalAvailableBudget },
                 { type: 'currency', field: '$P3-18 copy', value: (agg) => agg.deliveredAmount },
@@ -2838,12 +2832,12 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             });
 
             const assistiveShortAggregate = budgetAggregates.ATS ? { ...budgetAggregates.ATS } : initializeBudgetAggregate();
-            assistiveShortAggregate.primarySupplementLabel = safeString(assistiveShortAggregate.primarySupplementLabel) || safeString(assistiveShortAggregate.fund) || safeString(assistiveShortAggregate.fundClassification) || '';
+            assistiveShortAggregate.primarySupplementLabel = safeString(assistiveShortAggregate.primarySupplementValue) || safeString(assistiveShortAggregate.fund) || safeString(assistiveShortAggregate.fundClassification) || '';
 
             applyBudgetMapping(templateInputs, assistiveShortAggregate, [
                 { type: 'multi', field: 'P4-2 copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
                 { type: 'currency', field: '$P4-1  copy', value: (agg) => agg.availableFundStart },
-                { type: 'currency', field: '$P4-2 copy', value: (agg) => agg.primarySupplementAmount },
+                { type: 'currency', field: '$P4-2 copy', value: (agg) => (agg.primarySupplementAmount ?? 0) },
                 { type: 'currency', field: '$P4-3 copy', value: (agg) => agg.fundAmount },
                 { type: 'currency', field: '$P4-7 copy', value: (agg) => agg.previousMonthSpending },
                 { type: 'currency', field: '$P4-8 copy', value: (agg) => agg.totalAvailableBudget },
@@ -2856,12 +2850,12 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             ]);
 
             const assistiveOngoingAggregate = budgetAggregates.ATO ? { ...budgetAggregates.ATO } : initializeBudgetAggregate();
-            assistiveOngoingAggregate.primarySupplementLabel = safeString(assistiveOngoingAggregate.primarySupplementLabel) || safeString(assistiveOngoingAggregate.fund) || safeString(assistiveOngoingAggregate.fundClassification) || '';
+            assistiveOngoingAggregate.primarySupplementLabel = safeString(assistiveOngoingAggregate.primarySupplementValue) || safeString(assistiveOngoingAggregate.fund) || safeString(assistiveOngoingAggregate.fundClassification) || '';
 
             applyBudgetMapping(templateInputs, assistiveOngoingAggregate, [
                 { type: 'multi', field: 'P4-15 copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
                 { type: 'currency', field: '$P4-14 copy', value: (agg) => agg.availableFundStart },
-                { type: 'currency', field: '$P4-15 copy', value: (agg) => agg.primarySupplementAmount },
+                { type: 'currency', field: '$P4-15 copy', value: (agg) => (agg.primarySupplementAmount ?? 0) },
                 { type: 'currency', field: '$P4-19 copy', value: (agg) => agg.previousMonthSpending },
                 { type: 'currency', field: '$P4-20 copy', value: (agg) => agg.totalAvailableBudget },
                 { type: 'currency', field: '$P4-21 copy', value: (agg) => agg.deliveredAmount },
@@ -2873,17 +2867,17 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             ]);
 
             const homeModificationAggregate = budgetAggregates.HMB ? { ...budgetAggregates.HMB } : initializeBudgetAggregate();
-            homeModificationAggregate.primarySupplementLabel = safeString(homeModificationAggregate.primarySupplementLabel) || safeString(homeModificationAggregate.fund) || safeString(homeModificationAggregate.fundClassification) || '';
+            homeModificationAggregate.primarySupplementLabel = safeString(homeModificationAggregate.primarySupplementValue) || safeString(homeModificationAggregate.fund) || safeString(homeModificationAggregate.fundClassification) || '';
 
             applyBudgetMapping(templateInputs, homeModificationAggregate, [
                 { type: 'multi', field: 'P5- copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
                 { type: 'currency', field: '$P5-1 copy', value: (agg) => agg.availableFundStart },
-                { type: 'currency', field: '$P5-2 copy', value: (agg) => agg.primarySupplementAmount },
+                { type: 'currency', field: '$P5-2 copy', value: (agg) => (agg.primarySupplementAmount ?? 0) },
                 { type: 'currency', field: '$P5-6 copy', value: (agg) => agg.previousMonthSpending },
                 { type: 'currency', field: '$P5-7 copy', value: (agg) => agg.totalAvailableBudget },
                 { type: 'currency', field: '$P5-8 copy', value: (agg) => agg.deliveredAmount },
                 { type: 'currency', field: '$P5-9 copy', value: (agg) => agg.adjustmentAmount },
-                { type: 'currency', field: '$P5-10 copy', value: (agg) => agg.remainingBalance },
+                { type: 'currency', field: '$P5-10 copy', value: (agg) => agg.remainingBalanceEndOfMonth ?? agg.remainingBalance },
                 { type: 'currency', field: '$P5-11 copy', value: (agg) => agg.committedFunds },
                 { type: 'currency', field: '$P5-12 copy', value: (agg) => agg.remainingBalanceAllocationPeriod || (agg.remainingBalance - Math.abs(agg.committedFunds)) },
                 { type: 'multi', field: 'P4 Footer 2 copy copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }

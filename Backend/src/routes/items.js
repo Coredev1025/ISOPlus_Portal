@@ -2199,6 +2199,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 remainingBalanceEndOfMonth,
                 ...(remainingBalanceAllocationPeriod !== null && { remainingBalanceAllocationPeriod }),
                 primarySupplementLabel,
+                primarySupplementValue,
                 fundClassification,
                 fundAmount,
                 fund,
