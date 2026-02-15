@@ -370,7 +370,6 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
                 fundingStartDate: null,
                 fundingEndDate: null,
                 primarySupplementLabel: '',
-                primarySupplementValue: '',
                 remainingBalanceEndOfMonth: Math.max(0, currentBalance),
                 remainingBalanceAllocationPeriod: 0,
                 hscmDate: dateValue || null,

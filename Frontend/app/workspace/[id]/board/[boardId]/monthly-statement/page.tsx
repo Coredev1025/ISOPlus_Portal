@@ -118,7 +118,6 @@ interface BudgetRecord {
   fund?: string;
   committedFunds?: number;
   primarySupplementLabel?: string;
-  primarySupplementValue?: number;
   fundingStreamId?: string | null;
   hscmDate?: string | null;
   hscmTransactionType?: string;
@@ -2259,7 +2258,7 @@ export default function MonthlyStatement() {
         return item.participantName || '';
       }
       if (columnLabel === 'Primary Supplement' && (looksLikeId(rawValue) || isIdArray(rawValue))) {
-        return item.primarySupplementValue ?? 0;
+        return item.primarySupplementLabel || '';
       }
       return rawValue;
     }
