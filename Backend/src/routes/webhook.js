@@ -522,7 +522,9 @@ function parseNumberValue(value) {
 }
 
 function formatCurrencyValue(value) {
-    return `$${formatValue(parseNumberValue(value))}`;
+    const num = parseNumberValue(value);
+    const formatted = formatValue(num);
+    return num < 0 ? `-$${formatted.replace(/^-/, '')}` : `$${formatted}`;
 }
 
 function formatDateToAU(value, timezone) {
@@ -2713,6 +2715,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 'Participant': participantName,
                 'Address': participantAddress,
                 'Suburb': participantSuburb,
+                'State': participantState,
                 'Post Code': participantPostcode
             });
 
@@ -2738,11 +2741,13 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 setMultiValueField(templateInputs, field, subtitlePayload);
             });
 
-            // Page 1 contact: Phone Number and Business Email from Business Details (ISO+ Portal)
-            setMultiValueField(templateInputs, 'Disclaimer 2a', {
+            // Page 1 and Page 14 contact: Phone Number and Business Email from Business Details (ISO+ Portal)
+            const businessContactPayload = {
                 'Phone Number': safeBusinessDetails.phoneNumber || '',
                 'Business Email': safeBusinessDetails.businessEmail || ''
-            });
+            };
+            setMultiValueField(templateInputs, 'Disclaimer 2a', businessContactPayload);
+            setMultiValueField(templateInputs, 'Text 13-', businessContactPayload);
 
             const firstDayPayload = { 'first day': quarterMeta.firstDay };
             const lastDayPayload = { 'last day': quarterMeta.lastDay };
@@ -2752,7 +2757,8 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 'P4-8 copy',
                 'P4-20 copy',
                 'P5-7 copy',
-                'P3-7'
+                'P3-7',
+                'P3-17 copy'
             ].forEach((f) => setMultiValueField(templateInputs, f, firstDayPayload));
             [
                 'P2-14', 'P2-14 copy',
@@ -2880,8 +2886,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 { type: 'currency', field: '$P5-10 copy', value: (agg) => agg.remainingBalance },
                 { type: 'currency', field: '$P5-11 copy', value: (agg) => agg.committedFunds },
                 { type: 'currency', field: '$P5-12 copy', value: (agg) => agg.remainingBalanceAllocationPeriod || (agg.remainingBalance - Math.abs(agg.committedFunds)) },
-                { type: 'multi', field: 'P4 Footer 2 copy copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) },
-                { type: 'multi', field: 'P4 Footer 3 copy copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
+                { type: 'multi', field: 'P4 Footer 2 copy copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
             ]);
 
             // Pre-initialize ALL template tables with empty rows to prevent pdfme errors
