@@ -642,6 +642,8 @@ export default function MonthlyStatement() {
   const [distinctFundingSources, setDistinctFundingSources] = useState<string[]>([]);
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartCardRefs = useRef<(HTMLDivElement | null)[]>([]);
+  // When true, disable chart animations to ensure stable PDF captures.
+  const [isPdfChartCaptureMode, setIsPdfChartCaptureMode] = useState(false);
   const [isManualSyncing, setIsManualSyncing] = useState(false);
   const [showHelpDialog, setShowHelpDialog] = useState(false);
   const syncCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -1618,6 +1620,11 @@ export default function MonthlyStatement() {
       let chartImage: string | undefined;
       const chartsWithData = chartConfigs.filter((c) => c.hasData);
       if (chartsWithData.length > 0 && chartCardRefs.current.length > 0) {
+        setIsPdfChartCaptureMode(true);
+        // Allow React + Recharts to re-render with animations disabled.
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+        );
         try {
           const pdfCols = chartsWithData.length === 3 || chartsWithData.length > 4 ? 3 : 2;
           const { width: chartW, height: chartH } = getPdfChartCellSize(pdfCols);
@@ -1626,68 +1633,24 @@ export default function MonthlyStatement() {
           for (let i = 0; i < chartIndicesWithData.length; i++) {
             const idx = chartIndicesWithData[i];
             const el = chartCardRefs.current[idx];
-            if (el) {
-              const cardEl = el as HTMLElement;
-              const headerEl = cardEl.querySelector('[data-pdf-chart-header="true"]') as HTMLElement | null;
-              const containerEl = cardEl.querySelector('[data-pdf-chart-container="true"]') as HTMLElement | null;
+            if (!el) continue;
 
-              const prevCardCssText = cardEl.style.cssText;
-              const prevHeaderCssText = headerEl?.style.cssText;
-              const prevContainerCssText = containerEl?.style.cssText;
-
-              try {
-                cardEl.style.width = `${chartW}px`;
-                cardEl.style.height = `${chartH}px`;
-                cardEl.style.boxSizing = 'border-box';
-                cardEl.style.display = 'flex';
-                cardEl.style.flexDirection = 'column';
-                cardEl.style.overflow = 'hidden';
-                cardEl.style.backgroundColor = 'white';
-
-                if (headerEl) {
-                  headerEl.style.flex = '0 0 auto';
-                }
-
-                if (containerEl) {
-                  // Fill remaining space so the chart fully occupies the slot.
-                  const headerH = headerEl?.offsetHeight ?? 0;
-                  const computed = window.getComputedStyle(cardEl);
-                  const padTop = parseFloat(computed.paddingTop || '0') || 0;
-                  const padBottom = parseFloat(computed.paddingBottom || '0') || 0;
-                  const gapPx = parseFloat((computed as any).rowGap || '0') || 0;
-                  const availableH = Math.max(0, chartH - padTop - padBottom - headerH - gapPx);
-
-                  containerEl.style.flex = '1 1 auto';
-                  containerEl.style.minHeight = '0px';
-                  containerEl.style.height = `${availableH}px`;
-                  containerEl.style.overflow = 'visible';
-                }
-
-                await new Promise<void>((resolve) =>
-                  requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-                );
-
-                const dataUrl = await toPng(el, {
-                  pixelRatio: 1,
-                  cacheBust: true,
-                  backgroundColor: "white",
-                  width: chartW,
-                  height: chartH,
-                  style: { borderRadius: "8px", width: `${chartW}px`, height: `${chartH}px` },
-                });
-                imageDataUrls.push(dataUrl);
-              } finally {
-                cardEl.style.cssText = prevCardCssText;
-                if (headerEl && typeof prevHeaderCssText === 'string') headerEl.style.cssText = prevHeaderCssText;
-                if (containerEl && typeof prevContainerCssText === 'string') containerEl.style.cssText = prevContainerCssText;
-              }
-            }
+            // Capture the chart card at its current layout size (stable, no forced resizing),
+            // then scale into the fixed PDF cell size during compositing.
+            const dataUrl = await toPng(el, {
+              pixelRatio: 2,
+              cacheBust: true,
+              backgroundColor: "white",
+            });
+            imageDataUrls.push(dataUrl);
           }
           if (imageDataUrls.length > 0) {
             chartImage = await compositeChartImages(imageDataUrls, pdfCols, { width: chartW, height: chartH });
           }
         } catch (e) {
           console.warn("Chart capture for PDF failed:", e);
+        } finally {
+          setIsPdfChartCaptureMode(false);
         }
       }
 
@@ -2988,7 +2951,12 @@ export default function MonthlyStatement() {
                               />
                             }
                           />
-                          <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={42}>
+                          <Bar
+                            dataKey="value"
+                            radius={[6, 6, 0, 0]}
+                            maxBarSize={42}
+                            isAnimationActive={!isPdfChartCaptureMode}
+                          >
                             <LabelList
                               dataKey="value"
                               position="top"
