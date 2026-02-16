@@ -130,6 +130,7 @@ const BUDGET_FIELDS = {
     totalAvailable: [
         'Total Available Budget for Home Support ($)',
         'Total Available Fund for AT - Short-term ($)',
+        'Total Available Fund for AT - Ongoing ($)',
         'Total Available Fund for AT Ongoing ($)',
         'Total Available Fund for HM ($)',
         'Total Available Budget for Restorative Care ($)',
@@ -409,6 +410,7 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
             participantUnspent: parseNumber(getValueMulti(item, BUDGET_FIELDS.participantUnspent)),
             previousMonthSpending: parseNumber(getValueMulti(item, BUDGET_FIELDS.previousMonthSpending)),
             fundAmount: parseNumber(getValue(item, 'Fund Amount ($)')),
+            additionalAmountApproved: parseNumber(getValue(item, 'Additional amount approved (AT high tier) ($)')),
             fundClassification: formatStatus(getValue(item, 'Fund Classification')) || '',
             primarySupplementLabel: resolveReferenceValue(getValue(item, 'Primary Supplement'), psMap),
             fundingStartDate: getValue(item, 'Funding Start Date'),

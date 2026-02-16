@@ -71,6 +71,7 @@ const ATTRIBUTE_NAMES = {
     FUNDING_END_DATE: 'Funding End Date',
     FUND_CLASSIFICATION: 'Fund Classification',
     FUND_AMOUNT: 'Fund Amount ($)',
+    ADDITIONAL_AMOUNT_APPROVED_AT: 'Additional amount approved (AT high tier) ($)',
     TOTAL_AVAILABLE_HOME_SUPPORT: 'Total Available Budget for Home Support ($)',
     FUND_TEXT: 'Fund',
     HOME_SUPPORT_DELIVERED: 'Home Support Delivered During the Month ($-)',
@@ -1985,7 +1986,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 const dateValue = getValueFromItemMulti(item, 'Date');
                 const transactionTypeValue = getValueFromItemMulti(item, 'Transaction Type');
                 const receivedAmount = getNumberFromItem(item, 'Received Amount ($)');
-                const allocatedTime = getNumberFromItem(item, 'Allocated Time (Hr.)');
+                const allocatedTime = getNumberFromItem(item, [ATTRIBUTE_NAMES.ALLOCATED_TIME, 'Allocated Time (Hr.)']);
                 const allocatedAmount = getNumberFromItem(item, 'Allocated Amount ($-)');
                 const currentBalanceValue = getNumberFromItem(item, 'Current Balance ($)');
                 const currentBalance = Number.isFinite(currentBalanceValue) && currentBalanceValue !== 0
@@ -2124,6 +2125,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const primarySupplementLabel = resolveReferenceValue(primarySupplementValue, primarySupplementMap);
             const fundClassification = getLabelFromItem(item, ATTRIBUTE_NAMES.FUND_CLASSIFICATION);
             const fundAmount = getNumberFromItem(item, ATTRIBUTE_NAMES.FUND_AMOUNT);
+            const additionalAmountApproved = getNumberFromItem(item, ATTRIBUTE_NAMES.ADDITIONAL_AMOUNT_APPROVED_AT);
             const fund = getTextFromItem(item, ATTRIBUTE_NAMES.FUND_TEXT);
 
             const committedATShort = getNumberFromItem(item, ATTRIBUTE_NAMES.COMMITTED_AT_SHORT_TERM);
@@ -2202,6 +2204,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 primarySupplementLabel,
                 fundClassification,
                 fundAmount,
+                additionalAmountApproved,
                 fund,
                 committedFunds,
                 fundingStreamId: getFirstReferenceId(item, ATTRIBUTE_NAMES.FUNDING_STREAM),
@@ -2798,6 +2801,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             participantUnspent: 0,
             previousMonthSpending: 0,
             fundAmount: 0,
+            additionalAmountApproved: 0,
             shouldDisplay: false,
             hscmTotalAllocatedTime: 0,
             hscmTotalReceivedAmount: 0,
@@ -2902,6 +2906,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             aggregate.participantUnspent += item.participantUnspent || 0;
             aggregate.previousMonthSpending += item.previousMonthSpending || 0;
             aggregate.fundAmount += item.fundAmount || 0;
+            aggregate.additionalAmountApproved += item.additionalAmountApproved || 0;
 
             // Track HSCM-specific aggregates
             if (code === 'HSCM') {
@@ -3205,6 +3210,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 participantUnspent: budgetAggregate.participantUnspent || profileData.participantUnspent || 0,
                 previousMonthSpending: budgetAggregate.previousMonthSpending || profileData.previousMonthSpending || 0,
                 fundAmount: budgetAggregate.fundAmount || profileData.fundAmount || 0,
+                additionalAmountApproved: budgetAggregate.additionalAmountApproved ?? profileData.additionalAmountApproved ?? 0,
                 shouldDisplay: Boolean(budgetAggregate.shouldDisplay),
                 ...(config.code === 'HSCM' && {
                     hscmTotalAllocatedTime: budgetAggregate.hscmTotalAllocatedTime || 0,
