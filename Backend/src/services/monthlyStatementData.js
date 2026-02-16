@@ -70,7 +70,9 @@ const stripEmoji = (str) =>
 
 const resolveDisplayName = (refItem) => {
     if (!refItem?.data) return '';
-    for (const key of ['Funding Stream', 'Name', 'Full Name/Preferred Name', 'Definition']) {
+    // Prefer short "Primary Supplement" value (e.g. "Veterans") over "Definition" (long text)
+    // and prefer "Funding Stream" label for funding stream references.
+    for (const key of ['Funding Stream', 'Primary Supplement', 'Name', 'Full Name/Preferred Name', 'Definition']) {
         const val = refItem.data[key];
         if (val) return (typeof val === 'object' && val.name) ? val.name : String(val);
     }
