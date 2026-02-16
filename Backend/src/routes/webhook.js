@@ -573,6 +573,7 @@ function initializeBudgetAggregate() {
         remainingBalanceEndOfMonth: 0,
         remainingBalanceAllocationPeriod: 0,
         fundAmount: 0,
+        additionalAmountApproved: 0,
         govSubsidyAmount: 0,
         participantContributionAmount: 0,
         fund: '',
@@ -616,6 +617,7 @@ function calculateBudgetAggregates(items = []) {
         aggregate.remainingBalanceEndOfMonth += parseNumberValue(item.remainingBalanceEndOfMonth);
         aggregate.remainingBalanceAllocationPeriod += parseNumberValue(item.remainingBalanceAllocationPeriod);
         aggregate.fundAmount += parseNumberValue(item.fundAmount);
+        aggregate.additionalAmountApproved += parseNumberValue(item.additionalAmountApproved);
         aggregate.govSubsidyAmount += parseNumberValue(item.govSubsidyAmount);
         aggregate.participantContributionAmount += parseNumberValue(item.participantContributionAmount);
 
@@ -681,6 +683,7 @@ function enrichAggregateFromCategory(aggregate, category) {
         participantUnspent: 'participantUnspent',
         previousMonthSpending: 'previousMonthSpending',
         fundAmount: 'fundAmount',
+        additionalAmountApproved: 'additionalAmountApproved',
         adjustmentAmount: 'adjustmentAmount',
         committedFunds: 'committedFunds',
         govSubsidyAmount: 'govSubsidyAmount',
@@ -976,6 +979,12 @@ function resolveServiceProviderName(service = {}, business) {
     return '';
 }
 
+/** Only append ", by {Associated Provider}" when Delivered by is Associated Providers (per spec; provider column removed). */
+function isDeliveredByAssociatedProviders(service = {}) {
+    const deliveredByStr = (service.deliveredBy || '').toString().toLowerCase();
+    return deliveredByStr.includes('associated');
+}
+
 function resolveServiceDateValue(service = {}, rowType = 'delivered', timezone) {
     if (rowType === 'committed') {
         return 'To be delivered';
@@ -1005,7 +1014,7 @@ function mapServiceColumnValue(service, column, rowType, business, timezone) {
         }
         case 'service': {
             const name = service.service || service.taskName || cleanRichText(service.notes) || 'Service';
-            const providerName = resolveServiceProviderName(service, business);
+            const providerName = isDeliveredByAssociatedProviders(service) ? resolveServiceProviderName(service, business) : '';
             const enrichedName = providerName ? `${name}, by ${providerName}` : name;
             return truncateText(enrichedName, 60);
         }
@@ -2838,7 +2847,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 { type: 'multi', field: 'P4-2 copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
                 { type: 'currency', field: '$P4-1  copy', value: (agg) => agg.availableFundStart },
                 { type: 'currency', field: '$P4-2 copy', value: (agg) => (agg.primarySupplementAmount ?? 0) },
-                { type: 'currency', field: '$P4-3 copy', value: (agg) => agg.fundAmount },
+                { type: 'currency', field: '$P4-3 copy', value: (agg) => (agg.additionalAmountApproved ?? agg.fundAmount ?? 0) },
                 { type: 'currency', field: '$P4-7 copy', value: (agg) => agg.previousMonthSpending },
                 { type: 'currency', field: '$P4-8 copy', value: (agg) => agg.totalAvailableBudget },
                 { type: 'currency', field: '$P4-9 copy', value: (agg) => agg.deliveredAmount },
