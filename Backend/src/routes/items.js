@@ -692,6 +692,7 @@ const getReferenceDisplayName = (refItem) => {
     if (!refItem) return '';
     // Prefer short 'Name' (e.g. Veterans, Remote) over Definition for Primary Supplement and similar refs (per spec: "after the dash use the value of the Primary Supplement attribute")
     const shortName = getValueFromFlatData(refItem, [
+        'Primary Supplement',
         'Name',
         REF_ATTRIBUTE_NAMES.FS_NAME,
         REF_ATTRIBUTE_NAMES.FULL_NAME,

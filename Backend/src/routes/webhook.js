@@ -2764,7 +2764,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             ].forEach((f) => setMultiValueField(templateInputs, f, lastDayPayload));
 
             const homeSupportAggregate = budgetAggregates.HSQ ? { ...budgetAggregates.HSQ } : initializeBudgetAggregate();
-            homeSupportAggregate.primarySupplementLabel = safeString(homeSupportAggregate.primarySupplementValue) || safeString(homeSupportAggregate.fund) || safeString(homeSupportAggregate.fundClassification) || '';
+            homeSupportAggregate.primarySupplementLabel = safeString(homeSupportAggregate.primarySupplementLabel) || safeString(homeSupportAggregate.fund) || safeString(homeSupportAggregate.fundClassification) || '';
 
             applyBudgetMapping(templateInputs, homeSupportAggregate, [
                 { type: 'multi', field: 'P2-3', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
@@ -2789,7 +2789,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             ]);
 
             const restorativeAggregate = budgetAggregates.RCP ? { ...budgetAggregates.RCP } : initializeBudgetAggregate();
-            restorativeAggregate.primarySupplementLabel = safeString(restorativeAggregate.primarySupplementValue) || safeString(restorativeAggregate.fund) || safeString(restorativeAggregate.fundClassification) || '';
+            restorativeAggregate.primarySupplementLabel = safeString(restorativeAggregate.primarySupplementLabel) || safeString(restorativeAggregate.fund) || safeString(restorativeAggregate.fundClassification) || '';
 
             applyBudgetMapping(templateInputs, restorativeAggregate, [
                 { type: 'multi', field: 'P3-2', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
@@ -2812,7 +2812,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             });
 
             const endOfLifeAggregate = budgetAggregates.EOL ? { ...budgetAggregates.EOL } : initializeBudgetAggregate();
-            endOfLifeAggregate.primarySupplementLabel = safeString(endOfLifeAggregate.primarySupplementValue) || safeString(endOfLifeAggregate.fund) || safeString(endOfLifeAggregate.fundClassification) || '';
+            endOfLifeAggregate.primarySupplementLabel = safeString(endOfLifeAggregate.primarySupplementLabel) || safeString(endOfLifeAggregate.fund) || safeString(endOfLifeAggregate.fundClassification) || '';
 
             applyBudgetMapping(templateInputs, endOfLifeAggregate, [
                 { type: 'multi', field: 'P3-12 copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
@@ -2832,7 +2832,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             });
 
             const assistiveShortAggregate = budgetAggregates.ATS ? { ...budgetAggregates.ATS } : initializeBudgetAggregate();
-            assistiveShortAggregate.primarySupplementLabel = safeString(assistiveShortAggregate.primarySupplementValue) || safeString(assistiveShortAggregate.fund) || safeString(assistiveShortAggregate.fundClassification) || '';
+            assistiveShortAggregate.primarySupplementLabel = safeString(assistiveShortAggregate.primarySupplementLabel) || safeString(assistiveShortAggregate.fund) || safeString(assistiveShortAggregate.fundClassification) || '';
 
             applyBudgetMapping(templateInputs, assistiveShortAggregate, [
                 { type: 'multi', field: 'P4-2 copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
@@ -2850,7 +2850,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             ]);
 
             const assistiveOngoingAggregate = budgetAggregates.ATO ? { ...budgetAggregates.ATO } : initializeBudgetAggregate();
-            assistiveOngoingAggregate.primarySupplementLabel = safeString(assistiveOngoingAggregate.primarySupplementValue) || safeString(assistiveOngoingAggregate.fund) || safeString(assistiveOngoingAggregate.fundClassification) || '';
+            assistiveOngoingAggregate.primarySupplementLabel = safeString(assistiveOngoingAggregate.primarySupplementLabel) || safeString(assistiveOngoingAggregate.fund) || safeString(assistiveOngoingAggregate.fundClassification) || '';
 
             applyBudgetMapping(templateInputs, assistiveOngoingAggregate, [
                 { type: 'multi', field: 'P4-15 copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
@@ -2867,7 +2867,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             ]);
 
             const homeModificationAggregate = budgetAggregates.HMB ? { ...budgetAggregates.HMB } : initializeBudgetAggregate();
-            homeModificationAggregate.primarySupplementLabel = safeString(homeModificationAggregate.primarySupplementValue) || safeString(homeModificationAggregate.fund) || safeString(homeModificationAggregate.fundClassification) || '';
+            homeModificationAggregate.primarySupplementLabel = safeString(homeModificationAggregate.primarySupplementLabel) || safeString(homeModificationAggregate.fund) || safeString(homeModificationAggregate.fundClassification) || '';
 
             applyBudgetMapping(templateInputs, homeModificationAggregate, [
                 { type: 'multi', field: 'P5- copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
