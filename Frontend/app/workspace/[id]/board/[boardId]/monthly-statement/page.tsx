@@ -1513,8 +1513,17 @@ export default function MonthlyStatement() {
     }
   };
 
+  const getPdfChartCellSize = (cols: number) => {
+    if (cols === 3) return { width: 500, height: 600 };
+    return { width: 800, height: 600 };
+  };
+
   // Composite separate chart images into one image (cols per row) for PDF export.
-  const compositeChartImages = async (dataUrls: string[], cols: number): Promise<string> => {
+  const compositeChartImages = async (
+    dataUrls: string[],
+    cols: number,
+    cellSize?: { width: number; height: number }
+  ): Promise<string> => {
     if (dataUrls.length === 0) return '';
     const gap = 16;
     const loadImage = (src: string): Promise<HTMLImageElement> =>
@@ -1525,8 +1534,8 @@ export default function MonthlyStatement() {
         img.src = src;
       });
     const images = await Promise.all(dataUrls.map(loadImage));
-    const w = Math.max(...images.map((img) => img.width));
-    const h = Math.max(...images.map((img) => img.height));
+    const w = cellSize?.width ?? Math.max(...images.map((img) => img.width));
+    const h = cellSize?.height ?? Math.max(...images.map((img) => img.height));
     const rows = Math.ceil(images.length / cols);
     const canvas = document.createElement("canvas");
     canvas.width = cols * w + (cols - 1) * gap;
@@ -1608,6 +1617,8 @@ export default function MonthlyStatement() {
       const chartsWithData = chartConfigs.filter((c) => c.hasData);
       if (chartsWithData.length > 0 && chartCardRefs.current.length > 0) {
         try {
+          const pdfCols = chartsWithData.length <= 4 ? 2 : 3;
+          const { width: chartW, height: chartH } = getPdfChartCellSize(pdfCols);
           const chartIndicesWithData = chartsWithData.map((c) => chartConfigs.indexOf(c));
           const imageDataUrls: string[] = [];
           for (let i = 0; i < chartIndicesWithData.length; i++) {
@@ -1618,15 +1629,15 @@ export default function MonthlyStatement() {
                 pixelRatio: 1,
                 cacheBust: true,
                 backgroundColor: "white",
-                style: { borderRadius: "8px" },
-                width: el.offsetWidth,
+                width: chartW,
+                height: chartH,
+                style: { borderRadius: "8px", width: `${chartW}px`, height: `${chartH}px` },
               });
               imageDataUrls.push(dataUrl);
             }
           }
           if (imageDataUrls.length > 0) {
-            const pdfCols = chartsWithData.length <= 4 ? 2 : 3;
-            chartImage = await compositeChartImages(imageDataUrls, pdfCols);
+            chartImage = await compositeChartImages(imageDataUrls, pdfCols, { width: chartW, height: chartH });
           }
         } catch (e) {
           console.warn("Chart capture for PDF failed:", e);
