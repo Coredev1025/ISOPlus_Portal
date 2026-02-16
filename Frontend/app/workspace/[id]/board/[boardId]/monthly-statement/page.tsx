@@ -1549,6 +1549,8 @@ export default function MonthlyStatement() {
       const row = Math.floor(i / cols);
       const x = col * (w + gap);
       const y = row * (h + gap);
+      ctx.fillStyle = "white";
+      ctx.fillRect(x, y, w, h);
       ctx.drawImage(img, x, y, w, h);
     });
     return canvas.toDataURL("image/png");
@@ -1617,7 +1619,7 @@ export default function MonthlyStatement() {
       const chartsWithData = chartConfigs.filter((c) => c.hasData);
       if (chartsWithData.length > 0 && chartCardRefs.current.length > 0) {
         try {
-          const pdfCols = chartsWithData.length <= 4 ? 2 : 3;
+          const pdfCols = chartsWithData.length === 3 || chartsWithData.length > 4 ? 3 : 2;
           const { width: chartW, height: chartH } = getPdfChartCellSize(pdfCols);
           const chartIndicesWithData = chartsWithData.map((c) => chartConfigs.indexOf(c));
           const imageDataUrls: string[] = [];
@@ -1625,15 +1627,60 @@ export default function MonthlyStatement() {
             const idx = chartIndicesWithData[i];
             const el = chartCardRefs.current[idx];
             if (el) {
-              const dataUrl = await toPng(el, {
-                pixelRatio: 1,
-                cacheBust: true,
-                backgroundColor: "white",
-                width: chartW,
-                height: chartH,
-                style: { borderRadius: "8px", width: `${chartW}px`, height: `${chartH}px` },
-              });
-              imageDataUrls.push(dataUrl);
+              const cardEl = el as HTMLElement;
+              const headerEl = cardEl.querySelector('[data-pdf-chart-header="true"]') as HTMLElement | null;
+              const containerEl = cardEl.querySelector('[data-pdf-chart-container="true"]') as HTMLElement | null;
+
+              const prevCardCssText = cardEl.style.cssText;
+              const prevHeaderCssText = headerEl?.style.cssText;
+              const prevContainerCssText = containerEl?.style.cssText;
+
+              try {
+                cardEl.style.width = `${chartW}px`;
+                cardEl.style.height = `${chartH}px`;
+                cardEl.style.boxSizing = 'border-box';
+                cardEl.style.display = 'flex';
+                cardEl.style.flexDirection = 'column';
+                cardEl.style.overflow = 'hidden';
+                cardEl.style.backgroundColor = 'white';
+
+                if (headerEl) {
+                  headerEl.style.flex = '0 0 auto';
+                }
+
+                if (containerEl) {
+                  // Fill remaining space so the chart fully occupies the slot.
+                  const headerH = headerEl?.offsetHeight ?? 0;
+                  const computed = window.getComputedStyle(cardEl);
+                  const padTop = parseFloat(computed.paddingTop || '0') || 0;
+                  const padBottom = parseFloat(computed.paddingBottom || '0') || 0;
+                  const gapPx = parseFloat((computed as any).rowGap || '0') || 0;
+                  const availableH = Math.max(0, chartH - padTop - padBottom - headerH - gapPx);
+
+                  containerEl.style.flex = '1 1 auto';
+                  containerEl.style.minHeight = '0px';
+                  containerEl.style.height = `${availableH}px`;
+                  containerEl.style.overflow = 'visible';
+                }
+
+                await new Promise<void>((resolve) =>
+                  requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+                );
+
+                const dataUrl = await toPng(el, {
+                  pixelRatio: 1,
+                  cacheBust: true,
+                  backgroundColor: "white",
+                  width: chartW,
+                  height: chartH,
+                  style: { borderRadius: "8px", width: `${chartW}px`, height: `${chartH}px` },
+                });
+                imageDataUrls.push(dataUrl);
+              } finally {
+                cardEl.style.cssText = prevCardCssText;
+                if (headerEl && typeof prevHeaderCssText === 'string') headerEl.style.cssText = prevHeaderCssText;
+                if (containerEl && typeof prevContainerCssText === 'string') containerEl.style.cssText = prevContainerCssText;
+              }
             }
           }
           if (imageDataUrls.length > 0) {
@@ -2906,17 +2953,21 @@ export default function MonthlyStatement() {
                     <div
                       key={chart.code}
                       ref={(el) => { chartCardRefs.current[chartIndex] = el; }}
-                      className="rounded-lg border border-border/60 bg-card p-5 space-y-4 shadow-sm"
+                      className="rounded-lg border border-border/60 bg-card p-5 flex flex-col gap-4 shadow-sm"
                     >
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start justify-between gap-3" data-pdf-chart-header="true">
                         <div>
                           <h4 className="text-base font-semibold leading-tight">{chart.title}</h4>
                         </div>
                       </div>
 
-                      <ChartContainer config={chart.chartConfig} className="w-full aspect-auto min-h-[18rem] h-72 overflow-visible">
+                      <ChartContainer
+                        config={chart.chartConfig}
+                        className="w-full aspect-auto min-h-[18rem] h-72 overflow-visible"
+                        data-pdf-chart-container="true"
+                      >
                         <BarChart data={chart.data} margin={{ left: 0, right: 0, top: 28, bottom: 24 }} barCategoryGap="22%">
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
                           <XAxis
                             dataKey="shortLabel"
                             axisLine={false}
