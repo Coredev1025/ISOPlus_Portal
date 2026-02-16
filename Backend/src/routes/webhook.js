@@ -853,7 +853,7 @@ const SERVICE_TABLE_CONFIG = {
         delivered: {
             tableName: 'Table P6-1 copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
-            totals: ['$P6-1  copy', '$P6-2 copy', '$P6-3 copy'],
+            totals: [['$P6-1  copy', '$P3-3'], ['$P6-2 copy', '$P3-4'], ['$P6-3 copy', '$P3-5']],
             rowType: 'delivered'
         },
         adjustment: {
@@ -1111,10 +1111,11 @@ function buildServiceTableRows(services = [], config = {}, business, timezone) {
 function applyBudgetMapping(templateInputs, aggregate, mappings = []) {
     mappings.forEach((entry) => {
         const value = typeof entry.value === 'function' ? entry.value(aggregate) : entry.value;
+        const fields = Array.isArray(entry.field) ? entry.field : [entry.field];
         if (entry.type === 'currency') {
-            setCurrencyField(templateInputs, entry.field, value);
+            fields.forEach((f) => setCurrencyField(templateInputs, f, value));
         } else if (entry.type === 'multi') {
-            setMultiValueField(templateInputs, entry.field, value);
+            fields.forEach((f) => setMultiValueField(templateInputs, f, value));
         }
     });
 }
@@ -2760,6 +2761,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 'P4-8 copy',
                 'P4-20 copy',
                 'P5-7 copy',
+                'P5-8', 'P5-20',
                 'P3-7',
                 'P3-17 copy'
             ].forEach((f) => setMultiValueField(templateInputs, f, firstDayPayload));
@@ -2768,6 +2770,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 'P4-11 copy',
                 'P4-23 copy',
                 'P5-10 copy',
+                'P5-11', 'P5-23',
                 'P3-10',
                 'P3-20 copy'
             ].forEach((f) => setMultiValueField(templateInputs, f, lastDayPayload));
@@ -2782,19 +2785,19 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 { type: 'currency', field: '$P2-3', value: (agg) => (agg.primarySupplementAmount ?? 0) },
                 { type: 'currency', field: '$P2-4', value: (agg) => agg.carryoverFunding + agg.unspentReturned },
                 { type: 'currency', field: '$P2-6', value: (agg) => agg.commonwealthUnspent + agg.providerUnspent + agg.participantUnspent },
-                { type: 'currency', field: '$P2-6 copy copy', value: (agg) => agg.commonwealthUnspent },
-                { type: 'currency', field: '$P2-7 copy copy', value: (agg) => agg.providerUnspent },
-                { type: 'currency', field: '$P2-8 copy copy', value: (agg) => agg.participantUnspent },
+                { type: 'currency', field: ['$P2-6 copy copy', '$P4-8'], value: (agg) => agg.commonwealthUnspent },
+                { type: 'currency', field: ['$P2-7 copy copy', '$P4-9'], value: (agg) => agg.providerUnspent },
+                { type: 'currency', field: ['$P2-8 copy copy', '$P4-10'], value: (agg) => agg.participantUnspent },
                 { type: 'currency', field: '$P2-9', value: (agg) => agg.previousMonthSpending },
                 { type: 'currency', field: '$P2-10', value: (agg) => agg.totalAvailableBudget },
                 { type: 'currency', field: '$P2-11', value: (agg) => agg.totalAvailableBudget },
                 { type: 'currency', field: '$P2-12', value: (agg) => agg.deliveredAmount },
                 { type: 'currency', field: '$P2-13', value: (agg) => agg.adjustmentAmount },
                 { type: 'currency', field: '$P2-14', value: (agg) => agg.remainingBalance },
-                { type: 'currency', field: '$P2-14 copy', value: (agg) => agg.remainingBalance },
-                { type: 'currency', field: '$P7-4 copy', value: (agg) => agg.carryoverFunding },
-                { type: 'currency', field: '$P7-5 copy', value: (agg) => agg.unspentReturned },
-                { type: 'currency', field: '$P7-6 copy', value: (agg) => agg.carryoverFunding + agg.unspentReturned }
+                { type: 'currency', field: ['$P2-14 copy', '$P4-11'], value: (agg) => agg.commonwealthUnspent + agg.providerUnspent + agg.participantUnspent },
+                { type: 'currency', field: ['$P7-4 copy', '$P4-5'], value: (agg) => agg.carryoverFunding },
+                { type: 'currency', field: ['$P7-5 copy', '$P4-6'], value: (agg) => agg.unspentReturned },
+                { type: 'currency', field: ['$P7-6 copy', '$P4-7'], value: (agg) => agg.carryoverFunding + agg.unspentReturned }
             ]);
 
             const restorativeAggregate = budgetAggregates.RCP ? { ...budgetAggregates.RCP } : initializeBudgetAggregate();
@@ -2804,17 +2807,13 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 { type: 'multi', field: 'P3-2', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
                 { type: 'currency', field: '$P3-1', value: (agg) => agg.availableFundStart },
                 { type: 'currency', field: '$P3-2', value: (agg) => (agg.primarySupplementAmount ?? 0) },
-                // Note: $P3-3, $P3-4, $P3-5 (unspent HCP funds) are not in the RCP template page
-                // (Restorative Care Pathway does not have 10% care management deduction)
                 { type: 'currency', field: '$P3-6', value: (agg) => agg.previousMonthSpending },
                 { type: 'currency', field: '$P3-7', value: (agg) => agg.totalAvailableBudget },
                 { type: 'currency', field: '$P3-8', value: (agg) => agg.deliveredAmount },
                 { type: 'currency', field: '$P3-9', value: (agg) => agg.adjustmentAmount },
                 { type: 'currency', field: '$P3-10', value: (agg) => agg.remainingBalance }
-                // Note: P3 Footer 1 does not exist in template; RCP funding dates are in P3 Subtitle
             ]);
 
-            // Explicitly set RCP subtitle variables (template uses different var names than generic subtitle)
             setMultiValueField(templateInputs, 'P3 Subtitle', {
                 ' Funding Start Date': formatDateToAU(restorativeAggregate.fundingStartDate, timezone) || 'N/A',
                 ' Funding end date': formatDateToAU(restorativeAggregate.fundingEndDate, timezone) || 'N/A'
@@ -2845,16 +2844,16 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
 
             applyBudgetMapping(templateInputs, assistiveShortAggregate, [
                 { type: 'multi', field: 'P4-2 copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
-                { type: 'currency', field: '$P4-1  copy', value: (agg) => agg.availableFundStart },
-                { type: 'currency', field: '$P4-2 copy', value: (agg) => (agg.primarySupplementAmount ?? 0) },
-                { type: 'currency', field: '$P4-3 copy', value: (agg) => (agg.additionalAmountApproved ?? agg.fundAmount ?? 0) },
-                { type: 'currency', field: '$P4-7 copy', value: (agg) => agg.previousMonthSpending },
-                { type: 'currency', field: '$P4-8 copy', value: (agg) => agg.totalAvailableBudget },
-                { type: 'currency', field: '$P4-9 copy', value: (agg) => agg.deliveredAmount },
-                { type: 'currency', field: '$P4-10 copy', value: (agg) => agg.adjustmentAmount },
-                { type: 'currency', field: '$P4-11 copy', value: (agg) => agg.remainingBalance },
-                { type: 'currency', field: '$P4-12 copy', value: (agg) => agg.committedFunds },
-                { type: 'currency', field: '$P4-13 copy', value: (agg) => agg.remainingBalanceAllocationPeriod || (agg.remainingBalance - Math.abs(agg.committedFunds)) },
+                { type: 'currency', field: ['$P4-1  copy', '$P5-1'], value: (agg) => agg.availableFundStart },
+                { type: 'currency', field: ['$P4-2 copy', '$P5-2'], value: (agg) => (agg.primarySupplementAmount ?? 0) },
+                { type: 'currency', field: ['$P4-3 copy', '$P5-3'], value: (agg) => (agg.additionalAmountApproved ?? agg.fundAmount ?? 0) },
+                { type: 'currency', field: ['$P4-7 copy', '$P5-7'], value: (agg) => agg.previousMonthSpending },
+                { type: 'currency', field: ['$P4-8 copy', '$P5-8'], value: (agg) => agg.totalAvailableBudget },
+                { type: 'currency', field: ['$P4-9 copy', '$P5-9'], value: (agg) => agg.deliveredAmount },
+                { type: 'currency', field: ['$P4-10 copy', '$P5-10'], value: (agg) => agg.adjustmentAmount },
+                { type: 'currency', field: ['$P4-11 copy', '$P5-11'], value: (agg) => agg.remainingBalance },
+                { type: 'currency', field: ['$P4-12 copy', '$P5-12'], value: (agg) => agg.committedFunds },
+                { type: 'currency', field: ['$P4-13 copy', '$P5-13'], value: (agg) => agg.remainingBalanceAllocationPeriod || (agg.remainingBalance - Math.abs(agg.committedFunds)) },
                 { type: 'multi', field: 'P4 Footer 1 copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
             ]);
 
@@ -2863,15 +2862,15 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
 
             applyBudgetMapping(templateInputs, assistiveOngoingAggregate, [
                 { type: 'multi', field: 'P4-15 copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
-                { type: 'currency', field: '$P4-14 copy', value: (agg) => agg.availableFundStart },
-                { type: 'currency', field: '$P4-15 copy', value: (agg) => (agg.primarySupplementAmount ?? 0) },
-                { type: 'currency', field: '$P4-19 copy', value: (agg) => agg.previousMonthSpending },
-                { type: 'currency', field: '$P4-20 copy', value: (agg) => agg.totalAvailableBudget },
-                { type: 'currency', field: '$P4-21 copy', value: (agg) => agg.deliveredAmount },
-                { type: 'currency', field: '$P4-22 copy', value: (agg) => agg.adjustmentAmount },
-                { type: 'currency', field: '$P4-23 copy', value: (agg) => agg.remainingBalance },
-                { type: 'currency', field: '$P4-24 copy', value: (agg) => agg.committedFunds },
-                { type: 'currency', field: '$P4-25 copy', value: (agg) => agg.remainingBalanceAllocationPeriod || (agg.remainingBalance - Math.abs(agg.committedFunds)) },
+                { type: 'currency', field: ['$P4-14 copy', '$P5-14'], value: (agg) => agg.availableFundStart },
+                { type: 'currency', field: ['$P4-15 copy', '$P5-15'], value: (agg) => (agg.primarySupplementAmount ?? 0) },
+                { type: 'currency', field: ['$P4-19 copy', '$P5-19'], value: (agg) => agg.previousMonthSpending },
+                { type: 'currency', field: ['$P4-20 copy', '$P5-20'], value: (agg) => agg.totalAvailableBudget },
+                { type: 'currency', field: ['$P4-21 copy', '$P5-21'], value: (agg) => agg.deliveredAmount },
+                { type: 'currency', field: ['$P4-22 copy', '$P5-22'], value: (agg) => agg.adjustmentAmount },
+                { type: 'currency', field: ['$P4-23 copy', '$P5-23'], value: (agg) => agg.remainingBalance },
+                { type: 'currency', field: ['$P4-24 copy', '$P5-24'], value: (agg) => agg.committedFunds },
+                { type: 'currency', field: ['$P4-25 copy', '$P5-25'], value: (agg) => agg.remainingBalanceAllocationPeriod || (agg.remainingBalance - Math.abs(agg.committedFunds)) },
                 { type: 'multi', field: 'P4 Footer 2 copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
             ]);
 
@@ -2999,7 +2998,11 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                     const totalValues = [tableData.totals.amount, tableData.totals.gov, tableData.totals.participant];
                     config.totals.forEach((fieldName, index) => {
                         const value = totalValues[Math.min(index, totalValues.length - 1)] || 0;
-                        setCurrencyField(templateInputs, fieldName, value);
+                        if (Array.isArray(fieldName)) {
+                            fieldName.forEach((f) => setCurrencyField(templateInputs, f, value));
+                        } else {
+                            setCurrencyField(templateInputs, fieldName, value);
+                        }
                     });
                 });
             });
