@@ -7,11 +7,43 @@ const parseNumber = (value) => {
     if (value === null || value === undefined) return 0;
     if (Array.isArray(value) && value.length > 0) return parseNumber(value[0]);
     if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
-    if (typeof value === 'string') {
-        const parsed = parseFloat(value.replace(/[^0-9.-]/g, ''));
-        return Number.isFinite(parsed) ? parsed : 0;
+    if (typeof value !== 'string') return 0;
+
+    // Handle common “negative” formats from boards/exports:
+    // - parentheses: ($1,234.56)
+    // - trailing minus: 1,234.56-
+    // - unicode minus: −1234.56
+    let s = value.trim();
+    if (!s) return 0;
+
+    // Normalize unicode minus to ASCII hyphen-minus.
+    s = s.replace(/[\u2212\u2012\u2013\u2014]/g, '-');
+
+    let negative = false;
+    // Parentheses mean negative in many exports.
+    if (/\(.*\)/.test(s)) {
+        negative = true;
+        s = s.replace(/[()]/g, '');
     }
-    return 0;
+    // Trailing minus means negative.
+    if (/-\s*$/.test(s)) {
+        negative = true;
+        s = s.replace(/-\s*$/, '');
+    }
+
+    const cleaned = s.replace(/[^0-9.+-]/g, '');
+    const parsed = parseFloat(cleaned);
+    if (!Number.isFinite(parsed)) return 0;
+
+    if (negative && parsed > 0) return -Math.abs(parsed);
+    return parsed;
+};
+
+// Values marked as ($-) in the board are outflows and should be negative.
+const toOutflow = (num) => {
+    const n = Number(num);
+    if (!Number.isFinite(n) || n === 0) return 0;
+    return -Math.abs(n);
 };
 
 const parseDate = (value) => {
@@ -394,7 +426,7 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
             const transactionTypeValue = getValueMulti(item, ['Transaction Type']);
             const receivedAmount = parseNumber(getValue(item, 'Received Amount ($)'));
             const allocatedTime = parseNumber(getValueMulti(item, ['Allocated time (Hr.)', 'Allocated Time (Hr.)']));
-            const allocatedAmount = parseNumber(getValue(item, 'Allocated Amount ($-)'));
+            const allocatedAmount = toOutflow(parseNumber(getValue(item, 'Allocated Amount ($-)')));
             const currentBalanceValue = parseNumber(getValue(item, 'Current Balance ($)'));
             const currentBalance = (Number.isFinite(currentBalanceValue) && currentBalanceValue !== 0)
                 ? currentBalanceValue
@@ -425,7 +457,7 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
                 providerUnspent: 0,
                 participantUnspent: 0,
                 previousMonthSpending: 0,
-                deliveredAmount: Math.abs(allocatedAmount) || 0,
+                deliveredAmount: allocatedAmount || 0,
                 deliveredAmountRaw: allocatedAmount,
                 adjustmentAmount: 0,
                 remainingBalance: Math.max(0, currentBalance),
@@ -513,12 +545,42 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
         }
 
         const deliveredAmountRaw = (() => {
-            if (code === 'ATS') return parseNumber(getValueMulti(item, ['AT - Short-term Delivered During the Month ($-)', 'Assistive Technology - Short-term Delivered During the Month ($-)', 'Assistive Technology - Short-term Delivered During the Month']));
-            if (code === 'ATO') return parseNumber(getValueMulti(item, ['AT - Ongoing Delivered During the Month ($-)', 'Assistive Technology - Ongoing Delivered During the Month ($-)', 'Assistive Technology - Ongoing Delivered During the Month']));
-            if (code === 'HMB') return parseNumber(getValueMulti(item, ['Home Modification Delivered During the Month ($-)', 'Home Modification Delivered During the Month']));
-            if (code === 'RCP') return parseNumber(getValue(item, 'Restorative Care Delivered During the Month ($-)'));
-            if (code === 'EOL') return parseNumber(getValue(item, 'End-of-Life Care Delivered During the Month ($-)'));
-            return parseNumber(getValue(item, 'Home Support Delivered During the Month ($-)'));
+            if (code === 'ATS') {
+                const minusVal =
+                    getValue(item, 'AT - Short-term Delivered During the Month ($-)') ??
+                    getValue(item, 'Assistive Technology - Short-term Delivered During the Month ($-)');
+                if (minusVal !== null && minusVal !== undefined) return toOutflow(parseNumber(minusVal));
+                return toOutflow(parseNumber(getValue(item, 'Assistive Technology - Short-term Delivered During the Month')));
+            }
+            if (code === 'ATO') {
+                const minusVal =
+                    getValue(item, 'AT - Ongoing Delivered During the Month ($-)') ??
+                    getValue(item, 'Assistive Technology - Ongoing Delivered During the Month ($-)');
+                if (minusVal !== null && minusVal !== undefined) return toOutflow(parseNumber(minusVal));
+                return toOutflow(parseNumber(getValue(item, 'Assistive Technology - Ongoing Delivered During the Month')));
+            }
+            if (code === 'HMB') {
+                const minusVal = getValue(item, 'Home Modification Delivered During the Month ($-)');
+                if (minusVal !== null && minusVal !== undefined) return toOutflow(parseNumber(minusVal));
+                return toOutflow(parseNumber(getValue(item, 'Home Modification Delivered During the Month')));
+            }
+            if (code === 'RCP') {
+                const minusVal = getValue(item, 'Restorative Care Delivered During the Month ($-)');
+                if (minusVal !== null && minusVal !== undefined) return toOutflow(parseNumber(minusVal));
+                // Some boards omit ($-) in the attribute name; still treat delivered as outflow.
+                return toOutflow(parseNumber(getValue(item, 'Restorative Care Delivered During the Month')));
+            }
+            if (code === 'EOL') {
+                const minusVal = getValue(item, 'End-of-Life Care Delivered During the Month ($-)');
+                if (minusVal !== null && minusVal !== undefined) return toOutflow(parseNumber(minusVal));
+                return toOutflow(parseNumber(getValue(item, 'End-of-Life Care Delivered During the Month')));
+            }
+            // HSQ
+            {
+                const minusVal = getValue(item, 'Home Support Delivered During the Month ($-)');
+                if (minusVal !== null && minusVal !== undefined) return toOutflow(parseNumber(minusVal));
+                return toOutflow(parseNumber(getValue(item, 'Home Support Delivered During the Month')));
+            }
         })();
 
         const adjustmentAmount = parseNumber(getValue(item, 'Adjustments from Previous Months [Charges($-)/Refund($)]'));
@@ -528,9 +590,9 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
         const additionalAmountApproved = parseNumber(getValue(item, 'Additional amount approved (AT high tier) ($)'));
         const fund = formatStatus(getValue(item, 'Fund')) || '';
 
-        const committedATShort = parseNumber(getValue(item, 'Committed AT Short-term Funds - to be delivered ($-)'));
-        const committedATOngoing = parseNumber(getValue(item, 'Committed AT Ongoing Funds - to be delivered ($-)'));
-        const committedHM = parseNumber(getValue(item, 'Committed HM Funds - to be delivered ($-)'));
+        const committedATShort = toOutflow(parseNumber(getValue(item, 'Committed AT Short-term Funds - to be delivered ($-)')));
+        const committedATOngoing = toOutflow(parseNumber(getValue(item, 'Committed AT Ongoing Funds - to be delivered ($-)')));
+        const committedHM = toOutflow(parseNumber(getValue(item, 'Committed HM Funds - to be delivered ($-)')));
         let committedFunds = 0;
         if (code === 'ATS') committedFunds = committedATShort;
         else if (code === 'ATO') committedFunds = committedATOngoing;
@@ -591,7 +653,7 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
             providerUnspent,
             participantUnspent,
             previousMonthSpending,
-            deliveredAmount: Math.abs(deliveredAmountRaw) || 0,
+            deliveredAmount: deliveredAmountRaw || 0,
             deliveredAmountRaw,
             adjustmentAmount,
             remainingBalance: effectiveRemainingBalance,

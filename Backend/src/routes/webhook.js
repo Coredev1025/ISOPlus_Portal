@@ -516,9 +516,29 @@ function parseNumberValue(value) {
     if (typeof value === 'number' && Number.isFinite(value)) return value;
     const stringValue = value.toString();
     if (!stringValue) return 0;
-    const cleaned = stringValue.replace(/[^0-9.-]/g, '');
+    let s = stringValue.trim();
+    if (!s) return 0;
+
+    // Normalize unicode minus to ASCII hyphen-minus.
+    s = s.replace(/[\u2212\u2012\u2013\u2014]/g, '-');
+
+    let negative = false;
+    // Parentheses mean negative in many exports.
+    if (/\(.*\)/.test(s)) {
+        negative = true;
+        s = s.replace(/[()]/g, '');
+    }
+    // Trailing minus means negative.
+    if (/-\s*$/.test(s)) {
+        negative = true;
+        s = s.replace(/-\s*$/, '');
+    }
+
+    const cleaned = s.replace(/[^0-9.+-]/g, '');
     const parsed = parseFloat(cleaned);
-    return Number.isFinite(parsed) ? parsed : 0;
+    if (!Number.isFinite(parsed)) return 0;
+    if (negative && parsed > 0) return -Math.abs(parsed);
+    return parsed;
 }
 
 function formatCurrencyValue(value) {

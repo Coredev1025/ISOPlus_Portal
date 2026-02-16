@@ -120,7 +120,7 @@
             {
                 "name": "Recipient",
                 "type": "multiVariableText",
-                "content": "{\"Participant\":\"PARTICIPANT\",\"Address\":\"ADDRESS\",\"Suburb\":\"SUBURB\",\"State\":\"STATE\",\"Post Code\":\"POSTCODE\"}",
+                "content": "{\"Participant\":\"PARTICIPANT\",\"Address\":\"ADDRESS\",\"Suburb\":\"SUBURB\",\"Post Code\":\"POSTCODE\"}",
                 "position": {
                     "x": 20,
                     "y": 50.03
@@ -139,12 +139,11 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": false,
-                "text": "Provided to:\n\n{Participant}\n{Address}\n{Suburb} {State} {Post Code}",
+                "text": "Provided to:\n\n{Participant}\n{Address}\n{Suburb} {Post Code}",
                 "variables": [
                     "Participant",
                     "Address",
                     "Suburb",
-                    "State",
                     "Post Code"
                 ],
                 "required": false,
@@ -2278,7 +2277,7 @@
             {
                 "name": "P2-14 copy",
                 "type": "multiVariableText",
-                "content": "{\"last day\":\"LAST DAY\"}",
+                "content": "{\"first day\":\"FIRST DAY\"}",
                 "position": {
                     "x": 20,
                     "y": 252.04
@@ -2297,9 +2296,9 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": false,
-                "text": " Total Available Balance as of {last day}",
+                "text": " Total Available Balance on {first day}",
                 "variables": [
-                    "last day"
+                    "first day"
                 ],
                 "required": false,
                 "fontName": "Roboto",
@@ -3358,7 +3357,7 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": false,
-                "text": " Remaining Balance as at {last day}",
+                "text": " Remaining  Balance as at {last day}",
                 "variables": [
                     "last day"
                 ],
@@ -3992,7 +3991,7 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": true,
-                "text": "* Committed funds are costs which the participant has agreed to for the provision of the scheme and for which the provider has begun arrangements; however, these items or services have not yet been delivered in the calendar month.",
+                "text": "The following information relates to any incorrect or missing charges from previous months. Please contact us if you have any concerns or questions.",
                 "variables": [],
                 "required": false,
                 "fontName": "Roboto",
@@ -4800,7 +4799,7 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": true,
-                "text": "* Committed funds are costs which the participant has agreed to for the provision of the scheme and for which the provider has begun arrangements; however, these items or services have not yet been delivered in the calendar month.",
+                "text": "The following information relates to any incorrect or missing charges from previous months. Please contact us if you have any concerns or questions.",
                 "variables": [],
                 "required": false,
                 "fontName": "Roboto",
@@ -6277,7 +6276,7 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": true,
-                "text": "* Committed funds are costs which the participant has agreed to for the provision of the scheme and for which the provider has begun arrangements; however, these items or services have not yet been delivered in the calendar month.",
+                "text": "The following information relates to any incorrect or missing charges from previous months. Please contact us if you have any concerns or questions.",
                 "variables": [],
                 "required": false,
                 "fontName": "Roboto",
@@ -8406,7 +8405,7 @@
                 },
                 "width": 170,
                 "height": 110.59392000000001,
-                "content": "[[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]]",
+                "content": "[[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]]",
                 "showHead": true,
                 "head": [
                     "Date",
@@ -8707,7 +8706,7 @@
                 },
                 "width": 170,
                 "height": 43.89792,
-                "content": "[[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]]",
+                "content": "[[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"],[\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\",\"\"]]",
                 "showHead": true,
                 "head": [
                     "Date",
