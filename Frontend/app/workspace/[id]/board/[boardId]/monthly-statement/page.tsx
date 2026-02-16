@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { ArrowLeft, Calendar, User, FileText, AlertCircle, FileCheck, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown, HelpCircle, Download } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, forwardRef, type ReactElement } from "react";
 import { toPng } from "html-to-image";
 import {
   Table,
@@ -29,7 +29,7 @@ import { fetchMonthlyStatementItems } from "@/app/utils/items";
 import { format, startOfMonth, endOfMonth, isValid, parse } from "date-fns";
 import Spinner from "@/components/ui/spin";
 import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast } from "@/lib/toast-utils";
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
+import { ChartContainer, ChartStyle, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from "recharts";
 import {
   Dialog,
@@ -225,6 +225,83 @@ interface ChartCardConfig {
   serviceCount?: number;
   hasData: boolean;
 }
+
+const PdfChartFrame = forwardRef<
+  HTMLDivElement,
+  {
+    chart: ChartCardConfig;
+    width: number;
+    height: number;
+    chartId: string;
+    xAxisTick: ReactElement;
+    formatAxisCurrency: (value: number) => string;
+    formatCurrency: (amount?: number | null) => string;
+  }
+>(({ chart, width, height, chartId, xAxisTick, formatAxisCurrency, formatCurrency }, ref) => {
+  const padding = 20;
+  const gap = 12;
+  const titleHeight = 24;
+  const chartWidth = Math.max(0, Math.floor(width - padding * 2));
+  const chartHeight = Math.max(0, Math.floor(height - padding * 2 - titleHeight - gap));
+
+  return (
+    <div
+      ref={ref}
+      data-chart={chartId}
+      className="text-xs [&_.recharts-cartesian-axis-tick_text]:fill-muted-foreground [&_.recharts-cartesian-grid_line[stroke='#ccc']]:stroke-border/50 [&_.recharts-curve.recharts-tooltip-cursor]:stroke-border [&_.recharts-dot[stroke='#fff']]:stroke-transparent [&_.recharts-layer]:outline-none [&_.recharts-polar-grid_[stroke='#ccc']]:stroke-border [&_.recharts-radial-bar-background-sector]:fill-muted [&_.recharts-rectangle.recharts-tooltip-cursor]:fill-muted [&_.recharts-reference-line_[stroke='#ccc']]:stroke-border [&_.recharts-sector[stroke='#fff']]:stroke-transparent [&_.recharts-sector]:outline-none [&_.recharts-surface]:outline-none"
+      style={{
+        width: `${width}px`,
+        height: `${height}px`,
+        background: 'white',
+        borderRadius: '8px',
+        boxSizing: 'border-box',
+        padding: `${padding}px`,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: `${gap}px`,
+        overflow: 'hidden',
+      }}
+    >
+      <ChartStyle id={chartId} config={chart.chartConfig} />
+      <div style={{ height: `${titleHeight}px`, fontSize: 16, fontWeight: 600, lineHeight: 1.2 }}>
+        {chart.title}
+      </div>
+      <div style={{ flex: '1 1 auto', minHeight: 0 }}>
+        <BarChart
+          width={chartWidth}
+          height={chartHeight}
+          data={chart.data}
+          margin={{ left: 0, right: 0, top: 28, bottom: 24 }}
+          barCategoryGap="22%"
+        >
+          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+          <XAxis
+            dataKey="shortLabel"
+            axisLine={false}
+            tickLine={false}
+            interval={0}
+            height={110}
+            tick={xAxisTick}
+            allowDataOverflow={false}
+          />
+          <YAxis tickFormatter={formatAxisCurrency} axisLine={false} tickLine={false} />
+          <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={42} isAnimationActive={false}>
+            <LabelList
+              dataKey="value"
+              position="top"
+              formatter={(value: number) => (Number.isFinite(value) ? formatCurrency(value) : '')}
+              className="fill-muted-foreground text-[10px] font-medium"
+            />
+            {chart.data.map((entry) => (
+              <Cell key={`pdf-${chart.code}-${entry.name}`} fill={`var(--color-${entry.name})`} />
+            ))}
+          </Bar>
+        </BarChart>
+      </div>
+    </div>
+  );
+});
+PdfChartFrame.displayName = 'PdfChartFrame';
 
 const BUDGET_CATEGORY_LABELS: Record<string, string> = {
   HSQ: 'Home Support Quarterly Budget',
@@ -1639,10 +1716,32 @@ export default function MonthlyStatement() {
           );
           // If fonts are still loading, wait (prevents layout differences in SVG text).
           try {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const fonts: any = (document as any).fonts;
-            if (fonts?.ready) await fonts.ready;
+            if (document.fonts?.ready) await document.fonts.ready;
           } catch { /* ignore */ }
+
+          // Wait until all capture nodes are mounted and sized correctly.
+          const waitForCaptureNodes = async (expected: number, w: number, h: number) => {
+            const start = performance.now();
+            while (performance.now() - start < 2500) {
+              const els = pdfChartCaptureRefs.current.slice(0, expected).filter(Boolean) as HTMLDivElement[];
+              if (els.length === expected) {
+                const ready = els.every((el) => {
+                  const rect = el.getBoundingClientRect();
+                  if (Math.abs(rect.width - w) > 1 || Math.abs(rect.height - h) > 1) return false;
+                  const svg = el.querySelector('svg.recharts-surface') as SVGSVGElement | null;
+                  if (!svg) return false;
+                  const svgW = Number(svg.getAttribute('width'));
+                  const svgH = Number(svg.getAttribute('height'));
+                  return Number.isFinite(svgW) && svgW > 0 && Number.isFinite(svgH) && svgH > 0;
+                });
+                if (ready) return true;
+              }
+              await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+            }
+            return false;
+          };
+
+          await waitForCaptureNodes(chartIndicesWithData.length, chartW, chartH);
 
           const imageDataUrls: string[] = [];
           for (let i = 0; i < chartIndicesWithData.length; i++) {
@@ -3014,57 +3113,19 @@ export default function MonthlyStatement() {
                 {pdfChartCaptureRequest.indices.map((chartIdx, i) => {
                   const chart = chartConfigs[chartIdx];
                   if (!chart) return null;
+                  const chartId = `pdfchart-${chart.code}-${i}`;
                   return (
-                    <div
+                    <PdfChartFrame
                       key={`pdf-capture-${chart.code}`}
                       ref={(el) => { pdfChartCaptureRefs.current[i] = el; }}
-                      style={{
-                        width: `${pdfChartCaptureRequest.width}px`,
-                        height: `${pdfChartCaptureRequest.height}px`,
-                        background: 'white',
-                        borderRadius: '8px',
-                        boxSizing: 'border-box',
-                        padding: '20px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '12px',
-                      }}
-                    >
-                      <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.2 }}>
-                        {chart.title}
-                      </div>
-                      <div style={{ flex: '1 1 auto', minHeight: 0 }}>
-                        <ChartContainer
-                          config={chart.chartConfig}
-                          className="w-full h-full aspect-auto overflow-visible"
-                        >
-                          <BarChart data={chart.data} margin={{ left: 0, right: 0, top: 28, bottom: 24 }} barCategoryGap="22%">
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                            <XAxis
-                              dataKey="shortLabel"
-                              axisLine={false}
-                              tickLine={false}
-                              interval={0}
-                              height={110}
-                              tick={<ChartXAxisTick />}
-                              allowDataOverflow={false}
-                            />
-                            <YAxis tickFormatter={formatAxisCurrency} axisLine={false} tickLine={false} />
-                            <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={42} isAnimationActive={false}>
-                              <LabelList
-                                dataKey="value"
-                                position="top"
-                                formatter={(value: number) => (Number.isFinite(value) ? formatCurrency(value) : '')}
-                                className="fill-muted-foreground text-[10px] font-medium"
-                              />
-                              {chart.data.map((entry) => (
-                                <Cell key={`pdf-${chart.code}-${entry.name}`} fill={`var(--color-${entry.name})`} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ChartContainer>
-                      </div>
-                    </div>
+                      chart={chart}
+                      width={pdfChartCaptureRequest.width}
+                      height={pdfChartCaptureRequest.height}
+                      chartId={chartId}
+                      xAxisTick={<ChartXAxisTick />}
+                      formatAxisCurrency={formatAxisCurrency}
+                      formatCurrency={formatCurrency}
+                    />
                   );
                 })}
               </div>
