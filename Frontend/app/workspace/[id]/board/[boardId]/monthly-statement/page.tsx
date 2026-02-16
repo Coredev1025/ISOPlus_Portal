@@ -642,8 +642,14 @@ export default function MonthlyStatement() {
   const [distinctFundingSources, setDistinctFundingSources] = useState<string[]>([]);
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartCardRefs = useRef<(HTMLDivElement | null)[]>([]);
-  // When true, disable chart animations to ensure stable PDF captures.
-  const [isPdfChartCaptureMode, setIsPdfChartCaptureMode] = useState(false);
+  type PdfChartCaptureRequest = {
+    width: number;
+    height: number;
+    indices: number[]; // chart indices (into chartConfigs) in capture order
+  } | null;
+  const [pdfChartCaptureRequest, setPdfChartCaptureRequest] = useState<PdfChartCaptureRequest>(null);
+  const pdfChartCaptureRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const isPdfChartCaptureMode = pdfChartCaptureRequest !== null;
   const [isManualSyncing, setIsManualSyncing] = useState(false);
   const [showHelpDialog, setShowHelpDialog] = useState(false);
   const syncCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -1620,23 +1626,28 @@ export default function MonthlyStatement() {
       let chartImage: string | undefined;
       const chartsWithData = chartConfigs.filter((c) => c.hasData);
       if (chartsWithData.length > 0 && chartCardRefs.current.length > 0) {
-        setIsPdfChartCaptureMode(true);
-        // Allow React + Recharts to re-render with animations disabled.
-        await new Promise<void>((resolve) =>
-          requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-        );
         try {
           const pdfCols = chartsWithData.length === 3 || chartsWithData.length > 4 ? 3 : 2;
           const { width: chartW, height: chartH } = getPdfChartCellSize(pdfCols);
           const chartIndicesWithData = chartsWithData.map((c) => chartConfigs.indexOf(c));
+          // Render fixed-size offscreen charts for capture.
+          setPdfChartCaptureRequest({ width: chartW, height: chartH, indices: chartIndicesWithData });
+
+          // Allow React render + fonts + Recharts layout to settle before capture.
+          await new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+          );
+          // If fonts are still loading, wait (prevents layout differences in SVG text).
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const fonts: any = (document as any).fonts;
+            if (fonts?.ready) await fonts.ready;
+          } catch { /* ignore */ }
+
           const imageDataUrls: string[] = [];
           for (let i = 0; i < chartIndicesWithData.length; i++) {
-            const idx = chartIndicesWithData[i];
-            const el = chartCardRefs.current[idx];
+            const el = pdfChartCaptureRefs.current[i];
             if (!el) continue;
-
-            // Capture the chart card at its current layout size (stable, no forced resizing),
-            // then scale into the fixed PDF cell size during compositing.
             const dataUrl = await toPng(el, {
               pixelRatio: 2,
               cacheBust: true,
@@ -1650,7 +1661,8 @@ export default function MonthlyStatement() {
         } catch (e) {
           console.warn("Chart capture for PDF failed:", e);
         } finally {
-          setIsPdfChartCaptureMode(false);
+          setPdfChartCaptureRequest(null);
+          pdfChartCaptureRefs.current = [];
         }
       }
 
@@ -2984,6 +2996,79 @@ export default function MonthlyStatement() {
                 </div>
               )}
             </Card>
+
+            {/* Offscreen fixed-size chart renderer for PDF capture (prevents Recharts layout mismatches). */}
+            {pdfChartCaptureRequest && (
+              <div
+                aria-hidden="true"
+                style={{
+                  position: 'fixed',
+                  left: '-100000px',
+                  top: 0,
+                  width: 0,
+                  height: 0,
+                  overflow: 'hidden',
+                  pointerEvents: 'none',
+                }}
+              >
+                {pdfChartCaptureRequest.indices.map((chartIdx, i) => {
+                  const chart = chartConfigs[chartIdx];
+                  if (!chart) return null;
+                  return (
+                    <div
+                      key={`pdf-capture-${chart.code}`}
+                      ref={(el) => { pdfChartCaptureRefs.current[i] = el; }}
+                      style={{
+                        width: `${pdfChartCaptureRequest.width}px`,
+                        height: `${pdfChartCaptureRequest.height}px`,
+                        background: 'white',
+                        borderRadius: '8px',
+                        boxSizing: 'border-box',
+                        padding: '20px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                      }}
+                    >
+                      <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.2 }}>
+                        {chart.title}
+                      </div>
+                      <div style={{ flex: '1 1 auto', minHeight: 0 }}>
+                        <ChartContainer
+                          config={chart.chartConfig}
+                          className="w-full h-full aspect-auto overflow-visible"
+                        >
+                          <BarChart data={chart.data} margin={{ left: 0, right: 0, top: 28, bottom: 24 }} barCategoryGap="22%">
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                            <XAxis
+                              dataKey="shortLabel"
+                              axisLine={false}
+                              tickLine={false}
+                              interval={0}
+                              height={110}
+                              tick={<ChartXAxisTick />}
+                              allowDataOverflow={false}
+                            />
+                            <YAxis tickFormatter={formatAxisCurrency} axisLine={false} tickLine={false} />
+                            <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={42} isAnimationActive={false}>
+                              <LabelList
+                                dataKey="value"
+                                position="top"
+                                formatter={(value: number) => (Number.isFinite(value) ? formatCurrency(value) : '')}
+                                className="fill-muted-foreground text-[10px] font-medium"
+                              />
+                              {chart.data.map((entry) => (
+                                <Cell key={`pdf-${chart.code}-${entry.name}`} fill={`var(--color-${entry.name})`} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ChartContainer>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Individualised Budgets */}
             <Card className="shadow-lg print:shadow-none">
