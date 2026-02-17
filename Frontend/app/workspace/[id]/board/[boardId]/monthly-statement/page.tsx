@@ -1553,72 +1553,97 @@ export default function MonthlyStatement() {
         img.src = src;
       });
     const images = await Promise.all(dataUrls.map(loadImage));
-    const w = cellSize?.width ?? Math.max(...images.map((img) => img.width));
-    const h = cellSize?.height ?? Math.max(...images.map((img) => img.height));
+    const maxW = cellSize?.width ?? Math.max(...images.map((img) => img.width));
+    const maxH = cellSize?.height ?? Math.max(...images.map((img) => img.height));
     const rows = Math.ceil(images.length / cols);
-    const gridW = cols * w + (cols - 1) * gap;
-    const gridH = rows * h + (rows - 1) * gap;
 
-    // Draw the grid first (no padding). We'll crop to target aspect after.
+    // IMPORTANT:
+    // - pdfme scales images into a fixed (w,h) box without preserving aspect ratio.
+    // - Cropping loses information (your current issue).
+    // So we render a composite PNG that ALREADY matches the PDF box aspect ratio,
+    // and we *scale charts down to fit* (contain) instead of cropping.
+    const targetAspect = options?.targetAspect;
+    const validTargetAspect = !!targetAspect && Number.isFinite(targetAspect) && targetAspect > 0;
+    if (!validTargetAspect) {
+      // Fallback to a simple grid canvas (no enforced aspect).
+      const gridW = cols * maxW + (cols - 1) * gap;
+      const gridH = rows * maxH + (rows - 1) * gap;
+      const canvas = document.createElement("canvas");
+      canvas.width = gridW;
+      canvas.height = gridH;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return dataUrls[0];
+      ctx.imageSmoothingEnabled = true;
+      (ctx as unknown as { imageSmoothingQuality?: string }).imageSmoothingQuality = 'high';
+      ctx.fillStyle = background;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      images.forEach((img, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = col * (maxW + gap);
+        const y = row * (maxH + gap);
+        ctx.fillStyle = background;
+        ctx.fillRect(x, y, maxW, maxH);
+        const scale = Math.min(maxW / img.width, maxH / img.height);
+        const dw = img.width * scale;
+        const dh = img.height * scale;
+        ctx.drawImage(img, x + (maxW - dw) / 2, y + (maxH - dh) / 2, dw, dh);
+      });
+      return canvas.toDataURL("image/png");
+    }
+
+    // Choose a canvas size that preserves the target aspect while minimizing downscaling.
+    // Candidate A: base on width; Candidate B: base on height; pick larger effective scale.
+    const target = targetAspect as number;
+    const candA_W = Math.max(1, Math.round(cols * maxW + (cols - 1) * gap));
+    const candA_H = Math.max(1, Math.round(candA_W / target));
+    const candA_cellW = (candA_W - (cols - 1) * gap) / cols;
+    const candA_cellH = (candA_H - (rows - 1) * gap) / rows;
+    const candA_scale = Math.min(candA_cellW / maxW, candA_cellH / maxH);
+
+    const candB_H = Math.max(1, Math.round(rows * maxH + (rows - 1) * gap));
+    const candB_W = Math.max(1, Math.round(candB_H * target));
+    const candB_cellW = (candB_W - (cols - 1) * gap) / cols;
+    const candB_cellH = (candB_H - (rows - 1) * gap) / rows;
+    const candB_scale = Math.min(candB_cellW / maxW, candB_cellH / maxH);
+
+    const canvasW = candB_scale > candA_scale ? candB_W : candA_W;
+    const canvasH = candB_scale > candA_scale ? candB_H : candA_H;
+    const cellW = (canvasW - (cols - 1) * gap) / cols;
+    const cellH = (canvasH - (rows - 1) * gap) / rows;
+
     const canvas = document.createElement("canvas");
-    canvas.width = gridW;
-    canvas.height = gridH;
+    canvas.width = canvasW;
+    canvas.height = canvasH;
     const ctx = canvas.getContext("2d");
     if (!ctx) return dataUrls[0];
     ctx.imageSmoothingEnabled = true;
     (ctx as unknown as { imageSmoothingQuality?: string }).imageSmoothingQuality = 'high';
-    // IMPORTANT: default fillStyle is black; set explicitly to avoid black padding/bars.
     ctx.fillStyle = background;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+
     images.forEach((img, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
-      const x = col * (w + gap);
-      const y = row * (h + gap);
+      const x = col * (cellW + gap);
+      const y = row * (cellH + gap);
       ctx.fillStyle = background;
-      ctx.fillRect(x, y, w, h);
+      ctx.fillRect(x, y, cellW, cellH);
+
+      // Per-cell fitting:
+      // - contain keeps everything visible
+      // - cover fills cell but may crop (avoid unless explicitly requested)
       const scale = fit === 'cover'
-        ? Math.max(w / img.width, h / img.height)
-        : Math.min(w / img.width, h / img.height);
+        ? Math.max(cellW / img.width, cellH / img.height)
+        : Math.min(cellW / img.width, cellH / img.height);
       const dw = img.width * scale;
       const dh = img.height * scale;
-      const dx = x + (w - dw) / 2;
-      const dy = y + (h - dh) / 2;
+      const dx = x + (cellW - dw) / 2;
+      const dy = y + (cellH - dh) / 2;
       ctx.drawImage(img, dx, dy, dw, dh);
     });
 
-    // Crop to target aspect ratio (removes any outer margins and prevents pdfme stretching).
-    const targetAspect = options?.targetAspect;
-    if (!targetAspect || !Number.isFinite(targetAspect) || targetAspect <= 0) {
-      return canvas.toDataURL("image/png");
-    }
-
-    const gridAspect = gridW / gridH;
-    let sx = 0;
-    let sy = 0;
-    let sw = gridW;
-    let sh = gridH;
-    if (gridAspect > targetAspect) {
-      // Too wide -> crop left/right.
-      sw = Math.round(gridH * targetAspect);
-      sx = Math.round((gridW - sw) / 2);
-    } else if (gridAspect < targetAspect) {
-      // Too tall -> crop top/bottom.
-      sh = Math.round(gridW / targetAspect);
-      sy = Math.round((gridH - sh) / 2);
-    }
-
-    const out = document.createElement("canvas");
-    out.width = sw;
-    out.height = sh;
-    const outCtx = out.getContext("2d");
-    if (!outCtx) return canvas.toDataURL("image/png");
-    outCtx.imageSmoothingEnabled = true;
-    (outCtx as unknown as { imageSmoothingQuality?: string }).imageSmoothingQuality = 'high';
-    outCtx.fillStyle = background;
-    outCtx.fillRect(0, 0, out.width, out.height);
-    outCtx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
-    return out.toDataURL("image/png");
+    return canvas.toDataURL("image/png");
   };
 
   // Handle PDF generation/export (consolidated function)
@@ -1705,7 +1730,8 @@ export default function MonthlyStatement() {
               targetAspect: SUMMARY_TABLE_ASPECT,
               background: 'white',
               gap: 0,
-              fit: 'cover',
+              // Never crop: keep all labels visible in PDF.
+              fit: 'contain',
             });
           }
         } catch (e) {
