@@ -1534,10 +1534,17 @@ export default function MonthlyStatement() {
     dataUrls: string[],
     cols: number,
     cellSize?: { width: number; height: number },
-    options?: { targetAspect?: number }
+    options?: {
+      targetAspect?: number;
+      gap?: number;
+      background?: string;
+      fit?: 'contain' | 'cover';
+    }
   ): Promise<string> => {
     if (dataUrls.length === 0) return '';
-    const gap = 16;
+    const gap = options?.gap ?? 0;
+    const background = options?.background ?? 'white';
+    const fit = options?.fit ?? 'contain';
     const loadImage = (src: string): Promise<HTMLImageElement> =>
       new Promise((resolve, reject) => {
         const img = new Image();
@@ -1552,43 +1559,66 @@ export default function MonthlyStatement() {
     const gridW = cols * w + (cols - 1) * gap;
     const gridH = rows * h + (rows - 1) * gap;
 
-    const targetAspect = options?.targetAspect;
-    const gridAspect = gridW / gridH;
-    let canvasW = gridW;
-    let canvasH = gridH;
-    if (targetAspect && Number.isFinite(targetAspect) && targetAspect > 0) {
-      if (gridAspect > targetAspect) {
-        canvasH = Math.round(gridW / targetAspect);
-      } else {
-        canvasW = Math.round(gridH * targetAspect);
-      }
-    }
-    const offsetX = Math.round((canvasW - gridW) / 2);
-    const offsetY = Math.round((canvasH - gridH) / 2);
-
+    // Draw the grid first (no padding). We'll crop to target aspect after.
     const canvas = document.createElement("canvas");
-    canvas.width = canvasW;
-    canvas.height = canvasH;
+    canvas.width = gridW;
+    canvas.height = gridH;
     const ctx = canvas.getContext("2d");
     if (!ctx) return dataUrls[0];
     ctx.imageSmoothingEnabled = true;
     (ctx as unknown as { imageSmoothingQuality?: string }).imageSmoothingQuality = 'high';
+    // IMPORTANT: default fillStyle is black; set explicitly to avoid black padding/bars.
+    ctx.fillStyle = background;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     images.forEach((img, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
-      const x = offsetX + col * (w + gap);
-      const y = offsetY + row * (h + gap);
-      ctx.fillStyle = "white";
+      const x = col * (w + gap);
+      const y = row * (h + gap);
+      ctx.fillStyle = background;
       ctx.fillRect(x, y, w, h);
-      const scale = Math.min(w / img.width, h / img.height);
+      const scale = fit === 'cover'
+        ? Math.max(w / img.width, h / img.height)
+        : Math.min(w / img.width, h / img.height);
       const dw = img.width * scale;
       const dh = img.height * scale;
       const dx = x + (w - dw) / 2;
       const dy = y + (h - dh) / 2;
       ctx.drawImage(img, dx, dy, dw, dh);
     });
-    return canvas.toDataURL("image/png");
+
+    // Crop to target aspect ratio (removes any outer margins and prevents pdfme stretching).
+    const targetAspect = options?.targetAspect;
+    if (!targetAspect || !Number.isFinite(targetAspect) || targetAspect <= 0) {
+      return canvas.toDataURL("image/png");
+    }
+
+    const gridAspect = gridW / gridH;
+    let sx = 0;
+    let sy = 0;
+    let sw = gridW;
+    let sh = gridH;
+    if (gridAspect > targetAspect) {
+      // Too wide -> crop left/right.
+      sw = Math.round(gridH * targetAspect);
+      sx = Math.round((gridW - sw) / 2);
+    } else if (gridAspect < targetAspect) {
+      // Too tall -> crop top/bottom.
+      sh = Math.round(gridW / targetAspect);
+      sy = Math.round((gridH - sh) / 2);
+    }
+
+    const out = document.createElement("canvas");
+    out.width = sw;
+    out.height = sh;
+    const outCtx = out.getContext("2d");
+    if (!outCtx) return canvas.toDataURL("image/png");
+    outCtx.imageSmoothingEnabled = true;
+    (outCtx as unknown as { imageSmoothingQuality?: string }).imageSmoothingQuality = 'high';
+    outCtx.fillStyle = background;
+    outCtx.fillRect(0, 0, out.width, out.height);
+    outCtx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+    return out.toDataURL("image/png");
   };
 
   // Handle PDF generation/export (consolidated function)
@@ -1671,7 +1701,12 @@ export default function MonthlyStatement() {
             imageDataUrls.push(dataUrl);
           }
           if (imageDataUrls.length > 0) {
-            chartImage = await compositeChartImages(imageDataUrls, pdfCols, undefined, { targetAspect: SUMMARY_TABLE_ASPECT });
+            chartImage = await compositeChartImages(imageDataUrls, pdfCols, undefined, {
+              targetAspect: SUMMARY_TABLE_ASPECT,
+              background: 'white',
+              gap: 0,
+              fit: 'cover',
+            });
           }
         } catch (e) {
           console.warn("Chart capture for PDF failed:", e);
@@ -2986,15 +3021,15 @@ export default function MonthlyStatement() {
                     <div
                       key={chart.code}
                       ref={(el) => { chartCardRefs.current[chartIndex] = el; }}
-                      className="rounded-lg border border-border/60 bg-card p-3 flex flex-col gap-3 shadow-sm"
+                      className="rounded-lg border border-border/60 bg-white p-3 flex flex-col gap-3 shadow-sm"
                     >
-                      <div className="rounded-md bg-[#eef5f3] overflow-hidden" data-pdf-chart-container="true">
+                      <div className="rounded-md bg-white overflow-hidden" data-pdf-chart-container="true">
                         <div className="px-2 py-2 text-center text-[20px] font-black text-[#111827]">
                           {chart.title}
                         </div>
                         <ChartContainer
                           config={chart.chartConfig}
-                          className="w-full aspect-auto min-h-[18rem] h-72 overflow-visible bg-transparent"
+                          className="w-full aspect-auto min-h-[18rem] h-72 overflow-visible bg-white"
                         >
                           <BarChart data={chart.data} margin={{ left: 4, right: 4, top: 44, bottom: 14 }} barCategoryGap="22%">
                             <CartesianGrid stroke="#d9e3e1" strokeDasharray="0" vertical={false} />
