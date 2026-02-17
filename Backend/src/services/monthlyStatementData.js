@@ -945,6 +945,7 @@ export async function fetchServiceItems(workspaceId, boardId, options = {}) {
             actualEnd,
             actualShiftEndDateTime: actualEnd,
             serviceDeliveryDate: actualEnd,
+            serviceCategory,
             transactionStatus: formatStatus(getValue(item, ATTR.TRANSACTION_STATUS)),
             committedAtHmForDelivery: committedAtHm !== null && committedAtHm !== undefined
                 ? (typeof committedAtHm === 'number' ? committedAtHm : Number(committedAtHm) || 0)
