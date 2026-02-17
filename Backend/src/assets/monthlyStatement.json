@@ -2277,7 +2277,7 @@
             {
                 "name": "P2-14 copy",
                 "type": "multiVariableText",
-                "content": "{\"first day\":\"FIRST DAY\"}",
+                "content": "{\"last day\":\"LAST DAY\"}",
                 "position": {
                     "x": 20,
                     "y": 252.04
@@ -2296,9 +2296,9 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": false,
-                "text": " Total Available Balance on {first day}",
+                "text": " Total Available Balance on {last day}",
                 "variables": [
-                    "first day"
+                    "last day"
                 ],
                 "required": false,
                 "fontName": "Roboto",
@@ -4261,14 +4261,14 @@
                     ""
                 ],
                 "headWidthPercentages": [
-                    8.84816,
-                    28.573686,
-                    8.095190964368504,
-                    10.641823539041694,
-                    9.431061123460397,
-                    10.290479406693468,
-                    13.747683,
-                    10.371917
+                    8.346104,
+                    24.891944,
+                    8.931950399315337,
+                    11.31123108699917,
+                    9.765764897439134,
+                    11.127238841640313,
+                    14.249738,
+                    11.376028
                 ],
                 "tableStyles": {
                     "borderWidth": 0,
