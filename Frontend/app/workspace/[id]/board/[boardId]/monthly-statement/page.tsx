@@ -256,12 +256,37 @@ const PdfChartFrame = forwardRef<
   const availableWidth = chartWidth - leftMargin - rightMargin;
   const maxBarSize = Math.min(80, Math.floor(availableWidth / (numBars * 2)));
 
-  const PdfChartYAxisTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value?: number | string } }) => {
-    const raw = payload?.value;
-    const asNumber = typeof raw === 'number' ? raw : Number(raw ?? 0);
+  const PdfBarValueLabel = ({
+    x,
+    y,
+    width: barWidth,
+    height: barHeight,
+    value,
+  }: {
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    value?: number;
+  }) => {
+    if (x == null || y == null || barWidth == null || barHeight == null || value == null) return null;
+    const label = Number.isFinite(value) ? formatCurrency(value) : '';
+    if (!label) return null;
+
+    const cx = x + barWidth / 2;
+    const canFitInside = barHeight >= 28;
+    const cy = canFitInside ? y + 14 : y - 10;
+
     return (
-      <text x={x} y={y} textAnchor="end" fill="currentColor" className="text-[14px] leading-tight" dy={4}>
-        {formatAxisCurrency(asNumber)}
+      <text
+        x={cx}
+        y={cy}
+        textAnchor="middle"
+        dominantBaseline="middle"
+        fill={canFitInside ? '#ffffff' : '#111827'}
+        style={{ fontSize: 14, fontWeight: 700 }}
+      >
+        {label}
       </text>
     );
   };
@@ -274,7 +299,7 @@ const PdfChartFrame = forwardRef<
       style={{
         width: `${width}px`,
         height: `${height}px`,
-        background: 'white',
+        background: '#eef5f3',
         borderRadius: '8px',
         boxSizing: 'border-box',
         padding: `${padding}px`,
@@ -285,7 +310,7 @@ const PdfChartFrame = forwardRef<
       }}
     >
       <ChartStyle id={chartId} config={chart.chartConfig} />
-      <div style={{ height: `${titleHeight}px`, fontSize: 16, fontWeight: 600, lineHeight: 1.2 }}>
+      <div style={{ height: `${titleHeight}px`, fontSize: 16, fontWeight: 700, lineHeight: 1.2, textAlign: 'center', color: '#111827' }}>
         {chart.title}
       </div>
       <div style={{ flex: '1 1 auto', minHeight: 0 }}>
@@ -296,28 +321,21 @@ const PdfChartFrame = forwardRef<
           margin={{ left: leftMargin, right: rightMargin, top: topMargin, bottom: bottomMargin }}
           barCategoryGap={barGapPercentage}
         >
-          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+          <CartesianGrid stroke="#d9e3e1" strokeDasharray="0" vertical={false} />
           <XAxis
             dataKey="shortLabel"
-            axisLine={false}
+            axisLine={{ stroke: '#111827', strokeWidth: 1 }}
             tickLine={false}
             interval={0}
             height={bottomMargin - 18}
             tick={xAxisTick}
             allowDataOverflow={false}
           />
-          <YAxis
-            axisLine={false}
-            tickLine={false}
-            width={leftMargin - 5}
-            tick={<PdfChartYAxisTick />}
-          />
+          <YAxis hide />
           <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={maxBarSize} isAnimationActive={false}>
             <LabelList
               dataKey="value"
-              position="top"
-              formatter={(value: number) => (Number.isFinite(value) ? formatCurrency(value) : '')}
-              className="fill-muted-foreground text-[12px] font-semibold"
+              content={<PdfBarValueLabel />}
             />
             {chart.data.map((entry) => (
               <Cell key={`pdf-${chart.code}-${entry.name}`} fill={`var(--color-${entry.name})`} />
@@ -2820,7 +2838,7 @@ export default function MonthlyStatement() {
       }, []);
 
     return (
-      <text x={x} y={y} textAnchor="middle" fill="currentColor" className="text-[13px] leading-tight" style={{ overflow: 'visible' }}>
+      <text x={x} y={y} textAnchor="middle" fill="#111827" className="text-[14px] font-semibold leading-tight" style={{ overflow: 'visible' }}>
         {lines.map((line, index) => (
           <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 13 : 15}>
             {line}
@@ -2847,7 +2865,7 @@ export default function MonthlyStatement() {
       }, []);
 
     return (
-      <text x={x} y={y} textAnchor="middle" fill="currentColor" className="text-[15px] leading-tight" style={{ overflow: 'visible' }}>
+      <text x={x} y={y} textAnchor="middle" fill="#111827" className="text-[16px] font-semibold leading-tight" style={{ overflow: 'visible' }}>
         {lines.map((line, index) => (
           <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 15 : 17}>
             {line}
@@ -2857,12 +2875,37 @@ export default function MonthlyStatement() {
     );
   };
 
-  const ChartYAxisTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value?: number | string } }) => {
-    const raw = payload?.value;
-    const asNumber = typeof raw === 'number' ? raw : Number(raw ?? 0);
+  const ChartBarValueLabel = ({
+    x,
+    y,
+    width: barWidth,
+    height: barHeight,
+    value,
+  }: {
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    value?: number;
+  }) => {
+    if (x == null || y == null || barWidth == null || barHeight == null || value == null) return null;
+    const label = Number.isFinite(value) ? formatCurrency(value) : '';
+    if (!label) return null;
+
+    const cx = x + barWidth / 2;
+    const canFitInside = barHeight >= 28;
+    const cy = canFitInside ? y + 14 : y - 10;
+
     return (
-      <text x={x} y={y} textAnchor="end" fill="currentColor" className="text-[13px] leading-tight" dy={4}>
-        {formatAxisCurrency(asNumber)}
+      <text
+        x={cx}
+        y={cy}
+        textAnchor="middle"
+        dominantBaseline="middle"
+        fill={canFitInside ? '#ffffff' : '#111827'}
+        style={{ fontSize: 14, fontWeight: 700 }}
+      >
+        {label}
       </text>
     );
   };
@@ -3093,57 +3136,50 @@ export default function MonthlyStatement() {
                       ref={(el) => { chartCardRefs.current[chartIndex] = el; }}
                       className="rounded-lg border border-border/60 bg-card p-5 flex flex-col gap-4 shadow-sm"
                     >
-                      <div className="flex items-start justify-between gap-3" data-pdf-chart-header="true">
-                        <div>
-                          <h4 className="text-base font-semibold leading-tight">{chart.title}</h4>
+                      <div className="rounded-md bg-[#eef5f3] overflow-hidden" data-pdf-chart-container="true">
+                        <div className="px-3 py-2 text-center text-[15px] font-bold text-[#111827]">
+                          {chart.title}
                         </div>
-                      </div>
-
-                      <ChartContainer
-                        config={chart.chartConfig}
-                        className="w-full aspect-auto min-h-[18rem] h-72 overflow-visible"
-                        data-pdf-chart-container="true"
-                      >
-                        <BarChart data={chart.data} margin={{ left: 0, right: 0, top: 28, bottom: 18 }} barCategoryGap="22%">
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                          <XAxis
-                            dataKey="shortLabel"
-                            axisLine={false}
-                            tickLine={false}
-                            interval={0}
-                            height={120}
-                            tick={<ChartXAxisTick />}
-                            allowDataOverflow={false}
-                          />
-                          <YAxis axisLine={false} tickLine={false} tick={<ChartYAxisTick />} />
-                          <ChartTooltip
-                            content={
-                              <ChartTooltipContent
-                                formatter={(value, name, item) => [
-                                  formatCurrency(typeof value === 'number' ? value : Number(value)),
-                                  (item?.payload as ChartBarDatum)?.label || name,
-                                ]}
-                              />
-                            }
-                          />
-                          <Bar
-                            dataKey="value"
-                            radius={[6, 6, 0, 0]}
-                            maxBarSize={42}
-                            isAnimationActive={!isPdfChartCaptureMode}
-                          >
-                            <LabelList
-                              dataKey="value"
-                              position="top"
-                              formatter={(value: number) => (Number.isFinite(value) ? formatCurrency(value) : '')}
-                              className="fill-muted-foreground text-[12px] font-semibold"
+                        <ChartContainer
+                          config={chart.chartConfig}
+                          className="w-full aspect-auto min-h-[18rem] h-72 overflow-visible bg-transparent"
+                        >
+                          <BarChart data={chart.data} margin={{ left: 8, right: 8, top: 30, bottom: 18 }} barCategoryGap="22%">
+                            <CartesianGrid stroke="#d9e3e1" strokeDasharray="0" vertical={false} />
+                            <XAxis
+                              dataKey="shortLabel"
+                              axisLine={{ stroke: '#111827', strokeWidth: 1 }}
+                              tickLine={false}
+                              interval={0}
+                              height={120}
+                              tick={<ChartXAxisTick />}
+                              allowDataOverflow={false}
                             />
-                            {chart.data.map((entry) => (
-                              <Cell key={`${chart.code}-${entry.name}`} fill={`var(--color-${entry.name})`} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ChartContainer>
+                            <YAxis hide />
+                            <ChartTooltip
+                              content={
+                                <ChartTooltipContent
+                                  formatter={(value, name, item) => [
+                                    formatCurrency(typeof value === 'number' ? value : Number(value)),
+                                    (item?.payload as ChartBarDatum)?.label || name,
+                                  ]}
+                                />
+                              }
+                            />
+                            <Bar
+                              dataKey="value"
+                              radius={[6, 6, 0, 0]}
+                              maxBarSize={52}
+                              isAnimationActive={!isPdfChartCaptureMode}
+                            >
+                              <LabelList dataKey="value" content={<ChartBarValueLabel />} />
+                              {chart.data.map((entry) => (
+                                <Cell key={`${chart.code}-${entry.name}`} fill={`var(--color-${entry.name})`} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ChartContainer>
+                      </div>
                     </div>
                   ))}
                 </div>
