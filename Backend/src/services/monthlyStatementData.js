@@ -564,26 +564,29 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
             return 0;
         })();
 
-        // if (!totalAvailableBudget && code === 'HSQ') {
-        //     totalAvailableBudget =
-        //         availableFundStart +
-        //         quarterlyAdjustment +
-        //         primarySupplementAmount +
-        //         carryoverFunding +
-        //         commonwealthUnspent +
-        //         providerUnspent +
-        //         participantUnspent +
-        //         previousMonthSpending +
-        //         unspentReturned;
-        // }
+        // Match items.js: apply formula fallbacks when board columns are blank/missing.
+        if (!totalAvailableBudget && code === 'HSQ') {
+            totalAvailableBudget =
+                availableFundStart +
+                quarterlyAdjustment +
+                primarySupplementAmount +
+                carryoverFunding +
+                commonwealthUnspent +
+                providerUnspent +
+                participantUnspent +
+                previousMonthSpending +
+                unspentReturned;
+        }
 
-        // if (!totalAvailableBudget && (code === 'RCP' || code === 'EOL')) {
-        //     totalAvailableBudget = availableFundStart + primarySupplementAmount + previousSpendingAllocated;
-        // }
+        // RCP/EOL: Total Available = Available Fund at Start + Primary Supplement + Spending from Previous Month(s) within Allocated Period
+        if (!totalAvailableBudget && (code === 'RCP' || code === 'EOL')) {
+            totalAvailableBudget = availableFundStart + primarySupplementAmount + previousSpendingAllocated;
+        }
 
-        // if (!totalAvailableBudget && availableFundStart) {
-        //     totalAvailableBudget = availableFundStart;
-        // }
+        // Other categories fallback: use available fund start if present
+        if (!totalAvailableBudget && availableFundStart) {
+            totalAvailableBudget = availableFundStart;
+        }
 
         const deliveredAmountRaw = (() => {
             if (code === 'ATS') {
@@ -649,12 +652,12 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
         })();
 
         const remainingBalanceEndOfMonthRaw = remainingEndOfMonthAttr
-            ? getValue(item, remainingEndOfMonthAttr)
-            : (code === 'RCP' || code === 'EOL' ? getValue(item, 'Remaining Balance for Allocation Period ($)') : null);
+            ? getValueMulti(item, [remainingEndOfMonthAttr])
+            : (code === 'RCP' || code === 'EOL' ? getValueMulti(item, ['Remaining Balance for Allocation Period ($)']) : null);
 
         const remainingBalanceEndOfMonth = (remainingBalanceEndOfMonthRaw !== null && remainingBalanceEndOfMonthRaw !== undefined)
-            ? parseNumber(remainingBalanceEndOfMonthRaw)
-            : 0;
+            ? Math.max(0, parseNumber(remainingBalanceEndOfMonthRaw))
+            : Math.max(0, totalAvailableBudget + deliveredAmountRaw + adjustmentAmount);
 
         let remainingBalanceAllocationPeriod = null;
         if (code === 'ATS' || code === 'ATO' || code === 'HMB') {
@@ -663,10 +666,10 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
                 : code === 'ATO'
                     ? 'Remaining AT - Ongoing Balance for Allocation Period ($)'
                     : 'Remaining HM Balance for Allocation Period ($)';
-            const allocationRaw = getValue(item, allocationAttr);
+            const allocationRaw = getValueMulti(item, [allocationAttr]);
             remainingBalanceAllocationPeriod = (allocationRaw !== null && allocationRaw !== undefined)
-                ? parseNumber(allocationRaw)
-                : 0;
+                ? Math.max(0, parseNumber(allocationRaw))
+                : Math.max(0, remainingBalanceEndOfMonth + committedFunds);
         }
 
         const effectiveRemainingBalance = (code === 'ATS' || code === 'ATO' || code === 'HMB')
