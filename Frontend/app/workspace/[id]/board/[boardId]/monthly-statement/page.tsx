@@ -246,8 +246,9 @@ const PdfChartFrame = forwardRef<
   
   const leftMargin = Math.max(10, Math.floor(chartWidth * 0.08));
   const rightMargin = Math.max(10, Math.floor(chartWidth * 0.02));
-  const topMargin = 34;
-  const bottomMargin = Math.min(150, Math.max(95, Math.floor(chartHeight * 0.28)));
+  const topMargin = 28;
+  // Keep X labels readable without leaving a huge blank band under the chart.
+  const bottomMargin = chartWidth <= 480 ? 120 : chartWidth <= 640 ? 105 : 90;
   
   const numBars = chart.data.length;
   const barGapPercentage = numBars <= 2 ? "30%" : numBars === 3 ? "22%" : "18%";
@@ -301,7 +302,7 @@ const PdfChartFrame = forwardRef<
             axisLine={false}
             tickLine={false}
             interval={0}
-            height={bottomMargin - 10}
+            height={bottomMargin - 18}
             tick={xAxisTick}
             allowDataOverflow={false}
           />
@@ -3103,14 +3104,14 @@ export default function MonthlyStatement() {
                         className="w-full aspect-auto min-h-[18rem] h-72 overflow-visible"
                         data-pdf-chart-container="true"
                       >
-                        <BarChart data={chart.data} margin={{ left: 0, right: 0, top: 34, bottom: 24 }} barCategoryGap="22%">
+                        <BarChart data={chart.data} margin={{ left: 0, right: 0, top: 28, bottom: 18 }} barCategoryGap="22%">
                             <CartesianGrid strokeDasharray="3 3" vertical={false} />
                           <XAxis
                             dataKey="shortLabel"
                             axisLine={false}
                             tickLine={false}
                             interval={0}
-                            height={150}
+                            height={120}
                             tick={<ChartXAxisTick />}
                             allowDataOverflow={false}
                           />
@@ -3143,11 +3144,6 @@ export default function MonthlyStatement() {
                           </Bar>
                         </BarChart>
                       </ChartContainer>
-                      {!chart.hasData && (
-                        <p className="text-xs text-muted-foreground text-center">
-                          No data available for this period.
-                        </p>
-                      )}
                     </div>
                   ))}
                 </div>
