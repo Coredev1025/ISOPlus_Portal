@@ -134,6 +134,24 @@ async function resolveTemplateImageUrls(template, templateInputs) {
     }
 }
 
+function applyTemplateTextDefaults(template, templateInputs) {
+    const pages = template?.schemas;
+    if (!Array.isArray(pages)) return;
+    for (const pageSchemas of pages) {
+        if (!Array.isArray(pageSchemas)) continue;
+        for (const schema of pageSchemas) {
+            if (!schema?.name) continue;
+            if (templateInputs[schema.name] !== undefined) continue;
+            if (schema.type === 'text') {
+                templateInputs[schema.name] = typeof schema.content === 'string' ? schema.content : '';
+            }
+            if (schema.type === 'multiVariableText') {
+                templateInputs[schema.name] = typeof schema.content === 'string' ? schema.content : '{}';
+            }
+        }
+    }
+}
+
 // Attribute names for referenced item types
 const REF_ATTRIBUTE_NAMES = {
     // Participant Profile attributes
@@ -611,72 +629,67 @@ function initializeBudgetAggregate() {
 }
 
 function calculateBudgetAggregates(items = []) {
-    const aggregates = {};
+    const getItemTime = (item) => {
+        const v = item?.updatedAt || item?.createdAt || null;
+        if (!v) return 0;
+        const d = v instanceof Date ? v : new Date(v);
+        const t = d.getTime();
+        return Number.isFinite(t) ? t : 0;
+    };
 
+    const latestByCode = {};
     items.forEach((item) => {
         const code = item?.categoryCode || 'HSQ';
-        if (!aggregates[code]) {
-            aggregates[code] = initializeBudgetAggregate();
+        const t = getItemTime(item);
+        if (!latestByCode[code] || t >= latestByCode[code].t) {
+            latestByCode[code] = { t, item };
         }
-        const aggregate = aggregates[code];
+    });
 
-        aggregate.availableFundStart += parseNumberValue(item.availableFundStart);
-        aggregate.quarterlyAdjustment += parseNumberValue(item.quarterlyAdjustment);
-        aggregate.primarySupplementAmount += parseNumberValue(item.primarySupplementAmount);
-        aggregate.carryoverFunding += parseNumberValue(item.carryoverFunding);
-        aggregate.unspentReturned += parseNumberValue(item.unspentReturned);
-        aggregate.commonwealthUnspent += parseNumberValue(item.commonwealthUnspent);
-        aggregate.providerUnspent += parseNumberValue(item.providerUnspent);
-        aggregate.participantUnspent += parseNumberValue(item.participantUnspent);
-        aggregate.previousMonthSpending += parseNumberValue(item.previousMonthSpending);
-        aggregate.totalAvailableBudget += parseNumberValue(item.totalAvailableBudget);
-        aggregate.deliveredAmount += parseNumberValue(item.deliveredAmount);
-        aggregate.adjustmentAmount += parseNumberValue(item.adjustmentAmount);
-        aggregate.remainingBalance += parseNumberValue(item.remainingBalance);
-        aggregate.committedFunds += parseNumberValue(item.committedFunds);
-        aggregate.remainingBalanceEndOfMonth += parseNumberValue(item.remainingBalanceEndOfMonth);
-        aggregate.remainingBalanceAllocationPeriod += parseNumberValue(item.remainingBalanceAllocationPeriod);
-        aggregate.fundAmount += parseNumberValue(item.fundAmount);
-        aggregate.additionalAmountApproved += parseNumberValue(item.additionalAmountApproved);
-        aggregate.govSubsidyAmount += parseNumberValue(item.govSubsidyAmount);
-        aggregate.participantContributionAmount += parseNumberValue(item.participantContributionAmount);
+    const aggregates = {};
+    Object.entries(latestByCode).forEach(([code, entry]) => {
+        const item = entry?.item || {};
+        const aggregate = initializeBudgetAggregate();
 
-        // Track HSCM-specific aggregates
+        aggregate.availableFundStart = parseNumberValue(item.availableFundStart);
+        aggregate.quarterlyAdjustment = parseNumberValue(item.quarterlyAdjustment);
+        aggregate.primarySupplementAmount = parseNumberValue(item.primarySupplementAmount);
+        aggregate.carryoverFunding = parseNumberValue(item.carryoverFunding);
+        aggregate.unspentReturned = parseNumberValue(item.unspentReturned);
+        aggregate.commonwealthUnspent = parseNumberValue(item.commonwealthUnspent);
+        aggregate.providerUnspent = parseNumberValue(item.providerUnspent);
+        aggregate.participantUnspent = parseNumberValue(item.participantUnspent);
+        aggregate.previousMonthSpending = parseNumberValue(item.previousMonthSpending);
+        aggregate.totalAvailableBudget = parseNumberValue(item.totalAvailableBudget);
+        aggregate.deliveredAmount = parseNumberValue(item.deliveredAmount);
+        aggregate.adjustmentAmount = parseNumberValue(item.adjustmentAmount);
+        aggregate.remainingBalance = parseNumberValue(item.remainingBalance);
+        aggregate.committedFunds = parseNumberValue(item.committedFunds);
+        aggregate.remainingBalanceEndOfMonth = parseNumberValue(item.remainingBalanceEndOfMonth);
+        aggregate.remainingBalanceAllocationPeriod = parseNumberValue(item.remainingBalanceAllocationPeriod);
+        aggregate.fundAmount = parseNumberValue(item.fundAmount);
+        aggregate.additionalAmountApproved = parseNumberValue(item.additionalAmountApproved);
+        aggregate.govSubsidyAmount = parseNumberValue(item.govSubsidyAmount);
+        aggregate.participantContributionAmount = parseNumberValue(item.participantContributionAmount);
+
+        // Track HSCM-specific snapshot fields (not summed)
         if (code === 'HSCM') {
-            aggregate.hscmTotalAllocatedTime += parseNumberValue(item.hscmAllocatedTime);
-            aggregate.hscmTotalReceivedAmount += parseNumberValue(item.hscmReceivedAmount);
-            aggregate.hscmTotalAllocatedAmount += parseNumberValue(item.hscmAllocatedAmount);
-            aggregate.hscmItemCount += 1;
+            aggregate.hscmTotalAllocatedTime = parseNumberValue(item.hscmAllocatedTime);
+            aggregate.hscmTotalReceivedAmount = parseNumberValue(item.hscmReceivedAmount);
+            aggregate.hscmTotalAllocatedAmount = parseNumberValue(item.hscmAllocatedAmount);
+            aggregate.hscmItemCount = 1;
         }
 
-        if (!aggregate.primarySupplementLabel) {
-            aggregate.primarySupplementLabel = safeString(item.primarySupplementLabel) || safeString(item.fundClassification) || safeString(item.fund) || '';
-        }
-        if (!aggregate.fund) {
-            aggregate.fund = safeString(item.fund) || '';
-        }
-        if (!aggregate.fundClassification) {
-            aggregate.fundClassification = safeString(item.fundClassification) || '';
-        }
-        if (!aggregate.quarterLabel && item.quarter) {
-            aggregate.quarterLabel = item.quarter;
-        }
-        if (item.month && item.year && aggregate.months instanceof Set) {
-            aggregate.months.add(`${item.month} ${item.year}`);
-        }
+        aggregate.primarySupplementLabel =
+            safeString(item.primarySupplementLabel) || safeString(item.fundClassification) || safeString(item.fund) || '';
+        aggregate.fund = safeString(item.fund) || '';
+        aggregate.fundClassification = safeString(item.fundClassification) || '';
+        aggregate.quarterLabel = item.quarter ? safeString(item.quarter) : '';
 
-        const startDate = item.fundingStartDate ? new Date(item.fundingStartDate) : null;
-        if (startDate && !Number.isNaN(startDate.getTime())) {
-            if (!aggregate.fundingStartDate || startDate < new Date(aggregate.fundingStartDate)) {
-                aggregate.fundingStartDate = startDate.toISOString();
-            }
-        }
-        const endDate = item.fundingEndDate ? new Date(item.fundingEndDate) : null;
-        if (endDate && !Number.isNaN(endDate.getTime())) {
-            if (!aggregate.fundingEndDate || endDate > new Date(aggregate.fundingEndDate)) {
-                aggregate.fundingEndDate = endDate.toISOString();
-            }
-        }
+        aggregate.fundingStartDate = item.fundingStartDate || null;
+        aggregate.fundingEndDate = item.fundingEndDate || null;
+
+        aggregates[code] = aggregate;
     });
 
     return aggregates;
@@ -1010,6 +1023,10 @@ function resolveServiceDateValue(service = {}, rowType = 'delivered', timezone) 
         return 'To be delivered';
     }
     const status = normalizeStatus(service.transactionStatus);
+    if (status.includes('adjust') || status.includes('refund') || status.includes('charge')) {
+        const appliedAt = service.updatedAt || service.createdAt || service.serviceDeliveryDate || service.actualEnd || service.scheduledStart;
+        return formatDateToAU(appliedAt, timezone);
+    }
     if (status.includes('cancelled')) {
         return formatDateToAU(service.scheduledServiceDate || service.scheduledStart || service.scheduledShiftStart, timezone);
     }
@@ -1086,6 +1103,12 @@ function createPlaceholderRow(columns, rowType) {
 function getServiceSortDate(service, rowType = 'delivered') {
     if (rowType === 'committed') return null;
     const status = normalizeStatus(service.transactionStatus);
+    if (status.includes('adjust') || status.includes('refund') || status.includes('charge')) {
+        const raw = service.updatedAt || service.createdAt || service.serviceDeliveryDate || service.actualEnd || service.scheduledStart;
+        if (!raw) return null;
+        const d = raw instanceof Date ? raw : new Date(raw);
+        return Number.isNaN(d.getTime()) ? null : d;
+    }
     const dateStr = status.includes('cancelled')
         ? (service.scheduledServiceDate || service.scheduledStart || service.scheduledShiftStart)
         : (service.serviceDeliveryDate || service.actualEnd || service.actualStart || service.scheduledServiceDate || service.scheduledStart);
@@ -2615,56 +2638,28 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 postcode: businessDetails?.postcode || business.address?.postcode || ''
             };
 
-            // Resolve service and budget items: use request data if available, otherwise fetch from DB
-            const hasServices = (Array.isArray(statementData.serviceItems) && statementData.serviceItems.length)
-                || (Array.isArray(statementData.services) && statementData.services.length);
-            const hasBudget = Array.isArray(statementData.budgetItems) && statementData.budgetItems.length;
-
-            let services = hasServices ? (statementData.serviceItems || statementData.services) : [];
-            let budgetItems = hasBudget ? statementData.budgetItems : [];
-
-            if (!hasBudget || !hasServices) {
-                const participant = statementData.participant || statementData.participantProfile || '';
-                const monthNum = statementData.monthNumber || '';
-                const yearVal = statementData.year || '';
-                let startDate, endDate;
-                if (monthNum && yearVal) {
-                    const mi = Number(monthNum) - 1, yi = Number(yearVal);
-                    if (!isNaN(mi) && !isNaN(yi)) {
-                        startDate = new Date(Date.UTC(yi, mi, 1)).toISOString();
-                        endDate = new Date(Date.UTC(yi, mi + 1, 0, 23, 59, 59, 999)).toISOString();
-                    }
+            const participant = statementData.participant || statementData.participantProfile || '';
+            const monthNum = statementData.monthNumber || '';
+            const yearVal = statementData.year || '';
+            let startDate, endDate;
+            if (monthNum && yearVal) {
+                const mi = Number(monthNum) - 1, yi = Number(yearVal);
+                if (!isNaN(mi) && !isNaN(yi)) {
+                    startDate = new Date(Date.UTC(yi, mi, 1)).toISOString();
+                    endDate = new Date(Date.UTC(yi, mi + 1, 0, 23, 59, 59, 999)).toISOString();
                 }
-
-                const [dbBudget, dbService] = await Promise.all([
-                    !hasBudget ? fetchBudgetItems(workspaceId, boardId, { participant, month: monthNum, year: yearVal }) : Promise.resolve(null),
-                    !hasServices ? fetchServiceItems(workspaceId, boardId, { participant, startDate, endDate }) : Promise.resolve(null)
-                ]);
-
-                if (dbBudget) budgetItems = dbBudget;
-                if (dbService) services = dbService;
-
-                info('Webhook-Service', 'DB fallback for monthly statement PDF', {
-                    budgetCount: budgetItems.length, serviceCount: services.length, participant
-                }, extractContextFromReq(req));
             }
+
+            const [budgetItems, services] = await Promise.all([
+                fetchBudgetItems(workspaceId, boardId, { participant, month: monthNum, year: yearVal }),
+                fetchServiceItems(workspaceId, boardId, { participant, startDate, endDate })
+            ]);
+
+            info('Webhook-Service', 'Monthly statement PDF: fetched ISO+ data', {
+                budgetCount: budgetItems.length, serviceCount: services.length, participant
+            }, extractContextFromReq(req));
 
             const budgetAggregates = calculateBudgetAggregates(budgetItems);
-
-            // Enrich aggregates with budgetCategories from the frontend (which include profile-data fallbacks).
-            // This ensures PDF values match the values shown on the web page.
-            const budgetCats = Array.isArray(statementData.budgetCategories) ? statementData.budgetCategories : [];
-            if (budgetCats.length > 0) {
-                const categoryByCode = {};
-                budgetCats.forEach((cat) => { if (cat && cat.code) categoryByCode[cat.code] = cat; });
-
-                for (const code of Object.keys(categoryByCode)) {
-                    if (!budgetAggregates[code]) {
-                        budgetAggregates[code] = initializeBudgetAggregate();
-                    }
-                    enrichAggregateFromCategory(budgetAggregates[code], categoryByCode[code]);
-                }
-            }
 
             const monthNumber = statementData.monthNumber || '1';
             const yearValue = statementData.year || new Date().getFullYear().toString();
@@ -2873,7 +2868,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 { type: 'currency', field: ['$P4-10 copy', '$P5-10'], value: (agg) => agg.adjustmentAmount },
                 { type: 'currency', field: ['$P4-11 copy', '$P5-11'], value: (agg) => agg.remainingBalance },
                 { type: 'currency', field: ['$P4-12 copy', '$P5-12'], value: (agg) => agg.committedFunds },
-                { type: 'currency', field: ['$P4-13 copy', '$P5-13'], value: (agg) => agg.remainingBalanceAllocationPeriod || (agg.remainingBalance - Math.abs(agg.committedFunds)) },
+                { type: 'currency', field: ['$P4-13 copy', '$P5-13'], value: (agg) => (agg.remainingBalanceAllocationPeriod ?? 0) },
                 { type: 'multi', field: 'P4 Footer 1 copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
             ]);
 
@@ -2890,7 +2885,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 { type: 'currency', field: ['$P4-22 copy', '$P5-22'], value: (agg) => agg.adjustmentAmount },
                 { type: 'currency', field: ['$P4-23 copy', '$P5-23'], value: (agg) => agg.remainingBalance },
                 { type: 'currency', field: ['$P4-24 copy', '$P5-24'], value: (agg) => agg.committedFunds },
-                { type: 'currency', field: ['$P4-25 copy', '$P5-25'], value: (agg) => agg.remainingBalanceAllocationPeriod || (agg.remainingBalance - Math.abs(agg.committedFunds)) },
+                { type: 'currency', field: ['$P4-25 copy', '$P5-25'], value: (agg) => (agg.remainingBalanceAllocationPeriod ?? 0) },
                 { type: 'multi', field: 'P4 Footer 2 copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
             ]);
 
@@ -2907,7 +2902,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 { type: 'currency', field: '$P5-9 copy', value: (agg) => agg.adjustmentAmount },
                 { type: 'currency', field: '$P5-10 copy', value: (agg) => agg.remainingBalanceEndOfMonth ?? agg.remainingBalance },
                 { type: 'currency', field: '$P5-11 copy', value: (agg) => agg.committedFunds },
-                { type: 'currency', field: '$P5-12 copy', value: (agg) => agg.remainingBalanceAllocationPeriod || (agg.remainingBalance - Math.abs(agg.committedFunds)) },
+                { type: 'currency', field: '$P5-12 copy', value: (agg) => (agg.remainingBalanceAllocationPeriod ?? 0) },
                 { type: 'multi', field: 'P4 Footer 2 copy copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
             ]);
 
@@ -2966,10 +2961,10 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                     return;
                 }
 
-                const status = (service.transactionStatus || '').toString().toLowerCase();
+                const status = normalizeStatus(service.transactionStatus);
                 const isCommitted = !!service.committedAtHmForDelivery;
                 const hasCommittedBucket = isCommitted && Array.isArray(bucket.committed);
-                const isAdjustment = status.includes('adjustment') && Array.isArray(bucket.adjustment);
+                const isAdjustment = (status.includes('adjust') || status.includes('refund') || status.includes('charge')) && Array.isArray(bucket.adjustment);
                 const isDelivered = (status.includes('delivered') || status.includes('cancelled')) && Array.isArray(bucket.delivered);
                 const canRecordDelivery = Array.isArray(bucket.delivered);
 
@@ -3076,6 +3071,8 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                     }
                 }
             });
+
+            applyTemplateTextDefaults(template, templateInputs);
 
             const pdfBytes = await generate({
                 template,
