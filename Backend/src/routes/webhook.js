@@ -32,6 +32,22 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const router = express.Router();
 
+function enableRepeatHeadOnTables(template) {
+    if (!template || !Array.isArray(template.schemas)) {
+        return;
+    }
+    for (const pageSchemas of template.schemas) {
+        if (!Array.isArray(pageSchemas)) {
+            continue;
+        }
+        for (const schema of pageSchemas) {
+            if (schema && schema.type === 'table') {
+                schema.repeatHead = true;
+            }
+        }
+    }
+}
+
 // Attribute names constants (matching items.js)
 const ATTRIBUTE_NAMES = {
     SCHEDULED_START: 'Scheduled Shift Start Date & Time',
@@ -1220,6 +1236,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 const templatePath = path.join(__dirname, '..', 'assets', 'invoice.json');
                 const templateData = await fs.readFile(templatePath, 'utf8');
                 const template = JSON.parse(templateData);
+                enableRepeatHeadOnTables(template);
 
                 const logoBase64 = await getLogoData(business);
 
@@ -1337,6 +1354,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 const templatePath = path.join(__dirname, '..', 'assets', 'purchaseorder.json');
                 const templateData = await fs.readFile(templatePath, 'utf8');
                 const template = JSON.parse(templateData);
+                enableRepeatHeadOnTables(template);
 
                 const logoBase64 = await getLogoData(business);
 
@@ -1441,6 +1459,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                 const templatePath = path.join(__dirname, '..', 'assets', 'quote.json');
                 const templateData = await fs.readFile(templatePath, 'utf8');
                 const template = JSON.parse(templateData);
+                enableRepeatHeadOnTables(template);
 
                 const logoBase64 = await getLogoData(business);
 
@@ -1531,6 +1550,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                 const templatePath = path.join(__dirname, '..', 'assets', `NDISquote.json`);
                 const templateData = await fs.readFile(templatePath, 'utf8');
                 const template = JSON.parse(templateData);
+                enableRepeatHeadOnTables(template);
 
                 const logoBase64 = await getLogoData(business);
 
@@ -1750,6 +1770,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                 const templatePath = path.join(__dirname, '..', 'assets', 'NDISinvoice.json');
                 const templateData = await fs.readFile(templatePath, 'utf8');
                 const template = JSON.parse(templateData);
+                enableRepeatHeadOnTables(template);
 
                 const logoBase64 = await getLogoData(business);
 
@@ -2308,6 +2329,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             const templatePath = isLowCatBoard ? path.join(__dirname, '..', 'assets', 'taxInvoiceAG.json') : path.join(__dirname, '..', 'assets', 'participantTaxInvoiceAG.json');
             const templateData = await fs.readFile(templatePath, 'utf8');
             const template = JSON.parse(templateData);
+            enableRepeatHeadOnTables(template);
 
             const logoBase64 = await getLogoData(business);
 
@@ -2624,6 +2646,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             const templatePath = path.join(__dirname, '..', 'assets', 'monthlyStatement.json');
             const templateData = await fs.readFile(templatePath, 'utf8');
             const template = JSON.parse(templateData);
+            enableRepeatHeadOnTables(template);
 
             const logoBase64 = await getLogoData(business);
 
