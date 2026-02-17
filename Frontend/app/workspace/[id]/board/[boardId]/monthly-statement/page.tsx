@@ -246,14 +246,24 @@ const PdfChartFrame = forwardRef<
   
   const leftMargin = Math.max(10, Math.floor(chartWidth * 0.08));
   const rightMargin = Math.max(10, Math.floor(chartWidth * 0.02));
-  const topMargin = 28;
-  const bottomMargin = Math.min(120, Math.max(80, Math.floor(chartHeight * 0.25)));
+  const topMargin = 34;
+  const bottomMargin = Math.min(150, Math.max(95, Math.floor(chartHeight * 0.28)));
   
   const numBars = chart.data.length;
   const barGapPercentage = numBars <= 2 ? "30%" : numBars === 3 ? "22%" : "18%";
   
   const availableWidth = chartWidth - leftMargin - rightMargin;
   const maxBarSize = Math.min(80, Math.floor(availableWidth / (numBars * 2)));
+
+  const PdfChartYAxisTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value?: number | string } }) => {
+    const raw = payload?.value;
+    const asNumber = typeof raw === 'number' ? raw : Number(raw ?? 0);
+    return (
+      <text x={x} y={y} textAnchor="end" fill="currentColor" className="text-[14px] leading-tight" dy={4}>
+        {formatAxisCurrency(asNumber)}
+      </text>
+    );
+  };
 
   return (
     <div
@@ -295,13 +305,18 @@ const PdfChartFrame = forwardRef<
             tick={xAxisTick}
             allowDataOverflow={false}
           />
-          <YAxis tickFormatter={formatAxisCurrency} axisLine={false} tickLine={false} width={leftMargin - 5} />
+          <YAxis
+            axisLine={false}
+            tickLine={false}
+            width={leftMargin - 5}
+            tick={<PdfChartYAxisTick />}
+          />
           <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={maxBarSize} isAnimationActive={false}>
             <LabelList
               dataKey="value"
               position="top"
               formatter={(value: number) => (Number.isFinite(value) ? formatCurrency(value) : '')}
-              className="fill-muted-foreground text-[10px] font-medium"
+              className="fill-muted-foreground text-[12px] font-semibold"
             />
             {chart.data.map((entry) => (
               <Cell key={`pdf-${chart.code}-${entry.name}`} fill={`var(--color-${entry.name})`} />
@@ -2789,34 +2804,7 @@ export default function MonthlyStatement() {
   // X-axis tick: wrap into short lines so each label stays in its bar slot (no overlap) and full text is visible (no clip)
   const ChartXAxisTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value?: string } }) => {
     const raw = payload?.value ?? '';
-    const maxCharsPerLine = 14;
-    const lines = String(raw)
-      .split(/\s+/)
-      .reduce<string[]>((acc, word) => {
-        if (acc.length === 0) return [word];
-        const last = acc[acc.length - 1];
-        if ((last + ' ' + word).length <= maxCharsPerLine) {
-          acc[acc.length - 1] = `${last} ${word}`;
-        } else {
-          acc.push(word);
-        }
-        return acc;
-      }, []);
-
-    return (
-      <text x={x} y={y} textAnchor="middle" fill="currentColor" className="text-[11px] leading-tight" style={{ overflow: 'visible' }}>
-        {lines.map((line, index) => (
-          <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 11 : 13}>
-            {line}
-          </tspan>
-        ))}
-      </text>
-    );
-  };
-
-  const PdfChartXAxisTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value?: string } }) => {
-    const raw = payload?.value ?? '';
-    const maxCharsPerLine = 14;
+    const maxCharsPerLine = 12;
     const lines = String(raw)
       .split(/\s+/)
       .reduce<string[]>((acc, word) => {
@@ -2837,6 +2825,43 @@ export default function MonthlyStatement() {
             {line}
           </tspan>
         ))}
+      </text>
+    );
+  };
+
+  const PdfChartXAxisTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value?: string } }) => {
+    const raw = payload?.value ?? '';
+    const maxCharsPerLine = 12;
+    const lines = String(raw)
+      .split(/\s+/)
+      .reduce<string[]>((acc, word) => {
+        if (acc.length === 0) return [word];
+        const last = acc[acc.length - 1];
+        if ((last + ' ' + word).length <= maxCharsPerLine) {
+          acc[acc.length - 1] = `${last} ${word}`;
+        } else {
+          acc.push(word);
+        }
+        return acc;
+      }, []);
+
+    return (
+      <text x={x} y={y} textAnchor="middle" fill="currentColor" className="text-[15px] leading-tight" style={{ overflow: 'visible' }}>
+        {lines.map((line, index) => (
+          <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 15 : 17}>
+            {line}
+          </tspan>
+        ))}
+      </text>
+    );
+  };
+
+  const ChartYAxisTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value?: number | string } }) => {
+    const raw = payload?.value;
+    const asNumber = typeof raw === 'number' ? raw : Number(raw ?? 0);
+    return (
+      <text x={x} y={y} textAnchor="end" fill="currentColor" className="text-[13px] leading-tight" dy={4}>
+        {formatAxisCurrency(asNumber)}
       </text>
     );
   };
@@ -3078,18 +3103,18 @@ export default function MonthlyStatement() {
                         className="w-full aspect-auto min-h-[18rem] h-72 overflow-visible"
                         data-pdf-chart-container="true"
                       >
-                        <BarChart data={chart.data} margin={{ left: 0, right: 0, top: 28, bottom: 24 }} barCategoryGap="22%">
+                        <BarChart data={chart.data} margin={{ left: 0, right: 0, top: 34, bottom: 24 }} barCategoryGap="22%">
                             <CartesianGrid strokeDasharray="3 3" vertical={false} />
                           <XAxis
                             dataKey="shortLabel"
                             axisLine={false}
                             tickLine={false}
                             interval={0}
-                            height={130}
+                            height={150}
                             tick={<ChartXAxisTick />}
                             allowDataOverflow={false}
                           />
-                          <YAxis tickFormatter={formatAxisCurrency} axisLine={false} tickLine={false} />
+                          <YAxis axisLine={false} tickLine={false} tick={<ChartYAxisTick />} />
                           <ChartTooltip
                             content={
                               <ChartTooltipContent
@@ -3110,7 +3135,7 @@ export default function MonthlyStatement() {
                               dataKey="value"
                               position="top"
                               formatter={(value: number) => (Number.isFinite(value) ? formatCurrency(value) : '')}
-                              className="fill-muted-foreground text-[10px] font-medium"
+                              className="fill-muted-foreground text-[12px] font-semibold"
                             />
                             {chart.data.map((entry) => (
                               <Cell key={`${chart.code}-${entry.name}`} fill={`var(--color-${entry.name})`} />
