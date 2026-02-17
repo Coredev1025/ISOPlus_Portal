@@ -814,20 +814,37 @@ const SERVICE_BUCKET_TEMPLATES = {
 };
 
 function determineFundingCode(service = {}) {
-    const source = (service.fundingSource || '').toString().toLowerCase();
+    const source = (service.fundingSource || '').toString().toLowerCase().replace(/\s+/g, ' ').trim();
+    const category = (service.serviceCategory || '').toString().toLowerCase().replace(/\s+/g, ' ').trim();
+    const notes = (service.notes || service.taskName || service.service || '').toString().toLowerCase();
+
+    const hasHmToken = (s) => /(^|[^a-z])hm([^a-z]|$)/.test(s) || s.includes('(hm)') || s.includes('home mod');
+    const isAtShort = (s) =>
+        ((s.includes('assistive') || /(^|[^a-z])at([^a-z]|$)/.test(s)) && (s.includes('short-term') || s.includes('short term') || s.includes('short'))) ||
+        (s.includes('at - short') || s.includes('at short'));
+    const isAtOngoing = (s) =>
+        ((s.includes('assistive') || /(^|[^a-z])at([^a-z]|$)/.test(s)) && s.includes('ongoing')) ||
+        (s.includes('at - ongoing') || s.includes('at ongoing'));
+    const isHomeModification = (s) =>
+        s.includes('home modification') || s.includes('modification') || hasHmToken(s);
+
     if (source.includes('home support')) return 'HSQ';
     if (source.includes('restorative')) return 'RCP';
     if (source.includes('end-of-life') || source.includes('end of life')) return 'EOL';
-    if (source.includes('assistive') && source.includes('short')) return 'ATS';
-    if (source.includes('assistive') && source.includes('ongoing')) return 'ATO';
-    if (source.includes('modification')) return 'HMB';
+    if (isAtShort(source)) return 'ATS';
+    if (isAtOngoing(source)) return 'ATO';
+    if (isHomeModification(source)) return 'HMB';
 
-    const category = (service.serviceCategory || '').toString().toLowerCase();
+    if (category.includes('home support')) return 'HSQ';
     if (category.includes('restorative')) return 'RCP';
     if (category.includes('end-of-life') || category.includes('end of life')) return 'EOL';
-    if (category.includes('short')) return 'ATS';
-    if (category.includes('ongoing')) return 'ATO';
-    if (category.includes('modification')) return 'HMB';
+    if (isAtShort(category)) return 'ATS';
+    if (isAtOngoing(category)) return 'ATO';
+    if (isHomeModification(category)) return 'HMB';
+
+    if (isAtShort(notes)) return 'ATS';
+    if (isAtOngoing(notes)) return 'ATO';
+    if (isHomeModification(notes)) return 'HMB';
 
     return 'HSQ';
 }
@@ -950,16 +967,16 @@ const SERVICE_TABLE_CONFIG = {
             rowType: 'delivered'
         },
         adjustment: {
-            tableName: 'Table P10-2 copy',
-            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
-            totals: ['$P10-4 copy', '$P10-5 copy', '$P10-6 copy'],
-            rowType: 'committed'
-        },
-        committed: {
             tableName: 'Table P10-3 copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P10-7 copy', '$P10-8 copy', '$P10-9 copy'],
             rowType: 'adjustment'
+        },
+        committed: {
+            tableName: 'Table P10-2 copy',
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P10-4 copy', '$P10-5 copy', '$P10-6 copy'],
+            rowType: 'committed'
         }
     },
     ATO: {
@@ -970,16 +987,16 @@ const SERVICE_TABLE_CONFIG = {
             rowType: 'delivered'
         },
         adjustment: {
-            tableName: 'Table P11-2 copy',
-            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
-            totals: ['$P11-4 copy', '$P11-5 copy', '$P11-6 copy'],
-            rowType: 'committed'
-        },
-        committed: {
             tableName: 'Table P11-3  copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P11-7  copy', '$P11-8 copy', '$P11-9 1 copy'],
             rowType: 'adjustment'
+        },
+        committed: {
+            tableName: 'Table P11-2 copy',
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P11-4 copy', '$P11-5 copy', '$P11-6 copy'],
+            rowType: 'committed'
         }
     },
     HMB: {
@@ -990,16 +1007,16 @@ const SERVICE_TABLE_CONFIG = {
             rowType: 'delivered'
         },
         adjustment: {
-            tableName: 'Table P11-2 copy copy',
-            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
-            totals: ['$P12-4  copy', '$P11-5 copy copy', '$P11-6  copy'],
-            rowType: 'committed'
-        },
-        committed: {
             tableName: 'Table P12-3  copy',
             columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
             totals: ['$P12-7  copy', '$P11-8 copy copy', '$P11-9 1 copy copy'],
             rowType: 'adjustment'
+        },
+        committed: {
+            tableName: 'Table P11-2 copy copy',
+            columns: ['date', 'service', 'unit', 'quantity', 'unitPrice', 'totalAmount', 'govSubsidy', 'participantContribution'],
+            totals: ['$P12-4  copy', '$P11-5 copy copy', '$P11-6  copy'],
+            rowType: 'committed'
         }
     }
 };
@@ -3008,16 +3025,6 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
 
                 if (!status && canRecordDelivery) {
                     bucket.delivered.push(service);
-                }
-            });
-
-            // For codes with committed buckets (ATS, ATO, HMB), merge adjustment/refund rows
-            // into the delivered table so they appear at the bottom of the delivered section
-            ['ATS', 'ATO', 'HMB'].forEach(code => {
-                const bucket = serviceBuckets[code];
-                if (bucket?.adjustment?.length > 0 && bucket?.delivered) {
-                    bucket.delivered.push(...bucket.adjustment);
-                    bucket.adjustment = [];
                 }
             });
 

@@ -1518,14 +1518,33 @@ export default function MonthlyStatement() {
     return { width: 800, height: 600 };
   };
 
+  const waitForFontsAndNextPaint = async () => {
+    try {
+      const fonts = (document as any).fonts;
+      if (fonts?.ready) {
+        await fonts.ready;
+      }
+    } catch {
+    }
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  };
+
   // Composite separate chart images into one image (cols per row) for PDF export.
   const compositeChartImages = async (
     dataUrls: string[],
     cols: number,
-    cellSize?: { width: number; height: number }
+    cellSize?: { width: number; height: number },
+    options?: {
+      targetAspect?: number;
+      gap?: number;
+      background?: string;
+      fit?: 'contain' | 'cover';
+    }
   ): Promise<string> => {
     if (dataUrls.length === 0) return '';
-    const gap = 16;
+    const gap = options?.gap ?? 0;
+    const background = options?.background ?? 'white';
+    const fit = options?.fit ?? 'contain';
     const loadImage = (src: string): Promise<HTMLImageElement> =>
       new Promise((resolve, reject) => {
         const img = new Image();
@@ -1534,25 +1553,96 @@ export default function MonthlyStatement() {
         img.src = src;
       });
     const images = await Promise.all(dataUrls.map(loadImage));
-    const w = cellSize?.width ?? Math.max(...images.map((img) => img.width));
-    const h = cellSize?.height ?? Math.max(...images.map((img) => img.height));
+    const maxW = cellSize?.width ?? Math.max(...images.map((img) => img.width));
+    const maxH = cellSize?.height ?? Math.max(...images.map((img) => img.height));
     const rows = Math.ceil(images.length / cols);
+
+    // IMPORTANT:
+    // - pdfme scales images into a fixed (w,h) box without preserving aspect ratio.
+    // - Cropping loses information (your current issue).
+    // So we render a composite PNG that ALREADY matches the PDF box aspect ratio,
+    // and we *scale charts down to fit* (contain) instead of cropping.
+    const targetAspect = options?.targetAspect;
+    const validTargetAspect = !!targetAspect && Number.isFinite(targetAspect) && targetAspect > 0;
+    if (!validTargetAspect) {
+      // Fallback to a simple grid canvas (no enforced aspect).
+      const gridW = cols * maxW + (cols - 1) * gap;
+      const gridH = rows * maxH + (rows - 1) * gap;
+      const canvas = document.createElement("canvas");
+      canvas.width = gridW;
+      canvas.height = gridH;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return dataUrls[0];
+      ctx.imageSmoothingEnabled = true;
+      (ctx as unknown as { imageSmoothingQuality?: string }).imageSmoothingQuality = 'high';
+      ctx.fillStyle = background;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      images.forEach((img, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = col * (maxW + gap);
+        const y = row * (maxH + gap);
+        ctx.fillStyle = background;
+        ctx.fillRect(x, y, maxW, maxH);
+        const scale = Math.min(maxW / img.width, maxH / img.height);
+        const dw = img.width * scale;
+        const dh = img.height * scale;
+        ctx.drawImage(img, x + (maxW - dw) / 2, y + (maxH - dh) / 2, dw, dh);
+      });
+      return canvas.toDataURL("image/png");
+    }
+
+    // Choose a canvas size that preserves the target aspect while minimizing downscaling.
+    // Candidate A: base on width; Candidate B: base on height; pick larger effective scale.
+    const target = targetAspect as number;
+    const candA_W = Math.max(1, Math.round(cols * maxW + (cols - 1) * gap));
+    const candA_H = Math.max(1, Math.round(candA_W / target));
+    const candA_cellW = (candA_W - (cols - 1) * gap) / cols;
+    const candA_cellH = (candA_H - (rows - 1) * gap) / rows;
+    const candA_scale = Math.min(candA_cellW / maxW, candA_cellH / maxH);
+
+    const candB_H = Math.max(1, Math.round(rows * maxH + (rows - 1) * gap));
+    const candB_W = Math.max(1, Math.round(candB_H * target));
+    const candB_cellW = (candB_W - (cols - 1) * gap) / cols;
+    const candB_cellH = (candB_H - (rows - 1) * gap) / rows;
+    const candB_scale = Math.min(candB_cellW / maxW, candB_cellH / maxH);
+
+    const canvasW = candB_scale > candA_scale ? candB_W : candA_W;
+    const canvasH = candB_scale > candA_scale ? candB_H : candA_H;
+    const cellW = (canvasW - (cols - 1) * gap) / cols;
+    const cellH = (canvasH - (rows - 1) * gap) / rows;
+
     const canvas = document.createElement("canvas");
-    canvas.width = cols * w + (cols - 1) * gap;
-    canvas.height = rows * h + (rows - 1) * gap;
+    canvas.width = canvasW;
+    canvas.height = canvasH;
     const ctx = canvas.getContext("2d");
     if (!ctx) return dataUrls[0];
-    ctx.fillStyle = "white";
+    ctx.imageSmoothingEnabled = true;
+    (ctx as unknown as { imageSmoothingQuality?: string }).imageSmoothingQuality = 'high';
+    ctx.fillStyle = background;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+
     images.forEach((img, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
-      const x = col * (w + gap);
-      const y = row * (h + gap);
-      ctx.fillStyle = "white";
-      ctx.fillRect(x, y, w, h);
-      ctx.drawImage(img, x, y, w, h);
+      const x = col * (cellW + gap);
+      const y = row * (cellH + gap);
+      ctx.fillStyle = background;
+      ctx.fillRect(x, y, cellW, cellH);
+
+      // Per-cell fitting:
+      // - contain keeps everything visible
+      // - cover fills cell but may crop (avoid unless explicitly requested)
+      const scale = fit === 'cover'
+        ? Math.max(cellW / img.width, cellH / img.height)
+        : Math.min(cellW / img.width, cellH / img.height);
+      const dw = img.width * scale;
+      const dh = img.height * scale;
+      const dx = x + (cellW - dw) / 2;
+      const dy = y + (cellH - dh) / 2;
+      ctx.drawImage(img, dx, dy, dw, dh);
     });
+
     return canvas.toDataURL("image/png");
   };
 
@@ -1619,25 +1709,30 @@ export default function MonthlyStatement() {
       const chartsWithData = chartConfigs.filter((c) => c.hasData);
       if (chartsWithData.length > 0 && chartCardRefs.current.length > 0) {
         try {
+          const SUMMARY_TABLE_ASPECT = 170 / 125.8;
           const pdfCols = chartsWithData.length === 3 || chartsWithData.length > 4 ? 3 : 2;
-          const { width: chartW, height: chartH } = getPdfChartCellSize(pdfCols);
           const chartIndicesWithData = chartsWithData.map((c) => chartConfigs.indexOf(c));
-          // Capture existing on-page charts and stretch them into fixed PDF cells.
-          // (No offscreen re-rendering; compositing uses ctx.drawImage(img, ..., w, h) which stretches.)
+          await waitForFontsAndNextPaint();
           const imageDataUrls: string[] = [];
           for (const chartIdx of chartIndicesWithData) {
             const cardEl = chartCardRefs.current[chartIdx];
             const captureEl = (cardEl?.querySelector?.('[data-pdf-chart-container="true"]') as HTMLElement | null) ?? cardEl;
             if (!captureEl) continue;
             const dataUrl = await toPng(captureEl, {
-              pixelRatio: 2,
+              pixelRatio: 3,
               cacheBust: true,
               backgroundColor: "white",
             });
             imageDataUrls.push(dataUrl);
           }
           if (imageDataUrls.length > 0) {
-            chartImage = await compositeChartImages(imageDataUrls, pdfCols, { width: chartW, height: chartH });
+            chartImage = await compositeChartImages(imageDataUrls, pdfCols, undefined, {
+              targetAspect: SUMMARY_TABLE_ASPECT,
+              background: 'white',
+              gap: 0,
+              // Never crop: keep all labels visible in PDF.
+              fit: 'contain',
+            });
           }
         } catch (e) {
           console.warn("Chart capture for PDF failed:", e);
@@ -2672,7 +2767,18 @@ export default function MonthlyStatement() {
       }, []);
 
     return (
-      <text x={x} y={y} textAnchor="middle" fill="#111827" className="text-[18px] font-extrabold leading-tight" style={{ overflow: 'visible' }}>
+      <text
+        x={x}
+        y={y}
+        textAnchor="middle"
+        fill="#111827"
+        style={{
+          overflow: 'visible',
+          fontSize: 18,
+          fontWeight: 800,
+          lineHeight: 1.1,
+        }}
+      >
         {lines.map((line, index) => (
           <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 18 : 20}>
             {line}
@@ -2941,15 +3047,15 @@ export default function MonthlyStatement() {
                     <div
                       key={chart.code}
                       ref={(el) => { chartCardRefs.current[chartIndex] = el; }}
-                      className="rounded-lg border border-border/60 bg-card p-3 flex flex-col gap-3 shadow-sm"
+                      className="rounded-lg border border-border/60 bg-white p-3 flex flex-col gap-3 shadow-sm"
                     >
-                      <div className="rounded-md bg-[#eef5f3] overflow-hidden" data-pdf-chart-container="true">
+                      <div className="rounded-md bg-white overflow-hidden" data-pdf-chart-container="true">
                         <div className="px-2 py-2 text-center text-[20px] font-black text-[#111827]">
                           {chart.title}
                         </div>
                         <ChartContainer
                           config={chart.chartConfig}
-                          className="w-full aspect-auto min-h-[18rem] h-72 overflow-visible bg-transparent"
+                          className="w-full aspect-auto min-h-[18rem] h-72 overflow-visible bg-white"
                         >
                           <BarChart data={chart.data} margin={{ left: 4, right: 4, top: 44, bottom: 14 }} barCategoryGap="22%">
                             <CartesianGrid stroke="#d9e3e1" strokeDasharray="0" vertical={false} />
