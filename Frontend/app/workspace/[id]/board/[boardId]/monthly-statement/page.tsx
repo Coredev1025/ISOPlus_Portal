@@ -246,7 +246,7 @@ const PdfChartFrame = forwardRef<
   
   const leftMargin = Math.max(10, Math.floor(chartWidth * 0.08));
   const rightMargin = Math.max(10, Math.floor(chartWidth * 0.02));
-  const topMargin = 28;
+  const topMargin = 40;
   // Keep X labels readable without leaving a huge blank band under the chart.
   const bottomMargin = chartWidth <= 480 ? 120 : chartWidth <= 640 ? 105 : 90;
   
@@ -274,8 +274,8 @@ const PdfChartFrame = forwardRef<
     if (!label) return null;
 
     const cx = x + barWidth / 2;
-    const canFitInside = barHeight >= 28;
-    const cy = canFitInside ? y + 14 : y - 10;
+    // Always draw value just above the bar top.
+    const cy = Math.max(14, y - 8);
 
     return (
       <text
@@ -283,7 +283,7 @@ const PdfChartFrame = forwardRef<
         y={cy}
         textAnchor="middle"
         dominantBaseline="middle"
-        fill={canFitInside ? '#ffffff' : '#111827'}
+        fill="#111827"
         style={{ fontSize: 14, fontWeight: 700 }}
       >
         {label}
@@ -2893,8 +2893,8 @@ export default function MonthlyStatement() {
     if (!label) return null;
 
     const cx = x + barWidth / 2;
-    const canFitInside = barHeight >= 28;
-    const cy = canFitInside ? y + 14 : y - 10;
+    // Always draw value just above the bar top.
+    const cy = Math.max(14, y - 8);
 
     return (
       <text
@@ -2902,7 +2902,7 @@ export default function MonthlyStatement() {
         y={cy}
         textAnchor="middle"
         dominantBaseline="middle"
-        fill={canFitInside ? '#ffffff' : '#111827'}
+        fill="#111827"
         style={{ fontSize: 14, fontWeight: 700 }}
       >
         {label}
@@ -3144,7 +3144,7 @@ export default function MonthlyStatement() {
                           config={chart.chartConfig}
                           className="w-full aspect-auto min-h-[18rem] h-72 overflow-visible bg-transparent"
                         >
-                          <BarChart data={chart.data} margin={{ left: 8, right: 8, top: 30, bottom: 18 }} barCategoryGap="22%">
+                          <BarChart data={chart.data} margin={{ left: 8, right: 8, top: 40, bottom: 18 }} barCategoryGap="22%">
                             <CartesianGrid stroke="#d9e3e1" strokeDasharray="0" vertical={false} />
                             <XAxis
                               dataKey="shortLabel"
