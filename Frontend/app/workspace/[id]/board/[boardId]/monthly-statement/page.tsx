@@ -1518,11 +1518,23 @@ export default function MonthlyStatement() {
     return { width: 800, height: 600 };
   };
 
+  const waitForFontsAndNextPaint = async () => {
+    try {
+      const fonts = (document as any).fonts;
+      if (fonts?.ready) {
+        await fonts.ready;
+      }
+    } catch {
+    }
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  };
+
   // Composite separate chart images into one image (cols per row) for PDF export.
   const compositeChartImages = async (
     dataUrls: string[],
     cols: number,
-    cellSize?: { width: number; height: number }
+    cellSize?: { width: number; height: number },
+    options?: { targetAspect?: number }
   ): Promise<string> => {
     if (dataUrls.length === 0) return '';
     const gap = 16;
@@ -1537,21 +1549,44 @@ export default function MonthlyStatement() {
     const w = cellSize?.width ?? Math.max(...images.map((img) => img.width));
     const h = cellSize?.height ?? Math.max(...images.map((img) => img.height));
     const rows = Math.ceil(images.length / cols);
+    const gridW = cols * w + (cols - 1) * gap;
+    const gridH = rows * h + (rows - 1) * gap;
+
+    const targetAspect = options?.targetAspect;
+    const gridAspect = gridW / gridH;
+    let canvasW = gridW;
+    let canvasH = gridH;
+    if (targetAspect && Number.isFinite(targetAspect) && targetAspect > 0) {
+      if (gridAspect > targetAspect) {
+        canvasH = Math.round(gridW / targetAspect);
+      } else {
+        canvasW = Math.round(gridH * targetAspect);
+      }
+    }
+    const offsetX = Math.round((canvasW - gridW) / 2);
+    const offsetY = Math.round((canvasH - gridH) / 2);
+
     const canvas = document.createElement("canvas");
-    canvas.width = cols * w + (cols - 1) * gap;
-    canvas.height = rows * h + (rows - 1) * gap;
+    canvas.width = canvasW;
+    canvas.height = canvasH;
     const ctx = canvas.getContext("2d");
     if (!ctx) return dataUrls[0];
-    ctx.fillStyle = "white";
+    ctx.imageSmoothingEnabled = true;
+    (ctx as unknown as { imageSmoothingQuality?: string }).imageSmoothingQuality = 'high';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     images.forEach((img, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
-      const x = col * (w + gap);
-      const y = row * (h + gap);
+      const x = offsetX + col * (w + gap);
+      const y = offsetY + row * (h + gap);
       ctx.fillStyle = "white";
       ctx.fillRect(x, y, w, h);
-      ctx.drawImage(img, x, y, w, h);
+      const scale = Math.min(w / img.width, h / img.height);
+      const dw = img.width * scale;
+      const dh = img.height * scale;
+      const dx = x + (w - dw) / 2;
+      const dy = y + (h - dh) / 2;
+      ctx.drawImage(img, dx, dy, dw, dh);
     });
     return canvas.toDataURL("image/png");
   };
@@ -1619,25 +1654,24 @@ export default function MonthlyStatement() {
       const chartsWithData = chartConfigs.filter((c) => c.hasData);
       if (chartsWithData.length > 0 && chartCardRefs.current.length > 0) {
         try {
+          const SUMMARY_TABLE_ASPECT = 170 / 125.8;
           const pdfCols = chartsWithData.length === 3 || chartsWithData.length > 4 ? 3 : 2;
-          const { width: chartW, height: chartH } = getPdfChartCellSize(pdfCols);
           const chartIndicesWithData = chartsWithData.map((c) => chartConfigs.indexOf(c));
-          // Capture existing on-page charts and stretch them into fixed PDF cells.
-          // (No offscreen re-rendering; compositing uses ctx.drawImage(img, ..., w, h) which stretches.)
+          await waitForFontsAndNextPaint();
           const imageDataUrls: string[] = [];
           for (const chartIdx of chartIndicesWithData) {
             const cardEl = chartCardRefs.current[chartIdx];
             const captureEl = (cardEl?.querySelector?.('[data-pdf-chart-container="true"]') as HTMLElement | null) ?? cardEl;
             if (!captureEl) continue;
             const dataUrl = await toPng(captureEl, {
-              pixelRatio: 2,
+              pixelRatio: 3,
               cacheBust: true,
               backgroundColor: "white",
             });
             imageDataUrls.push(dataUrl);
           }
           if (imageDataUrls.length > 0) {
-            chartImage = await compositeChartImages(imageDataUrls, pdfCols, { width: chartW, height: chartH });
+            chartImage = await compositeChartImages(imageDataUrls, pdfCols, undefined, { targetAspect: SUMMARY_TABLE_ASPECT });
           }
         } catch (e) {
           console.warn("Chart capture for PDF failed:", e);
@@ -2672,7 +2706,18 @@ export default function MonthlyStatement() {
       }, []);
 
     return (
-      <text x={x} y={y} textAnchor="middle" fill="#111827" className="text-[18px] font-extrabold leading-tight" style={{ overflow: 'visible' }}>
+      <text
+        x={x}
+        y={y}
+        textAnchor="middle"
+        fill="#111827"
+        style={{
+          overflow: 'visible',
+          fontSize: 18,
+          fontWeight: 800,
+          lineHeight: 1.1,
+        }}
+      >
         {lines.map((line, index) => (
           <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 18 : 20}>
             {line}
