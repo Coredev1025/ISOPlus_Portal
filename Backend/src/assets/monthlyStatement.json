@@ -6842,7 +6842,7 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": false,
-                "text": "Restorative Care started { Funding Start Date}. Funding to { Funding end date}",
+                "text": "Restorative Care started { Funding Start Date}. Funding to end { Funding end date}",
                 "variables": [
                     " Funding Start Date",
                     " Funding end date"
