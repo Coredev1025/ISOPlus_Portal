@@ -374,7 +374,7 @@ const BUDGET_TABLE_COLUMNS: Record<string, string[]> = {
     'Received Amount ($)',
     'Allocated Time (Hr.)',
     'Allocated Amount ($-)',
-    'Current Balance ($)'
+    'Net Movement ($)'
   ]
 };
 
@@ -2249,7 +2249,7 @@ export default function MonthlyStatement() {
         return item.hscmAllocatedTime ?? 0;
       case 'Allocated Amount ($-)':
         return item.hscmAllocatedAmount ?? 0;
-      case 'Current Balance ($)':
+      case 'Net Movement ($)':
         return item.hscmCurrentBalance ?? item.remainingBalance ?? 0;
       default:
         return '';

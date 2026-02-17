@@ -852,6 +852,12 @@ export default function InvoiceGenerator() {
     }).format(amount || 0);
   };
 
+  const getInvoiceAmount = (record: ServiceRecord) => {
+    return isLowCatBoard ? (record.totalAmount || 0) : (record.participantContribution || 0);
+  };
+
+  const invoiceLabel = isLowCatBoard ? 'Tax Invoice' : 'Participant Tax Invoice';
+
   const formatDisplayDate = (dateString: string | null | undefined) => {
     if (!dateString) return '-';
     return dateString;
@@ -1745,7 +1751,7 @@ export default function InvoiceGenerator() {
         }
 
         setShowInvoiceModal(false);
-        showSuccessToast('Participant Tax Invoice generated', {
+        showSuccessToast(`${invoiceLabel} generated`, {
           description: `Invoice ${invoiceNumber} for ${participantName} (${itemCount} item${itemCount === 1 ? '' : 's'}) created. You can download it from the PDF Download column in the Service Records table.`
         });
         // Refresh data to show updated invoice numbers (silent mode to avoid showing another toast)
@@ -1843,7 +1849,7 @@ export default function InvoiceGenerator() {
         }
 
         setShowInvoiceModal(false);
-        showSuccessToast('Xero Participant Tax Invoice generated', {
+        showSuccessToast(`Xero ${invoiceLabel} generated`, {
           description: `Invoice ${invoiceNumber} for ${participantName} (${itemCount} item${itemCount === 1 ? '' : 's'}) created in Xero.`
         });
         // Refresh data to show updated invoice numbers (silent mode to avoid showing another toast)
@@ -2414,9 +2420,9 @@ export default function InvoiceGenerator() {
                   </div>
                   <Badge variant="secondary" className="text-lg px-3 py-1">
                     <DollarSign className="h-4 w-4 mr-1" />
-                    Total: ${eligibleRecords
+                    Total: {formatCurrency(eligibleRecords
                       .filter(r => selectedItems.has(r.id))
-                      .reduce((sum, record) => sum + (record.totalAmount || 0), 0).toFixed(2)}
+                      .reduce((sum, record) => sum + getInvoiceAmount(record), 0))}
                     {' '}
                     ({selectedItems.size} selected)
                   </Badge>
@@ -2459,8 +2465,8 @@ export default function InvoiceGenerator() {
                               </p>
                             </div>
                             <div className="text-right">
-                              <p className="font-semibold">${(record.totalAmount || 0).toFixed(2)}</p>
-                              <p className="text-xs text-muted-foreground">Total</p>
+                              <p className="font-semibold">{formatCurrency(getInvoiceAmount(record))}</p>
+                              <p className="text-xs text-muted-foreground">{isLowCatBoard ? 'Total' : 'Contribution'}</p>
                             </div>
                           </div>
                         </div>

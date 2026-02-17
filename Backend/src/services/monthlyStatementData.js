@@ -427,10 +427,7 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
             const receivedAmount = parseNumber(getValue(item, 'Received Amount ($)'));
             const allocatedTime = parseNumber(getValueMulti(item, ['Allocated time (Hr.)', 'Allocated Time (Hr.)']));
             const allocatedAmount = toOutflow(parseNumber(getValue(item, 'Allocated Amount ($-)')));
-            const currentBalanceValue = parseNumber(getValue(item, 'Current Balance ($)'));
-            const currentBalance = (Number.isFinite(currentBalanceValue) && currentBalanceValue !== 0)
-                ? currentBalanceValue
-                : (receivedAmount || 0) + (allocatedAmount || 0);
+            const currentBalance = parseNumber(getValue(item, 'Net Movement ($)'));
             const transactionType = (() => {
                 if (!transactionTypeValue) return '';
                 if (typeof transactionTypeValue === 'object' && transactionTypeValue.name) return transactionTypeValue.name;
@@ -460,7 +457,7 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
                 deliveredAmount: allocatedAmount || 0,
                 deliveredAmountRaw: allocatedAmount,
                 adjustmentAmount: 0,
-                remainingBalance: Math.max(0, currentBalance),
+                remainingBalance: currentBalance,
                 fundClassification: 'Care Management',
                 fundAmount: 0,
                 fund: '',
@@ -468,7 +465,7 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
                 fundingStartDate: null,
                 fundingEndDate: null,
                 primarySupplementLabel: '',
-                remainingBalanceEndOfMonth: Math.max(0, currentBalance),
+                remainingBalanceEndOfMonth: currentBalance,
                 remainingBalanceAllocationPeriod: 0,
                 hscmDate: dateValue || null,
                 hscmTransactionType: transactionType,
@@ -476,6 +473,8 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
                 hscmAllocatedTime: allocatedTime || 0,
                 hscmAllocatedAmount: allocatedAmount || 0,
                 hscmCurrentBalance: currentBalance || 0,
+                updatedAt: item.updatedAt,
+                createdAt: item.createdAt,
                 rawData: item.data || {}
             };
         }
@@ -523,26 +522,26 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
             return 0;
         })();
 
-        if (!totalAvailableBudget && code === 'HSQ') {
-            totalAvailableBudget =
-                availableFundStart +
-                quarterlyAdjustment +
-                primarySupplementAmount +
-                carryoverFunding +
-                commonwealthUnspent +
-                providerUnspent +
-                participantUnspent +
-                previousMonthSpending +
-                unspentReturned;
-        }
+        // if (!totalAvailableBudget && code === 'HSQ') {
+        //     totalAvailableBudget =
+        //         availableFundStart +
+        //         quarterlyAdjustment +
+        //         primarySupplementAmount +
+        //         carryoverFunding +
+        //         commonwealthUnspent +
+        //         providerUnspent +
+        //         participantUnspent +
+        //         previousMonthSpending +
+        //         unspentReturned;
+        // }
 
-        if (!totalAvailableBudget && (code === 'RCP' || code === 'EOL')) {
-            totalAvailableBudget = availableFundStart + primarySupplementAmount + previousSpendingAllocated;
-        }
+        // if (!totalAvailableBudget && (code === 'RCP' || code === 'EOL')) {
+        //     totalAvailableBudget = availableFundStart + primarySupplementAmount + previousSpendingAllocated;
+        // }
 
-        if (!totalAvailableBudget && availableFundStart) {
-            totalAvailableBudget = availableFundStart;
-        }
+        // if (!totalAvailableBudget && availableFundStart) {
+        //     totalAvailableBudget = availableFundStart;
+        // }
 
         const deliveredAmountRaw = (() => {
             if (code === 'ATS') {
@@ -612,8 +611,8 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
             : (code === 'RCP' || code === 'EOL' ? getValue(item, 'Remaining Balance for Allocation Period ($)') : null);
 
         const remainingBalanceEndOfMonth = (remainingBalanceEndOfMonthRaw !== null && remainingBalanceEndOfMonthRaw !== undefined)
-            ? Math.max(0, parseNumber(remainingBalanceEndOfMonthRaw))
-            : Math.max(0, totalAvailableBudget + deliveredAmountRaw + adjustmentAmount);
+            ? parseNumber(remainingBalanceEndOfMonthRaw)
+            : 0;
 
         let remainingBalanceAllocationPeriod = null;
         if (code === 'ATS' || code === 'ATO' || code === 'HMB') {
@@ -624,8 +623,8 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
                     : 'Remaining HM Balance for Allocation Period ($)';
             const allocationRaw = getValue(item, allocationAttr);
             remainingBalanceAllocationPeriod = (allocationRaw !== null && allocationRaw !== undefined)
-                ? Math.max(0, parseNumber(allocationRaw))
-                : Math.max(0, remainingBalanceEndOfMonth + committedFunds);
+                ? parseNumber(allocationRaw)
+                : 0;
         }
 
         const effectiveRemainingBalance = (code === 'ATS' || code === 'ATO' || code === 'HMB')
@@ -666,6 +665,8 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
             fund,
             committedFunds,
             fundingStreamId: getValue(item, 'Funding Stream'),
+            updatedAt: item.updatedAt,
+            createdAt: item.createdAt,
             rawData: item.data || {}
         };
     });
@@ -737,6 +738,7 @@ export async function fetchServiceItems(workspaceId, boardId, options = {}) {
         const useActualEnd = normalizeString(statusFormatted) === normalizeString(DELIVERED_STATUS);
         const scheduledStartDate = parseDate(scheduledStart);
         const actualEndDate = parseDate(actualEnd);
+        const statusNorm = normalizeString(statusFormatted);
 
         const profileValue = getValue(item, ATTR.PARTICIPANT_PROFILE);
         const profileId = extractRefId(profileValue);
@@ -752,7 +754,14 @@ export async function fetchServiceItems(workspaceId, boardId, options = {}) {
             item, scheduledStartDate, actualEndDate,
             scheduledStart,
             actualEnd,
-            filterDate: useActualEnd ? actualEndDate : scheduledStartDate,
+            filterDate: (() => {
+                if (useActualEnd) return actualEndDate;
+                const isAdjustmentLike = statusNorm.includes('adjust') || statusNorm.includes('refund') || statusNorm.includes('charge');
+                if (isAdjustmentLike) {
+                    return scheduledStartDate || actualEndDate || (item.updatedAt ? new Date(item.updatedAt) : null) || (item.createdAt ? new Date(item.createdAt) : null);
+                }
+                return scheduledStartDate;
+            })(),
             participantName: String(participantName),
             profileValue,
             statusFormatted: statusFormatted || '',
@@ -881,6 +890,8 @@ export async function fetchServiceItems(workspaceId, boardId, options = {}) {
             service,
             serviceProvider,
             deliveredBy: deliveredByName,
+            updatedAt: item.updatedAt,
+            createdAt: item.createdAt,
             scheduledStart,
             scheduledServiceDate: scheduledStart,
             scheduledShiftStart: scheduledStart,
