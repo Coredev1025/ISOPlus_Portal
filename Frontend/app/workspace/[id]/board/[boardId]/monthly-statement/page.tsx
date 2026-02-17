@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { ArrowLeft, Calendar, User, FileText, AlertCircle, FileCheck, FileSpreadsheet, ArrowUpDown, ArrowUp, ArrowDown, HelpCircle, Download } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
-import { useState, useEffect, useMemo, useRef, useCallback, forwardRef, type ReactElement } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { toPng } from "html-to-image";
 import {
   Table,
@@ -225,128 +225,6 @@ interface ChartCardConfig {
   serviceCount?: number;
   hasData: boolean;
 }
-
-const PdfChartFrame = forwardRef<
-  HTMLDivElement,
-  {
-    chart: ChartCardConfig;
-    width: number;
-    height: number;
-    chartId: string;
-    xAxisTick: ReactElement;
-    formatAxisCurrency: (value: number) => string;
-    formatCurrency: (amount?: number | null) => string;
-  }
->(({ chart, width, height, chartId, xAxisTick, formatAxisCurrency, formatCurrency }, ref) => {
-  const padding = 20;
-  const gap = 12;
-  const titleHeight = 24;
-  const chartWidth = Math.max(0, Math.floor(width - padding * 2));
-  const chartHeight = Math.max(0, Math.floor(height - padding * 2 - titleHeight - gap));
-  
-  const leftMargin = Math.max(10, Math.floor(chartWidth * 0.08));
-  const rightMargin = Math.max(10, Math.floor(chartWidth * 0.02));
-  const topMargin = 40;
-  // Keep X labels readable without leaving a huge blank band under the chart.
-  const bottomMargin = chartWidth <= 480 ? 120 : chartWidth <= 640 ? 105 : 90;
-  
-  const numBars = chart.data.length;
-  const barGapPercentage = numBars <= 2 ? "30%" : numBars === 3 ? "22%" : "18%";
-  
-  const availableWidth = chartWidth - leftMargin - rightMargin;
-  const maxBarSize = Math.min(80, Math.floor(availableWidth / (numBars * 2)));
-
-  const PdfBarValueLabel = ({
-    x,
-    y,
-    width: barWidth,
-    height: barHeight,
-    value,
-  }: {
-    x?: number;
-    y?: number;
-    width?: number;
-    height?: number;
-    value?: number;
-  }) => {
-    if (x == null || y == null || barWidth == null || barHeight == null || value == null) return null;
-    const label = Number.isFinite(value) ? formatCurrency(value) : '';
-    if (!label) return null;
-
-    const cx = x + barWidth / 2;
-    // Always draw value just above the bar top.
-    const cy = Math.max(14, y - 8);
-
-    return (
-      <text
-        x={cx}
-        y={cy}
-        textAnchor="middle"
-        dominantBaseline="middle"
-        fill="#111827"
-        style={{ fontSize: 14, fontWeight: 700 }}
-      >
-        {label}
-      </text>
-    );
-  };
-
-  return (
-    <div
-      ref={ref}
-      data-chart={chartId}
-      className="text-xs [&_.recharts-cartesian-axis-tick_text]:fill-muted-foreground [&_.recharts-cartesian-grid_line[stroke='#ccc']]:stroke-border/50 [&_.recharts-curve.recharts-tooltip-cursor]:stroke-border [&_.recharts-dot[stroke='#fff']]:stroke-transparent [&_.recharts-layer]:outline-none [&_.recharts-polar-grid_[stroke='#ccc']]:stroke-border [&_.recharts-radial-bar-background-sector]:fill-muted [&_.recharts-rectangle.recharts-tooltip-cursor]:fill-muted [&_.recharts-reference-line_[stroke='#ccc']]:stroke-border [&_.recharts-sector[stroke='#fff']]:stroke-transparent [&_.recharts-sector]:outline-none [&_.recharts-surface]:outline-none"
-      style={{
-        width: `${width}px`,
-        height: `${height}px`,
-        background: '#eef5f3',
-        borderRadius: '8px',
-        boxSizing: 'border-box',
-        padding: `${padding}px`,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: `${gap}px`,
-        overflow: 'hidden',
-      }}
-    >
-      <ChartStyle id={chartId} config={chart.chartConfig} />
-      <div style={{ height: `${titleHeight}px`, fontSize: 16, fontWeight: 700, lineHeight: 1.2, textAlign: 'center', color: '#111827' }}>
-        {chart.title}
-      </div>
-      <div style={{ flex: '1 1 auto', minHeight: 0 }}>
-        <BarChart
-          width={chartWidth}
-          height={chartHeight}
-          data={chart.data}
-          margin={{ left: leftMargin, right: rightMargin, top: topMargin, bottom: bottomMargin }}
-          barCategoryGap={barGapPercentage}
-        >
-          <CartesianGrid stroke="#d9e3e1" strokeDasharray="0" vertical={false} />
-          <XAxis
-            dataKey="shortLabel"
-            axisLine={{ stroke: '#111827', strokeWidth: 1 }}
-            tickLine={false}
-            interval={0}
-            height={bottomMargin - 18}
-            tick={xAxisTick}
-            allowDataOverflow={false}
-          />
-          <YAxis hide />
-          <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={maxBarSize} isAnimationActive={false}>
-            <LabelList
-              dataKey="value"
-              content={<PdfBarValueLabel />}
-            />
-            {chart.data.map((entry) => (
-              <Cell key={`pdf-${chart.code}-${entry.name}`} fill={`var(--color-${entry.name})`} />
-            ))}
-          </Bar>
-        </BarChart>
-      </div>
-    </div>
-  );
-});
-PdfChartFrame.displayName = 'PdfChartFrame';
 
 const BUDGET_CATEGORY_LABELS: Record<string, string> = {
   HSQ: 'Home Support Quarterly Budget',
@@ -764,14 +642,6 @@ export default function MonthlyStatement() {
   const [distinctFundingSources, setDistinctFundingSources] = useState<string[]>([]);
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartCardRefs = useRef<(HTMLDivElement | null)[]>([]);
-  type PdfChartCaptureRequest = {
-    width: number;
-    height: number;
-    indices: number[]; // chart indices (into chartConfigs) in capture order
-  } | null;
-  const [pdfChartCaptureRequest, setPdfChartCaptureRequest] = useState<PdfChartCaptureRequest>(null);
-  const pdfChartCaptureRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const isPdfChartCaptureMode = pdfChartCaptureRequest !== null;
   const [isManualSyncing, setIsManualSyncing] = useState(false);
   const [showHelpDialog, setShowHelpDialog] = useState(false);
   const syncCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -1752,47 +1622,14 @@ export default function MonthlyStatement() {
           const pdfCols = chartsWithData.length === 3 || chartsWithData.length > 4 ? 3 : 2;
           const { width: chartW, height: chartH } = getPdfChartCellSize(pdfCols);
           const chartIndicesWithData = chartsWithData.map((c) => chartConfigs.indexOf(c));
-          // Render fixed-size offscreen charts for capture.
-          setPdfChartCaptureRequest({ width: chartW, height: chartH, indices: chartIndicesWithData });
-
-          // Allow React render + fonts + Recharts layout to settle before capture.
-          await new Promise<void>((resolve) =>
-            requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-          );
-          // If fonts are still loading, wait (prevents layout differences in SVG text).
-          try {
-            if (document.fonts?.ready) await document.fonts.ready;
-          } catch { /* ignore */ }
-
-          // Wait until all capture nodes are mounted and sized correctly.
-          const waitForCaptureNodes = async (expected: number, w: number, h: number) => {
-            const start = performance.now();
-            while (performance.now() - start < 2500) {
-              const els = pdfChartCaptureRefs.current.slice(0, expected).filter(Boolean) as HTMLDivElement[];
-              if (els.length === expected) {
-                const ready = els.every((el) => {
-                  const rect = el.getBoundingClientRect();
-                  if (Math.abs(rect.width - w) > 1 || Math.abs(rect.height - h) > 1) return false;
-                  const svg = el.querySelector('svg.recharts-surface') as SVGSVGElement | null;
-                  if (!svg) return false;
-                  const svgW = Number(svg.getAttribute('width'));
-                  const svgH = Number(svg.getAttribute('height'));
-                  return Number.isFinite(svgW) && svgW > 0 && Number.isFinite(svgH) && svgH > 0;
-                });
-                if (ready) return true;
-              }
-              await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-            }
-            return false;
-          };
-
-          await waitForCaptureNodes(chartIndicesWithData.length, chartW, chartH);
-
+          // Capture existing on-page charts and stretch them into fixed PDF cells.
+          // (No offscreen re-rendering; compositing uses ctx.drawImage(img, ..., w, h) which stretches.)
           const imageDataUrls: string[] = [];
-          for (let i = 0; i < chartIndicesWithData.length; i++) {
-            const el = pdfChartCaptureRefs.current[i];
-            if (!el) continue;
-            const dataUrl = await toPng(el, {
+          for (const chartIdx of chartIndicesWithData) {
+            const cardEl = chartCardRefs.current[chartIdx];
+            const captureEl = (cardEl?.querySelector?.('[data-pdf-chart-container="true"]') as HTMLElement | null) ?? cardEl;
+            if (!captureEl) continue;
+            const dataUrl = await toPng(captureEl, {
               pixelRatio: 2,
               cacheBust: true,
               backgroundColor: "white",
@@ -1804,9 +1641,6 @@ export default function MonthlyStatement() {
           }
         } catch (e) {
           console.warn("Chart capture for PDF failed:", e);
-        } finally {
-          setPdfChartCaptureRequest(null);
-          pdfChartCaptureRefs.current = [];
         }
       }
 
@@ -2823,7 +2657,7 @@ export default function MonthlyStatement() {
   // X-axis tick: wrap into short lines so each label stays in its bar slot (no overlap) and full text is visible (no clip)
   const ChartXAxisTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value?: string } }) => {
     const raw = payload?.value ?? '';
-    const maxCharsPerLine = 12;
+    const maxCharsPerLine = 14;
     const lines = String(raw)
       .split(/\s+/)
       .reduce<string[]>((acc, word) => {
@@ -2838,36 +2672,9 @@ export default function MonthlyStatement() {
       }, []);
 
     return (
-      <text x={x} y={y} textAnchor="middle" fill="#111827" className="text-[14px] font-semibold leading-tight" style={{ overflow: 'visible' }}>
+      <text x={x} y={y} textAnchor="middle" fill="#111827" className="text-[18px] font-extrabold leading-tight" style={{ overflow: 'visible' }}>
         {lines.map((line, index) => (
-          <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 13 : 15}>
-            {line}
-          </tspan>
-        ))}
-      </text>
-    );
-  };
-
-  const PdfChartXAxisTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value?: string } }) => {
-    const raw = payload?.value ?? '';
-    const maxCharsPerLine = 12;
-    const lines = String(raw)
-      .split(/\s+/)
-      .reduce<string[]>((acc, word) => {
-        if (acc.length === 0) return [word];
-        const last = acc[acc.length - 1];
-        if ((last + ' ' + word).length <= maxCharsPerLine) {
-          acc[acc.length - 1] = `${last} ${word}`;
-        } else {
-          acc.push(word);
-        }
-        return acc;
-      }, []);
-
-    return (
-      <text x={x} y={y} textAnchor="middle" fill="#111827" className="text-[16px] font-semibold leading-tight" style={{ overflow: 'visible' }}>
-        {lines.map((line, index) => (
-          <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 15 : 17}>
+          <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 18 : 20}>
             {line}
           </tspan>
         ))}
@@ -2894,7 +2701,7 @@ export default function MonthlyStatement() {
 
     const cx = x + barWidth / 2;
     // Always draw value just above the bar top.
-    const cy = Math.max(14, y - 8);
+    const cy = Math.max(22, y - 8);
 
     return (
       <text
@@ -2903,7 +2710,7 @@ export default function MonthlyStatement() {
         textAnchor="middle"
         dominantBaseline="middle"
         fill="#111827"
-        style={{ fontSize: 14, fontWeight: 700 }}
+        style={{ fontSize: 20, fontWeight: 900 }}
       >
         {label}
       </text>
@@ -3134,24 +2941,24 @@ export default function MonthlyStatement() {
                     <div
                       key={chart.code}
                       ref={(el) => { chartCardRefs.current[chartIndex] = el; }}
-                      className="rounded-lg border border-border/60 bg-card p-5 flex flex-col gap-4 shadow-sm"
+                      className="rounded-lg border border-border/60 bg-card p-3 flex flex-col gap-3 shadow-sm"
                     >
                       <div className="rounded-md bg-[#eef5f3] overflow-hidden" data-pdf-chart-container="true">
-                        <div className="px-3 py-2 text-center text-[15px] font-bold text-[#111827]">
+                        <div className="px-2 py-2 text-center text-[20px] font-black text-[#111827]">
                           {chart.title}
                         </div>
                         <ChartContainer
                           config={chart.chartConfig}
                           className="w-full aspect-auto min-h-[18rem] h-72 overflow-visible bg-transparent"
                         >
-                          <BarChart data={chart.data} margin={{ left: 8, right: 8, top: 40, bottom: 18 }} barCategoryGap="22%">
+                          <BarChart data={chart.data} margin={{ left: 4, right: 4, top: 44, bottom: 14 }} barCategoryGap="22%">
                             <CartesianGrid stroke="#d9e3e1" strokeDasharray="0" vertical={false} />
                             <XAxis
                               dataKey="shortLabel"
                               axisLine={{ stroke: '#111827', strokeWidth: 1 }}
                               tickLine={false}
                               interval={0}
-                              height={120}
+                              height={132}
                               tick={<ChartXAxisTick />}
                               allowDataOverflow={false}
                             />
@@ -3170,7 +2977,7 @@ export default function MonthlyStatement() {
                               dataKey="value"
                               radius={[6, 6, 0, 0]}
                               maxBarSize={52}
-                              isAnimationActive={!isPdfChartCaptureMode}
+                              isAnimationActive={false}
                             >
                               <LabelList dataKey="value" content={<ChartBarValueLabel />} />
                               {chart.data.map((entry) => (
@@ -3190,41 +2997,6 @@ export default function MonthlyStatement() {
                 </div>
               )}
             </Card>
-
-            {/* Offscreen fixed-size chart renderer for PDF capture (prevents Recharts layout mismatches). */}
-            {pdfChartCaptureRequest && (
-              <div
-                aria-hidden="true"
-                style={{
-                  position: 'fixed',
-                  left: '-100000px',
-                  top: 0,
-                  width: 0,
-                  height: 0,
-                  overflow: 'hidden',
-                  pointerEvents: 'none',
-                }}
-              >
-                {pdfChartCaptureRequest.indices.map((chartIdx, i) => {
-                  const chart = chartConfigs[chartIdx];
-                  if (!chart) return null;
-                  const chartId = `pdfchart-${chart.code}-${i}`;
-                  return (
-                    <PdfChartFrame
-                      key={`pdf-capture-${chart.code}`}
-                      ref={(el) => { pdfChartCaptureRefs.current[i] = el; }}
-                      chart={chart}
-                      width={pdfChartCaptureRequest.width}
-                      height={pdfChartCaptureRequest.height}
-                      chartId={chartId}
-                      xAxisTick={<PdfChartXAxisTick />}
-                      formatAxisCurrency={formatAxisCurrency}
-                      formatCurrency={formatCurrency}
-                    />
-                  );
-                })}
-              </div>
-            )}
 
             {/* Individualised Budgets */}
             <Card className="shadow-lg print:shadow-none">
