@@ -2804,9 +2804,9 @@ export default function MonthlyStatement() {
       }, []);
 
     return (
-      <text x={x} y={y} textAnchor="middle" fill="currentColor" className="text-[9px] leading-tight" style={{ overflow: 'visible' }}>
+      <text x={x} y={y} textAnchor="middle" fill="currentColor" className="text-[11px] leading-tight" style={{ overflow: 'visible' }}>
         {lines.map((line, index) => (
-          <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 9 : 11}>
+          <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 11 : 13}>
             {line}
           </tspan>
         ))}
@@ -2831,9 +2831,9 @@ export default function MonthlyStatement() {
       }, []);
 
     return (
-      <text x={x} y={y} textAnchor="middle" fill="currentColor" className="text-[11px] leading-tight" style={{ overflow: 'visible' }}>
+      <text x={x} y={y} textAnchor="middle" fill="currentColor" className="text-[13px] leading-tight" style={{ overflow: 'visible' }}>
         {lines.map((line, index) => (
-          <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 11 : 13}>
+          <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 13 : 15}>
             {line}
           </tspan>
         ))}
@@ -3085,7 +3085,7 @@ export default function MonthlyStatement() {
                             axisLine={false}
                             tickLine={false}
                             interval={0}
-                            height={110}
+                            height={130}
                             tick={<ChartXAxisTick />}
                             allowDataOverflow={false}
                           />
