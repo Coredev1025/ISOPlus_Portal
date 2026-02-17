@@ -241,11 +241,51 @@ const getFolderIds = async (folderName, workspaceId, boardId, providedFolders = 
     if (!Array.isArray(folders)) {
         try {
             const { folder } = await getFolder(workspaceId, boardId);
-            folders = folder || [];
+            folders = Array.isArray(folder) ? folder : [];
         } catch { return []; }
     }
-    const names = folderName.toLowerCase().split(',').map(n => n.trim());
-    return folders.filter(f => f.name && names.some(n => f.name.toLowerCase().includes(n))).map(f => f.id);
+    const names = String(folderName || '')
+        .toLowerCase()
+        .split(',')
+        .map(n => n.trim())
+        .filter(Boolean);
+    if (names.length === 0) return [];
+    return folders
+        .filter(f => f?.name && names.some(n => String(f.name).toLowerCase().includes(n)))
+        .map(f => f.id);
+};
+
+const normalizeMonthParam = (month) => {
+    if (month === null || month === undefined || month === '') return null;
+    const raw = String(month).trim();
+    if (!/^\d{1,2}$/.test(raw)) return null;
+    const padded = raw.padStart(2, '0');
+    return MONTH_LABELS[padded] ? padded : null;
+};
+
+const normalizeYearParam = (year) => {
+    if (year === null || year === undefined || year === '') return '';
+    return String(year).trim();
+};
+
+const normalizeParticipantParam = (participant) => {
+    if (participant === null || participant === undefined) return '';
+    if (typeof participant === 'string') return participant.trim();
+    if (typeof participant === 'number' || typeof participant === 'boolean') return String(participant).trim();
+
+    if (Array.isArray(participant)) {
+        const ref = extractRefId(participant);
+        return ref ? String(ref).trim() : '';
+    }
+    if (typeof participant === 'object') {
+        if (participant.id) return String(participant.id).trim();
+        if (participant.value) return String(participant.value).trim();
+        if (participant.name) return String(participant.name).trim();
+        const ref = extractRefId(participant);
+        return ref ? String(ref).trim() : '';
+    }
+
+    return String(participant).trim();
 };
 
 const bulkFetchItems = async (workspaceId, boardId, itemIds) => {
@@ -331,6 +371,8 @@ const isPrimarySupplementOrUnspentHcp = (name) => {
 
 export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
     const { participant, month, year, categoryCode } = options;
+    const participantParam = normalizeParticipantParam(participant);
+    const yearParam = normalizeYearParam(year);
 
     let folders = [];
     try {
@@ -672,19 +714,19 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
     });
 
     const isIdLike = (value) => typeof value === 'string' && value.includes('-');
-    const normalizedParticipant = normalizeString(participant);
+    const normalizedParticipant = normalizeString(participantParam);
 
-    const normalizedMonth = typeof month === 'string' ? month.padStart(2, '0') : null;
+    const normalizedMonth = normalizeMonthParam(month);
     const targetMonthLabel = normalizedMonth && MONTH_LABELS[normalizedMonth] ? MONTH_LABELS[normalizedMonth] : null;
 
     let result = transformed.filter(item => {
         const matchesParticipant = normalizedParticipant
-            ? (isIdLike(participant)
-                ? item.participantProfileId === participant
+            ? (isIdLike(participantParam)
+                ? item.participantProfileId === participantParam
                 : normalizeString(item.participantName) === normalizedParticipant)
             : true;
 
-        const matchesYear = year ? normalizeString(item.year) === normalizeString(year) : true;
+        const matchesYear = yearParam ? normalizeString(item.year) === normalizeString(yearParam) : true;
         const matchesMonth = targetMonthLabel ? normalizeString(item.month) === normalizeString(targetMonthLabel) : true;
         return matchesParticipant && matchesYear && matchesMonth;
     });
@@ -705,6 +747,7 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
 
 export async function fetchServiceItems(workspaceId, boardId, options = {}) {
     const { participant, startDate, endDate, transactionStatusFilter, fundingSourceFilter } = options;
+    const participantParam = normalizeParticipantParam(participant);
 
     const businessProfile = await Business.findOne({ workspaceId: workspaceId.toString() }).select('name').lean();
 
@@ -771,9 +814,9 @@ export async function fetchServiceItems(workspaceId, boardId, options = {}) {
         };
     });
 
-    if (participant && participant !== 'all') {
+    if (participantParam && participantParam !== 'all') {
         try {
-            const re = new RegExp(participant, 'i');
+            const re = new RegExp(participantParam, 'i');
             processed = processed.filter(p =>
                 re.test(p.participantName) ||
                 (p.profileValue && (
