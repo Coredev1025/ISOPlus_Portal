@@ -1988,7 +1988,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 const receivedAmount = getNumberFromItem(item, 'Received Amount ($)');
                 const allocatedTime = getNumberFromItem(item, [ATTRIBUTE_NAMES.ALLOCATED_TIME, 'Allocated Time (Hr.)']);
                 const allocatedAmount = getNumberFromItem(item, 'Allocated Amount ($-)');
-                const currentBalanceValue = getNumberFromItem(item, 'Current Balance ($)');
+                const currentBalanceValue = getNumberFromItem(item, 'Net Movement ($)');
                 const currentBalance = Number.isFinite(currentBalanceValue) && currentBalanceValue !== 0
                     ? currentBalanceValue
                     : (receivedAmount || 0) + (allocatedAmount || 0);

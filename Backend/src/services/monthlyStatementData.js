@@ -427,7 +427,7 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
             const receivedAmount = parseNumber(getValue(item, 'Received Amount ($)'));
             const allocatedTime = parseNumber(getValueMulti(item, ['Allocated time (Hr.)', 'Allocated Time (Hr.)']));
             const allocatedAmount = toOutflow(parseNumber(getValue(item, 'Allocated Amount ($-)')));
-            const currentBalance = parseNumber(getValue(item, 'Current Balance ($)'));
+            const currentBalance = parseNumber(getValue(item, 'Net Movement ($)'));
             const transactionType = (() => {
                 if (!transactionTypeValue) return '';
                 if (typeof transactionTypeValue === 'object' && transactionTypeValue.name) return transactionTypeValue.name;
