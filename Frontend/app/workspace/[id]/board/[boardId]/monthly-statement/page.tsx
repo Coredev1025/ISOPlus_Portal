@@ -243,6 +243,17 @@ const PdfChartFrame = forwardRef<
   const titleHeight = 24;
   const chartWidth = Math.max(0, Math.floor(width - padding * 2));
   const chartHeight = Math.max(0, Math.floor(height - padding * 2 - titleHeight - gap));
+  
+  const leftMargin = Math.max(10, Math.floor(chartWidth * 0.08));
+  const rightMargin = Math.max(10, Math.floor(chartWidth * 0.02));
+  const topMargin = 28;
+  const bottomMargin = Math.min(120, Math.max(80, Math.floor(chartHeight * 0.25)));
+  
+  const numBars = chart.data.length;
+  const barGapPercentage = numBars <= 2 ? "30%" : numBars === 3 ? "22%" : "18%";
+  
+  const availableWidth = chartWidth - leftMargin - rightMargin;
+  const maxBarSize = Math.min(80, Math.floor(availableWidth / (numBars * 2)));
 
   return (
     <div
@@ -271,8 +282,8 @@ const PdfChartFrame = forwardRef<
           width={chartWidth}
           height={chartHeight}
           data={chart.data}
-          margin={{ left: 0, right: 0, top: 28, bottom: 24 }}
-          barCategoryGap="22%"
+          margin={{ left: leftMargin, right: rightMargin, top: topMargin, bottom: bottomMargin }}
+          barCategoryGap={barGapPercentage}
         >
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis
@@ -280,12 +291,12 @@ const PdfChartFrame = forwardRef<
             axisLine={false}
             tickLine={false}
             interval={0}
-            height={110}
+            height={bottomMargin - 10}
             tick={xAxisTick}
             allowDataOverflow={false}
           />
-          <YAxis tickFormatter={formatAxisCurrency} axisLine={false} tickLine={false} />
-          <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={42} isAnimationActive={false}>
+          <YAxis tickFormatter={formatAxisCurrency} axisLine={false} tickLine={false} width={leftMargin - 5} />
+          <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={maxBarSize} isAnimationActive={false}>
             <LabelList
               dataKey="value"
               position="top"
