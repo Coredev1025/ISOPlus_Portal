@@ -2814,6 +2814,33 @@ export default function MonthlyStatement() {
     );
   };
 
+  const PdfChartXAxisTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value?: string } }) => {
+    const raw = payload?.value ?? '';
+    const maxCharsPerLine = 14;
+    const lines = String(raw)
+      .split(/\s+/)
+      .reduce<string[]>((acc, word) => {
+        if (acc.length === 0) return [word];
+        const last = acc[acc.length - 1];
+        if ((last + ' ' + word).length <= maxCharsPerLine) {
+          acc[acc.length - 1] = `${last} ${word}`;
+        } else {
+          acc.push(word);
+        }
+        return acc;
+      }, []);
+
+    return (
+      <text x={x} y={y} textAnchor="middle" fill="currentColor" className="text-[11px] leading-tight" style={{ overflow: 'visible' }}>
+        {lines.map((line, index) => (
+          <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 11 : 13}>
+            {line}
+          </tspan>
+        ))}
+      </text>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -3133,7 +3160,7 @@ export default function MonthlyStatement() {
                       width={pdfChartCaptureRequest.width}
                       height={pdfChartCaptureRequest.height}
                       chartId={chartId}
-                      xAxisTick={<ChartXAxisTick />}
+                      xAxisTick={<PdfChartXAxisTick />}
                       formatAxisCurrency={formatAxisCurrency}
                       formatCurrency={formatCurrency}
                     />
