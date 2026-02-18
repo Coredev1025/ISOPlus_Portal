@@ -2771,7 +2771,7 @@ export default function MonthlyStatement() {
         x={x}
         y={y}
         textAnchor="middle"
-        fill="#111827"
+        fill="hsl(var(--foreground))"
         style={{
           overflow: 'visible',
           fontSize: 18,
@@ -2815,7 +2815,7 @@ export default function MonthlyStatement() {
         y={cy}
         textAnchor="middle"
         dominantBaseline="middle"
-        fill="#111827"
+        fill="hsl(var(--foreground))"
         style={{ fontSize: 20, fontWeight: 900 }}
       >
         {label}
@@ -2840,7 +2840,7 @@ export default function MonthlyStatement() {
 
             {/* Header */}
             <div className="mb-8">
-              <h1 className="text-3xl font-bold mb-2 text-black">
+              <h1 className="text-3xl font-bold mb-2 text-foreground">
                 Monthly Statement Generator
               </h1>
               <p className="text-muted-foreground">
@@ -3047,21 +3047,21 @@ export default function MonthlyStatement() {
                     <div
                       key={chart.code}
                       ref={(el) => { chartCardRefs.current[chartIndex] = el; }}
-                      className="rounded-lg border border-border/60 bg-white p-3 flex flex-col gap-3 shadow-sm"
+                      className="rounded-lg border border-border/60 bg-background p-3 flex flex-col gap-3 shadow-sm dark:bg-black dark:border-white/10 print:bg-white"
                     >
-                      <div className="rounded-md bg-white overflow-hidden" data-pdf-chart-container="true">
-                        <div className="px-2 py-2 text-center text-[20px] font-black text-[#111827]">
+                      <div className="rounded-md bg-background overflow-hidden dark:bg-black print:bg-white" data-pdf-chart-container="true">
+                        <div className="px-2 py-2 text-center text-[20px] font-black text-foreground dark:text-white print:text-black">
                           {chart.title}
                         </div>
                         <ChartContainer
                           config={chart.chartConfig}
-                          className="w-full aspect-auto min-h-[18rem] h-72 overflow-visible bg-white"
+                          className="w-full aspect-auto min-h-[18rem] h-72 overflow-visible bg-background dark:bg-black print:bg-white"
                         >
                           <BarChart data={chart.data} margin={{ left: 4, right: 4, top: 44, bottom: 14 }} barCategoryGap="22%">
-                            <CartesianGrid stroke="#d9e3e1" strokeDasharray="0" vertical={false} />
+                            <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="0" vertical={false} />
                             <XAxis
                               dataKey="shortLabel"
-                              axisLine={{ stroke: '#111827', strokeWidth: 1 }}
+                              axisLine={{ stroke: 'hsl(var(--muted-foreground))', strokeWidth: 1 }}
                               tickLine={false}
                               interval={0}
                               height={132}
@@ -3343,7 +3343,7 @@ export default function MonthlyStatement() {
                             {service.committedAtHmForDelivery && service.committedAtHmForDelivery > 0 ? (
                               <span className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-blue-500 text-white">Yes</span>
                             ) : (
-                              <span className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-white text-foreground border border-input">No</span>
+                                <span className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-background text-foreground border border-input dark:bg-white/10 dark:text-white dark:border-white/10">No</span>
                             )}
                           </TableCell>
                           <TableCell className="whitespace-nowrap">{service.unit || '-'}</TableCell>
@@ -3356,7 +3356,7 @@ export default function MonthlyStatement() {
                           <TableCell className="max-w-[250px]">
                             {service.notes && service.notes.trim() ? (
                               <div
-                                className="notes-cell text-sm prose prose-p:my-0.5 prose-p:leading-tight max-w-none"
+                                className="notes-cell text-sm prose prose-p:my-0.5 prose-p:leading-tight max-w-none dark:prose-invert"
                                 dangerouslySetInnerHTML={{ __html: sanitizeNotesHtml(service.notes) }}
                               />
                             ) : (
