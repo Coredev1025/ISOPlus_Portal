@@ -3,6 +3,15 @@ import dotenv from 'dotenv';
 import { info, warn, error, extractContextFromReq } from '../utils/logger.js';
 import { getItemValues, getAgeCareParticipantsServicePlanReferencedItems, setIntegrationMessage, getAgeCareMasterPlanReferencedItems } from '../services/isoplus.js';
 import axios from 'axios';
+import {
+    categorizeTransaction,
+    computeMasterPlanContributions,
+    computeMasterPlanQuantity,
+    computeMasterPlanTotalAmount,
+    isBlank,
+    isTimeBasedUnit,
+    parseNumber,
+} from '../utils/ageCareMasterPlanCalc.js';
 
 dotenv.config();
 const router = express.Router();
@@ -24,20 +33,18 @@ const checkServiceClaimingConditions = async (workspaceId, boardId, itemId, item
         const actualShiftEndDate = itemsValues['Actual Shift End Date & Time'];
         const transactionStatus = itemsValues['Transaction Status'];
         const committedATHM = itemsValues['Committed AT-HM for Delivery'];
-        const unit = servicePlanValues.unit;
-
-        const isBlank = (value) => !value || value.toString().trim() === '';
+        const tx = categorizeTransaction({ transactionStatus, committedATHM });
 
         let errorMessage = 'ERROR: Invalid transaction status or missing required fields. ';
 
-        if (transactionStatus?.includes('Delivered - To be claimed and Invoiced') && isBlank(actualShiftEndDate)) {
+        if (tx.isDelivered && isBlank(actualShiftEndDate)) {
             errorMessage += 'For Delivered status without Actual Shift End Date: Actual Shift End Date cannot be left blank.';
             await setIntegrationMessage(workspaceId, boardId, itemId, errorMessage);
             return { success: false, error: errorMessage };
         }
 
         // For Cancelled status, Actual Shift End Date should be blank
-        if (transactionStatus?.includes('Cancelled - To be claimed and Invoiced if applicable') && !isBlank(actualShiftEndDate)) {
+        if (tx.isCancelled && !isBlank(actualShiftEndDate)) {
             errorMessage += 'For Cancelled status: Actual Shift End Date should be blank. Cancellation percentage should be applied.';
             await setIntegrationMessage(workspaceId, boardId, itemId, errorMessage);
             return { success: false, error: errorMessage };
@@ -501,39 +508,56 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
 
         let updatevariables = [];
 
-        const actualDuration = formatValue(itemsValues["Actual Shift Duration(Hr.)"] || 0);
-        const scheduledDuration = formatValue(itemsValues["Scheduled Shift Duration(Hr.)"] || 0);
-        const quantityNonTimeBased = formatValue(itemsValues["Quantity (Non-Time-Based Service)"] || 0);
         const transactionStatus = itemsValues["Transaction Status"];
-        let quantity = 0;
+        const committedATHM = itemsValues['Committed AT-HM for Delivery'];
+        const tx = categorizeTransaction({ transactionStatus, committedATHM });
 
-        if (transactionStatus?.includes('Adjustment (Refund)') || transactionStatus?.includes('Adjustment (Charge)')) {
-            quantity = 0;
-        } else {
-            if (transactionStatus?.includes('Cancelled')) {
-                quantity = servicePlanValues.unit.includes('Hour') ? Number(scheduledDuration) : Number(quantityNonTimeBased);
-            } else {
-                quantity = servicePlanValues.unit.includes('Hour') ? Number(actualDuration) : Number(quantityNonTimeBased);
-            }
-        }
-
-        let totalAmount = 0;
-        if (transactionStatus?.includes('Cancelled')) {
-            if (cancellationTypeValues?.billableToClient) {
-                totalAmount = Number(formatValue(servicePlanValues.unitPrice * quantity * (cancellationTypeValues.billableToClient / 100)));
-            } else {
-                await setIntegrationMessage(workspaceId, boardId, itemId, "Cancellation Type item not found.");
-                return { error: 'Cancellation Type item not found.' };
-            }
-        } else {
-            totalAmount = Number(formatValue(servicePlanValues.unitPrice * quantity));
-        }
-        let participantContribution = Number(formatValue((servicePlanValues.participantContribution / 100) * totalAmount));
-        let governmentSubsidy = Number(formatValue(totalAmount - participantContribution));
         const checkServiceClaimingConditionsResult = await checkServiceClaimingConditions(workspaceId, boardId, itemId, itemsValues, servicePlanValues);
         if (checkServiceClaimingConditionsResult.success === false) {
             return { error: checkServiceClaimingConditionsResult.error };
         }
+
+        if (tx.isAdjustment) {
+            await setIntegrationMessage(workspaceId, boardId, itemId, "Adjustment transaction detected. Master Plan variables are managed manually and were not overwritten.");
+            return { success: true };
+        }
+
+        const actualDuration = parseNumber(itemsValues["Actual Shift Duration(Hr.)"] || 0);
+        const scheduledDuration = parseNumber(itemsValues["Scheduled Shift Duration(Hr.)"] || 0);
+        const quantityNonTimeBased = parseNumber(itemsValues["Quantity (Non-Time-Based Service)"] || 0);
+
+        const unit = servicePlanValues.unit;
+        const isTimeBased = isTimeBasedUnit(unit);
+
+        const quantity = computeMasterPlanQuantity({
+            isTimeBased,
+            tx,
+            actualDuration,
+            scheduledDuration,
+            quantityNonTimeBased,
+        });
+
+        const unitPrice = parseNumber(servicePlanValues.unitPrice);
+        const totalAmount = computeMasterPlanTotalAmount({
+            unitPrice,
+            quantity,
+            tx,
+            billableToClientPct: cancellationTypeValues?.billableToClient,
+        });
+
+        if (tx.isCancelled && (!cancellationTypeValues || isBlank(cancellationTypeValues?.billableToClient))) {
+            await setIntegrationMessage(workspaceId, boardId, itemId, "Cancellation Type item not found.");
+            return { error: 'Cancellation Type item not found.' };
+        }
+
+        const contributions = computeMasterPlanContributions({
+            totalAmount,
+            participantContributionPct: servicePlanValues.participantContribution,
+            tx,
+        });
+
+        const participantContribution = contributions.participantContribution;
+        const governmentSubsidy = contributions.governmentSubsidy;
 
         const getAttributeId = (attributeName) => {
             const attribute = itemValuesWithAttributeId.find(v => v.attribute?.name === attributeName);
@@ -549,7 +573,7 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
                 });
             }
         }
-        if (quantity >= 0) {
+        if (quantity !== null) {
             const quantityAttributeId = getAttributeId("Quantity");
             if (quantityAttributeId) {
                 updatevariables.push({
@@ -558,17 +582,17 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
                 });
             }
         }
-        if (servicePlanValues.unitPrice >= 0) {
+        if (unitPrice >= 0) {
             const unitPriceAttributeId = getAttributeId("Unit Price ($)");
             if (unitPriceAttributeId) {
                 updatevariables.push({
-                    data: servicePlanValues.unitPrice,
+                    data: unitPrice,
                     attribute_id: unitPriceAttributeId
                 });
             }
         }
         const totalAmountAttributeId = getAttributeId("Total Amount ($)");
-        if (totalAmountAttributeId) {
+        if (totalAmountAttributeId && totalAmount !== null) {
             updatevariables.push({
                 data: totalAmount,
                 attribute_id: totalAmountAttributeId
@@ -581,14 +605,12 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
                 attribute_id: governmentSubsidyAttributeId
             });
         }
-        if (participantContribution >= 0) {
-            const participantContributionAttributeId = getAttributeId("Participant Contribution ($)");
-            if (participantContributionAttributeId) {
-                updatevariables.push({
-                    data: participantContribution,
-                    attribute_id: participantContributionAttributeId
-                });
-            }
+        const participantContributionAttributeId = getAttributeId("Participant Contribution ($)");
+        if (participantContributionAttributeId) {
+            updatevariables.push({
+                data: participantContribution,
+                attribute_id: participantContributionAttributeId
+            });
         }
 
         if (updatevariables.length > 0) {
