@@ -5,10 +5,10 @@ import Business from '../models/Business.js';
 import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import AuditTrail from '../models/AuditTrail.js';
 import { uploadFileToS3, getS3FileUrl, deleteFileFromS3, getS3File, getContentType } from '../utils/uploadS3.js'; // Import S3 utility functions
 import { setLogo } from '../services/isoplus.js';
 import { updateOrganizationInfo } from '../services/xero.js';
+import { logAuditTrail } from '../utils/auditLogger.js';
 
 const validateBusinessProfile = (req, res, next) => {
   const errors = [];
@@ -113,7 +113,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
     info('Business-Service', 'Fetching Business profile data successfully', { businessName: business.name }, extractContextFromReq(req));
     res.json(business);
   } catch (err) {
-    error('Business-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
+    error('Business-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -153,6 +153,7 @@ router.get('/logo', authenticateToken, async (req, res) => {
   } catch (err) {
     error('Business-Service', 'Error retrieving logo URL', { 
       error: err.message,
+      stack: err.stack,
       workspaceId: req.query.workspaceId,
       logoKey: req.query.logoKey
     }, extractContextFromReq(req));
@@ -253,23 +254,44 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
     }
 
     if (business) {
+      const before = business?.toObject ? business.toObject() : business;
       business = await Business.findByIdAndUpdate(
         business._id,
         updateData,
         { new: true }
       );
       info('Business-Service', 'Business profile updated', { businessName: business.name }, extractContextFromReq(req));
-      AuditTrail.insertOne({ workspaceId, action: 'Updated Business profile', detail: `Changed Business profile from "${JSON.stringify(business)}" to "${JSON.stringify(updateData)}"`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
+      await logAuditTrail({
+        workspaceId,
+        action: 'Updated Business profile',
+        detail: 'Business profile updated',
+        req,
+        category: 'Business',
+        entityType: 'Business',
+        entityId: business?._id?.toString(),
+        before,
+        after: updateData,
+        success: true
+      });
     } else {
       business = new Business(updateData);
       await business.save();
       info('Business-Service', 'New Business profile created', { businessName: business.name }, extractContextFromReq(req));
-      AuditTrail.insertOne({ workspaceId, action: 'Created new Business profile', detail: `Resourse ID: ${business._id}`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
+      await logAuditTrail({
+        workspaceId,
+        action: 'Created new Business profile',
+        detail: `Resource ID: ${business._id}`,
+        req,
+        category: 'Business',
+        entityType: 'Business',
+        entityId: business?._id?.toString(),
+        success: true
+      });
     }
 
     res.status(200).json(business);
   } catch (err) {
-    error('Business-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
+    error('Business-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -315,6 +337,7 @@ router.get('/qr-logo', async (req, res) => {
   } catch (err) {
     error('Business-Service', 'Error retrieving logo', { 
       error: err.message,
+      stack: err.stack,
       workspaceId: req.query.workspaceId
     }, extractContextFromReq(req));
     res.status(500).json({ message: 'Server error' });
@@ -360,7 +383,7 @@ router.post('/xero/connect', authenticateToken, async (req, res) => {
     info('Business-Service', 'Xero integration connected', { businessId: business._id }, extractContextFromReq(req));
     res.json({ success: true });
   } catch (err) {
-    error('Business-Service', 'Server error during Xero connection', { message: err.message }, extractContextFromReq(req));
+    error('Business-Service', 'Server error during Xero connection', { message: err.message, stack: err.stack }, extractContextFromReq(req));
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -388,7 +411,7 @@ router.post('/xero/disconnect', authenticateToken, async (req, res) => {
     info('Business-Service', 'Xero integration disconnected', { businessId: business._id }, extractContextFromReq(req));
     res.json({ success: true });
   } catch (err) {
-    error('Business-Service', 'Server error during Xero disconnection', { message: err.message }, extractContextFromReq(req));
+    error('Business-Service', 'Server error during Xero disconnection', { message: err.message, stack: err.stack }, extractContextFromReq(req));
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -415,14 +438,24 @@ router.post('/xero/update-organization', authenticateToken, async (req, res) => 
       business.xeroOrganization = updatedOrganization;
       await business.save();
       info('Business-Service', 'Xero organization info updated', { businessId: business._id }, extractContextFromReq(req));
-      AuditTrail.insertOne({ workspaceId, action: 'Updated Xero organization info', detail: `Updated Xero organization info to "${JSON.stringify(updatedOrganization)}"`, userEmail: req.user.email, userIp: req.ip?.split(':').pop() });
+      await logAuditTrail({
+        workspaceId,
+        action: 'Updated Xero organization info',
+        detail: 'Updated Xero organization info',
+        req,
+        category: 'Xero',
+        entityType: 'Business',
+        entityId: business?._id?.toString(),
+        after: updatedOrganization,
+        success: true
+      });
       res.json({ success: true, organization: updatedOrganization });
     } else {
       error('Business-Service', 'Failed to update Xero organization info', { workspaceId }, extractContextFromReq(req));
       res.status(500).json({ message: 'Failed to update Xero organization info' });
     }
   } catch (err) {
-    error('Business-Service', 'Server error during Xero organization update', { message: err.message }, extractContextFromReq(req));
+    error('Business-Service', 'Server error during Xero organization update', { message: err.message, stack: err.stack }, extractContextFromReq(req));
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -434,7 +467,7 @@ router.use((err, req, res, next) => {
       return res.status(400).json({ status: 'error', message: 'File size too large. Maximum size is 10MB' });
     }
   }
-  error('Business-Service', 'File upload failed', { message: err.message || 'An unknown error occurred' }, extractContextFromReq(req));
+  error('Business-Service', 'File upload failed', { message: err.message || 'An unknown error occurred', stack: err.stack }, extractContextFromReq(req));
   res.status(500).json({ status: 'error', message: err.message || 'An unknown error occurred' });
 });
 
