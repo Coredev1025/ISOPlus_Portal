@@ -2152,7 +2152,7 @@ export default function InvoiceGenerator() {
 
             {/* Service Records Title */}
             <div className="mb-4">
-              <h2 className="text-xl font-semibold">Service Records</h2>
+              <h2 className="text-xl font-semibold dark:text-white">Service Records</h2>
             </div>
 
             {/* Service Records Table */}
@@ -2162,7 +2162,7 @@ export default function InvoiceGenerator() {
                   type="button"
                   variant="outline"
                   size="icon"
-                  className="absolute left-2 top-1/2 z-10 flex -translate-y-1/2 shadow-md bg-background/95"
+                  className="absolute left-2 top-1/2 z-10 flex -translate-y-1/2 shadow-md bg-background/95 dark:bg-black/90 dark:text-white dark:border-white/10"
                   onClick={() => handleHorizontalScroll('left')}
                   aria-label="Scroll table left"
                 >
@@ -2174,15 +2174,18 @@ export default function InvoiceGenerator() {
                   type="button"
                   variant="outline"
                   size="icon"
-                  className="absolute right-2 top-1/2 z-10 flex -translate-y-1/2 shadow-md bg-background/95"
+                  className="absolute right-2 top-1/2 z-10 flex -translate-y-1/2 shadow-md bg-background/95 dark:bg-black/90 dark:text-white dark:border-white/10"
                   onClick={() => handleHorizontalScroll('right')}
                   aria-label="Scroll table right"
                 >
                   <ArrowRightCircle className="h-5 w-5" />
                 </Button>
               )}
-              <div ref={tableContainerRef} className="overflow-x-auto rounded-lg border">
-                <Table className="min-w-[2400px]">
+              <div
+                ref={tableContainerRef}
+                className="overflow-x-auto rounded-lg border bg-white text-foreground dark:bg-black dark:text-white dark:border-white/10"
+              >
+                <Table className="min-w-[2400px] dark:text-white">
                   <TableHeader>
                     <TableRow>
                       {tableColumns.map((column) => {
@@ -2192,7 +2195,7 @@ export default function InvoiceGenerator() {
                         return (
                           <TableHead
                             key={column.key}
-                            className={`${column.className ?? ''} whitespace-nowrap ${isSortable ? 'cursor-pointer hover:bg-muted/50' : ''} ${isActiveSort ? 'text-primary font-semibold' : ''}`}
+                            className={`${column.className ?? ''} whitespace-nowrap dark:text-white ${isSortable ? 'cursor-pointer hover:bg-muted/50 dark:hover:bg-white/10' : ''} ${isActiveSort ? 'text-primary font-semibold dark:text-white' : ''}`}
                             onClick={isSortable ? () => {
                               if (isActiveSort) {
                                 // Toggle sort order if clicking the same column
@@ -2205,17 +2208,17 @@ export default function InvoiceGenerator() {
                             } : undefined}
                           >
                             <div className="flex items-center gap-2">
-                              <span className={isActiveSort ? 'text-primary' : ''}>{column.label}</span>
+                              <span className={isActiveSort ? 'text-primary dark:text-white' : ''}>{column.label}</span>
                               {isSortable && (
                                 <span className="inline-flex items-center justify-center w-4 h-4 flex-shrink-0">
                                   {isActiveSort ? (
                                     sortOrder === 'asc' ? (
-                                      <ArrowUp className="h-4 w-4 text-primary" />
+                                      <ArrowUp className="h-4 w-4 text-primary dark:text-white" />
                                     ) : (
-                                      <ArrowDown className="h-4 w-4 text-primary" />
+                                      <ArrowDown className="h-4 w-4 text-primary dark:text-white" />
                                     )
                                   ) : (
-                                    <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
+                                    <ArrowUpDown className="h-4 w-4 text-muted-foreground dark:text-white" />
                                   )}
                                 </span>
                               )}
@@ -2231,7 +2234,7 @@ export default function InvoiceGenerator() {
                         <TableCell colSpan={tableColumns.length} className="h-64 text-center">
                           <div className="flex flex-col items-center justify-center">
                             <Spinner />
-                            <p className="mt-4 text-muted-foreground">Loading service records...</p>
+                            <p className="mt-4 text-muted-foreground dark:text-white">Loading service records...</p>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -2249,7 +2252,7 @@ export default function InvoiceGenerator() {
                         <TableCell colSpan={tableColumns.length} className="h-64 text-center">
                           <div className="flex flex-col items-center justify-center">
                             <FileText className="h-8 w-8 text-muted-foreground mb-2" />
-                            <p className="text-muted-foreground">No service records found matching your criteria.</p>
+                            <p className="text-muted-foreground dark:text-white">No service records found matching your criteria.</p>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -2257,7 +2260,7 @@ export default function InvoiceGenerator() {
                       currentItems.map((record) => (
                         <TableRow
                           key={record.id}
-                          className={record?.invoiceNumber && record?.invoiceNumber !== '' && record?.invoiceNumber !== undefined ? 'bg-green-50 text-gray-600' : 'hover:bg-blue-50 transition-colors'}
+                          className={record?.invoiceNumber && record?.invoiceNumber !== '' && record?.invoiceNumber !== undefined ? 'bg-green-50 text-gray-600 dark:bg-black dark:text-white' : 'hover:bg-blue-50 transition-colors dark:hover:bg-white/10 dark:text-white'}
                         >
                           {tableColumns.map((column) => (
                             <TableCell key={`${record.id}-${column.key}`} className={column.className}>
@@ -2273,7 +2276,7 @@ export default function InvoiceGenerator() {
             </div>
 
             {/* Pagination */}
-            <div className="mt-4 flex justify-center">
+            <div className="mt-4 flex justify-center dark:text-white">
               <Pagination>
                 <PaginationContent>
                   <PaginationItem>
