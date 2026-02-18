@@ -28,6 +28,7 @@ import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
 import { syncQueue } from './services/sync/queue.js';
 import { requestContextMiddleware } from './middleware/requestContext.js';
+import { auditHttpMiddleware } from './middleware/auditHttp.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { info, error as logError } from './utils/logger.js';
 
@@ -77,6 +78,8 @@ app.use(session({
     maxAge: 1000 * 60 * 60 * 24
   }
 }));
+
+app.use(auditHttpMiddleware);
 
 app.use('/api/healthcheck', HealthCheckRouters);
 app.use('/api/auth', authRoutes);
