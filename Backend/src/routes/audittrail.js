@@ -57,7 +57,7 @@ router.post('/', authenticateToken, async (req, res) => {
         action: req.body.action,
         detail: req.body.detail,
         userEmail: req.user.email,
-        userIP: req.ip?.split(':').pop()
+        userIp: req.ip?.split(':').pop()
     });
 
     try {
@@ -84,7 +84,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
         auditTrail.action = req.body.action || auditTrail.action;
         auditTrail.detail = req.body.detail || auditTrail.detail;
         auditTrail.userEmail = req.body.userEmail || auditTrail.userEmail;
-        auditTrail.userIP = req.body.userIP || auditTrail.userIP;
+        auditTrail.userIp = req.body.userIp || auditTrail.userIp;
 
         const updatedAuditTrail = await auditTrail.save();
         info('AuditTrail-Service', 'Audit trail updated', { auditTrailId: updatedAuditTrail._id }, extractContextFromReq(req));

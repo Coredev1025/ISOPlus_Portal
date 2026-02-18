@@ -5,8 +5,16 @@ import "winston-mongodb";
 import dotenv from 'dotenv';
 import util from 'util';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 
 dotenv.config();
+
+try {
+  const logsDir = path.resolve(process.cwd(), 'logs');
+  fs.mkdirSync(logsDir, { recursive: true });
+} catch {
+}
 
 const levels = {
   error: 0,
@@ -108,6 +116,37 @@ function isDuplicateLog(level, source, message, meta, context) {
   return false;
 }
 
+function isExpressReqLike(obj) {
+  return !!obj &&
+    typeof obj === 'object' &&
+    typeof obj.method === 'string' &&
+    (typeof obj.originalUrl === 'string' || typeof obj.url === 'string') &&
+    (typeof obj.get === 'function' || typeof obj.headers === 'object');
+}
+
+function normalizeErrorMeta(err) {
+  if (!err) return undefined;
+  if (err instanceof Error) {
+    return {
+      errorName: err.name,
+      errorMessage: err.message,
+      stack: err.stack,
+    };
+  }
+  if (typeof err === 'object') {
+    const maybeMessage = err.message ? String(err.message) : undefined;
+    const maybeStack = err.stack ? String(err.stack) : undefined;
+    const maybeName = err.name ? String(err.name) : undefined;
+    return {
+      errorName: maybeName,
+      errorMessage: maybeMessage,
+      stack: maybeStack,
+      ...err,
+    };
+  }
+  return { errorMessage: String(err) };
+}
+
 /**
  * Truncate string to max length, adding ellipsis if truncated
  */
@@ -141,6 +180,11 @@ function sanitizeMetadataForStorage(obj, depth = 0, path = '') {
   // Handle null/undefined
   if (obj === null || obj === undefined) {
     return obj;
+  }
+
+  // Preserve Error details (message/stack) even when nested
+  if (obj instanceof Error) {
+    return sanitizeMetadataForStorage(normalizeErrorMeta(obj), depth + 1, `${path}.error`);
   }
 
   // Handle primitives
@@ -192,7 +236,9 @@ function sanitizeMetadataForStorage(obj, depth = 0, path = '') {
     }
 
     // Recursively sanitize nested objects
-    const sanitizedValue = sanitizeMetadataForStorage(value, depth + 1, `${path}.${key}`);
+    const sanitizedValue = value instanceof Error
+      ? sanitizeMetadataForStorage(normalizeErrorMeta(value), depth + 1, `${path}.${key}`)
+      : sanitizeMetadataForStorage(value, depth + 1, `${path}.${key}`);
     
     // Estimate size of this field
     const fieldSize = getObjectSize({ [key]: sanitizedValue });
@@ -262,6 +308,32 @@ const logger = winston.createLogger({
   ]
 });
 
+export function extractContextFromReq(req) {
+  if (!req) return {};
+
+  const headers = req.headers || {};
+
+  return {
+    ip: req.ip?.split(':').pop(),
+    email: req.user?.email,
+    userId: req.user?.userId || req.user?.id,
+    userRole: req.user?.role,
+    method: req.method,
+    url: req.originalUrl || req.url,
+    userAgent: req.get ? req.get('User-Agent') : headers['user-agent'],
+    referer: req.get ? req.get('Referer') : headers['referer'],
+    workspaceId: req.params?.workspaceId || req.body?.workspaceId || req.query?.workspaceId,
+    boardId: req.params?.boardId || req.body?.boardId || req.query?.boardId,
+    requestId: headers?.['x-request-id'] || headers?.['X-Request-Id'] || req.requestId
+  };
+}
+
+function normalizeContext(context) {
+  if (!context) return {};
+  if (isExpressReqLike(context)) return extractContextFromReq(context);
+  return context;
+}
+
 /**
  * Main logging function
  * @param {string} level - Log level (error, warn, info, debug)
@@ -271,14 +343,15 @@ const logger = winston.createLogger({
  * @param {object} context - Context object containing ip, email, userId, userRole, request info, etc.
  */
 const log = (level, source, message, meta = {}, context = {}) => {
+  const ctx = normalizeContext(context);
   // Extract context data with fallbacks
-  const ip = context.ip || 'N/A';
-  const email = context.email || 'N/A';
-  const userId = context.userId || 'N/A';
-  const userRole = context.userRole || 'N/A';
+  const ip = ctx.ip || 'N/A';
+  const email = ctx.email || 'N/A';
+  const userId = ctx.userId || 'N/A';
+  const userRole = ctx.userRole || 'N/A';
   
   // Check if this is a duplicate log entry (only if deduplication is enabled)
-  if (ENABLE_DEDUP && isDuplicateLog(level, source, message, meta, context)) {
+  if (ENABLE_DEDUP && isDuplicateLog(level, source, message, meta, ctx)) {
     return; // Skip logging if it's a duplicate
   }
   
@@ -293,9 +366,13 @@ const log = (level, source, message, meta = {}, context = {}) => {
     }
   }
 
+  if (meta instanceof Error) {
+    meta = normalizeErrorMeta(meta);
+  }
+
   // Filter out large/unnecessary fields from meta before processing
   const filteredMeta = {};
-  for (const [key, value] of Object.entries(meta)) {
+  for (const [key, value] of Object.entries(meta || {})) {
     // Skip excluded fields
     if (EXCLUDED_FIELDS.has(key.toLowerCase())) {
       continue;
@@ -329,12 +406,12 @@ const log = (level, source, message, meta = {}, context = {}) => {
     userRole,
     ...filteredMeta,
     // Add request context if available (only essential fields)
-    requestContext: context.method ? {
-      method: context.method,
-      url: truncateString(context.url || '', 200), // Truncate long URLs
-      workspaceId: context.workspaceId || meta.workspaceId,
-      boardId: context.boardId || meta.boardId,
-      requestId: context.requestId
+    requestContext: ctx.method ? {
+      method: ctx.method,
+      url: truncateString(ctx.url || '', 200), // Truncate long URLs
+      workspaceId: ctx.workspaceId || meta.workspaceId,
+      boardId: ctx.boardId || meta.boardId,
+      requestId: ctx.requestId
       // Exclude userAgent and referer to save space (can be added back if needed)
     } : {}
   };
@@ -353,31 +430,10 @@ const log = (level, source, message, meta = {}, context = {}) => {
   logger.log(level, message, enhancedMeta);
 };
 
-/**
- * Helper function to extract context from Express request object
- * This makes it easier to migrate existing code that passes req
- * @param {object} req - Express request object
- * @returns {object} Context object
- */
-export const extractContextFromReq = (req) => {
-  if (!req) return {};
-  
-  return {
-    ip: req.ip?.split(':').pop(),
-    email: req.user?.email,
-    userId: req.user?.id,
-    userRole: req.user?.role,
-    method: req.method,
-    url: req.url,
-    userAgent: req.get ? req.get('User-Agent') : undefined,
-    referer: req.get ? req.get('Referer') : undefined,
-    workspaceId: req.params?.workspaceId || req.body?.workspaceId,
-    boardId: req.params?.boardId || req.body?.boardId,
-    requestId: req.headers?.['x-request-id']
-  };
+export const error = (source, message, meta = {}, context = {}) => {
+  if (meta instanceof Error) return log('error', source, message, normalizeErrorMeta(meta), context);
+  return log('error', source, message, meta, context);
 };
-
-export const error = (source, message, meta = {}, context = {}) => log('error', source, message, meta, context);
 export const warn = (source, message, meta = {}, context = {}) => log('warn', source, message, meta, context);
 export const info = (source, message, meta = {}, context = {}) => log('info', source, message, meta, context);
 export const debug = (source, message, meta = {}, context = {}) => log('debug', source, message, meta, context);

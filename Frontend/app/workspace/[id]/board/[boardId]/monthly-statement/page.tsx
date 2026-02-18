@@ -1529,6 +1529,68 @@ export default function MonthlyStatement() {
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
   };
 
+  const captureChartAsLightPng = async (captureEl: HTMLElement) => {
+    const rect = captureEl.getBoundingClientRect();
+    const clone = captureEl.cloneNode(true) as HTMLElement;
+
+    const stripDarkVariantClasses = (el: Element) => {
+      const classList = (el as HTMLElement).classList;
+      if (!classList) return;
+      const toRemove: string[] = [];
+      classList.forEach((cls) => {
+        if (cls.startsWith('dark:')) toRemove.push(cls);
+      });
+      toRemove.forEach((cls) => classList.remove(cls));
+    };
+    stripDarkVariantClasses(clone);
+    clone.querySelectorAll('*').forEach(stripDarkVariantClasses);
+
+    const width = Math.max(1, Math.ceil(rect.width));
+    const height = Math.max(1, Math.ceil(rect.height));
+    clone.style.width = `${width}px`;
+    clone.style.height = `${height}px`;
+
+    clone.style.backgroundColor = '#ffffff';
+    clone.style.color = '#000000';
+    clone.style.setProperty('--background', '0 0% 100%');
+    clone.style.setProperty('--foreground', '0 0% 0%');
+    clone.style.setProperty('--card', '0 0% 100%');
+    clone.style.setProperty('--card-foreground', '0 0% 0%');
+    clone.style.setProperty('--popover', '0 0% 100%');
+    clone.style.setProperty('--popover-foreground', '0 0% 0%');
+    clone.style.setProperty('--muted', '0 0% 96%');
+    clone.style.setProperty('--muted-foreground', '0 0% 45%');
+    clone.style.setProperty('--border', '0 0% 90%');
+
+    const styleEl = document.createElement('style');
+    styleEl.textContent = `
+      svg text, svg tspan { fill: hsl(var(--foreground)) !important; }
+    `;
+    clone.prepend(styleEl);
+
+    const wrapper = document.createElement('div');
+    wrapper.style.position = 'fixed';
+    wrapper.style.left = '-100000px';
+    wrapper.style.top = '0';
+    wrapper.style.width = `${width}px`;
+    wrapper.style.height = `${height}px`;
+    wrapper.style.pointerEvents = 'none';
+    wrapper.style.zIndex = '-1';
+    wrapper.appendChild(clone);
+    document.body.appendChild(wrapper);
+
+    try {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      return await toPng(clone, {
+        pixelRatio: 3,
+        cacheBust: true,
+        backgroundColor: 'white',
+      });
+    } finally {
+      document.body.removeChild(wrapper);
+    }
+  };
+
   // Composite separate chart images into one image (cols per row) for PDF export.
   const compositeChartImages = async (
     dataUrls: string[],
@@ -1718,11 +1780,7 @@ export default function MonthlyStatement() {
             const cardEl = chartCardRefs.current[chartIdx];
             const captureEl = (cardEl?.querySelector?.('[data-pdf-chart-container="true"]') as HTMLElement | null) ?? cardEl;
             if (!captureEl) continue;
-            const dataUrl = await toPng(captureEl, {
-              pixelRatio: 3,
-              cacheBust: true,
-              backgroundColor: "white",
-            });
+            const dataUrl = await captureChartAsLightPng(captureEl);
             imageDataUrls.push(dataUrl);
           }
           if (imageDataUrls.length > 0) {
@@ -2753,6 +2811,7 @@ export default function MonthlyStatement() {
   const ChartXAxisTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value?: string } }) => {
     const raw = payload?.value ?? '';
     const maxCharsPerLine = 14;
+    const tickFontSize = 20;
     const lines = String(raw)
       .split(/\s+/)
       .reduce<string[]>((acc, word) => {
@@ -2774,13 +2833,13 @@ export default function MonthlyStatement() {
         fill="hsl(var(--foreground))"
         style={{
           overflow: 'visible',
-          fontSize: 18,
-          fontWeight: 800,
+          fontSize: tickFontSize,
+          fontWeight: 400,
           lineHeight: 1.1,
         }}
       >
         {lines.map((line, index) => (
-          <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 18 : 20}>
+          <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? tickFontSize : tickFontSize + 2}>
             {line}
           </tspan>
         ))}
@@ -2806,8 +2865,9 @@ export default function MonthlyStatement() {
     if (!label) return null;
 
     const cx = x + barWidth / 2;
+    const valueFontSize = 22;
     // Always draw value just above the bar top.
-    const cy = Math.max(22, y - 8);
+    const cy = Math.max(valueFontSize + 2, y - 10);
 
     return (
       <text
@@ -2816,7 +2876,7 @@ export default function MonthlyStatement() {
         textAnchor="middle"
         dominantBaseline="middle"
         fill="hsl(var(--foreground))"
-        style={{ fontSize: 20, fontWeight: 900 }}
+        style={{ fontSize: valueFontSize, fontWeight: 400 }}
       >
         {label}
       </text>
@@ -3050,7 +3110,7 @@ export default function MonthlyStatement() {
                       className="rounded-lg border border-border/60 bg-background p-3 flex flex-col gap-3 shadow-sm dark:bg-black dark:border-white/10 print:bg-white"
                     >
                       <div className="rounded-md bg-background overflow-hidden dark:bg-black print:bg-white" data-pdf-chart-container="true">
-                        <div className="px-2 py-2 text-center text-[20px] font-black text-foreground dark:text-white print:text-black">
+                        <div className="px-2 py-2 text-center text-[22px] font-normal text-foreground dark:text-white print:text-black">
                           {chart.title}
                         </div>
                         <ChartContainer
@@ -3064,7 +3124,7 @@ export default function MonthlyStatement() {
                               axisLine={{ stroke: 'hsl(var(--muted-foreground))', strokeWidth: 1 }}
                               tickLine={false}
                               interval={0}
-                              height={132}
+                              height={140}
                               tick={<ChartXAxisTick />}
                               allowDataOverflow={false}
                             />
@@ -3072,6 +3132,8 @@ export default function MonthlyStatement() {
                             <ChartTooltip
                               content={
                                 <ChartTooltipContent
+                                  className="text-sm"
+                                  labelClassName="font-normal text-sm"
                                   formatter={(value, name, item) => [
                                     formatCurrency(typeof value === 'number' ? value : Number(value)),
                                     (item?.payload as ChartBarDatum)?.label || name,
