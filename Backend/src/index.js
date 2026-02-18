@@ -49,16 +49,28 @@ const app = express();
 app.use(requestContextMiddleware);
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS 
-  ? process.env.ALLOWED_ORIGINS.split(' ').filter(Boolean)
+  ? process.env.ALLOWED_ORIGINS.split(/[\s,]+/).filter(Boolean)
   : ['http://localhost:3000'];
 
-app.use(cors({
-  origin: allowedOrigins, 
-  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookies', 'X-API-Version', 'Accept'],
+const corsOptions = {
+  origin: allowedOrigins,
+  methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'Accept',
+    'X-API-Version',
+    'X-Request-Id',
+    'X-User-Action',
+    'X-App-Action',
+    'X-Audit-Action'
+  ],
   credentials: true,
-  optionsSuccessStatus: 200 
-}));
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
