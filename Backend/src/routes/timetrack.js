@@ -41,7 +41,7 @@ router.get('/', authenticateToken, async (req, res) => {
 
             res.status(200).json({ tasks: myTasks });
         } catch (err) {
-            console.error(err.message);
+            error('TimeTrack-Service', 'Failed to build timetrack tasks response', { err }, req);
             res.status(500).json({ message: err.message });
         }
     } else {
@@ -50,9 +50,16 @@ router.get('/', authenticateToken, async (req, res) => {
 
 });
 
-router.put('/', authenticateToken, (req, res) => {
-    putTimeTracking(req.body.workspaceId, req.body.boardId, req.body.itemId, req.body.startTime, req.body.endTime);
-    return true;
+router.put('/', authenticateToken, async (req, res) => {
+    try {
+        const { workspaceId, boardId, itemId, startTime, endTime } = req.body || {};
+        await putTimeTracking(workspaceId, boardId, itemId, startTime, endTime);
+        info('TimeTrack-Service', 'Time tracking updated', { workspaceId, boardId, itemId }, extractContextFromReq(req));
+        res.status(200).json({ success: true });
+    } catch (err) {
+        error('TimeTrack-Service', 'Failed to update time tracking', { err }, req);
+        res.status(500).json({ success: false, message: err.message });
+    }
 });
 
 export default router;

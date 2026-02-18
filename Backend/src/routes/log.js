@@ -95,7 +95,7 @@ router.get('/', authenticateToken, async (req, res) => {
             totalPages: Math.ceil(total / limitNumber) || 1
         });
     } catch (err) {
-        error('Log-Service', 'Error fetching logs', { error: err.message }, extractContextFromReq(req));
+        error('Log-Service', 'Error fetching logs', { err }, req);
         res.status(500).json({ message: err.message });
     }
 });

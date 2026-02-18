@@ -91,7 +91,7 @@ async function getValidatedBusiness(workspaceId) {
 async function handlePDFError(err, workspaceId, boardId, itemId, action, req, res) {
     const errorMessage = (err && err.message) ? err.message : 'Server error: An unknown error occurred. Please contact support via ISO+™ Portal.';
     await setIntegrationMessage(workspaceId, boardId, itemId, errorMessage);
-    error('Webhook-Service', 'Server error', { message: errorMessage }, extractContextFromReq(req));
+    error('Webhook-Service', 'PDF generation error', { err, errorMessage, workspaceId, boardId, itemId, action }, req);
     logAuditTrail({
         workspaceId,
         action,
@@ -112,7 +112,11 @@ async function getLogoData(business) {
     if (!response.ok) throw new Error('Failed to fetch logo from URL');
 
     const buffer = await response.arrayBuffer();
-    console.log(business.defaultLogo)
+    // Persist diagnostic info without dumping the whole object
+    info('Webhook-Service', 'Embedding default logo for PDF generation', {
+      workspaceId: business?.workspaceId,
+      hasDefaultLogo: !!business?.defaultLogo
+    }, extractContextFromReq(req));
     const type = business.defaultLogo.split('.').pop();
     return `data:image/${type};base64,${Buffer.from(buffer).toString('base64')}`;
 }
@@ -362,7 +366,10 @@ async function bulkFetchReferenceItemsFromDB(workspaceId, boardId, itemIds) {
         }
     }
 
-    console.log(`[Webhook] Bulk fetch: requested=${uniqueIds.length}, found=${itemMap.size}`);
+    info('Webhook-Service', 'Bulk fetch reference items (webhook)', {
+      requested: uniqueIds.length,
+      found: itemMap.size
+    });
     return itemMap;
 }
 
@@ -2638,11 +2645,11 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         } catch (err) {
             // Do not call per-item error responder; log and send a single error response
             const errorMessage = (err && err.message) ? err.message : 'Server error: An unknown error occurred. Please contact support via ISO+™ Portal.';
-            error('Webhook-Service', 'Server error', { message: errorMessage }, extractContextFromReq(req));
+            error('Webhook-Service', 'Participant tax invoice PDF generation failed', { err, errorMessage }, req);
             return res.status(500).json({ message: errorMessage });
         }
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+        error('Webhook-Service', 'Server error', { err }, req);
         return res.status(500).json({ message: err.message });
     }
 });
