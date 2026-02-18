@@ -1518,6 +1518,100 @@ export default function MonthlyStatement() {
     return { width: 800, height: 600 };
   };
 
+  const pickPdfChartCols = (
+    n: number,
+    targetAspect: number,
+    cellAspect: number,
+    maxCols = 3
+  ) => {
+    const clampedN = Math.max(1, Math.floor(n));
+    const colsToTry = Array.from({ length: Math.max(1, maxCols) }, (_, i) => i + 1)
+      .filter((c) => c <= clampedN);
+
+    let bestCols = 1;
+    let bestScore = Number.POSITIVE_INFINITY;
+    let bestRows = clampedN;
+
+    for (const cols of colsToTry) {
+      const rows = Math.ceil(clampedN / cols);
+      const gridAspect = (cols / rows) * cellAspect;
+      const score = Math.abs(gridAspect - targetAspect);
+
+      // Tie-break: prefer fewer rows, then fewer cols (more readable).
+      const better =
+        score < bestScore ||
+        (Math.abs(score - bestScore) < 1e-6 && (rows < bestRows || (rows === bestRows && cols < bestCols)));
+
+      if (better) {
+        bestScore = score;
+        bestCols = cols;
+        bestRows = rows;
+      }
+    }
+
+    return bestCols;
+  };
+
+  const captureChartCardForPdf = async (captureEl: HTMLElement, opts: { width: number; height: number }) => {
+    const captureId = `pdf-capture-${Math.random().toString(16).slice(2)}`;
+    captureEl.setAttribute('data-pdf-capture-id', captureId);
+
+    try {
+      // NOTE: Use `onClone` to avoid theme flicker in the real UI.
+      return await toPng(captureEl, {
+        pixelRatio: 3,
+        cacheBust: true,
+        backgroundColor: 'white',
+        width: opts.width,
+        height: opts.height,
+        style: {
+          width: `${opts.width}px`,
+          height: `${opts.height}px`,
+        },
+        onClone: (clonedDocument: Document) => {
+          // Force light theme for PDF capture.
+          clonedDocument.documentElement.classList.remove('dark');
+          clonedDocument.body.style.background = 'white';
+
+          const clonedEl = clonedDocument.querySelector(
+            `[data-pdf-capture-id="${captureId}"]`
+          ) as HTMLElement | null;
+          if (!clonedEl) return;
+
+          // Make the captured element look like a clean "card" on white PDF.
+          clonedEl.style.boxSizing = 'border-box';
+          clonedEl.style.width = `${opts.width}px`;
+          clonedEl.style.height = `${opts.height}px`;
+          clonedEl.style.padding = '14px';
+          clonedEl.style.background = 'white';
+          clonedEl.style.border = '1px solid rgba(0,0,0,0.10)';
+          clonedEl.style.borderRadius = '12px';
+          clonedEl.style.overflow = 'hidden';
+          clonedEl.style.color = 'black';
+
+          // Ensure theme tokens resolve to light values within the capture subtree.
+          clonedEl.style.setProperty('--background', '0 0% 100%');
+          clonedEl.style.setProperty('--foreground', '0 0% 0%');
+          clonedEl.style.setProperty('--muted', '0 0% 96%');
+          clonedEl.style.setProperty('--muted-foreground', '0 0% 45%');
+          clonedEl.style.setProperty('--border', '0 0% 90%');
+          clonedEl.style.setProperty('--card', '0 0% 100%');
+          clonedEl.style.setProperty('--card-foreground', '0 0% 0%');
+
+          // Make sure the chart container uses the available height (avoid aspect-video forcing odd whitespace).
+          const chartRoot = clonedEl.querySelector('[data-chart]') as HTMLElement | null;
+          if (chartRoot) {
+            chartRoot.style.width = '100%';
+            chartRoot.style.height = `${Math.max(1, opts.height - 84)}px`;
+            (chartRoot.style as any).aspectRatio = 'auto';
+          }
+        },
+      } as any);
+    } finally {
+      captureEl.removeAttribute('data-pdf-capture-id');
+    }
+  };
+
   const waitForFontsAndNextPaint = async () => {
     try {
       const fonts = (document as any).fonts;
@@ -1710,7 +1804,11 @@ export default function MonthlyStatement() {
       if (chartsWithData.length > 0 && chartCardRefs.current.length > 0) {
         try {
           const SUMMARY_TABLE_ASPECT = 170 / 125.8;
-          const pdfCols = chartsWithData.length === 3 || chartsWithData.length > 4 ? 3 : 2;
+          // Pick a column count that best matches the fixed PDF placeholder aspect ratio,
+          // to reduce internal whitespace and make the summary charts look more "designed".
+          const PDF_CHART_W = 800;
+          const PDF_CHART_H = 600;
+          const pdfCols = pickPdfChartCols(chartsWithData.length, SUMMARY_TABLE_ASPECT, PDF_CHART_W / PDF_CHART_H, 3);
           const chartIndicesWithData = chartsWithData.map((c) => chartConfigs.indexOf(c));
           await waitForFontsAndNextPaint();
           const imageDataUrls: string[] = [];
@@ -1718,18 +1816,14 @@ export default function MonthlyStatement() {
             const cardEl = chartCardRefs.current[chartIdx];
             const captureEl = (cardEl?.querySelector?.('[data-pdf-chart-container="true"]') as HTMLElement | null) ?? cardEl;
             if (!captureEl) continue;
-            const dataUrl = await toPng(captureEl, {
-              pixelRatio: 3,
-              cacheBust: true,
-              backgroundColor: "white",
-            });
+            const dataUrl = await captureChartCardForPdf(captureEl, { width: PDF_CHART_W, height: PDF_CHART_H });
             imageDataUrls.push(dataUrl);
           }
           if (imageDataUrls.length > 0) {
             chartImage = await compositeChartImages(imageDataUrls, pdfCols, undefined, {
               targetAspect: SUMMARY_TABLE_ASPECT,
               background: 'white',
-              gap: 0,
+              gap: 18,
               // Never crop: keep all labels visible in PDF.
               fit: 'contain',
             });
