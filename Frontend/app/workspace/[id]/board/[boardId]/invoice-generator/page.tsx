@@ -2102,7 +2102,7 @@ export default function InvoiceGenerator() {
             </div>
 
             {/* Summary Cards - Under Filter Section */}
-            <div className={`grid grid-cols-1 md:grid-cols-${isLowCatBoard ? '2' : '4'} gap-6 mb-6`}>
+            <div className={`grid grid-cols-1 md:grid-cols-4 gap-6 mb-6`}>
               <Card className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
