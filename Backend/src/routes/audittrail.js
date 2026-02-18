@@ -45,7 +45,7 @@ router.get('/', authenticateToken, async (req, res) => {
             totalPages: Math.ceil(total / limit) || 1
         });
     } catch (err) {
-        error('AuditTrail-Service', 'Error fetching audit trails', { error: err.message }, extractContextFromReq(req));
+        error('AuditTrail-Service', 'Error fetching audit trails', { err }, req);
         res.status(500).json({ message: err.message });
     }
 });
@@ -65,7 +65,7 @@ router.post('/', authenticateToken, async (req, res) => {
         info('AuditTrail-Service', 'New Audit trail created', { auditTrailId: newAuditTrail._id }, extractContextFromReq(req));
         res.status(201).json(newAuditTrail);
     } catch (err) {
-        error('AuditTrail-Service', 'Error creating new Audit trail', { error: err.message }, extractContextFromReq(req));
+        error('AuditTrail-Service', 'Error creating new Audit trail', { err, body: req.body }, req);
         res.status(400).json({ message: err.message });
     }
 });
@@ -90,7 +90,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
         info('AuditTrail-Service', 'Audit trail updated', { auditTrailId: updatedAuditTrail._id }, extractContextFromReq(req));
         res.json(updatedAuditTrail);
     } catch (err) {
-        error('AuditTrail-Service', 'Error updating Audit trail', { error: err.message }, extractContextFromReq(req));
+        error('AuditTrail-Service', 'Error updating Audit trail', { err, params: req.params, body: req.body }, req);
         res.status(400).json({ message: err.message });
     }
 });

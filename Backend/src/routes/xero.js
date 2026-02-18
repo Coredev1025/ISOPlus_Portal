@@ -140,7 +140,7 @@ function createContactPayload(values, isUpdate = false) {
 }
 
 async function handleError(err, workspaceId, boardId, item, req, entityType = 'item') {
-  error('Xero-Service', `Error processing ${entityType} in Xero`, err.message);
+  error('Xero-Service', `Error processing ${entityType} in Xero`, { err, workspaceId, boardId, itemId: item?.id }, req);
   if (item) {
     await setIntegrationMessage(
       workspaceId,

@@ -50,6 +50,7 @@ const getFolderIds = async (folderName, workspaceId, boardId, providedFolders = 
             const { folder } = await getFolder(workspaceId, boardId);
             folders = folder || [];
         } catch (err) {
+            warn('Export-Service', 'Failed to fetch folders from ISO+ API (falling back to empty)', { err, workspaceId, boardId });
             return [];
         }
     }
@@ -897,10 +898,7 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
             exportDurationMs: duration
         });
     } catch (err) {
-        error('Export-Service', 'Failed to export invoice CSV', {
-            message: err.message,
-            stack: err.stack
-        }, extractContextFromReq(req));
+        error('Export-Service', 'Failed to export invoice CSV', { err }, req);
         res.status(500).json({ message: 'Server error', error: err.message });
     }
 });
@@ -953,10 +951,7 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
             exportDurationMs: duration
         });
     } catch (err) {
-        error('Export-Service', 'Failed to export monthly statement CSV', {
-            message: err.message,
-            stack: err.stack
-        }, extractContextFromReq(req));
+        error('Export-Service', 'Failed to export monthly statement CSV', { err }, req);
         res.status(500).json({ message: 'Server error', error: err.message });
     }
 });

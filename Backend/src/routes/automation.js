@@ -2,7 +2,7 @@ import express from 'express';
 import axios from 'axios';
 import { authenticateToken } from '../middleware/auth.js';
 import { v4 as uuidv4 } from 'uuid';
-import { info, error, extractContextFromReq } from '../utils/logger.js';
+import { info, error, warn, debug, extractContextFromReq } from '../utils/logger.js';
 import { getAutomation, updateAutomation } from '../services/isoplus.js';
 
 const router = express.Router();
@@ -33,9 +33,11 @@ router.post('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
                 'Authorization': `Bearer ${req.session.Authorization}`
             }
         });
+        info('Automation-Service', 'Automation created via ISO+ API', { workspaceId, boardId, automationId }, extractContextFromReq(req));
         res.json(response.data);
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to update data' });
+    } catch (err) {
+        error('Automation-Service', 'Failed to create automation', { err, workspaceId: req.params.workspaceId, boardId: req.params.boardId }, req);
+        res.status(500).json({ error: 'Failed to update data', message: err.message });
     }
 });
 
@@ -54,7 +56,7 @@ router.put('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
             let needsUpdate = automationItem.name.startsWith("Portal - ");
 
             if (needsUpdate) {
-                console.log("needsUpdate", automationItem.name);
+                debug('Automation-Service', 'Automation requires URL update', { name: automationItem.name, automationId: updatedAutomation.id }, extractContextFromReq(req));
             }
             
             if (needsUpdate && updatedAutomation.workflow && Array.isArray(updatedAutomation.workflow)) {
@@ -107,7 +109,7 @@ router.put('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
         }
         res.status(200).json(updatedAutomations);
     } catch (err) {
-        error('Automation-Service', 'Failed to update Automations', { error: err }, extractContextFromReq(req));
+        error('Automation-Service', 'Failed to update Automations', { err, workspaceId, boardId }, req);
         res.status(500).json({ error: 'Failed to update Automations' });
     }
 });

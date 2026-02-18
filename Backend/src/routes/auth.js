@@ -50,7 +50,7 @@ router.post('/register',
       info('User-Service', 'User registered successfully', { email }, extractContextFromReq(req));
       res.status(201).json({ user: { id: user._id, email, name, role: 'support_admin', avatar: '' } });
     } catch (err) {
-      error('User-Service', 'Server error during registration', { error: err.message }, extractContextFromReq(req));
+      error('User-Service', 'Server error during registration', { err, email: req.body?.email }, req);
       res.status(500).json({ message: 'Server error' });
     }
   }
@@ -95,7 +95,7 @@ router.post('/login',
       info('User-Service', 'User logged in successfully', { email }, extractContextFromReq(req));
       res.json({ user: { id: user._id, email, name: user.name, role: 'support_admin', avatar: '' } });
     } catch (err) {
-      error('User-Service', 'Server error during login', { error: err.message }, extractContextFromReq(req));
+      error('User-Service', 'Server error during login', { err, email: req.body?.email }, req);
       res.status(500).json({ message: 'Server error' });
     }
   }
@@ -104,7 +104,7 @@ router.post('/login',
 router.post('/logout', (req, res) => {
   req.session.destroy((err) => {
     if (err) {
-      error('Auth-Service', 'Error during logout', { error: err.message }, extractContextFromReq(req));
+      error('Auth-Service', 'Error during logout', { err }, req);
       return res.status(500).json({ message: 'Logout failed' });
     }
     res.clearCookie('connect.sid');
@@ -144,7 +144,7 @@ router.get('/verify', authenticateToken, async (req, res) => {
       }
     });
   } catch (err) {
-    error('User-Service', 'Server error during verification', { error: err.message }, extractContextFromReq(req));
+    error('User-Service', 'Server error during verification', { err, userId: req.user?.userId }, req);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -253,11 +253,11 @@ router.get("/isoplus/callback", async (req, res) => {
         grant_type: "authorization_code",
         client_id: process.env.CLIENT_ID,
         redirect_uri: `${process.env.CALLBACK_URL}`,
-        code: code
+        code: code ? '[REDACTED]' : undefined
       },
       error: err.response?.data || err.message,
       status: err.response?.status
-    }, extractContextFromReq(req));
+    }, req);
     const rawErrorMessage = err.response?.data?.error || err.message || 'Failed to authenticate';
     const safeErrorMessage = String(rawErrorMessage).substring(0, 500);
     
@@ -357,7 +357,7 @@ router.post('/oauth-login', async (req, res) => {
       });
     }
   } catch (err) {
-    error('User-Service', 'Server error during OAuth login', { error: err.message }, extractContextFromReq(req));
+    error('User-Service', 'Server error during OAuth login', { err, email: req.body?.oauthData?.email }, req);
     res.status(500).json({ message: 'Server error during OAuth login' });
   }
 });
@@ -368,7 +368,7 @@ router.get('/users', validateApiKey, async (req, res) => {
     info('User-Service', 'Users list retrieved successfully', { count: users.length }, extractContextFromReq(req));
     res.json({ users });
   } catch (err) {
-    error('User-Service', 'Server error while retrieving users', { error: err.message }, extractContextFromReq(req));
+    error('User-Service', 'Server error while retrieving users', { err }, req);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -398,7 +398,7 @@ router.patch('/users/:userId/disable', validateApiKey, async (req, res) => {
       }
     });
   } catch (err) {
-    error('User-Service', 'Server error while disabling user', { error: err.message }, extractContextFromReq(req));
+    error('User-Service', 'Server error while disabling user', { err, userId: req.params?.userId }, req);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -428,7 +428,7 @@ router.patch('/users/:userId/enable', validateApiKey, async (req, res) => {
       }
     });
   } catch (err) {
-    error('User-Service', 'Server error while enabling user', { error: err.message }, extractContextFromReq(req));
+    error('User-Service', 'Server error while enabling user', { err, userId: req.params?.userId }, req);
     res.status(500).json({ message: 'Server error' });
   }
 });

@@ -71,11 +71,11 @@ const checkServiceClaimingConditions = async (workspaceId, boardId, itemId, item
         }
 
         return { success: true };
-    } catch (error) {
-        console.error('Error in checkServiceClaimingConditions:', error);
+    } catch (err) {
+        error('AgeCare-Service', 'Error in checkServiceClaimingConditions', { err, workspaceId, boardId, itemId }, { workspaceId, boardId, itemId });
         await setIntegrationMessage(workspaceId, boardId, itemId,
-            `An error occurred while checking service claiming conditions: ${error.message}. Please contact support.`);
-        return { success: false, error: `An error occurred while checking service claiming conditions: ${error.message}. Please contact support.` };
+            `An error occurred while checking service claiming conditions: ${err.message}. Please contact support.`);
+        return { success: false, error: `An error occurred while checking service claiming conditions: ${err.message}. Please contact support.` };
     }
 };
 
@@ -488,8 +488,8 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
         } else {
             return { success: true };
         }
-    } catch (error) {
-        console.error('Error in updateVariablesParticipantsService:', error);
+    } catch (err) {
+        error('AgeCare-Service', 'Error in updateVariablesParticipantsService', { err, workspaceId, boardId, itemId }, { workspaceId, boardId, itemId });
         await setIntegrationMessage(workspaceId, boardId, itemId, "An unknown error occurred while updating Participants Service Plan variables. Please contact the ISO+™ support team.");
         return { error: 'An unknown error occurred while updating Participants Service Plan variables. Please contact the ISO+™ support team.' };
     }
@@ -637,8 +637,8 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
         } else {
             return { success: true };
         }
-    } catch (error) {
-        console.error('Error in updateVariablesMasterplan:', error);
+    } catch (err) {
+        error('AgeCare-Service', 'Error in updateVariablesMasterplan', { err, workspaceId, boardId, itemId }, { workspaceId, boardId, itemId });
         await setIntegrationMessage(workspaceId, boardId, itemId, "An unknown error occurred while updating Master Plan variables. Please contact the ISO+™ support team.");
         return { error: 'An unknown error occurred while updating Master Plan variables. Please contact the ISO+™ support team.' };
     }
@@ -703,8 +703,8 @@ const updateParticipantsServiceplan = async (workspaceId, boardId, itemId, items
             }
         }
         return { success: true };
-    } catch (error) {
-        console.error('Error in updateParticipantsServiceplan:', error);
+    } catch (err) {
+        error('AgeCare-Service', 'Error in updateParticipantsServiceplan', { err, workspaceId, boardId, itemId }, { workspaceId, boardId, itemId });
         return { error: 'While updating Participants ServicePlan, an unknown error occurred. Please contact ISO+ Portal Support team.' };
     }
 }

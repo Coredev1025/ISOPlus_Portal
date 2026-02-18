@@ -72,6 +72,7 @@ const updateUnitAndUnitPrice = async (workspaceId, boardId, itemId, mappingValue
             return { error: `Failed to update ${label} item` };
         }
     } catch (err) {
+        error('Xero-Service', `Failed to update ${label} item in ISO+`, { err, workspaceId, boardId, itemId, label }, { workspaceId, boardId, itemId });
         return { error: err.message };
     }
 };
