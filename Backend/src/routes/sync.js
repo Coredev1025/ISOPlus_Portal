@@ -61,11 +61,7 @@ router.post('/board/enable', authenticateToken, async (req, res) => {
     const statusCode = result.success ? 202 : 409; // 202 Accepted, 409 Conflict
     res.status(statusCode).json(result);
   } catch (err) {
-    const context = extractContextFromReq(req);
-    error('Sync-Route', 'Failed to enable board sync', { 
-      error: err.message,
-      stack: err.stack
-    }, context);
+    error('Sync-Route', 'Failed to enable board sync', { err }, req);
     
     // Return appropriate status code based on error type
     if (err.message === 'Board not found' || err.message.includes('Board not found')) {
@@ -100,9 +96,7 @@ router.post('/board/disable', authenticateToken, async (req, res) => {
     
     res.status(200).json(result);
   } catch (err) {
-    error('Sync-Route', 'Failed to disable board sync', { 
-      error: err.message
-    }, extractContextFromReq(req));
+    error('Sync-Route', 'Failed to disable board sync', { err }, req);
     res.status(500).json({ 
       message: 'Failed to disable sync', 
       error: err.message 
@@ -156,11 +150,7 @@ router.post('/board/manual', authenticateToken, async (req, res) => {
     const statusCode = result.success ? 202 : 409;
     res.status(statusCode).json(result);
   } catch (err) {
-    const context = extractContextFromReq(req);
-    error('Sync-Route', 'Failed to trigger manual sync', { 
-      error: err.message,
-      stack: err.stack
-    }, context);
+    error('Sync-Route', 'Failed to trigger manual sync', { err }, req);
     
     // Return appropriate status code based on error type
     if (err.message === 'Board not found' || err.message.includes('Board not found')) {
@@ -224,11 +214,7 @@ router.post('/board/retry', authenticateToken, async (req, res) => {
     const statusCode = result.success ? 202 : 409;
     res.status(statusCode).json(result);
   } catch (err) {
-    const context = extractContextFromReq(req);
-    error('Sync-Route', 'Failed to retry sync', { 
-      error: err.message,
-      stack: err.stack
-    }, context);
+    error('Sync-Route', 'Failed to retry sync', { err }, req);
     
     // Return appropriate status code based on error type
     if (err.message === 'Board not found' || err.message.includes('Board not found')) {
@@ -263,9 +249,7 @@ router.post('/board/cancel', authenticateToken, async (req, res) => {
     
     res.status(200).json(result);
   } catch (err) {
-    error('Sync-Route', 'Failed to cancel sync', { 
-      error: err.message
-    }, extractContextFromReq(req));
+    error('Sync-Route', 'Failed to cancel sync', { err }, req);
     res.status(500).json({ 
       message: 'Failed to cancel sync', 
       error: err.message 
@@ -292,9 +276,7 @@ router.post('/workspace/enable', authenticateToken, async (req, res) => {
     
     res.status(202).json(result);
   } catch (err) {
-    error('Sync-Route', 'Failed to enable workspace sync', { 
-      error: err.message
-    }, extractContextFromReq(req));
+    error('Sync-Route', 'Failed to enable workspace sync', { err }, req);
     res.status(500).json({ 
       message: 'Failed to enable workspace sync', 
       error: err.message 
@@ -322,10 +304,7 @@ router.get('/board/status/:boardId', authenticateToken, async (req, res) => {
       });
     }
     
-    error('Sync-Route', 'Failed to get board sync status', { 
-      boardId: req.params.boardId,
-      error: err.message
-    }, extractContextFromReq(req));
+    error('Sync-Route', 'Failed to get board sync status', { err, boardId: req.params.boardId }, req);
     res.status(500).json({ 
       message: 'Failed to get sync status', 
       error: err.message 
@@ -352,10 +331,7 @@ router.get('/workspace/status/:workspaceId', authenticateToken, async (req, res)
         try {
           return await getBoardSyncStatus(board.boardId);
         } catch (err) {
-          error('Sync-Route', 'Failed to get status for board', { 
-            boardId: board.boardId,
-            error: err.message 
-          }, {});
+          error('Sync-Route', 'Failed to get status for board', { err, boardId: board.boardId }, req);
           return {
             boardId: board.boardId,
             boardName: board.name,
@@ -371,10 +347,7 @@ router.get('/workspace/status/:workspaceId', authenticateToken, async (req, res)
       boards: boardsStatus
     });
   } catch (err) {
-    error('Sync-Route', 'Failed to get workspace sync status', { 
-      workspaceId: req.params.workspaceId,
-      error: err.message
-    }, extractContextFromReq(req));
+    error('Sync-Route', 'Failed to get workspace sync status', { err, workspaceId: req.params.workspaceId }, req);
     res.status(500).json({ 
       message: 'Failed to get sync status', 
       error: err.message 
@@ -507,10 +480,7 @@ router.get('/queue/analysis', authenticateToken, async (req, res) => {
 
     res.status(200).json(analysis);
   } catch (err) {
-    error('Sync-Route', 'Failed to get queue analysis', {
-      error: err.message,
-      stack: err.stack,
-    }, extractContextFromReq(req));
+    error('Sync-Route', 'Failed to get queue analysis', { err }, req);
     res.status(500).json({
       message: 'Failed to get queue analysis',
       error: err.message,
