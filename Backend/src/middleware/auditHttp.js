@@ -27,11 +27,7 @@ function redact(value, depth = 0) {
   }
 
   if (depth >= 3) {
-    try {
-      return '[Truncated]';
-    } catch {
-      return '[Truncated]';
-    }
+    return '[Truncated]';
   }
 
   if (Array.isArray(value)) {
@@ -49,18 +45,54 @@ function redact(value, depth = 0) {
   return result;
 }
 
+function headerValue(headers, key) {
+  if (!headers) return undefined;
+  return headers[key] ?? headers[key.toLowerCase()];
+}
+
+function getRoutePattern(req) {
+  const baseUrl = req.baseUrl || '';
+  const routePath = req.route?.path || '';
+  if (baseUrl && routePath) return `${baseUrl}${routePath}`;
+  return undefined;
+}
+
+function deriveUserAction({ method, routePattern, urlPath }) {
+  if (!method) return undefined;
+  const m = method.toUpperCase();
+
+  // Prefer stable route patterns (no IDs) when available
+  const rp = routePattern || '';
+
+  if (m === 'POST' && rp === '/api/pdf/:workspaceId/:boardId/monthly-statement') {
+    return 'Generate Monthly Statement';
+  }
+
+  if (m === 'GET' && rp === '/api/export/:workspaceId/:boardId/monthly-statement-csv') {
+    return 'View Monthly Statement Data (CSV)';
+  }
+
+  return undefined;
+}
+
 export function auditHttpMiddleware(req, res, next) {
   const startHrTime = process.hrtime.bigint();
 
   res.on('finish', async () => {
     try {
       const url = req.originalUrl || req.url || '';
+      const urlPath = url.split('?')[0];
+      const method = req.method || '';
+      const methodUpper = method.toUpperCase();
 
       // Skip noisy / internal endpoints
       if (
-        url.startsWith('/api/healthcheck') ||
-        url.startsWith('/api/log') ||
-        url.startsWith('/api/queues')
+        urlPath.startsWith('/api/healthcheck') ||
+        urlPath.startsWith('/api/log') ||
+        urlPath.startsWith('/api/queues') ||
+        urlPath.startsWith('/api/audit') || // Avoid self-referential audit logging
+        urlPath.startsWith('/api/sync/workspaces/status/') || // Polling endpoint (very noisy)
+        methodUpper === 'OPTIONS' // Never audit CORS preflights
       ) {
         return;
       }
@@ -90,11 +122,31 @@ export function auditHttpMiddleware(req, res, next) {
         req.query?.boardId ||
         req.body?.boardId;
 
-      const method = req.method || ctx.method || '';
+      const routePattern = getRoutePattern(req);
+      const httpAction = `HTTP ${method} ${urlPath}`;
 
-      const action = `HTTP ${method} ${url}`;
+      const explicitUserAction =
+        ctx.userAction ||
+        headerValue(req.headers, 'x-user-action') ||
+        headerValue(req.headers, 'x-app-action') ||
+        headerValue(req.headers, 'x-audit-action') ||
+        req.body?.userAction ||
+        req.body?.action;
+
+      const derivedUserAction = deriveUserAction({ method, routePattern, urlPath });
+
+      const userAction = (explicitUserAction && String(explicitUserAction).trim()) || derivedUserAction;
+      const action = userAction || httpAction;
+
+      // For read-only requests, only audit when we have a meaningful user action.
+      if (['GET', 'HEAD'].includes(methodUpper) && !userAction) {
+        return;
+      }
 
       const detail = {
+        userAction: userAction || undefined,
+        httpAction,
+        routePattern,
         statusCode,
         durationMs: Math.round(durationMs * 100) / 100,
         requestId: ctx.requestId,
@@ -122,7 +174,7 @@ export function auditHttpMiddleware(req, res, next) {
         req,
         success,
         statusCode,
-        category: 'HTTP',
+        category: userAction ? 'APP' : 'HTTP',
         entityType: boardId ? 'Board' : 'Workspace',
         entityId: boardId || workspaceId,
         metadata

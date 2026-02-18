@@ -312,6 +312,13 @@ export function extractContextFromReq(req) {
   if (!req) return {};
 
   const headers = req.headers || {};
+  const userAction =
+    headers?.['x-user-action'] ||
+    headers?.['x-app-action'] ||
+    headers?.['x-audit-action'] ||
+    headers?.['X-User-Action'] ||
+    headers?.['X-App-Action'] ||
+    headers?.['X-Audit-Action'];
 
   return {
     ip: req.ip?.split(':').pop(),
@@ -324,7 +331,8 @@ export function extractContextFromReq(req) {
     referer: req.get ? req.get('Referer') : headers['referer'],
     workspaceId: req.params?.workspaceId || req.body?.workspaceId || req.query?.workspaceId,
     boardId: req.params?.boardId || req.body?.boardId || req.query?.boardId,
-    requestId: headers?.['x-request-id'] || headers?.['X-Request-Id'] || req.requestId
+    requestId: headers?.['x-request-id'] || headers?.['X-Request-Id'] || req.requestId,
+    userAction: userAction ? String(userAction).trim() : undefined
   };
 }
 
@@ -411,7 +419,8 @@ const log = (level, source, message, meta = {}, context = {}) => {
       url: truncateString(ctx.url || '', 200), // Truncate long URLs
       workspaceId: ctx.workspaceId || meta.workspaceId,
       boardId: ctx.boardId || meta.boardId,
-      requestId: ctx.requestId
+      requestId: ctx.requestId,
+      userAction: ctx.userAction
       // Exclude userAgent and referer to save space (can be added back if needed)
     } : {}
   };
