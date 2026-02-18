@@ -1345,7 +1345,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
             }
         }));
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
+        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
         return res.status(200).json({ message: err.message });
     }
 });
@@ -1450,7 +1450,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
             }
         }));
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
+        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
         return res.status(200).json({ message: err.message });
     }
 });
@@ -1547,7 +1547,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
             }
         }));
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
+        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
         return res.status(200).json({ message: err.message });
     }
 });
@@ -1764,7 +1764,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
             }
         }));
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
+        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
         return res.status(200).json({ message: err.message });
     }
 });
@@ -2303,7 +2303,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             }
         }));
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
+        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
         return res.status(200).json({ message: err.message });
     }
 });
@@ -2642,7 +2642,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             return res.status(500).json({ message: errorMessage });
         }
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message }, extractContextFromReq(req));
+        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
         return res.status(500).json({ message: err.message });
     }
 });
@@ -3163,7 +3163,7 @@ router.get('/uploads/:filename', async (req, res) => {
             throw new Error('Invalid file URL');
         }
     } catch (err) {
-        error('Webhook-Service', 'Error downloading file', { message: err.message }, extractContextFromReq(req));
+        error('Webhook-Service', 'Error downloading file', { message: err.message, stack: err.stack }, extractContextFromReq(req));
         res.status(404).json({ message: 'File not found in ISO+™ Portal.' });
     }
 });

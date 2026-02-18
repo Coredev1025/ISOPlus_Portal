@@ -27,18 +27,25 @@ import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
 import { syncQueue } from './services/sync/queue.js';
+import { requestContextMiddleware } from './middleware/requestContext.js';
+import { errorHandler } from './middleware/errorHandler.js';
+import { info, error as logError } from './utils/logger.js';
 
 dotenv.config();
 
 const requiredEnvVars = ['MONGODB_URI', 'JWT_SECRET', 'SESSION_SECRET'];
 const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
 if (missingEnvVars.length > 0) {
-  console.error(`❌ Missing required environment variables: ${missingEnvVars.join(', ')}`);
-  console.error('Please check your .env file and ensure all required variables are set.');
+  // Log via application logger so it's persisted
+  logError('Bootstrap', 'Missing required environment variables', { missingEnvVars });
+  logError('Bootstrap', 'Please check your .env file and ensure all required variables are set.');
   process.exit(1);
 }
 
 const app = express();
+
+// Attach requestId and request lifecycle logging early
+app.use(requestContextMiddleware);
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS 
   ? process.env.ALLOWED_ORIGINS.split(' ').filter(Boolean)
@@ -105,21 +112,34 @@ createBullBoard({
 app.use('/api/queues', serverAdapter.getRouter());
 
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch((err) => console.error('MongoDB connection error:', err));
+  .then(() => info('Bootstrap', 'Connected to MongoDB'))
+  .catch((err) => logError('Bootstrap', 'MongoDB connection error', err));
+
+process.on('unhandledRejection', (reason) => {
+  logError('Process', 'Unhandled promise rejection', {
+    reason: reason instanceof Error ? { name: reason.name, message: reason.message, stack: reason.stack } : reason
+  });
+});
+
+process.on('uncaughtException', (err) => {
+  logError('Process', 'Uncaught exception', err);
+});
+
+// Global error handler (must be after routes)
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, async () => {
-  console.log(`Server is running on port ${PORT}`);
+  info('Bootstrap', `Server is running on port ${PORT}`);
   
   // Check and retry failed jobs on server startup
   // Add a delay to ensure Redis connection and queue are fully initialized
   setTimeout(async () => {
     try {
-      console.log('Checking for failed jobs to retry on startup...');
+      info('Bootstrap', 'Checking for failed jobs to retry on startup...');
       await checkAndRetryFailedJobs();
     } catch (err) {
-      console.error('Error checking failed jobs on startup:', err);
+      logError('Bootstrap', 'Error checking failed jobs on startup', err);
     }
   }, 3000); // 3 second delay to ensure everything is initialized
 });
