@@ -1,6 +1,6 @@
 import express from 'express';
 import dotenv from 'dotenv';
-import { info, warn, error, extractContextFromReq } from '../utils/logger.js';
+import { info, warn, error } from '../utils/logger.js';
 import { Item } from '../dto/itemsPayload.js';
 import { getQuoteNDISReferencedItems, getItemValues, getNDISParticipantsServicePlanReferencedItems, getNDISMasterPlanReferencedItems, setIntegrationMessage } from '../services/isoplus.js';
 import axios from 'axios';
@@ -101,7 +101,7 @@ router.post('/:workspaceId/:boardId/set-unit-and-unitprice', async (req, res) =>
     const items = payload.items[0];
     const itemsValues = items.values;
 
-    info('Xero-Service', `Incoming request to set-unit-and-unitprice`, { workspaceId, boardId, type, body: itemsValues }, extractContextFromReq(req));
+    info('Xero-Service', `Incoming request to set-unit-and-unitprice`, { workspaceId, boardId, type, body: itemsValues }, req ?? null);
     let [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = await getQuoteNDISReferencedItems(workspaceId, boardId, items.id);
     if (serviceAreaValues == null || serviceAreaValues.serviceAreaType == null) {
         serviceAreaValues = {
@@ -159,7 +159,7 @@ router.post('/:workspaceId/:boardId/set-unit-and-unitprice', async (req, res) =>
                 await handleUpdate(workspaceId, boardId, items.id, centreMappingValues, 'centre_capital_cost', 'Centre Capital Costs')
             }
 
-            info('Xero-Service', 'Service area processed successfully', itemsValues, extractContextFromReq(req));
+            info('Xero-Service', 'Service area processed successfully', itemsValues, req ?? null);
             return res.status(200).json({ message: 'Service area processed' });
         }
         case 'direct_support': {
@@ -219,7 +219,7 @@ router.post('/:workspaceId/:boardId/set-unit-and-unitprice', async (req, res) =>
             return res.status(200).json(result);
         }
         default:
-            warn('Xero-Service', 'Invalid type in set-unit-and-unitprice', { type }, extractContextFromReq(req));
+            warn('Xero-Service', 'Invalid type in set-unit-and-unitprice', { type }, req ?? null);
             return res.status(200).json({ error: 'Invalid type', message: 'Invalid type in set-unit-and-unitprice' });
     }
 });
@@ -231,7 +231,7 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
     const items = payload.items[0];
     const itemsValues = items.values;
 
-    info('Xero-Service', `Incoming request to Participants Service Plan`, { workspaceId, boardId, type, body: itemsValues }, extractContextFromReq(req));
+    info('Xero-Service', `Incoming request to Participants Service Plan`, { workspaceId, boardId, type, body: itemsValues }, req ?? null);
     let [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = await getNDISParticipantsServicePlanReferencedItems(workspaceId, boardId, items.id);
     if (serviceAreaValues == null || serviceAreaValues.serviceAreaType == null) {
         serviceAreaValues = {
@@ -288,7 +288,7 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
                 await handleUpdate(workspaceId, boardId, items.id, centreMappingValues, 'centre_capital_cost', 'Centre Capital Costs', 'Participants-Service-Plan');
             }
 
-            info('Xero-Service', 'Service area processed successfully', itemsValues, extractContextFromReq(req));
+            info('Xero-Service', 'Service area processed successfully', itemsValues, req ?? null);
             return res.status(200).json({ message: 'Service area processed' });
         }
         case 'direct_support': {
@@ -348,7 +348,7 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
             return res.status(200).json(result);
         }
         default:
-            warn('Xero-Service', 'Invalid type in set-unit', { type }, extractContextFromReq(req));
+            warn('Xero-Service', 'Invalid type in set-unit', { type }, req ?? null);
             return res.status(200).json({ error: 'Invalid type', message: 'Invalid type in set-unit' });
     }
 });
@@ -361,7 +361,7 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
 
     const [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues, participationTypeValues] = await getNDISMasterPlanReferencedItems(workspaceId, boardId, items.id);
 
-    info('Xero-Service', `Incoming request to Master plan`, { workspaceId, boardId, body: itemsValues }, extractContextFromReq(req));
+    info('Xero-Service', `Incoming request to Master plan`, { workspaceId, boardId, body: itemsValues }, req ?? null);
 
     if (!servicePlanValues) {
         setIntegrationMessage(workspaceId, boardId, items.id, "Service Plan Item not found");
@@ -567,11 +567,11 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
     );
     if (response.status === 200) {
         setIntegrationMessage(workspaceId, boardId, items.id, "Master plan processed successfully");
-        info('Xero-Service', 'Master plan processed successfully', { updateValues }, extractContextFromReq(req));
+        info('Xero-Service', 'Master plan processed successfully', { updateValues }, req ?? null);
         return res.status(200).json({ message: 'Master plan processed' });
     } else {
         setIntegrationMessage(workspaceId, boardId, items.id, "Failed to update master plan");
-        warn('Xero-Service', 'Failed to update master plan', { updateValues }, extractContextFromReq(req));
+        warn('Xero-Service', 'Failed to update master plan', { updateValues }, req ?? null);
         return res.status(200).json({ error: 'Failed to update master plan' });
     }
 });

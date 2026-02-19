@@ -1,7 +1,7 @@
 import express from 'express';
 import Board from '../models/Board.js';
 import Item from '../models/Item.js';
-import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
+import { info, error, warn } from '../utils/logger.js';
 import { getItemValues, ITEM_DELETED } from '../services/isoplus.js';
 import { transformItemData, transformValue } from '../utils/itemTransform.js';
 
@@ -15,13 +15,13 @@ router.post('/isoplus', async (req, res) => {
       event, 
       payloadObject: payload?.object,
       payloadId: payload?.id
-    }, extractContextFromReq(req));
+    }, req ?? null);
 
     // Validate hook payload
     if (!event || !payload) {
       warn('Webhook-Handler', 'Invalid hook payload', { 
         body: req.body 
-      }, extractContextFromReq(req));
+      }, req ?? null);
       return res.status(400).json({ 
         success: false, 
         message: 'Invalid hook payload' 
@@ -64,7 +64,7 @@ router.post('/isoplus', async (req, res) => {
       default:
         info('Webhook-Handler', 'Ignoring hook event type', { 
           event
-        }, extractContextFromReq(req));
+        }, req ?? null);
         // Return success for unhandled events to avoid hook deactivation
         return res.status(200).json({ 
           success: true, 
@@ -76,7 +76,7 @@ router.post('/isoplus', async (req, res) => {
     info('Webhook-Handler', 'Hook processed successfully', { 
       event, 
       payloadId: payload?.id 
-    }, extractContextFromReq(req));
+    }, req ?? null);
 
     res.status(200).json({ 
       success: true, 
@@ -87,7 +87,7 @@ router.post('/isoplus', async (req, res) => {
     error('Webhook-Handler', 'Failed to process hook', { 
       error: err.message,
       stack: err.stack 
-    }, extractContextFromReq(req));
+    }, req ?? null);
     
     // Return 200 to avoid hook deactivation on errors
     res.status(200).json({ 

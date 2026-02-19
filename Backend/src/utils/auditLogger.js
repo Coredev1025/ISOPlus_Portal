@@ -75,6 +75,6 @@ export async function logAuditTrail(params) {
     
     await AuditTrail.create(validatedData);
   } catch (err) {
-    logError('AuditLogger', 'Failed to log audit trail', err, params?.req);
+    logError('AuditLogger', 'Failed to log audit trail', err, params?.req ?? null);
   }
 }

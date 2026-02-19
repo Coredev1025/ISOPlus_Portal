@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { debug, info, extractContextFromReq } from '../utils/logger.js';
+import { debug, info } from '../utils/logger.js';
 
 function getHeader(headers, key) {
   if (!headers) return undefined;
@@ -33,7 +33,7 @@ export function requestContextMiddleware(req, res, next) {
       {
         startedAt: startedAt.toISOString(),
       },
-      extractContextFromReq(req)
+      req ?? null
     );
   }
 
@@ -50,7 +50,7 @@ export function requestContextMiddleware(req, res, next) {
         durationMs: Math.round(durationMs * 100) / 100,
         contentLength: res.getHeader('content-length'),
       },
-      extractContextFromReq(req)
+      req ?? null
     );
   });
 

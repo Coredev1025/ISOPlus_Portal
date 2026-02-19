@@ -1,7 +1,7 @@
 import axios from "axios";
 import Board from '../models/Board.js';
 import FormData from 'form-data';
-import { info, warn, error, logAttributeError, logApiError, logOperationStart, logOperationEnd, extractContextFromReq } from '../utils/logger.js';
+import { info, warn, error, logAttributeError, logApiError, logOperationStart, logOperationEnd } from '../utils/logger.js';
 
 const DEFAULT_ITEM_PAGE_SIZE = parseInt(process.env.ISOPLUS_ITEM_PAGE_SIZE || '100', 10);
 const DEFAULT_PAGE_DELAY_MS = parseInt(process.env.ISOPLUS_PAGE_DELAY_MS || '0', 10);
@@ -1056,7 +1056,7 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
         }
         
         // Log workspace validation
-        info('ISO+™ Service', 'Validating workspace access', { workspaceId, requestId }, extractContextFromReq(req));
+        info('ISO+™ Service', 'Validating workspace access', { workspaceId, requestId }, req ?? null);
         const boards = await getBoard(authorization, workspaceId);
         
         if (!boards || boards.status !== 200) {
@@ -1092,13 +1092,13 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
             };
             
             if (errorMessageIncludes(err, 'unauthorized') || err.response?.status === 401) {
-                error('ISO+™ Service', 'Error uploading logo: Unauthorized', uploadErrorContext, extractContextFromReq(req));
+                error('ISO+™ Service', 'Error uploading logo: Unauthorized', uploadErrorContext, req ?? null);
             } else if (errorMessageIncludes(err, 'forbidden') || err.response?.status === 403) {
-                error('ISO+™ Service', 'Error uploading logo: Forbidden', uploadErrorContext, extractContextFromReq(req));
+                error('ISO+™ Service', 'Error uploading logo: Forbidden', uploadErrorContext, req ?? null);
             } else if (errorMessageIncludes(err, 'timeout') || err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') {
-                error('ISO+™ Service', 'Error uploading logo: Request timeout', uploadErrorContext, extractContextFromReq(req));
+                error('ISO+™ Service', 'Error uploading logo: Request timeout', uploadErrorContext, req ?? null);
             } else {
-                error('ISO+™ Service', 'Error uploading logo file:', uploadErrorContext, extractContextFromReq(req));
+                error('ISO+™ Service', 'Error uploading logo file:', uploadErrorContext, req ?? null);
             }
             throw err;
         }
@@ -1615,19 +1615,19 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
         
         // Categorize and log different error types
         if (errorMessageIncludes(err, 'required') || errorMessageIncludes(err, 'missing')) {
-            error('ISO+™ Service', 'Error setting logo: Missing required parameter', errorContext, extractContextFromReq(req));
+            error('ISO+™ Service', 'Error setting logo: Missing required parameter', errorContext, req ?? null);
         } else if (errorMessageIncludes(err, 'unauthorized') || err?.response?.status === 401) {
-            error('ISO+™ Service', 'Error setting logo: Unauthorized', errorContext, extractContextFromReq(req));
+            error('ISO+™ Service', 'Error setting logo: Unauthorized', errorContext, req ?? null);
         } else if (errorMessageIncludes(err, 'forbidden') || err?.response?.status === 403) {
-            error('ISO+™ Service', 'Error setting logo: Forbidden', errorContext, extractContextFromReq(req));
+            error('ISO+™ Service', 'Error setting logo: Forbidden', errorContext, req ?? null);
         } else if (errorMessageIncludes(err, 'timeout') || err?.code === 'ECONNABORTED' || err?.code === 'ETIMEDOUT') {
-            error('ISO+™ Service', 'Error setting logo: Request timeout', errorContext, extractContextFromReq(req));
+            error('ISO+™ Service', 'Error setting logo: Request timeout', errorContext, req ?? null);
         } else if (errorMessageIncludes(err, 'network') || err?.code === 'ENOTFOUND' || err?.code === 'ECONNREFUSED') {
-            error('ISO+™ Service', 'Error setting logo: Network error', errorContext, extractContextFromReq(req));
+            error('ISO+™ Service', 'Error setting logo: Network error', errorContext, req ?? null);
         } else if (errorMessageIncludes(err, 'Failed to fetch boards')) {
-            error('ISO+™ Service', 'Error setting logo: Failed to fetch boards', errorContext, extractContextFromReq(req));
+            error('ISO+™ Service', 'Error setting logo: Failed to fetch boards', errorContext, req ?? null);
         } else {
-            error('ISO+™ Service', 'Error setting logo:', errorContext, extractContextFromReq(req));
+            error('ISO+™ Service', 'Error setting logo:', errorContext, req ?? null);
         }
         
         logOperationEnd('ISO+™ Service', 'setLogo', { 

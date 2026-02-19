@@ -1,7 +1,7 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import AuditTrail from '../models/AuditTrail.js';
-import { info, error, extractContextFromReq } from '../utils/logger.js';
+import { info, error } from '../utils/logger.js';
 
 const router = express.Router();
 
@@ -35,7 +35,7 @@ router.get('/', authenticateToken, async (req, res) => {
             total,
             page,
             limit 
-        }, extractContextFromReq(req));
+        }, req ?? null);
         
         res.json({
             items: auditTrails,
@@ -62,7 +62,7 @@ router.post('/', authenticateToken, async (req, res) => {
 
     try {
         const newAuditTrail = await auditTrail.save();
-        info('AuditTrail-Service', 'New Audit trail created', { auditTrailId: newAuditTrail._id }, extractContextFromReq(req));
+        info('AuditTrail-Service', 'New Audit trail created', { auditTrailId: newAuditTrail._id }, req ?? null);
         res.status(201).json(newAuditTrail);
     } catch (err) {
         error('AuditTrail-Service', 'Error creating new Audit trail', { err, body: req.body }, req);
@@ -87,7 +87,7 @@ router.put('/:id', authenticateToken, async (req, res) => {
         auditTrail.userIp = req.body.userIp || auditTrail.userIp;
 
         const updatedAuditTrail = await auditTrail.save();
-        info('AuditTrail-Service', 'Audit trail updated', { auditTrailId: updatedAuditTrail._id }, extractContextFromReq(req));
+        info('AuditTrail-Service', 'Audit trail updated', { auditTrailId: updatedAuditTrail._id }, req ?? null);
         res.json(updatedAuditTrail);
     } catch (err) {
         error('AuditTrail-Service', 'Error updating Audit trail', { err, params: req.params, body: req.body }, req);

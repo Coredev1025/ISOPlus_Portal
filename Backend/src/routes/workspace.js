@@ -2,7 +2,7 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import Workspace from '../models/Workspace.js';
 import Board from '../models/Board.js';
-import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
+import { info, error, warn } from '../utils/logger.js';
 import { getWorkspace, getBoard } from '../services/isoplus.js';
 import DynamicLinkingService from '../services/dynamicLinking.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
@@ -32,7 +32,7 @@ router.get('/boards', authenticateToken, async (req, res) => {
         try {
           const boardId = board.id?.toString();
           if (!boardId || !board.name) {
-            warn('Workspace-Service', 'Skipping board with missing id or name', { board }, extractContextFromReq(req));
+            warn('Workspace-Service', 'Skipping board with missing id or name', { board }, req ?? null);
             return null;
           }
 
@@ -59,7 +59,7 @@ router.get('/boards', authenticateToken, async (req, res) => {
             boardId: board.id, 
             error: err.message,
             stack: err.stack
-          }, extractContextFromReq(req));
+          }, req ?? null);
           return null;
         }
       });
@@ -72,7 +72,7 @@ router.get('/boards', authenticateToken, async (req, res) => {
         info('Workspace-Service', 'Auto-stored boards in database', { 
           total: response.board.length, 
           processed: successCount 
-        }, extractContextFromReq(req));
+        }, req ?? null);
       }
 
       const sortedBoard = [...response.board].sort((a, b) =>
@@ -83,7 +83,7 @@ router.get('/boards', authenticateToken, async (req, res) => {
       res.status(500).json({ message: response.message || 'Failed to fetch boards' });
     }
   } catch (err) {
-    error('Workspace-Service', 'Error in boards endpoint', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+    error('Workspace-Service', 'Error in boards endpoint', { message: err.message, stack: err.stack }, req ?? null);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -97,7 +97,7 @@ router.post('/', authenticateToken, async (req, res) => {
       userId: req.user.userId
     });
     await workspace.save();
-    info('Workspace-Service', 'New Workspace created', { workspaceId: workspace._id }, extractContextFromReq(req));
+    info('Workspace-Service', 'New Workspace created', { workspaceId: workspace._id }, req ?? null);
     const workspaceId = workspace._id?.toString();
     await logAuditTrail({
       workspaceId,
@@ -111,7 +111,7 @@ router.post('/', authenticateToken, async (req, res) => {
     });
     res.status(201).json(workspace);
   } catch (err) {
-    error('Workspace-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+    error('Workspace-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -128,13 +128,13 @@ router.post('/:workspaceId/check-links', authenticateToken, async (req, res) => 
     }
 
     const dynamicLinkingService = new DynamicLinkingService(req.session.Authorization, host);
-    info('Workspace-Service', 'Checking links', { workspaceId }, extractContextFromReq(req));
+    info('Workspace-Service', 'Checking links', { workspaceId }, req ?? null);
     const results = await dynamicLinkingService.main(workspaceId, false);
 
-    info('Workspace-Service', 'Links checked', { workspaceId, results }, extractContextFromReq(req));
+    info('Workspace-Service', 'Links checked', { workspaceId, results }, req ?? null);
     res.status(200).json(results);
   } catch (err) {
-    error('Workspace-Service', 'Failed to check links', { workspaceId: req.params.workspaceId, error: err.message, stack: err.stack }, extractContextFromReq(req));
+    error('Workspace-Service', 'Failed to check links', { workspaceId: req.params.workspaceId, error: err.message, stack: err.stack }, req ?? null);
     res.status(500).json({ message: 'Failed to check links', error: err.message });
   }
 });
@@ -150,13 +150,13 @@ router.post('/:workspaceId/create-links', authenticateToken, async (req, res) =>
     }
 
     const dynamicLinkingService = new DynamicLinkingService(req.session.Authorization, host);
-    info('Workspace-Service', 'Creating links', { workspaceId }, extractContextFromReq(req));
+    info('Workspace-Service', 'Creating links', { workspaceId }, req ?? null);
     const results = await dynamicLinkingService.main(workspaceId, true);
 
-    info('Workspace-Service', 'Links created', { workspaceId, results }, extractContextFromReq(req));
+    info('Workspace-Service', 'Links created', { workspaceId, results }, req ?? null);
     res.status(200).json(results);
   } catch (err) {
-    error('Workspace-Service', 'Failed to create links', { workspaceId: req.params.workspaceId, error: err.message, stack: err.stack }, extractContextFromReq(req));
+    error('Workspace-Service', 'Failed to create links', { workspaceId: req.params.workspaceId, error: err.message, stack: err.stack }, req ?? null);
     res.status(500).json({ message: 'Failed to create links', error: err.message });
   }
 });

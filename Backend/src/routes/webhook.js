@@ -1,5 +1,5 @@
 import express from 'express';
-import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
+import { info, error, warn } from '../utils/logger.js';
 import fs from 'fs/promises';
 import { generate } from '@pdfme/generator';
 import { text, table, line, image, multiVariableText } from '@pdfme/schemas';
@@ -101,7 +101,7 @@ async function handlePDFError(err, workspaceId, boardId, itemId, action, req, re
     return res.status(200).json({ message: errorMessage });
 }
 
-async function getLogoData(business) {
+async function getLogoData(business, req = null) {
     const logoKey = business.defaultLogo;
     if (!logoKey) return '';
 
@@ -116,7 +116,7 @@ async function getLogoData(business) {
     info('Webhook-Service', 'Embedding default logo for PDF generation', {
       workspaceId: business?.workspaceId,
       hasDefaultLogo: !!business?.defaultLogo
-    }, extractContextFromReq(req));
+    }, req ?? null);
     const type = business.defaultLogo.split('.').pop();
     return `data:image/${type};base64,${Buffer.from(buffer).toString('base64')}`;
 }
@@ -1206,7 +1206,7 @@ function applyBudgetMapping(templateInputs, aggregate, mappings = []) {
 function validateRequestParams(req) {
     const { workspaceId, boardId } = req.params;
     if (!req.body.items?.length) {
-        error('Webhook-Service', 'Server error', { message: "There are no items." }, extractContextFromReq(req));
+        error('Webhook-Service', 'Server error', { message: "There are no items." }, req ?? null);
         throw new Error('No items found in the payload');
     }
     return { workspaceId, boardId };
@@ -1230,7 +1230,7 @@ async function handlePDFSuccess(workspaceId, boardId, itemId, fileUrl, docType, 
         isDeleted: false,
         SignatureStatus: "Unsigned"
     });
-    info('Webhook-Service', `Successfully generating PDF ${docType.toLowerCase()}`, { link: fileUrl }, extractContextFromReq(req));
+    info('Webhook-Service', `Successfully generating PDF ${docType.toLowerCase()}`, { link: fileUrl }, req ?? null);
     return res.json({ pdfUrl: fileUrl });
 }
 
@@ -1352,7 +1352,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
             }
         }));
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
         return res.status(200).json({ message: err.message });
     }
 });
@@ -1457,7 +1457,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
             }
         }));
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
         return res.status(200).json({ message: err.message });
     }
 });
@@ -1554,7 +1554,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
             }
         }));
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
         return res.status(200).json({ message: err.message });
     }
 });
@@ -1771,7 +1771,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
             }
         }));
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
         return res.status(200).json({ message: err.message });
     }
 });
@@ -2310,7 +2310,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
             }
         }));
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
         return res.status(200).json({ message: err.message });
     }
 });
@@ -2406,7 +2406,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                 participantProfiles: participantProfileIds.size,
                 servicePlans: servicePlanIds.size,
                 foundItems: refItemsMap.size
-            }, extractContextFromReq(req));
+            }, req ?? null);
 
             // Fetch participant profile details from first item using database lookup
             let participantName = ' ';
@@ -2704,7 +2704,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
 
             info('Webhook-Service', 'Monthly statement PDF: fetched ISO+ data', {
                 budgetCount: budgetItems.length, serviceCount: services.length, participant
-            }, extractContextFromReq(req));
+            }, req ?? null);
 
             const budgetAggregates = calculateBudgetAggregates(budgetItems);
 
@@ -2736,7 +2736,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             });
             if (hasChartFromFrontend) {
                 templateInputs['Summary Table'] = chartImage.startsWith('data:') ? chartImage : `data:image/png;base64,${chartImage}`;
-                info('Webhook-Service', 'Monthly statement PDF: using chart image from frontend', { sizeChars: chartImage.length }, extractContextFromReq(req));
+                info('Webhook-Service', 'Monthly statement PDF: using chart image from frontend', { sizeChars: chartImage.length }, req ?? null);
             } else if (!hasChartFromFrontend && allCategoriesZero) {
                 // Hide bar chart section when not applicable (all values $0.00)
                 templateInputs['Summary Table'] = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
@@ -2746,7 +2746,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                     const miniChartBuffer = await fs.readFile(miniChartPath);
                     templateInputs['Summary Table'] = `data:image/png;base64,${miniChartBuffer.toString('base64')}`;
                 } catch (miniChartErr) {
-                    warn('Webhook-Service', 'Monthly statement mini-chart not found, using template default for Summary Table', { path: miniChartPath }, extractContextFromReq(req));
+                    warn('Webhook-Service', 'Monthly statement mini-chart not found, using template default for Summary Table', { path: miniChartPath }, req ?? null);
                 }
             }
 
@@ -2755,7 +2755,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 const footerBuffer = await fs.readFile(footerImagePath);
                 templateInputs['Image 13-1'] = `data:image/png;base64,${footerBuffer.toString('base64')}`;
             } catch (footerErr) {
-                warn('Webhook-Service', 'Monthly statement footer image not found, using template default', { path: footerImagePath }, extractContextFromReq(req));
+                warn('Webhook-Service', 'Monthly statement footer image not found, using template default', { path: footerImagePath }, req ?? null);
             }
 
             setMultiValueField(templateInputs, 'companyName', { 'Company Name': safeBusinessDetails.companyName });
@@ -3133,7 +3133,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                     servicesCount: services.length,
                     budgetItemsCount: budgetItems.length,
                     fileUrl
-                }, extractContextFromReq(req));
+                }, req ?? null);
 
                 return res.status(200).json({
                     message: 'Monthly statement PDF generated successfully',
@@ -3148,11 +3148,11 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             error('Webhook-Service', 'Error generating monthly statement PDF', {
                 message: errorMessage,
                 stack: err.stack
-            }, extractContextFromReq(req));
+            }, req ?? null);
             return res.status(500).json({ message: errorMessage, error: err.message });
         }
     } catch (err) {
-        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+        error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
         return res.status(500).json({ message: err.message });
     }
 });
@@ -3170,7 +3170,7 @@ router.get('/uploads/:filename', async (req, res) => {
             throw new Error('Invalid file URL');
         }
     } catch (err) {
-        error('Webhook-Service', 'Error downloading file', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+        error('Webhook-Service', 'Error downloading file', { message: err.message, stack: err.stack }, req ?? null);
         res.status(404).json({ message: 'File not found in ISO+™ Portal.' });
     }
 });
