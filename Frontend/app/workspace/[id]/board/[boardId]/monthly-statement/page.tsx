@@ -183,7 +183,6 @@ interface MonthlyStatementData {
     totalAmount: number;
     govSubsidy: number;
     participantContribution: number;
-    averageServiceCost: number;
   };
   participantAddress?: string;
   participantSuburb?: string;
@@ -1461,9 +1460,6 @@ export default function MonthlyStatement() {
         totalAmount,
         govSubsidy: backendSummary?.govSubsidy ?? fallbackSummary.govSubsidy,
         participantContribution: backendSummary?.participantContribution ?? fallbackSummary.participantContribution,
-        averageServiceCost:
-          backendSummary?.averageServiceCost ??
-          (totalServices > 0 ? totalAmount / totalServices : 0),
       };
 
       const effectiveMonthNumber = (data?.monthNumber ?? selectedMonth ?? '01').toString().padStart(2, '0');
@@ -3532,61 +3528,75 @@ export default function MonthlyStatement() {
 
             {/* Summary Footer */}
             <Card className="p-6 shadow-lg print:shadow-none print:break-inside-avoid">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="flex items-start justify-between gap-4">
                 <div className="space-y-1">
-                  <p className="text-sm text-muted-foreground">Statement Period</p>
-                  <p className="text-lg font-semibold">
-                    {statementData.month} {statementData.year}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm text-muted-foreground">Generated Date</p>
-                  <p className="text-lg font-semibold">
-                    {format(new Date(), 'dd/MM/yyyy')}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm text-muted-foreground">Total Services</p>
-                  <p className="text-lg font-semibold">
-                    {statementData.summary.totalServices} services
+                  <h3 className="text-base font-semibold leading-none">Statement summary</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Key figures for {statementData.month} {statementData.year}
                   </p>
                 </div>
               </div>
 
-              <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-1">
-                  <p className="text-sm text-muted-foreground">Government Subsidy</p>
-                  <p className="text-lg font-semibold">
-                    {formatCurrency(statementData.summary.govSubsidy)}
-                  </p>
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                <div className="flex items-start gap-3 rounded-lg border bg-muted/20 p-4 print:bg-transparent">
+                  <div className="mt-0.5 rounded-md bg-primary/10 p-2 text-primary print:bg-transparent">
+                    <Calendar className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-muted-foreground">Statement period</p>
+                    <p className="truncate text-sm font-semibold tabular-nums">
+                      {statementData.month} {statementData.year}
+                    </p>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <p className="text-sm text-muted-foreground">Participant Contribution</p>
-                  <p className="text-lg font-semibold">
-                    {formatCurrency(statementData.summary.participantContribution)}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-sm text-muted-foreground">Average Service Cost</p>
-                  <p className="text-lg font-semibold">
-                    {formatCurrency(statementData.summary.averageServiceCost)}
-                  </p>
-                </div>
-              </div>
 
-              {/* Important Notes */}
-              <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4" />
-                  Important Information
-                </h4>
-                <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
-                  <li>This statement shows all services delivered during the selected month.</li>
-                  <li>Budget amounts are indicative and may vary based on your care plan.</li>
-                  <li>Funding streams with zero balances are hidden automatically.</li>
-                  <li>For queries or concerns, please contact your service provider.</li>
-                  <li>Keep this statement for your records.</li>
-                </ul>
+                <div className="flex items-start gap-3 rounded-lg border bg-muted/20 p-4 print:bg-transparent">
+                  <div className="mt-0.5 rounded-md bg-primary/10 p-2 text-primary print:bg-transparent">
+                    <FileCheck className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-muted-foreground">Generated</p>
+                    <p className="truncate text-sm font-semibold tabular-nums">
+                      {format(new Date(), 'dd/MM/yyyy')}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 rounded-lg border bg-muted/20 p-4 print:bg-transparent">
+                  <div className="mt-0.5 rounded-md bg-primary/10 p-2 text-primary print:bg-transparent">
+                    <FileText className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-muted-foreground">Total services</p>
+                    <p className="truncate text-sm font-semibold tabular-nums">
+                      {statementData.summary.totalServices} services
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 rounded-lg border bg-muted/20 p-4 print:bg-transparent">
+                  <div className="mt-0.5 rounded-md bg-primary/10 p-2 text-primary print:bg-transparent">
+                    <FileSpreadsheet className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-muted-foreground">Government subsidy</p>
+                    <p className="truncate text-sm font-semibold tabular-nums">
+                      {formatCurrency(statementData.summary.govSubsidy)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3 rounded-lg border bg-muted/20 p-4 print:bg-transparent">
+                  <div className="mt-0.5 rounded-md bg-primary/10 p-2 text-primary print:bg-transparent">
+                    <User className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-muted-foreground">Participant contribution</p>
+                    <p className="truncate text-sm font-semibold tabular-nums">
+                      {formatCurrency(statementData.summary.participantContribution)}
+                    </p>
+                  </div>
+                </div>
               </div>
             </Card>
           </div>
