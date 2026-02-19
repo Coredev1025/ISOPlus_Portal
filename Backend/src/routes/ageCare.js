@@ -125,195 +125,88 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
         if (fullName != '') {
             fullName += ' - ';
         }
-        switch (serviceCategory.attribute.settings.labels.find(l => l.id === serviceCategory.data.toString())?.name) {
+        const getAttributeIdByName = (attributeName) => {
+            const attributeValue = itemValuesWithAttributeId.find(v => v.attribute?.name === attributeName);
+            return attributeValue?.attribute?.id;
+        };
+
+        const unitAttributeId = getAttributeIdByName("Unit");
+        const agreedUnitPriceAttributeId = getAttributeIdByName("Agreed Unit Price ($)");
+        const participantContributionAttributeId = getAttributeIdByName("Participant Contribution (%)");
+        const servicePlanIdAttributeId = getAttributeIdByName("Service Plan ID");
+
+        const serviceCategoryLabelId = serviceCategory?.data?.toString();
+        const serviceCategoryLabelName = serviceCategoryLabelId
+            ? serviceCategory?.attribute?.settings?.labels?.find(l => l.id === serviceCategoryLabelId)?.name || ''
+            : '';
+
+        let selectedMainService = null;
+        let servicePlanIdValue = '';
+
+        switch (serviceCategoryLabelName) {
             case '🧑‍⚕️ Home Support (HS)': {
                 if (homeSupportValues) {
-                    updatevariables.push({
-                        data: homeSupportValues.unit,
-                        attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
-                    });
-                    if (Number(homeSupportValues.unitPrice) >= 0) {
-                        updatevariables.push({
-                            data: Number(homeSupportValues.unitPrice),
-                            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
-                        });
-                    }
-                    const firstPercentageValue = homeSupportValues.participantContributionGuideline && homeSupportValues.participantContributionGuideline.includes('-')
-                        ? parseFloat(homeSupportValues.participantContributionGuideline.split('-')[0])
-                        : 0;
-                    if (firstPercentageValue >= 0) {
-                        updatevariables.push({
-                            data: firstPercentageValue,
-                            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
-                        });
-                    }
-                    updatevariables.push({
-                        data: fullName + homeSupportValues.service,
-                        attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Service Plan ID").attribute.id
-                    });
+                    selectedMainService = homeSupportValues;
+                    servicePlanIdValue = fullName + homeSupportValues.service;
                 }
                 break;
             }
             case '🦽 Assistive Technology (AT) - Short-term': {
                 if (assistiveTechnologyShortTermValues) {
-                    updatevariables.push({
-                        data: assistiveTechnologyShortTermValues.unit,
-                        attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
-                    });
-                    if (Number(assistiveTechnologyShortTermValues.unitPrice) >= 0) {
-                        updatevariables.push({
-                            data: Number(assistiveTechnologyShortTermValues.unitPrice),
-                            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
-                        });
-                    }
-                    const firstPercentageValue = assistiveTechnologyShortTermValues.participantContributionGuideline && assistiveTechnologyShortTermValues.participantContributionGuideline.includes('-')
-                        ? parseFloat(assistiveTechnologyShortTermValues.participantContributionGuideline.split('-')[0])
-                        : 0;
-                    if (firstPercentageValue >= 0) {
-                        updatevariables.push({
-                            data: firstPercentageValue,
-                            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
-                        });
-                    }
-                    let servicePlanId = '';
+                    selectedMainService = assistiveTechnologyShortTermValues;
                     if (wraparoundValues && wraparoundValues.wraparoundDescription) {
-                        servicePlanId = `${fullName}${wraparoundValues.wraparoundDescription} for ${assistiveTechnologyShortTermValues.service}`;
+                        servicePlanIdValue = `${fullName}${wraparoundValues.wraparoundDescription} for ${assistiveTechnologyShortTermValues.service}`;
                     } else {
-                        servicePlanId = fullName + assistiveTechnologyShortTermValues.service;
+                        servicePlanIdValue = fullName + assistiveTechnologyShortTermValues.service;
                     }
-                    updatevariables.push({
-                        data: servicePlanId,
-                        attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Service Plan ID").attribute.id
-                    });
                 }
                 break;
             }
             case '🦼 Assistive Technology (AT) - Ongoing': {
                 if (assistiveTechnologyOngoingValues) {
-                    updatevariables.push({
-                        data: assistiveTechnologyOngoingValues.unit,
-                        attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
-                    });
-                    if (Number(assistiveTechnologyOngoingValues.unitPrice) >= 0) {
-                        updatevariables.push({
-                            data: Number(assistiveTechnologyOngoingValues.unitPrice),
-                            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
-                        });
-                    }
-                    const firstPercentageValue = assistiveTechnologyOngoingValues.participantContributionGuideline && assistiveTechnologyOngoingValues.participantContributionGuideline.includes('-')
-                        ? parseFloat(assistiveTechnologyOngoingValues.participantContributionGuideline.split('-')[0])
-                        : 0;
-                    if (firstPercentageValue >= 0) {
-                        updatevariables.push({
-                            data: firstPercentageValue,
-                            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
-                        });
-                    }
-                    let servicePlanId = '';
+                    selectedMainService = assistiveTechnologyOngoingValues;
                     if (wraparoundValues && wraparoundValues.wraparoundDescription) {
-                        servicePlanId = `${fullName}${wraparoundValues.wraparoundDescription} for ${assistiveTechnologyOngoingValues.service}`;
+                        servicePlanIdValue = `${fullName}${wraparoundValues.wraparoundDescription} for ${assistiveTechnologyOngoingValues.service}`;
                     } else {
-                        servicePlanId = fullName + assistiveTechnologyOngoingValues.service;
+                        servicePlanIdValue = fullName + assistiveTechnologyOngoingValues.service;
                     }
-                    updatevariables.push({
-                        data: servicePlanId,
-                        attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Service Plan ID").attribute.id
-                    });
                 }
                 break;
             }
             case '🛠️ Home Modification (HM)': {
                 if (homeModificationValues) {
-                    updatevariables.push({
-                        data: homeModificationValues.unit,
-                        attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
-                    });
-                    if (Number(homeModificationValues.unitPrice) >= 0) {
-                        updatevariables.push({
-                            data: Number(homeModificationValues.unitPrice),
-                            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
-                        });
-                    }
-                    const firstPercentageValue = homeModificationValues.participantContributionGuideline && homeModificationValues.participantContributionGuideline.includes('-')
-                        ? parseFloat(homeModificationValues.participantContributionGuideline.split('-')[0])
-                        : 0;
-                    if (firstPercentageValue >= 0) {
-                        updatevariables.push({
-                            data: firstPercentageValue,
-                            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
-                        });
-                    }
-                    let servicePlanId = '';
+                    selectedMainService = homeModificationValues;
                     if (wraparoundValues && wraparoundValues.wraparoundDescription) {
-                        servicePlanId = `${fullName}${wraparoundValues.wraparoundDescription} for ${homeModificationValues.service}`;
+                        servicePlanIdValue = `${fullName}${wraparoundValues.wraparoundDescription} for ${homeModificationValues.service}`;
                     } else {
-                        servicePlanId = fullName + homeModificationValues.service;
+                        servicePlanIdValue = fullName + homeModificationValues.service;
                     }
-                    updatevariables.push({
-                        data: servicePlanId,
-                        attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Service Plan ID").attribute.id
-                    });
                 }
                 break;
             }
             case '🩺 AT Health Professional': { }
             case '🩺 HM Health Professional': {
                 if (healthProfessionalValues) {
-                    updatevariables.push({
-                        data: healthProfessionalValues.unit,
-                        attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
-                    });
-                    if (Number(healthProfessionalValues.unitPrice) >= 0) {
-                        updatevariables.push({
-                            data: Number(healthProfessionalValues.unitPrice),
-                            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
-                        });
-                    }
-                    const firstPercentageValue = healthProfessionalValues.participantContributionGuideline && healthProfessionalValues.participantContributionGuideline.includes('-')
-                        ? parseFloat(healthProfessionalValues.participantContributionGuideline.split('-')[0])
-                        : 0;
-                    if (firstPercentageValue >= 0) {
-                        updatevariables.push({
-                            data: firstPercentageValue,
-                            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
-                        });
-                    }
-                    let servicePlanId = '';
+                    selectedMainService = healthProfessionalValues;
                     if (wraparoundValues && wraparoundValues.wraparoundDescription) {
-                        servicePlanId = `${fullName}${wraparoundValues.wraparoundDescription} for ${healthProfessionalValues.service}`;
+                        servicePlanIdValue = `${fullName}${wraparoundValues.wraparoundDescription} for ${healthProfessionalValues.service}`;
                     } else {
-                        servicePlanId = fullName + healthProfessionalValues.service;
+                        servicePlanIdValue = fullName + healthProfessionalValues.service;
                     }
-                    updatevariables.push({
-                        data: servicePlanId,
-                        attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Service Plan ID").attribute.id
-                    });
                 }
                 break;
             }
             case '📌 AT Wraparound': { }
             case '📌 HM Wraparound': {
-                if (wraparoundValues) {
-                    updatevariables.push({
-                        data: wraparoundValues.unit,
-                        attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Unit").attribute.id
-                    });
-                    if (Number(wraparoundValues.unitPrice) >= 0) {
-                        updatevariables.push({
-                            data: Number(wraparoundValues.unitPrice),
-                            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Agreed Unit Price ($)").attribute.id
-                        });
-                    }
-                    const firstPercentageValue = wraparoundValues.participantContributionGuideline && wraparoundValues.participantContributionGuideline.includes('-')
-                        ? parseFloat(wraparoundValues.participantContributionGuideline.split('-')[0])
-                        : 0;
-                    if (firstPercentageValue >= 0) {
-                        updatevariables.push({
-                            data: firstPercentageValue,
-                            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Participant Contribution (%)").attribute.id
-                        });
-                    }
-                    let servicePlanId = fullName + wraparoundValues.wraparoundDescription;
+                selectedMainService = assistiveTechnologyShortTermValues ||
+                    assistiveTechnologyOngoingValues ||
+                    homeModificationValues ||
+                    healthProfessionalValues ||
+                    homeSupportValues ||
+                    null;
+
+                if (wraparoundValues?.wraparoundDescription) {
+                    let nextServicePlanIdValue = `${fullName}${wraparoundValues.wraparoundDescription}`;
 
                     const companionService = assistiveTechnologyShortTermValues?.service ||
                         assistiveTechnologyOngoingValues?.service ||
@@ -321,15 +214,62 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                         healthProfessionalValues?.service;
 
                     if (companionService) {
-                        servicePlanId = `${fullName}${wraparoundValues.wraparoundDescription} for ${companionService}`;
+                        nextServicePlanIdValue = `${fullName}${wraparoundValues.wraparoundDescription} for ${companionService}`;
                     }
 
-                    updatevariables.push({
-                        data: servicePlanId,
-                        attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === "Service Plan ID").attribute.id
-                    });
+                    servicePlanIdValue = nextServicePlanIdValue;
                 }
                 break;
+            }
+        }
+
+        if (servicePlanIdValue && servicePlanIdAttributeId) {
+            updatevariables.push({
+                data: servicePlanIdValue,
+                attribute_id: servicePlanIdAttributeId
+            });
+        }
+
+        const parseContributionPctFromGuideline = (guideline) => {
+            if (!guideline) return 0;
+            const text = guideline.toString();
+            const first = text.includes('-') ? text.split('-')[0] : text;
+            const parsed = parseFloat(first);
+            return Number.isFinite(parsed) ? parsed : 0;
+        };
+
+        const wraparoundSelected = !!wraparoundValues;
+        const mainServiceWraparoundText = (selectedMainService?.wraparound || '').toString().toLowerCase();
+        const wraparoundNotApplicable = wraparoundSelected && (
+            !!homeSupportValues ||
+            (mainServiceWraparoundText && (mainServiceWraparoundText.includes('not applicable') || mainServiceWraparoundText.includes('n/a')))
+        );
+
+        const pricingSource = wraparoundSelected ? wraparoundValues : selectedMainService;
+        if (pricingSource || wraparoundNotApplicable) {
+            const unitToSet = wraparoundNotApplicable ? '0' : (pricingSource?.unit ?? null);
+            const unitPriceToSet = wraparoundNotApplicable ? 0 : Number(pricingSource?.unitPrice);
+            const contributionPctToSet = wraparoundNotApplicable
+                ? 0
+                : parseContributionPctFromGuideline(pricingSource?.participantContributionGuideline);
+
+            if (unitAttributeId && unitToSet !== null && unitToSet !== undefined) {
+                updatevariables.push({
+                    data: unitToSet,
+                    attribute_id: unitAttributeId
+                });
+            }
+            if (agreedUnitPriceAttributeId && Number(unitPriceToSet) >= 0) {
+                updatevariables.push({
+                    data: Number(unitPriceToSet),
+                    attribute_id: agreedUnitPriceAttributeId
+                });
+            }
+            if (participantContributionAttributeId && Number(contributionPctToSet) >= 0) {
+                updatevariables.push({
+                    data: Number(contributionPctToSet),
+                    attribute_id: participantContributionAttributeId
+                });
             }
         }
 
@@ -356,6 +296,7 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
             const nonWrapCounts = [countHS, countATShort, countATOngoing, countHM, countHP];
             const numGroupsSelectedExclWrap = nonWrapCounts.filter(c => c > 0).length;
             const hasMultipleInAnyGroup = [...nonWrapCounts, countWraparound].some(c => c > 1);
+            const wraparoundSelected = countWraparound > 0;
 
             const selectedMap = {
                 homeSupport: !!homeSupportValues,
@@ -377,49 +318,32 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
             let statusColor = '';
             let integrationMsg = '';
 
-            if (!statusColor && wraparoundCategoryLabelName && categoryLabelName.includes('Home Support')) {
-                statusColor = '#3578D1';
-                integrationMsg = 'Error: Wraparound is NOT Applicable. The selected service does not support Wraparound according to Aged Care Pricing guidelines.';
-            }
-            if (!statusColor && wraparoundCategoryLabelName && countWraparound === 0) {
-                statusColor = '#D99C05';
-                integrationMsg = 'Error: Misalignment of Wraparound Category. The starting letters of the selected Wraparound do not match the Wraparound Category.';
-            }
-            if (!statusColor && numGroupsSelectedExclWrap === 0 && countWraparound === 0) {
+            if (!statusColor && numGroupsSelectedExclWrap === 0 && countWraparound === 0 && expectedKey) {
                 statusColor = '#C60909';
                 integrationMsg = 'Error: Misalignment of Service Category. The selected service does not match the assigned service category.';
             }
-            if (!statusColor && selectedMap.wraparound && numGroupsSelectedExclWrap === 0 && !selectedMap.homeSupport) {
+
+            if (!statusColor && hasMultipleInAnyGroup) {
+                statusColor = '#EE691E';
+                integrationMsg = 'Error: Multiple Services within a Group. Please select only one service in each group.';
+            }
+
+            if (!statusColor && numGroupsSelectedExclWrap > 1) {
+                statusColor = '#EE691E';
+                integrationMsg = 'Error: Multiple Service Groups. Please select only one service group (Wraparound can be combined with other categories except Home Support).';
+            }
+
+            if (!statusColor && wraparoundSelected && numGroupsSelectedExclWrap === 0) {
                 statusColor = '#CA56A8';
                 integrationMsg = 'Error: Wraparound cannot be chosen as a Standalone Service. Please select a service category (except Home Support).';
             }
-            if (!statusColor && selectedMap.wraparound && wraparoundCategoryLabelName) {
-                let wraparoundPrefix = '';
-                if (typeof wraparoundCategoryLabelName === 'string') {
-                    if (wraparoundCategoryLabelName.includes('AT')) {
-                        wraparoundPrefix = 'AT';
-                    } else if (wraparoundCategoryLabelName.includes('HM')) {
-                        wraparoundPrefix = 'HM';
-                    }
-                }
-                let wraparoundDescPrefix = '';
-                if (wraparoundValues?.wraparoundDescription && typeof wraparoundValues.wraparoundDescription === 'string') {
-                    if (wraparoundValues.wraparoundDescription.includes('AT')) {
-                        wraparoundDescPrefix = 'AT';
-                    } else if (wraparoundValues.wraparoundDescription.includes('HM')) {
-                        wraparoundDescPrefix = 'HM';
-                    }
-                }
-                if (!statusColor && selectedMap.homeSupport && selectedMap.wraparound) {
-                    statusColor = '#3578D1';
-                    integrationMsg = 'Error: Wraparound is NOT Applicable. The selected service does not support Wraparound according to Aged Care Pricing guidelines.';
-                }
-                if (wraparoundPrefix && wraparoundDescPrefix && wraparoundPrefix !== wraparoundDescPrefix) {
-                    statusColor = '#D99C05';
-                    integrationMsg = 'Error: Misalignment of Wraparound Category. The starting letters of the selected Wraparound do not match the Wraparound Category.';
-                }
+
+            if (!statusColor && wraparoundSelected && countHS > 0) {
+                statusColor = '#3578D1';
+                integrationMsg = 'Error: Wraparound is NOT Applicable. The selected service does not support Wraparound according to Aged Care Pricing guidelines.';
             }
-            if (!statusColor && selectedMap.wraparound) {
+
+            if (!statusColor && wraparoundSelected) {
                 const selectedService = homeSupportValues || assistiveTechnologyShortTermValues ||
                     assistiveTechnologyOngoingValues || homeModificationValues || healthProfessionalValues;
 
@@ -431,10 +355,53 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
                     }
                 }
             }
-            if (!statusColor && numGroupsSelectedExclWrap > 1) {
-                statusColor = '#EE691E';
-                integrationMsg = 'Error: Multiple Service Groups. Please select only one service group (Wraparound can be combined with other categories except Home Support).';
+
+            if (!statusColor && wraparoundSelected && wraparoundCategoryLabelName) {
+                let wraparoundPrefix = '';
+                if (typeof wraparoundCategoryLabelName === 'string') {
+                    if (wraparoundCategoryLabelName.includes('AT')) {
+                        wraparoundPrefix = 'AT';
+                    } else if (wraparoundCategoryLabelName.includes('HM')) {
+                        wraparoundPrefix = 'HM';
+                    }
+                }
+
+                const inferSelectedMainPrefix = () => {
+                    if (categoryLabelName.includes('Home Modification') || categoryLabelName.includes('(HM)') || categoryLabelName.includes('HM Health Professional')) {
+                        return 'HM';
+                    }
+                    if (categoryLabelName.includes('Assistive Technology') || categoryLabelName.includes('(AT)') || categoryLabelName.includes('AT Health Professional')) {
+                        return 'AT';
+                    }
+                    if (categoryLabelName.includes('Wraparound')) {
+                        if (countHM > 0) return 'HM';
+                        if (countATShort > 0 || countATOngoing > 0) return 'AT';
+                    }
+                    return '';
+                };
+
+                const selectedMainPrefix = inferSelectedMainPrefix();
+
+                let wraparoundDescPrefix = '';
+                if (wraparoundValues?.wraparoundDescription && typeof wraparoundValues.wraparoundDescription === 'string') {
+                    if (wraparoundValues.wraparoundDescription.includes('AT')) {
+                        wraparoundDescPrefix = 'AT';
+                    } else if (wraparoundValues.wraparoundDescription.includes('HM')) {
+                        wraparoundDescPrefix = 'HM';
+                    }
+                }
+
+                if (!statusColor && wraparoundPrefix && selectedMainPrefix && wraparoundPrefix !== selectedMainPrefix) {
+                    statusColor = '#D99C05';
+                    integrationMsg = 'Error: Misalignment of Wraparound Category. The starting letters of the selected Wraparound do not match the Wraparound Category.';
+                }
+
+                if (!statusColor && wraparoundPrefix && wraparoundDescPrefix && wraparoundPrefix !== wraparoundDescPrefix) {
+                    statusColor = '#D99C05';
+                    integrationMsg = 'Error: Misalignment of Wraparound Category. The starting letters of the selected Wraparound do not match the Wraparound Category.';
+                }
             }
+
             if (!statusColor && numGroupsSelectedExclWrap === 1) {
                 const selectedKey = ['homeSupport','assistiveTechnologyShortTerm','assistiveTechnologyOngoing','homeModification','healthProfessional']
                     .filter((k, idx) => nonWrapCounts[idx] > 0)[0];
