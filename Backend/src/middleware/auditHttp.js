@@ -57,12 +57,61 @@ function getRoutePattern(req) {
   return undefined;
 }
 
+function titleCaseWords(str) {
+  return String(str)
+    .split(/\s+/g)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+function humanizeWriteAction({ method, routePattern, urlPath }) {
+  const m = (method || '').toUpperCase();
+  if (!m || ['GET', 'HEAD', 'OPTIONS'].includes(m)) return undefined;
+
+  const input = routePattern || urlPath || '';
+  if (!input) return undefined;
+
+  // Strip query string & leading /api
+  const path = String(input).split('?')[0].replace(/^\/api\//, '/');
+
+  // Prefer last stable segment
+  const segments = path
+    .split('/')
+    .filter(Boolean)
+    .filter((s) => !s.startsWith(':')); // drop params from route patterns
+
+  if (!segments.length) return undefined;
+  const last = segments[segments.length - 1];
+
+  const words = String(last)
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!words) return undefined;
+
+  // If the endpoint already contains an action verb (update/generate/etc), keep it.
+  const verbPrefix =
+    m === 'POST' ? '' : m === 'PUT' || m === 'PATCH' ? 'Update ' : m === 'DELETE' ? 'Delete ' : '';
+
+  return titleCaseWords(`${verbPrefix}${words}`.trim());
+}
+
 function deriveUserAction({ method, routePattern, urlPath }) {
   if (!method) return undefined;
   const m = method.toUpperCase();
 
   // Prefer stable route patterns (no IDs) when available
   const rp = routePattern || '';
+
+  if (m === 'POST' && rp === '/api/age-care/:workspaceId/:boardId/update-variables-participants-service') {
+    return 'Update Participants Service variables';
+  }
+
+  if (m === 'POST' && rp === '/api/age-care/:workspaceId/:boardId/update-variables-masterplan') {
+    return 'Update Master Plan variables';
+  }
 
   if (m === 'POST' && rp === '/api/pdf/:workspaceId/:boardId/monthly-statement') {
     return 'Generate Monthly Statement';
@@ -73,6 +122,24 @@ function deriveUserAction({ method, routePattern, urlPath }) {
   }
 
   return undefined;
+}
+
+function getBodyItemId(req) {
+  const itemId =
+    req?.body?.itemId ||
+    req?.body?.id ||
+    req?.body?.items?.[0]?.id ||
+    req?.body?.items?.[0]?.itemId;
+  return itemId ? String(itemId) : undefined;
+}
+
+function buildAuditDetailMessage({ success, statusCode, durationMs, itemId }) {
+  const statusLabel = success ? 'OK' : 'FAILED';
+  const parts = [statusLabel];
+  if (itemId) parts.push(`item=${itemId}`);
+  if (typeof statusCode === 'number') parts.push(`status=${statusCode}`);
+  if (typeof durationMs === 'number') parts.push(`durationMs=${Math.round(durationMs * 100) / 100}`);
+  return parts.join(' ');
 }
 
 export function auditHttpMiddleware(req, res, next) {
@@ -123,7 +190,6 @@ export function auditHttpMiddleware(req, res, next) {
         req.body?.boardId;
 
       const routePattern = getRoutePattern(req);
-      const httpAction = `HTTP ${method} ${urlPath}`;
 
       const explicitUserAction =
         ctx.userAction ||
@@ -136,28 +202,47 @@ export function auditHttpMiddleware(req, res, next) {
       const derivedUserAction = deriveUserAction({ method, routePattern, urlPath });
 
       const userAction = (explicitUserAction && String(explicitUserAction).trim()) || derivedUserAction;
-      const action = userAction || httpAction;
+      const fallbackAction = !userAction ? humanizeWriteAction({ method, routePattern, urlPath }) : undefined;
+      const action = userAction || fallbackAction;
 
-      // For read-only requests, only audit when we have a meaningful user action.
+      // Never store "HTTP {method} {path}" as action.
+      // For read-only requests, only audit when we have an explicit/known action mapping.
       if (['GET', 'HEAD'].includes(methodUpper) && !userAction) {
         return;
       }
 
-      const detail = {
-        userAction: userAction || undefined,
-        httpAction,
-        routePattern,
+      if (!action) {
+        return;
+      }
+
+      const itemId = getBodyItemId(req);
+      const detail = buildAuditDetailMessage({
+        success,
         statusCode,
-        durationMs: Math.round(durationMs * 100) / 100,
-        requestId: ctx.requestId,
-        userId: ctx.userId,
-        userEmail: ctx.email,
-        userRole: ctx.userRole,
-        workspaceId,
-        boardId
-      };
+        durationMs,
+        itemId
+      });
 
       const metadata = {
+        http: {
+          method: methodUpper,
+          path: urlPath,
+          routePattern
+        },
+        request: {
+          requestId: ctx.requestId,
+          userId: ctx.userId,
+          userEmail: ctx.email,
+          userRole: ctx.userRole
+        },
+        timing: {
+          durationMs: Math.round(durationMs * 100) / 100
+        },
+        entity: {
+          workspaceId,
+          boardId,
+          itemId
+        },
         params: redact(req.params),
         query: redact(req.query),
         // Don't log bodies for GET/HEAD to reduce noise
@@ -174,7 +259,7 @@ export function auditHttpMiddleware(req, res, next) {
         req,
         success,
         statusCode,
-        category: userAction ? 'APP' : 'HTTP',
+        category: 'APP',
         entityType: boardId ? 'Board' : 'Workspace',
         entityId: boardId || workspaceId,
         metadata
