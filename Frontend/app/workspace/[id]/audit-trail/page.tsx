@@ -43,6 +43,76 @@ interface AuditTrailItem {
   detail: string;
 }
 
+function titleCaseWords(str: string) {
+  return str
+    .split(/\s+/g)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+function humanizeActionFromPath(method: string | undefined, path: string | undefined) {
+  if (!path) return "";
+  const urlPath = String(path).split("?")[0];
+
+  // Known “user actions” (keep these friendly and stable)
+  if (urlPath.includes("/api/age-care/") && urlPath.endsWith("/update-variables-participants-service")) {
+    return "Update Participants Service variables";
+  }
+  if (urlPath.includes("/api/age-care/") && urlPath.endsWith("/update-variables-masterplan")) {
+    return "Update Master Plan variables";
+  }
+  if (urlPath.includes("/api/pdf/") && urlPath.endsWith("/monthly-statement")) {
+    return "Generate Monthly Statement";
+  }
+
+  // Generic fallback: use last segment, avoid showing full endpoint
+  const segments = urlPath.split("/").filter(Boolean);
+  const last = segments[segments.length - 1] || "";
+  const words = last.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!words) return "";
+
+  const m = (method || "").toUpperCase();
+  const verbPrefix = m === "DELETE" ? "Delete " : m === "PUT" || m === "PATCH" ? "Update " : "";
+  return titleCaseWords(`${verbPrefix}${words}`.trim());
+}
+
+function normalizeAuditAction(item: any) {
+  const action = String(item?.action || "");
+  if (!action) return "";
+  if (action.startsWith("HTTP ")) {
+    const derived = humanizeActionFromPath(item?.method, item?.path);
+    return derived || "Unknown Action";
+  }
+  return action;
+}
+
+function normalizeAuditDetail(item: any) {
+  const detail = String(item?.detail || "");
+  if (!detail) return "";
+
+  // Old records stored detail as JSON - make it log-like.
+  const looksJson = detail.startsWith("{") && detail.endsWith("}");
+  if (looksJson) {
+    try {
+      const parsed = JSON.parse(detail);
+      const statusCode = typeof parsed?.statusCode === "number" ? parsed.statusCode : undefined;
+      const durationMs = typeof parsed?.durationMs === "number" ? parsed.durationMs : undefined;
+      const ok = typeof statusCode === "number" ? statusCode < 400 : undefined;
+
+      const parts: string[] = [];
+      if (ok !== undefined) parts.push(ok ? "OK" : "FAILED");
+      if (statusCode !== undefined) parts.push(`status=${statusCode}`);
+      if (durationMs !== undefined) parts.push(`durationMs=${Math.round(durationMs * 100) / 100}`);
+      return parts.length ? parts.join(" ") : detail;
+    } catch {
+      return detail;
+    }
+  }
+
+  return detail;
+}
+
 export default function AuditTrailPage() {
   const router = useRouter();
   const id = usePathname().split('/')[2];
@@ -97,10 +167,10 @@ export default function AuditTrailPage() {
         const { items, total, page, totalPages: apiTotalPages } = response.data;
 
         let auditData: AuditTrailItem[] = items.map((item: any) => ({
-          action: item.action,
+          action: normalizeAuditAction(item),
           user: item.userEmail,
           ipAddress: item.userIp,
-          detail: item.detail,
+          detail: normalizeAuditDetail(item),
           timestamp: new Date(item.createdAt).toLocaleString('en-AU', {
             day: '2-digit',
             month: '2-digit',
