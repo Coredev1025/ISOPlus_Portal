@@ -6,7 +6,7 @@ import { ArrowLeft, Calendar, User, FileText, AlertCircle, FileCheck, FileSpread
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { toPng } from "html-to-image";
+import { toJpeg } from "html-to-image";
 import {
   Table,
   TableBody,
@@ -1581,10 +1581,12 @@ export default function MonthlyStatement() {
 
     try {
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-      return await toPng(clone, {
-        pixelRatio: 3,
+      // Use JPEG + lower pixel ratio to keep request payload small (prevents 413 at proxies).
+      return await toJpeg(clone, {
+        pixelRatio: 2,
         cacheBust: true,
         backgroundColor: 'white',
+        quality: 0.85,
       });
     } finally {
       document.body.removeChild(wrapper);
@@ -1651,7 +1653,7 @@ export default function MonthlyStatement() {
         const dh = img.height * scale;
         ctx.drawImage(img, x + (maxW - dw) / 2, y + (maxH - dh) / 2, dw, dh);
       });
-      return canvas.toDataURL("image/png");
+      return canvas.toDataURL("image/jpeg", 0.82);
     }
 
     // Choose a canvas size that preserves the target aspect while minimizing downscaling.
@@ -1705,7 +1707,7 @@ export default function MonthlyStatement() {
       ctx.drawImage(img, dx, dy, dw, dh);
     });
 
-    return canvas.toDataURL("image/png");
+    return canvas.toDataURL("image/jpeg", 0.82);
   };
 
   // Handle PDF generation/export (consolidated function)
@@ -1728,45 +1730,6 @@ export default function MonthlyStatement() {
         return null;
       }
 
-      // Use optimized export endpoints to fetch all data in parallel
-      const exportBaseUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/export/${id}/${boardId}/monthly-statement-csv`;
-
-      const [budgetResponse, serviceResponse] = await Promise.all([
-        axios.get(exportBaseUrl, {
-          params: {
-            participant: selectedParticipant,
-            month: selectedMonth,
-            year: selectedYear,
-            startDate: dateRange.startDate,
-            endDate: dateRange.endDate,
-            type: 'budget'
-          },
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
-        }),
-        axios.get(exportBaseUrl, {
-          params: {
-            participant: selectedParticipant,
-            month: selectedMonth,
-            year: selectedYear,
-            startDate: dateRange.startDate,
-            endDate: dateRange.endDate,
-            type: 'service'
-          },
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
-        })
-      ]);
-
-      const allBudgetItems: BudgetRecord[] = budgetResponse.data?.items || [];
-      const allServiceItems: ServiceRecord[] = serviceResponse.data?.items || [];
-
-      // Create updated statement data with all items
-      const fullStatementData = {
-        ...statementData,
-        budgetItems: allBudgetItems,
-        serviceItems: allServiceItems,
-        services: allServiceItems, // Also update services for backward compatibility
-      };
-
       let chartImage: string | undefined;
       const chartsWithData = chartConfigs.filter((c) => c.hasData);
       if (chartsWithData.length > 0 && chartCardRefs.current.length > 0) {
@@ -1784,7 +1747,7 @@ export default function MonthlyStatement() {
             imageDataUrls.push(dataUrl);
           }
           if (imageDataUrls.length > 0) {
-            chartImage = await compositeChartImages(imageDataUrls, pdfCols, undefined, {
+            chartImage = await compositeChartImages(imageDataUrls, pdfCols, getPdfChartCellSize(pdfCols), {
               targetAspect: SUMMARY_TABLE_ASPECT,
               background: 'white',
               gap: 0,
@@ -1797,14 +1760,39 @@ export default function MonthlyStatement() {
         }
       }
 
+      // Prevent 413 "Content Too Large" from reverse proxies by skipping huge base64 images.
+      // If omitted, backend will fall back to a lightweight placeholder image.
+      const MAX_CHART_IMAGE_CHARS = 120_000; // ~<120KB string, keeps payload comfortably small
+      if (chartImage && chartImage.length > MAX_CHART_IMAGE_CHARS) {
+        chartImage = undefined;
+        showInfoToast('Charts omitted from PDF', {
+          description: 'Chart image was too large to upload; PDF will include a placeholder chart instead.'
+        });
+      }
+
+      const userActionLabel =
+        action === 'generate' ? 'Generate Monthly Statement PDF' : 'Export Monthly Statement PDF';
+
       // Call backend PDF generation endpoint, sending browser timezone so dates are formatted correctly
       const response = await axios.post(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/${id}/${boardId}/monthly-statement`,
         {
-          statementData: fullStatementData,
+          statementData: {
+            ...statementData,
+            monthNumber: statementData.monthNumber || selectedMonth,
+            year: statementData.year || selectedYear,
+          },
           businessDetails,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           ...(chartImage ? { chartImage } : {}),
+        }
+        ,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-User-Action': userActionLabel
+          }
         }
       );
 
