@@ -3,7 +3,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import Item from '../models/Item.js';
 import InvoiceNumber from '../models/InvoiceNumber.js';
 import Business from '../models/Business.js';
-import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
+import { info, error, warn } from '../utils/logger.js';
 import { getFolder } from '../services/isoplus.js';
 import { fetchBudgetItems, fetchServiceItems } from '../services/monthlyStatementData.js';
 
@@ -542,7 +542,7 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
 
         info('Export-Service', 'Starting optimized CSV export (DB only)', {
             workspaceId, boardId, participant
-        }, extractContextFromReq(req));
+        }, req ?? null);
 
         const folderIds = await getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
         const baseQuery = { workspaceId, boardId };
@@ -554,7 +554,7 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
 
         info('Export-Service', 'Fetched items from database', {
             count: allItems.length
-        }, extractContextFromReq(req));
+        }, req ?? null);
 
         let processedItems = allItems.map(item => {
             const scheduledStart = getValue(item, ATTRIBUTE_NAMES.SCHEDULED_START);
@@ -646,7 +646,7 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
             servicePlans: servicePlanIds.size,
             participantProfiles: participantProfileIds.size,
             fundingSources: fundingSourceIds.size
-        }, extractContextFromReq(req));
+        }, req ?? null);
 
         const allRefIds = [...servicePlanIds, ...participantProfileIds, ...fundingSourceIds];
         const refItemsMap = await bulkFetchItemsFromDB(workspaceId, boardId, allRefIds);
@@ -887,7 +887,7 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
             boardId,
             itemCount: transformedItems.length,
             durationMs: duration
-        }, extractContextFromReq(req));
+        }, req ?? null);
 
         res.status(200).json({
             items: transformedItems,
@@ -925,7 +925,7 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
 
         info('Export-Service', 'Starting monthly statement CSV export (DB only)', {
             workspaceId, boardId, participant, type
-        }, extractContextFromReq(req));
+        }, req ?? null);
 
         let items;
         if (type === 'budget') {
@@ -943,7 +943,7 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
         const duration = Date.now() - startTime;
         info('Export-Service', `Completed ${type} CSV export (DB only)`, {
             itemCount: items.length, durationMs: duration
-        }, extractContextFromReq(req));
+        }, req ?? null);
 
         res.status(200).json({
             items,

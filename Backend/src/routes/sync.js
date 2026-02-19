@@ -10,7 +10,7 @@ import {
   getBoardSyncStatus 
 } from '../services/sync.js';
 import Board from '../models/Board.js';
-import { info, error, extractContextFromReq } from '../utils/logger.js';
+import { info, error } from '../utils/logger.js';
 import { syncQueue } from '../services/sync/queue.js';
 
 const router = express.Router();
@@ -33,13 +33,12 @@ router.post('/board/enable', authenticateToken, async (req, res) => {
       boardId !== 'null';
     
     if (!isValidWorkspaceId || !isValidBoardId) {
-      const context = extractContextFromReq(req);
       error('Sync-Route', 'Invalid request parameters for board sync enable', { 
         workspaceId: workspaceId || 'missing',
         boardId: boardId || 'missing',
         workspaceIdType: typeof workspaceId,
         boardIdType: typeof boardId
-      }, context);
+      }, req ?? null);
       
       return res.status(400).json({ 
         message: 'workspaceId and boardId are required and must be valid non-empty strings',
@@ -56,7 +55,7 @@ router.post('/board/enable', authenticateToken, async (req, res) => {
       workspaceId, 
       boardId,
       success: result.success
-    }, extractContextFromReq(req));
+    }, req ?? null);
     
     const statusCode = result.success ? 202 : 409; // 202 Accepted, 409 Conflict
     res.status(statusCode).json(result);
@@ -92,7 +91,7 @@ router.post('/board/disable', authenticateToken, async (req, res) => {
     
     info('Sync-Route', 'Board sync disabled', { 
       boardId
-    }, extractContextFromReq(req));
+    }, req ?? null);
     
     res.status(200).json(result);
   } catch (err) {
@@ -122,13 +121,12 @@ router.post('/board/manual', authenticateToken, async (req, res) => {
       boardId !== 'null';
     
     if (!isValidWorkspaceId || !isValidBoardId) {
-      const context = extractContextFromReq(req);
       error('Sync-Route', 'Invalid request parameters for manual sync', { 
         workspaceId: workspaceId || 'missing',
         boardId: boardId || 'missing',
         workspaceIdType: typeof workspaceId,
         boardIdType: typeof boardId
-      }, context);
+      }, req ?? null);
       
       return res.status(400).json({ 
         message: 'workspaceId and boardId are required and must be valid non-empty strings',
@@ -145,7 +143,7 @@ router.post('/board/manual', authenticateToken, async (req, res) => {
       workspaceId, 
       boardId,
       success: result.success
-    }, extractContextFromReq(req));
+    }, req ?? null);
     
     const statusCode = result.success ? 202 : 409;
     res.status(statusCode).json(result);
@@ -185,13 +183,12 @@ router.post('/board/retry', authenticateToken, async (req, res) => {
       boardId !== 'null';
     
     if (!isValidWorkspaceId || !isValidBoardId) {
-      const context = extractContextFromReq(req);
       error('Sync-Route', 'Invalid request parameters for sync retry', { 
         workspaceId: workspaceId || 'missing',
         boardId: boardId || 'missing',
         workspaceIdType: typeof workspaceId,
         boardIdType: typeof boardId
-      }, context);
+      }, req ?? null);
       
       return res.status(400).json({ 
         message: 'workspaceId and boardId are required and must be valid non-empty strings',
@@ -209,7 +206,7 @@ router.post('/board/retry', authenticateToken, async (req, res) => {
       boardId,
       success: result.success,
       retryCount: result.retryCount
-    }, extractContextFromReq(req));
+    }, req ?? null);
     
     const statusCode = result.success ? 202 : 409;
     res.status(statusCode).json(result);
@@ -245,7 +242,7 @@ router.post('/board/cancel', authenticateToken, async (req, res) => {
     
     info('Sync-Route', 'Sync cancelled', { 
       boardId
-    }, extractContextFromReq(req));
+    }, req ?? null);
     
     res.status(200).json(result);
   } catch (err) {
@@ -272,7 +269,7 @@ router.post('/workspace/enable', authenticateToken, async (req, res) => {
     info('Sync-Route', 'Workspace sync enable requested', { 
       workspaceId,
       enabledBoards: result.enabledBoards
-    }, extractContextFromReq(req));
+    }, req ?? null);
     
     res.status(202).json(result);
   } catch (err) {
@@ -476,7 +473,7 @@ router.get('/queue/analysis', authenticateToken, async (req, res) => {
       waiting,
       completed,
       failed,
-    }, extractContextFromReq(req));
+    }, req ?? null);
 
     res.status(200).json(analysis);
   } catch (err) {

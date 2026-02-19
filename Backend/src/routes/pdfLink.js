@@ -1,6 +1,6 @@
 import express from 'express';
 import PDFLink from '../models/PDFLink.js';
-import { info, error, extractContextFromReq } from '../utils/logger.js';
+import { info, error } from '../utils/logger.js';
 
 const router = express.Router();
 
@@ -10,7 +10,7 @@ router.get('/', async (req, res) => {
         const workspaceId = req.query.workspaceId?.toString();
         if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
         const pdfLinks = await PDFLink.find({ workspaceId });
-        info('PDFLink-Service', 'PDF links fetched', { workspaceId, count: pdfLinks.length }, extractContextFromReq(req));
+        info('PDFLink-Service', 'PDF links fetched', { workspaceId, count: pdfLinks.length }, req ?? null);
         res.json(pdfLinks);
     } catch (err) {
         error('PDFLink-Service', 'Failed to fetch PDF links', { err }, req);
@@ -25,7 +25,7 @@ router.get('/:id', async (req, res) => {
         const itemId = req.params.id?.toString();
         if (!workspaceId || !itemId) return res.status(400).json({ message: 'Invalid workspaceId or itemId' });
         const pdfLinks = await PDFLink.find({ workspaceId, itemId });
-        info('PDFLink-Service', 'PDF links fetched by item', { workspaceId, itemId, count: pdfLinks.length }, extractContextFromReq(req));
+        info('PDFLink-Service', 'PDF links fetched by item', { workspaceId, itemId, count: pdfLinks.length }, req ?? null);
         res.json(pdfLinks);
     } catch (err) {
         error('PDFLink-Service', 'Failed to fetch PDF links by item', { err }, req);
@@ -46,7 +46,7 @@ router.post('/', async (req, res) => {
 
     try {
         const newPDFLink = await pdfLink.save();
-        info('PDFLink-Service', 'PDF link created', { pdfLinkId: newPDFLink._id, workspaceId: newPDFLink.workspaceId, itemId: newPDFLink.itemId }, extractContextFromReq(req));
+        info('PDFLink-Service', 'PDF link created', { pdfLinkId: newPDFLink._id, workspaceId: newPDFLink.workspaceId, itemId: newPDFLink.itemId }, req ?? null);
         res.status(201).json(newPDFLink);
     } catch (err) {
         error('PDFLink-Service', 'Failed to create PDF link', { err, body: req.body }, req);
@@ -69,7 +69,7 @@ router.put('/', async (req, res) => {
         pdfLink.isDeleted = true;
 
         const updatedPDFLink = await pdfLink.save();
-        info('PDFLink-Service', 'PDF link marked deleted', { pdfLinkId: updatedPDFLink._id, workspaceId, itemId }, extractContextFromReq(req));
+        info('PDFLink-Service', 'PDF link marked deleted', { pdfLinkId: updatedPDFLink._id, workspaceId, itemId }, req ?? null);
         res.json(updatedPDFLink);
     } catch (err) {
         error('PDFLink-Service', 'Failed to update PDF link', { err, body: req.body }, req);

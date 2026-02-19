@@ -4,7 +4,7 @@ import Business from '../models/Business.js';
 import InvoiceNumber from '../models/InvoiceNumber.js';
 import Board from '../models/Board.js';
 import Item from '../models/Item.js';
-import { warn, error, extractContextFromReq } from '../utils/logger.js';
+import { warn, error } from '../utils/logger.js';
 import { isEmpty } from '../utils/helpers.js';
 import {
   validateItemBelongsToTenant,
@@ -40,7 +40,7 @@ const router = express.Router();
 
 async function validatePayload(payload, req) {
   if (!payload?.items?.length) {
-    warn('Xero-Service', 'Received payload with empty items.', { payload }, extractContextFromReq(req));
+    warn('Xero-Service', 'Received payload with empty items.', { payload }, req ?? null);
     return { error: 'No items found in the payload' };
   }
   return { item: payload.items[0] };
@@ -108,7 +108,7 @@ async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, ty
       invoiceNumber,
       type,
       error: err.message
-    }, extractContextFromReq({}));
+    }, null);
   }
 }
 
@@ -1226,7 +1226,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
   const { workspaceId, boardId } = req.params;
   const payload = req.body;
   if (!payload.items || payload.items.length === 0) {
-    warn('Xero-Service', 'Received payload with empty items.', { payload }, extractContextFromReq(req));
+    warn('Xero-Service', 'Received payload with empty items.', { payload }, req ?? null);
     return res.json('No items found in the payload.');
   }
 
@@ -1797,7 +1797,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       workspaceId,
       boardId,
       itemCount: items.length
-    }, extractContextFromReq(req));
+    }, req ?? null);
     
     // Update integration messages for all items
     await Promise.all(items.map(async (item) => {

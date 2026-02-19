@@ -2,7 +2,7 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import Board from '../models/Board.js';
 import TimeTrack from '../models/TimeTrack.js';
-import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
+import { info, error, warn } from '../utils/logger.js';
 import { getBoardAttributes, getAllViews } from '../services/isoplus.js';
 import { enableBoardSync, disableBoardSync } from '../services/sync.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
@@ -15,7 +15,7 @@ router.post('/', authenticateToken, async (req, res) => {
         if (!boardId) return res.status(400).json({ message: 'Invalid boardId' });
         const existingBoard = await Board.findOne({ boardId }).lean();
         if (existingBoard) {
-            warn('Board-Service', 'Board already exists', { boardId: req.body.boardId }, extractContextFromReq(req));
+            warn('Board-Service', 'Board already exists', { boardId: req.body.boardId }, req ?? null);
             res.status(200).json({ board: existingBoard });
         } else {
             const newBoard = new Board({
@@ -37,11 +37,11 @@ router.post('/', authenticateToken, async (req, res) => {
                 success: true,
                 statusCode: 200
             });
-            info('Board-Service', 'New board created', { boardId: req.body.id }, extractContextFromReq(req));
+            info('Board-Service', 'New board created', { boardId: req.body.id }, req ?? null);
             res.status(200).json({ board: newBoard });
         }
     } catch (err) {
-        error('Board-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+        error('Board-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
         res.status(500).json({ message: 'Server error' });
     }
 });
@@ -53,14 +53,14 @@ router.get('/', authenticateToken, async (req, res) => {
         const existingBoard = await Board.findOne({ boardId }).lean();
 
         if (existingBoard) {
-            info('Board-Service', 'Successfully fetching board detail data', { boardId: req.query.id }, extractContextFromReq(req));
+            info('Board-Service', 'Successfully fetching board detail data', { boardId: req.query.id }, req ?? null);
             res.status(200).json({ board: existingBoard });
         } else {
-            warn('Board-Service', 'Failed fetching board detail data', { boardId: req.query.id }, extractContextFromReq(req));
+            warn('Board-Service', 'Failed fetching board detail data', { boardId: req.query.id }, req ?? null);
             res.status(200).json({ message: 'Board not found' });
         }
     } catch (err) {
-        error('Board-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+        error('Board-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
         res.status(500).json({ message: 'Server error' });
     }
 });
@@ -81,7 +81,7 @@ router.put('/', authenticateToken, async (req, res) => {
         
         // Check if board was found and updated (matchedCount > 0) or created via upsert (upsertedCount > 0)
         if (result.matchedCount === 0 && result.upsertedCount === 0) {
-            warn('Board-Service', 'Board not found and not created', { boardId: req.body.boardId }, extractContextFromReq(req));
+            warn('Board-Service', 'Board not found and not created', { boardId: req.body.boardId }, req ?? null);
             return res.status(404).json({ message: 'Board not found' });
         }
         
@@ -93,7 +93,7 @@ router.put('/', authenticateToken, async (req, res) => {
             info('Board-Service', 'Sync enabled in board configuration, triggering sync job', { 
                 boardId, 
                 workspaceId 
-            }, extractContextFromReq(req));
+            }, req ?? null);
             
             try {
                 syncResult = await enableBoardSync(req.session.Authorization, workspaceId, boardId);
@@ -103,7 +103,7 @@ router.put('/', authenticateToken, async (req, res) => {
                         boardId, 
                         workspaceId,
                         jobId: syncResult.jobId 
-                    }, extractContextFromReq(req));
+                    }, req ?? null);
                     
                     await logAuditTrail({ 
                         workspaceId, 
@@ -121,7 +121,7 @@ router.put('/', authenticateToken, async (req, res) => {
                         boardId, 
                         workspaceId,
                         reason: syncResult.message 
-                    }, extractContextFromReq(req));
+                    }, req ?? null);
                 }
             } catch (syncErr) {
                 error('Board-Service', 'Failed to enable sync', { 
@@ -129,7 +129,7 @@ router.put('/', authenticateToken, async (req, res) => {
                     workspaceId,
                     error: syncErr.message,
                     stack: syncErr.stack
-                }, extractContextFromReq(req));
+                }, req ?? null);
                 
                 // Revert syncData to false if sync enablement failed
                 await Board.updateOne({ boardId }, { $set: { syncData: false } });
@@ -147,7 +147,7 @@ router.put('/', authenticateToken, async (req, res) => {
             info('Board-Service', 'Sync disabled in board configuration', { 
                 boardId, 
                 workspaceId 
-            }, extractContextFromReq(req));
+            }, req ?? null);
             
             try {
                 syncResult = await disableBoardSync(boardId);
@@ -155,7 +155,7 @@ router.put('/', authenticateToken, async (req, res) => {
                 info('Board-Service', 'Sync disabled successfully', { 
                     boardId, 
                     workspaceId 
-                }, extractContextFromReq(req));
+                }, req ?? null);
                 
                 await logAuditTrail({ 
                     workspaceId, 
@@ -174,7 +174,7 @@ router.put('/', authenticateToken, async (req, res) => {
                     workspaceId,
                     error: syncErr.message,
                     stack: syncErr.stack
-                }, extractContextFromReq(req));
+                }, req ?? null);
             }
         }
         
@@ -187,7 +187,7 @@ router.put('/', authenticateToken, async (req, res) => {
             pdfAttributeId: req.body.pdfAttribute?.id,
             syncData: updatedBoard.syncData,
             syncStatus: updatedBoard.syncStatus
-        }, extractContextFromReq(req));
+        }, req ?? null);
         
         await logAuditTrail({ 
             workspaceId, 
@@ -205,7 +205,7 @@ router.put('/', authenticateToken, async (req, res) => {
             syncResult: syncResult 
         });
     } catch (err) {
-        error('Board-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+        error('Board-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
         res.status(500).json({ message: 'Server error' });
     }
 });
@@ -215,12 +215,12 @@ router.get('/attribute', authenticateToken, async (req, res) => {
         const attributes = await getBoardAttributes(req.query.workspaceId, req.query.boardId);
         const data = attributes.attribute.filter(item => item.type == "text" || item.type == "longtext");
         if (!data) {
-            warn('Board-Service', 'Failed fetching board attribute data', { boardId: req.query.boardId }, extractContextFromReq(req));
+            warn('Board-Service', 'Failed fetching board attribute data', { boardId: req.query.boardId }, req ?? null);
             return res.status(404).json({ message: 'Attribute not found' });
         }
         res.status(attributes.status).json({ attributes: data || [] });
     } catch (err) {
-        error('Board-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+        error('Board-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
         res.status(500).json({ message: 'Server error' });
     }
 });
@@ -230,12 +230,12 @@ router.get('/form', authenticateToken, async (req, res) => {
         const views = await getAllViews(req.session.Authorization, req.query.workspaceId, req.query.boardId);
         const data = views.views.filter(item => item.type == "form" && item.settings.formSettings.enabled);
         if (!data) {
-            warn('Board-Service', 'Failed fetching board form data', { boardId: req.query.boardId }, extractContextFromReq(req));
+            warn('Board-Service', 'Failed fetching board form data', { boardId: req.query.boardId }, req ?? null);
             return res.status(404).json({ message: 'Form not found' });
         }
         res.status(200).json({ views: data || [] });
     } catch (err) {
-        error('Board-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+        error('Board-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
         res.status(500).json({ message: 'Server error' });
     }
 });
