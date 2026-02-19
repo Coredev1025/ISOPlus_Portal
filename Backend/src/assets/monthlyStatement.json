@@ -3753,14 +3753,14 @@
                     "Cont."
                 ],
                 "headWidthPercentages": [
-                    8.664391,
-                    28.395026,
-                    8.392411637445138,
-                    10.627970730294207,
-                    9.175859169583363,
-                    10.45509262505219,
-                    13.600395,
-                    10.688854
+                    8.346104,
+                    24.891944,
+                    8.931950399315337,
+                    11.31123108699917,
+                    9.765764897439134,
+                    11.127238841640313,
+                    14.249738,
+                    11.376028
                 ],
                 "tableStyles": {
                     "borderWidth": 0,
@@ -3836,7 +3836,7 @@
                     "y": 170.98
                 },
                 "content": " Total",
-                "width": 110.93461951344861,
+                "width": 108,
                 "height": 7,
                 "rotate": 0,
                 "alignment": "left",
@@ -3861,10 +3861,10 @@
                 "type": "text",
                 "content": "$ P6-1 ",
                 "position": {
-                    "x": 130.93,
-                    "y": 170.97592
+                    "x": 128,
+                    "y": 170.98
                 },
-                "width": 17.77,
+                "width": 18.77,
                 "height": 7,
                 "rotate": 0,
                 "alignment": "center",
@@ -3889,10 +3889,10 @@
                 "type": "text",
                 "content": "$ P6-2 ",
                 "position": {
-                    "x": 148.71,
-                    "y": 170.97592
+                    "x": 146.78,
+                    "y": 170.98
                 },
-                "width": 23.12,
+                "width": 24,
                 "height": 7,
                 "rotate": 0,
                 "alignment": "center",
@@ -3917,10 +3917,10 @@
                 "type": "text",
                 "content": "$ P6-3 ",
                 "position": {
-                    "x": 171.83,
-                    "y": 170.97592
+                    "x": 170.8,
+                    "y": 170.98
                 },
-                "width": 18.17,
+                "width": 19.19999999999999,
                 "height": 7,
                 "rotate": 0,
                 "alignment": "center",
@@ -4344,7 +4344,7 @@
                     "y": 197.01600000000002
                 },
                 "content": " Total",
-                "width": 111.50286676568004,
+                "width": 108,
                 "height": 7,
                 "rotate": 0,
                 "alignment": "left",
@@ -4369,10 +4369,10 @@
                 "type": "text",
                 "content": "$ P6-4 ",
                 "position": {
-                    "x": 131.5,
+                    "x": 128,
                     "y": 197.01600000000002
                 },
-                "width": 17.49,
+                "width": 18.77,
                 "height": 7,
                 "rotate": 0,
                 "alignment": "center",
@@ -4397,10 +4397,10 @@
                 "type": "text",
                 "content": "$ P6-5 ",
                 "position": {
-                    "x": 149,
+                    "x": 146.78,
                     "y": 197.01600000000002
                 },
-                "width": 23.37,
+                "width": 24,
                 "height": 7,
                 "rotate": 0,
                 "alignment": "center",
@@ -4425,10 +4425,10 @@
                 "type": "text",
                 "content": "$ P6-6 ",
                 "position": {
-                    "x": 172.37,
+                    "x": 170.8,
                     "y": 197.01600000000002
                 },
-                "width": 17.63,
+                "width": 19.19999999999999,
                 "height": 7,
                 "rotate": 0,
                 "alignment": "center",
