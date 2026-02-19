@@ -3148,7 +3148,7 @@ export default function MonthlyStatement() {
                   <Spinner />
                 </div>
               ) : chartConfigs.length > 0 ? (
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-3" ref={chartContainerRef}>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3" ref={chartContainerRef}>
                   {chartConfigs.map((chart, chartIndex) => (
                     <div
                       key={chart.code}
