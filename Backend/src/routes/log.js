@@ -1,7 +1,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import { authenticateToken } from '../middleware/auth.js';
-import { warn, info, error, extractContextFromReq } from '../utils/logger.js';
+import { warn, info, error } from '../utils/logger.js';
 
 const router = express.Router();
 
@@ -27,7 +27,7 @@ const Log = mongoose.model('Log', logSchema);
 router.get('/', authenticateToken, async (req, res) => {
     try {
         if(req.user.role == 'isoplus_user') {
-            warn('Log-Service', 'Unauthorized access', { email: req.user.email }, extractContextFromReq(req));
+            warn('Log-Service', 'Unauthorized access', { email: req.user.email }, req ?? null);
             return res.status(403).json({ message: 'Unauthorized access' });
         }
 
@@ -85,7 +85,7 @@ router.get('/', authenticateToken, async (req, res) => {
             total,
             page: pageNumber,
             limit: limitNumber
-        }, extractContextFromReq(req));
+        }, req ?? null);
 
         res.json({
             items: logs,

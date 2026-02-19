@@ -3,7 +3,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import Item from '../models/Item.js';
 import Business from '../models/Business.js';
 import InvoiceNumber from '../models/InvoiceNumber.js';
-import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
+import { info, error, warn } from '../utils/logger.js';
 import { getFolder } from '../services/isoplus.js';
 import { batchProcess } from '../utils/helpers.js';
 import { getCachedTransform, setCachedTransform, getCacheStats, invalidateCacheForItem, getCachedMSBudget, setCachedMSBudget, getCachedMSService, setCachedMSService, invalidateMSCacheForItem } from '../utils/transformCache.js';
@@ -844,7 +844,7 @@ router.get('/:workspaceId/:boardId/invoice-generator/participants', authenticate
             message: err.message,
             workspaceId,
             boardId
-        }, extractContextFromReq(req));
+        }, req ?? null);
         res.status(500).json({ message: 'Server error' });
     }
 });
@@ -920,7 +920,7 @@ router.get('/:workspaceId/:boardId/monthly-statement/participants', authenticate
             message: err.message,
             workspaceId,
             boardId
-        }, extractContextFromReq(req));
+        }, req ?? null);
         res.status(500).json({ message: 'Server error' });
     }
 });
@@ -987,7 +987,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 stack: dbErr.stack,
                 workspaceId,
                 boardId
-            }, extractContextFromReq(req));
+            }, req ?? null);
             return res.status(500).json({
                 message: 'Error fetching invoice generator data',
                 error: dbErr.message
@@ -1127,7 +1127,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 warn('Items-Service', 'Invalid participant regex pattern', {
                     pattern: participant,
                     error: regexErr.message
-                }, extractContextFromReq(req));
+                }, req ?? null);
             }
         }
 
@@ -1326,7 +1326,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             fundingSources: fundingSourceIds.size,
             nestedRefs: nestedRefIds.size,
             totalFound: refItemsMap.size
-        }, extractContextFromReq(req));
+        }, req ?? null);
 
         // OPTIMIZED: Bulk fetch all invoice numbers upfront (like invoice-csv endpoint)
         const itemIdsForInvoice = items.map(p => p.item.itemId);
@@ -1596,7 +1596,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
     } catch (err) {
         error('Items-Service', 'Failed to fetch invoice generator data', {
             message: err.message
-        }, extractContextFromReq(req));
+        }, req ?? null);
         res.status(500).json({ message: 'Server error' });
     }
 });
@@ -1636,7 +1636,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             warn('Items-Service', 'Failed to fetch business name', {
                 message: err.message,
                 workspaceId
-            }, extractContextFromReq(req));
+            }, req ?? null);
         }
 
         // Fetch folder metadata once so we can group by real folder names
@@ -1649,7 +1649,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 message: folderErr.message,
                 workspaceId,
                 boardId
-            }, extractContextFromReq(req));
+            }, req ?? null);
         }
 
         const folderIdToName = new Map();
@@ -1727,7 +1727,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 stack: dbErr.stack,
                 workspaceId,
                 boardId
-            }, extractContextFromReq(req));
+            }, req ?? null);
             return res.status(500).json({
                 message: 'Error fetching budget items for monthly statement',
                 error: dbErr.message
@@ -1888,7 +1888,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         info('Items-Service', 'Bulk fetched participant profiles from DB (monthly-statement budget)', {
             profileIds: budgetParticipantProfileIds.size,
             foundProfiles: budgetProfilesMap.size
-        }, extractContextFromReq(req));
+        }, req ?? null);
 
         // DATABASE-ONLY: Resolve participant name from lookup map using helper function
         const resolveParticipantName = (participantProfileIdValue) => {
@@ -2326,7 +2326,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 stack: dbErr.stack,
                 workspaceId,
                 boardId
-            }, extractContextFromReq(req));
+            }, req ?? null);
             return res.status(500).json({
                 message: 'Error fetching service items for monthly statement',
                 error: dbErr.message
@@ -2371,7 +2371,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             foundProfiles: serviceProfilesMap.size,
             fundingSourceIds: serviceFundingSourceIds.size,
             foundFundingSources: fundingSourceRefMap.size
-        }, extractContextFromReq(req));
+        }, req ?? null);
 
         // Format transaction status to string (same logic as formatStatus used in transform)
         const formatStatusLabel = (value) => {
@@ -2458,7 +2458,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 warn('Items-Service', 'Invalid participant regex pattern', {
                     pattern: participant,
                     error: regexErr.message
-                }, extractContextFromReq(req));
+                }, req ?? null);
             }
         }
 
@@ -2599,7 +2599,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             participantProfilesNewlyFetched: msParticipantProfileIdsToFetch.length,
             fundingSources: msFundingSourceIds.size,
             totalFound: msRefItemsMap.size
-        }, extractContextFromReq(req));
+        }, req ?? null);
 
         // Format label value from flat data format
         const formatStatus = (value) => {
@@ -3147,7 +3147,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 warn('Items-Service', 'Failed to fetch budget data from profile', {
                     message: err.message,
                     participantProfileId
-                }, extractContextFromReq(req));
+                }, req ?? null);
             }
         }
 
@@ -3264,7 +3264,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
     } catch (err) {
         error('Items-Service', 'Failed to fetch monthly statement data', {
             message: err.message
-        }, extractContextFromReq(req));
+        }, req ?? null);
         res.status(500).json({ message: 'Server error' });
     }
 });
@@ -3384,7 +3384,7 @@ router.post('/:workspaceId/:boardId/update-status', authenticateToken, async (re
                     itemId,
                     workspaceId,
                     boardId
-                }, extractContextFromReq(req));
+                }, req ?? null);
                 results.push({
                     itemId,
                     updated: false,
@@ -3402,7 +3402,7 @@ router.post('/:workspaceId/:boardId/update-status', authenticateToken, async (re
             boardId,
             updatedCount,
             failedCount
-        }, extractContextFromReq(req));
+        }, req ?? null);
 
         res.status(200).json({
             updatedCount,
@@ -3412,7 +3412,7 @@ router.post('/:workspaceId/:boardId/update-status', authenticateToken, async (re
     } catch (err) {
         error('Items-Service', 'Failed to update invoice statuses', {
             message: err.message
-        }, extractContextFromReq(req));
+        }, req ?? null);
         res.status(500).json({ message: 'Server error' });
     }
 });
@@ -3436,19 +3436,19 @@ router.get('/:workspaceId/:boardId/:itemId', authenticateToken, async (req, res)
         if (!item) {
             warn('Items-Service', 'Item not found', {
                 workspaceId, boardId, itemId
-            }, extractContextFromReq(req));
+            }, req ?? null);
             return res.status(404).json({ message: 'Item not found' });
         }
 
         info('Items-Service', 'Successfully fetched item', {
             itemId
-        }, extractContextFromReq(req));
+        }, req ?? null);
 
         res.status(200).json(item);
     } catch (err) {
         error('Items-Service', 'Failed to fetch item', {
             message: err.message
-        }, extractContextFromReq(req));
+        }, req ?? null);
         res.status(500).json({ message: 'Server error' });
     }
 });
@@ -3465,7 +3465,7 @@ router.get('/cache/stats', authenticateToken, async (req, res) => {
     } catch (err) {
         error('Items-Service', 'Failed to get cache stats', {
             message: err.message
-        }, extractContextFromReq(req));
+        }, req ?? null);
         res.status(500).json({ message: 'Server error' });
     }
 });
@@ -3516,7 +3516,7 @@ router.get('/:workspaceId/:boardId/invoice/:invoiceNumber/pdf-link', authenticat
     } catch (err) {
         error('Items-Service', 'Failed to get PDF link', {
             message: err.message
-        }, extractContextFromReq(req));
+        }, req ?? null);
         res.status(500).json({ message: 'Server error' });
     }
 });

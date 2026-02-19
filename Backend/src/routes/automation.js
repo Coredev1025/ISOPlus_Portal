@@ -2,7 +2,7 @@ import express from 'express';
 import axios from 'axios';
 import { authenticateToken } from '../middleware/auth.js';
 import { v4 as uuidv4 } from 'uuid';
-import { info, error, warn, debug, extractContextFromReq } from '../utils/logger.js';
+import { info, error, warn, debug } from '../utils/logger.js';
 import { getAutomation, updateAutomation } from '../services/isoplus.js';
 
 const router = express.Router();
@@ -33,7 +33,7 @@ router.post('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
                 'Authorization': `Bearer ${req.session.Authorization}`
             }
         });
-        info('Automation-Service', 'Automation created via ISO+ API', { workspaceId, boardId, automationId }, extractContextFromReq(req));
+        info('Automation-Service', 'Automation created via ISO+ API', { workspaceId, boardId, automationId }, req ?? null);
         res.json(response.data);
     } catch (err) {
         error('Automation-Service', 'Failed to create automation', { err, workspaceId: req.params.workspaceId, boardId: req.params.boardId }, req);
@@ -56,7 +56,7 @@ router.put('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
             let needsUpdate = automationItem.name.startsWith("Portal - ");
 
             if (needsUpdate) {
-                debug('Automation-Service', 'Automation requires URL update', { name: automationItem.name, automationId: updatedAutomation.id }, extractContextFromReq(req));
+                debug('Automation-Service', 'Automation requires URL update', { name: automationItem.name, automationId: updatedAutomation.id }, req ?? null);
             }
             
             if (needsUpdate && updatedAutomation.workflow && Array.isArray(updatedAutomation.workflow)) {
@@ -81,7 +81,7 @@ router.put('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
                                     `${backendUrlWithoutProtocol}/api/${apiPath}/${workspaceId}/${boardId}`
                                 );
                             } else {
-                                warn('Automation-Service', 'BACKEND_URL not found in your environment variables', { workspaceId, boardId, automationId: updatedAutomation.id }, extractContextFromReq(req));
+                                warn('Automation-Service', 'BACKEND_URL not found in your environment variables', { workspaceId, boardId, automationId: updatedAutomation.id }, req ?? null);
                             }
                         }
                         
@@ -100,10 +100,10 @@ router.put('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
             if (needsUpdate) {
                 const result = await updateAutomation(workspaceId, boardId, automationItem.id, updatedAutomation, req.session.Authorization);
                 if (result) {
-                    info('Automation-Service', 'Automation updated', { workspaceId, boardId, automationId: updatedAutomation.id }, extractContextFromReq(req));
+                    info('Automation-Service', 'Automation updated', { workspaceId, boardId, automationId: updatedAutomation.id }, req ?? null);
                     updatedAutomations.push(result);
                 } else {
-                    error('Automation-Service', 'Failed to update Automation', { workspaceId, boardId, automationId: updatedAutomation.id }, extractContextFromReq(req));
+                    error('Automation-Service', 'Failed to update Automation', { workspaceId, boardId, automationId: updatedAutomation.id }, req ?? null);
                 }
             }
         }

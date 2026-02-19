@@ -2,7 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import { authenticateToken } from '../middleware/auth.js';
 import Business from '../models/Business.js';
-import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
+import { info, error, warn } from '../utils/logger.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { uploadFileToS3, getS3FileUrl, deleteFileFromS3, getS3File, getContentType } from '../utils/uploadS3.js'; // Import S3 utility functions
@@ -60,7 +60,7 @@ const validateBusinessProfile = (req, res, next) => {
     }
   }
   if (errors.length > 0) {
-    warn('Business-Service', 'Validation failed', { errors: errors }, extractContextFromReq(req));
+    warn('Business-Service', 'Validation failed', { errors: errors }, req ?? null);
     return res.status(400).json({
       status: 'error',
       errors: errors
@@ -97,7 +97,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
     const business = await Business.findOne({ workspaceId }).lean();
     if (!business) {
-      warn('Business-Service', 'Business profile not found', {}, extractContextFromReq(req));
+      warn('Business-Service', 'Business profile not found', {}, req ?? null);
       return res.status(404).json({ message: 'Business profile not found' });
     }
     if (business.defaultLogo) {
@@ -110,10 +110,10 @@ router.get('/profile', authenticateToken, async (req, res) => {
       business.wideLogo = await getS3FileUrl(business.wideLogo, 3600, false);
     }
 
-    info('Business-Service', 'Fetching Business profile data successfully', { businessName: business.name }, extractContextFromReq(req));
+    info('Business-Service', 'Fetching Business profile data successfully', { businessName: business.name }, req ?? null);
     res.json(business);
   } catch (err) {
-    error('Business-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+    error('Business-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -146,7 +146,7 @@ router.get('/logo', authenticateToken, async (req, res) => {
       workspaceId, 
       logoKey, 
       logoPath 
-    }, extractContextFromReq(req));
+    }, req ?? null);
 
     res.json({ logoUrl });
 
@@ -156,7 +156,7 @@ router.get('/logo', authenticateToken, async (req, res) => {
       stack: err.stack,
       workspaceId: req.query.workspaceId,
       logoKey: req.query.logoKey
-    }, extractContextFromReq(req));
+    }, req ?? null);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -260,7 +260,7 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
         updateData,
         { new: true }
       );
-      info('Business-Service', 'Business profile updated', { businessName: business.name }, extractContextFromReq(req));
+      info('Business-Service', 'Business profile updated', { businessName: business.name }, req ?? null);
       await logAuditTrail({
         workspaceId,
         action: 'Updated Business profile',
@@ -276,7 +276,7 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
     } else {
       business = new Business(updateData);
       await business.save();
-      info('Business-Service', 'New Business profile created', { businessName: business.name }, extractContextFromReq(req));
+      info('Business-Service', 'New Business profile created', { businessName: business.name }, req ?? null);
       await logAuditTrail({
         workspaceId,
         action: 'Created new Business profile',
@@ -291,7 +291,7 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
 
     res.status(200).json(business);
   } catch (err) {
-    error('Business-Service', 'Server error', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+    error('Business-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -324,7 +324,7 @@ router.get('/qr-logo', async (req, res) => {
     info('Business-Service', 'Logo retrieved successfully', { 
       workspaceId, 
       logoPath 
-    }, extractContextFromReq(req));
+    }, req ?? null);
 
     // Set appropriate headers for image response
     const fileExtension = logoPath.split('.').pop().toLowerCase();
@@ -339,7 +339,7 @@ router.get('/qr-logo', async (req, res) => {
       error: err.message,
       stack: err.stack,
       workspaceId: req.query.workspaceId
-    }, extractContextFromReq(req));
+    }, req ?? null);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -380,10 +380,10 @@ router.post('/xero/connect', authenticateToken, async (req, res) => {
       await business.save();
     }
 
-    info('Business-Service', 'Xero integration connected', { businessId: business._id }, extractContextFromReq(req));
+    info('Business-Service', 'Xero integration connected', { businessId: business._id }, req ?? null);
     res.json({ success: true });
   } catch (err) {
-    error('Business-Service', 'Server error during Xero connection', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+    error('Business-Service', 'Server error during Xero connection', { message: err.message, stack: err.stack }, req ?? null);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -395,7 +395,7 @@ router.post('/xero/disconnect', authenticateToken, async (req, res) => {
 
     const business = await Business.findOne({ workspaceId });
     if (!business) {
-      warn('Business-Service', 'Business not found', { workspaceId }, extractContextFromReq(req));
+      warn('Business-Service', 'Business not found', { workspaceId }, req ?? null);
       return res.status(404).json({ message: 'Business not found' });
     }
 
@@ -408,10 +408,10 @@ router.post('/xero/disconnect', authenticateToken, async (req, res) => {
     business.xeroOrganization = null;
 
     await business.save();
-    info('Business-Service', 'Xero integration disconnected', { businessId: business._id }, extractContextFromReq(req));
+    info('Business-Service', 'Xero integration disconnected', { businessId: business._id }, req ?? null);
     res.json({ success: true });
   } catch (err) {
-    error('Business-Service', 'Server error during Xero disconnection', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+    error('Business-Service', 'Server error during Xero disconnection', { message: err.message, stack: err.stack }, req ?? null);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -423,12 +423,12 @@ router.post('/xero/update-organization', authenticateToken, async (req, res) => 
 
     const business = await Business.findOne({ workspaceId });
     if (!business) {
-      warn('Business-Service', 'Business not found', { workspaceId }, extractContextFromReq(req));
+      warn('Business-Service', 'Business not found', { workspaceId }, req ?? null);
       return res.status(404).json({ message: 'Business not found' });
     }
 
     if (!business.xeroIntegrated) {
-      warn('Business-Service', 'Xero integration not found', { workspaceId }, extractContextFromReq(req));
+      warn('Business-Service', 'Xero integration not found', { workspaceId }, req ?? null);
       return res.status(400).json({ message: 'Xero integration not found' });
     }
 
@@ -437,7 +437,7 @@ router.post('/xero/update-organization', authenticateToken, async (req, res) => 
     if (updatedOrganization) {
       business.xeroOrganization = updatedOrganization;
       await business.save();
-      info('Business-Service', 'Xero organization info updated', { businessId: business._id }, extractContextFromReq(req));
+      info('Business-Service', 'Xero organization info updated', { businessId: business._id }, req ?? null);
       await logAuditTrail({
         workspaceId,
         action: 'Updated Xero organization info',
@@ -451,11 +451,11 @@ router.post('/xero/update-organization', authenticateToken, async (req, res) => 
       });
       res.json({ success: true, organization: updatedOrganization });
     } else {
-      error('Business-Service', 'Failed to update Xero organization info', { workspaceId }, extractContextFromReq(req));
+      error('Business-Service', 'Failed to update Xero organization info', { workspaceId }, req ?? null);
       res.status(500).json({ message: 'Failed to update Xero organization info' });
     }
   } catch (err) {
-    error('Business-Service', 'Server error during Xero organization update', { message: err.message, stack: err.stack }, extractContextFromReq(req));
+    error('Business-Service', 'Server error during Xero organization update', { message: err.message, stack: err.stack }, req ?? null);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -463,11 +463,11 @@ router.post('/xero/update-organization', authenticateToken, async (req, res) => 
 router.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      warn('Business-Service', 'File upload failed', { message: 'File size too large. Maximum size is 10MB' }, extractContextFromReq(req));
+      warn('Business-Service', 'File upload failed', { message: 'File size too large. Maximum size is 10MB' }, req ?? null);
       return res.status(400).json({ status: 'error', message: 'File size too large. Maximum size is 10MB' });
     }
   }
-  error('Business-Service', 'File upload failed', { message: err.message || 'An unknown error occurred', stack: err.stack }, extractContextFromReq(req));
+  error('Business-Service', 'File upload failed', { message: err.message || 'An unknown error occurred', stack: err.stack }, req ?? null);
   res.status(500).json({ status: 'error', message: err.message || 'An unknown error occurred' });
 });
 

@@ -309,7 +309,7 @@ const logger = winston.createLogger({
 });
 
 export function extractContextFromReq(req) {
-  if (!req) return {};
+  if (!req || typeof req !== 'object') return {};
 
   const headers = req.headers || {};
   const userAction =
@@ -350,7 +350,7 @@ function normalizeContext(context) {
  * @param {object} meta - Additional metadata
  * @param {object} context - Context object containing ip, email, userId, userRole, request info, etc.
  */
-const log = (level, source, message, meta = {}, context = {}) => {
+const log = (level, source, message, meta = {}, context = null) => {
   const ctx = normalizeContext(context);
   // Extract context data with fallbacks
   const ip = ctx.ip || 'N/A';
@@ -439,16 +439,16 @@ const log = (level, source, message, meta = {}, context = {}) => {
   logger.log(level, message, enhancedMeta);
 };
 
-export const error = (source, message, meta = {}, context = {}) => {
+export const error = (source, message, meta = {}, context = null) => {
   if (meta instanceof Error) return log('error', source, message, normalizeErrorMeta(meta), context);
   return log('error', source, message, meta, context);
 };
-export const warn = (source, message, meta = {}, context = {}) => log('warn', source, message, meta, context);
-export const info = (source, message, meta = {}, context = {}) => log('info', source, message, meta, context);
-export const debug = (source, message, meta = {}, context = {}) => log('debug', source, message, meta, context);
+export const warn = (source, message, meta = {}, context = null) => log('warn', source, message, meta, context);
+export const info = (source, message, meta = {}, context = null) => log('info', source, message, meta, context);
+export const debug = (source, message, meta = {}, context = null) => log('debug', source, message, meta, context);
 
 // Enhanced error logging for attribute-related issues
-export const logAttributeError = (source, message, attributeId, metadata, context = {}) => {
+export const logAttributeError = (source, message, attributeId, metadata, context = null) => {
   const errorContext = {
     attributeId,
     errorType: 'ATTRIBUTE_RECOGNITION_ERROR',
@@ -463,7 +463,7 @@ export const logAttributeError = (source, message, attributeId, metadata, contex
 };
 
 // Enhanced error logging for API-related issues
-export const logApiError = (source, message, apiContext, context = {}) => {
+export const logApiError = (source, message, apiContext, context = null) => {
   const errorContext = {
     errorType: 'API_ERROR',
     apiContext,
@@ -479,24 +479,26 @@ export const logApiError = (source, message, apiContext, context = {}) => {
 
 // Context-aware logging for operation flow tracking
 export const logOperationStart = (source, operation, metadata, context = {}) => {
+  const ctx = normalizeContext(context);
   const operationContext = {
     operationType: 'OPERATION_START',
     operation,
     ...metadata,
     timestamp: new Date().toISOString(),
-    requestId: context.requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    requestId: ctx.requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   };
   info(source, `Starting operation: ${operation}`, operationContext, context);
 };
 
 export const logOperationEnd = (source, operation, metadata, context = {}, success = true) => {
+  const ctx = normalizeContext(context);
   const operationContext = {
     operationType: 'OPERATION_END',
     operation,
     ...metadata,
     success,
     timestamp: new Date().toISOString(),
-    requestId: context.requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    requestId: ctx.requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   };
   const level = success ? 'info' : 'warn';
   log(level, source, `Completed operation: ${operation}`, operationContext, context);

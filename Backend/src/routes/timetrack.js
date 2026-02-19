@@ -1,7 +1,7 @@
 import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import { getFolder, getItem, putTimeTracking } from '../services/isoplus.js';
-import { info, error, warn, extractContextFromReq } from '../utils/logger.js';
+import { info, error, warn } from '../utils/logger.js';
 
 const router = express.Router();
 
@@ -54,7 +54,7 @@ router.put('/', authenticateToken, async (req, res) => {
     try {
         const { workspaceId, boardId, itemId, startTime, endTime } = req.body || {};
         await putTimeTracking(workspaceId, boardId, itemId, startTime, endTime);
-        info('TimeTrack-Service', 'Time tracking updated', { workspaceId, boardId, itemId }, extractContextFromReq(req));
+        info('TimeTrack-Service', 'Time tracking updated', { workspaceId, boardId, itemId }, req ?? null);
         res.status(200).json({ success: true });
     } catch (err) {
         error('TimeTrack-Service', 'Failed to update time tracking', { err }, req);
