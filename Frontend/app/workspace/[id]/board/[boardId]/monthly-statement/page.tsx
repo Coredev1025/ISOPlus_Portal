@@ -2521,6 +2521,7 @@ export default function MonthlyStatement() {
       ? localMonths[(monthIndex + 1) % localMonths.length].label
       : statementData.month;
     const selectedMonthLabel = statementData.month || localMonths[monthIndex]?.label || 'Selected month';
+    const selectedMonthTickLabel = `${selectedMonthLabel}\nexpenditure`;
 
     // Helper function to calculate expenditure as Delivered Amount + Adjustment Amount
     const calculateExpenditure = (
@@ -2624,14 +2625,14 @@ export default function MonthlyStatement() {
           {
             name: 'hsq-expenditure',
             label: `${selectedMonthLabel} expenditure`,
-            shortLabel: `${selectedMonthLabel} expenditure`,
+            shortLabel: selectedMonthTickLabel,
             value: expenditure,
             color: '#dc2626' // Red
           },
           {
             name: 'hsq-balance',
             label: hsqBalanceLabel,
-            shortLabel: hsqBalanceLabel,
+            shortLabel: `Available\nbalance\n${balanceLabel}`,
             value: remaining,
             color: '#2563eb' // Blue
           }
@@ -2661,11 +2662,18 @@ export default function MonthlyStatement() {
           : code === 'ATO'
             ? 'Committed AT Ongoing Funds'
             : 'Committed HM Funds';
+      const committedShortLabel =
+        code === 'ATS'
+          ? 'Committed\nShort-term'
+          : code === 'ATO'
+            ? 'Committed\nOngoing'
+            : 'Committed\nFunds';
       // Date A = Funding End Date for selected month/year; show N/A when not available (dynamic per selection)
       const fundingEndDisplay = category.fundingEndDate != null && String(category.fundingEndDate).trim() !== ''
         ? formatDate(category.fundingEndDate)
         : 'N/A';
       const remainingLabel = `Remaining budget ${fundingEndDisplay}`;
+      const remainingShortLabel = `Remaining\nbudget\n${fundingEndDisplay}`;
       const subtitle = isAssistive
         ? 'Assistive Technology'
         : isHomeModification
@@ -2681,21 +2689,21 @@ export default function MonthlyStatement() {
           {
             name: `${code}-expenditure`,
             label: `${selectedMonthLabel} expenditure`,
-            shortLabel: `${selectedMonthLabel} expenditure`,
+            shortLabel: selectedMonthTickLabel,
             value: expenditure,
             color: '#dc2626' // Red
           },
           {
             name: `${code}-committed`,
             label: committedLabel,
-            shortLabel: committedLabel,
+            shortLabel: committedShortLabel,
             value: committed,
             color: '#16a34a' // Green
           },
           {
             name: `${code}-balance`,
             label: remainingLabel,
-            shortLabel: remainingLabel,
+            shortLabel: remainingShortLabel,
             value: remaining,
             color: '#2563eb' // Blue
           }
@@ -2737,6 +2745,7 @@ export default function MonthlyStatement() {
           : code === 'EOL'
             ? 'Remaining End-of-Life Care Balance as at the End of the Month ($)'
             : `Remaining budget ${formatDate(category.fundingEndDate)}`;
+      const blueBarShortLabel = 'Remaining\nbalance';
       const blueBarValueForChart = code === 'RCP' || code === 'EOL' ? remaining : blueBarValue;
 
       pushChartConfig({
@@ -2747,21 +2756,21 @@ export default function MonthlyStatement() {
           {
             name: `${code}-previous`,
             label: 'Spending from previous months',
-            shortLabel: 'Spending from previous months',
+            shortLabel: 'Previous\nspending',
             value: previousSpending,
             color: '#7c3aed' // Purple
           },
           {
             name: `${code}-expenditure`,
             label: `${selectedMonthLabel} expenditure`,
-            shortLabel: `${selectedMonthLabel} expenditure`,
+            shortLabel: selectedMonthTickLabel,
             value: expenditure,
             color: '#dc2626' // Red
           },
           {
             name: `${code}-balance`,
             label: blueBarLabel,
-            shortLabel: blueBarLabel,
+            shortLabel: blueBarShortLabel,
             value: blueBarValueForChart,
             color: '#2563eb' // Blue - RCP: Remaining Restorative Care Balance as at End of Month; EOL: Remaining End-of-Life Care Balance as at End of Month
           }
@@ -2786,38 +2795,97 @@ export default function MonthlyStatement() {
   }, [statementData]);
 
   // X-axis tick: wrap into short lines so each label stays in its bar slot (no overlap) and full text is visible (no clip)
-  const ChartXAxisTick = ({ x, y, payload }: { x?: number; y?: number; payload?: { value?: string } }) => {
-    const raw = payload?.value ?? '';
-    const maxCharsPerLine = 14;
-    const tickFontSize = 20;
-    const lines = String(raw)
-      .split(/\s+/)
-      .reduce<string[]>((acc, word) => {
-        if (acc.length === 0) return [word];
-        const last = acc[acc.length - 1];
-        if ((last + ' ' + word).length <= maxCharsPerLine) {
-          acc[acc.length - 1] = `${last} ${word}`;
-        } else {
-          acc.push(word);
+  const ChartXAxisTick = ({
+    x,
+    y,
+    width,
+    payload,
+  }: {
+    x?: number;
+    y?: number;
+    width?: number;
+    payload?: { value?: string };
+  }) => {
+    const raw = String(payload?.value ?? '');
+    const tickFontSize = 14;
+    const tickLineHeight = tickFontSize + 2;
+    const availableWidth = typeof width === 'number' && width > 0 ? width : 84;
+    const approxCharWidth = tickFontSize * 0.56;
+    const maxCharsPerLine = Math.max(8, Math.floor((availableWidth - 6) / approxCharWidth));
+    const maxLines = 4;
+
+    const wrapSegment = (segment: string) => {
+      const words = segment.split(/\s+/).filter(Boolean);
+      const out: string[] = [];
+      let current = '';
+
+      const pushCurrent = () => {
+        if (current) out.push(current);
+        current = '';
+      };
+
+      for (const word of words) {
+        if (!current) {
+          if (word.length <= maxCharsPerLine) {
+            current = word;
+            continue;
+          }
+          // Split very long words so they never overflow into neighbouring ticks.
+          for (let i = 0; i < word.length; i += maxCharsPerLine) {
+            out.push(word.slice(i, i + maxCharsPerLine));
+          }
+          continue;
         }
-        return acc;
-      }, []);
+
+        const candidate = `${current} ${word}`;
+        if (candidate.length <= maxCharsPerLine) {
+          current = candidate;
+        } else {
+          pushCurrent();
+          if (word.length <= maxCharsPerLine) {
+            current = word;
+          } else {
+            for (let i = 0; i < word.length; i += maxCharsPerLine) {
+              out.push(word.slice(i, i + maxCharsPerLine));
+            }
+          }
+        }
+      }
+
+      pushCurrent();
+      return out;
+    };
+
+    const lines = raw
+      .split('\n')
+      .flatMap((segment) => wrapSegment(segment.trim()))
+      .filter(Boolean);
+
+    const clampedLines =
+      lines.length <= maxLines
+        ? lines
+        : [
+            ...lines.slice(0, maxLines - 1),
+            `${lines[maxLines - 1].slice(0, Math.max(0, maxCharsPerLine - 1))}…`,
+          ];
+
+    const startY = (y ?? 0) + 6;
 
     return (
       <text
         x={x}
-        y={y}
+        y={startY}
         textAnchor="middle"
-        fill="hsl(var(--foreground))"
+        dominantBaseline="hanging"
+        fill="hsl(var(--muted-foreground))"
         style={{
           overflow: 'visible',
           fontSize: tickFontSize,
           fontWeight: 400,
-          lineHeight: 1.1,
         }}
       >
-        {lines.map((line, index) => (
-          <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? tickFontSize : tickFontSize + 2}>
+        {clampedLines.map((line, index) => (
+          <tspan key={`${line}-${index}`} x={x} dy={index === 0 ? 0 : tickLineHeight}>
             {line}
           </tspan>
         ))}
@@ -3102,7 +3170,7 @@ export default function MonthlyStatement() {
                               axisLine={{ stroke: 'hsl(var(--muted-foreground))', strokeWidth: 1 }}
                               tickLine={false}
                               interval={0}
-                              height={140}
+                              height={96}
                               tick={<ChartXAxisTick />}
                               allowDataOverflow={false}
                             />
