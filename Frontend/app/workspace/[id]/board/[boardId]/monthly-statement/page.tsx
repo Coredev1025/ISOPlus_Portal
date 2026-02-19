@@ -1760,16 +1760,6 @@ export default function MonthlyStatement() {
         }
       }
 
-      // Prevent 413 "Content Too Large" from reverse proxies by skipping huge base64 images.
-      // If omitted, backend will fall back to a lightweight placeholder image.
-      const MAX_CHART_IMAGE_CHARS = 120_000; // ~<120KB string, keeps payload comfortably small
-      if (chartImage && chartImage.length > MAX_CHART_IMAGE_CHARS) {
-        chartImage = undefined;
-        showInfoToast('Charts omitted from PDF', {
-          description: 'Chart image was too large to upload; PDF will include a placeholder chart instead.'
-        });
-      }
-
       const userActionLabel =
         action === 'generate' ? 'Generate Monthly Statement PDF' : 'Export Monthly Statement PDF';
 
