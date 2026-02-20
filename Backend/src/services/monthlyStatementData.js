@@ -2,42 +2,10 @@ import Item from '../models/Item.js';
 import Business from '../models/Business.js';
 import { getFolder } from './isoplus.js';
 import { info } from '../utils/logger.js';
+import { parseFlexibleNumber } from '../utils/parseFlexibleNumber.js';
 
-const parseNumber = (value) => {
-    if (value === null || value === undefined) return 0;
-    if (Array.isArray(value) && value.length > 0) return parseNumber(value[0]);
-    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
-    if (typeof value !== 'string') return 0;
-
-    // Handle common “negative” formats from boards/exports:
-    // - parentheses: ($1,234.56)
-    // - trailing minus: 1,234.56-
-    // - unicode minus: −1234.56
-    let s = value.trim();
-    if (!s) return 0;
-
-    // Normalize unicode minus to ASCII hyphen-minus.
-    s = s.replace(/[\u2212\u2012\u2013\u2014]/g, '-');
-
-    let negative = false;
-    // Parentheses mean negative in many exports.
-    if (/\(.*\)/.test(s)) {
-        negative = true;
-        s = s.replace(/[()]/g, '');
-    }
-    // Trailing minus means negative.
-    if (/-\s*$/.test(s)) {
-        negative = true;
-        s = s.replace(/-\s*$/, '');
-    }
-
-    const cleaned = s.replace(/[^0-9.+-]/g, '');
-    const parsed = parseFloat(cleaned);
-    if (!Number.isFinite(parsed)) return 0;
-
-    if (negative && parsed > 0) return -Math.abs(parsed);
-    return parsed;
-};
+export const parseMonthlyStatementNumber = parseFlexibleNumber;
+const parseNumber = parseFlexibleNumber;
 
 // Values marked as ($-) in the board are outflows and should be negative.
 const toOutflow = (num) => {
@@ -676,7 +644,11 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
 
         const remainingBalanceEndOfMonthRaw = remainingEndOfMonthAttr
             ? getValueMulti(item, [remainingEndOfMonthAttr])
-            : (code === 'RCP' || code === 'EOL' ? getValueMulti(item, ['Remaining Balance for Allocation Period ($)']) : null);
+            : (code === 'RCP'
+                ? getValueMulti(item, ['Remaining Restorative Care Balance as at the End of the Month ($)'])
+                : code === 'EOL'
+                    ? getValueMulti(item, ['Remaining End-of-Life Care Balance as at the End of the Month ($)'])
+                    : null);
 
         const remainingBalanceEndOfMonth = (remainingBalanceEndOfMonthRaw !== null && remainingBalanceEndOfMonthRaw !== undefined)
             ? Math.max(0, parseNumber(remainingBalanceEndOfMonthRaw))
@@ -1006,11 +978,11 @@ export async function fetchServiceItems(workspaceId, boardId, options = {}) {
                 ? (typeof committedAtHm === 'number' ? committedAtHm : Number(committedAtHm) || 0)
                 : undefined,
             unit: getValue(item, ATTR.UNIT) || 'Hour',
-            quantity: Number(getValue(item, ATTR.QUANTITY)) || 0,
-            unitPrice: Number(getValue(item, ATTR.UNIT_PRICE)) || 0,
-            totalAmount: Number(getValue(item, ATTR.TOTAL_AMOUNT)) || 0,
-            govSubsidy: Number(getValue(item, ATTR.GOV_SUBSIDY)) || 0,
-            participantContribution: Number(getValue(item, ATTR.PARTICIPANT_CONTRIBUTION)) || 0,
+            quantity: parseNumber(getValue(item, ATTR.QUANTITY)) || 0,
+            unitPrice: parseNumber(getValue(item, ATTR.UNIT_PRICE)) || 0,
+            totalAmount: parseNumber(getValue(item, ATTR.TOTAL_AMOUNT)) || 0,
+            govSubsidy: parseNumber(getValue(item, ATTR.GOV_SUBSIDY)) || 0,
+            participantContribution: parseNumber(getValue(item, ATTR.PARTICIPANT_CONTRIBUTION)) || 0,
             fundingSource,
             notes,
             allocatedTime

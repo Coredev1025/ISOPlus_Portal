@@ -2785,7 +2785,7 @@ export default function MonthlyStatement() {
 
       const blueBarLabel = `Remaining budget ${fundingEndDisplay}`;
       const blueBarShortLabel = `Remaining\nbudget\n${fundingEndDisplay}`;
-      const blueBarValueForChart = totalAvailable;
+      const blueBarValueForChart = remaining;
 
       pushChartConfig({
         code,

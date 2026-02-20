@@ -265,8 +265,10 @@ const REF_ATTRIBUTE_NAMES = {
     TOTAL_BUDGET_RESTORATIVE: 'Total Available Budget for Restorative Care ($)',
     TOTAL_FUND_RESTORATIVE: 'Total Available Fund for Restorative Care ($)',
     REMAINING_RESTORATIVE: 'Remaining Balance for Allocation Period ($)',
+    REMAINING_RESTORATIVE_END_OF_MONTH: 'Remaining Restorative Care Balance as at the End of the Month ($)',
     TOTAL_BUDGET_END_OF_LIFE: 'Total Available Budget for End-of-Life Care ($)',
     TOTAL_FUND_END_OF_LIFE: 'Total Available Fund for End-of-Life Care ($)',
+    REMAINING_END_OF_LIFE_END_OF_MONTH: 'Remaining End-of-Life Care Balance as at the End of the Month ($)',
     TOTAL_BUDGET_AT_SHORT_TERM: 'Total Available Budget for Assistive Technology - Short-term ($)',
     TOTAL_FUND_AT_SHORT_TERM: 'Total Available Fund for AT - Short-term ($)',
     REMAINING_AT_SHORT_TERM_END_OF_MONTH: 'Remaining AT - Short-term Balance as at the End of the Month ($)',
@@ -2185,7 +2187,14 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             })();
             const remainingBalanceEndOfMonthRaw = remainingEndOfMonthAttr
                 ? getValueFromItemMulti(item, remainingEndOfMonthAttr)
-                : (categoryCode === 'RCP' || categoryCode === 'EOL' ? getValueFromItemMulti(item, REF_ATTRIBUTE_NAMES.REMAINING_RESTORATIVE) : null);
+                : (categoryCode === 'RCP' || categoryCode === 'EOL'
+                    ? getValueFromItemMulti(
+                        item,
+                        categoryCode === 'RCP'
+                            ? REF_ATTRIBUTE_NAMES.REMAINING_RESTORATIVE_END_OF_MONTH
+                            : REF_ATTRIBUTE_NAMES.REMAINING_END_OF_LIFE_END_OF_MONTH
+                    )
+                    : null);
             const remainingBalanceEndOfMonth = (remainingBalanceEndOfMonthRaw !== null && remainingBalanceEndOfMonthRaw !== undefined)
                 ? Math.max(0, parseNumberValue(remainingBalanceEndOfMonthRaw))
                 : Math.max(0, totalAvailableBudget + deliveredAmountRaw + adjustmentAmount);
@@ -3144,13 +3153,13 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                             } else if (fsNameLower.includes('restorative care')) {
                                 budgetDataFromProfile.restorativeCare = {
                                     totalAvailableBudget: getValue('Total Available Budget for Restorative Care ($)') || 0,
-                                    remainingBalance: getValue('Remaining Balance for Allocation Period ($)') || 0,
+                                    remainingBalance: getValue(REF_ATTRIBUTE_NAMES.REMAINING_RESTORATIVE_END_OF_MONTH) || 0,
                                     fundingEndDate: getValue('Funding End Date') || null
                                 };
                             } else if (fsNameLower.includes('end-of-life') || fsNameLower.includes('end of life')) {
                                 budgetDataFromProfile.endOfLife = {
                                     totalAvailableBudget: getValue('Total Available Budget for End-of-Life Care ($)') || 0,
-                                    remainingBalance: getValue('Remaining Balance for Allocation Period ($)') || 0,
+                                    remainingBalance: getValue(REF_ATTRIBUTE_NAMES.REMAINING_END_OF_LIFE_END_OF_MONTH) || 0,
                                     fundingEndDate: getValue('Funding End Date') || null
                                 };
                             } else if (fsNameLower.includes('assistive') && fsNameLower.includes('short')) {
