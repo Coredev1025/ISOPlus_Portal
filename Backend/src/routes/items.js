@@ -2804,6 +2804,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             availableFunds: 0,
             remainingBudget: 0,
             remainingBalanceAllocationPeriod: 0,
+            remainingBalanceEndOfMonth: 0,
             serviceDeliveredAmount: 0,
             serviceDeliveredAmountRaw: 0,
             adjustmentAmount: 0,
@@ -2912,6 +2913,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             aggregate.remainingBudget += item.remainingBalance || 0;
             if (code === 'ATS' || code === 'ATO' || code === 'HMB') {
                 aggregate.remainingBalanceAllocationPeriod += (item.remainingBalanceAllocationPeriod ?? item.remainingBalance) || 0;
+                aggregate.remainingBalanceEndOfMonth += item.remainingBalanceEndOfMonth || 0;
             }
             aggregate.serviceDeliveredAmount += item.deliveredAmount || 0;
             aggregate.serviceDeliveredAmountRaw += item.deliveredAmountRaw || 0;
@@ -3204,6 +3206,10 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const remainingBalanceAllocationPeriod = ['ATS', 'ATO', 'HMB'].includes(config.code)
                 ? (budgetAggregate.remainingBalanceAllocationPeriod ?? budgetAggregate.remainingBudget ?? profileData.remainingBalance ?? 0)
                 : undefined;
+            // For ATS/ATO/HMB: also expose remaining as at end of selected month
+            const remainingBalanceEndOfMonth = ['ATS', 'ATO', 'HMB'].includes(config.code)
+                ? (budgetAggregate.remainingBalanceEndOfMonth ?? 0)
+                : undefined;
 
             return {
                 name: categoryName,
@@ -3211,6 +3217,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 availableFunds: budgetAggregate.availableFunds || profileData.totalAvailableBudget || 0,
                 remainingBudget: budgetAggregate.remainingBudget || profileData.remainingBalance || 0,
                 ...(remainingBalanceAllocationPeriod !== undefined && { remainingBalanceAllocationPeriod }),
+                ...(remainingBalanceEndOfMonth !== undefined && { remainingBalanceEndOfMonth }),
                 fundingEndDate,
                 committedFunds: budgetAggregate.committedFunds || profileData.committedFunds || 0,
                 serviceDeliveredAmount: budgetAggregate.serviceDeliveredAmount || 0,
