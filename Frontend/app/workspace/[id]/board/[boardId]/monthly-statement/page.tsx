@@ -136,6 +136,8 @@ interface BudgetCategory {
   remainingBudget: number;
   /** For ATS/ATO/HMB: Remaining ... Balance for Allocation Period ($) - used for blue bar */
   remainingBalanceAllocationPeriod?: number;
+  /** For ATS/ATO/HMB: Remaining ... Balance as at the End of the Month ($) */
+  remainingBalanceEndOfMonth?: number;
   services?: ServiceRecord[];
   fundingEndDate?: string | null;
   committedFunds?: number;
@@ -2695,7 +2697,9 @@ export default function MonthlyStatement() {
       const expenditure = calculateExpenditure(category, { signed: isAssistive || isHomeModification });
       // Blue bar: ATS/ATO use Remaining ... Balance for Allocation Period ($) per spec
       const remaining = positive(
-        category.remainingBalanceAllocationPeriod ?? category.remainingBudget
+        category.remainingBalanceEndOfMonth ??
+          category.remainingBalanceAllocationPeriod ??
+          category.remainingBudget
       );
       const committed = Math.abs(toNumber(category.committedFunds ?? 0));
       const committedLabel =
