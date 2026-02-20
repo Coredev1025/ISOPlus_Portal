@@ -1404,7 +1404,7 @@
                 },
                 "bodyStyles": {
                     "fontName": "Roboto",
-                    "fontSize": 9,
+                    "fontSize": 10,
                     "characterSpacing": 0,
                     "alignment": "center",
                     "verticalAlignment": "middle",
