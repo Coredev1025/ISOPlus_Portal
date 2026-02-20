@@ -545,7 +545,7 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
         const participantUnspent = parseNumber(getValueMulti(item, BUDGET_FIELDS.participantUnspent));
         const previousMonthSpendingSameQuarter = parseNumber(getValue(item, 'Spending from Previous Month(s) within same Quarter ($)'));
         const previousMonthSpendingAllocatedPeriod = parseNumber(getValue(item, 'Spending from Previous Month(s) within Allocated Period ($)'));
-        const previousMonthSpending = (code === 'RCP' || code === 'EOL')
+        const previousMonthSpending = (code === 'ATS' || code === 'ATO' || code === 'HMB' || code === 'RCP' || code === 'EOL')
             ? previousMonthSpendingAllocatedPeriod
             : previousMonthSpendingSameQuarter;
 
@@ -763,6 +763,38 @@ export async function fetchServiceItems(workspaceId, boardId, options = {}) {
     const folderIds = await getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
     const query = { workspaceId, boardId };
     if (folderIds.length) query.folderId = { $in: folderIds };
+
+    const toValidDate = (value) => {
+        if (!value) return null;
+        const d = new Date(value);
+        return Number.isNaN(d.getTime()) ? null : d;
+    };
+    const startD = toValidDate(startDate);
+    const endD = toValidDate(endDate);
+
+    if (startD || endD) {
+        const rangeIso = {};
+        const startIso = startD ? startD.toISOString() : null;
+        const endIso = endD ? endD.toISOString() : null;
+        if (startIso) rangeIso.$gte = startIso;
+        if (endIso) rangeIso.$lte = endIso;
+
+        const rangeDate = {};
+        if (startD) rangeDate.$gte = startD;
+        if (endD) rangeDate.$lte = endD;
+
+        const scheduledKey = `data.${ATTR.SCHEDULED_START}`;
+        const actualEndKey = `data.${ATTR.ACTUAL_END}`;
+
+        query.$or = [
+            { [scheduledKey]: rangeIso },
+            { [scheduledKey]: rangeDate },
+            { [actualEndKey]: rangeIso },
+            { [actualEndKey]: rangeDate },
+            { updatedAt: rangeDate },
+            { createdAt: rangeDate },
+        ];
+    }
 
     const rawItems = await Item.find(query).lean();
 
