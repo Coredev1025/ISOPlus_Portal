@@ -2697,8 +2697,8 @@ export default function MonthlyStatement() {
       const expenditure = calculateExpenditure(category, { signed: isAssistive || isHomeModification });
       // Blue bar: ATS/ATO use Remaining ... Balance for Allocation Period ($) per spec
       const remaining = positive(
-        category.remainingBalanceEndOfMonth ??
-          category.remainingBalanceAllocationPeriod ??
+        category.remainingBalanceAllocationPeriod ??
+          category.remainingBalanceEndOfMonth ??
           category.remainingBudget
       );
       const committed = Math.abs(toNumber(category.committedFunds ?? 0));
@@ -2785,7 +2785,7 @@ export default function MonthlyStatement() {
 
       const blueBarLabel = `Remaining budget ${fundingEndDisplay}`;
       const blueBarShortLabel = `Remaining\nbudget\n${fundingEndDisplay}`;
-      const blueBarValueForChart = totalAvailable;
+      const blueBarValueForChart = remaining;
 
       pushChartConfig({
         code,

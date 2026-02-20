@@ -2875,7 +2875,8 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 postcode: businessDetails?.postcode || business.address?.postcode || ''
             };
 
-            const participant = statementData.participant || statementData.participantProfile || '';
+            const participantProfileId = statementData.participantProfile || '';
+            const queryParticipant = participantProfileId || statementData.participant || '';
             const monthNum = statementData.monthNumber || '';
             const yearVal = statementData.year || '';
 
@@ -2911,15 +2912,25 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             }
 
             const [budgetItems, services] = await Promise.all([
-                fetchBudgetItems(workspaceId, boardId, { participant, month: monthNum, year: yearVal }),
-                fetchServiceItems(workspaceId, boardId, { participant, startDate, endDate })
+                fetchBudgetItems(workspaceId, boardId, { participant: queryParticipant, month: monthNum, year: yearVal }),
+                fetchServiceItems(workspaceId, boardId, { participant: queryParticipant, startDate, endDate })
             ]);
 
             info('Webhook-Service', 'Monthly statement PDF: fetched ISO+ data', {
-                budgetCount: budgetItems.length, serviceCount: services.length, participant
+                budgetCount: budgetItems.length, serviceCount: services.length, queryParticipant
             }, req ?? null);
 
             const budgetAggregates = calculateBudgetAggregates(budgetItems);
+
+            const budgetCategories = Array.isArray(statementData.budgetCategories) ? statementData.budgetCategories : [];
+            for (const category of budgetCategories) {
+                const code = category?.code;
+                if (!code) continue;
+                if (!budgetAggregates[code]) {
+                    budgetAggregates[code] = initializeBudgetAggregate();
+                }
+                enrichAggregateFromCategory(budgetAggregates[code], category);
+            }
 
             const monthNumber = statementData.monthNumber || '1';
             const yearValue = statementData.year || new Date().getFullYear().toString();

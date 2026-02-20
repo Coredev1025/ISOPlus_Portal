@@ -2,42 +2,10 @@ import Item from '../models/Item.js';
 import Business from '../models/Business.js';
 import { getFolder } from './isoplus.js';
 import { info } from '../utils/logger.js';
+import { parseFlexibleNumber } from '../utils/parseFlexibleNumber.js';
 
-const parseNumber = (value) => {
-    if (value === null || value === undefined) return 0;
-    if (Array.isArray(value) && value.length > 0) return parseNumber(value[0]);
-    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
-    if (typeof value !== 'string') return 0;
-
-    // Handle common “negative” formats from boards/exports:
-    // - parentheses: ($1,234.56)
-    // - trailing minus: 1,234.56-
-    // - unicode minus: −1234.56
-    let s = value.trim();
-    if (!s) return 0;
-
-    // Normalize unicode minus to ASCII hyphen-minus.
-    s = s.replace(/[\u2212\u2012\u2013\u2014]/g, '-');
-
-    let negative = false;
-    // Parentheses mean negative in many exports.
-    if (/\(.*\)/.test(s)) {
-        negative = true;
-        s = s.replace(/[()]/g, '');
-    }
-    // Trailing minus means negative.
-    if (/-\s*$/.test(s)) {
-        negative = true;
-        s = s.replace(/-\s*$/, '');
-    }
-
-    const cleaned = s.replace(/[^0-9.+-]/g, '');
-    const parsed = parseFloat(cleaned);
-    if (!Number.isFinite(parsed)) return 0;
-
-    if (negative && parsed > 0) return -Math.abs(parsed);
-    return parsed;
-};
+export const parseMonthlyStatementNumber = parseFlexibleNumber;
+const parseNumber = parseFlexibleNumber;
 
 // Values marked as ($-) in the board are outflows and should be negative.
 const toOutflow = (num) => {
@@ -535,6 +503,7 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
         const availableFundStart = parseNumber(getValue(item, 'Available Fund at the Start of the Month ($)'));
         const quarterlyAdjustment = parseNumber(getValue(item, 'Classification Quarterly Budget Adjustment ($)'));
         const primarySupplementAmount = parseNumber(getValue(item, 'Primary Supplement ($)'));
+        const additionalAmountApproved = parseNumber(getValue(item, 'Additional amount approved (AT high tier) ($)'));
         const carryoverFunding = parseNumber(getValue(item, 'Carryover Funding from the Previous Quarter ($)'));
         const unspentReturned = parseNumber(getValueMulti(item, [
             'Unspent Budget at the End of the Quarter – Returned ($-)',
@@ -545,7 +514,7 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
         const participantUnspent = parseNumber(getValueMulti(item, BUDGET_FIELDS.participantUnspent));
         const previousMonthSpendingSameQuarter = parseNumber(getValue(item, 'Spending from Previous Month(s) within same Quarter ($)'));
         const previousMonthSpendingAllocatedPeriod = parseNumber(getValue(item, 'Spending from Previous Month(s) within Allocated Period ($)'));
-        const previousMonthSpending = (code === 'RCP' || code === 'EOL')
+        const previousMonthSpending = (code === 'ATS' || code === 'ATO' || code === 'HMB' || code === 'RCP' || code === 'EOL')
             ? previousMonthSpendingAllocatedPeriod
             : previousMonthSpendingSameQuarter;
 
@@ -583,6 +552,23 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
 
         // RCP/EOL: Total Available = Available Fund at Start + Primary Supplement + Spending from Previous Month(s) within Allocated Period
         if (!totalAvailableBudget && (code === 'RCP' || code === 'EOL')) {
+            totalAvailableBudget =
+              availableFundStart +
+              primarySupplementAmount +
+              previousMonthSpendingAllocatedPeriod;
+        }
+
+        // ATS: Total Available Fund = Available Fund at Start + Primary Supplement + Additional amount approved (AT high tier) + Spending from Previous Month(s) within Allocated Period
+        if (!totalAvailableBudget && code === 'ATS') {
+            totalAvailableBudget =
+              availableFundStart +
+              primarySupplementAmount +
+              additionalAmountApproved +
+              previousMonthSpendingAllocatedPeriod;
+        }
+
+        // ATO/HMB: Total Available Fund = Available Fund at Start + Primary Supplement + Spending from Previous Month(s) within Allocated Period
+        if (!totalAvailableBudget && (code === 'ATO' || code === 'HMB')) {
             totalAvailableBudget =
               availableFundStart +
               primarySupplementAmount +
@@ -637,7 +623,6 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
         const primarySupplementLabel = resolveReferenceValue(getValue(item, 'Primary Supplement'), psMap);
         const fundClassification = formatStatus(getValue(item, 'Fund Classification')) || '';
         const fundAmount = parseNumber(getValueMulti(item, ['Fund Amount ($)', 'Fund Amount($)']));
-        const additionalAmountApproved = parseNumber(getValue(item, 'Additional amount approved (AT high tier) ($)'));
         const fund = formatStatus(getValue(item, 'Fund')) || '';
 
         const committedATShort = toOutflow(parseNumber(getValue(item, 'Committed AT Short-term Funds - to be delivered ($-)')));
@@ -659,7 +644,11 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
 
         const remainingBalanceEndOfMonthRaw = remainingEndOfMonthAttr
             ? getValueMulti(item, [remainingEndOfMonthAttr])
-            : (code === 'RCP' || code === 'EOL' ? getValueMulti(item, ['Remaining Balance for Allocation Period ($)']) : null);
+            : (code === 'RCP'
+                ? getValueMulti(item, ['Remaining Restorative Care Balance as at the End of the Month ($)'])
+                : code === 'EOL'
+                    ? getValueMulti(item, ['Remaining End-of-Life Care Balance as at the End of the Month ($)'])
+                    : null);
 
         const remainingBalanceEndOfMonth = (remainingBalanceEndOfMonthRaw !== null && remainingBalanceEndOfMonthRaw !== undefined)
             ? Math.max(0, parseNumber(remainingBalanceEndOfMonthRaw))
@@ -763,6 +752,38 @@ export async function fetchServiceItems(workspaceId, boardId, options = {}) {
     const folderIds = await getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
     const query = { workspaceId, boardId };
     if (folderIds.length) query.folderId = { $in: folderIds };
+
+    const toValidDate = (value) => {
+        if (!value) return null;
+        const d = new Date(value);
+        return Number.isNaN(d.getTime()) ? null : d;
+    };
+    const startD = toValidDate(startDate);
+    const endD = toValidDate(endDate);
+
+    if (startD || endD) {
+        const rangeIso = {};
+        const startIso = startD ? startD.toISOString() : null;
+        const endIso = endD ? endD.toISOString() : null;
+        if (startIso) rangeIso.$gte = startIso;
+        if (endIso) rangeIso.$lte = endIso;
+
+        const rangeDate = {};
+        if (startD) rangeDate.$gte = startD;
+        if (endD) rangeDate.$lte = endD;
+
+        const scheduledKey = `data.${ATTR.SCHEDULED_START}`;
+        const actualEndKey = `data.${ATTR.ACTUAL_END}`;
+
+        query.$or = [
+            { [scheduledKey]: rangeIso },
+            { [scheduledKey]: rangeDate },
+            { [actualEndKey]: rangeIso },
+            { [actualEndKey]: rangeDate },
+            { updatedAt: rangeDate },
+            { createdAt: rangeDate },
+        ];
+    }
 
     const rawItems = await Item.find(query).lean();
 
@@ -957,11 +978,11 @@ export async function fetchServiceItems(workspaceId, boardId, options = {}) {
                 ? (typeof committedAtHm === 'number' ? committedAtHm : Number(committedAtHm) || 0)
                 : undefined,
             unit: getValue(item, ATTR.UNIT) || 'Hour',
-            quantity: Number(getValue(item, ATTR.QUANTITY)) || 0,
-            unitPrice: Number(getValue(item, ATTR.UNIT_PRICE)) || 0,
-            totalAmount: Number(getValue(item, ATTR.TOTAL_AMOUNT)) || 0,
-            govSubsidy: Number(getValue(item, ATTR.GOV_SUBSIDY)) || 0,
-            participantContribution: Number(getValue(item, ATTR.PARTICIPANT_CONTRIBUTION)) || 0,
+            quantity: parseNumber(getValue(item, ATTR.QUANTITY)) || 0,
+            unitPrice: parseNumber(getValue(item, ATTR.UNIT_PRICE)) || 0,
+            totalAmount: parseNumber(getValue(item, ATTR.TOTAL_AMOUNT)) || 0,
+            govSubsidy: parseNumber(getValue(item, ATTR.GOV_SUBSIDY)) || 0,
+            participantContribution: parseNumber(getValue(item, ATTR.PARTICIPANT_CONTRIBUTION)) || 0,
             fundingSource,
             notes,
             allocatedTime
