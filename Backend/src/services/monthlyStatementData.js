@@ -583,7 +583,10 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
 
         // RCP/EOL: Total Available = Available Fund at Start + Primary Supplement + Spending from Previous Month(s) within Allocated Period
         if (!totalAvailableBudget && (code === 'RCP' || code === 'EOL')) {
-            totalAvailableBudget = availableFundStart + primarySupplementAmount + previousSpendingAllocated;
+            totalAvailableBudget =
+              availableFundStart +
+              primarySupplementAmount +
+              previousMonthSpendingAllocatedPeriod;
         }
 
         // Other categories fallback: use available fund start if present
