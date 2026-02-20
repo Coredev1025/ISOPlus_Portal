@@ -48,6 +48,84 @@ function enableRepeatHeadOnTables(template) {
     }
 }
 
+function paginatePdfmeTemplateTableByRows(template, tableSchemaName, rows) {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    const pages = template?.schemas;
+    if (!template || !Array.isArray(pages) || pages.length === 0) {
+        return { template, tableInputs: { [tableSchemaName]: JSON.stringify(safeRows) } };
+    }
+
+    const basePageSchemas = pages[0];
+    if (!Array.isArray(basePageSchemas)) {
+        return { template, tableInputs: { [tableSchemaName]: JSON.stringify(safeRows) } };
+    }
+
+    const baseTableSchema = basePageSchemas.find(s => s?.type === 'table' && s?.name === tableSchemaName);
+    if (!baseTableSchema) {
+        return { template, tableInputs: { [tableSchemaName]: JSON.stringify(safeRows) } };
+    }
+
+    let rowsPerPage = 0;
+    try {
+        const parsed = JSON.parse(baseTableSchema.content ?? '[]');
+        if (Array.isArray(parsed)) rowsPerPage = parsed.length;
+    } catch { }
+    if (!rowsPerPage || rowsPerPage <= 0) {
+        rowsPerPage = 10;
+    }
+
+    if (safeRows.length <= rowsPerPage) {
+        return { template, tableInputs: { [tableSchemaName]: JSON.stringify(safeRows) } };
+    }
+
+    const chunks = [];
+    for (let i = 0; i < safeRows.length; i += rowsPerPage) {
+        chunks.push(safeRows.slice(i, i + rowsPerPage));
+    }
+
+    const tableBottomY = (Number(baseTableSchema.position?.y) || 0) + (Number(baseTableSchema.height) || 0);
+
+    const newSchemas = [];
+    const tableInputs = {};
+
+    for (let pageIndex = 0; pageIndex < chunks.length; pageIndex++) {
+        const isLast = pageIndex === chunks.length - 1;
+        const pageSchemasClone = JSON.parse(JSON.stringify(basePageSchemas));
+
+        const tableClone = pageSchemasClone.find(s => s?.type === 'table' && s?.name === tableSchemaName);
+        const pageTableName = `${tableSchemaName}_${pageIndex + 1}`;
+        if (tableClone) {
+            tableClone.name = pageTableName;
+        }
+
+        const columnCount = Array.isArray(tableClone?.head)
+            ? tableClone.head.length
+            : (Array.isArray(chunks[pageIndex]?.[0]) ? chunks[pageIndex][0].length : 0);
+
+        const paddedRows = [...chunks[pageIndex]];
+        while (paddedRows.length < rowsPerPage) {
+            paddedRows.push(Array(columnCount).fill(''));
+        }
+
+        tableInputs[pageTableName] = JSON.stringify(paddedRows);
+
+        if (!isLast) {
+            const filtered = pageSchemasClone.filter(s => {
+                if (s?.type === 'table' && s?.name === pageTableName) return true;
+                const y = s?.position?.y;
+                if (typeof y !== 'number') return true;
+                return y <= (tableBottomY + 0.5);
+            });
+            newSchemas.push(filtered);
+        } else {
+            newSchemas.push(pageSchemasClone);
+        }
+    }
+
+    const newTemplate = { ...template, schemas: newSchemas };
+    return { template: newTemplate, tableInputs };
+}
+
 // Attribute names constants (matching items.js)
 const ATTRIBUTE_NAMES = {
     SCHEDULED_START: 'Scheduled Shift Start Date & Time',
@@ -2544,7 +2622,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                 return res.status(400).json({ message: "There is nothing to invoice!" });
             }
 
-            const orders = JSON.stringify(ordersArr);
+            const { template: pagedTemplate, tableInputs } = paginatePdfmeTemplateTableByRows(template, 'orders', ordersArr);
             
             let subtotalValue, totalAUDValue;
             if (isLowCatBoard) {
@@ -2570,7 +2648,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 
             // Generate the PDF with all items
             const pdfBytes = await generate({
-                template: template,
+                template: pagedTemplate,
                 inputs: [
                     {
                         logo: logoBase64,
@@ -2594,7 +2672,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                             Postcode: business.address.postcode,
                             Country: business.address.country
                         }),
-                        orders: orders,
+                        ...tableInputs,
                         "dueDate": new Date(dueDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }),
                         "Bank Details": JSON.stringify({
                             "Account Name": business.bankDetails.accountName,
