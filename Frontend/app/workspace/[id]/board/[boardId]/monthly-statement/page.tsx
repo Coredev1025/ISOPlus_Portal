@@ -2765,30 +2765,23 @@ export default function MonthlyStatement() {
     // 5th, 6th Charts: Restorative Care & End-of-Life (per spec: Purple = Spending from previous months, Red = expenditure, Blue = Total Available Budget)
     const addRestorativeChart = (code: 'RCP' | 'EOL', title: string) => {
       const category = categoryLookup.get(code) ?? ({ code } as BudgetCategory);
-      const rcpCategory = categoryLookup.get('RCP');
       // Purple: Spending from previous month(s) = Fund Amount ($) - Available Fund at the Start of the Month ($)
       const previousSpending = getPreviousSpendingValue(category);
       const available = positive(category.availableFunds);
       // Blue bar per spec: value = Total Available Budget for Restorative Care ($) / End-of-Life Care ($)
       const totalAvailable = positive(category.totalAvailableBudget ?? category.availableFunds ?? 0);
-      const blueBarValue =
-        code === 'EOL'
-          ? positive(rcpCategory?.remainingBudget ?? 0)
-          : totalAvailable;
       // Red: [Month] expenditure = Service Delivered During the Month ($-) + Adjustments from Previous Months (signed then abs)
       const expenditure = calculateExpenditure(category, { signed: true });
       const remaining = positive(category.remainingBudget);
 
-      // RCP fifth chart: blue bar = Remaining Restorative Care Balance as at the End of the Month ($)
-      // EOL sixth chart: blue bar = Remaining End-of-Life Care Balance as at the End of the Month ($)
-      const blueBarLabel =
-        code === 'RCP'
-          ? 'Remaining Restorative Care Balance as at the End of the Month ($)'
-          : code === 'EOL'
-            ? 'Remaining End-of-Life Care Balance as at the End of the Month ($)'
-            : `Remaining budget ${formatDate(category.fundingEndDate)}`;
-      const blueBarShortLabel = 'Remaining\nbalance';
-      const blueBarValueForChart = code === 'RCP' || code === 'EOL' ? remaining : blueBarValue;
+      const fundingEndDisplay =
+        category.fundingEndDate != null && String(category.fundingEndDate).trim() !== ''
+          ? formatDate(category.fundingEndDate)
+          : 'N/A';
+
+      const blueBarLabel = `Remaining budget ${fundingEndDisplay}`;
+      const blueBarShortLabel = `Remaining\nbudget\n${fundingEndDisplay}`;
+      const blueBarValueForChart = totalAvailable;
 
       pushChartConfig({
         code,
@@ -2814,11 +2807,11 @@ export default function MonthlyStatement() {
             label: blueBarLabel,
             shortLabel: blueBarShortLabel,
             value: blueBarValueForChart,
-            color: '#2563eb' // Blue - RCP: Remaining Restorative Care Balance as at End of Month; EOL: Remaining End-of-Life Care Balance as at End of Month
+            color: '#2563eb' // Blue - Total Available Budget for the funding stream
           }
         ],
         metrics: [
-          { label: code === 'EOL' ? 'Remaining End-of-Life Care Balance as at the End of the Month ($)' : code === 'RCP' ? 'Remaining Restorative Care Balance as at the End of the Month ($)' : 'Total available budget', value: code === 'RCP' || code === 'EOL' ? remaining : blueBarValue },
+          { label: code === 'EOL' ? 'Total Available Budget for End-of-Life Care ($)' : 'Total Available Budget for Restorative Care ($)', value: totalAvailable },
           { label: 'Previous spending', value: previousSpending },
           { label: 'Remaining balance', value: remaining },
         ]
