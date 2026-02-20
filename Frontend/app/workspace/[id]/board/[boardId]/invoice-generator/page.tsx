@@ -40,6 +40,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format, formatDistanceToNow } from "date-fns";
 import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast } from "@/lib/toast-utils";
+import { isCareManagementLabel } from "@/lib/access";
 import {
   Dialog,
   DialogContent,
@@ -239,6 +240,14 @@ export default function InvoiceGenerator() {
   }, [boardId]);
 
   const isLowCatBoard = boardLabel === 'Care Management - SaH - Low Cat';
+  const isCareManagementBoard = isCareManagementLabel(boardLabel);
+
+  useEffect(() => {
+    if (!boardLabel) return;
+    if (!isCareManagementBoard) {
+      router.replace("/workspace/access-denied");
+    }
+  }, [boardLabel, isCareManagementBoard, router]);
 
   const handleManualRefresh = useCallback(async (silent = false, clearFilters = false) => {
     if (!id || !boardId) {

@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { ArrowLeft, Clock, Terminal, Download, Filter, MapPin, Search, List, Map, QrCode, FileText, FileBarChart } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Table,
   TableBody,
@@ -35,6 +35,7 @@ import { useAppContext } from "@/app/context/index";
 import { Badge } from "@/components/ui/badge";
 import { TimeEntry } from "./types";
 import axios from "@/app/utils/axiosConfig";
+import { isCareManagementLabel, isLowCatCareManagementLabel, isOwnerOrSupport } from "@/lib/access";
 
 interface Board {
   id: string;
@@ -71,10 +72,10 @@ export default function BoardDetail() {
   const [selectedEntry, setSelectedEntry] = useState<TimeEntry | null>(null);
   const [loadingBoards, setLoadingBoards] = useState(false);
   const ITEMS_PER_PAGE = 10;
-  const ALLOWED_ADMIN_BOARD_LABELS: BoardLabel[] = ['Care Management - SaH', 'Care Management - SaH - Low Cat'];
-  const isOwnerOrSupport = user.role === "owner" || user.role === "support_admin";
+  const isOwnerOrSupportUser = isOwnerOrSupport(user);
   const isWorkspaceOwner = user.role === "isoplus_user" && workspace?.user_role === "owner";
   const isWorkspaceAdmin = user.role === "isoplus_user" && workspace?.user_role === "admin";
+  const canAccessThisWorkspace = isOwnerOrSupportUser || isWorkspaceOwner || isWorkspaceAdmin;
 
   const calcDuration = (startTime: any, endTime: any) => {
     return Math.floor((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000);
@@ -82,10 +83,10 @@ export default function BoardDetail() {
 
   useEffect(() => {
     if (workspace === undefined) return;
-    if (!isOwnerOrSupport && !isWorkspaceOwner && !isWorkspaceAdmin) {
+    if (!canAccessThisWorkspace) {
       router.replace("/workspace/access-denied");
     }
-  }, [workspace, isOwnerOrSupport, isWorkspaceOwner, isWorkspaceAdmin, router]);
+  }, [workspace, canAccessThisWorkspace, router]);
 
   useEffect(() => {
     if (id) {
@@ -145,19 +146,13 @@ export default function BoardDetail() {
     };
   }, [id, boardId, workspace])
 
-  useEffect(() => {
-    if (!board || !isWorkspaceAdmin) return;
-    if (board.label && !ALLOWED_ADMIN_BOARD_LABELS.includes(board.label as BoardLabel)) {
-      router.replace("/workspace/access-denied");
-    }
-  }, [board, isWorkspaceAdmin, router]);
-
   // First useEffect for initial data fetching
   useEffect(() => {
     const abortController = new AbortController();
 
     const fetchData = async () => {
       try {
+        if (!id || !boardId) return;
         // Fetch time tracking data
         const timetracking = await axios.get(
           `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks?workspaceId=${id}&boardId=${boardId}`,
@@ -197,10 +192,11 @@ export default function BoardDetail() {
     return () => {
       abortController.abort();
     };
-  }, []);
+  }, [id, boardId, user.id, user.name]);
 
-  const getTimeTrackingStatus = async () => {
+  const getTimeTrackingStatus = useCallback(async () => {
     try {
+      if (!id || !boardId) return;
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks/status?workspaceId=${id}&boardId=${boardId}`, {}
       );
@@ -218,7 +214,7 @@ export default function BoardDetail() {
     } catch (error) {
       console.error("Error fetching time tracking status:", error);
     }
-  };
+  }, [id, boardId]);
 
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
@@ -240,11 +236,14 @@ export default function BoardDetail() {
       }, 1000);
     }
     return () => clearInterval(intervalId);
-  }, [timeTrackingEnabled]);
+  }, [timeTrackingEnabled, getTimeTrackingStatus]);
 
   if (!workspace || !board) {
     return null;
   }
+
+  const isCareManagementBoard = isCareManagementLabel(board.label);
+  const isLowCatBoard = isLowCatCareManagementLabel(board.label);
 
   // Filter time entries
   const filteredEntries = timeEntries.filter(entry => {
@@ -374,27 +373,29 @@ export default function BoardDetail() {
                 </div>
               </Card>
 
-              {/* Invoice Generator Card */}
-              <Card className="p-6 space-y-4 card-hover">
-                <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
-                  <FileText className="h-6 w-6 text-primary" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-semibold">Invoice Generator</h2>
-                  <p className="text-muted-foreground mb-4 text-sm">
-                    Generate professional service invoices
-                  </p>
-                  <Button
-                    onClick={() => router.push(`/workspace/${id}/board/${boardId}/invoice-generator`)}
-                    className="w-full"
-                  >
-                    Generate Invoice
-                  </Button>
-                </div>
-              </Card>
+              {/* Invoice Generator Card (Care Management boards only) */}
+              {isCareManagementBoard && (
+                <Card className="p-6 space-y-4 card-hover">
+                  <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-semibold">Invoice Generator</h2>
+                    <p className="text-muted-foreground mb-4 text-sm">
+                      Generate professional service invoices
+                    </p>
+                    <Button
+                      onClick={() => router.push(`/workspace/${id}/board/${boardId}/invoice-generator`)}
+                      className="w-full"
+                    >
+                      Generate Invoice
+                    </Button>
+                  </div>
+                </Card>
+              )}
 
-              {/* Monthly Statement Card */}
-              {!(board.label && board.label?.toString().includes('SaH - Low Cat')) && (
+              {/* Monthly Statement Card (Care Management boards only; hidden for Low Cat) */}
+              {isCareManagementBoard && !isLowCatBoard && (
                 <Card className="p-6 space-y-4 card-hover">
                   <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
                     <FileBarChart className="h-6 w-6 text-primary" />

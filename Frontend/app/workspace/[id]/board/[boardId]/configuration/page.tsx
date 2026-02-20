@@ -29,6 +29,7 @@ import { useAppContext } from "@/app/context";
 import axios from "@/app/utils/axiosConfig";
 import { showSaveSuccessToast, showSaveErrorToast, showFetchSuccessToast, showFetchErrorToast, showUpdateSuccessToast, showUpdateErrorToast } from "@/lib/toast-utils";
 import { Checkbox } from "@/components/ui/checkbox";
+import { isOwnerOrSupport } from "@/lib/access";
 
 // Define the attribute type as a literal union type
 type AttributeType = "Text" | "Long Text";
@@ -102,7 +103,7 @@ export default function ConfigurationPage() {
   const pathname = usePathname();
   const id = pathname.split("/")[2];
   const boardId = pathname.split("/")[4];
-  const { workspaces, setCurrentWorkspaceId } = useAppContext();
+  const { workspaces, user, setCurrentWorkspaceId } = useAppContext();
   const [board, setBoard] = useState<Board>();
   const [selectedAttribute, setSelectedAttribute] = useState<string>("");
   const [selectedPdfAttribute, setSelectedPdfAttribute] = useState<string>("");
@@ -130,7 +131,16 @@ export default function ConfigurationPage() {
     };
   }, [id, setCurrentWorkspaceId]);
 
+  const hasAccess = isOwnerOrSupport(user);
+
   useEffect(() => {
+    if (!hasAccess) {
+      router.replace("/workspace/access-denied");
+    }
+  }, [hasAccess, router]);
+
+  useEffect(() => {
+    if (!hasAccess) return;
     const abortController = new AbortController();
 
     const fetchAttributes = async () => {
@@ -171,9 +181,10 @@ export default function ConfigurationPage() {
     return () => {
       abortController.abort();
     };
-  }, [boardId]);
+  }, [hasAccess, board, id, boardId]);
 
   useEffect(() => {
+    if (!hasAccess) return;
     const abortController = new AbortController();
 
     const fetchBoards = async () => {
@@ -211,9 +222,13 @@ export default function ConfigurationPage() {
     return () => {
       abortController.abort();
     };
-  }, [id, boardId]);
+  }, [hasAccess, board, boardId]);
 
   const workspace = workspaces.find(workspace => workspace.id.toString() === id);
+
+  if (!hasAccess) {
+    return null;
+  }
 
   if (!workspace || !board) {
     return null;

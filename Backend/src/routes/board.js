@@ -11,6 +11,11 @@ const router = express.Router();
 
 router.post('/', authenticateToken, async (req, res) => {
     try {
+        // Only Support Admin / Owner can create boards in portal DB
+        if (req.user.role !== 'support_admin' && req.user.role !== 'owner') {
+            warn('Board-Service', 'Access denied creating board', { userId: req.user.userId, role: req.user.role }, req ?? null);
+            return res.status(403).json({ message: 'Access denied. Owner or Support Admin permission required.' });
+        }
         const boardId = req.body.id?.toString();
         if (!boardId) return res.status(400).json({ message: 'Invalid boardId' });
         const existingBoard = await Board.findOne({ boardId }).lean();
@@ -67,6 +72,11 @@ router.get('/', authenticateToken, async (req, res) => {
 
 router.put('/', authenticateToken, async (req, res) => {
     try {
+        // Only Support Admin / Owner can update board configuration (label, sync, attributes)
+        if (req.user.role !== 'support_admin' && req.user.role !== 'owner') {
+            warn('Board-Service', 'Access denied updating board', { userId: req.user.userId, role: req.user.role, boardId: req.body.boardId }, req ?? null);
+            return res.status(403).json({ message: 'Access denied. Owner or Support Admin permission required.' });
+        }
         const boardId = req.body.boardId?.toString();
         const workspaceId = req.body.workspaceId?.toString();
         if (!boardId || !workspaceId) return res.status(400).json({ message: 'Invalid boardId or workspaceId' });
