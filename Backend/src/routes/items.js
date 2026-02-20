@@ -1736,18 +1736,34 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
 
         const parseNumberValue = (rawValue) => {
             if (rawValue === null || rawValue === undefined) return 0;
-            if (Array.isArray(rawValue) && rawValue.length > 0) {
-                return parseNumberValue(rawValue[0]);
+            if (Array.isArray(rawValue) && rawValue.length > 0) return parseNumberValue(rawValue[0]);
+            if (typeof rawValue === 'number') return Number.isFinite(rawValue) ? rawValue : 0;
+            if (typeof rawValue !== 'string') return 0;
+
+            let s = rawValue.trim();
+            if (!s) return 0;
+
+            // Normalize unicode minus to ASCII hyphen-minus.
+            s = s.replace(/[\u2212\u2012\u2013\u2014]/g, '-');
+
+            let negative = false;
+            // Parentheses mean negative in many exports.
+            if (/\(.*\)/.test(s)) {
+                negative = true;
+                s = s.replace(/[()]/g, '');
             }
-            if (typeof rawValue === 'number') {
-                return Number.isFinite(rawValue) ? rawValue : 0;
+            // Trailing minus means negative.
+            if (/-\s*$/.test(s)) {
+                negative = true;
+                s = s.replace(/-\s*$/, '');
             }
-            if (typeof rawValue === 'string') {
-                const normalized = rawValue.replace(/[^0-9.\\-]/g, '');
-                const parsed = parseFloat(normalized);
-                return Number.isFinite(parsed) ? parsed : 0;
-            }
-            return 0;
+
+            const cleaned = s.replace(/[^0-9.+-]/g, '');
+            const parsed = parseFloat(cleaned);
+            if (!Number.isFinite(parsed)) return 0;
+
+            if (negative && parsed > 0) return -Math.abs(parsed);
+            return parsed;
         };
 
         const normalizeAttributeNames = (attributeName) => {
@@ -2062,7 +2078,14 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const commonwealthUnspent = getNumberFromItem(item, ATTRIBUTE_NAMES.COMMONWEALTH_UNSPENT_FUNDS);
             const providerUnspent = getNumberFromItem(item, ATTRIBUTE_NAMES.PROVIDER_UNSPENT_FUNDS);
             const participantUnspent = getNumberFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_UNSPENT_FUNDS);
-            const previousMonthSpending = getNumberFromItem(item, ATTRIBUTE_NAMES.PREVIOUS_MONTH_SPENDING);
+            const previousMonthSpendingSameQuarter = getNumberFromItem(item, ATTRIBUTE_NAMES.PREVIOUS_MONTH_SPENDING);
+            const previousMonthSpendingAllocatedPeriod = getNumberFromItem(
+                item,
+                ATTRIBUTE_NAMES.PREVIOUS_MONTH_SPENDING_ALLOCATED_PERIOD
+            );
+            const previousMonthSpending = (categoryCode === 'RCP' || categoryCode === 'EOL')
+                ? previousMonthSpendingAllocatedPeriod
+                : previousMonthSpendingSameQuarter;
 
             const totalAvailableBudgetHomeSupport = getNumberFromItem(item, ATTRIBUTE_NAMES.TOTAL_AVAILABLE_HOME_SUPPORT);
             let totalAvailableBudget = totalAvailableBudgetHomeSupport;
