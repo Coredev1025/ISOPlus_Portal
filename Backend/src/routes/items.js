@@ -2073,6 +2073,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const availableFundStart = getNumberFromItem(item, ATTRIBUTE_NAMES.AVAILABLE_FUND_START);
             const quarterlyAdjustment = getNumberFromItem(item, ATTRIBUTE_NAMES.QUARTERLY_ADJUSTMENT);
             const primarySupplementAmount = getNumberFromItem(item, ATTRIBUTE_NAMES.PRIMARY_SUPPLEMENT_AMOUNT);
+            const additionalAmountApproved = getNumberFromItem(item, ATTRIBUTE_NAMES.ADDITIONAL_AMOUNT_APPROVED_AT);
             const carryoverFunding = getNumberFromItem(item, ATTRIBUTE_NAMES.CARRYOVER_FUNDING);
             const unspentReturned = getNumberFromItem(item, ATTRIBUTE_NAMES.UNSPENT_BUDGET_RETURNED);
             const commonwealthUnspent = getNumberFromItem(item, ATTRIBUTE_NAMES.COMMONWEALTH_UNSPENT_FUNDS);
@@ -2083,7 +2084,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                 item,
                 ATTRIBUTE_NAMES.PREVIOUS_MONTH_SPENDING_ALLOCATED_PERIOD
             );
-            const previousMonthSpending = (categoryCode === 'RCP' || categoryCode === 'EOL')
+            const previousMonthSpending = (categoryCode === 'ATS' || categoryCode === 'ATO' || categoryCode === 'HMB' || categoryCode === 'RCP' || categoryCode === 'EOL')
                 ? previousMonthSpendingAllocatedPeriod
                 : previousMonthSpendingSameQuarter;
 
@@ -2119,6 +2120,16 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
                     const previousSpendingAllocated = getNumberFromItem(item, ATTRIBUTE_NAMES.PREVIOUS_MONTH_SPENDING_ALLOCATED_PERIOD) || 0;
                     totalAvailableBudget = availableFundStart + primarySupplementAmount + previousSpendingAllocated;
                 }
+                // Fallback for ATS: Total Available Fund = Available Fund at Start + Primary Supplement + Additional amount approved (AT high tier) + Spending from Previous Month(s) within Allocated Period (per formula)
+                if (!totalAvailableBudget && categoryCode === 'ATS') {
+                    const previousSpendingAllocated = getNumberFromItem(item, ATTRIBUTE_NAMES.PREVIOUS_MONTH_SPENDING_ALLOCATED_PERIOD) || 0;
+                    totalAvailableBudget = availableFundStart + primarySupplementAmount + additionalAmountApproved + previousSpendingAllocated;
+                }
+                // Fallback for ATO/HMB: Total Available Fund = Available Fund at Start + Primary Supplement + Spending from Previous Month(s) within Allocated Period (per formula)
+                if (!totalAvailableBudget && (categoryCode === 'ATO' || categoryCode === 'HMB')) {
+                    const previousSpendingAllocated = getNumberFromItem(item, ATTRIBUTE_NAMES.PREVIOUS_MONTH_SPENDING_ALLOCATED_PERIOD) || 0;
+                    totalAvailableBudget = availableFundStart + primarySupplementAmount + previousSpendingAllocated;
+                }
                 // Fallback for other categories: use Available Fund at Start of Month
                 if (!totalAvailableBudget && availableFundStart) {
                     totalAvailableBudget = availableFundStart;
@@ -2148,7 +2159,6 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             const primarySupplementLabel = resolveReferenceValue(primarySupplementValue, primarySupplementMap);
             const fundClassification = getLabelFromItem(item, ATTRIBUTE_NAMES.FUND_CLASSIFICATION);
             const fundAmount = getNumberFromItem(item, ATTRIBUTE_NAMES.FUND_AMOUNT);
-            const additionalAmountApproved = getNumberFromItem(item, ATTRIBUTE_NAMES.ADDITIONAL_AMOUNT_APPROVED_AT);
             const fund = getTextFromItem(item, ATTRIBUTE_NAMES.FUND_TEXT);
 
             const committedATShort = getNumberFromItem(item, ATTRIBUTE_NAMES.COMMITTED_AT_SHORT_TERM);

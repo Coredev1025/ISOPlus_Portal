@@ -535,6 +535,7 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
         const availableFundStart = parseNumber(getValue(item, 'Available Fund at the Start of the Month ($)'));
         const quarterlyAdjustment = parseNumber(getValue(item, 'Classification Quarterly Budget Adjustment ($)'));
         const primarySupplementAmount = parseNumber(getValue(item, 'Primary Supplement ($)'));
+        const additionalAmountApproved = parseNumber(getValue(item, 'Additional amount approved (AT high tier) ($)'));
         const carryoverFunding = parseNumber(getValue(item, 'Carryover Funding from the Previous Quarter ($)'));
         const unspentReturned = parseNumber(getValueMulti(item, [
             'Unspent Budget at the End of the Quarter – Returned ($-)',
@@ -589,6 +590,23 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
               previousMonthSpendingAllocatedPeriod;
         }
 
+        // ATS: Total Available Fund = Available Fund at Start + Primary Supplement + Additional amount approved (AT high tier) + Spending from Previous Month(s) within Allocated Period
+        if (!totalAvailableBudget && code === 'ATS') {
+            totalAvailableBudget =
+              availableFundStart +
+              primarySupplementAmount +
+              additionalAmountApproved +
+              previousMonthSpendingAllocatedPeriod;
+        }
+
+        // ATO/HMB: Total Available Fund = Available Fund at Start + Primary Supplement + Spending from Previous Month(s) within Allocated Period
+        if (!totalAvailableBudget && (code === 'ATO' || code === 'HMB')) {
+            totalAvailableBudget =
+              availableFundStart +
+              primarySupplementAmount +
+              previousMonthSpendingAllocatedPeriod;
+        }
+
         // Other categories fallback: use available fund start if present
         if (!totalAvailableBudget && availableFundStart) {
             totalAvailableBudget = availableFundStart;
@@ -637,7 +655,6 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
         const primarySupplementLabel = resolveReferenceValue(getValue(item, 'Primary Supplement'), psMap);
         const fundClassification = formatStatus(getValue(item, 'Fund Classification')) || '';
         const fundAmount = parseNumber(getValueMulti(item, ['Fund Amount ($)', 'Fund Amount($)']));
-        const additionalAmountApproved = parseNumber(getValue(item, 'Additional amount approved (AT high tier) ($)'));
         const fund = formatStatus(getValue(item, 'Fund')) || '';
 
         const committedATShort = toOutflow(parseNumber(getValue(item, 'Committed AT Short-term Funds - to be delivered ($-)')));
