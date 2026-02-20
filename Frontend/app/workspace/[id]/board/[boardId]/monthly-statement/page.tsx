@@ -1768,6 +1768,8 @@ export default function MonthlyStatement() {
             monthNumber: statementData.monthNumber || selectedMonth,
             year: statementData.year || selectedYear,
           },
+          startDate: dateRange.startDate,
+          endDate: dateRange.endDate,
           businessDetails,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           ...(chartImage ? { chartImage } : {}),

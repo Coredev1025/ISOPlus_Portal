@@ -2810,7 +2810,14 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
     try {
         const { workspaceId, boardId } = req.params;
-        const { statementData, businessDetails, chartImage, timezone } = req.body;
+        const {
+            statementData,
+            businessDetails,
+            chartImage,
+            timezone,
+            startDate: requestStartDate,
+            endDate: requestEndDate
+        } = req.body;
 
         if (!statementData) {
             return res.status(400).json({ message: "No statement data provided." });
@@ -2841,12 +2848,35 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             const participant = statementData.participant || statementData.participantProfile || '';
             const monthNum = statementData.monthNumber || '';
             const yearVal = statementData.year || '';
-            let startDate, endDate;
-            if (monthNum && yearVal) {
+
+            const normalizeIsoOrNull = (value) => {
+                if (!value) return null;
+                const d = value instanceof Date ? value : new Date(value);
+                if (Number.isNaN(d.getTime())) return null;
+                return d.toISOString();
+            };
+
+            let startDate = normalizeIsoOrNull(requestStartDate);
+            let endDate = normalizeIsoOrNull(requestEndDate);
+
+            // Guard against inverted ranges; fallback to computed month range.
+            if (startDate && endDate) {
+                const s = new Date(startDate);
+                const e = new Date(endDate);
+                if (s.getTime() > e.getTime()) {
+                    startDate = null;
+                    endDate = null;
+                }
+            }
+
+            // Fallback: compute a UTC month range when request didn't provide valid dates.
+            if ((!startDate || !endDate) && monthNum && yearVal) {
                 const mi = Number(monthNum) - 1, yi = Number(yearVal);
                 if (!isNaN(mi) && !isNaN(yi)) {
-                    startDate = new Date(Date.UTC(yi, mi, 1)).toISOString();
-                    endDate = new Date(Date.UTC(yi, mi + 1, 0, 23, 59, 59, 999)).toISOString();
+                    const computedStart = new Date(Date.UTC(yi, mi, 1)).toISOString();
+                    const computedEnd = new Date(Date.UTC(yi, mi + 1, 0, 23, 59, 59, 999)).toISOString();
+                    startDate = startDate || computedStart;
+                    endDate = endDate || computedEnd;
                 }
             }
 
