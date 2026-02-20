@@ -543,8 +543,11 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
         const commonwealthUnspent = parseNumber(getValueMulti(item, BUDGET_FIELDS.commonwealthUnspent));
         const providerUnspent = parseNumber(getValueMulti(item, BUDGET_FIELDS.providerUnspent));
         const participantUnspent = parseNumber(getValueMulti(item, BUDGET_FIELDS.participantUnspent));
-        const previousMonthSpending = parseNumber(getValue(item, 'Spending from Previous Month(s) within same Quarter ($)'));
-        const previousSpendingAllocated = parseNumber(getValue(item, 'Spending from Previous Month(s) within Allocated Period ($)'));
+        const previousMonthSpendingSameQuarter = parseNumber(getValue(item, 'Spending from Previous Month(s) within same Quarter ($)'));
+        const previousMonthSpendingAllocatedPeriod = parseNumber(getValue(item, 'Spending from Previous Month(s) within Allocated Period ($)'));
+        const previousMonthSpending = (code === 'RCP' || code === 'EOL')
+            ? previousMonthSpendingAllocatedPeriod
+            : previousMonthSpendingSameQuarter;
 
         let totalAvailableBudget = (() => {
             if (code === 'HSQ') {
