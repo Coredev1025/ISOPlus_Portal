@@ -78,12 +78,50 @@ function paginatePdfmeTemplateTableByRows(template, tableSchemaName, rows) {
         return { template, tableInputs: { [tableSchemaName]: JSON.stringify(safeRows) } };
     }
 
-    const chunks = [];
-    for (let i = 0; i < safeRows.length; i += rowsPerPage) {
-        chunks.push(safeRows.slice(i, i + rowsPerPage));
-    }
+    const tableTopY = Number(baseTableSchema.position?.y) || 0;
+    const tableHeight = Number(baseTableSchema.height) || 0;
+    const tableBottomY = tableTopY + tableHeight;
 
-    const tableBottomY = (Number(baseTableSchema.position?.y) || 0) + (Number(baseTableSchema.height) || 0);
+    const padding = template?.basePdf?.padding;
+    const topPadding = Array.isArray(padding) ? (Number(padding[0]) || 20) : 20;
+    const bottomPadding = Array.isArray(padding) ? (Number(padding[2]) || 20) : 20;
+    const pageHeight = Number(template?.basePdf?.height) || 297;
+    const EPS = 0.5;
+
+    // Estimate row height from the base template so we can fit more rows on pages 2+ (no repeated header/footer).
+    const approxRowHeight = (tableHeight > 0 && rowsPerPage > 0) ? (tableHeight / rowsPerPage) : 12;
+    const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+
+    const availableHeightNoFooter = clamp(pageHeight - topPadding - bottomPadding, 40, pageHeight);
+
+    // Find where the footer/totals start on the base page so the last page can keep them.
+    let footerMinY = pageHeight - bottomPadding;
+    for (const s of basePageSchemas) {
+        if (!s || s.type === 'table') continue;
+        const y = s.position?.y;
+        if (typeof y === 'number' && y > (tableBottomY + EPS)) {
+            footerMinY = Math.min(footerMinY, y);
+        }
+    }
+    const availableHeightWithFooter = clamp((footerMinY - topPadding - EPS), 40, availableHeightNoFooter);
+
+    const rowsPerPageNoFooter = clamp(Math.floor(availableHeightNoFooter / approxRowHeight), rowsPerPage, 60);
+    const rowsPerPageLastWithFooter = clamp(Math.floor(availableHeightWithFooter / approxRowHeight), rowsPerPage, 60);
+
+    // Build chunks with variable sizes: page 1 uses the template row count; pages 2+ use larger counts.
+    const chunks = [];
+    let cursor = 0;
+    chunks.push(safeRows.slice(cursor, cursor + rowsPerPage));
+    cursor += rowsPerPage;
+    while (cursor < safeRows.length) {
+        const remaining = safeRows.length - cursor;
+        if (remaining <= rowsPerPageLastWithFooter) {
+            chunks.push(safeRows.slice(cursor));
+            break;
+        }
+        chunks.push(safeRows.slice(cursor, cursor + rowsPerPageNoFooter));
+        cursor += rowsPerPageNoFooter;
+    }
 
     const newSchemas = [];
     const tableInputs = {};
@@ -96,30 +134,48 @@ function paginatePdfmeTemplateTableByRows(template, tableSchemaName, rows) {
         const pageTableName = `${tableSchemaName}_${pageIndex + 1}`;
         if (tableClone) {
             tableClone.name = pageTableName;
+            // For pages 2+, move the table to the top margin and do not repeat invoice header blocks.
+            if (pageIndex > 0 && tableClone.position) {
+                tableClone.position.y = topPadding;
+                // Expand the table to use available space on pages 2+ to avoid large blank areas.
+                tableClone.height = isLast ? availableHeightWithFooter : availableHeightNoFooter;
+            }
         }
 
-        const columnCount = Array.isArray(tableClone?.head)
-            ? tableClone.head.length
-            : (Array.isArray(chunks[pageIndex]?.[0]) ? chunks[pageIndex][0].length : 0);
+        // Do not add filler rows; only render actual data rows.
+        // (Table height is controlled above to reduce empty space on pages 2+.)
+        const pageRows = Array.isArray(chunks[pageIndex]) ? chunks[pageIndex] : [];
+        tableInputs[pageTableName] = JSON.stringify(pageRows);
 
-        const paddedRows = [...chunks[pageIndex]];
-        while (paddedRows.length < rowsPerPage) {
-            paddedRows.push(Array(columnCount).fill(''));
+        // Page 1 keeps the invoice header; pages 2+ remove it entirely.
+        if (pageIndex === 0) {
+            if (!isLast) {
+                const filtered = pageSchemasClone.filter(s => {
+                    if (s?.type === 'table' && s?.name === pageTableName) return true;
+                    const y = s?.position?.y;
+                    if (typeof y !== 'number') return true;
+                    return y <= (tableBottomY + EPS);
+                });
+                newSchemas.push(filtered);
+            } else {
+                newSchemas.push(pageSchemasClone);
+            }
+            continue;
         }
 
-        tableInputs[pageTableName] = JSON.stringify(paddedRows);
-
+        // Pages 2+ (non-last): only show the table (with its repeated column header).
         if (!isLast) {
-            const filtered = pageSchemasClone.filter(s => {
-                if (s?.type === 'table' && s?.name === pageTableName) return true;
-                const y = s?.position?.y;
-                if (typeof y !== 'number') return true;
-                return y <= (tableBottomY + 0.5);
-            });
-            newSchemas.push(filtered);
-        } else {
-            newSchemas.push(pageSchemasClone);
+            newSchemas.push(pageSchemasClone.filter(s => s?.type === 'table' && s?.name === pageTableName));
+            continue;
         }
+
+        // Pages 2+ (last): keep table + footer/totals, but remove invoice header (everything above original table top).
+        newSchemas.push(pageSchemasClone.filter(s => {
+            if (s?.type === 'table' && s?.name === pageTableName) return true;
+            const y = s?.position?.y;
+            if (typeof y !== 'number') return true;
+            return y >= (tableTopY - EPS);
+        }));
     }
 
     const newTemplate = { ...template, schemas: newSchemas };
