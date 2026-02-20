@@ -1040,7 +1040,25 @@ function setMultiValueField(target, fieldName, payload) {
 
 function cleanRichText(value) {
     if (!value) return '';
-    return value.toString().replace(/<[^>]*>/g, '').trim();
+    // Convert common HTML formatting into plain text with sensible spacing/line breaks.
+    // This is used for PDF output (pdfme) where HTML cannot be rendered.
+    return value
+        .toString()
+        .replace(/\r\n|\r/g, '\n')
+        .replace(/<\s*br\s*\/?>/gi, '\n')
+        .replace(/<\/\s*(p|div|li|tr|h[1-6])\s*>/gi, '\n')
+        .replace(/<\s*li\s*>/gi, '• ')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/gi, "'")
+        .replace(/[ \t]+/g, ' ')
+        .replace(/\n[ \t]+/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
 }
 
 function normalizeTableCell(value) {
@@ -1245,10 +1263,22 @@ function mapServiceColumnValue(service, column, rowType, business, timezone) {
             return truncateText(provider, 20);
         }
         case 'service': {
-            const name = service.service || service.taskName || cleanRichText(service.notes) || 'Service';
+            const baseName = (service.service || service.taskName || '').toString().trim();
+            const notesText = cleanRichText(service.notes);
             const providerName = isDeliveredByAssociatedProviders(service) ? resolveServiceProviderName(service, business) : '';
-            const enrichedName = providerName ? `${name}, by ${providerName}` : name;
-            return truncateText(enrichedName, 60);
+            if (!baseName && notesText) {
+                return truncateText(notesText, 2000);
+            }
+
+            const serviceLine = baseName
+                ? (providerName ? `${baseName}, by ${providerName}` : baseName)
+                : 'Service';
+
+            const baseLower = baseName.toLowerCase();
+            const notesLower = notesText.toLowerCase();
+            const shouldAppendNotes = !!notesText && (!baseName || !baseLower.includes(notesLower));
+            const enrichedName = shouldAppendNotes ? `${serviceLine}\n${notesText}` : serviceLine;
+            return truncateText(enrichedName, 2000);
         }
         case 'unit':
             return service.unit || 'Unit';
