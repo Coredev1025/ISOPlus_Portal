@@ -10,6 +10,7 @@ import { useAppContext } from "@/app/context";
 import axios from "@/app/utils/axiosConfig";
 import { showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
 import Spinner from "@/components/ui/spin";
+import { isOwnerOrSupport } from "@/lib/access";
 
 // Function to decode HTML entities
 const decodeHtmlEntities = (text: string): string => {
@@ -79,10 +80,9 @@ export default function WorkspaceConfiguration() {
   }
 
   // Check if user has permission to access this page
-  const isOwnerOrSupport = user.role === "owner" || user.role === "support_admin";
-  const isIsoPlusUserWithAdminOrOwner = user.role === "isoplus_user" && (workspace && (workspace.user_role === "admin" || workspace.user_role === "owner"));
+  const isOwnerOrSupportUser = isOwnerOrSupport(user);
 
-  if (!isOwnerOrSupport && !isIsoPlusUserWithAdminOrOwner) {
+  if (!isOwnerOrSupportUser) {
     router.replace("/workspace/access-denied");
     return null;
   }
