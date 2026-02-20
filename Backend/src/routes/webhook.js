@@ -66,12 +66,22 @@ function paginatePdfmeTemplateTableByRows(template, tableSchemaName, rows) {
     }
 
     let rowsPerPage = 0;
+    let baseTableCols = 0;
     try {
         const parsed = JSON.parse(baseTableSchema.content ?? '[]');
-        if (Array.isArray(parsed)) rowsPerPage = parsed.length;
+        if (Array.isArray(parsed)) {
+            rowsPerPage = parsed.length;
+            const firstRow = parsed[0];
+            if (Array.isArray(firstRow)) {
+                baseTableCols = firstRow.length;
+            }
+        }
     } catch { }
     if (!rowsPerPage || rowsPerPage <= 0) {
         rowsPerPage = 10;
+    }
+    if (!baseTableCols || baseTableCols <= 0) {
+        baseTableCols = Array.isArray(baseTableSchema.head) ? baseTableSchema.head.length : 1;
     }
 
     if (safeRows.length <= rowsPerPage) {
@@ -88,8 +98,16 @@ function paginatePdfmeTemplateTableByRows(template, tableSchemaName, rows) {
     const pageHeight = Number(template?.basePdf?.height) || 297;
     const EPS = 0.5;
 
-    // Estimate row height from the base template so we can fit more rows on pages 2+ (no repeated header/footer).
-    const approxRowHeight = (tableHeight > 0 && rowsPerPage > 0) ? (tableHeight / rowsPerPage) : 12;
+    const buildEmptyTableContent = (rowCount, colCount) =>
+        JSON.stringify(Array.from({ length: rowCount }, () => Array.from({ length: colCount }, () => '')));
+
+    // Estimate row height from the base template.
+    // We intentionally apply a safety factor because if we over-estimate how many rows fit,
+    // pdfme will auto-paginate the table inside our "manual" pages, creating extra pages
+    // with only a few rows (the large blank blocks you were seeing).
+    const approxRowHeightBase = (tableHeight > 0 && rowsPerPage > 0) ? (tableHeight / rowsPerPage) : 12;
+    const ROW_HEIGHT_SAFETY_FACTOR = 1.3;
+    const approxRowHeight = approxRowHeightBase * ROW_HEIGHT_SAFETY_FACTOR;
     const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 
     const availableHeightNoFooter = clamp(pageHeight - topPadding - bottomPadding, 40, pageHeight);
@@ -105,8 +123,8 @@ function paginatePdfmeTemplateTableByRows(template, tableSchemaName, rows) {
     }
     const availableHeightWithFooter = clamp((footerMinY - topPadding - EPS), 40, availableHeightNoFooter);
 
-    const rowsPerPageNoFooter = clamp(Math.floor(availableHeightNoFooter / approxRowHeight), rowsPerPage, 60);
-    const rowsPerPageLastWithFooter = clamp(Math.floor(availableHeightWithFooter / approxRowHeight), rowsPerPage, 60);
+    const rowsPerPageNoFooter = clamp(Math.floor(availableHeightNoFooter / approxRowHeight), rowsPerPage, 200);
+    const rowsPerPageLastWithFooter = clamp(Math.floor(availableHeightWithFooter / approxRowHeight), rowsPerPage, 200);
 
     // Build chunks with variable sizes: page 1 uses the template row count; pages 2+ use larger counts.
     const chunks = [];
@@ -139,11 +157,14 @@ function paginatePdfmeTemplateTableByRows(template, tableSchemaName, rows) {
                 tableClone.position.y = topPadding;
                 // Expand the table to use available space on pages 2+ to avoid large blank areas.
                 tableClone.height = isLast ? availableHeightWithFooter : availableHeightNoFooter;
+                // IMPORTANT: pdfme table renders only as many body rows as exist in schema.content.
+                // Increase row capacity on pages 2+ so we can actually render more rows per page.
+                const pageRowCapacity = isLast ? rowsPerPageLastWithFooter : rowsPerPageNoFooter;
+                tableClone.content = buildEmptyTableContent(pageRowCapacity, baseTableCols);
             }
         }
 
-        // Do not add filler rows; only render actual data rows.
-        // (Table height is controlled above to reduce empty space on pages 2+.)
+        // Only render actual data rows; schema.content above controls capacity, not the data itself.
         const pageRows = Array.isArray(chunks[pageIndex]) ? chunks[pageIndex] : [];
         tableInputs[pageTableName] = JSON.stringify(pageRows);
 
@@ -2678,8 +2699,6 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                 return res.status(400).json({ message: "There is nothing to invoice!" });
             }
 
-            const { template: pagedTemplate, tableInputs } = paginatePdfmeTemplateTableByRows(template, 'orders', ordersArr);
-            
             let subtotalValue, totalAUDValue;
             if (isLowCatBoard) {
                 subtotalValue = formatCurrencyValue(totalAmountSum);
@@ -2704,7 +2723,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 
             // Generate the PDF with all items
             const pdfBytes = await generate({
-                template: pagedTemplate,
+                template,
                 inputs: [
                     {
                         logo: logoBase64,
@@ -2728,7 +2747,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                             Postcode: business.address.postcode,
                             Country: business.address.country
                         }),
-                        ...tableInputs,
+                        orders: ordersArr,
                         "dueDate": new Date(dueDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }),
                         "Bank Details": JSON.stringify({
                             "Account Name": business.bankDetails.accountName,
