@@ -19,6 +19,7 @@ import axios from "@/app/utils/axiosConfig";
 import Spinner from "@/components/ui/spin";
 import { showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
 import { Badge } from "@/components/ui/badge";
+import { isOwnerOrSupport } from "@/lib/access";
 import {
   Tooltip,
   TooltipContent,
@@ -51,11 +52,11 @@ export default function WorkspaceDetail() {
   const workspace = workspaces.find(workspace => workspace.id.toString() === id);
   const [boards, setBoards] = useState<Board[]>([]);
   const [loadingBoards, setLoadingBoards] = useState<boolean>(false); // Loading state for boards
-  const ALLOWED_ADMIN_BOARD_LABELS: BoardLabel[] = ['Care Management - SaH', 'Care Management - SaH - Low Cat'];
-  const isOwnerOrSupport = user.role === "owner" || user.role === "support_admin";
+  const isOwnerOrSupportUser = isOwnerOrSupport(user);
   const isWorkspaceOwner = user.role === "isoplus_user" && workspace?.user_role === "owner";
   const isWorkspaceAdmin = user.role === "isoplus_user" && workspace?.user_role === "admin";
-  const canSeeBoardMeta = isOwnerOrSupport || isWorkspaceOwner || isWorkspaceAdmin;
+  const canSeeBoardMeta = isOwnerOrSupportUser || isWorkspaceOwner || isWorkspaceAdmin;
+  const canAccessThisWorkspace = isOwnerOrSupportUser || isWorkspaceOwner || isWorkspaceAdmin;
   const adminBoardIds = useMemo(() => {
     if (!isWorkspaceAdmin) return null;
     const boardList = (workspace as any)?.board;
@@ -73,19 +74,10 @@ export default function WorkspaceDetail() {
     return boards;
   }, [adminBoardIds, boards, isWorkspaceAdmin]);
   const canOpenBoard = (board: Board) => {
-    if (isOwnerOrSupport || isWorkspaceOwner) {
-      return true;
-    }
-    if (isWorkspaceAdmin) {
-      return ALLOWED_ADMIN_BOARD_LABELS.includes(board.label as BoardLabel);
-    }
-    return false;
+    return canAccessThisWorkspace;
   };
   const openBoardTooltip = (board: Board) => {
     if (canOpenBoard(board)) return undefined;
-    if (isWorkspaceAdmin) {
-      return "Admins can open only boards labeled Care Management - SaH or Care Management - SaH - Low Cat.";
-    }
     return "You don't have permission to open this board.";
   };
 
@@ -152,7 +144,7 @@ export default function WorkspaceDetail() {
       return;
     }
 
-    if (!isOwnerOrSupport && !isWorkspaceOwner && !isWorkspaceAdmin) {
+    if (!canAccessThisWorkspace) {
       router.replace("/workspace/access-denied");
       return;
     }
@@ -162,7 +154,7 @@ export default function WorkspaceDetail() {
     return () => {
       abortController.abort();
     };
-  }, [id, boards.length, workspace, isOwnerOrSupport, isWorkspaceOwner, isWorkspaceAdmin, router]);
+  }, [id, boards.length, workspace, canAccessThisWorkspace, router]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -200,7 +192,7 @@ export default function WorkspaceDetail() {
 
           {/* Workspace Actions */}
           {
-            (isOwnerOrSupport || isWorkspaceOwner || isWorkspaceAdmin) && (
+            canAccessThisWorkspace && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <Card className="p-6 space-y-4 card-hover">
                   <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
@@ -256,7 +248,7 @@ export default function WorkspaceDetail() {
                   </div>
                 </Card>
 
-                {(isOwnerOrSupport || isWorkspaceOwner) && (
+                {isOwnerOrSupportUser && (
                   <Card className="p-6 space-y-4 card-hover">
                     <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
                       <Terminal className="h-6 w-6 text-primary" />

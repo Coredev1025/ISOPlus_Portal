@@ -29,6 +29,7 @@ import { fetchMonthlyStatementItems } from "@/app/utils/items";
 import { format, startOfMonth, endOfMonth, isValid, parse } from "date-fns";
 import Spinner from "@/components/ui/spin";
 import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast } from "@/lib/toast-utils";
+import { isCareManagementLabel, isLowCatCareManagementLabel } from "@/lib/access";
 import { ChartContainer, ChartStyle, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from "recharts";
 import {
@@ -234,6 +235,9 @@ const BUDGET_CATEGORY_LABELS: Record<string, string> = {
   ATO: 'Assistive Technology - Ongoing Budget',
   HMB: 'Home Modification Budget',
 };
+
+// Shared category order used for rendering and export
+const CATEGORY_ORDER = ['HSQ', 'ATS', 'ATO', 'HMB', 'RCP', 'EOL', 'HSCM'] as const;
 
 const BUDGET_TABLE_COLUMNS: Record<string, string[]> = {
   HSQ: [
@@ -605,6 +609,8 @@ export default function MonthlyStatement() {
 
   const { syncStatuses, setSyncStatuses } = useAppContext();
 
+  const [boardLabel, setBoardLabel] = useState<string>("");
+  const [boardLabelChecked, setBoardLabelChecked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingParticipants, setLoadingParticipants] = useState(false);
   const [loadingServiceItems, setLoadingServiceItems] = useState(false);
@@ -668,10 +674,50 @@ export default function MonthlyStatement() {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 5 }, (_, i) => (currentYear - i).toString());
 
+  const canUseMonthlyStatement =
+    boardLabelChecked &&
+    isCareManagementLabel(boardLabel) &&
+    !isLowCatCareManagementLabel(boardLabel);
+
+  useEffect(() => {
+    const fetchBoardLabel = async () => {
+      try {
+        setBoardLabelChecked(false);
+        const response = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${boardId}`,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            }
+          }
+        );
+
+        setBoardLabel(response.data?.board?.label || "");
+      } catch (err) {
+        console.error('Error fetching board label:', err);
+        setBoardLabel("");
+      } finally {
+        setBoardLabelChecked(true);
+      }
+    };
+
+    if (boardId) {
+      fetchBoardLabel();
+    }
+  }, [boardId]);
+
+  useEffect(() => {
+    if (boardLabelChecked && !canUseMonthlyStatement) {
+      router.replace("/workspace/access-denied");
+    }
+  }, [boardLabelChecked, canUseMonthlyStatement, router]);
+
   // Fetch unique participants using dedicated endpoint
   useEffect(() => {
     const fetchParticipants = async () => {
       if (!id || !boardId) return;
+      if (!canUseMonthlyStatement) return;
 
       setLoadingParticipants(true);
       try {
@@ -698,7 +744,7 @@ export default function MonthlyStatement() {
     };
 
     fetchParticipants();
-  }, [id, boardId]);
+  }, [id, boardId, canUseMonthlyStatement]);
 
   // Set default month and year
   useEffect(() => {
@@ -739,9 +785,10 @@ export default function MonthlyStatement() {
     };
 
     if (id) {
+      if (!canUseMonthlyStatement) return;
       loadBusinessDetails();
     }
-  }, [id]);
+  }, [id, canUseMonthlyStatement]);
 
   // Helper function to get quarter months
   const getQuarterMonths = (monthNumber: string): { start: string; end: string } => {
@@ -2194,9 +2241,6 @@ export default function MonthlyStatement() {
 
   const getBudgetColumnsForCode = (code?: string) =>
     BUDGET_TABLE_COLUMNS[code || 'HSQ'] || BUDGET_TABLE_COLUMNS.HSQ;
-
-  // Shared category order used for rendering and export
-  const CATEGORY_ORDER = ['HSQ', 'ATS', 'ATO', 'HMB', 'RCP', 'EOL', 'HSCM'] as const;
 
   // Determine budget category code from item data or folder name
   const resolveBudgetCategoryCode = useCallback((folderName: string, items: BudgetRecord[]): string => {
