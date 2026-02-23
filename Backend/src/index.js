@@ -45,6 +45,8 @@ if (missingEnvVars.length > 0) {
 
 const app = express();
 
+app.set('etag', false);
+
 // Attach requestId and request lifecycle logging early
 app.use(requestContextMiddleware);
 
@@ -71,6 +73,14 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
+
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  next();
+});
 
 const requestBodyLimit = process.env.REQUEST_BODY_LIMIT || '25mb';
 app.use(express.json({ limit: requestBodyLimit }));
