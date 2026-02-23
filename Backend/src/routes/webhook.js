@@ -327,6 +327,74 @@ function applyTemplateTextDefaults(template, templateInputs) {
     }
 }
 
+function getTemplateImageContentByName(template, schemaName) {
+    const pages = template?.schemas;
+    if (!Array.isArray(pages)) return '';
+    for (const pageSchemas of pages) {
+        if (!Array.isArray(pageSchemas)) continue;
+        const match = pageSchemas.find((s) => s?.type === 'image' && s?.name === schemaName);
+        if (match && typeof match.content === 'string' && match.content.length > 0) {
+            return match.content;
+        }
+    }
+    return '';
+}
+
+function ensureMonthlyStatementHeaderFromPage2(template) {
+    const pages = template?.schemas;
+    if (!Array.isArray(pages) || pages.length < 2) return;
+
+    const headerTextSchemaBase = {
+        type: 'text',
+        content: 'Monthly Statement',
+        position: { x: 20, y: 10 },
+        width: 120,
+        height: 6,
+        rotate: 0,
+        alignment: 'left',
+        verticalAlignment: 'middle',
+        fontSize: 20,
+        lineHeight: 1,
+        characterSpacing: 0,
+        fontColor: '#000000',
+        backgroundColor: '',
+        opacity: 1,
+        strikethrough: false,
+        underline: false,
+        required: false,
+        readOnly: true,
+        fontName: 'Roboto'
+    };
+
+    const logoHeaderSchemaBase = {
+        type: 'image',
+        content: '',
+        position: { x: 174, y: 8 },
+        width: 16,
+        height: 15.53,
+        rotate: 0,
+        opacity: 1,
+        required: false,
+        readOnly: false
+    };
+
+    for (let pageIndex = 1; pageIndex < pages.length; pageIndex++) {
+        const pageSchemas = pages[pageIndex];
+        if (!Array.isArray(pageSchemas)) continue;
+
+        const pageNo = pageIndex + 1;
+        const headerName = `headerMonthlyStatement_p${pageNo}`;
+        const logoName = `logoHeader_p${pageNo}`;
+
+        const filtered = pageSchemas.filter((s) => s?.name !== headerName && s?.name !== logoName);
+        filtered.push(
+            { ...headerTextSchemaBase, name: headerName },
+            { ...logoHeaderSchemaBase, name: logoName }
+        );
+        pages[pageIndex] = filtered;
+    }
+}
+
 // Attribute names for referenced item types
 const REF_ATTRIBUTE_NAMES = {
     // Participant Profile attributes
@@ -2861,6 +2929,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             const templateData = await fs.readFile(templatePath, 'utf8');
             const template = JSON.parse(templateData);
             enableRepeatHeadOnTables(template);
+            ensureMonthlyStatementHeaderFromPage2(template);
 
             const logoBase64 = await getLogoData(business);
 
@@ -2947,7 +3016,14 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
 
             const templateInputs = {};
             await resolveTemplateImageUrls(template, templateInputs);
-            templateInputs.logo = logoBase64 || templateInputs.logo || '';
+            const templateDefaultLogo = getTemplateImageContentByName(template, 'logo');
+            templateInputs.logo = logoBase64 || templateInputs.logo || templateDefaultLogo || '';
+
+            const pageCount = Array.isArray(template?.schemas) ? template.schemas.length : 0;
+            for (let p = 2; p <= pageCount; p++) {
+                templateInputs[`headerMonthlyStatement_p${p}`] = 'Monthly Statement';
+                templateInputs[`logoHeader_p${p}`] = templateInputs.logo;
+            }
 
             // Summary Table: use chart image from frontend when provided; hide if all values $0.00; else mini-chart
             const hasChartFromFrontend = chartImage && typeof chartImage === 'string' && chartImage.length > 50;
