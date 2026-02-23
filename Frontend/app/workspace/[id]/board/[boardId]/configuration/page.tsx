@@ -140,38 +140,36 @@ export default function ConfigurationPage() {
   }, [hasAccess, router]);
 
   useEffect(() => {
-    if (!hasAccess) return;
+    if (!hasAccess || !id || !boardId) return;
     const abortController = new AbortController();
 
     const fetchAttributes = async () => {
-      if (!board) {
-        try {
-          const response = await axios.get(
-            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards/attribute?workspaceId=${id}&boardId=${boardId}`,
-            {
-              signal: abortController.signal
-            }
-          );
-
-          const attributes = response.data.attributes;
-          const formattedAttributes = attributes.map((attr: any) => {
-            return {
-              id: attr.id, name: attr.name, type: attr.type == "text" ? "Text" : "Long Text"
-            }
-          });
-
-          // Sort attributes alphabetically by name
-          const sortedAttributes = formattedAttributes.sort((a: any, b: any) =>
-            a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-          );
-
-          setIsoAttributes(sortedAttributes);
-          showFetchSuccessToast("Board attributes");
-        } catch (error: any) {
-          if (error.name != "CanceledError" && error.name != "AbortError") {
-            console.error("Error fetching attributes:", error);
-            showFetchErrorToast("board attributes", error.response?.data?.message || "Failed to load board attributes");
+      try {
+        const response = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards/attribute?workspaceId=${id}&boardId=${boardId}`,
+          {
+            signal: abortController.signal
           }
+        );
+
+        const attributes = response.data.attributes;
+        const formattedAttributes = attributes.map((attr: any) => {
+          return {
+            id: attr.id, name: attr.name, type: attr.type == "text" ? "Text" : "Long Text"
+          }
+        });
+
+        // Sort attributes alphabetically by name
+        const sortedAttributes = formattedAttributes.sort((a: any, b: any) =>
+          a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+        );
+
+        setIsoAttributes(sortedAttributes);
+        showFetchSuccessToast("Board attributes");
+      } catch (error: any) {
+        if (error.name != "CanceledError" && error.name != "AbortError") {
+          console.error("Error fetching attributes:", error);
+          showFetchErrorToast("board attributes", error.response?.data?.message || "Failed to load board attributes");
         }
       }
     };
@@ -181,39 +179,37 @@ export default function ConfigurationPage() {
     return () => {
       abortController.abort();
     };
-  }, [hasAccess, board, id, boardId]);
+  }, [hasAccess, id, boardId]);
 
   useEffect(() => {
-    if (!hasAccess) return;
+    if (!hasAccess || !boardId) return;
     const abortController = new AbortController();
 
     const fetchBoards = async () => {
-      if (!board) {
-        try {
-          const boardResponse = await axios.get(
-            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${boardId}`,
-            {
-              signal: abortController.signal
-            }
-          );
-          const boardData = { id: boardId, name: boardResponse.data.board.name, label: boardResponse.data.board?.label || 'No Label', attributeId: boardResponse.data.board?.attribute?.id || '', pdfAttributeId: boardResponse.data.board?.pdfAttribute?.id || '', syncData: boardResponse.data.board?.syncData || false };
-          setBoard(boardData);
-          setSelectedAttribute(boardResponse.data.board?.attribute?.id || '');
-          setSelectedPdfAttribute(boardResponse.data.board?.pdfAttribute?.id || '');
-          setBoardLabel(boardResponse.data.board?.label || 'No Label');
-          setSyncData(boardResponse.data.board?.syncData || false);
-          showFetchSuccessToast("Board configuration");
-        } catch (error: any) {
-          if (error.name != "CanceledError" && error.name != "AbortError") {
-            console.error("Error fetching board:", error);
-            showFetchErrorToast("board configuration", error.response?.data?.message || "Failed to load board configuration");
+      try {
+        const boardResponse = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${boardId}`,
+          {
+            signal: abortController.signal
           }
-          setBoard({ id: boardId, name: '', label: 'No Label', attributeId: '', pdfAttributeId: '', syncData: false });
-          setSelectedAttribute('');
-          setSelectedPdfAttribute('');
-          setSyncData(false);
-          return;
+        );
+        const boardData = { id: boardId, name: boardResponse.data.board.name, label: boardResponse.data.board?.label || 'No Label', attributeId: boardResponse.data.board?.attribute?.id || '', pdfAttributeId: boardResponse.data.board?.pdfAttribute?.id || '', syncData: boardResponse.data.board?.syncData || false };
+        setBoard(boardData);
+        setSelectedAttribute(boardResponse.data.board?.attribute?.id || '');
+        setSelectedPdfAttribute(boardResponse.data.board?.pdfAttribute?.id || '');
+        setBoardLabel(boardResponse.data.board?.label || 'No Label');
+        setSyncData(boardResponse.data.board?.syncData || false);
+        showFetchSuccessToast("Board configuration");
+      } catch (error: any) {
+        if (error.name != "CanceledError" && error.name != "AbortError") {
+          console.error("Error fetching board:", error);
+          showFetchErrorToast("board configuration", error.response?.data?.message || "Failed to load board configuration");
         }
+        setBoard({ id: boardId, name: '', label: 'No Label', attributeId: '', pdfAttributeId: '', syncData: false });
+        setSelectedAttribute('');
+        setSelectedPdfAttribute('');
+        setSyncData(false);
+        return;
       }
     };
 
@@ -222,7 +218,7 @@ export default function ConfigurationPage() {
     return () => {
       abortController.abort();
     };
-  }, [hasAccess, board, boardId]);
+  }, [hasAccess, boardId]);
 
   const workspace = workspaces.find(workspace => workspace.id.toString() === id);
 
