@@ -347,7 +347,7 @@ function ensureMonthlyStatementHeaderFromPage2(template) {
     const headerTextSchemaBase = {
         type: 'text',
         content: 'Monthly Statement',
-        position: { x: 20, y: 10 },
+        position: { x: 20, y: 13.8 },
         width: 120,
         height: 6,
         rotate: 0,
