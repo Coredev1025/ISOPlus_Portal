@@ -156,6 +156,7 @@ function WorkspacesList() {
   const [searchQuery, setSearchQuery] = useState("");
   const { user, workspaces, setWorkspaces } = useAppContext();
   const [isLoading, setLoading] = useState(false);
+  const hasFetchedWorkspaces = useRef(false);
 
   const filteredWorkspaces = workspaces.filter(item =>
     item.id.toString().includes(searchQuery.toLowerCase()) ||
@@ -163,44 +164,54 @@ function WorkspacesList() {
   );
 
   useEffect(() => {
+    if (!user?.role) return;
+    if (workspaces.length > 0) return;
+    if (hasFetchedWorkspaces.current) return;
+    hasFetchedWorkspaces.current = true;
+
     const abortController = new AbortController();
 
     const fetchWorkspaces = async () => {
-      if (workspaces.length === 0) {
-        setLoading(true);
-        try {
-          const response = await axios.get(
-            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces`,
-            {
-              withCredentials: true,
-              signal: abortController.signal
-            }
-          );
-
-          let sortedWorkspace: any[] = [];
-
-          response.data.workspace.forEach((workspace: any) => {
-            if ((user.role == "support_admin" || user.role == "owner" || workspace?.user_role == "owner" || workspace?.user_role == "admin")) {
-              sortedWorkspace.push(workspace);
-            }
-          })
-
-          sortedWorkspace = [...sortedWorkspace].sort((a, b) =>
-            a.name.localeCompare(b.name)
-          );
-
-          setWorkspaces(sortedWorkspace);
-          showFetchSuccessToast("Workspaces");
-
-          if (user.role === "isoplus_user" && sortedWorkspace.length === 1) {
-            router.push(`/workspace/${sortedWorkspace[0].id}`);
+      setLoading(true);
+      try {
+        const response = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces`,
+          {
+            withCredentials: true,
+            signal: abortController.signal
           }
-        } catch (error: any) {
-          if (error.name !== "CanceledError" && error.name !== "AbortError") {
-            console.error("Error fetching workspaces:", error);
-            showFetchErrorToast("workspaces", error.response?.data?.message || "Failed to load workspaces");
+        );
+
+        let sortedWorkspace: any[] = [];
+
+        response.data.workspace.forEach((workspace: any) => {
+          if ((user.role == "support_admin" || user.role == "owner" || workspace?.user_role == "owner" || workspace?.user_role == "admin")) {
+            sortedWorkspace.push(workspace);
           }
+        })
+
+        sortedWorkspace = [...sortedWorkspace].sort((a, b) =>
+          a.name.localeCompare(b.name)
+        );
+
+        setWorkspaces(sortedWorkspace);
+
+        if (sortedWorkspace.length === 0) {
+          router.replace("/access-denied");
+          return;
         }
+
+        showFetchSuccessToast("Workspaces");
+
+        if (user.role === "isoplus_user" && sortedWorkspace.length === 1) {
+          router.push(`/workspace/${sortedWorkspace[0].id}`);
+        }
+      } catch (error: any) {
+        if (error.name !== "CanceledError" && error.name !== "AbortError") {
+          console.error("Error fetching workspaces:", error);
+          showFetchErrorToast("workspaces", error.response?.data?.message || "Failed to load workspaces");
+        }
+      } finally {
         setLoading(false);
       }
     };
