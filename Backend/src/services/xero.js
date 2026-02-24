@@ -185,6 +185,21 @@ export async function createInvoice(invoice) {
             throw new Error('Xero client not configured');
         }
 
+        const normalizeDateOnly = (value) => {
+            if (!value) return undefined;
+            if (typeof value === 'string') {
+                const trimmed = value.trim();
+                if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+                    return trimmed;
+                }
+            }
+            const dt = new Date(value);
+            if (Number.isNaN(dt.getTime())) {
+                throw new Error(`Invalid date value: ${String(value)}`);
+            }
+            return dt.toISOString().split('T')[0];
+        };
+
         await xeroClient.updateTenants(false);
         if (!xeroClient.tenants?.length) {
             throw new Error('No organizations connected');
@@ -200,8 +215,8 @@ export async function createInvoice(invoice) {
                 type: invoice.type || 'ACCREC',
                 contact: { contactID },
                 reference: invoice.reference,
-                date: new Date(invoice.date).toISOString().split('T')[0],
-                dueDate: new Date(invoice.dueDate).toISOString().split('T')[0], // YYYY-MM-DD format
+                date: normalizeDateOnly(invoice.date),
+                dueDate: normalizeDateOnly(invoice.dueDate), // YYYY-MM-DD format
                 lineItems: invoice.lineItems.map(item => ({
                     itemCode: item.itemCode,
                     description: item.description,
@@ -217,7 +232,9 @@ export async function createInvoice(invoice) {
 
         const response = await xeroClient.accountingApi.createInvoices(
             tenantId,
-            invoiceData
+            invoiceData,
+            true,
+            4
         );
 
         return response.body.invoices[0];

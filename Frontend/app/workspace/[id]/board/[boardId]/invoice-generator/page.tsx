@@ -82,6 +82,51 @@ const FUNDING_SOURCE_CODE_MAP: Record<string, string> = {
   "Unspent Home Care Package (HCP) Funds": "HCP"
 };
 
+const SYDNEY_TIME_ZONE = "Australia/Sydney";
+
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+function formatDateOnlyInTimeZone(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-AU", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  const year = parts.find(p => p.type === "year")?.value;
+  const month = parts.find(p => p.type === "month")?.value;
+  const day = parts.find(p => p.type === "day")?.value;
+
+  if (!year || !month || !day) {
+    throw new Error("Failed to format date-only value.");
+  }
+
+  return `${year}-${month}-${day}`;
+}
+
+function addDaysDateOnlyUTC(yyyyMmDd: string, days: number) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(yyyyMmDd);
+  if (!match) {
+    throw new Error(`Invalid date-only value: ${yyyyMmDd}`);
+  }
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const day = Number(match[3]);
+
+  const dt = new Date(Date.UTC(year, monthIndex, day));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`;
+}
+
+function getDefaultInvoiceDates() {
+  const invoiceDate = formatDateOnlyInTimeZone(new Date(), SYDNEY_TIME_ZONE);
+  const dueDate = addDaysDateOnlyUTC(invoiceDate, 14);
+  return { invoiceDate, dueDate };
+}
+
 interface ServiceRecord {
   id: string;
   status: "invoiced" | "pending";
@@ -185,12 +230,12 @@ export default function InvoiceGenerator() {
   const [eligibleRecords, setEligibleRecords] = useState<ServiceRecord[]>([]);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [loadingEligible, setLoadingEligible] = useState(false);
-  const [invoiceDate, setInvoiceDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [dueDate, setDueDate] = useState<string>(() => {
-    const date = new Date();
-    date.setDate(date.getDate() + 14);
-    return date.toISOString().split('T')[0];
-  });
+  const defaultInvoiceDatesRef = useRef<{ invoiceDate: string; dueDate: string } | null>(null);
+  if (!defaultInvoiceDatesRef.current) {
+    defaultInvoiceDatesRef.current = getDefaultInvoiceDates();
+  }
+  const [invoiceDate, setInvoiceDate] = useState<string>(defaultInvoiceDatesRef.current!.invoiceDate);
+  const [dueDate, setDueDate] = useState<string>(defaultInvoiceDatesRef.current!.dueDate);
   const [uniqueParticipants, setUniqueParticipants] = useState<string[]>([]);
   const [showHelpDialog, setShowHelpDialog] = useState(false);
   const [generatingPDF, setGeneratingPDF] = useState(false);
@@ -1630,10 +1675,9 @@ export default function InvoiceGenerator() {
   const handleOpenInvoiceModal = () => {
     setSelectedItems(new Set()); // Reset selected items
     // Set default dates
-    setInvoiceDate(new Date().toISOString().split('T')[0]);
-    const due = new Date();
-    due.setDate(due.getDate() + 14);
-    setDueDate(due.toISOString().split('T')[0]);
+    const { invoiceDate: defaultInvoiceDate, dueDate: defaultDueDate } = getDefaultInvoiceDates();
+    setInvoiceDate(defaultInvoiceDate);
+    setDueDate(defaultDueDate);
     setShowInvoiceModal(true);
     // Don't show toast here - fetchEligibleRecords will show appropriate toasts
   };
@@ -1700,8 +1744,8 @@ export default function InvoiceGenerator() {
         itemIds: itemIds,
         items: selectedRecords, // Keep items for backward compatibility
         participantName: participantName,
-        invoiceDate: new Date(invoiceDate).toISOString(),
-        dueDate: new Date(dueDate).toISOString(),
+        invoiceDate: invoiceDate,
+        dueDate: dueDate,
         isLowCat: isLowCatBoard // Pass Low-Cat flag to backend
       };
 
@@ -1823,8 +1867,8 @@ export default function InvoiceGenerator() {
       const payload = {
         items: selectedRecords,
         participantName: participantName,
-        invoiceDate: new Date(invoiceDate).toISOString(),
-        dueDate: new Date(dueDate).toISOString(),
+        invoiceDate: invoiceDate,
+        dueDate: dueDate,
         isLowCat: isLowCatBoard
       };
 

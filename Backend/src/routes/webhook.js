@@ -2833,7 +2833,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                             "Billing Address": billingAddress
                         }),
                         invoiceDetails: JSON.stringify({
-                            Date: new Date(invoiceDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+                            Date: new Date(invoiceDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Australia/Sydney' }),
                             "Invoice Number": invoiceNumber
                         }),
                         companyName: JSON.stringify({ "Company Name": business.name }),
@@ -2846,7 +2846,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                             Country: business.address.country
                         }),
                         orders: ordersArr,
-                        "dueDate": new Date(dueDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+                        "dueDate": new Date(dueDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Australia/Sydney' }),
                         "Bank Details": JSON.stringify({
                             "Account Name": business.bankDetails.accountName,
                             "Bank Name": business.bankDetails.bankName,
