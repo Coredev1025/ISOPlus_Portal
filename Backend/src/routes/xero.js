@@ -58,6 +58,21 @@ function formatValue(val) {
   }
 }
 
+function roundTo(value, dp) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 0;
+  const factor = Math.pow(10, dp);
+  return Math.round((num + Number.EPSILON) * factor) / factor;
+}
+
+function round2(value) {
+  return roundTo(value, 2);
+}
+
+function round4(value) {
+  return roundTo(value, 4);
+}
+
 async function initializeXeroOperation(workspaceId, boardId, item) {
   const business = await Business.findOne({ workspaceId: workspaceId.toString() });
   if (!business) {
@@ -1710,25 +1725,30 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         description = 'Service';
       }
       
-      const quantity = typeof item.quantity === 'number' ? item.quantity : Number(item.quantity || 0);
+      const quantityRaw = typeof item.quantity === 'number' ? item.quantity : Number(item.quantity || 0);
       const unitPrice = typeof item.unitPrice === 'number' ? item.unitPrice : Number(item.unitPrice || 0);
       const totalItemAmount = typeof item.totalAmount === 'number' ? item.totalAmount : Number(item.totalAmount || 0);
       const participantContributionAmount = typeof item.participantContribution === 'number' ? item.participantContribution : Number(item.totalAmount || 0);
 
       // For Low-Cat, use total amount; for others, use participant contribution if available
-      const lineAmount = isLowCatBoard? totalItemAmount : participantContributionAmount;
+      const lineAmountRaw = isLowCatBoard ? totalItemAmount : participantContributionAmount;
+      const lineAmountMoney = round2(lineAmountRaw);
 
-      if (lineAmount > 0) {
-        const calculatedUnitPrice = quantity > 0 ? lineAmount / quantity : (unitPrice > 0 ? unitPrice : lineAmount);
+      if (lineAmountMoney > 0) {
+        const quantity = quantityRaw > 0 ? quantityRaw : 1;
+        const calculatedUnitPrice =
+          quantity > 0 ? (lineAmountMoney / quantity) : (unitPrice > 0 ? unitPrice : lineAmountMoney);
+        const unitAmount = round4(calculatedUnitPrice);
         
         lineItems.push({
           description: description || 'Service',
-          quantity: formatValue(quantity || 1),
-          unitAmount: formatValue(calculatedUnitPrice),
+          quantity: quantity,
+          unitAmount: unitAmount,
+          lineAmount: lineAmountMoney,
           accountCode: salesAccountCode,
           taxType: gstType
         });
-        totalAmount += lineAmount;
+        totalAmount += lineAmountMoney;
       }
     }
 
