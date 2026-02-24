@@ -1085,12 +1085,6 @@ export default function InvoiceGenerator() {
       render: (record) => record.participant || '-'
     },
     {
-      key: 'paymentStatus',
-      label: 'Payment Status',
-      className: 'min-w-[180px]',
-      render: (record) => record.paymentStatus || '-'
-    },
-    {
       key: 'service',
       label: 'Service',
       className: 'min-w-[220px]',
@@ -1178,14 +1172,14 @@ export default function InvoiceGenerator() {
         }
         return '-';
       }
-    }
-  ] : [
+    },
     {
       key: 'paymentStatus',
       label: 'Payment Status',
       className: 'min-w-[180px]',
       render: (record) => record.paymentStatus || '-'
-    },
+    }
+  ] : [
     {
       key: 'participant',
       label: 'Participant',
@@ -1292,6 +1286,12 @@ export default function InvoiceGenerator() {
         }
         return '-';
       }
+    },
+    {
+      key: 'paymentStatus',
+      label: 'Payment Status',
+      className: 'min-w-[180px]',
+      render: (record) => record.paymentStatus || '-'
     }
   ];
 
