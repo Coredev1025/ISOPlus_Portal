@@ -30,7 +30,7 @@ export default function AccessDenied() {
             variant="destructive"
             className="w-full"
           >
-            Return to ISO+ Main Website
+            Return to ISO+™ Main Website
           </Button>
         </Card>
       </div>
