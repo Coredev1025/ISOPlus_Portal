@@ -1734,8 +1734,8 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
       const lineAmountRaw = isLowCatBoard ? totalItemAmount : participantContributionAmount;
       const lineAmountMoney = round2(lineAmountRaw);
 
-      if (lineAmountMoney > 0) {
-        const quantity = quantityRaw > 0 ? quantityRaw : 1;
+      if (lineAmountMoney !== 0) {
+        const quantity = quantityRaw !== 0 ? Math.abs(quantityRaw) : 1;
         const calculatedUnitPrice =
           quantity > 0 ? (lineAmountMoney / quantity) : (unitPrice > 0 ? unitPrice : lineAmountMoney);
         const unitAmount = round4(calculatedUnitPrice);
