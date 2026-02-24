@@ -339,9 +339,9 @@ class IsoPlusLineItemValues extends ItemValues {
                 'number.base': 'Quantity must be a number.',
                 'any.required': 'Quantity is required.'
             }),
-            unitAmount: Joi.number().greater(0).required().messages({
+            unitAmount: Joi.number().invalid(0).required().messages({
                 'number.base': 'UnitAmount must be a number.',
-                'number.greater': 'UnitAmount must be greater than 0',
+                'any.invalid': 'UnitAmount must not be 0',
                 'any.required': 'UnitAmount is required.'
             }),
             accountCode: Joi.string().required().messages({
@@ -362,9 +362,9 @@ class IsoPlusLineItemValues extends ItemValues {
                 'number.base': 'TaxAmount must be a number.',
                 'number.min': 'TaxAmount must be non-negative.'
             }),
-            lineAmount: Joi.number().min(0).allow(null).messages({
+            lineAmount: Joi.number().allow(null).messages({
                 'number.base': 'LineAmount must be a number.',
-                'number.min': 'LineAmount must be non-negative.'
+                'any.required': 'LineAmount is required.'
             })
         });
     }
