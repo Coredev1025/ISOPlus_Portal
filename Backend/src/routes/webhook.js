@@ -2152,13 +2152,13 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
 
                     // Line 3: Provider Travel - Non-Labour Cost
-                    const unitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) || 0;
+                    const unitPrice3 = 1;
                     const mileage3 = invoiceValues["Provider Travel - Non-Labour - Mileage (kms) as per the Service Plan, if a Vehicle is Used."] || '';
                     const others3 = invoiceValues["Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied."] || '';
                     const itemName3 = servicePlanValues?.providerTravelItemName || '';
                     const itemNumber3 = servicePlanValues?.providerTravelItemNumber || '';
                     const qty3 = Number(invoiceValues["Provider Travel - Non-Labour Cost Amount($)"]) || 0;
-                    const amountValue3 = formatValue(Number(invoiceValues["Provider Travel - Non-Labour Cost Amount($)"]) * unitPrice3) || 0;
+                    const amountValue3 = formatValue(Number(invoiceValues["Provider Travel - Non-Labour Cost Amount($)"])) || 0;
                     const amount3 = formatValue(qty3 * unitPrice3);
 
                     if (amountValue3 > 0) {
@@ -2193,13 +2193,13 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     }
 
                     // Line 4: Activity Based Transport
-                    const unitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) || 0;
+                    const unitPrice4 = 1;
                     const mileage4 = invoiceValues["Activity Base Transport Mileage(Kms) as per the Service Plan, if a Vehicle is Used."] || '';
                     const others4 = invoiceValues["Activity Base Transport Costs as per the Service Plan, if other costs are applied."] || '';
                     const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
                     const itemNumber4 = servicePlanValues?.activityBasedTransportItemNumber || '';
                     const qty4 = Number(invoiceValues["Activity Base Transport Amount($)"]) || 0;
-                    const amountValue4 = formatValue(Number(invoiceValues["Activity Base Transport Amount($)"]) * unitPrice4) || 0;
+                    const amountValue4 = formatValue(Number(invoiceValues["Activity Base Transport Amount($)"])) || 0;
                     const amount4 = formatValue(qty4 * unitPrice4);
 
                     if (amountValue4 > 0) {
