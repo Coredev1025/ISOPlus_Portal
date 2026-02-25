@@ -73,6 +73,33 @@ function round4(value) {
   return roundTo(value, 4);
 }
 
+function escapeRegExp(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getXeroServiceRowDate(item) {
+  const status = (item?.transactionStatus ?? '').toString().trim();
+  const scheduled = (item?.scheduledServiceDate ?? '').toString().trim();
+  const delivered = (item?.serviceDeliveryDate ?? '').toString().trim();
+
+  const isDelivered =
+    status === 'Delivered - To be claimed and invoiced.' ||
+    status.toLowerCase().startsWith('delivered');
+
+  const preferred = isDelivered ? delivered : scheduled;
+  const fallback = isDelivered ? scheduled : delivered;
+  return preferred || fallback || '';
+}
+
+function appendDateSuffix(description, rowDate) {
+  const base = (description ?? '').toString().trim() || 'Service';
+  const date = (rowDate ?? '').toString().trim();
+  if (!date) return base;
+
+  const alreadyHasDateSuffix = new RegExp(`\\s*-\\s*${escapeRegExp(date)}\\s*$`).test(base);
+  return alreadyHasDateSuffix ? base : `${base} - ${date}`;
+}
+
 async function initializeXeroOperation(workspaceId, boardId, item) {
   const business = await Business.findOne({ workspaceId: workspaceId.toString() });
   if (!business) {
@@ -1724,6 +1751,9 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         // Final fallback
         description = 'Service';
       }
+
+      const rowDate = getXeroServiceRowDate(item);
+      const xeroLineDescription = appendDateSuffix(description, rowDate);
       
       const quantityRaw = typeof item.quantity === 'number' ? item.quantity : Number(item.quantity || 0);
       const unitPrice = typeof item.unitPrice === 'number' ? item.unitPrice : Number(item.unitPrice || 0);
@@ -1741,7 +1771,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         const unitAmount = round4(calculatedUnitPrice);
         
         lineItems.push({
-          description: description || 'Service',
+          description: xeroLineDescription,
           quantity: quantity,
           unitAmount: unitAmount,
           lineAmount: lineAmountMoney,

@@ -231,22 +231,30 @@ export default function ConfigurationPage() {
   }
 
   const suggestLabel = () => {
-    const name = board?.name.toLowerCase();
+    const name = (board?.name ?? '').toLowerCase();
     let suggestion: BoardLabel = 'No Label';
     let reason = '';
+
+    const hasSah = name.includes('sah');
+    const hasLowCat = name.includes('low cat') || name.includes('low-cat');
+    const hasNdis = name.includes('ndis');
+    const hasVerification = name.includes('verification');
 
     if (name.includes('job management')) {
       suggestion = 'Job Management';
       reason = "Based on the board name containing 'Job Management', we suggest labeling this as a Job Management board.";
-    } else if (name.includes('ndis') && name.includes('certification')) {
-      suggestion = 'Care Management - NDIS - Certification';
-      reason = "Based on the board name containing 'NDIS - Certification', we suggest labeling this as a Care Management - NDIS - Certification board.";
-    } else if (name.includes('ndis') && name.includes('verification')) {
-      suggestion = 'Care Management - NDIS - Verification';
-      reason = "Based on the board name containing 'NDIS - Verification', we suggest labeling this as a Care Management - NDIS - Verification board.";
-    } else if (name.includes('care management')) {
+    } else if (hasSah && hasLowCat) {
+      suggestion = 'Care Management - SaH - Low Cat';
+      reason = "Based on the board name containing 'SaH' and 'Low Cat', we suggest labeling this as a Care Management - SaH - Low Cat board.";
+    } else if (hasSah) {
       suggestion = 'Care Management - SaH';
       reason = "Based on the board name containing 'SaH', we suggest labeling this as a Care Management - SaH board.";
+    } else if (hasNdis && hasVerification) {
+      suggestion = 'Care Management - NDIS - Verification';
+      reason = "Based on the board name containing 'NDIS' and 'Verification', we suggest labeling this as a Care Management - NDIS - Verification board.";
+    } else if (hasNdis) {
+      suggestion = 'Care Management - NDIS - Certification';
+      reason = "Based on the board name containing 'NDIS', we suggest labeling this as a Care Management - NDIS - Certification board.";
     } else {
       reason = "We couldn't automatically determine the board type based on its name. Please select a label manually if needed.";
     }

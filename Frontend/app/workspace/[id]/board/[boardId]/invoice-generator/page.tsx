@@ -1946,7 +1946,7 @@ export default function InvoiceGenerator() {
             <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
               <div className="space-y-2">
                 <h1 className="text-2xl font-bold">
-                  {isLowCatBoard ? 'Invoice Generator (Low-Cat)' : 'Invoice Generator'}
+                  Invoice Generator
                 </h1>
                 <p className="text-muted-foreground">
                   {isLowCatBoard 
