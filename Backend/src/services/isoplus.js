@@ -1730,7 +1730,8 @@ export async function getQuoteNDISReferencedItems(workspaceId, boardId, itemId) 
     const referenceResponse = await getReferences(workspaceId, boardId, itemId);
     if (!referenceResponse) return [null, null];
 
-    for (const reference of referenceResponse.data) {
+    const refs = referenceResponse?.data ?? [];
+    for (const reference of refs) {
 
         const attribute = await getAttribute(workspaceId, boardId, reference.attribute_id);
         if (!attribute) continue;
@@ -1739,140 +1740,134 @@ export async function getQuoteNDISReferencedItems(workspaceId, boardId, itemId) 
             case 'Service Area':
                 {
                     const serviceValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
-                    if (serviceValues) {
-                        const values = serviceValues.values;
-                        if (!values.some(v => v.attribute.name === "Service Area")) {
-                            throw new Error("Service Area is required");
-                        }
-                        const serviceAreaType = ServiceAreaMap[values.find(v => v.attribute.name === "Service Area").data.toString()] || 'ACT($)';
-
-                        serviceAreaValues = {
-                            serviceArea: values.find(v => v.attribute.name === "Service Area").data.toString(),
-                            serviceAreaType: serviceAreaType
-                        };
+                    if (serviceValues === ITEM_DELETED || !serviceValues) continue;
+                    const values = Array.isArray(serviceValues.values) ? serviceValues.values : [];
+                    if (!values.some(v => v.attribute.name === "Service Area")) {
+                        throw new Error("Service Area is required");
                     }
+                    const serviceAreaType = ServiceAreaMap[values.find(v => v.attribute.name === "Service Area")?.data?.toString()] || 'ACT($)';
+
+                    serviceAreaValues = {
+                        serviceArea: values.find(v => v.attribute.name === "Service Area")?.data?.toString() ?? '',
+                        serviceAreaType: serviceAreaType
+                    };
                     break;
                 }
             case 'Direct Support Item Number':
                 {
                     const directSupportItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
-                    if (directSupportItemValues) {
-                        const values = directSupportItemValues.values;
-                        if (!values.some(v => v.attribute.name === "Support Item Number")) {
-                            throw new Error("Support Item Number is required");
-                        }
-
-                        directSupportValues = {
-                            id: directSupportItemValues.id,
-                            itemName: values.find(v => v.attribute.name === "Support Item Name").data.toString(),
-                            unit: values.find(v => v.attribute.name === "Unit").data.toString(),
-                            "ACT($)": values.find(v => v.attribute.name === "ACT($)").data.toString(),
-                            "NSW($)": values.find(v => v.attribute.name === "NSW($)").data.toString(),
-                            "NT($)": values.find(v => v.attribute.name === "NT($)").data.toString(),
-                            "QLD($)": values.find(v => v.attribute.name === "QLD($)").data.toString(),
-                            "SA($)": values.find(v => v.attribute.name === "SA($)").data.toString(),
-                            "TAS($)": values.find(v => v.attribute.name === "TAS($)").data.toString(),
-                            "VIC($)": values.find(v => v.attribute.name === "VIC($)").data.toString(),
-                            "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
-                            "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
-                            "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
-                        };
+                    if (directSupportItemValues === ITEM_DELETED || !directSupportItemValues) continue;
+                    const values = Array.isArray(directSupportItemValues.values) ? directSupportItemValues.values : [];
+                    if (!values.some(v => v.attribute.name === "Support Item Number")) {
+                        throw new Error("Support Item Number is required");
                     }
+
+                    directSupportValues = {
+                        id: directSupportItemValues.id,
+                        itemName: values.find(v => v.attribute.name === "Support Item Name")?.data?.toString() ?? '',
+                        unit: values.find(v => v.attribute.name === "Unit")?.data?.toString() ?? '',
+                        "ACT($)": values.find(v => v.attribute.name === "ACT($)")?.data?.toString() ?? '',
+                        "NSW($)": values.find(v => v.attribute.name === "NSW($)")?.data?.toString() ?? '',
+                        "NT($)": values.find(v => v.attribute.name === "NT($)")?.data?.toString() ?? '',
+                        "QLD($)": values.find(v => v.attribute.name === "QLD($)")?.data?.toString() ?? '',
+                        "SA($)": values.find(v => v.attribute.name === "SA($)")?.data?.toString() ?? '',
+                        "TAS($)": values.find(v => v.attribute.name === "TAS($)")?.data?.toString() ?? '',
+                        "VIC($)": values.find(v => v.attribute.name === "VIC($)")?.data?.toString() ?? '',
+                        "WA($)": values.find(v => v.attribute.name === "WA($)")?.data?.toString() ?? '',
+                        "Remote($)": values.find(v => v.attribute.name === "Remote($)")?.data?.toString() ?? '',
+                        "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)")?.data?.toString() ?? '',
+                    };
                     break;
                 }
             case 'Provider Travel - Non-Labour Cost Item Number':
                 {
                     const probiderTavelNonItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
-                    if (probiderTavelNonItemValues) {
-                        const values = probiderTavelNonItemValues.values;
-                        if (!values.some(v => v.attribute.name === "Support Item Number")) {
-                            throw new Error("Support Item Number is required");
-                        }
-
-                        providerTravelValues = {
-                            id: probiderTavelNonItemValues.id,
-                            itemName: values.find(v => v.attribute.name === "Support Item Name").data.toString(),
-                            unit: values.find(v => v.attribute.name === "Unit").data.toString(),
-                            "ACT($)": values.find(v => v.attribute.name === "ACT($)").data.toString(),
-                            "NSW($)": values.find(v => v.attribute.name === "NSW($)").data.toString(),
-                            "NT($)": values.find(v => v.attribute.name === "NT($)").data.toString(),
-                            "QLD($)": values.find(v => v.attribute.name === "QLD($)").data.toString(),
-                            "SA($)": values.find(v => v.attribute.name === "SA($)").data.toString(),
-                            "TAS($)": values.find(v => v.attribute.name === "TAS($)").data.toString(),
-                            "VIC($)": values.find(v => v.attribute.name === "VIC($)").data.toString(),
-                            "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
-                            "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
-                            "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
-                        };
+                    if (probiderTavelNonItemValues === ITEM_DELETED || !probiderTavelNonItemValues) continue;
+                    const values = Array.isArray(probiderTavelNonItemValues.values) ? probiderTavelNonItemValues.values : [];
+                    if (!values.some(v => v.attribute.name === "Support Item Number")) {
+                        throw new Error("Support Item Number is required");
                     }
+
+                    providerTravelValues = {
+                        id: probiderTavelNonItemValues.id,
+                        itemName: values.find(v => v.attribute.name === "Support Item Name")?.data?.toString() ?? '',
+                        unit: values.find(v => v.attribute.name === "Unit")?.data?.toString() ?? '',
+                        "ACT($)": values.find(v => v.attribute.name === "ACT($)")?.data?.toString() ?? '',
+                        "NSW($)": values.find(v => v.attribute.name === "NSW($)")?.data?.toString() ?? '',
+                        "NT($)": values.find(v => v.attribute.name === "NT($)")?.data?.toString() ?? '',
+                        "QLD($)": values.find(v => v.attribute.name === "QLD($)")?.data?.toString() ?? '',
+                        "SA($)": values.find(v => v.attribute.name === "SA($)")?.data?.toString() ?? '',
+                        "TAS($)": values.find(v => v.attribute.name === "TAS($)")?.data?.toString() ?? '',
+                        "VIC($)": values.find(v => v.attribute.name === "VIC($)")?.data?.toString() ?? '',
+                        "WA($)": values.find(v => v.attribute.name === "WA($)")?.data?.toString() ?? '',
+                        "Remote($)": values.find(v => v.attribute.name === "Remote($)")?.data?.toString() ?? '',
+                        "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)")?.data?.toString() ?? '',
+                    };
                     break;
                 }
             case 'Activity Based Transport Item Number':
                 {
                     const activityItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
-                    if (activityItemValues) {
-                        const values = activityItemValues.values;
-                        if (!values.some(v => v.attribute.name === "Support Item Number")) {
-                            throw new Error("Support Item Number is required");
-                        }
-
-                        activityBasedTransportValues = {
-                            id: activityItemValues.id,
-                            itemName: values.find(v => v.attribute.name === "Support Item Name").data.toString(),
-                            unit: values.find(v => v.attribute.name === "Unit").data.toString(),
-                            "ACT($)": values.find(v => v.attribute.name === "ACT($)").data.toString(),
-                            "NSW($)": values.find(v => v.attribute.name === "NSW($)").data.toString(),
-                            "NT($)": values.find(v => v.attribute.name === "NT($)").data.toString(),
-                            "QLD($)": values.find(v => v.attribute.name === "QLD($)").data.toString(),
-                            "SA($)": values.find(v => v.attribute.name === "SA($)").data.toString(),
-                            "TAS($)": values.find(v => v.attribute.name === "TAS($)").data.toString(),
-                            "VIC($)": values.find(v => v.attribute.name === "VIC($)").data.toString(),
-                            "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
-                            "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
-                            "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
-                        };
+                    if (activityItemValues === ITEM_DELETED || !activityItemValues) continue;
+                    const values = Array.isArray(activityItemValues.values) ? activityItemValues.values : [];
+                    if (!values.some(v => v.attribute.name === "Support Item Number")) {
+                        throw new Error("Support Item Number is required");
                     }
+
+                    activityBasedTransportValues = {
+                        id: activityItemValues.id,
+                        itemName: values.find(v => v.attribute.name === "Support Item Name")?.data?.toString() ?? '',
+                        unit: values.find(v => v.attribute.name === "Unit")?.data?.toString() ?? '',
+                        "ACT($)": values.find(v => v.attribute.name === "ACT($)")?.data?.toString() ?? '',
+                        "NSW($)": values.find(v => v.attribute.name === "NSW($)")?.data?.toString() ?? '',
+                        "NT($)": values.find(v => v.attribute.name === "NT($)")?.data?.toString() ?? '',
+                        "QLD($)": values.find(v => v.attribute.name === "QLD($)")?.data?.toString() ?? '',
+                        "SA($)": values.find(v => v.attribute.name === "SA($)")?.data?.toString() ?? '',
+                        "TAS($)": values.find(v => v.attribute.name === "TAS($)")?.data?.toString() ?? '',
+                        "VIC($)": values.find(v => v.attribute.name === "VIC($)")?.data?.toString() ?? '',
+                        "WA($)": values.find(v => v.attribute.name === "WA($)")?.data?.toString() ?? '',
+                        "Remote($)": values.find(v => v.attribute.name === "Remote($)")?.data?.toString() ?? '',
+                        "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)")?.data?.toString() ?? '',
+                    };
                     break;
                 }
             case 'Centre Capital Costs Item':
                 {
                     const centreItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
-                    if (centreItemValues) {
-                        const values = centreItemValues.values;
-                        if (!values.some(v => v.attribute.name === "Support Item Number")) {
-                            throw new Error("Support Item Number is required");
-                        }
-
-                        centreCapitalCostsValues = {
-                            id: centreItemValues.id,
-                            itemName: values.find(v => v.attribute.name === "Support Item Name").data.toString(),
-                            unit: values.find(v => v.attribute.name === "Unit").data.toString(),
-                            "ACT($)": values.find(v => v.attribute.name === "ACT($)").data.toString(),
-                            "NSW($)": values.find(v => v.attribute.name === "NSW($)").data.toString(),
-                            "NT($)": values.find(v => v.attribute.name === "NT($)").data.toString(),
-                            "QLD($)": values.find(v => v.attribute.name === "QLD($)").data.toString(),
-                            "SA($)": values.find(v => v.attribute.name === "SA($)").data.toString(),
-                            "TAS($)": values.find(v => v.attribute.name === "TAS($)").data.toString(),
-                            "VIC($)": values.find(v => v.attribute.name === "VIC($)").data.toString(),
-                            "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
-                            "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
-                            "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
-                        };
+                    if (centreItemValues === ITEM_DELETED || !centreItemValues) continue;
+                    const values = Array.isArray(centreItemValues.values) ? centreItemValues.values : [];
+                    if (!values.some(v => v.attribute.name === "Support Item Number")) {
+                        throw new Error("Support Item Number is required");
                     }
+
+                    centreCapitalCostsValues = {
+                        id: centreItemValues.id,
+                        itemName: values.find(v => v.attribute.name === "Support Item Name")?.data?.toString() ?? '',
+                        unit: values.find(v => v.attribute.name === "Unit")?.data?.toString() ?? '',
+                        "ACT($)": values.find(v => v.attribute.name === "ACT($)")?.data?.toString() ?? '',
+                        "NSW($)": values.find(v => v.attribute.name === "NSW($)")?.data?.toString() ?? '',
+                        "NT($)": values.find(v => v.attribute.name === "NT($)")?.data?.toString() ?? '',
+                        "QLD($)": values.find(v => v.attribute.name === "QLD($)")?.data?.toString() ?? '',
+                        "SA($)": values.find(v => v.attribute.name === "SA($)")?.data?.toString() ?? '',
+                        "TAS($)": values.find(v => v.attribute.name === "TAS($)")?.data?.toString() ?? '',
+                        "VIC($)": values.find(v => v.attribute.name === "VIC($)")?.data?.toString() ?? '',
+                        "WA($)": values.find(v => v.attribute.name === "WA($)")?.data?.toString() ?? '',
+                        "Remote($)": values.find(v => v.attribute.name === "Remote($)")?.data?.toString() ?? '',
+                        "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)")?.data?.toString() ?? '',
+                    };
                     break;
                 }
             case 'Provider Travel - Labour Travel Time Costs': {
                 const providerTravelLabourTravelTimeValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
-                if (providerTravelLabourTravelTimeValues) {
-                    const values = providerTravelLabourTravelTimeValues.values;
-                    if (!values.some(v => v.attribute.name === "Labour Travel Time Costs")) {
-                        throw new Error("Labour Travel Time Costs is required");
-                    }
-                    providerTravelLabourTravelTime = {
-                        id: providerTravelLabourTravelTimeValues.id,
-                        itemName: values.find(v => v.attribute.name === "Labour Travel Time Costs").data.toString(),
-                    };
+                if (providerTravelLabourTravelTimeValues === ITEM_DELETED || !providerTravelLabourTravelTimeValues) continue;
+                const values = Array.isArray(providerTravelLabourTravelTimeValues.values) ? providerTravelLabourTravelTimeValues.values : [];
+                if (!values.some(v => v.attribute.name === "Labour Travel Time Costs")) {
+                    throw new Error("Labour Travel Time Costs is required");
                 }
+                providerTravelLabourTravelTime = {
+                    id: providerTravelLabourTravelTimeValues.id,
+                    itemName: values.find(v => v.attribute.name === "Labour Travel Time Costs")?.data?.toString() ?? '',
+                };
                 break;
             }
         }
