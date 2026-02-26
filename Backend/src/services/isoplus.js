@@ -2045,7 +2045,8 @@ export async function getNDISMasterPlanReferencedItems(workspaceId, boardId, ite
     const referenceResponse = await getReferences(workspaceId, boardId, itemId);
     if (!referenceResponse) return [null, null];
 
-    for (const reference of referenceResponse.data) {
+    const refs = referenceResponse?.data ?? [];
+    for (const reference of refs) {
 
         const attribute = await getAttribute(workspaceId, boardId, reference.attribute_id);
         if (!attribute) continue;
@@ -2054,9 +2055,10 @@ export async function getNDISMasterPlanReferencedItems(workspaceId, boardId, ite
             case 'Service Plan':
                 {
                     const servicePlan = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (servicePlan === ITEM_DELETED || !servicePlan) continue;
                     if (servicePlan) {
                         const [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = await getNDISParticipantsServicePlanReferencedItems(workspaceId, boardId, reference.to_item_id);
-                        const values = servicePlan.values;
+                        const values = Array.isArray(servicePlan.values) ? servicePlan.values : [];
                         let
                             directSupportUnit = null,
                             directSupportUnitPrice = null,
@@ -2149,12 +2151,13 @@ export async function getNDISMasterPlanReferencedItems(workspaceId, boardId, ite
             case 'Cancellation Type':
                 {
                     const cancellationType = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (cancellationType === ITEM_DELETED || !cancellationType) continue;
                     if (cancellationType) {
-                        const values = cancellationType.values;
+                        const values = Array.isArray(cancellationType.values) ? cancellationType.values : [];
                         cancellationTypeValues = {
-                            definition: values.find(v => v.attribute.name === "Definition").data.toString(),
-                            billableToClient: values.find(v => v.attribute.name === "Billable to Client %").data.toString(),
-                            payableToWorker: values.find(v => v.attribute.name === "Payable to Worker %").data.toString(),
+                            definition: values.find(v => v.attribute.name === "Definition")?.data?.toString() || '',
+                            billableToClient: values.find(v => v.attribute.name === "Billable to Client %")?.data?.toString() || '',
+                            payableToWorker: values.find(v => v.attribute.name === "Payable to Worker %")?.data?.toString() || '',
                         }
                     }
                     break;
@@ -2162,12 +2165,14 @@ export async function getNDISMasterPlanReferencedItems(workspaceId, boardId, ite
             case 'Fund':
                 {
                     const fund = await getItemValues(workspaceId, boardId, reference.to_item_id);
-                    const fundAmount = fund.values.find(v => v.attribute.name === "Fund Amount($)").data || 0;
-                    const previouslyUsed = fund.values.find(v => v.attribute.name === "Previously Used ($)").data || 0;
-                    const invoicedAndReceived = fund.values.find(v => v.attribute.name === "Invoiced and Received Amount($)").data || 0;
+                    if (fund === ITEM_DELETED || !fund) continue;
+                    const values = Array.isArray(fund.values) ? fund.values : [];
+                    const fundAmount = Number(values.find(v => v.attribute.name === "Fund Amount($)")?.data || 0);
+                    const previouslyUsed = Number(values.find(v => v.attribute.name === "Previously Used ($)")?.data || 0);
+                    const invoicedAndReceived = Number(values.find(v => v.attribute.name === "Invoiced and Received Amount($)")?.data || 0);
 
                     const availableFund = fundAmount - previouslyUsed - invoicedAndReceived;
-                    const budgetSpent = availableFund * 100 / fundAmount;
+                    const budgetSpent = fundAmount !== 0 ? (availableFund * 100 / fundAmount) : 0;
                     const fundingBudgetStatus = budgetSpent > 0 ? "👍 Within Budget" : budgetSpent < 0 ? "👎 Over Budget" : "👌 On Budget";
                     fundValues = {
                         fundingBudgetStatus: fundingBudgetStatus,
@@ -2177,8 +2182,9 @@ export async function getNDISMasterPlanReferencedItems(workspaceId, boardId, ite
             case 'Participant Profile':
                 {
                     const participantProfile = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (participantProfile === ITEM_DELETED || !participantProfile) continue;
                     if (participantProfile) {
-                        const values = participantProfile.values;
+                        const values = Array.isArray(participantProfile.values) ? participantProfile.values : [];
                         participantProfileValues = {
                             billingContact: values.find(v => v.attribute.name === "Billing Contact")?.data?.toString() || '',
                             billingAddress: values.find(v => v.attribute.name === "Billing Address")?.data?.toString() || '',
@@ -2195,13 +2201,15 @@ export async function getNDISMasterPlanReferencedItems(workspaceId, boardId, ite
             case 'Participation Type':
                 {
                     const participationType = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (participationType === ITEM_DELETED || !participationType) continue;
                     if (participationType) {
-                        const values = participationType.values;
+                        const values = Array.isArray(participationType.values) ? participationType.values : [];
                         participationTypeValues = {
-                            participationType: values.find(v => v.attribute.name === "Participation Type").data.toString(),
-                            definition: values.find(v => v.attribute.name === "Definition").data.toString(),
+                            participationType: values.find(v => v.attribute.name === "Participation Type")?.data?.toString() || '',
+                            definition: values.find(v => v.attribute.name === "Definition")?.data?.toString() || '',
                         }
                     }
+                    break;
                 }
         }
     }
