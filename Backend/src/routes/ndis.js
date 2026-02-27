@@ -159,6 +159,9 @@ async function updateVariablesParticipantsServicePlan(workspaceId, boardId, item
         const selectedItem = prioritizedItems.find(item => hasSelectionValue(itemsValues, item.key));
         const selectedPricingItem = selectedItem?.itemValues || null;
         const selectedItemNumber = selectedPricingItem?.itemNumber || '';
+        const prioritizedItemNumber = prioritizedItems
+            .map(item => normalizeStringValue(item?.itemValues?.itemNumber))
+            .find(itemNumber => itemNumber !== '') || '';
 
         const labourTravelTimePrice = itemsValues?.['Agreed Unit Price for Labour Travel Time ($)'];
         const allowancesType = normalizeStringValue(itemsValues?.['Allowances']);
@@ -189,20 +192,7 @@ async function updateVariablesParticipantsServicePlan(workspaceId, boardId, item
         const updateValues = [];
         const servicePlanIdAttributeId = getAttributeIdByName('Service Plan ID');
         if (servicePlanIdAttributeId) {
-            let participantName = normalizeStringValue(participantProfileValues?.fullName);
-            if (!participantName) {
-                const firstName = normalizeStringValue(participantProfileValues?.firstName);
-                const lastName = normalizeStringValue(participantProfileValues?.lastName);
-                participantName = `${firstName}${firstName && lastName ? ' ' : ''}${lastName}`.trim();
-            }
-
-            let servicePlanIdValue = selectedItemNumber;
-            if (participantName && selectedItemNumber) {
-                servicePlanIdValue = `${participantName} - ${selectedItemNumber}`;
-            } else if (participantName) {
-                servicePlanIdValue = participantName;
-            }
-
+            let servicePlanIdValue = prioritizedItemNumber;
             if (servicePlanIdValue) {
                 updateValues.push({
                     data: servicePlanIdValue,
@@ -210,6 +200,21 @@ async function updateVariablesParticipantsServicePlan(workspaceId, boardId, item
                 });
             }
         }
+
+        const participantNameAttributeId = getAttributeIdByName('Participant Full Name');
+        if (participantNameAttributeId) {
+            let participantNameValue = normalizeStringValue(participantProfileValues?.fullName);
+            if (!participantNameValue) {
+                const firstName = normalizeStringValue(participantProfileValues?.firstName);
+                const lastName = normalizeStringValue(participantProfileValues?.lastName);
+                participantNameValue = `${firstName}${firstName && lastName ? ' ' : ''}${lastName}`.trim();
+            }
+            updateValues.push({
+                data: `${participantNameValue ? participantNameValue + (participantNameValue && prioritizedItemNumber ? ' - ' : '') : ''}${prioritizedItemNumber}`.trim(),
+                attribute_id: participantNameAttributeId
+            });
+        }
+
 
         const statusAttribute = itemValuesWithAttributeId.find(v => v.attribute?.name === 'Configuration Status');
         if (statusAttribute) {

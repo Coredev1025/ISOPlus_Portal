@@ -2045,7 +2045,7 @@ export async function getNDISParticipantsServicePlanReferencedItems(workspaceId,
                     }
                     break;
                 }
-            case 'Participant Profile':
+            case 'Participant Intake Form':
                 {
                     const participantProfile = await getItemValues(workspaceId, boardId, reference.to_item_id);
                     if (participantProfile) {
