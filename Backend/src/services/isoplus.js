@@ -1889,7 +1889,7 @@ export async function getNDISParticipantsServicePlanReferencedItems(workspaceId,
         'Very Remote': 'Very Remote($)',
         '': 'ACT($)'
     }
-    let serviceAreaValues = null, directSupportValues = null, providerTravelValues = null, activityBasedTransportValues = null, centreCapitalCostsValues = null;
+    let serviceAreaValues = null, directSupportValues = null, providerTravelValues = null, activityBasedTransportValues = null, centreCapitalCostsValues = null, participantProfileValues = null;
 
     const referenceResponse = await getReferences(workspaceId, boardId, itemId);
     if (!referenceResponse) return [null, null];
@@ -1941,10 +1941,10 @@ export async function getNDISParticipantsServicePlanReferencedItems(workspaceId,
                             "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
                             "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
                             "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
-                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations")?.data?.toString() || 'NA',
                             providerTravel: values.find(v => v.attribute.name === "Provider Travel")?.data?.toString() || 'NA',
                             ndiaRequestedReports: values.find(v => v.attribute.name === "NDIA Requested Reports")?.data?.toString() || 'NA',
                             nonFaceToFaceSupportProvision: values.find(v => v.attribute.name === "Non-Face-to-Face Support Provision")?.data?.toString() || 'NA',
+                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations")?.data?.toString() || 'NA',
                         };
                     }
                     break;
@@ -1973,10 +1973,10 @@ export async function getNDISParticipantsServicePlanReferencedItems(workspaceId,
                             "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
                             "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
                             "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
-                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations")?.data?.toString() || 'NA',
                             providerTravel: values.find(v => v.attribute.name === "Provider Travel")?.data?.toString() || 'NA',
                             ndiaRequestedReports: values.find(v => v.attribute.name === "NDIA Requested Reports")?.data?.toString() || 'NA',
                             nonFaceToFaceSupportProvision: values.find(v => v.attribute.name === "Non-Face-to-Face Support Provision")?.data?.toString() || 'NA',
+                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations")?.data?.toString() || 'NA',
                         };
                     }
                     break;
@@ -2005,10 +2005,10 @@ export async function getNDISParticipantsServicePlanReferencedItems(workspaceId,
                             "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
                             "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
                             "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
-                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations")?.data?.toString() || 'NA',
                             providerTravel: values.find(v => v.attribute.name === "Provider Travel")?.data?.toString() || 'NA',
                             ndiaRequestedReports: values.find(v => v.attribute.name === "NDIA Requested Reports")?.data?.toString() || 'NA',
                             nonFaceToFaceSupportProvision: values.find(v => v.attribute.name === "Non-Face-to-Face Support Provision")?.data?.toString() || 'NA',
+                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations")?.data?.toString() || 'NA',
                         };
                     }
                     break;
@@ -2037,10 +2037,23 @@ export async function getNDISParticipantsServicePlanReferencedItems(workspaceId,
                             "WA($)": values.find(v => v.attribute.name === "WA($)").data.toString(),
                             "Remote($)": values.find(v => v.attribute.name === "Remote($)").data.toString(),
                             "Very Remote($)": values.find(v => v.attribute.name === "Very Remote($)").data.toString(),
-                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations")?.data?.toString() || 'NA',
                             providerTravel: values.find(v => v.attribute.name === "Provider Travel")?.data?.toString() || 'NA',
                             ndiaRequestedReports: values.find(v => v.attribute.name === "NDIA Requested Reports")?.data?.toString() || 'NA',
                             nonFaceToFaceSupportProvision: values.find(v => v.attribute.name === "Non-Face-to-Face Support Provision")?.data?.toString() || 'NA',
+                            shortNoticeCancellations: values.find(v => v.attribute.name === "Short Notice Cancellations")?.data?.toString() || 'NA',
+                        };
+                    }
+                    break;
+                }
+            case 'Participant Profile':
+                {
+                    const participantProfile = await getItemValues(workspaceId, boardId, reference.to_item_id);
+                    if (participantProfile) {
+                        const values = participantProfile.values;
+                        participantProfileValues = {
+                            fullName: values.find(v => v.attribute.name === "Full Name/Preferred Name")?.data?.toString() || '',
+                            firstName: values.find(v => v.attribute.name === "First Name")?.data?.toString() || '',
+                            lastName: values.find(v => v.attribute.name === "Last Name")?.data?.toString() || '',
                         };
                     }
                     break;
@@ -2048,7 +2061,7 @@ export async function getNDISParticipantsServicePlanReferencedItems(workspaceId,
         }
     }
 
-    return [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues];
+    return [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues, participantProfileValues];
 }
 
 export async function getNDISMasterPlanReferencedItems(workspaceId, boardId, itemId) {
