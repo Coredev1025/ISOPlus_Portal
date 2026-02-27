@@ -94,6 +94,108 @@ async function handleUpdate(workspaceId, boardId, itemId, mappingValues, type, l
     }
 }
 
+const toNumber = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const isYes = (value) => String(value ?? '').trim().toUpperCase() === 'Y';
+
+const getLabelNameFromValue = (valueWithAttribute) => {
+    if (!valueWithAttribute) return '';
+    const selectedId = Array.isArray(valueWithAttribute.data)
+        ? valueWithAttribute.data[0]?.toString()
+        : valueWithAttribute.data?.toString();
+    if (!selectedId) return '';
+    const labels = valueWithAttribute.attribute?.settings?.labels || [];
+    return labels.find((l) => l.id?.toString() === selectedId)?.name || selectedId;
+};
+
+const resolveParticipantFullName = async (workspaceId, boardId, itemsValues) => {
+    const participantProfileRef = Array.isArray(itemsValues['Participant Profile']) && itemsValues['Participant Profile'].length > 0
+        ? itemsValues['Participant Profile'][0]
+        : null;
+    if (participantProfileRef) {
+        const participantProfile = await getItemValues(workspaceId, boardId, participantProfileRef);
+        const values = Array.isArray(participantProfile?.values) ? participantProfile.values : [];
+        const fullName = values.find(v => v.attribute.name === 'Full Name/Preferred Name')?.data?.toString() ?? '';
+        if (fullName) return fullName;
+        const firstName = values.find(v => v.attribute.name === 'First Name')?.data?.toString() ?? '';
+        const lastName = values.find(v => v.attribute.name === 'Last Name')?.data?.toString() ?? '';
+        return `${firstName}${firstName && lastName ? ' ' : ''}${lastName}`.trim();
+    }
+    const participantFullName = Array.isArray(itemsValues['Participant Full Name']) && itemsValues['Participant Full Name'].length > 0
+        ? itemsValues['Participant Full Name'][0]
+        : (itemsValues['Participant Full Name'] ?? '');
+    return participantFullName?.toString() ?? '';
+};
+
+const updateParticipantsServicePlanStatusAndId = async (workspaceId, boardId, itemId, itemsValues, referencedItems) => {
+    const [_, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = referencedItems;
+    const responseItemValues = await getItemValues(workspaceId, boardId, itemId);
+    const itemValuesWithAttributeId = Array.isArray(responseItemValues?.values) ? responseItemValues.values : [];
+    const getAttributeByName = (attributeName) => itemValuesWithAttributeId.find(v => v.attribute?.name === attributeName);
+
+    const selectedByPriority = [
+        { ref: Array.isArray(itemsValues['Direct Support Item Number']) && itemsValues['Direct Support Item Number'].length > 0, value: directSupportValues },
+        { ref: Array.isArray(itemsValues['Activity Based Transport Item Number']) && itemsValues['Activity Based Transport Item Number'].length > 0, value: activityBasedTransportValues },
+        { ref: Array.isArray(itemsValues['Centre Capital Costs Item']) && itemsValues['Centre Capital Costs Item'].length > 0, value: centreCapitalCostsValues },
+        { ref: Array.isArray(itemsValues['Provider Travel - Non-Labour Cost Item Number']) && itemsValues['Provider Travel - Non-Labour Cost Item Number'].length > 0, value: providerTravelValues },
+    ].find(entry => entry.ref);
+
+    const selectedPricing = selectedByPriority?.value || null;
+    const labourTravelTimeAgreedPrice = toNumber(itemsValues['Agreed Unit Price for Labour Travel Time ($)']);
+    const agreedPriceForAllowances = toNumber(itemsValues['Agreed Price for Allowances($)']);
+    const nonFaceToFaceAgreedPrice = toNumber(itemsValues['Agreed Unit Price for Non-Face-to-Face Support($)']);
+    const allowancesValue = getLabelNameFromValue(getAttributeByName('Allowances'));
+
+    let configurationStatusMessage = 'Aligned and Correct Selection';
+    if (!selectedByPriority) {
+        configurationStatusMessage = 'Error: No Item Number Selected.';
+    } else if (!isYes(selectedPricing?.providerTravel) && labourTravelTimeAgreedPrice !== 0) {
+        configurationStatusMessage = 'Error: Labour Travel Time is not claimable from the NDIA.';
+    } else if (!isYes(selectedPricing?.ndiaRequestedReports) && allowancesValue === 'NDIA Requested Reports' && agreedPriceForAllowances !== 0) {
+        configurationStatusMessage = 'Error: NDIA Requested Reports cost is not claimable from the NDIA.';
+    } else if (!isYes(selectedPricing?.nonFaceToFaceSupportProvision) && nonFaceToFaceAgreedPrice !== 0) {
+        configurationStatusMessage = 'Error: Non-face-to-face support provision is not claimable from the NDIA.';
+    }
+
+    const participantName = await resolveParticipantFullName(workspaceId, boardId, itemsValues);
+    const servicePlanIdValue = `${participantName}${participantName ? ' - ' : ''}${selectedPricing?.itemNumber || ''}`.trim();
+
+    const updates = [];
+    const configurationStatusAttribute = getAttributeByName('Configuration Status');
+    if (configurationStatusAttribute) {
+        updates.push({
+            data: configurationStatusMessage,
+            attribute_id: configurationStatusAttribute.attribute.id
+        });
+    }
+    const servicePlanIdAttribute = getAttributeByName('Service Plan ID');
+    if (servicePlanIdAttribute && servicePlanIdValue) {
+        updates.push({
+            data: servicePlanIdValue,
+            attribute_id: servicePlanIdAttribute.attribute.id
+        });
+    }
+
+    if (updates.length > 0) {
+        await axios.put(
+            `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
+            { values: updates },
+            {
+                headers: {
+                    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "X-API-Version": "2025-02-26.morava",
+                }
+            }
+        );
+    }
+    await setIntegrationMessage(workspaceId, boardId, itemId, configurationStatusMessage);
+};
+
 router.post('/:workspaceId/:boardId/set-unit-and-unitprice', async (req, res) => {
     const { workspaceId, boardId } = req.params;
     const { type } = req.query;
@@ -232,7 +334,8 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
     const itemsValues = items.values;
 
     info('Xero-Service', `Incoming request to Participants Service Plan`, { workspaceId, boardId, type, body: itemsValues }, req ?? null);
-    let [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = await getNDISParticipantsServicePlanReferencedItems(workspaceId, boardId, items.id);
+    let referencedItems = await getNDISParticipantsServicePlanReferencedItems(workspaceId, boardId, items.id);
+    let [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = referencedItems;
     if (serviceAreaValues == null || serviceAreaValues.serviceAreaType == null) {
         serviceAreaValues = {
             serviceAreaType: 'ACT($)'
@@ -288,6 +391,7 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
                 await handleUpdate(workspaceId, boardId, items.id, centreMappingValues, 'centre_capital_cost', 'Centre Capital Costs', 'Participants-Service-Plan');
             }
 
+            await updateParticipantsServicePlanStatusAndId(workspaceId, boardId, items.id, itemsValues, referencedItems);
             info('Xero-Service', 'Service area processed successfully', itemsValues, req ?? null);
             return res.status(200).json({ message: 'Service area processed' });
         }
@@ -303,6 +407,7 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
                 unitPriceAttr: 'Agreed Unit Price for Direct Support ($)'
             };
             const result = await handleUpdate(workspaceId, boardId, items.id, mappingValues, 'direct_support', 'Direct Support', 'Participants-Service-Plan');
+            await updateParticipantsServicePlanStatusAndId(workspaceId, boardId, items.id, itemsValues, referencedItems);
             return res.status(200).json(result);
         }
         case 'activity_based_transport': {
@@ -317,6 +422,7 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
                 unitPriceAttr: 'Agreed Price for Activity Based Transport ($)'
             };
             const result = await handleUpdate(workspaceId, boardId, items.id, mappingValues, 'activity_based_transport', 'Activity Based Transport', 'Participants-Service-Plan');
+            await updateParticipantsServicePlanStatusAndId(workspaceId, boardId, items.id, itemsValues, referencedItems);
             return res.status(200).json(result);
         }
         case 'provider_travel_non_labour_cost': {
@@ -331,6 +437,7 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
                 unitPriceAttr: 'Agreed Unit Price for Non-Labour Travel ($)'
             };
             const result = await handleUpdate(workspaceId, boardId, items.id, mappingValues, 'provider_travel_non_labour_cost', 'Provider Travel Non Labour Cost');
+            await updateParticipantsServicePlanStatusAndId(workspaceId, boardId, items.id, itemsValues, referencedItems);
             return res.status(200).json(result);
         }
         case 'centre_capital_cost': {
@@ -345,7 +452,12 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
                 unitPriceAttr: 'Agreed Unit Price for Centre Capital Costs($)'
             };
             const result = await handleUpdate(workspaceId, boardId, items.id, mappingValues, 'centre_capital_cost', 'Centre Capital Costs', 'Participants-Service-Plan');
+            await updateParticipantsServicePlanStatusAndId(workspaceId, boardId, items.id, itemsValues, referencedItems);
             return res.status(200).json(result);
+        }
+        case 'update_service_plan_variables': {
+            await updateParticipantsServicePlanStatusAndId(workspaceId, boardId, items.id, itemsValues, referencedItems);
+            return res.status(200).json({ message: 'Participants service plan variables updated' });
         }
         default:
             warn('Xero-Service', 'Invalid type in set-unit', { type }, req ?? null);
