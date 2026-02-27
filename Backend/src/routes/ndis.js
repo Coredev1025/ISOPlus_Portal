@@ -94,107 +94,168 @@ async function handleUpdate(workspaceId, boardId, itemId, mappingValues, type, l
     }
 }
 
-const toNumber = (value) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-};
+function hasSelectionValue(itemsValues, key) {
+    const raw = itemsValues?.[key];
+    if (Array.isArray(raw)) return raw.length > 0;
+    return raw !== undefined && raw !== null && raw !== '';
+}
 
-const isYes = (value) => String(value ?? '').trim().toUpperCase() === 'Y';
+function parseNumericValue(value) {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) ? numericValue : 0;
+}
 
-const getLabelNameFromValue = (valueWithAttribute) => {
-    if (!valueWithAttribute) return '';
-    const selectedId = Array.isArray(valueWithAttribute.data)
-        ? valueWithAttribute.data[0]?.toString()
-        : valueWithAttribute.data?.toString();
-    if (!selectedId) return '';
-    const labels = valueWithAttribute.attribute?.settings?.labels || [];
-    return labels.find((l) => l.id?.toString() === selectedId)?.name || selectedId;
-};
+function hasNonZeroValue(value) {
+    return Math.abs(parseNumericValue(value)) > 0;
+}
 
-const resolveParticipantFullName = async (workspaceId, boardId, itemsValues) => {
-    const participantProfileRef = Array.isArray(itemsValues['Participant Profile']) && itemsValues['Participant Profile'].length > 0
-        ? itemsValues['Participant Profile'][0]
-        : null;
-    if (participantProfileRef) {
-        const participantProfile = await getItemValues(workspaceId, boardId, participantProfileRef);
-        const values = Array.isArray(participantProfile?.values) ? participantProfile.values : [];
-        const fullName = values.find(v => v.attribute.name === 'Full Name/Preferred Name')?.data?.toString() ?? '';
-        if (fullName) return fullName;
-        const firstName = values.find(v => v.attribute.name === 'First Name')?.data?.toString() ?? '';
-        const lastName = values.find(v => v.attribute.name === 'Last Name')?.data?.toString() ?? '';
-        return `${firstName}${firstName && lastName ? ' ' : ''}${lastName}`.trim();
+function normalizeStringValue(value) {
+    if (Array.isArray(value)) {
+        return value[0]?.toString().trim() || '';
     }
-    const participantFullName = Array.isArray(itemsValues['Participant Full Name']) && itemsValues['Participant Full Name'].length > 0
-        ? itemsValues['Participant Full Name'][0]
-        : (itemsValues['Participant Full Name'] ?? '');
-    return participantFullName?.toString() ?? '';
-};
+    return value?.toString().trim() || '';
+}
 
-const updateParticipantsServicePlanStatusAndId = async (workspaceId, boardId, itemId, itemsValues, referencedItems) => {
-    const [_, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = referencedItems;
-    const responseItemValues = await getItemValues(workspaceId, boardId, itemId);
-    const itemValuesWithAttributeId = Array.isArray(responseItemValues?.values) ? responseItemValues.values : [];
-    const getAttributeByName = (attributeName) => itemValuesWithAttributeId.find(v => v.attribute?.name === attributeName);
+function resolveConfigurationStatusLabelId(statusAttribute, desiredStatusText, fallbackColor) {
+    const labels = statusAttribute?.attribute?.settings?.labels || [];
+    if (!labels.length) return '';
 
-    const selectedByPriority = [
-        { ref: Array.isArray(itemsValues['Direct Support Item Number']) && itemsValues['Direct Support Item Number'].length > 0, value: directSupportValues },
-        { ref: Array.isArray(itemsValues['Activity Based Transport Item Number']) && itemsValues['Activity Based Transport Item Number'].length > 0, value: activityBasedTransportValues },
-        { ref: Array.isArray(itemsValues['Centre Capital Costs Item']) && itemsValues['Centre Capital Costs Item'].length > 0, value: centreCapitalCostsValues },
-        { ref: Array.isArray(itemsValues['Provider Travel - Non-Labour Cost Item Number']) && itemsValues['Provider Travel - Non-Labour Cost Item Number'].length > 0, value: providerTravelValues },
-    ].find(entry => entry.ref);
+    const normalizedDesiredText = desiredStatusText.toLowerCase();
+    const exactMatch = labels.find(label => (label.name || '').toLowerCase() === normalizedDesiredText);
+    if (exactMatch?.id) return exactMatch.id;
 
-    const selectedPricing = selectedByPriority?.value || null;
-    const labourTravelTimeAgreedPrice = toNumber(itemsValues['Agreed Unit Price for Labour Travel Time ($)']);
-    const agreedPriceForAllowances = toNumber(itemsValues['Agreed Price for Allowances($)']);
-    const nonFaceToFaceAgreedPrice = toNumber(itemsValues['Agreed Unit Price for Non-Face-to-Face Support($)']);
-    const allowancesValue = getLabelNameFromValue(getAttributeByName('Allowances'));
+    const includesMatch = labels.find(label => (label.name || '').toLowerCase().includes(normalizedDesiredText));
+    if (includesMatch?.id) return includesMatch.id;
 
-    let configurationStatusMessage = 'Aligned and Correct Selection';
-    if (!selectedByPriority) {
-        configurationStatusMessage = 'Error: No Item Number Selected.';
-    } else if (!isYes(selectedPricing?.providerTravel) && labourTravelTimeAgreedPrice !== 0) {
-        configurationStatusMessage = 'Error: Labour Travel Time is not claimable from the NDIA.';
-    } else if (!isYes(selectedPricing?.ndiaRequestedReports) && allowancesValue === 'NDIA Requested Reports' && agreedPriceForAllowances !== 0) {
-        configurationStatusMessage = 'Error: NDIA Requested Reports cost is not claimable from the NDIA.';
-    } else if (!isYes(selectedPricing?.nonFaceToFaceSupportProvision) && nonFaceToFaceAgreedPrice !== 0) {
-        configurationStatusMessage = 'Error: Non-face-to-face support provision is not claimable from the NDIA.';
-    }
+    const colorMatch = labels.find(label => label.color === fallbackColor);
+    return colorMatch?.id || '';
+}
 
-    const participantName = await resolveParticipantFullName(workspaceId, boardId, itemsValues);
-    const servicePlanIdValue = `${participantName}${participantName ? ' - ' : ''}${selectedPricing?.itemNumber || ''}`.trim();
+async function updateVariablesParticipantsServicePlan(workspaceId, boardId, itemId, itemsValues) {
+    try {
+        const responseItemValues = await getItemValues(workspaceId, boardId, itemId);
+        const itemValuesWithAttributeId = responseItemValues?.values || [];
+        const getAttributeIdByName = (attributeName) => {
+            const attributeValue = itemValuesWithAttributeId.find(v => v.attribute?.name === attributeName);
+            return attributeValue?.attribute?.id;
+        };
 
-    const updates = [];
-    const configurationStatusAttribute = getAttributeByName('Configuration Status');
-    if (configurationStatusAttribute) {
-        updates.push({
-            data: configurationStatusMessage,
-            attribute_id: configurationStatusAttribute.attribute.id
-        });
-    }
-    const servicePlanIdAttribute = getAttributeByName('Service Plan ID');
-    if (servicePlanIdAttribute && servicePlanIdValue) {
-        updates.push({
-            data: servicePlanIdValue,
-            attribute_id: servicePlanIdAttribute.attribute.id
-        });
-    }
+        const [
+            ,
+            directSupportValues,
+            providerTravelValues,
+            activityBasedTransportValues,
+            centreCapitalCostsValues,
+            participantProfileValues
+        ] = await getNDISParticipantsServicePlanReferencedItems(workspaceId, boardId, itemId);
 
-    if (updates.length > 0) {
-        await axios.put(
-            `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
-            { values: updates },
-            {
-                headers: {
-                    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "X-API-Version": "2025-02-26.morava",
-                }
+        const prioritizedItems = [
+            { key: 'Direct Support Item Number', itemValues: directSupportValues },
+            { key: 'Activity Based Transport Item Number', itemValues: activityBasedTransportValues },
+            { key: 'Centre Capital Costs Item', itemValues: centreCapitalCostsValues },
+            { key: 'Provider Travel - Non-Labour Cost Item Number', itemValues: providerTravelValues },
+        ];
+
+        const selectedItem = prioritizedItems.find(item => hasSelectionValue(itemsValues, item.key));
+        const selectedPricingItem = selectedItem?.itemValues || null;
+        const selectedItemNumber = selectedPricingItem?.itemNumber || '';
+        const prioritizedItemNumber = prioritizedItems
+            .map(item => normalizeStringValue(item?.itemValues?.itemNumber))
+            .find(itemNumber => itemNumber !== '') || '';
+
+        const labourTravelTimePrice = itemsValues?.['Agreed Unit Price for Labour Travel Time ($)'];
+        const allowancesType = normalizeStringValue(itemsValues?.['Allowances']);
+        const allowancesPrice = itemsValues?.['Agreed Price for Allowances($)'];
+        const nonFaceToFaceSupportPrice = itemsValues?.['Agreed Unit Price for Non-Face-to-Face Support($)'];
+
+        const providerTravelClaimable = normalizeStringValue(selectedPricingItem?.providerTravel).toUpperCase() === 'Y';
+        const ndiaReportsClaimable = normalizeStringValue(selectedPricingItem?.ndiaRequestedReports).toUpperCase() === 'Y';
+        const nonFaceToFaceClaimable = normalizeStringValue(selectedPricingItem?.nonFaceToFaceSupportProvision).toUpperCase() === 'Y';
+
+        let integrationMessage = 'Aligned and Correct Selection';
+        let fallbackColor = '#388903';
+
+        if (!selectedItem) {
+            integrationMessage = 'Error: No Item Number Selected.';
+            fallbackColor = '#C60909';
+        } else if (!providerTravelClaimable && hasNonZeroValue(labourTravelTimePrice)) {
+            integrationMessage = 'Error: Labour Travel Time is not claimable from the NDIA.';
+            fallbackColor = '#C60909';
+        } else if (!ndiaReportsClaimable && allowancesType === 'NDIA Requested Reports' && hasNonZeroValue(allowancesPrice)) {
+            integrationMessage = 'Error: NDIA Requested Reports cost is not claimable from the NDIA.';
+            fallbackColor = '#C60909';
+        } else if (!nonFaceToFaceClaimable && hasNonZeroValue(nonFaceToFaceSupportPrice)) {
+            integrationMessage = 'Error: Non-face-to-face support provision is not claimable from the NDIA.';
+            fallbackColor = '#C60909';
+        }
+
+        const updateValues = [];
+        const servicePlanIdAttributeId = getAttributeIdByName('Service Plan ID');
+        if (servicePlanIdAttributeId) {
+            let servicePlanIdValue = prioritizedItemNumber;
+            if (servicePlanIdValue) {
+                updateValues.push({
+                    data: servicePlanIdValue,
+                    attribute_id: servicePlanIdAttributeId
+                });
             }
-        );
+        }
+
+        const participantNameAttributeId = getAttributeIdByName('Participant Full Name');
+        if (participantNameAttributeId) {
+            let participantNameValue = normalizeStringValue(participantProfileValues?.fullName);
+            if (!participantNameValue) {
+                const firstName = normalizeStringValue(participantProfileValues?.firstName);
+                const lastName = normalizeStringValue(participantProfileValues?.lastName);
+                participantNameValue = `${firstName}${firstName && lastName ? ' ' : ''}${lastName}`.trim();
+            }
+            updateValues.push({
+                data: `${participantNameValue ? participantNameValue + (participantNameValue && prioritizedItemNumber ? ' - ' : '') : ''}${prioritizedItemNumber}`.trim(),
+                attribute_id: participantNameAttributeId
+            });
+        }
+
+
+        const statusAttribute = itemValuesWithAttributeId.find(v => v.attribute?.name === 'Configuration Status');
+        if (statusAttribute) {
+            const desiredStatusText = integrationMessage === 'Aligned and Correct Selection'
+                ? 'Aligned and Correct Selection'
+                : integrationMessage;
+            const statusLabelId = resolveConfigurationStatusLabelId(statusAttribute, desiredStatusText, fallbackColor);
+            if (statusLabelId) {
+                updateValues.push({
+                    data: [statusLabelId],
+                    attribute_id: statusAttribute.attribute.id
+                });
+            }
+        } else {
+            await setIntegrationMessage(workspaceId, boardId, itemId, 'Configuration Status is required.');
+            return { error: 'Configuration Status is required.' };
+        }
+
+        if (updateValues.length > 0) {
+            await axios.put(
+                `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
+                { values: updateValues },
+                {
+                    headers: {
+                        "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "X-API-Version": "2025-02-26.morava",
+                    }
+                }
+            );
+        }
+
+        await setIntegrationMessage(workspaceId, boardId, itemId, integrationMessage);
+        return { success: true, message: integrationMessage };
+    } catch (err) {
+        error('Xero-Service', 'Error in updateVariablesParticipantsServicePlan', { err, workspaceId, boardId, itemId }, { workspaceId, boardId, itemId });
+        await setIntegrationMessage(workspaceId, boardId, itemId, "An unknown error occurred while updating Participants Service Plan variables. Please contact the ISO+ support team.");
+        return { error: 'An unknown error occurred while updating Participants Service Plan variables. Please contact the ISO+ support team.' };
     }
-    await setIntegrationMessage(workspaceId, boardId, itemId, configurationStatusMessage);
-};
+}
 
 router.post('/:workspaceId/:boardId/set-unit-and-unitprice', async (req, res) => {
     const { workspaceId, boardId } = req.params;
@@ -334,15 +395,15 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
     const itemsValues = items.values;
 
     info('Xero-Service', `Incoming request to Participants Service Plan`, { workspaceId, boardId, type, body: itemsValues }, req ?? null);
-    let referencedItems = await getNDISParticipantsServicePlanReferencedItems(workspaceId, boardId, items.id);
-    let [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = referencedItems;
+    let [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = await getNDISParticipantsServicePlanReferencedItems(workspaceId, boardId, items.id);
     if (serviceAreaValues == null || serviceAreaValues.serviceAreaType == null) {
         serviceAreaValues = {
             serviceAreaType: 'ACT($)'
         }
     }
     const safeGet = (obj, key) => Array.isArray(obj[key]) && obj[key].length > 0 ? obj[key][0] : undefined;
-    switch (type) {
+    const normalizedType = (type || '').toString().trim();
+    switch (normalizedType) {
         case 'service_area': {
             if (!serviceAreaValues)
                 return res.status(200).json({ error: 'Service Area Item not found' });
@@ -391,7 +452,7 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
                 await handleUpdate(workspaceId, boardId, items.id, centreMappingValues, 'centre_capital_cost', 'Centre Capital Costs', 'Participants-Service-Plan');
             }
 
-            await updateParticipantsServicePlanStatusAndId(workspaceId, boardId, items.id, itemsValues, referencedItems);
+            await updateVariablesParticipantsServicePlan(workspaceId, boardId, items.id, itemsValues);
             info('Xero-Service', 'Service area processed successfully', itemsValues, req ?? null);
             return res.status(200).json({ message: 'Service area processed' });
         }
@@ -407,7 +468,7 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
                 unitPriceAttr: 'Agreed Unit Price for Direct Support ($)'
             };
             const result = await handleUpdate(workspaceId, boardId, items.id, mappingValues, 'direct_support', 'Direct Support', 'Participants-Service-Plan');
-            await updateParticipantsServicePlanStatusAndId(workspaceId, boardId, items.id, itemsValues, referencedItems);
+            await updateVariablesParticipantsServicePlan(workspaceId, boardId, items.id, itemsValues);
             return res.status(200).json(result);
         }
         case 'activity_based_transport': {
@@ -422,7 +483,7 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
                 unitPriceAttr: 'Agreed Price for Activity Based Transport ($)'
             };
             const result = await handleUpdate(workspaceId, boardId, items.id, mappingValues, 'activity_based_transport', 'Activity Based Transport', 'Participants-Service-Plan');
-            await updateParticipantsServicePlanStatusAndId(workspaceId, boardId, items.id, itemsValues, referencedItems);
+            await updateVariablesParticipantsServicePlan(workspaceId, boardId, items.id, itemsValues);
             return res.status(200).json(result);
         }
         case 'provider_travel_non_labour_cost': {
@@ -437,7 +498,7 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
                 unitPriceAttr: 'Agreed Unit Price for Non-Labour Travel ($)'
             };
             const result = await handleUpdate(workspaceId, boardId, items.id, mappingValues, 'provider_travel_non_labour_cost', 'Provider Travel Non Labour Cost');
-            await updateParticipantsServicePlanStatusAndId(workspaceId, boardId, items.id, itemsValues, referencedItems);
+            await updateVariablesParticipantsServicePlan(workspaceId, boardId, items.id, itemsValues);
             return res.status(200).json(result);
         }
         case 'centre_capital_cost': {
@@ -452,16 +513,23 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
                 unitPriceAttr: 'Agreed Unit Price for Centre Capital Costs($)'
             };
             const result = await handleUpdate(workspaceId, boardId, items.id, mappingValues, 'centre_capital_cost', 'Centre Capital Costs', 'Participants-Service-Plan');
-            await updateParticipantsServicePlanStatusAndId(workspaceId, boardId, items.id, itemsValues, referencedItems);
+            await updateVariablesParticipantsServicePlan(workspaceId, boardId, items.id, itemsValues);
             return res.status(200).json(result);
         }
         case 'update_service_plan_variables': {
-            await updateParticipantsServicePlanStatusAndId(workspaceId, boardId, items.id, itemsValues, referencedItems);
-            return res.status(200).json({ message: 'Participants service plan variables updated' });
+            const result = await updateVariablesParticipantsServicePlan(workspaceId, boardId, items.id, itemsValues);
+            return res.status(200).json(result);
         }
-        default:
+        default: {
+            // Some automations trigger this endpoint without query type.
+            // In that case, we should still run the variable checks instead of warning.
+            if (!normalizedType) {
+                const result = await updateVariablesParticipantsServicePlan(workspaceId, boardId, items.id, itemsValues);
+                return res.status(200).json(result);
+            }
             warn('Xero-Service', 'Invalid type in set-unit', { type }, req ?? null);
             return res.status(200).json({ error: 'Invalid type', message: 'Invalid type in set-unit' });
+        }
     }
 });
 
