@@ -180,22 +180,28 @@ async function updateVariablesParticipantsServicePlan(workspaceId, boardId, item
             fallbackColor = '#C60909';
         } else if (!providerTravelClaimable && hasNonZeroValue(labourTravelTimePrice)) {
             integrationMessage = 'Error: Labour Travel Time is not claimable from the NDIA.';
-            fallbackColor = '#C60909';
+            fallbackColor = '#EE691E';
         } else if (!ndiaReportsClaimable && allowancesType === 'NDIA Requested Reports' && hasNonZeroValue(allowancesPrice)) {
             integrationMessage = 'Error: NDIA Requested Reports cost is not claimable from the NDIA.';
-            fallbackColor = '#C60909';
+            fallbackColor = '#D99C05';
         } else if (!nonFaceToFaceClaimable && hasNonZeroValue(nonFaceToFaceSupportPrice)) {
             integrationMessage = 'Error: Non-face-to-face support provision is not claimable from the NDIA.';
-            fallbackColor = '#C60909';
+            fallbackColor = '#CA56A8';
         }
 
         const updateValues = [];
+        let participantNameValue = normalizeStringValue(participantProfileValues?.fullName);
+        if (!participantNameValue) {
+            const firstName = normalizeStringValue(participantProfileValues?.firstName);
+            const lastName = normalizeStringValue(participantProfileValues?.lastName);
+            participantNameValue = `${firstName ? firstName + (firstName && lastName ? ' ' : '') : ''}${lastName ? lastName : ''}`.trim();
+        }
         const servicePlanIdAttributeId = getAttributeIdByName('Service Plan ID');
         if (servicePlanIdAttributeId) {
-            let servicePlanIdValue = prioritizedItemNumber;
-            if (servicePlanIdValue) {
+            let servicePlanIdValue = `${participantNameValue ? participantNameValue + (participantNameValue && prioritizedItemNumber ? ' - ' : '') : ''}${prioritizedItemNumber}`.trim();
+            if (servicePlanIdValue && servicePlanIdValue.trim() !== '' && prioritizedItemNumber && prioritizedItemNumber.trim() !== '') {
                 updateValues.push({
-                    data: servicePlanIdValue,
+                    data: servicePlanIdValue.trim(),
                     attribute_id: servicePlanIdAttributeId
                 });
             }
@@ -203,16 +209,12 @@ async function updateVariablesParticipantsServicePlan(workspaceId, boardId, item
 
         const participantNameAttributeId = getAttributeIdByName('Participant Full Name');
         if (participantNameAttributeId) {
-            let participantNameValue = normalizeStringValue(participantProfileValues?.fullName);
-            if (!participantNameValue) {
-                const firstName = normalizeStringValue(participantProfileValues?.firstName);
-                const lastName = normalizeStringValue(participantProfileValues?.lastName);
-                participantNameValue = `${firstName}${firstName && lastName ? ' ' : ''}${lastName}`.trim();
+            if (participantNameValue && participantNameValue.trim() !== '') {
+                updateValues.push({ 
+                    data: participantNameValue.trim(),
+                    attribute_id: participantNameAttributeId
+                });
             }
-            updateValues.push({
-                data: `${participantNameValue ? participantNameValue + (participantNameValue && prioritizedItemNumber ? ' - ' : '') : ''}${prioritizedItemNumber}`.trim(),
-                attribute_id: participantNameAttributeId
-            });
         }
 
 
