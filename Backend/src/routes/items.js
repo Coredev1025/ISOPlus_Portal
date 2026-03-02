@@ -3,6 +3,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import Item from '../models/Item.js';
 import Business from '../models/Business.js';
 import InvoiceNumber from '../models/InvoiceNumber.js';
+import Board from '../models/Board.js';
 import { info, error, warn } from '../utils/logger.js';
 import { getFolder } from '../services/isoplus.js';
 import { batchProcess } from '../utils/helpers.js';
@@ -950,6 +951,20 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             });
         }
 
+        let isNDISBoard = false;
+        try {
+            const board = await Board.findOne({ boardId: boardId.toString() }).select('label').lean();
+            if (board?.label && typeof board.label === 'string') {
+                isNDISBoard = board.label.includes('NDIS');
+            }
+        } catch (boardErr) {
+            warn('Items-Service', 'Failed to fetch board label for invoice-generator', {
+                message: boardErr.message,
+                workspaceId,
+                boardId
+            }, req ?? null);
+        }
+
         // Calculate pagination
         const hasLimitParam = limitParam !== undefined && limitParam !== null && limitParam !== '';
         let limitNumber = null;
@@ -1085,7 +1100,8 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 transactionStatusNames: getLabelNames(item, ATTRIBUTE_NAMES.TRANSACTION_STATUS),
                 paymentStatusNames: getLabelNames(item, ATTRIBUTE_NAMES.PAYMENT_STATUS || 'Payment Status'),
                 transactionStatusRaw: getRawStatusData(item, ATTRIBUTE_NAMES.TRANSACTION_STATUS),
-                paymentStatusRaw: getRawStatusData(item, ATTRIBUTE_NAMES.PAYMENT_STATUS || 'Payment Status')
+                paymentStatusRaw: getRawStatusData(item, ATTRIBUTE_NAMES.PAYMENT_STATUS || 'Payment Status'),
+                timesheetApprovalNames: getLabelNames(item, 'Timesheet Approval')
             };
         }));
         // Apply filters in JavaScript
@@ -1188,6 +1204,15 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     }
                 }
                 return false;
+            });
+        }
+
+        if (isNDISBoard) {
+            filteredItems = filteredItems.filter(p => {
+                const value = p.timesheetApprovalNames;
+                if (!value) return false;
+                const names = Array.isArray(value) ? value : [value];
+                return names.some(name => String(name).toLowerCase() === 'approved');
             });
         }
 
@@ -1521,6 +1546,11 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             const transactionStatusValue = getValue(ATTRIBUTE_NAMES.TRANSACTION_STATUS);
             const transactionStatusFormatted = formatStatus(transactionStatusValue);
 
+            const jobStatusRaw = getValue('Job Status');
+            const jobStatusFormatted = formatStatus(jobStatusRaw);
+            const gstRaw = getValue('GST');
+            const gstLabel = isNDISBoard ? 'GST Free' : (typeof gstRaw === 'string' ? gstRaw : undefined);
+
             // DATABASE-ONLY: Get funding source names from pre-fetched lookup map
             let fundingSource;
             const fundingSourceData = getValue(ATTRIBUTE_NAMES.FUNDING_SOURCE);
@@ -1561,6 +1591,8 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 fundingSource: fundingSource,
                 transactionStatus: transactionStatusFormatted,
                 notes: notes,
+                jobStatus: jobStatusFormatted,
+                gst: gstLabel,
                 // PDF download field
                 fileUrl: fileUrl,
                 // CSV export fields (Included in CSV but not in table)
