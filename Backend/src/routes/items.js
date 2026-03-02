@@ -1101,7 +1101,8 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 paymentStatusNames: getLabelNames(item, ATTRIBUTE_NAMES.PAYMENT_STATUS || 'Payment Status'),
                 transactionStatusRaw: getRawStatusData(item, ATTRIBUTE_NAMES.TRANSACTION_STATUS),
                 paymentStatusRaw: getRawStatusData(item, ATTRIBUTE_NAMES.PAYMENT_STATUS || 'Payment Status'),
-                timesheetApprovalNames: getLabelNames(item, 'Timesheet Approval')
+                timesheetApprovalNames: getLabelNames(item, 'Timesheet Approval'),
+                jobStatusRaw: getValueFromItem(item, 'Job Status')
             };
         }));
         // Apply filters in JavaScript
@@ -1150,32 +1151,41 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
         }
 
         if (transactionStatusFilter && transactionStatusFilter !== 'all') {
-            filteredItems = filteredItems.filter(p => {
-                // First try matching against label names
-                if (Array.isArray(p.transactionStatusNames) && p.transactionStatusNames.length > 0) {
-                    if (p.transactionStatusNames.some(name => {
-                        const nameStr = String(name);
-                        return transactionStatusFilter == nameStr
-                    })) {
-                        return true;
+            if (isNDISBoard) {
+                // For NDIS boards, treat this filter as Job Status instead of Transaction Status
+                filteredItems = filteredItems.filter(p => {
+                    if (!p.jobStatusRaw) return false;
+                    const raw = String(p.jobStatusRaw);
+                    return transactionStatusFilter == raw;
+                });
+            } else {
+                filteredItems = filteredItems.filter(p => {
+                    // First try matching against label names
+                    if (Array.isArray(p.transactionStatusNames) && p.transactionStatusNames.length > 0) {
+                        if (p.transactionStatusNames.some(name => {
+                            const nameStr = String(name);
+                            return transactionStatusFilter == nameStr
+                        })) {
+                            return true;
+                        }
+                    } else if (p.transactionStatusNames && !Array.isArray(p.transactionStatusNames)) {
+                        const nameStr = String(p.transactionStatusNames);
+                        if (transactionStatusFilter == nameStr) {
+                            return true;
+                        }
                     }
-                } else if (p.transactionStatusNames && !Array.isArray(p.transactionStatusNames)) {
-                    const nameStr = String(p.transactionStatusNames);
-                    if (transactionStatusFilter == nameStr) {
-                        return true;
+                    // Fallback: try matching against raw status data if label names didn't match or were empty
+                    if (p.transactionStatusRaw) {
+                        const rawStr = Array.isArray(p.transactionStatusRaw)
+                            ? p.transactionStatusRaw.map(v => String(v)).join(' ')
+                            : String(p.transactionStatusRaw);
+                        if (transactionStatusFilter == rawStr) {
+                            return true;
+                        }
                     }
-                }
-                // Fallback: try matching against raw status data if label names didn't match or were empty
-                if (p.transactionStatusRaw) {
-                    const rawStr = Array.isArray(p.transactionStatusRaw)
-                        ? p.transactionStatusRaw.map(v => String(v)).join(' ')
-                        : String(p.transactionStatusRaw);
-                    if (transactionStatusFilter == rawStr) {
-                        return true;
-                    }
-                }
-                return false;
-            });
+                    return false;
+                });
+            }
         }
 
         if (paymentStatusFilter && paymentStatusFilter !== 'all') {
@@ -1633,6 +1643,34 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
         }, req ?? null);
         res.status(500).json({ message: 'Server error' });
     }
+});
+
+// NDIS-specific alias endpoint for invoice generator data.
+// Frontend can call this path for NDIS boards; it simply delegates
+// to the main invoice-generator route, preserving all query params.
+router.get('/:workspaceId/:boardId/ndis-invoice-generator', authenticateToken, async (req, res) => {
+    const { workspaceId, boardId } = req.params;
+    if (!workspaceId || !boardId) {
+        return res.status(400).json({
+            message: 'WorkspaceId and boardId are required'
+        });
+    }
+
+    const searchParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(req.query)) {
+        if (value === undefined || value === null) continue;
+        if (Array.isArray(value)) {
+            value.forEach(v => searchParams.append(key, String(v)));
+        } else {
+            searchParams.append(key, String(value));
+        }
+    }
+
+    const queryString = searchParams.toString();
+    const basePath = `/api/items/${workspaceId}/${boardId}/invoice-generator`;
+    const location = queryString ? `${basePath}?${queryString}` : basePath;
+
+    return res.redirect(location);
 });
 
 router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async (req, res) => {

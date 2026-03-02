@@ -61,6 +61,14 @@ const TRANSACTION_STATUS_FILTERS = [
   { value: "adjustment-charge", label: "Adjustment (Charge) - To be claimed and invoiced.", description: "To be claimed and invoiced.", isoValue: "Adjustment (Charge) - To be claimed and invoiced." }
 ];
 
+const JOB_STATUS_FILTERS = [
+  { value: "all", label: "All Job Status", isoValue: "" },
+  { value: "delivered", label: "Delivered - To be claimed and invoiced.", description: "To be claimed and invoiced.", isoValue: "Delivered - To be claimed and invoiced." },
+  { value: "cancelled", label: "Cancelled - To be claimed and invoiced if applicable.", description: "To be claimed and invoiced if applicable.", isoValue: "Cancelled - To be claimed and invoiced if applicable." },
+  { value: "adjustment-refund", label: "Adjustment (Refund) - To be claimed and invoiced.", description: "To be claimed and invoiced.", isoValue: "Adjustment (Refund) - To be claimed and invoiced." },
+  { value: "adjustment-charge", label: "Adjustment (Charge) - To be claimed and invoiced.", description: "To be claimed and invoiced.", isoValue: "Adjustment (Charge) - To be claimed and invoiced." }
+];
+
 const PAYMENT_STATUS_FILTERS = [
   { value: "all", label: "All Payment Status" },
   { value: "Gov Claim Submitted", label: "Gov Claim Submitted" },
@@ -573,7 +581,8 @@ export default function InvoiceGenerator() {
 
       setLoadingEligible(true);
       try {
-        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator`;
+        const endpoint = isNDISBoard ? 'ndis-invoice-generator' : 'invoice-generator';
+        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/${endpoint}`;
         const params = new URLSearchParams();
 
         // Use current filters from main page - fetch ALL records (including invoiced)
@@ -706,7 +715,8 @@ export default function InvoiceGenerator() {
       setLoading(true);
       setError(null);
       try {
-        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator`;
+        const endpoint = isNDISBoard ? 'ndis-invoice-generator' : 'invoice-generator';
+        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/${endpoint}`;
 
         // Build query parameters
         const params = new URLSearchParams();
@@ -954,7 +964,8 @@ export default function InvoiceGenerator() {
   };
 
   const getTransactionStatusSearchValue = (filterValue: string) => {
-    return TRANSACTION_STATUS_FILTERS.find(option => option.value === filterValue)?.isoValue || '';
+    const source = isNDISBoard ? JOB_STATUS_FILTERS : TRANSACTION_STATUS_FILTERS;
+    return source.find(option => option.value === filterValue)?.isoValue || '';
   };
 
   const handleDownloadPDF = async (fileUrl: string, invoiceNumber?: string) => {
@@ -2335,11 +2346,11 @@ export default function InvoiceGenerator() {
                 <SelectTrigger className="w-fit flex-shrink-0 min-w-[220px]">
                   <div className="flex items-center gap-2 min-w-0 w-full">
                     <Filter className="h-4 w-4 flex-shrink-0" />
-                    <SelectValue placeholder="Transaction Status" className="truncate" />
+                    <SelectValue placeholder={isNDISBoard ? "Job Status" : "Transaction Status"} className="truncate" />
                   </div>
                 </SelectTrigger>
                 <SelectContent>
-                  {TRANSACTION_STATUS_FILTERS.map((option) => (
+                  {(isNDISBoard ? JOB_STATUS_FILTERS : TRANSACTION_STATUS_FILTERS).map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
                     </SelectItem>
