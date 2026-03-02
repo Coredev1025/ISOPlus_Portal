@@ -394,8 +394,8 @@ export default function BoardDetail() {
                 </Card>
               )}
 
-              {/* Monthly Statement Card (Care Management boards only; hidden for Low Cat) */}
-              {isCareManagementBoard && !isLowCatBoard && (
+              {/* Monthly Statement Card (SaH care management boards only; hidden for Low Cat and NDIS) */}
+              {isCareManagementBoard && !isLowCatBoard && !board?.label?.includes('NDIS') && (
                 <Card className="p-6 space-y-4 card-hover">
                   <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
                     <FileBarChart className="h-6 w-6 text-primary" />
