@@ -147,6 +147,8 @@ interface ServiceRecord {
   fundingSource?: string;
   fileUrl?: string;
   itemFirstPayment?: string;
+  jobStatus?: string;
+  gst?: string;
   // CSV export fields (already formatted by backend)
   careRecipientIdentifier?: string;
   serviceIdentifier?: string;
@@ -285,6 +287,7 @@ export default function InvoiceGenerator() {
   }, [boardId]);
 
   const isLowCatBoard = boardLabel === 'Care Management - SaH - Low Cat';
+  const isNDISBoard = boardLabel?.includes('NDIS');
   const isCareManagementBoard = isCareManagementLabel(boardLabel);
 
   useEffect(() => {
@@ -1179,6 +1182,95 @@ export default function InvoiceGenerator() {
       className: 'min-w-[180px]',
       render: (record) => record.paymentStatus || '-'
     }
+  ] : isNDISBoard ? [
+    {
+      key: 'participant',
+      label: 'Participant Name',
+      className: 'min-w-[200px]',
+      render: (record) => record.participant || '-'
+    },
+    {
+      key: 'service',
+      label: 'Service',
+      className: 'min-w-[220px]',
+      render: (record) => record.service || '-'
+    },
+    {
+      key: 'scheduledServiceDate',
+      label: 'Scheduled Service Date',
+      className: 'min-w-[180px]',
+      render: (record) => formatDisplayDate(record.scheduledServiceDate)
+    },
+    {
+      key: 'serviceDeliveryDate',
+      label: 'Service Delivery Date',
+      className: 'min-w-[180px]',
+      render: (record) => formatDisplayDate(record.serviceDeliveryDate)
+    },
+    {
+      key: 'jobStatus',
+      label: 'Job Status',
+      className: 'min-w-[180px]',
+      render: (record) => record.jobStatus || '-'
+    },
+    {
+      key: 'unit',
+      label: 'Unit',
+      className: 'min-w-[120px]',
+      render: (record) => record.unit || '-'
+    },
+    {
+      key: 'quantity',
+      label: 'Quantity',
+      className: 'min-w-[120px]',
+      render: (record) => (typeof record.quantity === 'number' ? record.quantity : record.quantity ?? '-')
+    },
+    {
+      key: 'unitPrice',
+      label: 'Unit Price',
+      className: 'min-w-[120px]',
+      render: (record) => formatCurrency(record.unitPrice)
+    },
+    {
+      key: 'gst',
+      label: 'GST',
+      className: 'min-w-[120px]',
+      render: (record) => record.gst || 'GST Free'
+    },
+    {
+      key: 'totalAmount',
+      label: 'Total Amount',
+      className: 'min-w-[150px]',
+      render: (record) => formatCurrency(record.totalAmount)
+    },
+    {
+      key: 'fileUrl',
+      label: 'PDF Download',
+      className: 'min-w-[120px]',
+      render: (record) => {
+        if (record.fileUrl) {
+          return (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-2"
+              onClick={() => handleDownloadPDF(record.fileUrl!, record.invoiceNumber)}
+              title="Download PDF Invoice"
+            >
+              <Download className="h-4 w-4" />
+              {record.invoiceNumber ? `Invoice #${record.invoiceNumber}` : 'Download'}
+            </Button>
+          );
+        }
+        return '-';
+      }
+    },
+    {
+      key: 'paymentStatus',
+      label: 'Payment Status',
+      className: 'min-w-[180px]',
+      render: (record) => record.paymentStatus || '-'
+    }
   ] : [
     {
       key: 'participant',
@@ -1295,6 +1387,22 @@ export default function InvoiceGenerator() {
     }
   ];
 
+  const formatDateForNdisCsv = (dateString: string | null | undefined) => {
+    if (!dateString) return '';
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) {
+      const parts = dateString.split(/[-T ]/);
+      if (parts.length >= 3) {
+        return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[0]}`;
+      }
+      return '';
+    }
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = String(d.getFullYear());
+    return `${day}/${month}/${year}`;
+  };
+
   // Export handlers
   const handleExportCSV = async () => {
     try {
@@ -1366,6 +1474,104 @@ export default function InvoiceGenerator() {
         const stringValue = String(value).replace(/"/g, '""');
         return `"${stringValue}"`;
       };
+
+      if (isNDISBoard) {
+        const businessRes = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`,
+          {
+            params: { workspaceId: id },
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            }
+          }
+        );
+
+        const business = businessRes.data || {};
+        const rawRegistration: string = business.companyRegistrationId || '';
+        const rawAbn: string = business.abn || '';
+        const registrationNumber = rawRegistration.replace(/\D/g, '').slice(0, 30);
+        const ndisNumber = rawRegistration.replace(/\D/g, '').slice(0, 20);
+        const abnClean = rawAbn.replace(/\D/g, '');
+
+        const ndisHeaders = [
+          'RegistrationNumber',
+          'NDISNumber',
+          'SupportDeliveredFrom',
+          'SupportDeliveredTo',
+          'SupportNumber',
+          'ClaimReference',
+          'Quantity',
+          'Hours',
+          'UnitPrice',
+          'GSTCode',
+          'ClaimType',
+          'CancellationReason',
+          'ABN of Support Provider'
+        ];
+
+        const ndisRows: string[] = [ndisHeaders.join(',')];
+
+        allItems.forEach((item) => {
+          const supportDeliveredFrom = formatDateForNdisCsv(item.serviceDeliveryDate || item.scheduledServiceDate);
+          const supportDeliveredTo = formatDateForNdisCsv(item.serviceDeliveryDate || item.scheduledServiceDate);
+          const supportNumber = (item as any).serviceIdentifier || '';
+          const claimReference = item.invoiceNumber || '';
+          const quantity = item.quantity ?? '';
+          const hours = '';
+          const unitPrice = item.unitPrice ?? '';
+          const gstCode = 'P2';
+          const claimType = item.jobStatus === 'Cancelled' ? 'CANC' : '';
+          const cancellationReason = '';
+
+          ndisRows.push(
+            [
+              escapeForCsv(registrationNumber),
+              escapeForCsv(ndisNumber),
+              escapeForCsv(supportDeliveredFrom),
+              escapeForCsv(supportDeliveredTo),
+              escapeForCsv(supportNumber),
+              escapeForCsv(claimReference),
+              escapeForCsv(quantity),
+              escapeForCsv(hours),
+              escapeForCsv(unitPrice),
+              escapeForCsv(gstCode),
+              escapeForCsv(claimType),
+              escapeForCsv(cancellationReason),
+              escapeForCsv(abnClean)
+            ].join(',')
+          );
+        });
+
+        const csvContentNdis = ndisRows.join('\n');
+        const blobNdis = new Blob([csvContentNdis], { type: 'text/csv;charset=utf-8;' });
+        const linkNdis = document.createElement('a');
+        const urlNdis = URL.createObjectURL(blobNdis);
+
+        const GenerateNdisExportFileName = () => {
+          const uniqueCode = Math.random().toString(36).substring(2, 7).toUpperCase();
+          const currentDate = new Date();
+          const timestamp = `${currentDate.getFullYear().toString().slice(2)}${(currentDate.getMonth() + 1).toString().padStart(2, '0')}${currentDate.getDate().toString().padStart(2, '0')}${currentDate.getHours().toString().padStart(2, '0')}${currentDate.getMinutes().toString().padStart(2, '0')}${currentDate.getSeconds().toString().padStart(2, '0')}`;
+          const participantName = participantFilter && participantFilter !== 'all' ? participantFilter : '(Multiple)';
+          return `NDIS-CLAIM~${timestamp}~${participantName}~${uniqueCode}.csv`;
+        };
+
+        linkNdis.href = urlNdis;
+        linkNdis.download = GenerateNdisExportFileName();
+        linkNdis.style.display = 'none';
+        document.body.appendChild(linkNdis);
+        linkNdis.click();
+
+        setTimeout(() => {
+          document.body.removeChild(linkNdis);
+          URL.revokeObjectURL(urlNdis);
+        }, 100);
+
+        setExportingCSV(false);
+        const durationTextNdis = exportDuration ? ` (${(exportDuration / 1000).toFixed(1)}s)` : '';
+        showSuccessToast(`Successfully exported ${allItems.length} records to CSV${durationTextNdis}.`);
+        return;
+      }
 
       const csvHeaders = [
         'Item External Reference Identifier',
@@ -1947,11 +2153,16 @@ export default function InvoiceGenerator() {
               <div className="space-y-2">
                 <h1 className="text-2xl font-bold">
                   Invoice Generator
+                  {(isLowCatBoard || isNDISBoard) && (
+                    <> ({isLowCatBoard ? 'Low-Cat' : 'NDIS'})</>
+                  )}
                 </h1>
                 <p className="text-muted-foreground">
-                  {isLowCatBoard 
+                  {isLowCatBoard
                     ? 'Manage service records and generate tax invoices.'
-                    : 'Manage service records, submit claims and generate participant tax invoices.'}
+                    : isNDISBoard
+                      ? 'Manage service records and generate NDIS participant tax invoices.'
+                      : 'Manage service records, submit claims and generate participant tax invoices.'}
                 </p>
               </div>
               <div className="flex flex-col items-end gap-3">
