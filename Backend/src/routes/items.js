@@ -990,7 +990,10 @@ const handleGetInvoiceGenerator = async (req, res) => {
         // STABLE VERSION: Use find() instead of aggregate() for better stability
         // Base query - only from Master Plan,Shift Planning and Reporting
         const baseQuery = { workspaceId, boardId };
-        const folderIds = await getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
+        let folderIds = await getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
+        if (isNDISBoard && (!folderIds || folderIds.length === 0)) {
+            folderIds = await getFolderIds('Master Plan', workspaceId, boardId);
+        }
         if (folderIds && folderIds.length > 0) {
             baseQuery.folderId = { $in: folderIds };
         }
@@ -1082,20 +1085,23 @@ const handleGetInvoiceGenerator = async (req, res) => {
         const processedItems = await Promise.all(allItems.map(async item => {
             const scheduledStart = getValueFromItem(item, ATTRIBUTE_NAMES.SCHEDULED_START);
             const actualEnd = getValueFromItem(item, ATTRIBUTE_NAMES.ACTUAL_END);
-            const participantIds = getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE) || '';
-            const participantId = participantIds.length > 0 ? participantIds[0] : '';
+            const participantProfileValue = getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
+            const participantId = extractRefId(participantProfileValue);
             let participantName = '';
-            if(participantId) {
+            if (participantId) {
                 const participantProfileItem = await Item.findOne({ itemId: participantId }).lean();
                 participantName = getValueFromItem(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_FULL_NAME);
             }
 
+            const totalAmountNum = parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.TOTAL_AMOUNT));
+            const totalInvoiceableNum = parseNumber(getValueFromItem(item, 'Total Invoiceable Value($)'));
             return {
                 item,
                 scheduledStartDate: parseDate(scheduledStart),
                 actualEndDate: parseDate(actualEnd),
                 participantName: String(participantName),
-                totalAmountNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.TOTAL_AMOUNT)),
+                totalAmountNum,
+                totalInvoiceableNum,
                 govSubsidyNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.GOV_SUBSIDY)),
                 participantContributionNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)),
                 transactionStatusNames: getLabelNames(item, ATTRIBUTE_NAMES.TRANSACTION_STATUS),
@@ -1230,6 +1236,7 @@ const handleGetInvoiceGenerator = async (req, res) => {
                 if (!hasApprovedTimesheet) return false;
 
                 const hasNonZeroTotal = Math.abs(p.totalAmountNum) > 0 ||
+                    Math.abs(p.totalInvoiceableNum || 0) > 0 ||
                     Math.abs(p.govSubsidyNum) > 0 ||
                     Math.abs(p.participantContributionNum) > 0;
 
