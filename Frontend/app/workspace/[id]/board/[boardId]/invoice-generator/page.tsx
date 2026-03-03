@@ -1502,7 +1502,6 @@ export default function InvoiceGenerator() {
         const rawRegistration: string = business.companyRegistrationId || '';
         const rawAbn: string = business.abn || '';
         const registrationNumber = rawRegistration.replace(/\D/g, '').slice(0, 30);
-        const ndisNumber = rawRegistration.replace(/\D/g, '').slice(0, 20);
         const abnClean = rawAbn.replace(/\D/g, '');
 
         const ndisHeaders = [
@@ -1524,6 +1523,7 @@ export default function InvoiceGenerator() {
         const ndisRows: string[] = [ndisHeaders.join(',')];
 
         allItems.forEach((item) => {
+          const participantNdisNumber: string = (item as any).participantNdisNumber ?? '';
           const supportDeliveredFrom = (item as any).supportDeliveredFrom || formatDateForNdisCsv(item.serviceDeliveryDate || item.scheduledServiceDate);
           const supportDeliveredTo = (item as any).supportDeliveredTo || formatDateForNdisCsv(item.serviceDeliveryDate || item.scheduledServiceDate);
           const supportNumber = (item as any).supportNumber || (item as any).serviceIdentifier || '';
@@ -1538,7 +1538,7 @@ export default function InvoiceGenerator() {
           ndisRows.push(
             [
               escapeForCsv(registrationNumber),
-              escapeForCsv(ndisNumber),
+              escapeForCsv(participantNdisNumber),
               escapeForCsv(supportDeliveredFrom),
               escapeForCsv(supportDeliveredTo),
               escapeForCsv(supportNumber),
@@ -2398,7 +2398,7 @@ export default function InvoiceGenerator() {
                 </div>
               </Card>
 
-              {!isLowCatBoard && (
+              {!isLowCatBoard && !isNDISBoard && (
                 <>
                   <Card className="p-6">
                     <div className="flex items-center justify-between">
