@@ -1222,7 +1222,14 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 const value = p.timesheetApprovalNames;
                 if (!value) return false;
                 const names = Array.isArray(value) ? value : [value];
-                return names.some(name => String(name).toLowerCase() === 'approved');
+                const hasApprovedTimesheet = names.some(name => String(name).toLowerCase() === 'approved');
+                if (!hasApprovedTimesheet) return false;
+
+                const hasNonZeroTotal = Math.abs(p.totalAmountNum) > 0 ||
+                    Math.abs(p.govSubsidyNum) > 0 ||
+                    Math.abs(p.participantContributionNum) > 0;
+
+                return hasNonZeroTotal;
             });
         }
 
@@ -1645,9 +1652,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
     }
 });
 
-// NDIS-specific alias endpoint for invoice generator data.
-// Frontend can call this path for NDIS boards; it simply delegates
-// to the main invoice-generator route, preserving all query params.
 router.get('/:workspaceId/:boardId/ndis-invoice-generator', authenticateToken, async (req, res) => {
     const { workspaceId, boardId } = req.params;
     if (!workspaceId || !boardId) {

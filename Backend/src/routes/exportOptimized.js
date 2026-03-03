@@ -562,6 +562,8 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
 
             const transactionStatusValue = getValue(item, ATTRIBUTE_NAMES.TRANSACTION_STATUS);
             const paymentStatusValue = getValue(item, ATTRIBUTE_NAMES.PAYMENT_STATUS);
+            const timesheetApprovalValue = getValue(item, 'Timesheet Approval');
+            const jobStatusValue = getValue(item, 'Job Status');
 
             return {
                 item,
@@ -573,6 +575,8 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
                 participantContributionNum: parseNumber(getValue(item, ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)),
                 transactionStatus: formatStatus(transactionStatusValue),
                 paymentStatus: formatStatus(paymentStatusValue),
+                timesheetApproval: formatStatus(timesheetApprovalValue),
+                jobStatus: formatStatus(jobStatusValue),
                 servicePlanId: extractRefId(getValue(item, ATTRIBUTE_NAMES.SERVICE_PLAN)),
                 participantProfileId: extractRefId(getValue(item, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE)),
                 fundingSourceIds: extractAllRefIds(getValue(item, ATTRIBUTE_NAMES.FUNDING_SOURCE))
@@ -603,6 +607,32 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
             processedItems = processedItems.filter(p => p.paymentStatus === paymentStatusFilter);
         }
 
+        let isNDISBoard = false;
+        try {
+            const board = await Board.findOne({ boardId: boardId.toString() }).select('label').lean();
+            if (board?.label && typeof board.label === 'string') {
+                isNDISBoard = board.label.includes('NDIS');
+            }
+        } catch (boardErr) {
+            warn('Export-Service', 'Failed to fetch board label for invoice-csv', {
+                message: boardErr.message,
+                workspaceId,
+                boardId
+            }, req ?? null);
+        }
+
+        if (isNDISBoard) {
+            processedItems = processedItems.filter(p => {
+                const timesheet = (p.timesheetApproval || '').toString().toLowerCase();
+                if (timesheet !== 'approved') return false;
+
+                const hasNonZeroTotal = Math.abs(p.totalAmountNum) > 0 ||
+                    Math.abs(p.govSubsidyNum) > 0 ||
+                    Math.abs(p.participantContributionNum) > 0;
+
+                return hasNonZeroTotal;
+            });
+        }
 
         let totals = processedItems.reduce((acc, p) => ({
             totalAmount: acc.totalAmount + p.totalAmountNum,
