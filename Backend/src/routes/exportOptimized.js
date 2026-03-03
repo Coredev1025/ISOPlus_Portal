@@ -542,6 +542,20 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
             return res.status(400).json({ message: 'WorkspaceId and boardId are required' });
         }
 
+        let isNDISBoard = false;
+        try {
+            const board = await Board.findOne({ boardId: boardId.toString() }).select('label').lean();
+            if (board?.label && typeof board.label === 'string') {
+                isNDISBoard = board.label.includes('NDIS');
+            }
+        } catch (boardErr) {
+            warn('Export-Service', 'Failed to fetch board label for invoice-csv', {
+                message: boardErr.message,
+                workspaceId,
+                boardId
+            }, req ?? null);
+        }
+
         info('Export-Service', 'Starting optimized CSV export (DB only)', {
             workspaceId, boardId, participant
         }, req ?? null);
@@ -567,12 +581,15 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
             const timesheetApprovalValue = getValue(item, 'Timesheet Approval');
             const jobStatusValue = getValue(item, 'Job Status');
 
+            const totalAmountNum = parseNumber(getValue(item, ATTRIBUTE_NAMES.TOTAL_AMOUNT));
+            const totalInvoiceableNum = parseNumber(getValue(item, 'Total Invoiceable Value($)'));
             return {
                 item,
                 scheduledStartDate: parseDate(scheduledStart),
                 actualEndDate: parseDate(actualEnd),
                 participantName: '', // Will be populated after bulk fetching participant profiles
-                totalAmountNum: parseNumber(getValue(item, ATTRIBUTE_NAMES.TOTAL_AMOUNT)),
+                totalAmountNum,
+                totalInvoiceableNum,
                 govSubsidyNum: parseNumber(getValue(item, ATTRIBUTE_NAMES.GOV_SUBSIDY)),
                 participantContributionNum: parseNumber(getValue(item, ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)),
                 transactionStatus: formatStatus(transactionStatusValue),
@@ -603,24 +620,14 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
         }
         // Note: Participant filter will be applied after participant names are populated from profiles
         if (transactionStatusFilter && transactionStatusFilter !== 'all') {
-            processedItems = processedItems.filter(p => p.transactionStatus === transactionStatusFilter);
+            if (isNDISBoard) {
+                processedItems = processedItems.filter(p => p.jobStatus === transactionStatusFilter);
+            } else {
+                processedItems = processedItems.filter(p => p.transactionStatus === transactionStatusFilter);
+            }
         }
         if (paymentStatusFilter && paymentStatusFilter !== 'all') {
             processedItems = processedItems.filter(p => p.paymentStatus === paymentStatusFilter);
-        }
-
-        let isNDISBoard = false;
-        try {
-            const board = await Board.findOne({ boardId: boardId.toString() }).select('label').lean();
-            if (board?.label && typeof board.label === 'string') {
-                isNDISBoard = board.label.includes('NDIS');
-            }
-        } catch (boardErr) {
-            warn('Export-Service', 'Failed to fetch board label for invoice-csv', {
-                message: boardErr.message,
-                workspaceId,
-                boardId
-            }, req ?? null);
         }
 
         if (isNDISBoard) {
@@ -629,6 +636,7 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
                 if (timesheet !== 'approved') return false;
 
                 const hasNonZeroTotal = Math.abs(p.totalAmountNum) > 0 ||
+                    Math.abs(p.totalInvoiceableNum || 0) > 0 ||
                     Math.abs(p.govSubsidyNum) > 0 ||
                     Math.abs(p.participantContributionNum) > 0;
 
