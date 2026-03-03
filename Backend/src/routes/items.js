@@ -929,7 +929,7 @@ router.get('/:workspaceId/:boardId/monthly-statement/participants', authenticate
     }
 });
 
-router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async (req, res) => {
+const handleGetInvoiceGenerator = async (req, res) => {
     try {
         const { workspaceId, boardId } = req.params;
         const {
@@ -1640,9 +1640,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                     unit,
                     quantity,
                     unitPrice,
-                    totalAmount,
-                    govSubsidy,
-                    participantContribution,
                     serviceIdentifier,
                     invoiceNumber,
                     jobStatus: jobStatusFormatted,
@@ -1680,32 +1677,10 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
         }, req ?? null);
         res.status(500).json({ message: 'Server error' });
     }
-});
+};
 
-router.get('/:workspaceId/:boardId/ndis-invoice-generator', authenticateToken, async (req, res) => {
-    const { workspaceId, boardId } = req.params;
-    if (!workspaceId || !boardId) {
-        return res.status(400).json({
-            message: 'WorkspaceId and boardId are required'
-        });
-    }
-
-    const searchParams = new URLSearchParams();
-    for (const [key, value] of Object.entries(req.query)) {
-        if (value === undefined || value === null) continue;
-        if (Array.isArray(value)) {
-            value.forEach(v => searchParams.append(key, String(v)));
-        } else {
-            searchParams.append(key, String(value));
-        }
-    }
-
-    const queryString = searchParams.toString();
-    const basePath = `/api/items/${workspaceId}/${boardId}/invoice-generator`;
-    const location = queryString ? `${basePath}?${queryString}` : basePath;
-
-    return res.redirect(location);
-});
+router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, handleGetInvoiceGenerator);
+router.get('/:workspaceId/:boardId/ndis-invoice-generator', authenticateToken, handleGetInvoiceGenerator);
 
 router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async (req, res) => {
     try {

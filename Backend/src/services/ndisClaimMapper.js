@@ -1,5 +1,3 @@
-import { info } from '../utils/logger.js';
-
 function toDdMmYyyy(dateString) {
     if (!dateString) return '';
     const d = new Date(dateString);
@@ -10,13 +8,9 @@ function toDdMmYyyy(dateString) {
         return `${day}/${month}/${year}`;
     }
 
-    try {
-        const parts = String(dateString).split(/[-T ]/);
-        if (parts.length >= 3) {
-            return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[0]}`;
-        }
-    } catch {
-        // ignore parse errors and fall through
+    const parts = String(dateString).split(/[-T ]/);
+    if (parts.length >= 3) {
+        return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[0]}`;
     }
     return '';
 }
@@ -24,13 +18,10 @@ function toDdMmYyyy(dateString) {
 function formatHoursToHhhMm(hours) {
     const numeric = Number(hours);
     if (!Number.isFinite(numeric) || numeric <= 0) return '';
-
     const totalMinutes = Math.round(numeric * 60);
     const h = Math.floor(totalMinutes / 60);
     const m = totalMinutes % 60;
-    const hoursPart = String(h);
-    const minutesPart = String(m).padStart(2, '0');
-    return `${hoursPart}:${minutesPart}`;
+    return `${h}:${String(m).padStart(2, '0')}`;
 }
 
 function mapCancellationReason(rawReason) {
@@ -47,9 +38,6 @@ export function mapNdisClaimFields({
     unit,
     quantity,
     unitPrice,
-    totalAmount,
-    govSubsidy,
-    participantContribution,
     serviceIdentifier,
     invoiceNumber,
     jobStatus,
@@ -96,18 +84,6 @@ export function mapNdisClaimFields({
     let claimType = '';
     if (jobStatusValue.includes('cancel')) {
         claimType = 'CANC';
-    }
-
-    const hasNonZeroTotal =
-        Math.abs(Number(totalAmount) || 0) > 0 ||
-        Math.abs(Number(govSubsidy) || 0) > 0 ||
-        Math.abs(Number(participantContribution) || 0) > 0;
-
-    if (!hasNonZeroTotal) {
-        info('NDIS-Claim-Mapper', 'Skipping NDIS claim mapping for zero-value item', {
-            invoiceNumber,
-            serviceIdentifier
-        });
     }
 
     const supportDeliveredDate = serviceDeliveryDate || scheduledServiceDate || null;

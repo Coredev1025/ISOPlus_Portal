@@ -2,6 +2,7 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import Item from '../models/Item.js';
 import InvoiceNumber from '../models/InvoiceNumber.js';
+import Board from '../models/Board.js';
 import Business from '../models/Business.js';
 import { info, error, warn } from '../utils/logger.js';
 import { getFolder } from '../services/isoplus.js';
@@ -923,9 +924,6 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
                     unit,
                     quantity,
                     unitPrice,
-                    totalAmount,
-                    govSubsidy,
-                    participantContribution,
                     serviceIdentifier,
                     invoiceNumber: invoiceNumberMap.get(itemId),
                     jobStatus,
