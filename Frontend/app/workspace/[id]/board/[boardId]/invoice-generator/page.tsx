@@ -63,10 +63,9 @@ const TRANSACTION_STATUS_FILTERS = [
 
 const JOB_STATUS_FILTERS = [
   { value: "all", label: "All Job Status", isoValue: "" },
-  { value: "delivered", label: "Delivered - To be claimed and invoiced.", description: "To be claimed and invoiced.", isoValue: "Delivered - To be claimed and invoiced." },
-  { value: "cancelled", label: "Cancelled - To be claimed and invoiced if applicable.", description: "To be claimed and invoiced if applicable.", isoValue: "Cancelled - To be claimed and invoiced if applicable." },
-  { value: "adjustment-refund", label: "Adjustment (Refund) - To be claimed and invoiced.", description: "To be claimed and invoiced.", isoValue: "Adjustment (Refund) - To be claimed and invoiced." },
-  { value: "adjustment-charge", label: "Adjustment (Charge) - To be claimed and invoiced.", description: "To be claimed and invoiced.", isoValue: "Adjustment (Charge) - To be claimed and invoiced." }
+  { value: "scheduled", label: "Scheduled", isoValue: "Scheduled" },
+  { value: "completed", label: "Completed", isoValue: "Completed" },
+  { value: "cancelled", label: "Cancelled", isoValue: "Cancelled" }
 ];
 
 const PAYMENT_STATUS_FILTERS = [
@@ -703,6 +702,11 @@ export default function InvoiceGenerator() {
 
   useEffect(() => {
     const fetchData = async () => {
+      if (!boardLabel && id && boardId) {
+        setLoading(false);
+        return;
+      }
+
       // Cancel previous request if it exists
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -847,6 +851,8 @@ export default function InvoiceGenerator() {
   }, [
     id,
     boardId,
+    boardLabel,
+    isNDISBoard,
     statusFilter,
     participantFilter,
     scheduledServiceDateRange,

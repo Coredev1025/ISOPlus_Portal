@@ -1103,7 +1103,8 @@ const handleGetInvoiceGenerator = async (req, res) => {
                 transactionStatusRaw: getRawStatusData(item, ATTRIBUTE_NAMES.TRANSACTION_STATUS),
                 paymentStatusRaw: getRawStatusData(item, ATTRIBUTE_NAMES.PAYMENT_STATUS || 'Payment Status'),
                 timesheetApprovalNames: getLabelNames(item, 'Timesheet Approval'),
-                jobStatusRaw: getValueFromItem(item, 'Job Status')
+                jobStatusRaw: getValueFromItem(item, 'Job Status'),
+                jobStatusNames: getLabelNames(item, 'Job Status')
             };
         }));
         // Apply filters in JavaScript
@@ -1153,11 +1154,15 @@ const handleGetInvoiceGenerator = async (req, res) => {
 
         if (transactionStatusFilter && transactionStatusFilter !== 'all') {
             if (isNDISBoard) {
-                // For NDIS boards, treat this filter as Job Status instead of Transaction Status
+                // For NDIS boards, filter by Job Status label name (Scheduled, Completed, Cancelled)
                 filteredItems = filteredItems.filter(p => {
-                    if (!p.jobStatusRaw) return false;
-                    const raw = String(p.jobStatusRaw);
-                    return transactionStatusFilter == raw;
+                    const names = p.jobStatusNames || [];
+                    if (names.length > 0) {
+                        return names.some(name => String(name) === transactionStatusFilter);
+                    }
+                    const raw = p.jobStatusRaw;
+                    if (raw != null && typeof raw === 'string') return transactionStatusFilter === raw;
+                    return false;
                 });
             } else {
                 filteredItems = filteredItems.filter(p => {
