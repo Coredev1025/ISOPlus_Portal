@@ -920,6 +920,18 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
                 const gstRaw = getValue(item, 'GST');
                 const jobStatus = p.jobStatus;
 
+                let participantNdisNumber = '';
+                if (p.participantProfileId) {
+                    const participantProfileItem = refItemsMap.get(p.participantProfileId);
+                    if (participantProfileItem) {
+                        const raw = getValue(participantProfileItem, 'NDIS Number');
+                        if (raw != null) {
+                            const str = typeof raw === 'object' && raw?.name != null ? raw.name : String(raw);
+                            participantNdisNumber = str.replace(/\D/g, '').slice(0, 20);
+                        }
+                    }
+                }
+
                 const ndisFields = mapNdisClaimFields({
                     unit,
                     quantity,
@@ -938,7 +950,8 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
 
                 return {
                     ...baseTransformed,
-                    ...ndisFields
+                    ...ndisFields,
+                    participantNdisNumber
                 };
             }
 

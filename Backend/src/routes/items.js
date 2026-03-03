@@ -1636,6 +1636,15 @@ const handleGetInvoiceGenerator = async (req, res) => {
                 const nonFaceToFaceHours = Number(getValue('Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)')) || 0;
                 const cancellationReasonRaw = getValue('Cancellation Reason');
 
+                let participantNdisNumber = '';
+                if (participantProfileItem?.data) {
+                    const raw = getValueFromFlatData(participantProfileItem, 'NDIS Number');
+                    if (raw != null) {
+                        const str = typeof raw === 'object' && raw?.name != null ? raw.name : String(raw);
+                        participantNdisNumber = str.replace(/\D/g, '').slice(0, 20);
+                    }
+                }
+
                 const ndisFields = mapNdisClaimFields({
                     unit,
                     quantity,
@@ -1654,7 +1663,8 @@ const handleGetInvoiceGenerator = async (req, res) => {
 
                 transformedData = {
                     ...transformedData,
-                    ...ndisFields
+                    ...ndisFields,
+                    participantNdisNumber
                 };
             }
 
