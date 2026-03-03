@@ -8,6 +8,7 @@ import { info, error, warn } from '../utils/logger.js';
 import { getFolder } from '../services/isoplus.js';
 import { batchProcess } from '../utils/helpers.js';
 import { getCachedTransform, setCachedTransform, getCacheStats, invalidateCacheForItem, getCachedMSBudget, setCachedMSBudget, getCachedMSService, setCachedMSService, invalidateMSCacheForItem } from '../utils/transformCache.js';
+import { mapNdisClaimFields } from '../services/ndisClaimMapper.js';
 
 const router = express.Router();
 
@@ -1190,11 +1191,10 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
         if (paymentStatusFilter && paymentStatusFilter !== 'all') {
             filteredItems = filteredItems.filter(p => {
-                // First try matching against label names
                 if (Array.isArray(p.paymentStatusNames) && p.paymentStatusNames.length > 0) {
                     if (p.paymentStatusNames.some(name => {
                         const nameStr = String(name);
-                        return paymentStatusFilter == nameStr
+                        return paymentStatusFilter == nameStr;
                     })) {
                         return true;
                     }
@@ -1204,7 +1204,6 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                         return true;
                     }
                 }
-                // Fallback: try matching against raw status data if label names didn't match or were empty
                 if (p.paymentStatusRaw) {
                     const rawStr = Array.isArray(p.paymentStatusRaw)
                         ? p.paymentStatusRaw.map(v => String(v)).join(' ')
@@ -1591,7 +1590,7 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             const serviceLabel = service || '';
             const isWraparound = serviceLabel.toLowerCase().includes('wraparound');
 
-            const transformedData = {
+            let transformedData = {
                 // Table fields (Visible in ISO+ Portal Table)
                 id: item.itemId,
                 paymentStatus: paymentStatusFormatted,
@@ -1630,6 +1629,37 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
                 healthProfessionalTypeOther: healthProfessionalTypeOther,
                 itemFirstPayment: itemFirstPaymentValue
             };
+
+            if (isNDISBoard) {
+                const actualShiftDurationHours = Number(getValue('Actual Shift Duration(Hr.)')) || 0;
+                const labourTravelMinutes = Number(getValue('Labour Travel Time (Min.) as per the Service Plan, regarding the Time Cap, if applicable.')) || 0;
+                const nonFaceToFaceHours = Number(getValue('Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)')) || 0;
+                const cancellationReasonRaw = getValue('Cancellation Reason');
+
+                const ndisFields = mapNdisClaimFields({
+                    unit,
+                    quantity,
+                    unitPrice,
+                    totalAmount,
+                    govSubsidy,
+                    participantContribution,
+                    serviceIdentifier,
+                    invoiceNumber,
+                    jobStatus: jobStatusFormatted,
+                    scheduledServiceDate: scheduledServiceDate,
+                    serviceDeliveryDate: serviceDeliveryDate,
+                    actualShiftDurationHours,
+                    labourTravelMinutes,
+                    nonFaceToFaceHours,
+                    cancellationReasonRaw,
+                    gstLabelRaw: gstLabel
+                });
+
+                transformedData = {
+                    ...transformedData,
+                    ...ndisFields
+                };
+            }
 
             // Store transformed data in cache for future requests
             setCachedTransform(workspaceId, boardId, item.itemId, transformedData);

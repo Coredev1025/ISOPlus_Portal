@@ -1524,16 +1524,16 @@ export default function InvoiceGenerator() {
         const ndisRows: string[] = [ndisHeaders.join(',')];
 
         allItems.forEach((item) => {
-          const supportDeliveredFrom = formatDateForNdisCsv(item.serviceDeliveryDate || item.scheduledServiceDate);
-          const supportDeliveredTo = formatDateForNdisCsv(item.serviceDeliveryDate || item.scheduledServiceDate);
-          const supportNumber = (item as any).serviceIdentifier || '';
-          const claimReference = item.invoiceNumber || '';
-          const quantity = item.quantity ?? '';
-          const hours = '';
-          const unitPrice = item.unitPrice ?? '';
-          const gstCode = 'P2';
-          const claimType = item.jobStatus === 'Cancelled' ? 'CANC' : '';
-          const cancellationReason = '';
+          const supportDeliveredFrom = (item as any).supportDeliveredFrom || formatDateForNdisCsv(item.serviceDeliveryDate || item.scheduledServiceDate);
+          const supportDeliveredTo = (item as any).supportDeliveredTo || formatDateForNdisCsv(item.serviceDeliveryDate || item.scheduledServiceDate);
+          const supportNumber = (item as any).supportNumber || (item as any).serviceIdentifier || '';
+          const claimReference = (item as any).claimReference || item.invoiceNumber || '';
+          const quantity = (item as any).ndisQuantity ?? item.quantity ?? '';
+          const hours = (item as any).ndisHours ?? '';
+          const unitPrice = (item as any).ndisUnitPrice ?? item.unitPrice ?? '';
+          const gstCode = (item as any).ndisGstCode || 'P2';
+          const claimType = (item as any).ndisClaimType || (item.jobStatus === 'Cancelled' ? 'CANC' : '');
+          const cancellationReason = (item as any).ndisCancellationReason || '';
 
           ndisRows.push(
             [

@@ -6,6 +6,7 @@ import Business from '../models/Business.js';
 import { info, error, warn } from '../utils/logger.js';
 import { getFolder } from '../services/isoplus.js';
 import { fetchBudgetItems, fetchServiceItems } from '../services/monthlyStatementData.js';
+import { mapNdisClaimFields } from '../services/ndisClaimMapper.js';
 
 const router = express.Router();
 
@@ -876,7 +877,7 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
             const serviceLabel = service || '';
             const isWraparound = serviceLabel.toLowerCase().includes('wraparound');
 
-            return {
+            const baseTransformed = {
                 id: item.itemId,
                 paymentStatus: paymentStatusFormatted,
                 participant,
@@ -909,6 +910,41 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
                 healthProfessionalTypeOther,
                 itemFirstPayment: itemFirstPaymentValue
             };
+
+            if (isNDISBoard) {
+                const actualShiftDurationHours = parseNumber(getValue(item, 'Actual Shift Duration(Hr.)'));
+                const labourTravelMinutes = parseNumber(getValue(item, 'Labour Travel Time (Min.) as per the Service Plan, regarding the Time Cap, if applicable.'));
+                const nonFaceToFaceHours = parseNumber(getValue(item, 'Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)'));
+                const cancellationReasonRaw = getValue(item, 'Cancellation Reason');
+                const gstRaw = getValue(item, 'GST');
+                const jobStatus = p.jobStatus;
+
+                const ndisFields = mapNdisClaimFields({
+                    unit,
+                    quantity,
+                    unitPrice,
+                    totalAmount,
+                    govSubsidy,
+                    participantContribution,
+                    serviceIdentifier,
+                    invoiceNumber: invoiceNumberMap.get(itemId),
+                    jobStatus,
+                    scheduledServiceDate,
+                    serviceDeliveryDate,
+                    actualShiftDurationHours,
+                    labourTravelMinutes,
+                    nonFaceToFaceHours,
+                    cancellationReasonRaw,
+                    gstLabelRaw: gstRaw || 'GST Free'
+                });
+
+                return {
+                    ...baseTransformed,
+                    ...ndisFields
+                };
+            }
+
+            return baseTransformed;
         });
 
         const duration = Date.now() - startTime;
