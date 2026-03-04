@@ -1094,7 +1094,7 @@ const handleGetInvoiceGenerator = async (req, res) => {
             }
 
             const totalAmountNum = parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.TOTAL_AMOUNT));
-            const totalInvoiceableNum = parseNumber(getValueFromItem(item, 'Total Invoiceable Value($)'));
+            const totalInvoiceableNum = isNDISBoard ? parseNumber(getValueFromItem(item, 'Total Invoiceable Value($)')) : 0;
             return {
                 item,
                 scheduledStartDate: parseDate(scheduledStart),

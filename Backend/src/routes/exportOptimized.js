@@ -582,7 +582,7 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
             const jobStatusValue = getValue(item, 'Job Status');
 
             const totalAmountNum = parseNumber(getValue(item, ATTRIBUTE_NAMES.TOTAL_AMOUNT));
-            const totalInvoiceableNum = parseNumber(getValue(item, 'Total Invoiceable Value($)'));
+            const totalInvoiceableNum = isNDISBoard ? parseNumber(getValue(item, 'Total Invoiceable Value($)')) : 0;
             return {
                 item,
                 scheduledStartDate: parseDate(scheduledStart),
