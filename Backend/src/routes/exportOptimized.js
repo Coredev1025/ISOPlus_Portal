@@ -2,12 +2,27 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import Item from '../models/Item.js';
 import InvoiceNumber from '../models/InvoiceNumber.js';
-import Board from '../models/Board.js';
 import Business from '../models/Business.js';
 import { info, error, warn } from '../utils/logger.js';
 import { getFolder } from '../services/isoplus.js';
 import { fetchBudgetItems, fetchServiceItems } from '../services/monthlyStatementData.js';
-import { mapNdisClaimFields } from '../services/ndisClaimMapper.js';
+import {
+    buildNdisMasterPlanServiceRows,
+    NDIS_MASTERPLAN_ATTR,
+    NDIS_SERVICEPLAN_ATTR,
+    extractRefId as extractNdisRefId,
+    extractAllRefIds as extractNdisAllRefIds,
+    formatLabelValue as formatNdisLabelValue,
+    parseNumberValue as parseNdisNumber,
+    formatDdMmYyyy,
+    hoursToHhhMm,
+    minutesToHhhMm,
+    sanitizeDigits,
+    getParticipantDisplayName as getNdisParticipantDisplayName,
+    getParticipantNdisNumber,
+    mapCancellationReasonCode,
+    isUuidLike as isUuidLikeNdis,
+} from '../utils/ndisServiceRecords.js';
 
 const router = express.Router();
 
@@ -542,20 +557,6 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
             return res.status(400).json({ message: 'WorkspaceId and boardId are required' });
         }
 
-        let isNDISBoard = false;
-        try {
-            const board = await Board.findOne({ boardId: boardId.toString() }).select('label').lean();
-            if (board?.label && typeof board.label === 'string') {
-                isNDISBoard = board.label.includes('NDIS');
-            }
-        } catch (boardErr) {
-            warn('Export-Service', 'Failed to fetch board label for invoice-csv', {
-                message: boardErr.message,
-                workspaceId,
-                boardId
-            }, req ?? null);
-        }
-
         info('Export-Service', 'Starting optimized CSV export (DB only)', {
             workspaceId, boardId, participant
         }, req ?? null);
@@ -578,24 +579,17 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
 
             const transactionStatusValue = getValue(item, ATTRIBUTE_NAMES.TRANSACTION_STATUS);
             const paymentStatusValue = getValue(item, ATTRIBUTE_NAMES.PAYMENT_STATUS);
-            const timesheetApprovalValue = getValue(item, 'Timesheet Approval');
-            const jobStatusValue = getValue(item, 'Job Status');
 
-            const totalAmountNum = parseNumber(getValue(item, ATTRIBUTE_NAMES.TOTAL_AMOUNT));
-            const totalInvoiceableNum = isNDISBoard ? parseNumber(getValue(item, 'Total Invoiceable Value($)')) : 0;
             return {
                 item,
                 scheduledStartDate: parseDate(scheduledStart),
                 actualEndDate: parseDate(actualEnd),
                 participantName: '', // Will be populated after bulk fetching participant profiles
-                totalAmountNum,
-                totalInvoiceableNum,
+                totalAmountNum: parseNumber(getValue(item, ATTRIBUTE_NAMES.TOTAL_AMOUNT)),
                 govSubsidyNum: parseNumber(getValue(item, ATTRIBUTE_NAMES.GOV_SUBSIDY)),
                 participantContributionNum: parseNumber(getValue(item, ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)),
                 transactionStatus: formatStatus(transactionStatusValue),
                 paymentStatus: formatStatus(paymentStatusValue),
-                timesheetApproval: formatStatus(timesheetApprovalValue),
-                jobStatus: formatStatus(jobStatusValue),
                 servicePlanId: extractRefId(getValue(item, ATTRIBUTE_NAMES.SERVICE_PLAN)),
                 participantProfileId: extractRefId(getValue(item, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE)),
                 fundingSourceIds: extractAllRefIds(getValue(item, ATTRIBUTE_NAMES.FUNDING_SOURCE))
@@ -620,29 +614,12 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
         }
         // Note: Participant filter will be applied after participant names are populated from profiles
         if (transactionStatusFilter && transactionStatusFilter !== 'all') {
-            if (isNDISBoard) {
-                processedItems = processedItems.filter(p => p.jobStatus === transactionStatusFilter);
-            } else {
-                processedItems = processedItems.filter(p => p.transactionStatus === transactionStatusFilter);
-            }
+            processedItems = processedItems.filter(p => p.transactionStatus === transactionStatusFilter);
         }
         if (paymentStatusFilter && paymentStatusFilter !== 'all') {
             processedItems = processedItems.filter(p => p.paymentStatus === paymentStatusFilter);
         }
 
-        if (isNDISBoard) {
-            processedItems = processedItems.filter(p => {
-                const timesheet = (p.timesheetApproval || '').toString().toLowerCase();
-                if (timesheet !== 'approved') return false;
-
-                const hasNonZeroTotal = Math.abs(p.totalAmountNum) > 0 ||
-                    Math.abs(p.totalInvoiceableNum || 0) > 0 ||
-                    Math.abs(p.govSubsidyNum) > 0 ||
-                    Math.abs(p.participantContributionNum) > 0;
-
-                return hasNonZeroTotal;
-            });
-        }
 
         let totals = processedItems.reduce((acc, p) => ({
             totalAmount: acc.totalAmount + p.totalAmountNum,
@@ -886,7 +863,7 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
             const serviceLabel = service || '';
             const isWraparound = serviceLabel.toLowerCase().includes('wraparound');
 
-            const baseTransformed = {
+            return {
                 id: item.itemId,
                 paymentStatus: paymentStatusFormatted,
                 participant,
@@ -919,51 +896,6 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
                 healthProfessionalTypeOther,
                 itemFirstPayment: itemFirstPaymentValue
             };
-
-            if (isNDISBoard) {
-                const actualShiftDurationHours = parseNumber(getValue(item, 'Actual Shift Duration(Hr.)'));
-                const labourTravelMinutes = parseNumber(getValue(item, 'Labour Travel Time (Min.) as per the Service Plan, regarding the Time Cap, if applicable.'));
-                const nonFaceToFaceHours = parseNumber(getValue(item, 'Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)'));
-                const cancellationReasonRaw = getValue(item, 'Cancellation Reason');
-                const gstRaw = getValue(item, 'GST');
-                const jobStatus = p.jobStatus;
-
-                let participantNdisNumber = '';
-                if (p.participantProfileId) {
-                    const participantProfileItem = refItemsMap.get(p.participantProfileId);
-                    if (participantProfileItem) {
-                        const raw = getValue(participantProfileItem, 'NDIS Number');
-                        if (raw != null) {
-                            const str = typeof raw === 'object' && raw?.name != null ? raw.name : String(raw);
-                            participantNdisNumber = str.replace(/\D/g, '').slice(0, 20);
-                        }
-                    }
-                }
-
-                const ndisFields = mapNdisClaimFields({
-                    unit,
-                    quantity,
-                    unitPrice,
-                    serviceIdentifier,
-                    invoiceNumber: invoiceNumberMap.get(itemId),
-                    jobStatus,
-                    scheduledServiceDate,
-                    serviceDeliveryDate,
-                    actualShiftDurationHours,
-                    labourTravelMinutes,
-                    nonFaceToFaceHours,
-                    cancellationReasonRaw,
-                    gstLabelRaw: gstRaw || 'GST Free'
-                });
-
-                return {
-                    ...baseTransformed,
-                    ...ndisFields,
-                    participantNdisNumber
-                };
-            }
-
-            return baseTransformed;
         });
 
         const duration = Date.now() - startTime;
@@ -984,6 +916,355 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
         });
     } catch (err) {
         error('Export-Service', 'Failed to export invoice CSV', { err }, req);
+        res.status(500).json({ message: 'Server error', error: err.message });
+    }
+});
+
+router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (req, res) => {
+    const startTime = Date.now();
+    try {
+        const { workspaceId, boardId } = req.params;
+        const {
+            participant = '',
+            startDate,
+            endDate,
+            serviceDeliveryStart,
+            serviceDeliveryEnd,
+            paymentStatus: paymentStatusFilter = '',
+            sortBy = 'scheduledServiceDate',
+            sortOrder = 'asc',
+            limit = 'all',
+        } = req.query;
+
+        if (!workspaceId || !boardId) {
+            return res.status(400).json({ message: 'WorkspaceId and boardId are required' });
+        }
+
+        const business = await Business.findOne({ workspaceId: workspaceId.toString() })
+            .select('abn companyRegistrationId')
+            .lean();
+
+        const registrationNumber = sanitizeDigits(business?.companyRegistrationId || '', 30);
+        const abn = sanitizeDigits(business?.abn || '', 20);
+
+        const folderIds = await getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
+        const baseQuery = { workspaceId, boardId };
+        if (folderIds && folderIds.length > 0) {
+            baseQuery.folderId = { $in: folderIds };
+        }
+
+        const allMasterItems = await Item.find(baseQuery).lean();
+
+        // Only Approved timesheets
+        let masterItems = allMasterItems.filter(item => {
+            const approval = item?.data?.[NDIS_MASTERPLAN_ATTR.TIMESHEET_APPROVAL];
+            return formatNdisLabelValue(approval).trim().toLowerCase() === 'approved';
+        });
+
+        // Collect base reference IDs
+        const servicePlanIds = new Set();
+        const participantProfileIds = new Set();
+        const cancellationTypeIds = new Set();
+        const serviceDeliveryModeIds = new Set();
+        const cancellationReasonIds = new Set();
+
+        for (const item of masterItems) {
+            const spId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_PLAN]);
+            if (spId && isUuidLikeNdis(spId)) servicePlanIds.add(spId);
+
+            const ppId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_PROFILE]);
+            if (ppId && isUuidLikeNdis(ppId)) participantProfileIds.add(ppId);
+
+            const ctId = extractNdisRefId(item?.data?.['Cancellation Type']);
+            if (ctId && isUuidLikeNdis(ctId)) cancellationTypeIds.add(ctId);
+
+            const modeIds = extractNdisAllRefIds(item?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE]).filter(isUuidLikeNdis);
+            modeIds.forEach(id => serviceDeliveryModeIds.add(id));
+
+            const crIds = extractNdisAllRefIds(item?.data?.[NDIS_MASTERPLAN_ATTR.CANCELLATION_REASON]).filter(isUuidLikeNdis);
+            crIds.forEach(id => cancellationReasonIds.add(id));
+        }
+
+        const refItemsMap = await bulkFetchItemsFromDB(workspaceId, boardId, [
+            ...servicePlanIds,
+            ...participantProfileIds,
+            ...cancellationTypeIds,
+            ...serviceDeliveryModeIds,
+            ...cancellationReasonIds,
+        ]);
+
+        // Second-level: support catalogue items referenced from participant service plan
+        const supportItemIds = new Set();
+        for (const spId of servicePlanIds) {
+            const spItem = refItemsMap.get(spId);
+            if (!spItem?.data) continue;
+            const dsId = extractNdisRefId(spItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_DIRECT_SUPPORT]);
+            const ptId = extractNdisRefId(spItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR]);
+            const abtId = extractNdisRefId(spItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT]);
+            const cccId = extractNdisRefId(spItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_CENTRE_CAPITAL]);
+            [dsId, ptId, abtId, cccId].forEach(id => {
+                if (id && isUuidLikeNdis(id)) supportItemIds.add(id);
+            });
+        }
+        if (supportItemIds.size > 0) {
+            const supportMap = await bulkFetchItemsFromDB(workspaceId, boardId, [...supportItemIds]);
+            for (const [k, v] of supportMap) {
+                refItemsMap.set(k, v);
+            }
+        }
+
+        // Bulk fetch invoice numbers (PDF) for ClaimReference
+        const itemIdsForInvoice = masterItems.map(i => i.itemId);
+        const invoiceNumbers = await InvoiceNumber.find({
+            workspaceId,
+            boardId,
+            itemId: { $in: itemIdsForInvoice },
+            type: 'PDF',
+        }).lean();
+        const invoiceNumberMap = new Map(invoiceNumbers.map(inv => [inv.itemId, inv.invoiceNumber]));
+
+        // Apply filters (participant, payment status, dates) at item-level
+        if (participant) {
+            try {
+                const participantRegex = new RegExp(participant, 'i');
+                masterItems = masterItems.filter(item => {
+                    const ppId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_PROFILE]);
+                    const profileItem = ppId ? refItemsMap.get(ppId) : null;
+                    const name = getNdisParticipantDisplayName(profileItem) ||
+                        (item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_FULL_NAME] ? String(item.data[NDIS_MASTERPLAN_ATTR.PARTICIPANT_FULL_NAME]) : '');
+                    return participantRegex.test(String(name || ''));
+                });
+            } catch (regexErr) {
+                warn('Export-Service', 'Invalid participant regex pattern (NDIS invoice-csv)', { participant, error: regexErr.message }, req ?? null);
+            }
+        }
+
+        if (paymentStatusFilter && paymentStatusFilter !== 'all') {
+            masterItems = masterItems.filter(item => {
+                const ps = formatNdisLabelValue(item?.data?.[NDIS_MASTERPLAN_ATTR.PAYMENT_STATUS]).trim();
+                return ps === paymentStatusFilter;
+            });
+        }
+
+        const startDateObj = startDate ? new Date(startDate) : null;
+        const endDateObj = endDate ? new Date(endDate) : null;
+        const serviceDeliveryStartObj = serviceDeliveryStart ? new Date(serviceDeliveryStart) : null;
+        const serviceDeliveryEndObj = serviceDeliveryEnd ? new Date(serviceDeliveryEnd) : null;
+
+        masterItems = masterItems.filter(item => {
+            const scheduledStartRaw = item?.data?.[NDIS_MASTERPLAN_ATTR.SCHEDULED_START];
+            const actualStartRaw = item?.data?.[NDIS_MASTERPLAN_ATTR.ACTUAL_START] ?? item?.data?.['Actual Shift Start Date & Time'];
+            const scheduledStartDate = scheduledStartRaw ? new Date(scheduledStartRaw) : null;
+            const actualStartDate = actualStartRaw ? new Date(actualStartRaw) : null;
+
+            if (startDateObj && (!scheduledStartDate || isNaN(scheduledStartDate.getTime()) || scheduledStartDate < startDateObj)) return false;
+            if (endDateObj && (!scheduledStartDate || isNaN(scheduledStartDate.getTime()) || scheduledStartDate > endDateObj)) return false;
+
+            if (serviceDeliveryStartObj && (!actualStartDate || isNaN(actualStartDate.getTime()) || actualStartDate < serviceDeliveryStartObj)) return false;
+            if (serviceDeliveryEndObj && (!actualStartDate || isNaN(actualStartDate.getTime()) || actualStartDate > serviceDeliveryEndObj)) return false;
+
+            return true;
+        });
+
+        // Sort items before expansion (preserves per-item service order)
+        const selectedSortOrder = sortOrder === 'desc' ? -1 : 1;
+        const getSortDate = (item) => {
+            const scheduledStartRaw = item?.data?.[NDIS_MASTERPLAN_ATTR.SCHEDULED_START];
+            const actualStartRaw = item?.data?.[NDIS_MASTERPLAN_ATTR.ACTUAL_START] ?? item?.data?.['Actual Shift Start Date & Time'];
+            if (sortBy === 'serviceDeliveryDate') {
+                const d = actualStartRaw ? new Date(actualStartRaw) : null;
+                return d && !isNaN(d.getTime()) ? d : null;
+            }
+            const d = scheduledStartRaw ? new Date(scheduledStartRaw) : null;
+            return d && !isNaN(d.getTime()) ? d : null;
+        };
+
+        masterItems.sort((a, b) => {
+            const aD = getSortDate(a);
+            const bD = getSortDate(b);
+            const aNull = !aD;
+            const bNull = !bD;
+            if (aNull && bNull) return 0;
+            if (aNull) return 1;
+            if (bNull) return -1;
+            if (aD.getTime() < bD.getTime()) return -1 * selectedSortOrder;
+            if (aD.getTime() > bD.getTime()) return 1 * selectedSortOrder;
+            return 0;
+        });
+
+        const sanitizeClaimReference = (value) => {
+            if (!value) return '';
+            const raw = String(value);
+            // Allowed: / _ - and alphanumeric (per PDF)
+            const cleaned = raw.replace(/\s+/g, '_').replace(/[^A-Za-z0-9/_-]/g, '');
+            return cleaned.slice(0, 50);
+        };
+
+        const formatCsvNumber = (value, decimals = 2) => {
+            const n = typeof value === 'number' ? value : Number(value);
+            if (!Number.isFinite(n)) return '';
+            const fixed = n.toFixed(decimals);
+            // Trim trailing zeros for nicer output (still valid)
+            return fixed.replace(/\.00$/, '').replace(/(\.\d*[1-9])0+$/, '$1');
+        };
+
+        const resolveRefName = (refId) => {
+            const refItem = refItemsMap.get(refId);
+            if (!refItem?.data) return '';
+            const candidates = ['Name', 'Definition', 'Full Name/Preferred Name', 'Preferred Name'];
+            for (const key of candidates) {
+                const v = refItem.data[key];
+                if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+            }
+            return '';
+        };
+
+        // Expand and map to claim CSV rows
+        const claimRows = [];
+        for (const item of masterItems) {
+            const itemId = item.itemId;
+            const ppId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_PROFILE]);
+            const spId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_PLAN]);
+            const ctId = extractNdisRefId(item?.data?.['Cancellation Type']);
+
+            const participantProfileItem = ppId ? refItemsMap.get(ppId) : null;
+            const servicePlanItem = spId ? refItemsMap.get(spId) : null;
+            const cancellationTypeItem = ctId ? refItemsMap.get(ctId) : null;
+
+            const participantName =
+                getNdisParticipantDisplayName(participantProfileItem) ||
+                (item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_FULL_NAME] ? String(item.data[NDIS_MASTERPLAN_ATTR.PARTICIPANT_FULL_NAME]).trim() : '');
+
+            const supportCatalogue = (() => {
+                if (!servicePlanItem?.data) return {};
+                const dsId = extractNdisRefId(servicePlanItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_DIRECT_SUPPORT]);
+                const ptId = extractNdisRefId(servicePlanItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR]);
+                const abtId = extractNdisRefId(servicePlanItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT]);
+                const cccId = extractNdisRefId(servicePlanItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_CENTRE_CAPITAL]);
+                return {
+                    directSupport: dsId ? refItemsMap.get(dsId) : null,
+                    providerTravelNonLabour: ptId ? refItemsMap.get(ptId) : null,
+                    activityTransport: abtId ? refItemsMap.get(abtId) : null,
+                    centreCapital: cccId ? refItemsMap.get(cccId) : null,
+                };
+            })();
+
+            const invNo = invoiceNumberMap.get(itemId);
+
+            const rows = buildNdisMasterPlanServiceRows({
+                masterPlanItem: item,
+                participantName,
+                participantProfileItem,
+                servicePlanItem,
+                supportCatalogue,
+                cancellationTypeItem,
+                invoiceNumber: invNo,
+                invoicePdfLink: null,
+            });
+
+            // Resolve telehealth indicator once per source item (best-effort)
+            let isTelehealth = false;
+            const modeValue = item?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE];
+            let modeLabel = formatNdisLabelValue(modeValue).trim();
+            if (!modeLabel) {
+                const modeIds = extractNdisAllRefIds(modeValue).filter(isUuidLikeNdis);
+                modeLabel = modeIds.map(resolveRefName).filter(Boolean).join(', ');
+            }
+            if (modeLabel && modeLabel.toLowerCase().includes('telehealth')) {
+                isTelehealth = true;
+            }
+
+            // Resolve cancellation reason label/code once per source item
+            const cancellationReasonValue = item?.data?.[NDIS_MASTERPLAN_ATTR.CANCELLATION_REASON];
+            let cancellationReasonLabel = formatNdisLabelValue(cancellationReasonValue).trim();
+            if (!cancellationReasonLabel) {
+                const crIds = extractNdisAllRefIds(cancellationReasonValue).filter(isUuidLikeNdis);
+                cancellationReasonLabel = crIds.map(resolveRefName).filter(Boolean).join(', ');
+            }
+            const cancellationReasonCode = mapCancellationReasonCode(cancellationReasonLabel);
+
+            // Source item date values (for SupportDeliveredFrom/To)
+            const actualStartRaw = item?.data?.[NDIS_MASTERPLAN_ATTR.ACTUAL_START] ?? item?.data?.['Actual Shift Start Date & Time'];
+            const actualEndRaw = item?.data?.[NDIS_MASTERPLAN_ATTR.ACTUAL_END] ?? item?.data?.['Actual Shift End Date & Time'];
+            const scheduledStartRaw = item?.data?.[NDIS_MASTERPLAN_ATTR.SCHEDULED_START];
+            const scheduledEndRaw = item?.data?.[NDIS_MASTERPLAN_ATTR.SCHEDULED_END];
+
+            const supportDeliveredFrom = formatDdMmYyyy(actualStartRaw || scheduledStartRaw);
+            const supportDeliveredTo = formatDdMmYyyy(actualEndRaw || scheduledEndRaw);
+
+            const ndisNumber = getParticipantNdisNumber(participantProfileItem);
+            const claimReference = sanitizeClaimReference(invNo || '');
+
+            for (const r of rows) {
+                let claimType = (r.claimType || '').toString().trim().toUpperCase();
+                if (!claimType && isTelehealth) claimType = 'THLT';
+
+                let quantity = '';
+                let hours = '';
+
+                const unitStr = (r.unit || '').toString();
+                const isHourUnit = unitStr.toLowerCase().includes('hour');
+                const code = String(r.code || '');
+
+                if (code === 'direct_support_time') {
+                    hours = hoursToHhhMm(item?.data?.[NDIS_MASTERPLAN_ATTR.ACTUAL_DURATION_HR]);
+                } else if (code === 'centre_capital_costs') {
+                    hours = hoursToHhhMm(item?.data?.[NDIS_MASTERPLAN_ATTR.ACTUAL_DURATION_HR]);
+                } else if (code === 'labour_travel_time') {
+                    hours = minutesToHhhMm(item?.data?.[NDIS_MASTERPLAN_ATTR.LABOUR_TRAVEL_TIME_MIN]);
+                } else if (code === 'non_face_to_face') {
+                    hours = hoursToHhhMm(item?.data?.[NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_TIME_HR]);
+                } else if (code.startsWith('canc_') && isHourUnit) {
+                    hours = hoursToHhhMm(item?.data?.[NDIS_MASTERPLAN_ATTR.SCHEDULED_DURATION_HR]);
+                } else {
+                    quantity = formatCsvNumber(r.quantity);
+                }
+
+                const unitPrice = formatCsvNumber(r.unitPrice, 2);
+                const gstCode = 'P2';
+
+                claimRows.push({
+                    RegistrationNumber: registrationNumber,
+                    NDISNumber: ndisNumber,
+                    SupportDeliveredFrom: supportDeliveredFrom,
+                    SupportDeliveredTo: supportDeliveredTo,
+                    SupportNumber: r.supportNumber || '',
+                    ClaimReference: claimReference,
+                    Quantity: quantity,
+                    Hours: hours,
+                    UnitPrice: unitPrice,
+                    GSTCode: gstCode,
+                    ClaimType: claimType,
+                    CancellationReason: claimType === 'CANC' ? cancellationReasonCode : '',
+                    'ABN of Support Provider': abn,
+                });
+            }
+        }
+
+        // Optional limit support (keep consistent with other exports)
+        let finalRows = claimRows;
+        if (String(limit).toLowerCase() !== 'all') {
+            const parsed = parseInt(limit, 10);
+            if (!isNaN(parsed) && parsed > 0) {
+                finalRows = claimRows.slice(0, parsed);
+            }
+        }
+
+        const duration = Date.now() - startTime;
+        info('Export-Service', 'Completed NDIS invoice CSV export (DB only)', {
+            workspaceId,
+            boardId,
+            rowCount: finalRows.length,
+            durationMs: duration,
+        }, req ?? null);
+
+        res.status(200).json({
+            items: finalRows,
+            total: finalRows.length,
+            exportDurationMs: duration,
+        });
+    } catch (err) {
+        error('Export-Service', 'Failed to export NDIS invoice CSV', { err }, req);
         res.status(500).json({ message: 'Server error', error: err.message });
     }
 });

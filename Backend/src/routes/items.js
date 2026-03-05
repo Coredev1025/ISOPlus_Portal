@@ -3,12 +3,20 @@ import { authenticateToken } from '../middleware/auth.js';
 import Item from '../models/Item.js';
 import Business from '../models/Business.js';
 import InvoiceNumber from '../models/InvoiceNumber.js';
-import Board from '../models/Board.js';
 import { info, error, warn } from '../utils/logger.js';
 import { getFolder } from '../services/isoplus.js';
 import { batchProcess } from '../utils/helpers.js';
 import { getCachedTransform, setCachedTransform, getCacheStats, invalidateCacheForItem, getCachedMSBudget, setCachedMSBudget, getCachedMSService, setCachedMSService, invalidateMSCacheForItem } from '../utils/transformCache.js';
-import { mapNdisClaimFields } from '../services/ndisClaimMapper.js';
+import {
+    buildNdisMasterPlanServiceRows,
+    formatLabelValue as formatNdisLabelValue,
+    NDIS_MASTERPLAN_ATTR,
+    NDIS_SERVICEPLAN_ATTR,
+    extractRefId as extractNdisRefId,
+    extractAllRefIds as extractNdisAllRefIds,
+    parseNumberValue as parseNdisNumber,
+    getParticipantDisplayName as getNdisParticipantDisplayName,
+} from '../utils/ndisServiceRecords.js';
 
 const router = express.Router();
 
@@ -853,6 +861,312 @@ router.get('/:workspaceId/:boardId/invoice-generator/participants', authenticate
     }
 });
 
+router.get('/:workspaceId/:boardId/invoice-generator-ndis/participants', authenticateToken, async (req, res) => {
+    try {
+        const { workspaceId, boardId } = req.params;
+
+        if (!workspaceId || !boardId) {
+            return res.status(400).json({ message: 'WorkspaceId and boardId are required' });
+        }
+
+        // Base query - only from Master Plan, Shift Planning and Reporting
+        const baseQuery = { workspaceId, boardId };
+        const folderIds = await getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
+        if (folderIds && folderIds.length > 0) {
+            baseQuery.folderId = { $in: folderIds };
+        }
+
+        const allItems = await Item.find(baseQuery).lean();
+
+        // Only Approved timesheets
+        const approvedItems = allItems.filter(item => {
+            const approval = item?.data?.[NDIS_MASTERPLAN_ATTR.TIMESHEET_APPROVAL];
+            return formatNdisLabelValue(approval).trim().toLowerCase() === 'approved';
+        });
+
+        const participantProfileIds = new Set();
+        for (const item of approvedItems) {
+            const ppId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_PROFILE]);
+            if (ppId && isUuidLike(ppId)) participantProfileIds.add(ppId);
+        }
+
+        const refItemsMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, [...participantProfileIds]);
+
+        const names = new Set();
+        for (const item of approvedItems) {
+            const ppId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_PROFILE]);
+            const profileItem = ppId ? refItemsMap.get(ppId) : null;
+            const name =
+                getNdisParticipantDisplayName(profileItem) ||
+                (item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_FULL_NAME] ? String(item.data[NDIS_MASTERPLAN_ATTR.PARTICIPANT_FULL_NAME]).trim() : '');
+            if (name) names.add(name);
+        }
+
+        res.status(200).json({ participants: [...names].sort((a, b) => a.localeCompare(b)) });
+    } catch (err) {
+        error('Items-Service', 'Failed to fetch NDIS invoice generator participants', { message: err.message }, req ?? null);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
+router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, async (req, res) => {
+    try {
+        const { workspaceId, boardId } = req.params;
+        const {
+            participant = '',
+            startDate,
+            endDate,
+            serviceDeliveryStart,
+            serviceDeliveryEnd,
+            paymentStatus: paymentStatusFilter = '',
+            status = 'all',
+            page = 1,
+            limit: limitParam,
+            sortBy = 'scheduledServiceDate',
+            sortOrder = 'asc',
+        } = req.query;
+
+        if (!workspaceId || !boardId) {
+            return res.status(400).json({ message: 'WorkspaceId and boardId are required' });
+        }
+
+        const hasLimitParam = limitParam !== undefined && limitParam !== null && limitParam !== '';
+        let limitNumber = null;
+        let applyPagination = false;
+        if (hasLimitParam) {
+            const limitValue = limitParam.toString().toLowerCase();
+            if (limitValue !== 'all') {
+                const parsedLimit = parseInt(limitParam, 10);
+                if (!isNaN(parsedLimit) && parsedLimit > 0) {
+                    limitNumber = parsedLimit;
+                    applyPagination = true;
+                }
+            }
+        }
+        const pageNumber = applyPagination ? (parseInt(page, 10) > 0 ? parseInt(page, 10) : 1) : 1;
+        const skip = applyPagination && limitNumber ? (pageNumber - 1) * limitNumber : 0;
+
+        const baseQuery = { workspaceId, boardId };
+        const folderIds = await getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
+        if (folderIds && folderIds.length > 0) {
+            baseQuery.folderId = { $in: folderIds };
+        }
+
+        const allItems = await Item.find(baseQuery).lean();
+
+        // Only Approved timesheets
+        let masterItems = allItems.filter(item => {
+            const approval = item?.data?.[NDIS_MASTERPLAN_ATTR.TIMESHEET_APPROVAL];
+            return formatNdisLabelValue(approval).trim().toLowerCase() === 'approved';
+        });
+
+        // Bulk collect references needed for participant + service-plan + cancellation type
+        const servicePlanIds = new Set();
+        const participantProfileIds = new Set();
+        const cancellationTypeIds = new Set();
+
+        for (const item of masterItems) {
+            const spId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_PLAN]);
+            if (spId && isUuidLike(spId)) servicePlanIds.add(spId);
+
+            const ppId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_PROFILE]);
+            if (ppId && isUuidLike(ppId)) participantProfileIds.add(ppId);
+
+            const ctId = extractNdisRefId(item?.data?.['Cancellation Type']);
+            if (ctId && isUuidLike(ctId)) cancellationTypeIds.add(ctId);
+        }
+
+        const refItemsMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, [
+            ...servicePlanIds,
+            ...participantProfileIds,
+            ...cancellationTypeIds,
+        ]);
+
+        // Second-level: support catalogue items referenced from participant service plan
+        const supportItemIds = new Set();
+        for (const spId of servicePlanIds) {
+            const spItem = refItemsMap.get(spId);
+            if (!spItem) continue;
+            const dsId = extractNdisRefId(spItem?.data?.[NDIS_SERVICEPLAN_ATTR.ITEM_DIRECT_SUPPORT]);
+            const ptId = extractNdisRefId(spItem?.data?.[NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR]);
+            const abtId = extractNdisRefId(spItem?.data?.[NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT]);
+            const cccId = extractNdisRefId(spItem?.data?.[NDIS_SERVICEPLAN_ATTR.ITEM_CENTRE_CAPITAL]);
+            [dsId, ptId, abtId, cccId].forEach(id => {
+                if (id && isUuidLike(id)) supportItemIds.add(id);
+            });
+        }
+        if (supportItemIds.size > 0) {
+            const supportMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, [...supportItemIds]);
+            for (const [k, v] of supportMap) {
+                refItemsMap.set(k, v);
+            }
+        }
+
+        // Bulk fetch invoice numbers (PDF) to mark invoiced/pending and provide download link
+        const itemIdsForInvoice = masterItems.map(i => i.itemId);
+        const invoiceNumbers = await InvoiceNumber.find({
+            workspaceId,
+            boardId,
+            itemId: { $in: itemIdsForInvoice },
+            type: 'PDF',
+        }).lean();
+        const invoiceNumberMap = new Map(invoiceNumbers.map(inv => [inv.itemId, inv.invoiceNumber]));
+        const invoiceFileUrlMap = new Map(invoiceNumbers.map(inv => [inv.itemId, inv.pdfLink || null]));
+
+        // Participant filter (resolved name from Participant Profile)
+        if (participant) {
+            try {
+                const participantRegex = new RegExp(participant, 'i');
+                masterItems = masterItems.filter(item => {
+                    const ppId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_PROFILE]);
+                    const profileItem = ppId ? refItemsMap.get(ppId) : null;
+                    const name = getNdisParticipantDisplayName(profileItem) ||
+                        (item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_FULL_NAME] ? String(item.data[NDIS_MASTERPLAN_ATTR.PARTICIPANT_FULL_NAME]) : '');
+                    return participantRegex.test(String(name || ''));
+                });
+            } catch (regexErr) {
+                warn('Items-Service', 'Invalid participant regex pattern (NDIS invoice-generator)', { participant, error: regexErr.message }, req ?? null);
+            }
+        }
+
+        // Payment Status filter (if provided)
+        if (paymentStatusFilter && paymentStatusFilter !== 'all') {
+            masterItems = masterItems.filter(item => {
+                const ps = formatNdisLabelValue(item?.data?.[NDIS_MASTERPLAN_ATTR.PAYMENT_STATUS]).trim();
+                return ps === paymentStatusFilter;
+            });
+        }
+
+        // Status filter (pending/invoiced)
+        if (status && status !== 'all') {
+            masterItems = masterItems.filter(item => {
+                const invNo = invoiceNumberMap.get(item.itemId);
+                const derived = invNo ? 'invoiced' : 'pending';
+                return derived === status;
+            });
+        }
+
+        // Date filters (scheduled start + actual start)
+        const startDateObj = startDate ? new Date(startDate) : null;
+        const endDateObj = endDate ? new Date(endDate) : null;
+        const serviceDeliveryStartObj = serviceDeliveryStart ? new Date(serviceDeliveryStart) : null;
+        const serviceDeliveryEndObj = serviceDeliveryEnd ? new Date(serviceDeliveryEnd) : null;
+
+        masterItems = masterItems.filter(item => {
+            const scheduledStartRaw = item?.data?.[NDIS_MASTERPLAN_ATTR.SCHEDULED_START];
+            const actualStartRaw = item?.data?.[NDIS_MASTERPLAN_ATTR.ACTUAL_START] ?? item?.data?.['Actual Shift Start Date & Time'];
+            const scheduledStartDate = scheduledStartRaw ? new Date(scheduledStartRaw) : null;
+            const actualStartDate = actualStartRaw ? new Date(actualStartRaw) : null;
+
+            if (startDateObj && (!scheduledStartDate || isNaN(scheduledStartDate.getTime()) || scheduledStartDate < startDateObj)) return false;
+            if (endDateObj && (!scheduledStartDate || isNaN(scheduledStartDate.getTime()) || scheduledStartDate > endDateObj)) return false;
+
+            if (serviceDeliveryStartObj && (!actualStartDate || isNaN(actualStartDate.getTime()) || actualStartDate < serviceDeliveryStartObj)) return false;
+            if (serviceDeliveryEndObj && (!actualStartDate || isNaN(actualStartDate.getTime()) || actualStartDate > serviceDeliveryEndObj)) return false;
+
+            return true;
+        });
+
+        // Sort items (stable) before expansion; expansion preserves service-order per item
+        const selectedSortOrder = sortOrder === 'desc' ? -1 : 1;
+        const getSortDate = (item) => {
+            const scheduledStartRaw = item?.data?.[NDIS_MASTERPLAN_ATTR.SCHEDULED_START];
+            const actualStartRaw = item?.data?.[NDIS_MASTERPLAN_ATTR.ACTUAL_START] ?? item?.data?.['Actual Shift Start Date & Time'];
+            if (sortBy === 'serviceDeliveryDate') {
+                const d = actualStartRaw ? new Date(actualStartRaw) : null;
+                return d && !isNaN(d.getTime()) ? d : null;
+            }
+            const d = scheduledStartRaw ? new Date(scheduledStartRaw) : null;
+            return d && !isNaN(d.getTime()) ? d : null;
+        };
+
+        masterItems.sort((a, b) => {
+            const aD = getSortDate(a);
+            const bD = getSortDate(b);
+            const aNull = !aD;
+            const bNull = !bD;
+            if (aNull && bNull) return 0;
+            if (aNull) return 1;
+            if (bNull) return -1;
+            if (aD.getTime() < bD.getTime()) return -1 * selectedSortOrder;
+            if (aD.getTime() > bD.getTime()) return 1 * selectedSortOrder;
+            return 0;
+        });
+
+        // Expand items into NDIS service rows
+        const expandedRows = [];
+        for (const item of masterItems) {
+            const ppId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_PROFILE]);
+            const spId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_PLAN]);
+            const ctId = extractNdisRefId(item?.data?.['Cancellation Type']);
+
+            const participantProfileItem = ppId ? refItemsMap.get(ppId) : null;
+            const servicePlanItem = spId ? refItemsMap.get(spId) : null;
+            const cancellationTypeItem = ctId ? refItemsMap.get(ctId) : null;
+
+            const participantName =
+                getNdisParticipantDisplayName(participantProfileItem) ||
+                (item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_FULL_NAME] ? String(item.data[NDIS_MASTERPLAN_ATTR.PARTICIPANT_FULL_NAME]).trim() : '');
+
+            const supportCatalogue = (() => {
+                if (!servicePlanItem?.data) return {};
+                const dsId = extractNdisRefId(servicePlanItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_DIRECT_SUPPORT]);
+                const ptId = extractNdisRefId(servicePlanItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR]);
+                const abtId = extractNdisRefId(servicePlanItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT]);
+                const cccId = extractNdisRefId(servicePlanItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_CENTRE_CAPITAL]);
+                return {
+                    directSupport: dsId ? refItemsMap.get(dsId) : null,
+                    providerTravelNonLabour: ptId ? refItemsMap.get(ptId) : null,
+                    activityTransport: abtId ? refItemsMap.get(abtId) : null,
+                    centreCapital: cccId ? refItemsMap.get(cccId) : null,
+                };
+            })();
+
+            const invNo = invoiceNumberMap.get(item.itemId);
+            const invLink = invoiceFileUrlMap.get(item.itemId);
+
+            const rows = buildNdisMasterPlanServiceRows({
+                masterPlanItem: item,
+                participantName,
+                participantProfileItem,
+                servicePlanItem,
+                supportCatalogue,
+                cancellationTypeItem,
+                invoiceNumber: invNo,
+                invoicePdfLink: invLink,
+            });
+
+            expandedRows.push(...rows);
+        }
+
+        // Aggregate totals on expanded rows
+        let invoiced = 0;
+        let pending = 0;
+        let totalAmount = 0;
+        for (const r of expandedRows) {
+            if (r.status === 'invoiced') invoiced += 1;
+            else pending += 1;
+            totalAmount += parseNdisNumber(r.totalAmount);
+        }
+
+        const total = expandedRows.length;
+        const items = applyPagination && limitNumber ? expandedRows.slice(skip, skip + limitNumber) : expandedRows;
+
+        res.status(200).json({
+            items,
+            total,
+            invoiced,
+            pending,
+            totalAmount,
+            totalGovSubsidy: 0,
+            totalParticipantContribution: 0,
+        });
+    } catch (err) {
+        error('Items-Service', 'Failed to fetch NDIS invoice generator data', { message: err.message, stack: err.stack }, req ?? null);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
 router.get('/:workspaceId/:boardId/monthly-statement/participants', authenticateToken, async (req, res) => {
     try {
         const { workspaceId, boardId } = req.params;
@@ -929,7 +1243,7 @@ router.get('/:workspaceId/:boardId/monthly-statement/participants', authenticate
     }
 });
 
-const handleGetInvoiceGenerator = async (req, res) => {
+router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async (req, res) => {
     try {
         const { workspaceId, boardId } = req.params;
         const {
@@ -950,20 +1264,6 @@ const handleGetInvoiceGenerator = async (req, res) => {
             return res.status(400).json({
                 message: 'WorkspaceId and boardId are required'
             });
-        }
-
-        let isNDISBoard = false;
-        try {
-            const board = await Board.findOne({ boardId: boardId.toString() }).select('label').lean();
-            if (board?.label && typeof board.label === 'string') {
-                isNDISBoard = board.label.includes('NDIS');
-            }
-        } catch (boardErr) {
-            warn('Items-Service', 'Failed to fetch board label for invoice-generator', {
-                message: boardErr.message,
-                workspaceId,
-                boardId
-            }, req ?? null);
         }
 
         // Calculate pagination
@@ -990,10 +1290,7 @@ const handleGetInvoiceGenerator = async (req, res) => {
         // STABLE VERSION: Use find() instead of aggregate() for better stability
         // Base query - only from Master Plan,Shift Planning and Reporting
         const baseQuery = { workspaceId, boardId };
-        let folderIds = await getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
-        if (isNDISBoard && (!folderIds || folderIds.length === 0)) {
-            folderIds = await getFolderIds('Master Plan', workspaceId, boardId);
-        }
+        const folderIds = await getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
         if (folderIds && folderIds.length > 0) {
             baseQuery.folderId = { $in: folderIds };
         }
@@ -1085,32 +1382,26 @@ const handleGetInvoiceGenerator = async (req, res) => {
         const processedItems = await Promise.all(allItems.map(async item => {
             const scheduledStart = getValueFromItem(item, ATTRIBUTE_NAMES.SCHEDULED_START);
             const actualEnd = getValueFromItem(item, ATTRIBUTE_NAMES.ACTUAL_END);
-            const participantProfileValue = getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
-            const participantId = extractRefId(participantProfileValue);
+            const participantIds = getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_PROFILE) || '';
+            const participantId = participantIds.length > 0 ? participantIds[0] : '';
             let participantName = '';
-            if (participantId) {
+            if(participantId) {
                 const participantProfileItem = await Item.findOne({ itemId: participantId }).lean();
                 participantName = getValueFromItem(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_FULL_NAME);
             }
 
-            const totalAmountNum = parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.TOTAL_AMOUNT));
-            const totalInvoiceableNum = isNDISBoard ? parseNumber(getValueFromItem(item, 'Total Invoiceable Value($)')) : 0;
             return {
                 item,
                 scheduledStartDate: parseDate(scheduledStart),
                 actualEndDate: parseDate(actualEnd),
                 participantName: String(participantName),
-                totalAmountNum,
-                totalInvoiceableNum,
+                totalAmountNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.TOTAL_AMOUNT)),
                 govSubsidyNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.GOV_SUBSIDY)),
                 participantContributionNum: parseNumber(getValueFromItem(item, ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)),
                 transactionStatusNames: getLabelNames(item, ATTRIBUTE_NAMES.TRANSACTION_STATUS),
                 paymentStatusNames: getLabelNames(item, ATTRIBUTE_NAMES.PAYMENT_STATUS || 'Payment Status'),
                 transactionStatusRaw: getRawStatusData(item, ATTRIBUTE_NAMES.TRANSACTION_STATUS),
-                paymentStatusRaw: getRawStatusData(item, ATTRIBUTE_NAMES.PAYMENT_STATUS || 'Payment Status'),
-                timesheetApprovalNames: getLabelNames(item, 'Timesheet Approval'),
-                jobStatusRaw: getValueFromItem(item, 'Job Status'),
-                jobStatusNames: getLabelNames(item, 'Job Status')
+                paymentStatusRaw: getRawStatusData(item, ATTRIBUTE_NAMES.PAYMENT_STATUS || 'Payment Status')
             };
         }));
         // Apply filters in JavaScript
@@ -1159,53 +1450,41 @@ const handleGetInvoiceGenerator = async (req, res) => {
         }
 
         if (transactionStatusFilter && transactionStatusFilter !== 'all') {
-            if (isNDISBoard) {
-                // For NDIS boards, filter by Job Status label name (Scheduled, Completed, Cancelled)
-                filteredItems = filteredItems.filter(p => {
-                    const names = p.jobStatusNames || [];
-                    if (names.length > 0) {
-                        return names.some(name => String(name) === transactionStatusFilter);
+            filteredItems = filteredItems.filter(p => {
+                // First try matching against label names
+                if (Array.isArray(p.transactionStatusNames) && p.transactionStatusNames.length > 0) {
+                    if (p.transactionStatusNames.some(name => {
+                        const nameStr = String(name);
+                        return transactionStatusFilter == nameStr
+                    })) {
+                        return true;
                     }
-                    const raw = p.jobStatusRaw;
-                    if (raw != null && typeof raw === 'string') return transactionStatusFilter === raw;
-                    return false;
-                });
-            } else {
-                filteredItems = filteredItems.filter(p => {
-                    // First try matching against label names
-                    if (Array.isArray(p.transactionStatusNames) && p.transactionStatusNames.length > 0) {
-                        if (p.transactionStatusNames.some(name => {
-                            const nameStr = String(name);
-                            return transactionStatusFilter == nameStr
-                        })) {
-                            return true;
-                        }
-                    } else if (p.transactionStatusNames && !Array.isArray(p.transactionStatusNames)) {
-                        const nameStr = String(p.transactionStatusNames);
-                        if (transactionStatusFilter == nameStr) {
-                            return true;
-                        }
+                } else if (p.transactionStatusNames && !Array.isArray(p.transactionStatusNames)) {
+                    const nameStr = String(p.transactionStatusNames);
+                    if (transactionStatusFilter == nameStr) {
+                        return true;
                     }
-                    // Fallback: try matching against raw status data if label names didn't match or were empty
-                    if (p.transactionStatusRaw) {
-                        const rawStr = Array.isArray(p.transactionStatusRaw)
-                            ? p.transactionStatusRaw.map(v => String(v)).join(' ')
-                            : String(p.transactionStatusRaw);
-                        if (transactionStatusFilter == rawStr) {
-                            return true;
-                        }
+                }
+                // Fallback: try matching against raw status data if label names didn't match or were empty
+                if (p.transactionStatusRaw) {
+                    const rawStr = Array.isArray(p.transactionStatusRaw)
+                        ? p.transactionStatusRaw.map(v => String(v)).join(' ')
+                        : String(p.transactionStatusRaw);
+                    if (transactionStatusFilter == rawStr) {
+                        return true;
                     }
-                    return false;
-                });
-            }
+                }
+                return false;
+            });
         }
 
         if (paymentStatusFilter && paymentStatusFilter !== 'all') {
             filteredItems = filteredItems.filter(p => {
+                // First try matching against label names
                 if (Array.isArray(p.paymentStatusNames) && p.paymentStatusNames.length > 0) {
                     if (p.paymentStatusNames.some(name => {
                         const nameStr = String(name);
-                        return paymentStatusFilter == nameStr;
+                        return paymentStatusFilter == nameStr
                     })) {
                         return true;
                     }
@@ -1215,6 +1494,7 @@ const handleGetInvoiceGenerator = async (req, res) => {
                         return true;
                     }
                 }
+                // Fallback: try matching against raw status data if label names didn't match or were empty
                 if (p.paymentStatusRaw) {
                     const rawStr = Array.isArray(p.paymentStatusRaw)
                         ? p.paymentStatusRaw.map(v => String(v)).join(' ')
@@ -1224,23 +1504,6 @@ const handleGetInvoiceGenerator = async (req, res) => {
                     }
                 }
                 return false;
-            });
-        }
-
-        if (isNDISBoard) {
-            filteredItems = filteredItems.filter(p => {
-                const value = p.timesheetApprovalNames;
-                if (!value) return false;
-                const names = Array.isArray(value) ? value : [value];
-                const hasApprovedTimesheet = names.some(name => String(name).toLowerCase() === 'approved');
-                if (!hasApprovedTimesheet) return false;
-
-                const hasNonZeroTotal = Math.abs(p.totalAmountNum) > 0 ||
-                    Math.abs(p.totalInvoiceableNum || 0) > 0 ||
-                    Math.abs(p.govSubsidyNum) > 0 ||
-                    Math.abs(p.participantContributionNum) > 0;
-
-                return hasNonZeroTotal;
             });
         }
 
@@ -1574,11 +1837,6 @@ const handleGetInvoiceGenerator = async (req, res) => {
             const transactionStatusValue = getValue(ATTRIBUTE_NAMES.TRANSACTION_STATUS);
             const transactionStatusFormatted = formatStatus(transactionStatusValue);
 
-            const jobStatusRaw = getValue('Job Status');
-            const jobStatusFormatted = formatStatus(jobStatusRaw);
-            const gstRaw = getValue('GST');
-            const gstLabel = isNDISBoard ? 'GST Free' : (typeof gstRaw === 'string' ? gstRaw : undefined);
-
             // DATABASE-ONLY: Get funding source names from pre-fetched lookup map
             let fundingSource;
             const fundingSourceData = getValue(ATTRIBUTE_NAMES.FUNDING_SOURCE);
@@ -1602,7 +1860,7 @@ const handleGetInvoiceGenerator = async (req, res) => {
             const serviceLabel = service || '';
             const isWraparound = serviceLabel.toLowerCase().includes('wraparound');
 
-            let transformedData = {
+            const transformedData = {
                 // Table fields (Visible in ISO+ Portal Table)
                 id: item.itemId,
                 paymentStatus: paymentStatusFormatted,
@@ -1619,8 +1877,6 @@ const handleGetInvoiceGenerator = async (req, res) => {
                 fundingSource: fundingSource,
                 transactionStatus: transactionStatusFormatted,
                 notes: notes,
-                jobStatus: jobStatusFormatted,
-                gst: gstLabel,
                 // PDF download field
                 fileUrl: fileUrl,
                 // CSV export fields (Included in CSV but not in table)
@@ -1642,44 +1898,6 @@ const handleGetInvoiceGenerator = async (req, res) => {
                 itemFirstPayment: itemFirstPaymentValue
             };
 
-            if (isNDISBoard) {
-                const actualShiftDurationHours = Number(getValue('Actual Shift Duration(Hr.)')) || 0;
-                const labourTravelMinutes = Number(getValue('Labour Travel Time (Min.) as per the Service Plan, regarding the Time Cap, if applicable.')) || 0;
-                const nonFaceToFaceHours = Number(getValue('Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)')) || 0;
-                const cancellationReasonRaw = getValue('Cancellation Reason');
-
-                let participantNdisNumber = '';
-                if (participantProfileItem?.data) {
-                    const raw = getValueFromFlatData(participantProfileItem, 'NDIS Number');
-                    if (raw != null) {
-                        const str = typeof raw === 'object' && raw?.name != null ? raw.name : String(raw);
-                        participantNdisNumber = str.replace(/\D/g, '').slice(0, 20);
-                    }
-                }
-
-                const ndisFields = mapNdisClaimFields({
-                    unit,
-                    quantity,
-                    unitPrice,
-                    serviceIdentifier,
-                    invoiceNumber,
-                    jobStatus: jobStatusFormatted,
-                    scheduledServiceDate: scheduledServiceDate,
-                    serviceDeliveryDate: serviceDeliveryDate,
-                    actualShiftDurationHours,
-                    labourTravelMinutes,
-                    nonFaceToFaceHours,
-                    cancellationReasonRaw,
-                    gstLabelRaw: gstLabel
-                });
-
-                transformedData = {
-                    ...transformedData,
-                    ...ndisFields,
-                    participantNdisNumber
-                };
-            }
-
             // Store transformed data in cache for future requests
             setCachedTransform(workspaceId, boardId, item.itemId, transformedData);
 
@@ -1699,10 +1917,7 @@ const handleGetInvoiceGenerator = async (req, res) => {
         }, req ?? null);
         res.status(500).json({ message: 'Server error' });
     }
-};
-
-router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, handleGetInvoiceGenerator);
-router.get('/:workspaceId/:boardId/ndis-invoice-generator', authenticateToken, handleGetInvoiceGenerator);
+});
 
 router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async (req, res) => {
     try {

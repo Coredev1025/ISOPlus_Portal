@@ -11,10 +11,14 @@ const router = express.Router();
 function formatValue(val) {
     const num = Number(val);
     if (!isNaN(num)) {
-        return (Math.round(num * 100) / 100).toFixed(2);
+      const factor = Math.pow(10, 2);
+      const result = Math.round(num * factor) / factor;
+  
+      return result.toFixed(2);
+    } else {
+      return val;
     }
-    return val;
-}
+  }
 
 function extractUnit(unitString) {
     switch (unitString) {
@@ -84,9 +88,10 @@ async function handleUpdate(workspaceId, boardId, itemId, mappingValues, type, l
     if (result.error) {
         warn('Xero-Service', `${label} update failed`, { result }, { workspaceId, boardId, itemId, mappingValues, type });
         return { message: `${label} update failed`, error: result.error };
+    } else {
+        info('Xero-Service', `${label} item updated successfully`, { result }, { workspaceId, boardId, itemId, mappingValues, type });
+        return { message: `${label} item updated successfully` };
     }
-    info('Xero-Service', `${label} item updated successfully`, { result }, { workspaceId, boardId, itemId, mappingValues, type });
-    return { message: `${label} item updated successfully` };
 }
 
 function hasSelectionValue(itemsValues, key) {
