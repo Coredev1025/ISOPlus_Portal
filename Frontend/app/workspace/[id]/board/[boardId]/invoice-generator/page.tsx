@@ -69,6 +69,23 @@ const PAYMENT_STATUS_FILTERS = [
   { value: "Participant Paid", label: "Participant Paid" }
 ];
 
+const NDIS_PAYMENT_STATUS_OPTIONS = [
+  "Awaiting Payment",
+  "Paid",
+  "Partially Paid",
+  "Overdue",
+  "Void",
+  "Disputed",
+  "Refunded"
+];
+
+const JOB_STATUS_FILTERS = [
+  { value: "all", label: "All Job Status" },
+  { value: "Scheduled", label: "Scheduled" },
+  { value: "Completed", label: "Completed" },
+  { value: "Cancelled", label: "Cancelled" }
+];
+
 const FUNDING_SOURCE_CODE_MAP: Record<string, string> = {
   "Home Support(HS) Quarterly": "ON",
   "Home Support Care Management": "CM",
@@ -207,6 +224,7 @@ export default function InvoiceGenerator() {
   const [serviceDeliveryDateRange, setServiceDeliveryDateRange] = useState<DateRange | undefined>();
   const [transactionStatusFilter, setTransactionStatusFilter] = useState("all");
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
+  const [jobStatusFilter, setJobStatusFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortBy, setSortBy] = useState<"scheduledServiceDate" | "serviceDeliveryDate">("scheduledServiceDate");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
@@ -250,6 +268,7 @@ export default function InvoiceGenerator() {
     setServiceDeliveryDateRange(undefined);
     setTransactionStatusFilter("all");
     setPaymentStatusFilter("all");
+    setJobStatusFilter("all");
     setStatusFilter("all");
   }, []);
 
@@ -621,6 +640,14 @@ export default function InvoiceGenerator() {
           params.append('paymentStatus', paymentStatusFilter);
         }
 
+        if (isNdisBoard && jobStatusFilter !== 'all') {
+          params.append('jobStatus', jobStatusFilter);
+        }
+
+        if (isNdisBoard && jobStatusFilter !== 'all') {
+          params.append('jobStatus', jobStatusFilter);
+        }
+
         params.append('sortBy', sortBy);
         params.append('sortOrder', sortOrder);
 
@@ -695,7 +722,7 @@ export default function InvoiceGenerator() {
         eligibleRecordsAbortControllerRef.current.abort();
       }
     };
-  }, [showInvoiceModal, id, boardId, participantFilter, scheduledServiceDateRange, serviceDeliveryDateRange, transactionStatusFilter, paymentStatusFilter, sortBy, sortOrder, refreshKey, isNdisBoard]);
+  }, [showInvoiceModal, id, boardId, participantFilter, scheduledServiceDateRange, serviceDeliveryDateRange, transactionStatusFilter, paymentStatusFilter, jobStatusFilter, sortBy, sortOrder, refreshKey, isNdisBoard]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -851,6 +878,7 @@ export default function InvoiceGenerator() {
     serviceDeliveryDateRange,
     transactionStatusFilter,
     paymentStatusFilter,
+    jobStatusFilter,
     sortBy,
     sortOrder,
     currentPage,
@@ -861,7 +889,7 @@ export default function InvoiceGenerator() {
   // Whenever filters change, reset to first page for consistent results
   useEffect(() => {
     setCurrentPage(1);
-  }, [statusFilter, participantFilter, scheduledServiceDateRange, serviceDeliveryDateRange, transactionStatusFilter, paymentStatusFilter, sortBy, sortOrder]);
+  }, [statusFilter, participantFilter, scheduledServiceDateRange, serviceDeliveryDateRange, transactionStatusFilter, paymentStatusFilter, jobStatusFilter, sortBy, sortOrder]);
 
   const handleHorizontalScroll = useCallback((direction: 'left' | 'right') => {
     if (!tableContainerRef.current) {
@@ -1117,7 +1145,7 @@ export default function InvoiceGenerator() {
       key: 'jobStatus',
       label: 'Job Status',
       className: 'min-w-[160px]',
-      render: (record) => (record as any).jobStatus || '-'
+      render: (record) => record.jobStatus || '-'
     },
     {
       key: 'unit',
@@ -1141,7 +1169,35 @@ export default function InvoiceGenerator() {
       key: 'gst',
       label: 'GST',
       className: 'min-w-[120px]',
-      render: (record) => ((record as any).gst as string) || 'GST Free'
+      render: (record) => record.gst || 'GST Free'
+    },
+    {
+      key: 'fileUrl',
+      label: 'PDF Download',
+      className: 'min-w-[140px]',
+      render: (record) => {
+        if (record.fileUrl) {
+          return (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-2"
+              onClick={() => handleDownloadPDF(record.fileUrl!, record.invoiceNumber)}
+              title="Download PDF Invoice"
+            >
+              <Download className="h-4 w-4" />
+              {record.invoiceNumber ? `Invoice #${record.invoiceNumber}` : 'Download'}
+            </Button>
+          );
+        }
+        return '-';
+      }
+    },
+    {
+      key: 'paymentStatus',
+      label: 'Payment Status',
+      className: 'min-w-[180px]',
+      render: (record) => record.paymentStatus || '-'
     }
   ] : isLowCatBoard ? [
     {
@@ -1397,6 +1453,10 @@ export default function InvoiceGenerator() {
 
         if (paymentStatusFilter !== 'all') {
           params.append('paymentStatus', paymentStatusFilter);
+        }
+
+        if (jobStatusFilter !== 'all') {
+          params.append('jobStatus', jobStatusFilter);
         }
 
         params.append('sortBy', sortBy);
@@ -2324,6 +2384,25 @@ export default function InvoiceGenerator() {
                 </Select>
               )}
 
+              {isNdisBoard && (
+                <Select value={jobStatusFilter} onValueChange={setJobStatusFilter}>
+                  <SelectTrigger className="w-fit flex-shrink-0 min-w-[180px]">
+                    <div className="flex items-center gap-2 min-w-0 w-full">
+                      <Filter className="h-4 w-4 flex-shrink-0" />
+                      <SelectValue placeholder="Job Status" className="truncate" />
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {JOB_STATUS_FILTERS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+
               <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
                 <SelectTrigger className="w-fit flex-shrink-0">
                   <div className="flex items-center gap-2 min-w-0 w-full">
@@ -2332,11 +2411,22 @@ export default function InvoiceGenerator() {
                   </div>
                 </SelectTrigger>
                 <SelectContent>
-                  {PAYMENT_STATUS_FILTERS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
+                  {isNdisBoard ? (
+                    <>
+                      <SelectItem value="all">All Payment Status</SelectItem>
+                      {NDIS_PAYMENT_STATUS_OPTIONS.map((status) => (
+                        <SelectItem key={status} value={status}>
+                          {status}
+                        </SelectItem>
+                      ))}
+                    </>
+                  ) : (
+                    PAYMENT_STATUS_FILTERS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
 
