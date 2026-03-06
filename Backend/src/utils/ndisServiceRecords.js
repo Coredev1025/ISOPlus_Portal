@@ -157,6 +157,26 @@ export function getValueMulti(item, attributeNames) {
   return null;
 }
 
+function getMasterPlanLabel(masterPlanItem, attributeNames) {
+  const raw = getValueMulti(masterPlanItem, attributeNames);
+  return formatLabelValue(raw).trim();
+}
+
+function getMasterPlanNumber(masterPlanItem, attributeNames) {
+  const raw = getValueMulti(masterPlanItem, attributeNames);
+  return parseNumberValue(raw);
+}
+
+function getServicePlanLabel(servicePlanItem, attributeNames) {
+  const raw = getValueMulti(servicePlanItem, attributeNames);
+  return formatLabelValue(raw).trim();
+}
+
+function getServicePlanNumber(servicePlanItem, attributeNames) {
+  const raw = getValueMulti(servicePlanItem, attributeNames);
+  return parseNumberValue(raw);
+}
+
 export function parseNumberValue(rawValue) {
   if (rawValue === null || rawValue === undefined) return 0;
   if (Array.isArray(rawValue) && rawValue.length > 0) return parseNumberValue(rawValue[0]);
@@ -355,10 +375,23 @@ export function buildNdisMasterPlanServiceRows({
   const master = masterPlanItem?.data || {};
 
   const groupSize = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.GROUP_SIZE]) || 1;
-  const jobStatus = formatLabelValue(master[NDIS_MASTERPLAN_ATTR.JOB_STATUS]).trim();
-  const paymentStatus = formatLabelValue(master[NDIS_MASTERPLAN_ATTR.PAYMENT_STATUS]).trim();
+  const jobStatus = getMasterPlanLabel(masterPlanItem, [
+    NDIS_MASTERPLAN_ATTR.JOB_STATUS,
+    'Job status',
+    'JobStatus',
+  ]);
+  const paymentStatus = getMasterPlanLabel(masterPlanItem, [
+    NDIS_MASTERPLAN_ATTR.PAYMENT_STATUS,
+    'Payment status',
+    'PaymentStatus',
+  ]);
 
   const scheduledStart = master[NDIS_MASTERPLAN_ATTR.SCHEDULED_START];
+  const scheduledEnd = getValueMulti(masterPlanItem, [
+    NDIS_MASTERPLAN_ATTR.SCHEDULED_END,
+    'Scheduled Shift End Date and Time',
+    'Scheduled Shift End Date & Time',
+  ]);
   const actualStart = getValueMulti(masterPlanItem, [
     NDIS_MASTERPLAN_ATTR.ACTUAL_START,
     'Actual Shift Start Date & Time',
@@ -368,25 +401,107 @@ export function buildNdisMasterPlanServiceRows({
     'Actual Shift End Date & Time',
   ]);
 
+  const computeDurationHr = (startRaw, endRaw) => {
+    if (!startRaw || !endRaw) return 0;
+    const s = new Date(startRaw);
+    const e = new Date(endRaw);
+    if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return 0;
+    const ms = e.getTime() - s.getTime();
+    if (!Number.isFinite(ms) || ms <= 0) return 0;
+    return ms / (60 * 60 * 1000);
+  };
+
+  let actualDurationHr = getMasterPlanNumber(masterPlanItem, [
+    NDIS_MASTERPLAN_ATTR.ACTUAL_DURATION_HR,
+    'Actual Shift Duration (Hr.)',
+    'Actual Shift Duration (Hr)',
+    'Actual Shift Duration(Hrs.)',
+    'Actual Shift Duration (Hrs.)',
+    'Actual Shift Duration',
+  ]);
+  if (actualDurationHr <= 0) {
+    actualDurationHr = computeDurationHr(actualStart, actualEnd);
+  }
+
+  let scheduledDurationHr = getMasterPlanNumber(masterPlanItem, [
+    NDIS_MASTERPLAN_ATTR.SCHEDULED_DURATION_HR,
+    'Scheduled Shift Duration (Hr.)',
+    'Scheduled Shift Duration (Hr)',
+    'Scheduled Shift Duration(Hrs.)',
+    'Scheduled Shift Duration',
+  ]);
+  if (scheduledDurationHr <= 0) {
+    scheduledDurationHr = computeDurationHr(scheduledStart, scheduledEnd);
+  }
+
   const scheduledServiceDate = getDateOnlyIso(scheduledStart);
   const serviceDeliveryDate = getDateOnlyIso(actualStart);
 
   const status = invoiceNumber ? 'invoiced' : 'pending';
 
   const servicePlan = servicePlanItem || null;
-  const spDirectUnit = formatLabelValue(getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.UNIT_DIRECT_SUPPORT)).trim();
-  const spDirectUnitPrice = parseNumberValue(getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.PRICE_DIRECT_SUPPORT));
-  const spNonLabourUnit = formatLabelValue(getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.UNIT_PROVIDER_TRAVEL_NON_LABOUR)).trim();
-  const spNonLabourUnitPrice = parseNumberValue(getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.PRICE_PROVIDER_TRAVEL_NON_LABOUR));
-  const spActivityUnit = formatLabelValue(getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.UNIT_ACTIVITY_TRANSPORT)).trim();
-  const spActivityUnitPrice = parseNumberValue(getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.PRICE_ACTIVITY_TRANSPORT));
-  const spCentreUnit = formatLabelValue(getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.UNIT_CENTRE_CAPITAL)).trim();
-  const spCentreUnitPrice = parseNumberValue(getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.PRICE_CENTRE_CAPITAL));
-  const spLabourUnit = formatLabelValue(getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.UNIT_LABOUR_TRAVEL_TIME)).trim();
-  const spLabourUnitPrice = parseNumberValue(getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.PRICE_LABOUR_TRAVEL_TIME));
-  const spAllowancesUnit = formatLabelValue(getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.UNIT_ALLOWANCES)).trim();
-  const spNonFaceUnit = formatLabelValue(getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.UNIT_NON_FACE_TO_FACE)).trim();
-  const spNonFaceUnitPrice = parseNumberValue(getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.PRICE_NON_FACE_TO_FACE));
+  const spDirectUnit = getServicePlanLabel(servicePlan, [
+    NDIS_SERVICEPLAN_ATTR.UNIT_DIRECT_SUPPORT,
+    'Unit (Direct Support)',
+  ]);
+  const spDirectUnitPrice = getServicePlanNumber(servicePlan, [
+    NDIS_SERVICEPLAN_ATTR.PRICE_DIRECT_SUPPORT,
+    'Agreed Unit Price for Direct Support ($)',
+    'Agreed Unit Price for Direct Support($)',
+  ]);
+  const spNonLabourUnit = getServicePlanLabel(servicePlan, [
+    NDIS_SERVICEPLAN_ATTR.UNIT_PROVIDER_TRAVEL_NON_LABOUR,
+    'Unit (Provider Travel Non-Labour Cost)',
+    'Unit (Provider Travel - Non-Labour Costs)',
+  ]);
+  const spNonLabourUnitPrice = getServicePlanNumber(servicePlan, [
+    NDIS_SERVICEPLAN_ATTR.PRICE_PROVIDER_TRAVEL_NON_LABOUR,
+    'Agreed Unit Price for Non-Labour Travel ($)',
+    'Agreed Unit Price for Non-Labour Travel($)',
+  ]);
+  const spActivityUnit = getServicePlanLabel(servicePlan, [
+    NDIS_SERVICEPLAN_ATTR.UNIT_ACTIVITY_TRANSPORT,
+    'Unit (Activity Base Transport)',
+  ]);
+  const spActivityUnitPrice = getServicePlanNumber(servicePlan, [
+    NDIS_SERVICEPLAN_ATTR.PRICE_ACTIVITY_TRANSPORT,
+    'Agreed Price for Activity Base Transport ($)',
+    'Agreed Unit Price for Activity Based Transport ($)',
+  ]);
+  const spCentreUnit = getServicePlanLabel(servicePlan, [
+    NDIS_SERVICEPLAN_ATTR.UNIT_CENTRE_CAPITAL,
+    'Unit (Centre Capital Cost)',
+    'Unit (Centre Capital Costs)',
+  ]);
+  const spCentreUnitPrice = getServicePlanNumber(servicePlan, [
+    NDIS_SERVICEPLAN_ATTR.PRICE_CENTRE_CAPITAL,
+    'Agreed Unit Price for Centre Capital Cost($)',
+    'Agreed Unit Price for Centre Capital Costs ($)',
+    'Agreed Unit Price for Centre Capital Costs($)',
+  ]);
+  const spLabourUnit = getServicePlanLabel(servicePlan, [
+    NDIS_SERVICEPLAN_ATTR.UNIT_LABOUR_TRAVEL_TIME,
+    'Unit (Labour Travel Time)',
+  ]);
+  const spLabourUnitPrice = getServicePlanNumber(servicePlan, [
+    NDIS_SERVICEPLAN_ATTR.PRICE_LABOUR_TRAVEL_TIME,
+    'Agreed Unit Price for Labour Travel Time ($)',
+    'Agreed Unit Price for Labour Travel Time($)',
+  ]);
+  const spAllowancesUnit = getServicePlanLabel(servicePlan, [
+    NDIS_SERVICEPLAN_ATTR.UNIT_ALLOWANCES,
+    'Unit (Allowances)',
+  ]);
+  const spNonFaceUnit = getServicePlanLabel(servicePlan, [
+    NDIS_SERVICEPLAN_ATTR.UNIT_NON_FACE_TO_FACE,
+    'Unit (Non Face to Face Support)',
+  ]);
+  const spNonFaceUnitPrice = getServicePlanNumber(servicePlan, [
+    NDIS_SERVICEPLAN_ATTR.PRICE_NON_FACE_TO_FACE,
+    'Agreed Unit Price for Non-Face-to-Face Support($)',
+    'Agreed Unit Price for Non Face to Face Support($)',
+    'Agreed Unit Price for Non-Face-to-Face Support ($)',
+  ]);
 
   const directSupportItemNumber = getSupportItemNumber(
     supportCatalogue?.directSupport,
@@ -438,8 +553,17 @@ export function buildNdisMasterPlanServiceRows({
     // 1) Direct Support - Hour based
     const directTimeAmount = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.DIRECT_SUPPORT_VALUE_TIME]);
     if (directTimeAmount > 0 && spDirectUnit.includes('Hour')) {
-      const unitPrice = groupSize > 0 ? spDirectUnitPrice / groupSize : 0;
-      const qty = round1(master[NDIS_MASTERPLAN_ATTR.ACTUAL_DURATION_HR]);
+      let unitPrice = groupSize > 0 ? spDirectUnitPrice / groupSize : 0;
+      let qty = round1(actualDurationHr);
+      // If duration is not stored, derive qty from amount/unit price (matches NDIS invoice output)
+      if (qty <= 0 && directTimeAmount > 0 && unitPrice > 0) {
+        qty = round1(directTimeAmount / unitPrice);
+      }
+      // If unit price is missing but qty exists, derive unit price from amount/qty
+      if (unitPrice <= 0 && directTimeAmount > 0 && qty > 0) {
+        unitPrice = parseFloat((directTimeAmount / qty).toFixed(2));
+      }
+
       if (qty > 0 && unitPrice > 0) {
         addRow({
           code: 'direct_support_time',
@@ -464,8 +588,16 @@ export function buildNdisMasterPlanServiceRows({
     // 2) Direct Support - Non hour based
     const directNonTimeAmount = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.DIRECT_SUPPORT_VALUE_NON_TIME]);
     if (directNonTimeAmount > 0 && !spDirectUnit.includes('Hour')) {
-      const qty = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.QUANTITY_DIRECT_SUPPORT_NON_TIME]);
-      if (qty > 0 && spDirectUnitPrice > 0) {
+      let qty = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.QUANTITY_DIRECT_SUPPORT_NON_TIME]);
+      let unitPrice = spDirectUnitPrice;
+      if (qty <= 0 && directNonTimeAmount > 0 && unitPrice > 0) {
+        qty = parseNumberValue(parseFloat((directNonTimeAmount / unitPrice).toFixed(2)));
+      }
+      if (unitPrice <= 0 && directNonTimeAmount > 0 && qty > 0) {
+        unitPrice = parseFloat((directNonTimeAmount / qty).toFixed(2));
+      }
+
+      if (qty > 0 && unitPrice > 0) {
         addRow({
           code: 'direct_support_non_time',
           service: (() => {
@@ -479,7 +611,7 @@ export function buildNdisMasterPlanServiceRows({
           })(),
           unit: spDirectUnit || '',
           quantity: qty,
-          unitPrice: spDirectUnitPrice,
+          unitPrice,
           totalAmount: directNonTimeAmount,
           supportNumber: directSupportItemNumber,
           claimType: '',
@@ -488,10 +620,30 @@ export function buildNdisMasterPlanServiceRows({
     }
 
     // 3) Provider Travel - Non-Labour Cost (unitPrice=1, quantity=amount)
-    const providerAmount = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.PROVIDER_TRAVEL_NON_LABOUR_AMOUNT]);
+    let providerAmount = getMasterPlanNumber(masterPlanItem, [
+      NDIS_MASTERPLAN_ATTR.PROVIDER_TRAVEL_NON_LABOUR_AMOUNT,
+      'Provider Travel - Non-Labour Amount($)',
+      'Provider Travel - Non-Labour Cost Amount ($)',
+    ]);
+    const providerMileageRaw = getValueMulti(masterPlanItem, [
+        NDIS_MASTERPLAN_ATTR.PROVIDER_TRAVEL_MILEAGE,
+        'Provider Travel - Non-Labour Mileage (kms) as per the Service Plan, if a vehicle is used.',
+      ]);
+    const providerOthersRaw = getValueMulti(masterPlanItem, [
+        NDIS_MASTERPLAN_ATTR.PROVIDER_TRAVEL_OTHER_COSTS,
+        'Provider Travel - Non-Labour - Other Costs as per the Service Plan, if other costs are applied.',
+      ]);
+    const providerMileageNum = parseNumberValue(providerMileageRaw);
+    const providerOthersNum = parseNumberValue(providerOthersRaw);
+    if (providerAmount <= 0) {
+      const computed =
+        providerMileageNum > 0 && spNonLabourUnitPrice > 0
+          ? providerMileageNum * spNonLabourUnitPrice + providerOthersNum
+          : providerOthersNum;
+      if (computed > 0) providerAmount = computed;
+    }
+
     if (providerAmount > 0) {
-      const mileage = master[NDIS_MASTERPLAN_ATTR.PROVIDER_TRAVEL_MILEAGE];
-      const others = master[NDIS_MASTERPLAN_ATTR.PROVIDER_TRAVEL_OTHER_COSTS];
       addRow({
         code: 'provider_travel_non_labour',
         service: (() => {
@@ -500,8 +652,8 @@ export function buildNdisMasterPlanServiceRows({
             itemName: providerTravelItemName,
             fallback: 'Provider Travel - Non-Labour Cost Item',
           });
-          if (mileage) desc += ` - ${mileage}km`;
-          if (others) desc += ` - Others: ${others}`;
+          if (providerMileageNum) desc += ` - ${providerMileageNum}km`;
+          if (providerOthersNum) desc += ` - Others: ${providerOthersNum}`;
           return desc;
         })(),
         unit: spNonLabourUnit || '',
@@ -514,10 +666,31 @@ export function buildNdisMasterPlanServiceRows({
     }
 
     // 4) Activity Based Transport (unitPrice=1, quantity=amount)
-    const activityAmount = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.ACTIVITY_BASE_TRANSPORT_AMOUNT]);
+    let activityAmount = getMasterPlanNumber(masterPlanItem, [
+      NDIS_MASTERPLAN_ATTR.ACTIVITY_BASE_TRANSPORT_AMOUNT,
+      'Activity Based Transport Amount($)',
+      'Activity Based Transport Amount ($)',
+      'Activity Base Transport Amount ($)',
+    ]);
+    const activityMileageRaw = getValueMulti(masterPlanItem, [
+        NDIS_MASTERPLAN_ATTR.ACTIVITY_TRANSPORT_MILEAGE,
+        'Activity Based Transport Mileage(Kms) as per the Service Plan, if a vehicle is used.',
+      ]);
+    const activityOthersRaw = getValueMulti(masterPlanItem, [
+        NDIS_MASTERPLAN_ATTR.ACTIVITY_TRANSPORT_OTHER_COSTS,
+        'Activity Based Transport Costs as per the Service Plan, if other costs are applied.',
+      ]);
+    const activityMileageNum = parseNumberValue(activityMileageRaw);
+    const activityOthersNum = parseNumberValue(activityOthersRaw);
+    if (activityAmount <= 0) {
+      const computed =
+        activityMileageNum > 0 && spActivityUnitPrice > 0
+          ? activityMileageNum * spActivityUnitPrice + activityOthersNum
+          : activityOthersNum;
+      if (computed > 0) activityAmount = computed;
+    }
+
     if (activityAmount > 0) {
-      const mileage = master[NDIS_MASTERPLAN_ATTR.ACTIVITY_TRANSPORT_MILEAGE];
-      const others = master[NDIS_MASTERPLAN_ATTR.ACTIVITY_TRANSPORT_OTHER_COSTS];
       addRow({
         code: 'activity_transport',
         service: (() => {
@@ -526,11 +699,11 @@ export function buildNdisMasterPlanServiceRows({
             itemName: activityItemName,
             fallback: 'Activity Based Transport Item',
           });
-          if (mileage) desc += ` - ${mileage}km`;
-          if (others) desc += ` - Others: ${others}`;
+          if (activityMileageNum) desc += ` - ${activityMileageNum}km`;
+          if (activityOthersNum) desc += ` - Others: ${activityOthersNum}`;
           return desc;
         })(),
-        unit: spActivityUnit || '',
+        unit: spActivityUnit || 'Each(E)',
         quantity: activityAmount,
         unitPrice: 1,
         totalAmount: activityAmount,
@@ -539,11 +712,29 @@ export function buildNdisMasterPlanServiceRows({
       });
     }
 
-    // 5) Centre Capital Costs (quantity=duration)
-    const centreAmount = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.CENTRE_CAPITAL_COSTS_AMOUNT]);
+    // 5) Centre Capital Costs
+    let centreAmount = getMasterPlanNumber(masterPlanItem, [
+      NDIS_MASTERPLAN_ATTR.CENTRE_CAPITAL_COSTS_AMOUNT,
+      'Centre Capital Cost Amount($)',
+      'Centre Capital Cost Amount ($)',
+      'Centre Capital Costs Amount ($)',
+    ]);
+    // Prefer actual duration, but if it's missing use qty = amount / unitPrice
+    // (this matches the NDIS PDF invoice output where Centre Capital quantity is still shown).
+    let qty = round1(actualDurationHr);
+    let unitPrice = spCentreUnitPrice;
+    if (qty <= 0 && centreAmount > 0 && unitPrice > 0) {
+      qty = round1(centreAmount / unitPrice);
+    }
+    if (unitPrice <= 0 && centreAmount > 0 && qty > 0) {
+      unitPrice = parseFloat((centreAmount / qty).toFixed(2));
+    }
+    if (centreAmount <= 0 && qty > 0 && unitPrice > 0) {
+      centreAmount = qty * unitPrice;
+    }
+
     if (centreAmount > 0) {
-      const qty = round1(master[NDIS_MASTERPLAN_ATTR.ACTUAL_DURATION_HR]);
-      if (qty > 0 && spCentreUnitPrice > 0) {
+      if (qty > 0 && unitPrice > 0) {
         addRow({
           code: 'centre_capital_costs',
           service: buildSimpleItemDesc({
@@ -551,9 +742,9 @@ export function buildNdisMasterPlanServiceRows({
             itemName: centreCapitalItemName,
             fallback: 'Centre Capital Costs Item',
           }),
-          unit: spCentreUnit || '',
+          unit: spCentreUnit || 'Hour(H)',
           quantity: qty,
-          unitPrice: spCentreUnitPrice,
+          unitPrice,
           totalAmount: centreAmount,
           supportNumber: centreCapitalItemNumber,
           claimType: '',
@@ -618,7 +809,7 @@ export function buildNdisMasterPlanServiceRows({
     const cancellationFee = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.CANCELLATION_FEE]);
     if (cancellationFee > 0) {
       const billablePct = parseNumberValue(getValue(cancellationTypeItem, NDIS_CANCELLATION_TYPE_ATTR.BILLABLE_TO_CLIENT_PCT));
-      const scheduledDuration = round1(master[NDIS_MASTERPLAN_ATTR.SCHEDULED_DURATION_HR]);
+      const scheduledDuration = round1(scheduledDurationHr);
 
       const directShortNotice = getShortNoticeCancellationsFlag(supportCatalogue?.directSupport);
       const providerShortNotice = getShortNoticeCancellationsFlag(supportCatalogue?.providerTravelNonLabour);
@@ -632,7 +823,9 @@ export function buildNdisMasterPlanServiceRows({
         const baseUnitPrice = spDirectUnit.includes('Hour')
           ? (groupSize > 0 ? spDirectUnitPrice / groupSize : 0)
           : spDirectUnitPrice;
-        const unitPrice = baseUnitPrice * (billablePct / 100);
+        const unitPriceRaw = baseUnitPrice * (billablePct / 100);
+        const unitPrice = parseFloat(unitPriceRaw.toFixed(2));
+        const totalAmount = parseFloat((qty * unitPrice).toFixed(2));
         if (qty > 0 && unitPrice > 0) {
           addRow({
             code: 'canc_direct_support',
@@ -647,7 +840,7 @@ export function buildNdisMasterPlanServiceRows({
             unit: spDirectUnit || '',
             quantity: qty,
             unitPrice,
-            totalAmount: qty * unitPrice,
+            totalAmount,
             supportNumber: directSupportItemNumber,
             claimType: 'CANC',
           });
@@ -656,7 +849,9 @@ export function buildNdisMasterPlanServiceRows({
 
       if (providerShortNotice) {
         const qty = scheduledDuration;
-        const unitPrice = spNonLabourUnitPrice * (billablePct / 100);
+        const unitPriceRaw = spNonLabourUnitPrice * (billablePct / 100);
+        const unitPrice = parseFloat(unitPriceRaw.toFixed(2));
+        const totalAmount = parseFloat((qty * unitPrice).toFixed(2));
         if (qty > 0 && unitPrice > 0) {
           addRow({
             code: 'canc_provider_travel',
@@ -670,7 +865,7 @@ export function buildNdisMasterPlanServiceRows({
             unit: spNonLabourUnit || '',
             quantity: qty,
             unitPrice,
-            totalAmount: qty * unitPrice,
+            totalAmount,
             supportNumber: providerTravelItemNumber,
             claimType: 'CANC',
           });
@@ -679,7 +874,9 @@ export function buildNdisMasterPlanServiceRows({
 
       if (activityShortNotice) {
         const qty = scheduledDuration;
-        const unitPrice = spActivityUnitPrice * (billablePct / 100);
+        const unitPriceRaw = spActivityUnitPrice * (billablePct / 100);
+        const unitPrice = parseFloat(unitPriceRaw.toFixed(2));
+        const totalAmount = parseFloat((qty * unitPrice).toFixed(2));
         if (qty > 0 && unitPrice > 0) {
           addRow({
             code: 'canc_activity_transport',
@@ -693,7 +890,7 @@ export function buildNdisMasterPlanServiceRows({
             unit: spActivityUnit || '',
             quantity: qty,
             unitPrice,
-            totalAmount: qty * unitPrice,
+            totalAmount,
             supportNumber: activityItemNumber,
             claimType: 'CANC',
           });
@@ -702,7 +899,9 @@ export function buildNdisMasterPlanServiceRows({
 
       if (centreShortNotice) {
         const qty = scheduledDuration;
-        const unitPrice = spCentreUnitPrice * (billablePct / 100);
+        const unitPriceRaw = spCentreUnitPrice * (billablePct / 100);
+        const unitPrice = parseFloat(unitPriceRaw.toFixed(2));
+        const totalAmount = parseFloat((qty * unitPrice).toFixed(2));
         if (qty > 0 && unitPrice > 0) {
           addRow({
             code: 'canc_centre_capital',
@@ -716,7 +915,7 @@ export function buildNdisMasterPlanServiceRows({
             unit: spCentreUnit || '',
             quantity: qty,
             unitPrice,
-            totalAmount: qty * unitPrice,
+            totalAmount,
             supportNumber: centreCapitalItemNumber,
             claimType: 'CANC',
           });

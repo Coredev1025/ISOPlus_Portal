@@ -225,6 +225,7 @@ export default function InvoiceGenerator() {
   const [transactionStatusFilter, setTransactionStatusFilter] = useState("all");
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
   const [jobStatusFilter, setJobStatusFilter] = useState("all");
+  const [ndisPaymentStatusOptions, setNdisPaymentStatusOptions] = useState<string[]>(NDIS_PAYMENT_STATUS_OPTIONS);
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortBy, setSortBy] = useState<"scheduledServiceDate" | "serviceDeliveryDate">("scheduledServiceDate");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
@@ -576,6 +577,35 @@ export default function InvoiceGenerator() {
     }
   }, [id, boardId, isNdisBoard]);
 
+  // Fetch NDIS Payment Status options (dynamic, falls back to defaults)
+  useEffect(() => {
+    const fetchPaymentStatusOptions = async () => {
+      try {
+        if (!isNdisBoard) return;
+        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator-ndis/payment-status-options`;
+        const response = await axios.get(apiUrl, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
+        });
+        const options = Array.isArray(response.data?.options) ? response.data.options : [];
+        const cleaned = options.map((o: any) => String(o || '').trim()).filter((s: string) => s);
+        if (cleaned.length > 0) {
+          setNdisPaymentStatusOptions(cleaned);
+        } else {
+          setNdisPaymentStatusOptions(NDIS_PAYMENT_STATUS_OPTIONS);
+        }
+      } catch (err) {
+        setNdisPaymentStatusOptions(NDIS_PAYMENT_STATUS_OPTIONS);
+      }
+    };
+
+    if (id && boardId && isNdisBoard) {
+      fetchPaymentStatusOptions();
+    }
+  }, [id, boardId, isNdisBoard]);
+
   // Fetch eligible records when modal opens - use current filters
   useEffect(() => {
     const fetchEligibleRecords = async () => {
@@ -638,10 +668,6 @@ export default function InvoiceGenerator() {
 
         if (paymentStatusFilter !== 'all') {
           params.append('paymentStatus', paymentStatusFilter);
-        }
-
-        if (isNdisBoard && jobStatusFilter !== 'all') {
-          params.append('jobStatus', jobStatusFilter);
         }
 
         if (isNdisBoard && jobStatusFilter !== 'all') {
@@ -762,6 +788,10 @@ export default function InvoiceGenerator() {
 
         if (paymentStatusFilter !== 'all') {
           params.append('paymentStatus', paymentStatusFilter);
+        }
+
+        if (isNdisBoard && jobStatusFilter !== 'all') {
+          params.append('jobStatus', jobStatusFilter);
         }
 
         // Date range filter for scheduled service dates
@@ -2414,7 +2444,7 @@ export default function InvoiceGenerator() {
                   {isNdisBoard ? (
                     <>
                       <SelectItem value="all">All Payment Status</SelectItem>
-                      {NDIS_PAYMENT_STATUS_OPTIONS.map((status) => (
+                      {ndisPaymentStatusOptions.map((status) => (
                         <SelectItem key={status} value={status}>
                           {status}
                         </SelectItem>
