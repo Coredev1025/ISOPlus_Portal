@@ -15,6 +15,7 @@ import {
     extractRefId as extractNdisRefId,
     extractAllRefIds as extractNdisAllRefIds,
     parseNumberValue as parseNdisNumber,
+    getValueMulti as getNdisValueMulti,
     getParticipantDisplayName as getNdisParticipantDisplayName,
 } from '../utils/ndisServiceRecords.js';
 
@@ -931,7 +932,7 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis/payment-status-options
 
         const statuses = new Set();
         for (const item of approvedItems) {
-            const raw = item?.data?.[NDIS_MASTERPLAN_ATTR.PAYMENT_STATUS];
+            const raw = getNdisValueMulti(item, [NDIS_MASTERPLAN_ATTR.PAYMENT_STATUS, 'Payment status', 'PaymentStatus']);
             const value = formatNdisLabelValue(raw).trim();
             if (value) statuses.add(value);
         }
@@ -1098,7 +1099,9 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
         // Payment Status filter (if provided)
         if (paymentStatusFilter && paymentStatusFilter !== 'all') {
             masterItems = masterItems.filter(item => {
-                const ps = formatNdisLabelValue(item?.data?.[NDIS_MASTERPLAN_ATTR.PAYMENT_STATUS]).trim();
+                const ps = formatNdisLabelValue(
+                    getNdisValueMulti(item, [NDIS_MASTERPLAN_ATTR.PAYMENT_STATUS, 'Payment status', 'PaymentStatus'])
+                ).trim();
                 return ps === paymentStatusFilter;
             });
         }
