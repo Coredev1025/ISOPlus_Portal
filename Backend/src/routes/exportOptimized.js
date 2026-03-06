@@ -1174,12 +1174,17 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
                 missingNdis.push({ itemId: item.itemId, participant: participantName || '' });
             }
         }
+        // If there are any invalid rows, drop them from the export rather than failing the whole request.
         if (missingNdis.length > 0) {
-            return res.status(400).json({
-                message: 'NDIS Number is required for all exported claim rows.',
-                missing: missingNdis.slice(0, 50),
-                missingCount: missingNdis.length
-            });
+            // filter out the invalid items so downstream logic only sees valid rows
+            const invalidIds = new Set(missingNdis.map(m => m.itemId));
+            masterItems = masterItems.filter(i => !invalidIds.has(i.itemId));
+            // log a warning for diagnostics
+            warn('Export-Service', 'Skipping items with missing NDIS number during export', {
+                workspaceId,
+                boardId,
+                skipped: missingNdis.length
+            }, req ?? null);
         }
 
         for (const item of masterItems) {
@@ -1356,6 +1361,8 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
         res.status(200).json({
             items: finalRows,
             total: finalRows.length,
+            skippedCount: missingNdis.length,
+            skipped: missingNdis.slice(0, 50),
             exportDurationMs: duration,
         });
     } catch (err) {
