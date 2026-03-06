@@ -931,6 +931,7 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
             serviceDeliveryStart,
             serviceDeliveryEnd,
             paymentStatus: paymentStatusFilter = '',
+            jobStatus: jobStatusFilter = '',
             sortBy = 'scheduledServiceDate',
             sortOrder = 'asc',
             limit = 'all',
@@ -946,6 +947,16 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
 
         const registrationNumber = sanitizeDigits(business?.companyRegistrationId || '', 30);
         const abn = sanitizeDigits(business?.abn || '', 20);
+        if (!registrationNumber) {
+            return res.status(400).json({
+                message: 'Company Registration ID is required to export NDIS claims. Please set it in ISO+ Portal → Business Configuration (it is stored in the Business profile record in MongoDB).'
+            });
+        }
+        if (!abn) {
+            return res.status(400).json({
+                message: 'ABN is required to export NDIS claims. Please set it in ISO+ Portal → Business Configuration (it is stored as Business.abn in MongoDB).'
+            });
+        }
 
         const folderIds = await getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
         const baseQuery = { workspaceId, boardId };
@@ -967,6 +978,8 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
         const cancellationTypeIds = new Set();
         const serviceDeliveryModeIds = new Set();
         const cancellationReasonIds = new Set();
+        const allowancesRefIds = new Set();
+        const nonFaceToFaceRefIds = new Set();
 
         for (const item of masterItems) {
             const spId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_PLAN]);
@@ -983,6 +996,12 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
 
             const crIds = extractNdisAllRefIds(item?.data?.[NDIS_MASTERPLAN_ATTR.CANCELLATION_REASON]).filter(isUuidLikeNdis);
             crIds.forEach(id => cancellationReasonIds.add(id));
+
+            const allowanceIds = extractNdisAllRefIds(item?.data?.[NDIS_MASTERPLAN_ATTR.ALLOWANCES_TYPE]).filter(isUuidLikeNdis);
+            allowanceIds.forEach(id => allowancesRefIds.add(id));
+
+            const nf2fIds = extractNdisAllRefIds(item?.data?.[NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_SUPPORTS]).filter(isUuidLikeNdis);
+            nf2fIds.forEach(id => nonFaceToFaceRefIds.add(id));
         }
 
         const refItemsMap = await bulkFetchItemsFromDB(workspaceId, boardId, [
@@ -991,6 +1010,8 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
             ...cancellationTypeIds,
             ...serviceDeliveryModeIds,
             ...cancellationReasonIds,
+            ...allowancesRefIds,
+            ...nonFaceToFaceRefIds,
         ]);
 
         // Second-level: support catalogue items referenced from participant service plan
@@ -1021,7 +1042,16 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
             itemId: { $in: itemIdsForInvoice },
             type: 'PDF',
         }).lean();
-        const invoiceNumberMap = new Map(invoiceNumbers.map(inv => [inv.itemId, inv.invoiceNumber]));
+        const invoicePdfObjectIdMap = new Map(invoiceNumbers.map(inv => [inv.itemId, inv._id ? inv._id.toString() : null]));
+
+        masterItems = masterItems.filter(item => {
+            const ref = invoicePdfObjectIdMap.get(item.itemId);
+            return Boolean(ref);
+        });
+        if (masterItems.length === 0) {
+            const duration = Date.now() - startTime;
+            return res.status(200).json({ items: [], total: 0, exportDurationMs: duration });
+        }
 
         // Apply filters (participant, payment status, dates) at item-level
         if (participant) {
@@ -1043,6 +1073,14 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
             masterItems = masterItems.filter(item => {
                 const ps = formatNdisLabelValue(item?.data?.[NDIS_MASTERPLAN_ATTR.PAYMENT_STATUS]).trim();
                 return ps === paymentStatusFilter;
+            });
+        }
+
+        if (jobStatusFilter && jobStatusFilter !== 'all') {
+            const desired = String(jobStatusFilter).trim().toLowerCase();
+            masterItems = masterItems.filter(item => {
+                const js = formatNdisLabelValue(item?.data?.[NDIS_MASTERPLAN_ATTR.JOB_STATUS]).trim().toLowerCase();
+                return js === desired;
             });
         }
 
@@ -1121,6 +1159,26 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
 
         // Expand and map to claim CSV rows
         const claimRows = [];
+
+        const missingNdis = [];
+        for (const item of masterItems) {
+            const ppId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_PROFILE]);
+            const profileItem = ppId ? refItemsMap.get(ppId) : null;
+            const ndisNumber = getParticipantNdisNumber(profileItem);
+            if (!ndisNumber || ndisNumber === '0') {
+                const participantName = getNdisParticipantDisplayName(profileItem) ||
+                    (item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_FULL_NAME] ? String(item.data[NDIS_MASTERPLAN_ATTR.PARTICIPANT_FULL_NAME]).trim() : '');
+                missingNdis.push({ itemId: item.itemId, participant: participantName || '' });
+            }
+        }
+        if (missingNdis.length > 0) {
+            return res.status(400).json({
+                message: 'NDIS Number is required for all exported claim rows.',
+                missing: missingNdis.slice(0, 50),
+                missingCount: missingNdis.length
+            });
+        }
+
         for (const item of masterItems) {
             const itemId = item.itemId;
             const ppId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_PROFILE]);
@@ -1149,16 +1207,47 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
                 };
             })();
 
-            const invNo = invoiceNumberMap.get(itemId);
+            const claimReference = invoicePdfObjectIdMap.get(itemId) || '';
+
+            const resolvedAllowances = (() => {
+                const value = item?.data?.[NDIS_MASTERPLAN_ATTR.ALLOWANCES_TYPE];
+                const ids = extractNdisAllRefIds(value).filter(isUuidLikeNdis);
+                if (ids.length > 0) {
+                    const names = ids.map(resolveRefName).filter(Boolean);
+                    if (names.length > 0) return names.join(', ');
+                }
+                return formatNdisLabelValue(value).trim();
+            })();
+
+            const resolvedNf2f = (() => {
+                const value = item?.data?.[NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_SUPPORTS];
+                const ids = extractNdisAllRefIds(value).filter(isUuidLikeNdis);
+                if (ids.length > 0) {
+                    const names = ids.map(resolveRefName).filter(Boolean);
+                    if (names.length > 0) return names.join(', ');
+                }
+                return formatNdisLabelValue(value).trim();
+            })();
+
+            const itemForRows = (resolvedAllowances || resolvedNf2f)
+                ? {
+                    ...item,
+                    data: {
+                        ...(item.data || {}),
+                        [NDIS_MASTERPLAN_ATTR.ALLOWANCES_TYPE]: resolvedAllowances || (item?.data?.[NDIS_MASTERPLAN_ATTR.ALLOWANCES_TYPE] ?? ''),
+                        [NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_SUPPORTS]: resolvedNf2f || (item?.data?.[NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_SUPPORTS] ?? ''),
+                    }
+                }
+                : item;
 
             const rows = buildNdisMasterPlanServiceRows({
-                masterPlanItem: item,
+                masterPlanItem: itemForRows,
                 participantName,
                 participantProfileItem,
                 servicePlanItem,
                 supportCatalogue,
                 cancellationTypeItem,
-                invoiceNumber: invNo,
+                invoiceNumber: claimReference,
                 invoicePdfLink: null,
             });
 
@@ -1193,7 +1282,7 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
             const supportDeliveredTo = formatDdMmYyyy(actualEndRaw || scheduledEndRaw);
 
             const ndisNumber = getParticipantNdisNumber(participantProfileItem);
-            const claimReference = sanitizeClaimReference(invNo || '');
+            const claimReferenceCsv = sanitizeClaimReference(claimReference);
 
             for (const r of rows) {
                 let claimType = (r.claimType || '').toString().trim().toUpperCase();
@@ -1229,7 +1318,7 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
                     SupportDeliveredFrom: supportDeliveredFrom,
                     SupportDeliveredTo: supportDeliveredTo,
                     SupportNumber: r.supportNumber || '',
-                    ClaimReference: claimReference,
+                    ClaimReference: claimReferenceCsv,
                     Quantity: quantity,
                     Hours: hours,
                     UnitPrice: unitPrice,

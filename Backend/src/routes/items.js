@@ -909,6 +909,40 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis/participants', authent
     }
 });
 
+router.get('/:workspaceId/:boardId/invoice-generator-ndis/payment-status-options', authenticateToken, async (req, res) => {
+    try {
+        const { workspaceId, boardId } = req.params;
+
+        if (!workspaceId || !boardId) {
+            return res.status(400).json({ message: 'WorkspaceId and boardId are required' });
+        }
+
+        const baseQuery = { workspaceId, boardId };
+        const folderIds = await getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
+        if (folderIds && folderIds.length > 0) {
+            baseQuery.folderId = { $in: folderIds };
+        }
+
+        const allItems = await Item.find(baseQuery).lean();
+        const approvedItems = allItems.filter(item => {
+            const approval = item?.data?.[NDIS_MASTERPLAN_ATTR.TIMESHEET_APPROVAL];
+            return formatNdisLabelValue(approval).trim().toLowerCase() === 'approved';
+        });
+
+        const statuses = new Set();
+        for (const item of approvedItems) {
+            const raw = item?.data?.[NDIS_MASTERPLAN_ATTR.PAYMENT_STATUS];
+            const value = formatNdisLabelValue(raw).trim();
+            if (value) statuses.add(value);
+        }
+
+        res.status(200).json({ options: [...statuses].sort((a, b) => a.localeCompare(b)) });
+    } catch (err) {
+        error('Items-Service', 'Failed to fetch NDIS payment status options', { message: err.message }, req ?? null);
+        res.status(500).json({ message: 'Server error' });
+    }
+});
+
 router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, async (req, res) => {
     try {
         const { workspaceId, boardId } = req.params;
@@ -919,6 +953,7 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
             serviceDeliveryStart,
             serviceDeliveryEnd,
             paymentStatus: paymentStatusFilter = '',
+            jobStatus: jobStatusFilter = '',
             status = 'all',
             page = 1,
             limit: limitParam,
@@ -964,6 +999,8 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
         const servicePlanIds = new Set();
         const participantProfileIds = new Set();
         const cancellationTypeIds = new Set();
+        const allowancesRefIds = new Set();
+        const nonFaceToFaceRefIds = new Set();
 
         for (const item of masterItems) {
             const spId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_PLAN]);
@@ -974,12 +1011,20 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
 
             const ctId = extractNdisRefId(item?.data?.['Cancellation Type']);
             if (ctId && isUuidLike(ctId)) cancellationTypeIds.add(ctId);
+
+            const allowanceIds = extractNdisAllRefIds(item?.data?.[NDIS_MASTERPLAN_ATTR.ALLOWANCES_TYPE]).filter(isUuidLike);
+            allowanceIds.forEach(id => allowancesRefIds.add(id));
+
+            const nf2fIds = extractNdisAllRefIds(item?.data?.[NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_SUPPORTS]).filter(isUuidLike);
+            nf2fIds.forEach(id => nonFaceToFaceRefIds.add(id));
         }
 
         const refItemsMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, [
             ...servicePlanIds,
             ...participantProfileIds,
             ...cancellationTypeIds,
+            ...allowancesRefIds,
+            ...nonFaceToFaceRefIds,
         ]);
 
         // Second-level: support catalogue items referenced from participant service plan
@@ -1013,6 +1058,27 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
         const invoiceNumberMap = new Map(invoiceNumbers.map(inv => [inv.itemId, inv.invoiceNumber]));
         const invoiceFileUrlMap = new Map(invoiceNumbers.map(inv => [inv.itemId, inv.pdfLink || null]));
 
+        const resolveRefDisplayName = (refId) => {
+            const refItem = refItemsMap.get(refId);
+            if (!refItem?.data) return '';
+            const candidates = ['Name', 'Definition', 'Full Name/Preferred Name', 'Preferred Name'];
+            for (const key of candidates) {
+                const v = refItem.data[key];
+                if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+            }
+            return '';
+        };
+
+        const resolveValueToNames = (value) => {
+            if (!value) return '';
+            const ids = extractNdisAllRefIds(value).filter(isUuidLike);
+            if (ids.length > 0) {
+                const names = ids.map(resolveRefDisplayName).filter(Boolean);
+                if (names.length > 0) return names.join(', ');
+            }
+            return formatNdisLabelValue(value).trim();
+        };
+
         // Participant filter (resolved name from Participant Profile)
         if (participant) {
             try {
@@ -1034,6 +1100,14 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
             masterItems = masterItems.filter(item => {
                 const ps = formatNdisLabelValue(item?.data?.[NDIS_MASTERPLAN_ATTR.PAYMENT_STATUS]).trim();
                 return ps === paymentStatusFilter;
+            });
+        }
+
+        if (jobStatusFilter && jobStatusFilter !== 'all') {
+            const desired = String(jobStatusFilter).trim().toLowerCase();
+            masterItems = masterItems.filter(item => {
+                const js = formatNdisLabelValue(item?.data?.[NDIS_MASTERPLAN_ATTR.JOB_STATUS]).trim().toLowerCase();
+                return js === desired;
             });
         }
 
@@ -1096,6 +1170,19 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
         // Expand items into NDIS service rows
         const expandedRows = [];
         for (const item of masterItems) {
+            const resolvedAllowances = resolveValueToNames(item?.data?.[NDIS_MASTERPLAN_ATTR.ALLOWANCES_TYPE]);
+            const resolvedNf2f = resolveValueToNames(item?.data?.[NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_SUPPORTS]);
+            const itemForRows = (resolvedAllowances || resolvedNf2f)
+                ? {
+                    ...item,
+                    data: {
+                        ...(item.data || {}),
+                        [NDIS_MASTERPLAN_ATTR.ALLOWANCES_TYPE]: resolvedAllowances || (item?.data?.[NDIS_MASTERPLAN_ATTR.ALLOWANCES_TYPE] ?? ''),
+                        [NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_SUPPORTS]: resolvedNf2f || (item?.data?.[NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_SUPPORTS] ?? ''),
+                    }
+                }
+                : item;
+
             const ppId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_PROFILE]);
             const spId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_PLAN]);
             const ctId = extractNdisRefId(item?.data?.['Cancellation Type']);
@@ -1126,7 +1213,7 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
             const invLink = invoiceFileUrlMap.get(item.itemId);
 
             const rows = buildNdisMasterPlanServiceRows({
-                masterPlanItem: item,
+                masterPlanItem: itemForRows,
                 participantName,
                 participantProfileItem,
                 servicePlanItem,
