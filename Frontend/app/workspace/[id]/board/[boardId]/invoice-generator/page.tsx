@@ -1508,7 +1508,12 @@ export default function InvoiceGenerator() {
         });
 
         const allItems: Array<Record<string, unknown>> = response.data?.items || [];
+        const skippedCount: number = response.data?.skippedCount || 0;
         const exportDuration = response.data?.exportDurationMs;
+
+        if (skippedCount > 0) {
+          showWarningToast(`${skippedCount} record${skippedCount === 1 ? '' : 's'} were skipped because required data was missing.`);
+        }
 
         if (allItems.length === 0) {
           showErrorToast('No records to export.');
