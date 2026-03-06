@@ -1202,6 +1202,12 @@ export default function InvoiceGenerator() {
       render: (record) => record.gst || 'GST Free'
     },
     {
+      key: 'totalAmount',
+      label: 'Total Amount',
+      className: 'min-w-[150px]',
+      render: (record) => formatCurrency(record.totalAmount)
+    },
+    {
       key: 'fileUrl',
       label: 'PDF Download',
       className: 'min-w-[140px]',
