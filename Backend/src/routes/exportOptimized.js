@@ -13,6 +13,7 @@ import {
     extractRefId as extractNdisRefId,
     extractAllRefIds as extractNdisAllRefIds,
     formatLabelValue as formatNdisLabelValue,
+    getValueMulti as getNdisValueMulti,
     parseNumberValue as parseNdisNumber,
     formatDdMmYyyy,
     hoursToHhhMm,
@@ -1071,7 +1072,9 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
 
         if (paymentStatusFilter && paymentStatusFilter !== 'all') {
             masterItems = masterItems.filter(item => {
-                const ps = formatNdisLabelValue(item?.data?.[NDIS_MASTERPLAN_ATTR.PAYMENT_STATUS]).trim();
+                const ps = formatNdisLabelValue(
+                    getNdisValueMulti(item, [NDIS_MASTERPLAN_ATTR.PAYMENT_STATUS, 'Payment status', 'PaymentStatus'])
+                ).trim();
                 return ps === paymentStatusFilter;
             });
         }
@@ -1296,15 +1299,18 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
                 const code = String(r.code || '');
 
                 if (code === 'direct_support_time') {
-                    hours = hoursToHhhMm(item?.data?.[NDIS_MASTERPLAN_ATTR.ACTUAL_DURATION_HR]);
+                    // Direct support quantity is hour-based and may be derived even when actual duration is missing.
+                    hours = hoursToHhhMm(r.quantity);
                 } else if (code === 'centre_capital_costs') {
-                    hours = hoursToHhhMm(item?.data?.[NDIS_MASTERPLAN_ATTR.ACTUAL_DURATION_HR]);
+                    // Centre Capital quantity is hour-based and may be derived even when actual duration is missing.
+                    hours = hoursToHhhMm(r.quantity);
                 } else if (code === 'labour_travel_time') {
                     hours = minutesToHhhMm(item?.data?.[NDIS_MASTERPLAN_ATTR.LABOUR_TRAVEL_TIME_MIN]);
                 } else if (code === 'non_face_to_face') {
                     hours = hoursToHhhMm(item?.data?.[NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_TIME_HR]);
                 } else if (code.startsWith('canc_') && isHourUnit) {
-                    hours = hoursToHhhMm(item?.data?.[NDIS_MASTERPLAN_ATTR.SCHEDULED_DURATION_HR]);
+                    // Cancellation quantity is already computed on the expanded row.
+                    hours = hoursToHhhMm(r.quantity);
                 } else {
                     quantity = formatCsvNumber(r.quantity);
                 }
