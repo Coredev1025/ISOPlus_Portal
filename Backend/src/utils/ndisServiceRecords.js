@@ -331,8 +331,9 @@ export function getParticipantNdisNumber(participantProfileItem) {
 export function mapCancellationReasonCode(cancellationReasonLabel) {
   const s = String(cancellationReasonLabel || '').toLowerCase();
   if (!s) return '';
+  console.log("cancellationReasonLabel", cancellationReasonLabel);
   if (s.includes('health')) return 'NSDH';
-  if (s.includes('family')) return 'NSDF';
+  if (s.includes('family') || s.includes('emergency')) return 'NSDF';
   if (s.includes('transport')) return 'NSDT';
   return 'NSDO';
 }
@@ -775,6 +776,13 @@ export function buildNdisMasterPlanServiceRows({
     if (allowancesAmount > 0) {
       const usedAllowanceUnitPrice = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.USED_ALLOWANCE_AMOUNT]) || allowancesAmount;
       const allowancesType = formatLabelValue(master[NDIS_MASTERPLAN_ATTR.ALLOWANCES_TYPE]).trim();
+      const allowancesTypeLower = allowancesType.toLowerCase();
+      const isNdiaRequiredReport =
+        allowancesTypeLower.includes('report') &&
+        (allowancesTypeLower.includes('ndia') ||
+          allowancesTypeLower.includes('required') ||
+          allowancesTypeLower.includes('requested') ||
+          allowancesTypeLower.includes('mandatory'));
       addRow({
         code: 'allowances',
         service: `Allowances${allowancesType ? ` - ${allowancesType}` : ''}`,
@@ -783,7 +791,7 @@ export function buildNdisMasterPlanServiceRows({
         unitPrice: usedAllowanceUnitPrice,
         totalAmount: allowancesAmount,
         supportNumber: directSupportItemNumber,
-        claimType: allowancesType.toLowerCase().includes('ndia requested report') ? 'REPW' : '',
+        claimType: isNdiaRequiredReport ? 'REPW' : '',
       });
     }
 

@@ -979,7 +979,7 @@ export default function InvoiceGenerator() {
     return isLowCatBoard ? (record.totalAmount || 0) : (record.participantContribution || 0);
   };
 
-  const invoiceLabel = isLowCatBoard ? 'Tax Invoice' : 'Participant Tax Invoice';
+  const invoiceLabel = (isLowCatBoard || isNdisBoard) ? 'Tax Invoice' : 'Participant Tax Invoice';
 
   const formatDisplayDate = (dateString: string | null | undefined) => {
     if (!dateString) return '-';
@@ -2286,7 +2286,7 @@ export default function InvoiceGenerator() {
                         disabled={isNdisBoard}
                       >
                         <Receipt className="h-4 w-4" />
-                        {isLowCatBoard ? 'Tax Invoice' : 'Participant Tax Invoice'}
+                        {invoiceLabel}
                       </Button>
                     </div>
                     <div className="flex items-start gap-2 text-sm text-muted-foreground">
