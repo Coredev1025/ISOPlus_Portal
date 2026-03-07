@@ -1035,7 +1035,6 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
             }
         }
 
-        // Bulk fetch invoice numbers (PDF) for ClaimReference
         const itemIdsForInvoice = masterItems.map(i => i.itemId);
         const invoiceNumbers = await InvoiceNumber.find({
             workspaceId,
@@ -1043,16 +1042,7 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
             itemId: { $in: itemIdsForInvoice },
             type: 'PDF',
         }).lean();
-        const invoicePdfObjectIdMap = new Map(invoiceNumbers.map(inv => [inv.itemId, inv._id ? inv._id.toString() : null]));
-
-        masterItems = masterItems.filter(item => {
-            const ref = invoicePdfObjectIdMap.get(item.itemId);
-            return Boolean(ref);
-        });
-        if (masterItems.length === 0) {
-            const duration = Date.now() - startTime;
-            return res.status(200).json({ items: [], total: 0, exportDurationMs: duration });
-        }
+        const invoiceNumberMap = new Map(invoiceNumbers.map(inv => [inv.itemId, inv.invoiceNumber || '']));
 
         // Apply filters (participant, payment status, dates) at item-level
         if (participant) {
@@ -1152,10 +1142,18 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
         const resolveRefName = (refId) => {
             const refItem = refItemsMap.get(refId);
             if (!refItem?.data) return '';
-            const candidates = ['Name', 'Definition', 'Full Name/Preferred Name', 'Preferred Name'];
+            // Cancellation reason reference items can store their label under the attribute name itself.
+            const candidates = [
+                'Cancellation Reason',
+                'Name',
+                'Definition',
+                'Full Name/Preferred Name',
+                'Preferred Name'
+            ];
             for (const key of candidates) {
                 const v = refItem.data[key];
-                if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+                const label = formatNdisLabelValue(v).trim();
+                if (label && !isUuidLikeNdis(label)) return label;
             }
             return '';
         };
@@ -1215,7 +1213,10 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
                 };
             })();
 
-            const claimReference = invoicePdfObjectIdMap.get(itemId) || '';
+            const claimReference =
+                invoiceNumberMap.get(itemId) ||
+                formatNdisLabelValue(item?.data?.['Generated NDIS Invoice Number']).trim() ||
+                '';
 
             const resolvedAllowances = (() => {
                 const value = item?.data?.[NDIS_MASTERPLAN_ATTR.ALLOWANCES_TYPE];
@@ -1262,10 +1263,13 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
             // Resolve telehealth indicator once per source item (best-effort)
             let isTelehealth = false;
             const modeValue = item?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE];
-            let modeLabel = formatNdisLabelValue(modeValue).trim();
-            if (!modeLabel) {
-                const modeIds = extractNdisAllRefIds(modeValue).filter(isUuidLikeNdis);
+            const modeIds = extractNdisAllRefIds(modeValue).filter(isUuidLikeNdis);
+            let modeLabel = '';
+            if (modeIds.length > 0) {
                 modeLabel = modeIds.map(resolveRefName).filter(Boolean).join(', ');
+            }
+            if (!modeLabel) {
+                modeLabel = formatNdisLabelValue(modeValue).trim();
             }
             if (modeLabel && modeLabel.toLowerCase().includes('telehealth')) {
                 isTelehealth = true;
@@ -1273,10 +1277,13 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
 
             // Resolve cancellation reason label/code once per source item
             const cancellationReasonValue = item?.data?.[NDIS_MASTERPLAN_ATTR.CANCELLATION_REASON];
-            let cancellationReasonLabel = formatNdisLabelValue(cancellationReasonValue).trim();
-            if (!cancellationReasonLabel) {
-                const crIds = extractNdisAllRefIds(cancellationReasonValue).filter(isUuidLikeNdis);
+            const crIds = extractNdisAllRefIds(cancellationReasonValue).filter(isUuidLikeNdis);
+            let cancellationReasonLabel = '';
+            if (crIds.length > 0) {
                 cancellationReasonLabel = crIds.map(resolveRefName).filter(Boolean).join(', ');
+            }
+            if (!cancellationReasonLabel) {
+                cancellationReasonLabel = formatNdisLabelValue(cancellationReasonValue).trim();
             }
             const cancellationReasonCode = mapCancellationReasonCode(cancellationReasonLabel);
 
@@ -1310,9 +1317,9 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
                     // Centre Capital quantity is hour-based and may be derived even when actual duration is missing.
                     hours = hoursToHhhMm(r.quantity);
                 } else if (code === 'labour_travel_time') {
-                    hours = minutesToHhhMm(item?.data?.[NDIS_MASTERPLAN_ATTR.LABOUR_TRAVEL_TIME_MIN]);
+                    hours = minutesToHhhMm(r.quantity);
                 } else if (code === 'non_face_to_face') {
-                    hours = hoursToHhhMm(item?.data?.[NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_TIME_HR]);
+                    hours = hoursToHhhMm(r.quantity);
                 } else if (code.startsWith('canc_') && isHourUnit) {
                     // Cancellation quantity is already computed on the expanded row.
                     hours = hoursToHhhMm(r.quantity);
