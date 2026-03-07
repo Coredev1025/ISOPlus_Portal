@@ -34,6 +34,17 @@ import {
 } from '../services/xero.js';
 import { Item as ItemPayloadDTO } from '../dto/itemsPayload.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
+import {
+  NDIS_MASTERPLAN_ATTR as NDIS_MASTERPLAN_ATTR_DB,
+  NDIS_SERVICEPLAN_ATTR as NDIS_SERVICEPLAN_ATTR_DB,
+  buildNdisMasterPlanServiceRows,
+  extractRefId as extractNdisRefId,
+  formatDdMmYyyy,
+} from '../utils/ndisServiceRecords.js';
+import {
+  getNdisInvoiceGeneratorContextFromMasterItems,
+  getParticipantProfileFields,
+} from '../utils/ndisInvoiceGeneratorInvoicing.js';
 
 dotenv.config();
 const router = express.Router();
@@ -438,6 +449,19 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
   const invoiceValues = item.values;
   const invoiceDate = invoiceValues["Invoice Date"];
   const dueDate = invoiceValues["Due Date"];
+  const dateOnly = (d) => d ? new Date(d).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+  const scheduledShiftStart =
+    invoiceValues["Scheduled Shift Start Date & Time"] ||
+    invoiceValues["Scheduled Shift Start Date and Time"] ||
+    '';
+  const actualShiftStart =
+    invoiceValues["Actual Shift Start Date and Time"] ||
+    invoiceValues["Actual Shift Start Date & Time"] ||
+    '';
+  const serviceDate =
+    invoiceValues['Job Status'] === 'Cancelled'
+      ? dateOnly(scheduledShiftStart || actualShiftStart)
+      : dateOnly(actualShiftStart || scheduledShiftStart);
 
   try {
     await initializeXeroOperation(workspaceId, boardId, item);
@@ -988,7 +1012,10 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       return res.status(200).json({ message: "There is nothing to invoice!" });
     }
 
-    invoice.lineItems = lineItems;
+    invoice.lineItems = lineItems.map((li) => ({
+      ...li,
+      description: serviceDate ? `${li.description} - ${serviceDate}` : li.description
+    }));
 
     const createdInvoice = await createInvoice(invoice);
     await setIntegrationMessage(workspaceId, boardId, item.id, "Your invoice has been created successfully in Xero.");
@@ -1631,6 +1658,186 @@ router.post('/refresh', async (req, res) => {
   } catch (err) {
     error('Xero-Service', 'Error refreshing token', err);
     res.status(200).json({ message: 'Error refreshing token', error: err.message });
+  }
+});
+
+router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, res) => {
+  const { workspaceId, boardId } = req.params;
+  try {
+    const raw = Array.isArray(req.body?.itemIds)
+      ? req.body.itemIds
+      : (Array.isArray(req.body?.items) ? req.body.items : []);
+
+    const masterItemIds = [...new Set(raw
+      .map((r) => {
+        if (!r) return null;
+        if (typeof r === 'string') return r;
+        if (typeof r === 'object') {
+          if (r.sourceItemId) return String(r.sourceItemId);
+          if (r.id && String(r.id).includes(':')) return String(r.id).split(':')[0];
+          if (r.id) return String(r.id);
+        }
+        return null;
+      })
+      .filter(Boolean)
+      .map(String))];
+
+    await configure();
+    await ensureAuthenticated(workspaceId);
+
+    const { masterItems, refItemsMap, participantProfileItem } =
+      await getNdisInvoiceGeneratorContextFromMasterItems({
+        workspaceId,
+        boardId,
+        masterItemIds,
+      });
+
+    const participantProfile = getParticipantProfileFields(participantProfileItem);
+
+    const email = (participantProfile.email || '').toString().trim();
+    const firstName = (participantProfile.firstName || '').toString().trim();
+    const lastName = (participantProfile.lastName || '').toString().trim();
+
+    let contact = email ? await getContactByEmail(email) : null;
+    if (!contact) {
+      if (!firstName || !lastName) {
+        throw new Error(
+          'First name and last name are required for NDIS invoice contact creation. Please ensure the participant profile contains both first and last name.'
+        );
+      }
+      contact = await createOrUpdateContact({
+        name: participantProfile.fullName || participantProfile.displayName || `${firstName} ${lastName}`,
+        firstName,
+        lastName,
+        addresses: [
+          {
+            addressType: 'POBOX',
+            addressLine1: participantProfile.address || ' ',
+            city: participantProfile.suburb || ' ',
+            region: participantProfile.state || ' ',
+            postalCode: (participantProfile.postcode || '').toString() || ' ',
+          },
+          {
+            addressType: 'STREET',
+            addressLine1: participantProfile.address || ' ',
+            city: participantProfile.suburb || ' ',
+            region: participantProfile.state || ' ',
+            postalCode: (participantProfile.postcode || '').toString() || ' ',
+          },
+        ],
+        emailAddress: email || undefined,
+      });
+    }
+
+    const invoiceDateRaw = req.body?.invoiceDate || new Date().toISOString();
+    const dueDateRaw = req.body?.dueDate || '';
+    const invoiceDate = invoiceDateRaw ? String(invoiceDateRaw).split('T')[0] : new Date().toISOString().split('T')[0];
+    let dueDate = dueDateRaw ? String(dueDateRaw).split('T')[0] : '';
+    if (!dueDate) {
+      const d = new Date(invoiceDateRaw);
+      d.setDate(d.getDate() + 14);
+      dueDate = d.toISOString().split('T')[0];
+    }
+
+    const accounts = await getAccounts(workspaceId);
+    const salesAccountCode = accounts.find((acc) => acc.Type === 'REVENUE')?.Code || '200';
+    const gstType = 'EXEMPTOUTPUT';
+
+    const reference =
+      masterItems.length === 1
+        ? masterItems[0].itemId
+        : `${masterItems[0].itemId} (+${masterItems.length - 1})`;
+
+    const invoice = {
+      type: 'ACCREC',
+      contact: { contactID: contact.contactID },
+      reference,
+      lineItems: [],
+      date: invoiceDate,
+      dueDate,
+      status: 'DRAFT',
+    };
+
+    const allRows = [];
+    for (const masterPlanItem of masterItems) {
+      const spId = extractNdisRefId(masterPlanItem?.data?.[NDIS_MASTERPLAN_ATTR_DB.SERVICE_PLAN]);
+      const servicePlanItem = spId ? refItemsMap.get(spId) : null;
+      if (!servicePlanItem) {
+        throw new Error(
+          'Master plan information is required. Master plan is missing a service plan reference.'
+        );
+      }
+
+      const ctId = extractNdisRefId(masterPlanItem?.data?.['Cancellation Type']);
+      const cancellationTypeItem = ctId ? refItemsMap.get(ctId) : null;
+
+      const supportCatalogue = (() => {
+        const dsId = extractNdisRefId(servicePlanItem?.data?.[NDIS_SERVICEPLAN_ATTR_DB.ITEM_DIRECT_SUPPORT]);
+        const ptId = extractNdisRefId(servicePlanItem?.data?.[NDIS_SERVICEPLAN_ATTR_DB.ITEM_PROVIDER_TRAVEL_NON_LABOUR]);
+        const abtId = extractNdisRefId(servicePlanItem?.data?.[NDIS_SERVICEPLAN_ATTR_DB.ITEM_ACTIVITY_TRANSPORT]);
+        const cccId = extractNdisRefId(servicePlanItem?.data?.[NDIS_SERVICEPLAN_ATTR_DB.ITEM_CENTRE_CAPITAL]);
+        return {
+          directSupport: dsId ? refItemsMap.get(dsId) : null,
+          providerTravelNonLabour: ptId ? refItemsMap.get(ptId) : null,
+          activityTransport: abtId ? refItemsMap.get(abtId) : null,
+          centreCapital: cccId ? refItemsMap.get(cccId) : null,
+        };
+      })();
+
+      allRows.push(
+        ...buildNdisMasterPlanServiceRows({
+          masterPlanItem,
+          participantName: participantProfile.displayName,
+          participantProfileItem,
+          servicePlanItem,
+          supportCatalogue,
+          cancellationTypeItem,
+          invoiceNumber: '',
+          invoicePdfLink: null,
+        })
+      );
+    }
+
+    if (allRows.length === 0) {
+      return res.status(200).json({ message: 'There is nothing to invoice!' });
+    }
+
+    for (const r of allRows) {
+      const jobStatus = (r.jobStatus || '').toString().trim().toLowerCase();
+      const dateIso =
+        jobStatus === 'cancelled'
+          ? r.scheduledServiceDate || r.serviceDeliveryDate || ''
+          : r.serviceDeliveryDate || r.scheduledServiceDate || '';
+      const rowDate = formatDdMmYyyy(dateIso);
+
+      invoice.lineItems.push({
+        description: appendDateSuffix(r.service, rowDate),
+        quantity: Number(r.quantity) || 0,
+        unitAmount: Number(r.unitPrice) || 0,
+        taxType: gstType,
+        accountCode: salesAccountCode,
+      });
+    }
+
+    const createdInvoice = await createInvoice(invoice);
+
+    const savedInvoiceNumber = `${createdInvoice.invoiceNumber} (Xero)`;
+    await Promise.all(
+      masterItems.map(async (it) => {
+        await saveInvoiceNumber(workspaceId, boardId, it.itemId, savedInvoiceNumber, 'Xero');
+      })
+    );
+
+    return res.json({
+      invoiceNumber: createdInvoice.invoiceNumber,
+      invoiceUrl: createdInvoice.url || createdInvoice.onlineInvoiceUrl || '',
+      itemCount: masterItems.length,
+      lineCount: invoice.lineItems.length,
+    });
+  } catch (err) {
+    const message = err?.message || 'Unknown error';
+    error('Xero-Service', 'Server error (NDIS invoice generator Xero)', { message, stack: err?.stack }, req ?? null);
+    return res.status(200).json({ message });
   }
 });
 
