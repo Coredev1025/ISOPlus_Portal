@@ -27,6 +27,17 @@ import {
 } from '../services/isoplus.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
 import { fetchBudgetItems, fetchServiceItems } from '../services/monthlyStatementData.js';
+import {
+    NDIS_MASTERPLAN_ATTR as NDIS_MASTERPLAN_ATTR_DB,
+    NDIS_SERVICEPLAN_ATTR as NDIS_SERVICEPLAN_ATTR_DB,
+    buildNdisMasterPlanServiceRows,
+    extractRefId as extractNdisRefId,
+    formatDdMmYyyy,
+} from '../utils/ndisServiceRecords.js';
+import {
+    getNdisInvoiceGeneratorContextFromMasterItems,
+    getParticipantProfileFields,
+} from '../utils/ndisInvoiceGeneratorInvoicing.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2057,6 +2068,20 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                 const invoiceDate = invoiceValues["Invoice Date"] ? invoiceValues["Invoice Date"].replace('Z', '') : "";
                 const dueDate = invoiceValues["Due Date"] ? invoiceValues["Due Date"].replace('Z', '') : "";
 
+                const dateOnly = (d) => d ? new Date(d).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+                const scheduledShiftStart =
+                    invoiceValues["Scheduled Shift Start Date & Time"] ||
+                    invoiceValues["Scheduled Shift Start Date and Time"] ||
+                    '';
+                const actualShiftStart =
+                    invoiceValues["Actual Shift Start Date and Time"] ||
+                    invoiceValues["Actual Shift Start Date & Time"] ||
+                    '';
+                const serviceDate =
+                    invoiceValues['Job Status'] === 'Cancelled'
+                        ? dateOnly(scheduledShiftStart || actualShiftStart)
+                        : dateOnly(actualShiftStart || scheduledShiftStart);
+
                 let ordersArr = [];
                 let subTotal = 0;
                 const groupSize = Number(invoiceValues['Group Size']) || 1;
@@ -2499,7 +2524,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                     return res.status(200).json({ message: "There is nothing to invoice!" });
                 }
 
-                const orders = JSON.stringify(ordersArr);
+                const orders = JSON.stringify(ordersArr.map((r) => [serviceDate || ' ', ...r]));
                 subTotal = formatValue(subTotal);
                 const gstTotal = formatValue((parseFloat(subTotal) * parseFloat(gst) / 100));
                 const total = formatValue(parseFloat(subTotal) + parseFloat(gstTotal));
@@ -2564,6 +2589,200 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         }));
     } catch (err) {
         error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
+        return res.status(200).json({ message: err.message });
+    }
+});
+
+router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, res) => {
+    try {
+        const { workspaceId, boardId } = validateRequestParams(req);
+        const business = await getValidatedBusiness(workspaceId);
+
+        const raw = Array.isArray(req.body?.itemIds)
+            ? req.body.itemIds
+            : (Array.isArray(req.body?.items) ? req.body.items : []);
+
+        const masterItemIds = [...new Set(raw.map((r) => {
+            if (!r) return null;
+            if (typeof r === 'string') return r;
+            if (typeof r === 'object') {
+                if (r.sourceItemId) return String(r.sourceItemId);
+                if (r.id && String(r.id).includes(':')) return String(r.id).split(':')[0];
+                if (r.id) return String(r.id);
+            }
+            return null;
+        }).filter(Boolean).map(String))];
+
+        const { masterItems, refItemsMap, participantProfileItem } =
+            await getNdisInvoiceGeneratorContextFromMasterItems({
+                workspaceId,
+                boardId,
+                masterItemIds,
+            });
+
+        const participantProfile = getParticipantProfileFields(participantProfileItem);
+
+        const invoiceDateRaw = req.body?.invoiceDate || new Date().toISOString();
+        const dueDateRaw = req.body?.dueDate || '';
+        const invoiceDate = invoiceDateRaw ? String(invoiceDateRaw).replace('Z', '') : '';
+        let dueDate = dueDateRaw ? String(dueDateRaw).replace('Z', '') : '';
+        if (!dueDate) {
+            const d = new Date(invoiceDateRaw);
+            d.setDate(d.getDate() + 14);
+            dueDate = d.toISOString();
+        }
+
+        const templatePath = path.join(__dirname, '..', 'assets', 'NDISinvoice.json');
+        const templateData = await fs.readFile(templatePath, 'utf8');
+        const template = JSON.parse(templateData);
+        enableRepeatHeadOnTables(template);
+
+        const logoBase64 = await getLogoData(business);
+
+        const invoiceNumberBase =
+            business.documentNumbering.invoice.prefix + business.documentNumbering.invoice.nextNumber;
+        const invoiceNumber = `${invoiceNumberBase} (ISO+™)`;
+
+        const allRows = [];
+        for (const masterPlanItem of masterItems) {
+            const spId = extractNdisRefId(masterPlanItem?.data?.[NDIS_MASTERPLAN_ATTR_DB.SERVICE_PLAN]);
+            const servicePlanItem = spId ? refItemsMap.get(spId) : null;
+            if (!servicePlanItem) {
+                throw new Error('Master plan information is required. Master plan is missing a service plan reference.');
+            }
+
+            const ctId = extractNdisRefId(masterPlanItem?.data?.['Cancellation Type']);
+            const cancellationTypeItem = ctId ? refItemsMap.get(ctId) : null;
+
+            const supportCatalogue = (() => {
+                const dsId = extractNdisRefId(servicePlanItem?.data?.[NDIS_SERVICEPLAN_ATTR_DB.ITEM_DIRECT_SUPPORT]);
+                const ptId = extractNdisRefId(servicePlanItem?.data?.[NDIS_SERVICEPLAN_ATTR_DB.ITEM_PROVIDER_TRAVEL_NON_LABOUR]);
+                const abtId = extractNdisRefId(servicePlanItem?.data?.[NDIS_SERVICEPLAN_ATTR_DB.ITEM_ACTIVITY_TRANSPORT]);
+                const cccId = extractNdisRefId(servicePlanItem?.data?.[NDIS_SERVICEPLAN_ATTR_DB.ITEM_CENTRE_CAPITAL]);
+                return {
+                    directSupport: dsId ? refItemsMap.get(dsId) : null,
+                    providerTravelNonLabour: ptId ? refItemsMap.get(ptId) : null,
+                    activityTransport: abtId ? refItemsMap.get(abtId) : null,
+                    centreCapital: cccId ? refItemsMap.get(cccId) : null,
+                };
+            })();
+
+            allRows.push(...buildNdisMasterPlanServiceRows({
+                masterPlanItem,
+                participantName: participantProfile.displayName,
+                participantProfileItem,
+                servicePlanItem,
+                supportCatalogue,
+                cancellationTypeItem,
+                invoiceNumber,
+                invoicePdfLink: null,
+            }));
+        }
+
+        if (allRows.length === 0) {
+            return res.status(200).json({ message: 'There is nothing to invoice!' });
+        }
+
+        const fmt2 = (val) => {
+            const n = Number(val);
+            if (!Number.isFinite(n)) return '0.00';
+            return (Math.round(n * 100) / 100).toFixed(2);
+        };
+
+        let subTotalNum = 0;
+        const gstLabel = 'GST Free';
+        const ordersArr = allRows.map((r) => {
+            const jobStatus = (r.jobStatus || '').toString().trim().toLowerCase();
+            const dateIso = jobStatus === 'cancelled'
+                ? (r.scheduledServiceDate || r.serviceDeliveryDate || '')
+                : (r.serviceDeliveryDate || r.scheduledServiceDate || '');
+            const rowDate = formatDdMmYyyy(dateIso) || ' ';
+
+            subTotalNum += Number(r.totalAmount || 0);
+            return [
+                rowDate,
+                (r.service || ' ').toString(),
+                (r.unit || ' ').toString(),
+                fmt2(r.quantity),
+                fmt2(r.unitPrice),
+                gstLabel,
+                fmt2(r.totalAmount),
+            ];
+        });
+
+        const subTotal = fmt2(subTotalNum);
+        const gst = '0%';
+        const gstTotal = fmt2((Number(subTotal) * parseFloat(gst)) / 100);
+        const total = fmt2(Number(subTotal) + Number(gstTotal));
+
+        const clientDetails = {
+            Contact: participantProfile.billingContact || participantProfile.fullName || participantProfile.displayName || ' ',
+            Address: participantProfile.billingAddress || participantProfile.address || ' ',
+        };
+
+        const pdfBytes = await generate({
+            template,
+            inputs: [
+                {
+                    logo: logoBase64,
+                    subtotal: subTotal,
+                    totalGST: gstTotal,
+                    total: total,
+                    clientDetails: JSON.stringify(clientDetails),
+                    invoiceDetails: JSON.stringify({
+                        Date: invoiceDate && invoiceDate !== ''
+                            ? new Date(invoiceDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })
+                            : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                        'Invoice Number': invoiceNumberBase,
+                    }),
+                    companyName: JSON.stringify({ 'Company Name': business.name }),
+                    companyDetails: JSON.stringify({
+                        ABN: business.abn,
+                        'Street Address': business.address.street,
+                        Suburb: business.address.suburb,
+                        State: business.address.state,
+                        Postcode: business.address.postcode,
+                        Country: business.address.country,
+                    }),
+                    orders: JSON.stringify(ordersArr),
+                    dueDate: dueDate && dueDate !== ''
+                        ? new Date(dueDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })
+                        : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                    'Bank Details': JSON.stringify({
+                        'Account Name': business.bankDetails.accountName,
+                        'Bank Name': business.bankDetails.bankName,
+                        BSB: business.bankDetails.bsb,
+                        'Account Number': business.bankDetails.accountNumber,
+                        'invoice Number': invoiceNumberBase,
+                    }),
+                },
+            ],
+            plugins: { text, image, line, table, multiVariableText },
+        });
+
+        const safeSuffix = (participantProfile.displayName || 'Multiple').replace(/[^a-zA-Z0-9-_]+/g, '_').slice(0, 40);
+        const filename = `output/${workspaceId}/${boardId}/NDIS-invoices/${invoiceNumberBase + '-ISO+™-' + safeSuffix}.pdf`;
+        const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+        if (uploadResult?.$metadata?.httpStatusCode !== 200) {
+            throw new Error('Upload of PDF failed, please provide correct information.');
+        }
+        const fileUrl = await getS3FileUrl(filename);
+
+        await Promise.all(masterItems.map(async (it) => {
+            await saveInvoiceNumber(workspaceId, boardId, it.itemId, invoiceNumber, 'PDF', fileUrl);
+        }));
+
+        business.documentNumbering.invoice.nextNumber += 1;
+        await business.save();
+
+        return res.json({
+            invoiceNumber,
+            fileUrl,
+            itemCount: masterItems.length,
+            lineCount: ordersArr.length,
+        });
+    } catch (err) {
+        error('Webhook-Service', 'Server error (NDIS invoice generator PDF)', { message: err.message, stack: err.stack }, req ?? null);
         return res.status(200).json({ message: err.message });
     }
 });

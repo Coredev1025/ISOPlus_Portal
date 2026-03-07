@@ -331,7 +331,6 @@ export function getParticipantNdisNumber(participantProfileItem) {
 export function mapCancellationReasonCode(cancellationReasonLabel) {
   const s = String(cancellationReasonLabel || '').toLowerCase();
   if (!s) return '';
-  console.log("cancellationReasonLabel", cancellationReasonLabel);
   if (s.includes('health')) return 'NSDH';
   if (s.includes('family') || s.includes('emergency')) return 'NSDF';
   if (s.includes('transport')) return 'NSDT';
