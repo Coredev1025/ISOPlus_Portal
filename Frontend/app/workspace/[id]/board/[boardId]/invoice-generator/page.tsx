@@ -976,6 +976,7 @@ export default function InvoiceGenerator() {
   };
 
   const getInvoiceAmount = (record: ServiceRecord) => {
+    if (isNdisBoard) return record.totalAmount || 0;
     return isLowCatBoard ? (record.totalAmount || 0) : (record.participantContribution || 0);
   };
 
@@ -2019,10 +2020,14 @@ export default function InvoiceGenerator() {
       isGeneratingInvoiceRef.current = true;
 
       // Endpoint generates ONE PDF for all selected items
-      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/${id}/${boardId}/invoiceparticipanttax`;
+      const apiUrl = isNdisBoard
+        ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/${id}/${boardId}/invoicendis-invoice-generator`
+        : `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/${id}/${boardId}/invoiceparticipanttax`;
 
       // Extract item IDs from selected records - backend expects itemIds array
-      const itemIds = selectedRecords.map(record => record.id);
+      const itemIds = isNdisBoard
+        ? Array.from(new Set(selectedRecords.map((r: any) => (r?.sourceItemId || String(r?.id || '')).toString().split(':')[0]).filter(Boolean)))
+        : selectedRecords.map(record => record.id);
 
       const payload = {
         itemIds: itemIds,
@@ -2040,23 +2045,23 @@ export default function InvoiceGenerator() {
       if (resp.status === 200 && resp.data) {
         const { invoiceNumber, fileUrl, itemCount } = resp.data;
 
-        // Update item statuses in database
-        try {
-          const updateUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/update-status`;
-          await axios.post(updateUrl, {
-            itemIds: Array.from(selectedItems),
-            invoiceNumber: invoiceNumber,
-            status: 'invoiced',
-            fileUrl
-          }, {
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
-          });
-        } catch (updateErr: any) {
-          console.error('Error updating item statuses:', updateErr);
-          // Don't fail the whole operation if status update fails
-          showInfoToast('Invoice generated but status update failed', {
-            description: 'The invoice was created but item statuses could not be updated. Please refresh the page.'
-          });
+        if (!isNdisBoard) {
+          try {
+            const updateUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/update-status`;
+            await axios.post(updateUrl, {
+              itemIds: Array.from(selectedItems),
+              invoiceNumber: invoiceNumber,
+              status: 'invoiced',
+              fileUrl
+            }, {
+              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+            });
+          } catch (updateErr: any) {
+            console.error('Error updating item statuses:', updateErr);
+            showInfoToast('Invoice generated but status update failed', {
+              description: 'The invoice was created but item statuses could not be updated. Please refresh the page.'
+            });
+          }
         }
 
         if (fileUrl) {
@@ -2146,7 +2151,9 @@ export default function InvoiceGenerator() {
       isGeneratingInvoiceRef.current = true;
 
       // Endpoint generates ONE Xero invoice for all selected items
-      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/${id}/${boardId}/invoiceparticipanttax`;
+      const apiUrl = isNdisBoard
+        ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/${id}/${boardId}/invoicendis-invoice-generator`
+        : `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/${id}/${boardId}/invoiceparticipanttax`;
 
       const payload = {
         items: selectedRecords,
@@ -2163,22 +2170,22 @@ export default function InvoiceGenerator() {
       if (resp.status === 200 && resp.data) {
         const { invoiceNumber, invoiceUrl, itemCount } = resp.data;
 
-        // Update item statuses in database (mark as invoiced)
-        try {
-          const updateUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/update-status`;
-          await axios.post(updateUrl, {
-            itemIds: Array.from(selectedItems),
-            invoiceNumber: invoiceNumber,
-            status: 'invoiced'
-          }, {
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
-          });
-        } catch (updateErr: any) {
-          console.error('Error updating item statuses:', updateErr);
-          // Don't fail the whole operation if status update fails
-          showInfoToast('Xero invoice created but status update failed', {
-            description: 'The invoice was created in Xero but item statuses could not be updated. Please refresh the page.'
-          });
+        if (!isNdisBoard) {
+          try {
+            const updateUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/update-status`;
+            await axios.post(updateUrl, {
+              itemIds: Array.from(selectedItems),
+              invoiceNumber: invoiceNumber,
+              status: 'invoiced'
+            }, {
+              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+            });
+          } catch (updateErr: any) {
+            console.error('Error updating item statuses:', updateErr);
+            showInfoToast('Xero invoice created but status update failed', {
+              description: 'The invoice was created in Xero but item statuses could not be updated. Please refresh the page.'
+            });
+          }
         }
 
         if (invoiceUrl) {
@@ -2283,7 +2290,6 @@ export default function InvoiceGenerator() {
                       <Button
                         className="gap-2"
                         onClick={handleOpenInvoiceModal}
-                        disabled={isNdisBoard}
                       >
                         <Receipt className="h-4 w-4" />
                         {invoiceLabel}
@@ -2841,7 +2847,9 @@ export default function InvoiceGenerator() {
                             </div>
                             <div className="text-right">
                               <p className="font-semibold">{formatCurrency(getInvoiceAmount(record))}</p>
-                              <p className="text-xs text-muted-foreground">{isLowCatBoard ? 'Total' : 'Contribution'}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {(isLowCatBoard || isNdisBoard) ? 'Total' : 'Contribution'}
+                              </p>
                             </div>
                           </div>
                         </div>
