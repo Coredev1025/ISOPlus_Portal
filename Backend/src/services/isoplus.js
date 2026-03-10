@@ -239,10 +239,12 @@ function iterateViews(authorization, workspaceId, boardId, options = {}) {
     );
 }
 
-export async function getWorkspace(authorization, userEmail = null) {
+export async function getWorkspace(authorization, userEmail = null, options = {}) {
     try {
+        const includeBoards = options.includeBoards !== false;
+        const workspaceRolesById = options.workspaceRolesById || null;
         const normalizedEmail = userEmail ? userEmail.toLowerCase() : null;
-        const cacheKey = `workspace:${authorization}:${normalizedEmail || ''}`;
+        const cacheKey = `workspace:${authorization}:${normalizedEmail || ''}:${includeBoards ? 'with-boards' : 'no-boards'}`;
 
         const workspaceResults = await getOrSetCache(cacheKey, async () => {
             const workspaces = await collectPaginated(iterateWorkspaces(authorization));
@@ -251,13 +253,24 @@ export async function getWorkspace(authorization, userEmail = null) {
                 workspaces,
                 DEFAULT_WORKSPACE_DETAIL_CONCURRENCY,
                 async (item) => {
-                    const [board, member] = await Promise.all([
-                        getBoard(authorization, item.id),
-                        getMember(authorization, item.id),
-                    ]);
+                    const workspaceId = item.id?.toString();
+                    const roleFromToken = workspaceRolesById && workspaceId
+                        ? workspaceRolesById[workspaceId]
+                        : null;
 
-                    let userRole = 'restricted_member';
-                    if (member.status === 200 && normalizedEmail) {
+                    const tasks = [
+                        includeBoards ? getBoard(authorization, item.id) : Promise.resolve({ board: [], status: 200 }),
+                    ];
+
+                    const shouldFetchMembers = !roleFromToken && normalizedEmail;
+                    if (shouldFetchMembers) {
+                        tasks.push(getMember(authorization, item.id));
+                    }
+
+                    const [board, member] = await Promise.all(tasks);
+
+                    let userRole = roleFromToken || 'restricted_member';
+                    if (!roleFromToken && member?.status === 200 && normalizedEmail) {
                         userRole = member.members.find(
                             (m) => m.email && m.email.toLowerCase() === normalizedEmail
                         )?.role || userRole;
