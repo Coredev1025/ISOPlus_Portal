@@ -1530,6 +1530,22 @@ export default function InvoiceGenerator() {
           return `"${stringValue}"`;
         };
 
+        const normalizeHoursForCsv = (value: unknown) => {
+          const raw = String(value ?? '').trim().replace(/^"+|"+$/g, '');
+          if (!raw) return '';
+
+          const timeMatch = raw.match(/^(\d+):(\d{1,2})(?::\d{1,2}(?:\.\d+)?)?$/);
+          if (!timeMatch) return raw;
+
+          const hours = Number(timeMatch[1]);
+          const minutes = Number(timeMatch[2]);
+          if (!Number.isFinite(hours) || !Number.isFinite(minutes) || minutes < 0 || minutes >= 60) {
+            return raw;
+          }
+
+          return `${hours}:${String(minutes).padStart(2, '0')}`;
+        };
+
         const csvHeaders = [
           'RegistrationNumber',
           'NDISNumber',
@@ -1550,7 +1566,10 @@ export default function InvoiceGenerator() {
         allItems.forEach((row) => {
           csvRows.push(
             csvHeaders
-              .map((h) => escapeForCsv((row as any)[h]))
+              .map((h) => {
+                const value = (row as any)[h];
+                return h === 'Hours' ? escapeForCsv(normalizeHoursForCsv(value)) : escapeForCsv(value);
+              })
               .join(',')
           );
         });
