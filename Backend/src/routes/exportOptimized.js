@@ -938,6 +938,10 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
             limit = 'all',
         } = req.query;
 
+        const debugLogsEnabled =
+            String(req.query.debugLogs || '').toLowerCase() === 'true' ||
+            String(process.env.NDIS_EXPORT_DEBUG || '').toLowerCase() === 'true';
+
         if (!workspaceId || !boardId) {
             return res.status(400).json({ message: 'WorkspaceId and boardId are required' });
         }
@@ -1261,6 +1265,31 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
                 }
                 : item;
 
+            if (debugLogsEnabled) {
+                info('Export-Service', 'NDIS export raw DB values', {
+                    workspaceId,
+                    boardId,
+                    itemId,
+                    raw: {
+                        jobStatus: item?.data?.[NDIS_MASTERPLAN_ATTR.JOB_STATUS] ?? null,
+                        paymentStatus: item?.data?.[NDIS_MASTERPLAN_ATTR.PAYMENT_STATUS] ?? null,
+                        serviceDeliveryMode: item?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE] ?? null,
+                        cancellationReason: item?.data?.[NDIS_MASTERPLAN_ATTR.CANCELLATION_REASON] ?? null,
+                        allowancesType: item?.data?.[NDIS_MASTERPLAN_ATTR.ALLOWANCES_TYPE] ?? null,
+                        nonFaceToFaceSupports: item?.data?.[NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_SUPPORTS] ?? null,
+                        actualStart: item?.data?.[NDIS_MASTERPLAN_ATTR.ACTUAL_START] ?? item?.data?.['Actual Shift Start Date & Time'] ?? null,
+                        actualEnd: item?.data?.[NDIS_MASTERPLAN_ATTR.ACTUAL_END] ?? item?.data?.['Actual Shift End Date & Time'] ?? null,
+                    },
+                    resolved: {
+                        participantName,
+                        claimReference,
+                        serviceDeliveryMode: resolvedServiceDeliveryMode,
+                        allowancesType: resolvedAllowances,
+                        nonFaceToFaceSupports: resolvedNf2f,
+                    }
+                }, req ?? null);
+            }
+
             const rows = buildNdisMasterPlanServiceRows({
                 masterPlanItem: itemForRows,
                 participantName,
@@ -1296,10 +1325,28 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
             const ndisNumber = getParticipantNdisNumber(participantProfileItem);
             const claimReferenceCsv = sanitizeClaimReference(claimReference);
 
+            const normalizeHoursForCsv = (raw) => {
+                const s = String(raw || '').trim().replace(/^"+|"+$/g, '');
+                if (!s) return '';
+
+                // Force output to HHH:MM even if upstream value includes seconds.
+                const strictTimeMatch = s.match(/^(\d+):(\d{1,2})(?::\d{1,2}(?:\.\d+)?)?$/);
+                if (strictTimeMatch) {
+                    const h = Number(strictTimeMatch[1]);
+                    const m = Number(strictTimeMatch[2]);
+                    if (Number.isFinite(h) && Number.isFinite(m) && m >= 0 && m < 60) {
+                        return `${h}:${String(m).padStart(2, '0')}`;
+                    }
+                }
+
+                return formatDurationHhhMm(s, 'hours');
+            };
+
             for (const r of rows) {
                 const claimType = resolveNdisClaimType(
                     r.claimType,
-                    itemForRows?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE]
+                    itemForRows?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE],
+                    r.code
                 );
 
                 let quantity = '';
@@ -1328,7 +1375,25 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
 
                 // Final guard: normalize any accidental HH:MM:SS into HH:MM.
                 if (hours) {
-                    hours = formatDurationHhhMm(hours, 'hours');
+                    hours = normalizeHoursForCsv(hours);
+                }
+
+                if (debugLogsEnabled) {
+                    info('Export-Service', 'NDIS export computed row values', {
+                        workspaceId,
+                        boardId,
+                        itemId,
+                        rowCode: r.code || '',
+                        supportNumber: r.supportNumber || '',
+                        unit: r.unit || '',
+                        quantityRaw: r.quantity,
+                        baseClaimType: r.claimType || '',
+                        finalClaimType: claimType,
+                        quantityCsv: quantity,
+                        hoursCsv: hours,
+                        unitPriceCsv: formatCsvNumber(r.unitPrice, 2),
+                        cancellationReasonCode: claimType === 'CANC' ? cancellationReasonCode : '',
+                    }, req ?? null);
                 }
 
                 const unitPrice = formatCsvNumber(r.unitPrice, 2);
