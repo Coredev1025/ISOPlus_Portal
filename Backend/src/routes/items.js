@@ -1175,13 +1175,15 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
         for (const item of masterItems) {
             const resolvedAllowances = resolveValueToNames(item?.data?.[NDIS_MASTERPLAN_ATTR.ALLOWANCES_TYPE]);
             const resolvedNf2f = resolveValueToNames(item?.data?.[NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_SUPPORTS]);
-            const itemForRows = (resolvedAllowances || resolvedNf2f)
+            const resolvedServiceDeliveryMode = resolveValueToNames(item?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE]);
+            const itemForRows = (resolvedAllowances || resolvedNf2f || resolvedServiceDeliveryMode)
                 ? {
                     ...item,
                     data: {
                         ...(item.data || {}),
                         [NDIS_MASTERPLAN_ATTR.ALLOWANCES_TYPE]: resolvedAllowances || (item?.data?.[NDIS_MASTERPLAN_ATTR.ALLOWANCES_TYPE] ?? ''),
                         [NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_SUPPORTS]: resolvedNf2f || (item?.data?.[NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_SUPPORTS] ?? ''),
+                        [NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE]: resolvedServiceDeliveryMode || (item?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE] ?? ''),
                     }
                 }
                 : item;

@@ -16,12 +16,12 @@ import {
     getValueMulti as getNdisValueMulti,
     parseNumberValue as parseNdisNumber,
     formatDdMmYyyy,
-    hoursToHhhMm,
-    minutesToHhhMm,
+    formatDurationHhhMm,
     sanitizeDigits,
     getParticipantDisplayName as getNdisParticipantDisplayName,
     getParticipantNdisNumber,
     mapCancellationReasonCode,
+    resolveNdisClaimType,
     isUuidLike as isUuidLikeNdis,
 } from '../utils/ndisServiceRecords.js';
 
@@ -1238,13 +1238,24 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
                 return formatNdisLabelValue(value).trim();
             })();
 
-            const itemForRows = (resolvedAllowances || resolvedNf2f)
+            const resolvedServiceDeliveryMode = (() => {
+                const value = item?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE];
+                const ids = extractNdisAllRefIds(value).filter(isUuidLikeNdis);
+                if (ids.length > 0) {
+                    const names = ids.map(resolveRefName).filter(Boolean);
+                    if (names.length > 0) return names.join(', ');
+                }
+                return formatNdisLabelValue(value).trim();
+            })();
+
+            const itemForRows = (resolvedAllowances || resolvedNf2f || resolvedServiceDeliveryMode)
                 ? {
                     ...item,
                     data: {
                         ...(item.data || {}),
                         [NDIS_MASTERPLAN_ATTR.ALLOWANCES_TYPE]: resolvedAllowances || (item?.data?.[NDIS_MASTERPLAN_ATTR.ALLOWANCES_TYPE] ?? ''),
                         [NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_SUPPORTS]: resolvedNf2f || (item?.data?.[NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_SUPPORTS] ?? ''),
+                        [NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE]: resolvedServiceDeliveryMode || (item?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE] ?? ''),
                     }
                 }
                 : item;
@@ -1259,21 +1270,6 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
                 invoiceNumber: claimReference,
                 invoicePdfLink: null,
             });
-
-            // Resolve telehealth indicator once per source item (best-effort)
-            let isTelehealth = false;
-            const modeValue = item?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE];
-            const modeIds = extractNdisAllRefIds(modeValue).filter(isUuidLikeNdis);
-            let modeLabel = '';
-            if (modeIds.length > 0) {
-                modeLabel = modeIds.map(resolveRefName).filter(Boolean).join(', ');
-            }
-            if (!modeLabel) {
-                modeLabel = formatNdisLabelValue(modeValue).trim();
-            }
-            if (modeLabel && modeLabel.toLowerCase().includes('telehealth')) {
-                isTelehealth = true;
-            }
 
             // Resolve cancellation reason label/code once per source item
             const cancellationReasonValue = item?.data?.[NDIS_MASTERPLAN_ATTR.CANCELLATION_REASON];
@@ -1300,8 +1296,10 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
             const claimReferenceCsv = sanitizeClaimReference(claimReference);
 
             for (const r of rows) {
-                let claimType = (r.claimType || '').toString().trim().toUpperCase();
-                if (!claimType && isTelehealth) claimType = 'THLT';
+                const claimType = resolveNdisClaimType(
+                    r.claimType,
+                    itemForRows?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE]
+                );
 
                 let quantity = '';
                 let hours = '';
@@ -1312,17 +1310,17 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
 
                 if (code === 'direct_support_time') {
                     // Direct support quantity is hour-based and may be derived even when actual duration is missing.
-                    hours = hoursToHhhMm(r.quantity);
+                    hours = formatDurationHhhMm(r.quantity, 'hours');
                 } else if (code === 'centre_capital_costs') {
                     // Centre Capital quantity is hour-based and may be derived even when actual duration is missing.
-                    hours = hoursToHhhMm(r.quantity);
+                    hours = formatDurationHhhMm(r.quantity, 'hours');
                 } else if (code === 'labour_travel_time') {
-                    hours = minutesToHhhMm(r.quantity);
+                    hours = formatDurationHhhMm(r.quantity, 'minutes');
                 } else if (code === 'non_face_to_face') {
-                    hours = hoursToHhhMm(r.quantity);
+                    hours = formatDurationHhhMm(r.quantity, 'hours');
                 } else if (code.startsWith('canc_') && isHourUnit) {
                     // Cancellation quantity is already computed on the expanded row.
-                    hours = hoursToHhhMm(r.quantity);
+                    hours = formatDurationHhhMm(r.quantity, 'hours');
                 } else {
                     quantity = formatCsvNumber(r.quantity);
                 }
