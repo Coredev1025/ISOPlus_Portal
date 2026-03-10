@@ -1145,6 +1145,7 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
             // Cancellation reason reference items can store their label under the attribute name itself.
             const candidates = [
                 'Cancellation Reason',
+                'Service Delivery Mode',
                 'Name',
                 'Definition',
                 'Full Name/Preferred Name',
@@ -1323,6 +1324,11 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
                     hours = formatDurationHhhMm(r.quantity, 'hours');
                 } else {
                     quantity = formatCsvNumber(r.quantity);
+                }
+
+                // Final guard: normalize any accidental HH:MM:SS into HH:MM.
+                if (hours) {
+                    hours = formatDurationHhhMm(hours, 'hours');
                 }
 
                 const unitPrice = formatCsvNumber(r.unitPrice, 2);
