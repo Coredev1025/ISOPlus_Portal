@@ -1,15 +1,99 @@
 import axios from "axios";
 import Board from '../models/Board.js';
 import FormData from 'form-data';
+import http from 'http';
+import https from 'https';
 import { info, warn, error, logAttributeError, logApiError, logOperationStart, logOperationEnd } from '../utils/logger.js';
 
 const DEFAULT_ITEM_PAGE_SIZE = parseInt(process.env.ISOPLUS_ITEM_PAGE_SIZE || '100', 10);
 const DEFAULT_PAGE_DELAY_MS = parseInt(process.env.ISOPLUS_PAGE_DELAY_MS || '0', 10);
 const DEFAULT_COLLECTION_PAGE_SIZE = parseInt(process.env.ISOPLUS_COLLECTION_PAGE_SIZE || '100', 10);
 const LOGO_ITEMS_PAGE_SIZE = parseInt(process.env.LOGO_ITEMS_PAGE_SIZE || '50', 10);
+const DEFAULT_WORKSPACE_DETAIL_CONCURRENCY = Math.max(parseInt(process.env.ISOPLUS_WORKSPACE_DETAIL_CONCURRENCY || '8', 10), 1);
+const CACHE_TTL_MS = Math.max(parseInt(process.env.ISOPLUS_COLLECTION_CACHE_TTL_MS || '30000', 10), 0);
+const CACHE_MAX_ENTRIES = Math.max(parseInt(process.env.ISOPLUS_COLLECTION_CACHE_MAX_ENTRIES || '500', 10), 50);
+
+const isoPlusClient = axios.create({
+    timeout: Math.max(parseInt(process.env.ISOPLUS_HTTP_TIMEOUT_MS || '30000', 10), 1000),
+    httpAgent: new http.Agent({ keepAlive: true, maxSockets: 100 }),
+    httpsAgent: new https.Agent({ keepAlive: true, maxSockets: 100 }),
+});
+
+const responseCache = new Map();
+const inflightCache = new Map();
 
 const sleep = (ms = 0) => new Promise(resolve => setTimeout(resolve, ms));
 const withAfterParam = (params, after) => (after ? { ...params, after } : params);
+
+function readFromCache(key) {
+    if (CACHE_TTL_MS <= 0) return null;
+    const entry = responseCache.get(key);
+    if (!entry) return null;
+    if (entry.expiresAt <= Date.now()) {
+        responseCache.delete(key);
+        return null;
+    }
+    return entry.value;
+}
+
+function writeToCache(key, value) {
+    if (CACHE_TTL_MS <= 0) return;
+    if (responseCache.size >= CACHE_MAX_ENTRIES) {
+        const oldestKey = responseCache.keys().next().value;
+        if (oldestKey) responseCache.delete(oldestKey);
+    }
+    responseCache.set(key, {
+        value,
+        expiresAt: Date.now() + CACHE_TTL_MS,
+    });
+}
+
+async function getOrSetCache(key, fetcher) {
+    const cached = readFromCache(key);
+    if (cached !== null) {
+        return cached;
+    }
+
+    const inFlight = inflightCache.get(key);
+    if (inFlight) {
+        return inFlight;
+    }
+
+    const promise = (async () => {
+        try {
+            const value = await fetcher();
+            writeToCache(key, value);
+            return value;
+        } finally {
+            inflightCache.delete(key);
+        }
+    })();
+
+    inflightCache.set(key, promise);
+    return promise;
+}
+
+async function mapWithConcurrency(items, concurrency, mapper) {
+    const results = new Array(items.length);
+    let nextIndex = 0;
+
+    const worker = async () => {
+        while (true) {
+            const currentIndex = nextIndex;
+            nextIndex += 1;
+
+            if (currentIndex >= items.length) {
+                return;
+            }
+
+            results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+        }
+    };
+
+    const poolSize = Math.min(Math.max(concurrency, 1), items.length || 1);
+    await Promise.all(Array.from({ length: poolSize }, () => worker()));
+    return results;
+}
 
 function createPaginator(fetchPage, options = {}) {
     const pageDelayMs = options.pageDelayMs ?? DEFAULT_PAGE_DELAY_MS;
@@ -71,7 +155,7 @@ function iterateWorkspaces(authorization, options = {}) {
     };
 
     return createPaginator(
-        (after) => axios.get(url, { headers, params: withAfterParam(baseParams, after) }),
+        (after) => isoPlusClient.get(url, { headers, params: withAfterParam(baseParams, after) }),
         { pageDelayMs: options.pageDelayMs }
     );
 }
@@ -90,7 +174,7 @@ function iterateBoards(authorization, workspaceId, options = {}) {
     };
 
     return createPaginator(
-        (after) => axios.get(url, { headers, params: withAfterParam(baseParams, after) }),
+        (after) => isoPlusClient.get(url, { headers, params: withAfterParam(baseParams, after) }),
         { pageDelayMs: options.pageDelayMs }
     );
 }
@@ -110,7 +194,7 @@ function iterateFolders(workspaceId, boardId, options = {}) {
     };
 
     return createPaginator(
-        (after) => axios.get(url, { headers, params: withAfterParam(baseParams, after) }),
+        (after) => isoPlusClient.get(url, { headers, params: withAfterParam(baseParams, after) }),
         { pageDelayMs: options.pageDelayMs }
     );
 }
@@ -130,7 +214,7 @@ function iterateMembers(authorization, workspaceId, options = {}) {
     };
 
     return createPaginator(
-        (after) => axios.get(membersUrl, { headers: membersHeaders, params: withAfterParam(baseParams, after) }),
+        (after) => isoPlusClient.get(membersUrl, { headers: membersHeaders, params: withAfterParam(baseParams, after) }),
         { pageDelayMs: options.pageDelayMs }
     );
 }
@@ -150,7 +234,7 @@ function iterateViews(authorization, workspaceId, boardId, options = {}) {
     };
 
     return createPaginator(
-        (after) => axios.get(url, { headers, params: withAfterParam(baseParams, after) }),
+        (after) => isoPlusClient.get(url, { headers, params: withAfterParam(baseParams, after) }),
         { pageDelayMs: options.pageDelayMs }
     );
 }
@@ -158,35 +242,37 @@ function iterateViews(authorization, workspaceId, boardId, options = {}) {
 export async function getWorkspace(authorization, userEmail = null) {
     try {
         const normalizedEmail = userEmail ? userEmail.toLowerCase() : null;
-        const workspaceIterator = iterateWorkspaces(authorization);
-        const workspaceResults = [];
+        const cacheKey = `workspace:${authorization}:${normalizedEmail || ''}`;
 
-        while (true) {
-            const { value: workspacePage, done } = await workspaceIterator.next();
-            if (done) {
-                break;
-            }
+        const workspaceResults = await getOrSetCache(cacheKey, async () => {
+            const workspaces = await collectPaginated(iterateWorkspaces(authorization));
 
-            for (const item of workspacePage) {
-                const board = await getBoard(authorization, item.id);
-                const member = await getMember(authorization, item.id);
-                let userRole = "restricted_member";
+            return mapWithConcurrency(
+                workspaces,
+                DEFAULT_WORKSPACE_DETAIL_CONCURRENCY,
+                async (item) => {
+                    const [board, member] = await Promise.all([
+                        getBoard(authorization, item.id),
+                        getMember(authorization, item.id),
+                    ]);
 
-                if (member.status === 200 && normalizedEmail) {
-                    userRole = member.members.find(
-                        (m) => m.email && m.email.toLowerCase() === normalizedEmail
-                    )?.role || userRole;
+                    let userRole = 'restricted_member';
+                    if (member.status === 200 && normalizedEmail) {
+                        userRole = member.members.find(
+                            (m) => m.email && m.email.toLowerCase() === normalizedEmail
+                        )?.role || userRole;
+                    }
+
+                    return {
+                        id: item.id,
+                        name: item.name,
+                        label: item.label,
+                        board: board.board,
+                        user_role: userRole,
+                    };
                 }
-
-                workspaceResults.push({
-                    id: item.id,
-                    name: item.name,
-                    label: item.label,
-                    board: board.board,
-                    user_role: userRole
-                });
-            }
-        }
+            );
+        });
 
         return { workspace: workspaceResults, status: 200 };
     } catch (err) {
@@ -220,7 +306,8 @@ export async function getMyWorkspace(authorization) {
 
 export async function getBoard(authorization, workspaceId) {
     try {
-        const boards = await collectPaginated(iterateBoards(authorization, workspaceId));
+        const cacheKey = `board:${authorization}:${workspaceId}`;
+        const boards = await getOrSetCache(cacheKey, async () => collectPaginated(iterateBoards(authorization, workspaceId)));
         return { board: boards, status: 200 };
     } catch (err) {
         return { message: err.message, status: 500 };
@@ -284,7 +371,8 @@ export async function getItem(workspaceId, boardId, folderId) {
 
 export async function getMember(authorization, workspaceId) {
     try {
-        const members = await collectPaginated(iterateMembers(authorization, workspaceId));
+        const cacheKey = `member:${authorization}:${workspaceId}`;
+        const members = await getOrSetCache(cacheKey, async () => collectPaginated(iterateMembers(authorization, workspaceId)));
         return { members: members, status: 200 };
     } catch (err) {
         return { message: err.message, status: 500 };
@@ -293,7 +381,8 @@ export async function getMember(authorization, workspaceId) {
 
 export async function getAllViews(authorization, workspaceId, boardId) {
     try {
-        const views = await collectPaginated(iterateViews(authorization, workspaceId, boardId));
+        const cacheKey = `views:${authorization}:${workspaceId}:${boardId}`;
+        const views = await getOrSetCache(cacheKey, async () => collectPaginated(iterateViews(authorization, workspaceId, boardId)));
         return { views: views, status: 200 };
     } catch (err) {
         return { message: err.message, status: 500 };
