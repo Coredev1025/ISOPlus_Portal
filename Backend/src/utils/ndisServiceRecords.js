@@ -267,6 +267,33 @@ export function minutesToHhhMm(minutesValue) {
   return `${wholeHours}:${String(minutes).padStart(2, '0')}`;
 }
 
+export function formatDurationHhhMm(value, source = 'hours') {
+  if (value === null || value === undefined || value === '') return '';
+
+  if (typeof value === 'string') {
+    const s = value.trim();
+    if (!s) return '';
+
+    // Accept preformatted duration strings and trim optional seconds.
+    const timeMatch = s.match(/^(\d+):(\d{1,2})(?::\d{1,2})?$/);
+    if (timeMatch) {
+      const h = Number(timeMatch[1]);
+      const m = Number(timeMatch[2]);
+      if (Number.isFinite(h) && Number.isFinite(m) && m >= 0 && m < 60) {
+        return `${h}:${String(m).padStart(2, '0')}`;
+      }
+    }
+
+    const n = Number(s);
+    if (!Number.isFinite(n)) return '';
+    return source === 'minutes' ? minutesToHhhMm(n) : hoursToHhhMm(n);
+  }
+
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '';
+  return source === 'minutes' ? minutesToHhhMm(n) : hoursToHhhMm(n);
+}
+
 export function sanitizeDigits(value, maxLen) {
   if (value === null || value === undefined) return '';
   const digits = String(value).replace(/\D/g, '');
@@ -335,6 +362,18 @@ export function mapCancellationReasonCode(cancellationReasonLabel) {
   if (s.includes('family') || s.includes('emergency')) return 'NSDF';
   if (s.includes('transport')) return 'NSDT';
   return 'NSDO';
+}
+
+export function isTelehealthServiceMode(serviceDeliveryModeValue) {
+  const label = formatLabelValue(serviceDeliveryModeValue).trim().toLowerCase();
+  if (!label) return false;
+  return label.includes('telehealth');
+}
+
+export function resolveNdisClaimType(baseClaimType, serviceDeliveryModeValue) {
+  const normalizedBase = String(baseClaimType || '').trim().toUpperCase();
+  if (normalizedBase) return normalizedBase;
+  return isTelehealthServiceMode(serviceDeliveryModeValue) ? 'THLT' : '';
 }
 
 function buildDirectSupportDesc({ itemNumber, itemName, startTime, endTime, groupSize, fallback }) {
@@ -529,8 +568,13 @@ export function buildNdisMasterPlanServiceRows({
 
   const actualStartDesc = formatDateTimeForDesc(actualStart);
   const actualEndDesc = formatDateTimeForDesc(actualEnd);
+  const serviceDeliveryModeValue = getValueMulti(masterPlanItem, [
+    NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE,
+    'Service Delivery Mode',
+  ]);
 
   const addRow = (row) => {
+    const claimType = resolveNdisClaimType(row.claimType, serviceDeliveryModeValue);
     rows.push({
       id: `${itemId}:${row.code}`,
       sourceItemId: itemId,
@@ -544,6 +588,7 @@ export function buildNdisMasterPlanServiceRows({
       fileUrl: invoicePdfLink || null,
       gst: row.gst ?? 'GST Free',
       ...row,
+      claimType,
     });
   };
 
