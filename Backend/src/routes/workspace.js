@@ -9,6 +9,53 @@ import { logAuditTrail } from '../utils/auditLogger.js';
 
 const router = express.Router();
 
+async function persistBoardsInBackground(boards, req) {
+  try {
+    const operations = boards
+      .map((board) => {
+        const boardId = board.id?.toString();
+        if (!boardId || !board.name) {
+          warn('Workspace-Service', 'Skipping board with missing id or name', { board }, req ?? null);
+          return null;
+        }
+
+        return {
+          updateOne: {
+            filter: { boardId },
+            update: {
+              $setOnInsert: {
+                boardId,
+                name: board.name,
+                color: board.color || '',
+                description: board.description || '',
+                og_image: board.og_image || '',
+                label: 'No Label',
+                createdAt: new Date(),
+              },
+            },
+            upsert: true,
+          },
+        };
+      })
+      .filter(Boolean);
+
+    if (!operations.length) return;
+
+    const result = await Board.bulkWrite(operations, { ordered: false });
+    info('Workspace-Service', 'Auto-stored boards in database', {
+      total: boards.length,
+      inserted: result?.upsertedCount || 0,
+      matched: result?.matchedCount || 0,
+      modified: result?.modifiedCount || 0,
+    }, req ?? null);
+  } catch (err) {
+    error('Workspace-Service', 'Failed to persist boards in background', {
+      error: err.message,
+      stack: err.stack,
+    }, req ?? null);
+  }
+}
+
 router.get('/', authenticateToken, async (req, res) => {
   const response = await getWorkspace(req.session.Authorization, req.user.email);
 
@@ -27,58 +74,15 @@ router.get('/boards', authenticateToken, async (req, res) => {
     const response = await getBoard(req.session.Authorization, req.query.workspaceId);
 
     if (response.status === 200 && Array.isArray(response.board)) {
-      // Store boards in database if they don't exist (parallel processing)
-      const boardPromises = response.board.map(async (board) => {
-        try {
-          const boardId = board.id?.toString();
-          if (!boardId || !board.name) {
-            warn('Workspace-Service', 'Skipping board with missing id or name', { board }, req ?? null);
-            return null;
-          }
-
-          // Use findOneAndUpdate with upsert to avoid race conditions
-          await Board.findOneAndUpdate(
-            { boardId },
-            {
-              $setOnInsert: {
-                boardId: boardId,
-                name: board.name,
-                color: board.color || '',
-                description: board.description || '',
-                og_image: board.og_image || '',
-                label: 'No Label',
-                createdAt: new Date()
-              }
-            },
-            { upsert: true, new: true }
-          );
-
-          return boardId;
-        } catch (err) {
-          error('Workspace-Service', 'Failed to save individual board', { 
-            boardId: board.id, 
-            error: err.message,
-            stack: err.stack
-          }, req ?? null);
-          return null;
-        }
-      });
-
-      // Wait for all board operations to complete
-      const results = await Promise.all(boardPromises);
-      const successCount = results.filter(r => r !== null).length;
-      
-      if (successCount > 0) {
-        info('Workspace-Service', 'Auto-stored boards in database', { 
-          total: response.board.length, 
-          processed: successCount 
-        }, req ?? null);
-      }
-
       const sortedBoard = [...response.board].sort((a, b) =>
         a.name.localeCompare(b.name)
       );
+
       res.status(200).json({ board: sortedBoard });
+
+      setImmediate(() => {
+        persistBoardsInBackground(response.board, req);
+      });
     } else {
       res.status(500).json({ message: response.message || 'Failed to fetch boards' });
     }
