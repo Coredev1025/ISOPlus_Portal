@@ -1062,7 +1062,7 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
         const resolveRefDisplayName = (refId) => {
             const refItem = refItemsMap.get(refId);
             if (!refItem?.data) return '';
-            const candidates = ['Name', 'Definition', 'Full Name/Preferred Name', 'Preferred Name'];
+            const candidates = ['Service Delivery Mode', 'Name', 'Definition', 'Full Name/Preferred Name', 'Preferred Name'];
             for (const key of candidates) {
                 const v = refItem.data[key];
                 if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();

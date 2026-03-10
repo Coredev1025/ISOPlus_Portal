@@ -367,7 +367,7 @@ export function mapCancellationReasonCode(cancellationReasonLabel) {
 export function isTelehealthServiceMode(serviceDeliveryModeValue) {
   const label = formatLabelValue(serviceDeliveryModeValue).trim().toLowerCase();
   if (!label) return false;
-  return label.includes('telehealth');
+  return /\btelehealth\b|\bthlt\b/.test(label);
 }
 
 export function resolveNdisClaimType(baseClaimType, serviceDeliveryModeValue) {
