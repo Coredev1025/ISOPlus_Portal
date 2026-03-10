@@ -57,7 +57,19 @@ async function persistBoardsInBackground(boards, req) {
 }
 
 router.get('/', authenticateToken, async (req, res) => {
-  const response = await getWorkspace(req.session.Authorization, req.user.email);
+  const workspaceRolesById = Array.isArray(req.user?.workspace)
+    ? req.user.workspace.reduce((acc, workspace) => {
+        const id = workspace?.id?.toString();
+        if (!id) return acc;
+        acc[id] = workspace?.user_role || 'restricted_member';
+        return acc;
+      }, {})
+    : null;
+
+  const response = await getWorkspace(req.session.Authorization, req.user.email, {
+    includeBoards: false,
+    workspaceRolesById,
+  });
 
   if (response.status === 200 && Array.isArray(response.workspace)) {
     const sortedWorkspace = [...response.workspace].sort((a, b) =>
