@@ -370,10 +370,19 @@ export function isTelehealthServiceMode(serviceDeliveryModeValue) {
   return /\btelehealth\b|\bthlt\b/.test(label);
 }
 
-export function resolveNdisClaimType(baseClaimType, serviceDeliveryModeValue) {
+export function resolveNdisClaimType(baseClaimType, serviceDeliveryModeValue, rowCode = '') {
   const normalizedBase = String(baseClaimType || '').trim().toUpperCase();
   if (normalizedBase) return normalizedBase;
-  return isTelehealthServiceMode(serviceDeliveryModeValue) ? 'THLT' : '';
+
+  if (!isTelehealthServiceMode(serviceDeliveryModeValue)) return '';
+
+  // THLT applies to direct service rows only when no stronger claim type is already set.
+  const eligibleTelehealthCodes = new Set([
+    'direct_support_time',
+    'direct_support_non_time',
+    'centre_capital_costs',
+  ]);
+  return eligibleTelehealthCodes.has(String(rowCode || '').trim()) ? 'THLT' : '';
 }
 
 function buildDirectSupportDesc({ itemNumber, itemName, startTime, endTime, groupSize, fallback }) {
@@ -574,7 +583,7 @@ export function buildNdisMasterPlanServiceRows({
   ]);
 
   const addRow = (row) => {
-    const claimType = resolveNdisClaimType(row.claimType, serviceDeliveryModeValue);
+    const claimType = resolveNdisClaimType(row.claimType, serviceDeliveryModeValue, row.code);
     rows.push({
       id: `${itemId}:${row.code}`,
       sourceItemId: itemId,
