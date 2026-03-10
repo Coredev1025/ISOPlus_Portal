@@ -2,6 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
+import axios from 'axios';
+import http from 'http';
+import https from 'https';
 import authRoutes from './routes/auth.js';
 import automationRoutes from './routes/automation.js';
 import businessRoutes from './routes/business.js';
@@ -33,6 +36,10 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { info, error as logError } from './utils/logger.js';
 
 dotenv.config();
+
+axios.defaults.timeout = Math.max(parseInt(process.env.HTTP_CLIENT_TIMEOUT_MS || '30000', 10), 1000);
+axios.defaults.httpAgent = new http.Agent({ keepAlive: true, maxSockets: 100 });
+axios.defaults.httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 100 });
 
 const requiredEnvVars = ['MONGODB_URI', 'JWT_SECRET', 'SESSION_SECRET'];
 const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
