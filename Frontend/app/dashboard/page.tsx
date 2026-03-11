@@ -185,7 +185,7 @@ function WorkspacesList() {
         let sortedWorkspace: any[] = [];
 
         response.data.workspace.forEach((workspace: any) => {
-          if ((user.role == "support_admin" || user.role == "owner" || workspace?.user_role == "owner" || workspace?.user_role == "admin")) {
+          if ((user.role == "support_admin" || user.role == "owner" || workspace?.user_role == "owner" || workspace?.user_role == "admin" || workspace?.user_role == "restricted_member")) {
             sortedWorkspace.push(workspace);
           }
         })

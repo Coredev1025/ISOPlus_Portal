@@ -55,8 +55,9 @@ export default function WorkspaceDetail() {
   const isOwnerOrSupportUser = isOwnerOrSupport(user);
   const isWorkspaceOwner = user.role === "isoplus_user" && workspace?.user_role === "owner";
   const isWorkspaceAdmin = user.role === "isoplus_user" && workspace?.user_role === "admin";
+  const isWorkspaceRestricted = user.role === "isoplus_user" && workspace?.user_role === "restricted_member";
   const canSeeBoardMeta = isOwnerOrSupportUser || isWorkspaceOwner || isWorkspaceAdmin;
-  const canAccessThisWorkspace = isOwnerOrSupportUser || isWorkspaceOwner || isWorkspaceAdmin;
+  const canAccessThisWorkspace = isOwnerOrSupportUser || isWorkspaceOwner || isWorkspaceAdmin || isWorkspaceRestricted;
   const adminBoardIds = useMemo(() => {
     if (!isWorkspaceAdmin) return null;
     const boardList = (workspace as any)?.board;
