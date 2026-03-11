@@ -182,32 +182,38 @@ function iterateWorkspaces(authorization, options = {}) {
 }
 
 export async function getWorkspacePage(authorization, options = {}) {
-    const limit = Math.max(parseInt(options.limit ?? DEFAULT_COLLECTION_PAGE_SIZE, 10), 1);
-    const after = options.after ?? null;
+    try {
+        const limit = Math.min(Math.max(parseInt(options.limit ?? DEFAULT_COLLECTION_PAGE_SIZE, 10), 1), 100);
+        const after = options.after ?? null;
 
-    const url = "https://app.isoplus.online/api/v2/workspaces";
-    const headers = {
-        "Authorization": authorization,
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    };
-    const params = withAfterParam(
-        {
-            limit: String(limit),
-            sort_by: "created_at",
-            sort_direction: "desc",
-        },
-        after
-    );
+        const url = "https://app.isoplus.online/api/v2/workspaces";
+        const headers = {
+            "Authorization": authorization,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        };
+        const params = withAfterParam(
+            {
+                limit: String(limit),
+                sort_by: "created_at",
+                sort_direction: "desc",
+            },
+            after
+        );
 
-    const response = await isoPlusClient.get(url, { headers, params });
-    const data = response?.data || {};
-    return {
-        workspace: Array.isArray(data.data) ? data.data : [],
-        has_more: Boolean(data.has_more),
-        after: data.after ?? null,
-        status: response.status || 200,
-    };
+        const response = await isoPlusClient.get(url, { headers, params });
+        const data = response?.data || {};
+        return {
+            workspace: Array.isArray(data.data) ? data.data : [],
+            has_more: Boolean(data.has_more),
+            after: data.after ?? null,
+            status: response.status || 200,
+        };
+    } catch (err) {
+        const status = err?.response?.status || 500;
+        const message = err?.response?.data?.message || err?.message || 'Failed to fetch workspaces';
+        return { workspace: [], has_more: false, after: null, status, message };
+    }
 }
 
 function iterateBoards(authorization, workspaceId, options = {}) {
@@ -230,32 +236,86 @@ function iterateBoards(authorization, workspaceId, options = {}) {
 }
 
 export async function getBoardPage(authorization, workspaceId, options = {}) {
-    const limit = Math.max(parseInt(options.limit ?? DEFAULT_COLLECTION_PAGE_SIZE, 10), 1);
-    const after = options.after ?? null;
+    try {
+        // ISO+ API enforces limit <= 100
+        const limit = Math.min(Math.max(parseInt(options.limit ?? DEFAULT_COLLECTION_PAGE_SIZE, 10), 1), 100);
+        const after = options.after ?? null;
 
-    const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards`;
-    const headers = {
-        "Authorization": authorization,
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    };
-    const params = withAfterParam(
-        {
-            limit: String(limit),
-            sort_by: "created_at",
-            sort_direction: "desc",
-        },
-        after
-    );
+        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards`;
+        const headers = {
+            "Authorization": authorization,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        };
+        const params = withAfterParam(
+            {
+                limit: String(limit),
+                sort_by: "created_at",
+                sort_direction: "desc",
+            },
+            after
+        );
 
-    const response = await isoPlusClient.get(url, { headers, params });
-    const data = response?.data || {};
-    return {
-        board: Array.isArray(data.data) ? data.data : [],
-        has_more: Boolean(data.has_more),
-        after: data.after ?? null,
-        status: response.status || 200,
-    };
+        const response = await isoPlusClient.get(url, { headers, params });
+        const data = response?.data || {};
+        return {
+            board: Array.isArray(data.data) ? data.data : [],
+            has_more: Boolean(data.has_more),
+            after: data.after ?? null,
+            status: response.status || 200,
+        };
+    } catch (err) {
+        const status = err?.response?.status || 500;
+        const message = err?.response?.data?.message || err?.message || 'Failed to fetch boards';
+        return { board: [], has_more: false, after: null, status, message };
+    }
+}
+
+export async function getMemberRole(authorization, workspaceId, userEmail, options = {}) {
+    try {
+        const email = userEmail ? String(userEmail).toLowerCase() : null;
+        if (!email) return { role: null, status: 400, message: 'userEmail is required' };
+
+        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/members`;
+        const headers = {
+            "Authorization": authorization,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-API-Version": "2025-02-26.morava",
+        };
+        const limit = Math.max(parseInt(options.limit ?? '100', 10), 1);
+        const pageDelayMs = options.pageDelayMs ?? DEFAULT_PAGE_DELAY_MS;
+        let after = null;
+
+        while (true) {
+            const params = withAfterParam(
+                {
+                    limit: String(limit),
+                    sort_by: "created_at",
+                    sort_direction: "desc",
+                },
+                after
+            );
+
+            const response = await isoPlusClient.get(url, { headers, params });
+            const data = response?.data || {};
+            const members = Array.isArray(data.data) ? data.data : [];
+            const match = members.find((m) => m?.email && String(m.email).toLowerCase() === email);
+            if (match?.role) return { role: match.role, status: 200 };
+
+            const hasMore = Boolean(data.has_more);
+            const nextAfter = data.after ?? null;
+            if (!hasMore || !nextAfter || nextAfter === after) {
+                return { role: null, status: 200 };
+            }
+            after = nextAfter;
+            if (pageDelayMs > 0) await sleep(pageDelayMs);
+        }
+    } catch (err) {
+        const status = err?.response?.status || 500;
+        const message = err?.response?.data?.message || err?.message || 'Failed to fetch members';
+        return { role: null, status, message };
+    }
 }
 
 function iterateFolders(workspaceId, boardId, options = {}) {

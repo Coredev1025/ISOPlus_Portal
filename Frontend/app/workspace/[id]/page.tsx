@@ -57,6 +57,7 @@ export default function WorkspaceDetail() {
   const [boardsHasMore, setBoardsHasMore] = useState<boolean>(false);
   const [boardsNextAfter, setBoardsNextAfter] = useState<string | null>(null);
   const [boardSearch, setBoardSearch] = useState<string>("");
+  const [debouncedBoardQuery, setDebouncedBoardQuery] = useState<string>("");
   const isOwnerOrSupportUser = isOwnerOrSupport(user);
   const isWorkspaceOwner = user.role === "isoplus_user" && workspace?.user_role === "owner";
   const isWorkspaceAdmin = user.role === "isoplus_user" && workspace?.user_role === "admin";
@@ -107,23 +108,42 @@ export default function WorkspaceDetail() {
   }, [id, setCurrentWorkspaceId]);
 
   useEffect(() => {
+    const t = setTimeout(() => setDebouncedBoardQuery(boardSearch.trim()), 300);
+    return () => clearTimeout(t);
+  }, [boardSearch]);
+
+  useEffect(() => {
     const abortController = new AbortController();
 
     const fetchBoardsPage = async (after: string | null) => {
       setLoadingBoards(true);
       try {
+        if (!after) {
+          setBoards([]);
+          setBoardsHasMore(false);
+          setBoardsNextAfter(null);
+        }
+
         const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards`, {
           signal: abortController.signal,
           params: {
             workspaceId: id,
             limit: 50,
             ...(after ? { after } : {}),
+            ...(debouncedBoardQuery ? { q: debouncedBoardQuery } : {}),
           }
         });
 
         const list: Board[] = Array.isArray(response?.data?.board) ? response.data.board : [];
         if (!abortController.signal.aborted) {
-          setBoards(list);
+          if (after) {
+            const merged = [...boards, ...list];
+            const deduped = Array.from(new Map(merged.map((b: any) => [String(b.id), b])).values());
+            const sorted = [...deduped].sort((a: any, b: any) => (a?.name || '').localeCompare(b?.name || ''));
+            setBoards(sorted);
+          } else {
+            setBoards(list);
+          }
           setBoardsHasMore(Boolean(response?.data?.hasMore));
           setBoardsNextAfter(response?.data?.nextAfter || null);
           showFetchSuccessToast("Boards");
@@ -149,14 +169,12 @@ export default function WorkspaceDetail() {
       return;
     }
 
-    if (boards.length === 0) {
-      fetchBoardsPage(null);
-    }
+    fetchBoardsPage(null);
 
     return () => {
       abortController.abort();
     };
-  }, [id, boards.length, workspace, canAccessThisWorkspace, router]);
+  }, [id, workspace, canAccessThisWorkspace, router, debouncedBoardQuery]);
 
   const loadMoreBoards = async () => {
     if (loadingMoreBoards) return;
@@ -170,6 +188,7 @@ export default function WorkspaceDetail() {
           workspaceId: id,
           limit: 50,
           after: boardsNextAfter,
+          ...(debouncedBoardQuery ? { q: debouncedBoardQuery } : {}),
         }
       });
 

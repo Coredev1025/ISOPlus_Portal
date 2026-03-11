@@ -159,29 +159,34 @@ function WorkspacesList() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [nextAfter, setNextAfter] = useState<string | null>(null);
-  const hasFetchedWorkspaces = useRef(false);
+  const [debouncedQuery, setDebouncedQuery] = useState("");
 
-  const filteredWorkspaces = workspaces.filter(item =>
-    item.id.toString().includes(searchQuery.toLowerCase()) ||
-    item.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredWorkspaces = workspaces;
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
   useEffect(() => {
     if (!user?.role) return;
-    if (workspaces.length > 0) return;
-    if (hasFetchedWorkspaces.current) return;
 
     const abortController = new AbortController();
 
-    const fetchWorkspaces = async (after: string | null) => {
+    const fetchWorkspaces = async () => {
       setLoading(true);
       try {
+        setWorkspaces([]);
+        setHasMore(false);
+        setNextAfter(null);
+
         const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces`, {
           withCredentials: true,
           signal: abortController.signal,
           params: {
             limit: 50,
-            ...(after ? { after } : {}),
+            ...(debouncedQuery ? { q: debouncedQuery } : {}),
+            ...(debouncedQuery ? { includeDetails: true } : {}),
           }
         });
 
@@ -203,9 +208,8 @@ function WorkspacesList() {
         setWorkspaces(sortedWorkspace);
         setHasMore(Boolean(response?.data?.hasMore));
         setNextAfter(response?.data?.nextAfter || null);
-        hasFetchedWorkspaces.current = true;
 
-        if (sortedWorkspace.length === 0) {
+        if (!debouncedQuery && sortedWorkspace.length === 0) {
           router.replace("/access-denied");
           return;
         }
@@ -220,19 +224,18 @@ function WorkspacesList() {
           console.error("Error fetching workspaces:", error);
           showFetchErrorToast("workspaces", error.response?.data?.message || "Failed to load workspaces");
         }
-        hasFetchedWorkspaces.current = false;
       } finally {
         setLoading(false);
       }
     };
 
-    fetchWorkspaces(null);
+    fetchWorkspaces();
 
     return () => {
       abortController.abort();
       setLoading(false);
     };
-  }, [workspaces, setWorkspaces, router, user.role]);
+  }, [debouncedQuery, router, setWorkspaces, user.role]);
 
   const loadMore = async () => {
     if (isLoadingMore) return;
@@ -247,6 +250,8 @@ function WorkspacesList() {
         params: {
           limit: 50,
           after,
+          ...(debouncedQuery ? { q: debouncedQuery } : {}),
+          ...(debouncedQuery ? { includeDetails: true } : {}),
         }
       });
 
