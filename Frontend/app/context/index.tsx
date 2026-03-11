@@ -11,12 +11,13 @@ export interface User {
 }
 
 export interface Workspace {
-    id: number;
+    id: string | number;
     name: string;
-    owner_id: number;
-    photo_url: string;
-    subscription_id: number;
     user_role: string;
+    board?: any[];
+    owner_id?: number;
+    photo_url?: string;
+    subscription_id?: number;
 }
 
 export interface SyncStatus {
