@@ -207,6 +207,7 @@ export default function InvoiceGenerator() {
   const id = pathname.split('/')[2];
   const boardId = pathname.split('/')[4];
   const { workspaces, user, setCurrentWorkspaceId, syncStatuses, setSyncStatuses } = useAppContext();
+  const workspace = workspaces.find(w => w.id.toString() === id);
   
   const [boardLabel, setBoardLabel] = useState<string>('');
 
@@ -310,13 +311,26 @@ export default function InvoiceGenerator() {
   const isLowCatBoard = boardLabel === 'Care Management - SaH - Low Cat';
   const isCareManagementBoard = isCareManagementLabel(boardLabel);
   const isNdisBoard = typeof boardLabel === 'string' && boardLabel.toLowerCase().includes('ndis');
+  const isNdisCertificationOrVerificationBoard =
+    boardLabel === 'Care Management - NDIS - Certification' ||
+    boardLabel === 'Care Management - NDIS - Verification';
+  const isWorkspaceAdmin = user.role === 'isoplus_user' && workspace?.user_role === 'admin';
+  const canAccessInvoiceGenerator = isCareManagementBoard &&
+    (!isNdisCertificationOrVerificationBoard || isWorkspaceAdmin);
 
   useEffect(() => {
     if (!boardLabel) return;
-    if (!isCareManagementBoard) {
+    if (isNdisCertificationOrVerificationBoard && !workspace) return;
+    if (!canAccessInvoiceGenerator) {
       router.replace("/workspace/access-denied");
     }
-  }, [boardLabel, isCareManagementBoard, router]);
+  }, [
+    boardLabel,
+    canAccessInvoiceGenerator,
+    isNdisCertificationOrVerificationBoard,
+    workspace,
+    router,
+  ]);
 
   const handleManualRefresh = useCallback(async (silent = false, clearFilters = false) => {
     if (!id || !boardId) {

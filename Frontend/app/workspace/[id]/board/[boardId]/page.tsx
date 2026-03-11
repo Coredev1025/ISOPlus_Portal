@@ -244,6 +244,10 @@ export default function BoardDetail() {
 
   const isCareManagementBoard = isCareManagementLabel(board.label);
   const isLowCatBoard = isLowCatCareManagementLabel(board.label);
+  const isNdisCertificationOrVerificationBoard =
+    board.label === 'Care Management - NDIS - Certification' ||
+    board.label === 'Care Management - NDIS - Verification';
+  const canAccessInvoiceGenerator = (isCareManagementBoard || isLowCatBoard || isNdisCertificationOrVerificationBoard) && isWorkspaceAdmin;
 
   // Filter time entries
   const filteredEntries = timeEntries.filter(entry => {
@@ -373,8 +377,7 @@ export default function BoardDetail() {
                 </div>
               </Card>
 
-              {/* Invoice Generator Card (Care Management boards only) */}
-              {isCareManagementBoard && (
+              {canAccessInvoiceGenerator && (
                 <Card className="p-6 space-y-4 card-hover">
                   <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
                     <FileText className="h-6 w-6 text-primary" />
