@@ -3,11 +3,30 @@ import { authenticateToken } from '../middleware/auth.js';
 import Workspace from '../models/Workspace.js';
 import Board from '../models/Board.js';
 import { info, error, warn } from '../utils/logger.js';
-import { getWorkspace, getBoard } from '../services/isoplus.js';
+import { getWorkspace, getBoard, getWorkspacePage, getBoardPage } from '../services/isoplus.js';
 import DynamicLinkingService from '../services/dynamicLinking.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
 
 const router = express.Router();
+
+class TimeoutError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'TimeoutError';
+  }
+}
+
+function withTimeout(promise, timeoutMs, message) {
+  const ms = Number(timeoutMs);
+  if (!Number.isFinite(ms) || ms <= 0) return promise;
+
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new TimeoutError(message)), ms);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+}
 
 async function persistBoardsInBackground(boards, req) {
   try {
@@ -57,50 +76,149 @@ async function persistBoardsInBackground(boards, req) {
 }
 
 router.get('/', authenticateToken, async (req, res) => {
-  const workspaceRolesById = Array.isArray(req.user?.workspace)
-    ? req.user.workspace.reduce((acc, workspace) => {
-        const id = workspace?.id?.toString();
-        if (!id) return acc;
-        acc[id] = workspace?.user_role || 'restricted_member';
-        return acc;
-      }, {})
-    : null;
+  try {
+    const authorization = req.session?.Authorization;
+    if (!authorization) {
+      warn(
+        'Workspace-Service',
+        'Missing OAuth authorization in session',
+        { hasSession: Boolean(req.session), hasToken: Boolean(req.session?.token) },
+        req ?? null
+      );
+      return res.status(401).json({
+        message: 'Authentication session is missing OAuth credentials. Please login again.',
+        error_type: 'oauth',
+      });
+    }
 
-  const response = await getWorkspace(req.session.Authorization, req.user.email, {
-    includeBoards: false,
-    workspaceRolesById,
-  });
+    const limit = Math.min(Math.max(parseInt(req.query?.limit || '50', 10), 1), 200);
+    const after = req.query?.after ? String(req.query.after) : null;
 
-  if (response.status === 200 && Array.isArray(response.workspace)) {
-    const sortedWorkspace = [...response.workspace].sort((a, b) =>
-      a.name.localeCompare(b.name)
+    const workspaceMetaById = Array.isArray(req.user?.workspace)
+      ? req.user.workspace.reduce((acc, workspace) => {
+          const id = workspace?.id?.toString();
+          if (!id) return acc;
+          acc[id] = {
+            user_role: workspace?.user_role || 'restricted_member',
+            board: Array.isArray(workspace?.board) ? workspace.board : undefined,
+          };
+          return acc;
+        }, {})
+      : null;
+
+    const timeoutMs = process.env.WORKSPACE_FETCH_TIMEOUT_MS || process.env.ISOPLUS_HTTP_TIMEOUT_MS || '30000';
+    const page = await withTimeout(
+      getWorkspacePage(authorization, { limit, after }),
+      timeoutMs,
+      'Workspace fetch timed out'
     );
-    res.status(200).json({ workspace: sortedWorkspace });
-  } else {
-    res.status(500).json({ message: response.message || 'Failed to fetch workspaces' });
+
+    if (page.status === 200 && Array.isArray(page.workspace)) {
+      const mapped = page.workspace.map((w) => {
+        const id = w?.id?.toString?.() ?? w?.id;
+        const metaFromToken = workspaceMetaById && id ? workspaceMetaById[id] : null;
+        const roleFromToken = metaFromToken?.user_role || null;
+        const user_role =
+          roleFromToken ||
+          (req.user?.role === 'owner' ? 'owner' : null) ||
+          (req.user?.role === 'support_admin' ? 'admin' : null) ||
+          'restricted_member';
+
+        return {
+          ...w,
+          user_role,
+          // Keep board ID allowlist from JWT (used for admin board filtering)
+          ...(metaFromToken?.board ? { board: metaFromToken.board } : {}),
+        };
+      });
+
+      const sortedWorkspace = [...mapped].sort((a, b) => (a?.name || '').localeCompare(b?.name || ''));
+      return res.status(200).json({
+        workspace: sortedWorkspace,
+        nextAfter: page.after,
+        hasMore: Boolean(page.has_more),
+      });
+    }
+
+    const rawMessage = page.message || 'Failed to fetch workspaces';
+    const normalized = String(rawMessage).toLowerCase();
+    const mappedStatus =
+      normalized.includes('status code 401') || normalized.includes('unauthorized') ? 401 :
+      normalized.includes('status code 403') || normalized.includes('forbidden') ? 403 :
+      500;
+
+    warn('Workspace-Service', 'Failed to fetch workspaces', { status: page.status, message: rawMessage }, req ?? null);
+    return res.status(mappedStatus).json({
+      message: rawMessage,
+      ...(mappedStatus === 401 ? { error_type: 'oauth' } : {}),
+    });
+  } catch (err) {
+    const status = err?.name === 'TimeoutError' ? 504 : 500;
+    error(
+      'Workspace-Service',
+      'Unhandled error in workspaces endpoint',
+      { message: err?.message, stack: err?.stack, status },
+      req ?? null
+    );
+    return res.status(status).json({ message: status === 504 ? 'Workspace fetch timed out' : 'Server error' });
   }
 });
 
 router.get('/boards', authenticateToken, async (req, res) => {
   try {
-    const response = await getBoard(req.session.Authorization, req.query.workspaceId);
+    const workspaceId = req.query.workspaceId?.toString();
+    if (!workspaceId) {
+      return res.status(400).json({ message: 'workspaceId query param is required' });
+    }
 
-    if (response.status === 200 && Array.isArray(response.board)) {
-      const sortedBoard = [...response.board].sort((a, b) =>
-        a.name.localeCompare(b.name)
-      );
+    const limit = Math.min(Math.max(parseInt(req.query?.limit || '200', 10), 1), 200);
+    const after = req.query?.after ? String(req.query.after) : null;
 
-      res.status(200).json({ board: sortedBoard });
+    const timeoutMs = process.env.BOARD_FETCH_TIMEOUT_MS || process.env.ISOPLUS_HTTP_TIMEOUT_MS || '30000';
+    const page = await withTimeout(
+      getBoardPage(req.session.Authorization, workspaceId, { limit, after }),
+      timeoutMs,
+      'Board fetch timed out'
+    );
+
+    if (page.status === 200 && Array.isArray(page.board)) {
+      const boardIds = page.board
+        .map((b) => b?.id?.toString?.() ?? b?.id)
+        .filter(Boolean)
+        .map((id) => String(id));
+
+      const dbBoards = boardIds.length
+        ? await Board.find({ boardId: { $in: boardIds }, workspaceId: workspaceId.toString() })
+            .select('boardId label')
+            .lean()
+        : [];
+
+      const labelById = new Map(dbBoards.map((b) => [String(b.boardId), b.label]));
+
+      const enriched = page.board.map((b) => {
+        const id = b?.id?.toString?.() ?? b?.id;
+        const label = id ? labelById.get(String(id)) : undefined;
+        return { ...b, label: label || b?.label || 'No Label' };
+      });
+
+      const sortedBoard = [...enriched].sort((a, b) => (a?.name || '').localeCompare(b?.name || ''));
+
+      res.status(200).json({
+        board: sortedBoard,
+        nextAfter: page.after,
+        hasMore: Boolean(page.has_more),
+      });
 
       setImmediate(() => {
-        persistBoardsInBackground(response.board, req);
+        persistBoardsInBackground(page.board, req);
       });
     } else {
-      res.status(500).json({ message: response.message || 'Failed to fetch boards' });
+      res.status(500).json({ message: page.message || 'Failed to fetch boards' });
     }
   } catch (err) {
     error('Workspace-Service', 'Error in boards endpoint', { message: err.message, stack: err.stack }, req ?? null);
-    res.status(500).json({ message: 'Server error' });
+    const status = err?.name === 'TimeoutError' ? 504 : 500;
+    res.status(status).json({ message: status === 504 ? 'Board fetch timed out' : 'Server error' });
   }
 });
 

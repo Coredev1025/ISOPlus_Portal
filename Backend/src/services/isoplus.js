@@ -100,9 +100,13 @@ function createPaginator(fetchPage, options = {}) {
     const selectData = options.selectData || ((response) => response.data?.data || []);
     const selectHasMore = options.selectHasMore || ((response) => Boolean(response.data?.has_more));
     const selectAfter = options.selectAfter || ((response) => response.data?.after);
+    const debugKey = options.debugKey ? String(options.debugKey) : 'unknown';
+    const maxPagesRaw = options.maxPages ?? process.env.ISOPLUS_PAGINATION_MAX_PAGES ?? '1000';
+    const maxPages = Math.max(parseInt(maxPagesRaw, 10), 1);
 
     let after = null;
     let hasMore = true;
+    let pageCount = 0;
 
     return {
         async next() {
@@ -110,10 +114,27 @@ function createPaginator(fetchPage, options = {}) {
                 return { value: undefined, done: true };
             }
 
+            pageCount += 1;
+            if (pageCount > maxPages) {
+                throw new Error(`Pagination exceeded max pages (${maxPages}) for ${debugKey}`);
+            }
+
+            const previousAfter = after;
             const response = await fetchPage(after);
             const batch = selectData(response) || [];
             hasMore = selectHasMore(response);
             after = selectAfter(response);
+
+            if (hasMore && (after === null || after === undefined || after === '' || after === previousAfter)) {
+                warn('ISO+™ Service', 'Paginator cursor missing/unchanged; stopping to avoid hang', {
+                    debugKey,
+                    hasMore,
+                    previousAfter: previousAfter ?? null,
+                    after: after ?? null,
+                    batchSize: Array.isArray(batch) ? batch.length : undefined,
+                });
+                throw new Error(`Pagination cursor missing/unchanged for ${debugKey}`);
+            }
 
             if (hasMore && pageDelayMs > 0) {
                 await sleep(pageDelayMs);
@@ -156,8 +177,37 @@ function iterateWorkspaces(authorization, options = {}) {
 
     return createPaginator(
         (after) => isoPlusClient.get(url, { headers, params: withAfterParam(baseParams, after) }),
-        { pageDelayMs: options.pageDelayMs }
+        { pageDelayMs: options.pageDelayMs, debugKey: 'workspaces' }
     );
+}
+
+export async function getWorkspacePage(authorization, options = {}) {
+    const limit = Math.max(parseInt(options.limit ?? DEFAULT_COLLECTION_PAGE_SIZE, 10), 1);
+    const after = options.after ?? null;
+
+    const url = "https://app.isoplus.online/api/v2/workspaces";
+    const headers = {
+        "Authorization": authorization,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    };
+    const params = withAfterParam(
+        {
+            limit: String(limit),
+            sort_by: "created_at",
+            sort_direction: "desc",
+        },
+        after
+    );
+
+    const response = await isoPlusClient.get(url, { headers, params });
+    const data = response?.data || {};
+    return {
+        workspace: Array.isArray(data.data) ? data.data : [],
+        has_more: Boolean(data.has_more),
+        after: data.after ?? null,
+        status: response.status || 200,
+    };
 }
 
 function iterateBoards(authorization, workspaceId, options = {}) {
@@ -175,8 +225,37 @@ function iterateBoards(authorization, workspaceId, options = {}) {
 
     return createPaginator(
         (after) => isoPlusClient.get(url, { headers, params: withAfterParam(baseParams, after) }),
-        { pageDelayMs: options.pageDelayMs }
+        { pageDelayMs: options.pageDelayMs, debugKey: `boards:${workspaceId}` }
     );
+}
+
+export async function getBoardPage(authorization, workspaceId, options = {}) {
+    const limit = Math.max(parseInt(options.limit ?? DEFAULT_COLLECTION_PAGE_SIZE, 10), 1);
+    const after = options.after ?? null;
+
+    const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards`;
+    const headers = {
+        "Authorization": authorization,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    };
+    const params = withAfterParam(
+        {
+            limit: String(limit),
+            sort_by: "created_at",
+            sort_direction: "desc",
+        },
+        after
+    );
+
+    const response = await isoPlusClient.get(url, { headers, params });
+    const data = response?.data || {};
+    return {
+        board: Array.isArray(data.data) ? data.data : [],
+        has_more: Boolean(data.has_more),
+        after: data.after ?? null,
+        status: response.status || 200,
+    };
 }
 
 function iterateFolders(workspaceId, boardId, options = {}) {
@@ -195,7 +274,7 @@ function iterateFolders(workspaceId, boardId, options = {}) {
 
     return createPaginator(
         (after) => isoPlusClient.get(url, { headers, params: withAfterParam(baseParams, after) }),
-        { pageDelayMs: options.pageDelayMs }
+        { pageDelayMs: options.pageDelayMs, debugKey: `folders:${workspaceId}:${boardId}` }
     );
 }
 
@@ -215,7 +294,7 @@ function iterateMembers(authorization, workspaceId, options = {}) {
 
     return createPaginator(
         (after) => isoPlusClient.get(membersUrl, { headers: membersHeaders, params: withAfterParam(baseParams, after) }),
-        { pageDelayMs: options.pageDelayMs }
+        { pageDelayMs: options.pageDelayMs, debugKey: `members:${workspaceId}` }
     );
 }
 
@@ -235,7 +314,7 @@ function iterateViews(authorization, workspaceId, boardId, options = {}) {
 
     return createPaginator(
         (after) => isoPlusClient.get(url, { headers, params: withAfterParam(baseParams, after) }),
-        { pageDelayMs: options.pageDelayMs }
+        { pageDelayMs: options.pageDelayMs, debugKey: `views:${workspaceId}:${boardId}` }
     );
 }
 
@@ -361,7 +440,7 @@ export function iterateBoardItems(workspaceId, boardId, folderId, options = {}) 
             const requestConfig = await buildItemRequest(workspaceId, boardId, folderId, limit, after);
             return axios.get(requestConfig.url, { headers: requestConfig.headers, params: requestConfig.params });
         },
-        { pageDelayMs: options.pageDelayMs }
+        { pageDelayMs: options.pageDelayMs, debugKey: `items:${workspaceId}:${boardId}:${folderId}` }
     );
 }
 

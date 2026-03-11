@@ -20,6 +20,7 @@ import Spinner from "@/components/ui/spin";
 import { showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
 import { Badge } from "@/components/ui/badge";
 import { isOwnerOrSupport } from "@/lib/access";
+import { Input } from "@/components/ui/input";
 import {
   Tooltip,
   TooltipContent,
@@ -52,6 +53,10 @@ export default function WorkspaceDetail() {
   const workspace = workspaces.find(workspace => workspace.id.toString() === id);
   const [boards, setBoards] = useState<Board[]>([]);
   const [loadingBoards, setLoadingBoards] = useState<boolean>(false); // Loading state for boards
+  const [loadingMoreBoards, setLoadingMoreBoards] = useState<boolean>(false);
+  const [boardsHasMore, setBoardsHasMore] = useState<boolean>(false);
+  const [boardsNextAfter, setBoardsNextAfter] = useState<string | null>(null);
+  const [boardSearch, setBoardSearch] = useState<string>("");
   const isOwnerOrSupportUser = isOwnerOrSupport(user);
   const isWorkspaceOwner = user.role === "isoplus_user" && workspace?.user_role === "owner";
   const isWorkspaceAdmin = user.role === "isoplus_user" && workspace?.user_role === "admin";
@@ -74,6 +79,16 @@ export default function WorkspaceDetail() {
     }
     return boards;
   }, [adminBoardIds, boards, isWorkspaceAdmin]);
+
+  const filteredBoards = useMemo(() => {
+    const q = boardSearch.trim().toLowerCase();
+    if (!q) return visibleBoards;
+    return visibleBoards.filter((b) =>
+      b.id?.toString().toLowerCase().includes(q) ||
+      (b.name || "").toLowerCase().includes(q) ||
+      (canSeeBoardMeta ? (b.label || "").toLowerCase().includes(q) : false)
+    );
+  }, [visibleBoards, boardSearch, canSeeBoardMeta]);
   const canOpenBoard = (board: Board) => {
     return canAccessThisWorkspace;
   };
@@ -94,49 +109,33 @@ export default function WorkspaceDetail() {
   useEffect(() => {
     const abortController = new AbortController();
 
-    const fetchBoards = async () => {
-      if (boards.length === 0) {
-        setLoadingBoards(true);
-        try {
-          const response = await axios.get(
-            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`,
-            {
-              signal: abortController.signal
-            }
-          );
+    const fetchBoardsPage = async (after: string | null) => {
+      setLoadingBoards(true);
+      try {
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards`, {
+          signal: abortController.signal,
+          params: {
+            workspaceId: id,
+            limit: 50,
+            ...(after ? { after } : {}),
+          }
+        });
 
-          const data: Board[] = await Promise.all(
-            response.data.board.map(async (board: any) => {
-              try {
-                const boardResponse = await axios.get(
-                  `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${board.id}`,
-                  {
-                    signal: abortController.signal
-                  }
-                );
-                return { ...board, label: boardResponse.data.board.label };
-              } catch (error: any) {
-                if (error.name != "CanceledError" && error.name != "AbortError") {
-                  console.error("Error fetching board:", error);
-                }
-                return { ...board, label: null };
-              }
-            })
-          );
-
-          if (!abortController.signal.aborted) {
-            setBoards(data);
-            showFetchSuccessToast("Boards");
-          }
-        } catch (error: any) {
-          if (error.name != "CanceledError" && error.name != "AbortError") {
-            console.error("Error fetching boards:", error);
-            showFetchErrorToast("boards", error.response?.data?.message || "Failed to load boards");
-          }
-        } finally {
-          if (!abortController.signal.aborted) {
-            setLoadingBoards(false);
-          }
+        const list: Board[] = Array.isArray(response?.data?.board) ? response.data.board : [];
+        if (!abortController.signal.aborted) {
+          setBoards(list);
+          setBoardsHasMore(Boolean(response?.data?.hasMore));
+          setBoardsNextAfter(response?.data?.nextAfter || null);
+          showFetchSuccessToast("Boards");
+        }
+      } catch (error: any) {
+        if (error.name != "CanceledError" && error.name != "AbortError") {
+          console.error("Error fetching boards:", error);
+          showFetchErrorToast("boards", error.response?.data?.message || "Failed to load boards");
+        }
+      } finally {
+        if (!abortController.signal.aborted) {
+          setLoadingBoards(false);
         }
       }
     };
@@ -150,12 +149,44 @@ export default function WorkspaceDetail() {
       return;
     }
 
-    fetchBoards();
+    if (boards.length === 0) {
+      fetchBoardsPage(null);
+    }
 
     return () => {
       abortController.abort();
     };
   }, [id, boards.length, workspace, canAccessThisWorkspace, router]);
+
+  const loadMoreBoards = async () => {
+    if (loadingMoreBoards) return;
+    if (!boardsHasMore) return;
+    if (!boardsNextAfter) return;
+
+    setLoadingMoreBoards(true);
+    try {
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards`, {
+        params: {
+          workspaceId: id,
+          limit: 50,
+          after: boardsNextAfter,
+        }
+      });
+
+      const list: Board[] = Array.isArray(response?.data?.board) ? response.data.board : [];
+      const merged = [...boards, ...list];
+      const deduped = Array.from(new Map(merged.map((b: any) => [String(b.id), b])).values());
+      const sorted = [...deduped].sort((a: any, b: any) => (a?.name || '').localeCompare(b?.name || ''));
+      setBoards(sorted);
+      setBoardsHasMore(Boolean(response?.data?.hasMore));
+      setBoardsNextAfter(response?.data?.nextAfter || null);
+    } catch (error: any) {
+      console.error("Error fetching more boards:", error);
+      showFetchErrorToast("boards", error.response?.data?.message || "Failed to load more boards");
+    } finally {
+      setLoadingMoreBoards(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -272,14 +303,33 @@ export default function WorkspaceDetail() {
             )
           }
 
-          {/* Boards List */}
+          {/* Boards */}
           <Card className="p-6 shadow-lg">
-            <h2 className="text-xl font-semibold mb-2">Workspace Boards</h2>
-            <Table className="enhanced-table">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+              <div>
+                <h2 className="text-xl font-semibold mb-2">Workspace Boards</h2>
+              </div>
+              <div className="w-full md:w-80">
+                <Input
+                  placeholder={canSeeBoardMeta ? "Search by board ID, name, or label..." : "Search by board ID or name..."}
+                  value={boardSearch}
+                  onChange={(e) => setBoardSearch(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {loadingBoards ? (
+              <div className="text-center py-8 text-muted-foreground">
+                Loading boards...
+                <span className="ml-2"><Spinner /></span>
+              </div>
+            ) : (
+              <>
+                <Table className="enhanced-table">
               <TableHeader>
                 <TableRow>
                   <TableHead className="font-semibold">Board ID</TableHead>
-                  <TableHead className="font-semibold">Board Name</TableHead>
+                  <TableHead className="font-semibold">Name</TableHead>
                   <TableHead className={`font-semibold ${canSeeBoardMeta ? '' : 'hidden'}`}>
                     <div className="flex items-center gap-2">
                       Label
@@ -297,29 +347,24 @@ export default function WorkspaceDetail() {
                       </TooltipProvider>
                     </div>
                   </TableHead>
-                  <TableHead className={`font-semibold w-[100px] ${canSeeBoardMeta ? '' : 'hidden'}`}>Actions</TableHead>
+                  <TableHead className="font-semibold w-[120px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleBoards?.map((board) => {
+                {filteredBoards?.map((board) => {
                   const boardIsOpenable = canOpenBoard(board);
+                  const labelKey = (Object.prototype.hasOwnProperty.call(LABEL_COLORS, board.label) ? board.label : 'No Label') as BoardLabel;
                   return (
                   <TableRow key={board.id}>
                     <TableCell className="font-mono">{board.id}</TableCell>
                     <TableCell>{board.name}</TableCell>
                     <TableCell className={`font-semibold ${canSeeBoardMeta ? '' : 'hidden'}`}>
-                      {board.label ? (
-                        <Badge variant="outline" className={board.label ? LABEL_COLORS[board.label as NonNullable<BoardLabel>] : 'No Label'}>
-                          {board.label}
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className={LABEL_COLORS['No Label']}>
-                          No Label
-                        </Badge>
-                      )}
+                      <Badge variant="outline" className={LABEL_COLORS[labelKey]}>
+                        {(board.label as BoardLabel) || 'No Label'}
+                      </Badge>
                     </TableCell>
                     <TableCell>
-                      <div className={`flex w-[100px] items-center gap-2 ${canSeeBoardMeta ? '' : 'hidden'}`}>
+                      <div className="flex w-[120px] items-center gap-2">
                         <Button
                           variant="outline"
                           size="sm"
@@ -327,7 +372,7 @@ export default function WorkspaceDetail() {
                           title={openBoardTooltip(board)}
                           onClick={() => router.push(`/workspace/${workspace?.id}/board/${board.id}`)}
                         >
-                          Open Board
+                          Open
                         </Button>
                       </div>
                     </TableCell>
@@ -335,16 +380,22 @@ export default function WorkspaceDetail() {
                 )})}
               </TableBody>
             </Table>
-            {loadingBoards ?
-              <div className="text-center py-8 text-muted-foreground">
-                Loading boards...
-                <span className="ml-2"><Spinner /></span>
-              </div>
-              : boards?.length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  No boards found matching your search.
-                </div>
-              )}
+
+                {filteredBoards.length === 0 && (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No boards found matching your search.
+                  </div>
+                )}
+
+                {boardsHasMore && (
+                  <div className="flex justify-center pt-6">
+                    <Button variant="outline" onClick={loadMoreBoards} disabled={loadingMoreBoards}>
+                      {loadingMoreBoards ? "Loading..." : "Load more boards"}
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
           </Card>
         </div>
       </div>

@@ -156,6 +156,9 @@ function WorkspacesList() {
   const [searchQuery, setSearchQuery] = useState("");
   const { user, workspaces, setWorkspaces } = useAppContext();
   const [isLoading, setLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextAfter, setNextAfter] = useState<string | null>(null);
   const hasFetchedWorkspaces = useRef(false);
 
   const filteredWorkspaces = workspaces.filter(item =>
@@ -167,34 +170,40 @@ function WorkspacesList() {
     if (!user?.role) return;
     if (workspaces.length > 0) return;
     if (hasFetchedWorkspaces.current) return;
-    hasFetchedWorkspaces.current = true;
 
     const abortController = new AbortController();
 
-    const fetchWorkspaces = async () => {
+    const fetchWorkspaces = async (after: string | null) => {
       setLoading(true);
       try {
-        const response = await axios.get(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces`,
-          {
-            withCredentials: true,
-            signal: abortController.signal
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces`, {
+          withCredentials: true,
+          signal: abortController.signal,
+          params: {
+            limit: 50,
+            ...(after ? { after } : {}),
           }
-        );
+        });
 
         let sortedWorkspace: any[] = [];
 
-        response.data.workspace.forEach((workspace: any) => {
-          if ((user.role == "support_admin" || user.role == "owner" || workspace?.user_role == "owner" || workspace?.user_role == "admin" || workspace?.user_role == "restricted_member")) {
+        const workspaceList = response?.data?.workspace;
+        if (!Array.isArray(workspaceList)) {
+          throw new Error("Invalid workspaces response");
+        }
+
+        workspaceList.forEach((workspace: any) => {
+          if ((user.role == "support_admin" || user.role == "owner" || workspace?.user_role == "owner" || workspace?.user_role == "admin" || workspace?.user_role == "restricted_member" || workspace?.user_role == "full_member")) {
             sortedWorkspace.push(workspace);
           }
         })
 
-        sortedWorkspace = [...sortedWorkspace].sort((a, b) =>
-          a.name.localeCompare(b.name)
-        );
+        sortedWorkspace = [...sortedWorkspace].sort((a, b) => a.name.localeCompare(b.name));
 
         setWorkspaces(sortedWorkspace);
+        setHasMore(Boolean(response?.data?.hasMore));
+        setNextAfter(response?.data?.nextAfter || null);
+        hasFetchedWorkspaces.current = true;
 
         if (sortedWorkspace.length === 0) {
           router.replace("/access-denied");
@@ -211,18 +220,59 @@ function WorkspacesList() {
           console.error("Error fetching workspaces:", error);
           showFetchErrorToast("workspaces", error.response?.data?.message || "Failed to load workspaces");
         }
+        hasFetchedWorkspaces.current = false;
       } finally {
         setLoading(false);
       }
     };
 
-    fetchWorkspaces();
+    fetchWorkspaces(null);
 
     return () => {
       abortController.abort();
       setLoading(false);
     };
   }, [workspaces, setWorkspaces, router, user.role]);
+
+  const loadMore = async () => {
+    if (isLoadingMore) return;
+    if (!hasMore) return;
+    const after = nextAfter;
+    if (!after) return;
+
+    setIsLoadingMore(true);
+    try {
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces`, {
+        withCredentials: true,
+        params: {
+          limit: 50,
+          after,
+        }
+      });
+
+      const workspaceList = response?.data?.workspace;
+      if (!Array.isArray(workspaceList)) {
+        throw new Error("Invalid workspaces response");
+      }
+
+      const allowed = workspaceList.filter((workspace: any) =>
+        (user.role == "support_admin" || user.role == "owner" || workspace?.user_role == "owner" || workspace?.user_role == "admin" || workspace?.user_role == "restricted_member" || workspace?.user_role == "full_member")
+      );
+
+      const merged = [...workspaces, ...allowed];
+      const deduped = Array.from(new Map(merged.map((w: any) => [String(w.id), w])).values());
+      const sorted = [...deduped].sort((a: any, b: any) => (a?.name || '').localeCompare(b?.name || ''));
+
+      setWorkspaces(sorted);
+      setHasMore(Boolean(response?.data?.hasMore));
+      setNextAfter(response?.data?.nextAfter || null);
+    } catch (error: any) {
+      console.error("Error fetching more workspaces:", error);
+      showFetchErrorToast("workspaces", error.response?.data?.message || "Failed to load more workspaces");
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   return (
     <Card className="p-6 shadow-sm">
@@ -271,11 +321,21 @@ function WorkspacesList() {
           <span className="ml-2"><Spinner /></span>
         </div>
         :
-        filteredWorkspaces.length === 0 && (
-          <div className="text-center py-8 text-muted-foreground">
-            No workspaces found matching your search.
-          </div>
-        )
+        <>
+          {filteredWorkspaces.length === 0 && (
+            <div className="text-center py-8 text-muted-foreground">
+              No workspaces found matching your search.
+            </div>
+          )}
+
+          {hasMore && (
+            <div className="flex justify-center py-6">
+              <Button variant="outline" onClick={loadMore} disabled={isLoadingMore}>
+                {isLoadingMore ? "Loading..." : "Load more"}
+              </Button>
+            </div>
+          )}
+        </>
       }
     </Card >
   );
