@@ -392,20 +392,28 @@ router.post('/:workspaceId/:boardId/set-unit-and-unitprice', async (req, res) =>
 router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res) => {
     const { workspaceId, boardId } = req.params;
     const { type } = req.query;
-    const payload = req.body;
-    const items = payload.items[0];
-    const itemsValues = items.values;
+    try {
+        const payload = req.body;
+        const items = Array.isArray(payload?.items) ? payload.items[0] : null;
+        const itemsValues = items?.values || {};
 
-    info('Xero-Service', `Incoming request to Participants Service Plan`, { workspaceId, boardId, type, body: itemsValues }, req ?? null);
-    let [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] = await getNDISParticipantsServicePlanReferencedItems(workspaceId, boardId, items.id);
-    if (serviceAreaValues == null || serviceAreaValues.serviceAreaType == null) {
-        serviceAreaValues = {
-            serviceAreaType: 'ACT($)'
+        info('Xero-Service', `Incoming request to Participants Service Plan`, { workspaceId, boardId, type, itemId: items?.id }, req ?? null);
+
+        if (!items?.id) {
+            warn('Xero-Service', 'Missing item in Participants Service Plan payload', { workspaceId, boardId, type }, req ?? null);
+            return res.status(200).json({ error: 'Invalid payload', message: 'Missing item id' });
         }
-    }
-    const safeGet = (obj, key) => Array.isArray(obj[key]) && obj[key].length > 0 ? obj[key][0] : undefined;
-    const normalizedType = (type || '').toString().trim();
-    switch (normalizedType) {
+
+        let [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues] =
+            await getNDISParticipantsServicePlanReferencedItems(workspaceId, boardId, items.id);
+
+        if (serviceAreaValues == null || serviceAreaValues.serviceAreaType == null) {
+            serviceAreaValues = { serviceAreaType: 'ACT($)' };
+        }
+
+        const safeGet = (obj, key) => Array.isArray(obj?.[key]) && obj[key].length > 0 ? obj[key][0] : undefined;
+        const normalizedType = (type || '').toString().trim();
+        switch (normalizedType) {
         case 'service_area': {
             if (!serviceAreaValues)
                 return res.status(200).json({ error: 'Service Area Item not found' });
@@ -532,6 +540,16 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
             warn('Xero-Service', 'Invalid type in set-unit', { type }, req ?? null);
             return res.status(200).json({ error: 'Invalid type', message: 'Invalid type in set-unit' });
         }
+        }
+    } catch (err) {
+        error('Xero-Service', 'Participants Service Plan automation failed', {
+            workspaceId,
+            boardId,
+            type,
+            message: err?.message,
+            stack: err?.stack
+        }, req ?? null);
+        return res.status(200).json({ error: 'Participants Service Plan failed', message: err?.message || 'Server error' });
     }
 });
 
