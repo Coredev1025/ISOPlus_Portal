@@ -52,6 +52,7 @@ function redact(value, depth = 0) {
 export function errorHandler(err, req, res, next) {
   const statusCode = Number(err?.statusCode || err?.status || 500);
   const ctx = extractContextFromReq(req);
+  res.locals.__unhandledExceptionLogged = true;
 
   logError(
     'HTTP',
