@@ -265,6 +265,15 @@ const mongoSanitizeFormat = winston.format((info) => {
   return info;
 });
 
+const dropHttpLifecycleForPersistence = winston.format((info) => {
+  const source = info?.metadata?.source ?? info?.source;
+  const msg = info?.message;
+  if (source === 'HTTP' && (msg === 'Request start' || msg === 'Request end')) {
+    return false;
+  }
+  return info;
+});
+
 const logger = winston.createLogger({
   levels,
   format: winston.format.combine(
@@ -286,7 +295,12 @@ const logger = winston.createLogger({
       datePattern: 'YYYY-MM-DD',
       zippedArchive: true,
       maxSize: '20m',
-      maxFiles: '14d'
+      maxFiles: '14d',
+      format: winston.format.combine(
+        dropHttpLifecycleForPersistence(),
+        winston.format.timestamp({ format: 'YYYY/MM/DD, HH:mm:ss' }),
+        winston.format.json()
+      )
     }),
     new winston.transports.MongoDB({
       level: 'debug', // Set to the lowest level to log all levels
@@ -296,6 +310,7 @@ const logger = winston.createLogger({
       },
       collection: 'logs',
       format: winston.format.combine(
+        dropHttpLifecycleForPersistence(),
         mongoSanitizeFormat(),
         json()
       ),
