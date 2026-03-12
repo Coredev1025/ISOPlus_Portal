@@ -40,7 +40,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format, formatDistanceToNow } from "date-fns";
 import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast } from "@/lib/toast-utils";
-import { isCareManagementLabel } from "@/lib/access";
+import { canAccessWorkspace, isCareManagementLabel } from "@/lib/access";
 import {
   Dialog,
   DialogContent,
@@ -314,22 +314,21 @@ export default function InvoiceGenerator() {
   const isNdisCertificationOrVerificationBoard =
     boardLabel === 'Care Management - NDIS - Certification' ||
     boardLabel === 'Care Management - NDIS - Verification';
-  const isWorkspaceAdmin = user.role === 'isoplus_user' && workspace?.user_role === 'admin';
-  const canAccessInvoiceGenerator = isCareManagementBoard &&
-    (!isNdisCertificationOrVerificationBoard || isWorkspaceAdmin);
+  const canAccessInvoiceGenerator = isCareManagementBoard && canAccessWorkspace(user, workspace);
 
   useEffect(() => {
     if (!boardLabel) return;
-    if (isNdisCertificationOrVerificationBoard && !workspace) return;
+    // Avoid false-deny while workspace context is still loading for ISO+ users
+    if (user.role === 'isoplus_user' && !workspace) return;
     if (!canAccessInvoiceGenerator) {
       router.replace("/workspace/access-denied");
     }
   }, [
     boardLabel,
     canAccessInvoiceGenerator,
-    isNdisCertificationOrVerificationBoard,
     workspace,
     router,
+    user.role,
   ]);
 
   const handleManualRefresh = useCallback(async (silent = false, clearFilters = false) => {
