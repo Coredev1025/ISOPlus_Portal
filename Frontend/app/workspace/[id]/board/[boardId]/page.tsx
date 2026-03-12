@@ -247,7 +247,9 @@ export default function BoardDetail() {
   const isNdisCertificationOrVerificationBoard =
     board.label === 'Care Management - NDIS - Certification' ||
     board.label === 'Care Management - NDIS - Verification';
-  const canAccessInvoiceGenerator = (isCareManagementBoard || isLowCatBoard || isNdisCertificationOrVerificationBoard) && isWorkspaceAdmin;
+  const canAccessInvoiceGenerator =
+    (isCareManagementBoard || isLowCatBoard || isNdisCertificationOrVerificationBoard) &&
+    (isOwnerOrSupportUser || isWorkspaceOwner || isWorkspaceAdmin);
 
   // Filter time entries
   const filteredEntries = timeEntries.filter(entry => {
