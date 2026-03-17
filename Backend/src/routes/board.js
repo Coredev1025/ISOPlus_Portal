@@ -3,7 +3,17 @@ import { authenticateToken } from '../middleware/auth.js';
 import Board from '../models/Board.js';
 import TimeTrack from '../models/TimeTrack.js';
 import { info, error, warn } from '../utils/logger.js';
-import { getBoardAttributes, getAllViews } from '../services/isoplus.js';
+import { getBoardAttributes, getAllViews, getItemValues, ITEM_DELETED } from '../services/isoplus.js';
+
+const slugify = (str) => (str || '').toString().toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+
+const getValueFromItem = (item, attrName) => {
+    const entry = item?.values?.find(v => v?.attribute?.name === attrName);
+    if (!entry || entry.data == null) return null;
+    const d = entry.data;
+    if (typeof d === 'object' && d?.name) return String(d.name);
+    return String(d);
+};
 import { enableBoardSync, disableBoardSync } from '../services/sync.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
 
@@ -243,18 +253,36 @@ router.get('/views-for-qr', authenticateToken, async (req, res) => {
             .map(item => ({
                 id: item.id,
                 name: item.name,
-                url: `${formBaseUrl}${item.id}`,
-                type: 'form',
+                url: `https://app.isoplus.online/form/${item.id}`,
+                type: item.type
             }));
-
-        const sharedDocuments = (views.views || [])
-            .filter(item => item.type === 'document' && item.settings?.editorItems?.[item.id]?.public === true)
-            .map(item => ({
-                id: item.id,
-                name: item.name,
-                url: `${documentBaseUrl}${item.id}`,
-                type: 'document',
-            }));
+        let sharedDocuments = [];
+        const publicDocumentIds = (views.views || [])
+            .filter(item => item.type === 'document')
+            .flatMap(item =>
+                Object.entries(item.settings?.editorItems || {})
+                    .filter(([, entry]) => entry?.public === true)
+                    .map(([editorItemKey]) => ({
+                        id: editorItemKey,
+                        viewId: item.id,
+                        type: item.type
+                    }))
+            );
+        
+        for (const documentId of publicDocumentIds) {
+            const documentValues = await getItemValues(req.query.workspaceId, req.query.boardId, documentId.id);
+            if (documentValues && documentValues !== ITEM_DELETED) {
+                const name = getValueFromItem(documentValues, 'Name') || documentValues.name || '';
+                const slug = slugify(name) || 'document';
+                const last5 = documentId.id.toString().slice(-5);
+                sharedDocuments.push({
+                    id: documentId.id,
+                    name: name,
+                    url: `https://app.isoplus.online/p/i${req.query.workspaceId}-${documentId.viewId}/${slug}-${last5}`,
+                    type: documentId.type,
+                });
+            }
+        }
 
         const combined = [...sharedForms, ...sharedDocuments].sort((a, b) =>
             (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
