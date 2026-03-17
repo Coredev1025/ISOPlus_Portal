@@ -235,7 +235,7 @@ router.get('/attribute', authenticateToken, async (req, res) => {
     }
 });
 
-router.get('/form', authenticateToken, async (req, res) => {
+router.get('/views-for-qr', authenticateToken, async (req, res) => {
     try {
         const views = await getAllViews(req.session.Authorization, req.query.workspaceId, req.query.boardId);
         const sharedForms = (views.views || [])
