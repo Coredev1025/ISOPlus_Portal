@@ -272,13 +272,13 @@ router.get('/views-for-qr', authenticateToken, async (req, res) => {
         for (const documentId of publicDocumentIds) {
             const documentValues = await getItemValues(req.query.workspaceId, req.query.boardId, documentId.id);
             if (documentValues && documentValues !== ITEM_DELETED) {
-                const name = getValueFromItem(documentValues, 'Name') || documentValues.name || '';
-                const slug = slugify(name) || 'document';
+                const name = getValueFromItem(documentValues, 'Name') || getValueFromItem(documentValues, 'Document Title');
+                const slug = slugify(name) || '';
                 const last5 = documentId.id.toString().slice(-5);
                 sharedDocuments.push({
                     id: documentId.id,
-                    name: name,
-                    url: `https://app.isoplus.online/p/i${req.query.workspaceId}-${documentId.viewId}/${slug}-${last5}`,
+                    name: name || 'Unnamed',
+                    url: `https://app.isoplus.online/p/i${req.query.workspaceId}-${documentId.viewId}/${slug? slug + '-' : ''}${last5}`,
                     type: documentId.type,
                 });
             }
