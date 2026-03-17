@@ -238,12 +238,29 @@ router.get('/attribute', authenticateToken, async (req, res) => {
 router.get('/form', authenticateToken, async (req, res) => {
     try {
         const views = await getAllViews(req.session.Authorization, req.query.workspaceId, req.query.boardId);
-        const data = views.views.filter(item => item.type == "form" && item.settings.formSettings.enabled);
-        if (!data) {
-            warn('Board-Service', 'Failed fetching board form data', { boardId: req.query.boardId }, req ?? null);
-            return res.status(404).json({ message: 'Form not found' });
-        }
-        res.status(200).json({ views: data || [] });
+        const sharedForms = (views.views || [])
+            .filter(item => item.type === 'form' && item.settings?.formSettings?.enabled)
+            .map(item => ({
+                id: item.id,
+                name: item.name,
+                url: `${formBaseUrl}${item.id}`,
+                type: 'form',
+            }));
+
+        const sharedDocuments = (views.views || [])
+            .filter(item => item.type === 'document' && item.settings?.editorItems?.[item.id]?.public === true)
+            .map(item => ({
+                id: item.id,
+                name: item.name,
+                url: `${documentBaseUrl}${item.id}`,
+                type: 'document',
+            }));
+
+        const combined = [...sharedForms, ...sharedDocuments].sort((a, b) =>
+            (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
+        );
+
+        res.status(200).json({ views: combined });
     } catch (err) {
         error('Board-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
         res.status(500).json({ message: 'Server error' });
