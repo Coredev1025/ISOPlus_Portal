@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, QrCode, Download, FileText, Image, Copy, Info } from "lucide-react";
+import { ArrowLeft, QrCode, Download, FileText, File, Copy, Info, ChevronDown } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useState, useEffect, useRef } from "react";
@@ -11,12 +11,18 @@ import axios from "@/app/utils/axiosConfig";
 import Spinner from "@/components/ui/spin";
 import { showFetchSuccessToast, showFetchErrorToast, showSuccessToast } from "@/lib/toast-utils";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   Tooltip,
   TooltipContent,
@@ -33,11 +39,11 @@ interface Board {
   label?: string;
 }
 
-interface Form {
+interface FormOrDocument {
   id: string;
   name: string;
   url: string;
-  type: string;
+  type: "form" | "document";
 }
 
 interface Business {
@@ -52,9 +58,10 @@ export default function QRGeneratorPage() {
   const id = pathname.split('/')[2];
   const boardId = pathname.split('/')[4];
   const [board, setBoard] = useState<Board>();
-  const [forms, setForms] = useState<Form[]>([]);
+  const [items, setItems] = useState<FormOrDocument[]>([]);
   const [business, setBusiness] = useState<Business>();
-  const [selectedForm, setSelectedForm] = useState<string>('');
+  const [selectedId, setSelectedId] = useState<string>('');
+  const [comboOpen, setComboOpen] = useState(false);
   const [qrCodeGenerated, setQrCodeGenerated] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -86,16 +93,17 @@ export default function QRGeneratorPage() {
           }
         );
         setBusiness(businessResponse.data);
-        const formResponse = await axios.get(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards/form?workspaceId=${id}&boardId=${boardId}`
+        const viewsResponse = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards/views-for-qr?workspaceId=${id}&boardId=${boardId}`
         );
-        const formData = formResponse.data.views;
-        setForms(formData.map((form: any) => ({
-          id: form.id,
-          name: form.name,
-          url: `https://app.isoplus.online/form/${form.id}`,
-          type: form.type
-        })));
+        const viewsData = viewsResponse.data.views || [];
+        const mapped = viewsData.map((v: { id: string; name: string; url: string; type: "form" | "document" }) => ({
+          id: v.id,
+          name: v.name,
+          url: v.url,
+          type: v.type,
+        }));
+        setItems(mapped.sort((a: { name: string }, b: { name: string }) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" })));
       } catch (error: any) {
         console.error("Error fetching data:", error);
         showFetchErrorToast("data", error.response?.data?.message || "Failed to load data");
@@ -108,12 +116,12 @@ export default function QRGeneratorPage() {
   }, [id, boardId]);
 
   const generateQRCode = async () => {
-    if (!selectedForm) return;
+    if (!selectedId) return;
 
     try {
       setGenerating(true);
-      const form = forms.find(f => f.id === selectedForm);
-      if (!form) return;
+      const item = items.find((f) => f.id === selectedId);
+      if (!item) return;
 
       const canvas = canvasRef.current;
       if (!canvas) {
@@ -123,7 +131,7 @@ export default function QRGeneratorPage() {
       canvas.width = 400;
       canvas.height = 400;
 
-      await QRCode.toCanvas(canvas, form.url, {
+      await QRCode.toCanvas(canvas, item.url, {
         errorCorrectionLevel: 'H',
         margin: 3,
         color: {
@@ -217,7 +225,7 @@ export default function QRGeneratorPage() {
 
     try {
       const link = document.createElement('a');
-      link.download = `qr-code-${selectedForm}.png`;
+      link.download = `qr-code-${selectedId}.png`;
       link.href = canvas.toDataURL('image/png');
       document.body.appendChild(link);
       link.click();
@@ -295,7 +303,7 @@ export default function QRGeneratorPage() {
       // Fallback: Try to download the image
       try {
         const link = document.createElement('a');
-        link.download = `qr-code-${selectedForm}.png`;
+        link.download = `qr-code-${selectedId}.png`;
         link.href = canvas.toDataURL('image/png');
         document.body.appendChild(link);
         link.click();
@@ -321,7 +329,7 @@ export default function QRGeneratorPage() {
     }
   };
 
-  const selectedFormData = forms.find(f => f.id === selectedForm);
+  const selectedItem = items.find((f) => f.id === selectedId);
 
   return (
     <div className="min-h-screen bg-background">
@@ -348,7 +356,7 @@ export default function QRGeneratorPage() {
                   QR Generator
                 </h1>
                 <p className="text-muted-foreground">
-                  Create QR codes for your forms with custom branding
+                  Create QR codes for your forms and documents with custom branding
                 </p>
               </div>
             </div>
@@ -363,41 +371,86 @@ export default function QRGeneratorPage() {
             </Card>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Form Selection */}
+              {/* Form or Document Selection */}
               <Card className="p-6 space-y-6">
                 <div>
-                  <h2 className="text-xl font-semibold mb-4">Select Form</h2>
+                  <h2 className="text-xl font-semibold mb-4">Select Form or Document</h2>
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium mb-2">Choose a form to generate QR code</label>
-                      <Select value={selectedForm} onValueChange={setSelectedForm}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a form..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {forms.map((form) => (
-                            <SelectItem key={form.id} value={form.id}>
-                              <div className="flex items-center gap-2">
-                                <FileText className="h-4 w-4" />
-                                {form.name}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <label className="block text-sm font-medium mb-2">Choose a form or document to generate QR code</label>
+                      <Popover open={comboOpen} onOpenChange={setComboOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={comboOpen}
+                            className="w-full justify-between font-normal h-10"
+                          >
+                            {selectedId
+                              ? (() => {
+                                  const sel = items.find((i) => i.id === selectedId);
+                                  return sel ? (
+                                    <span className="flex items-center gap-2 truncate">
+                                      {sel.name}
+                                      {sel.type === "form" ? (
+                                        <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                      ) : (
+                                        <File className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                      )}
+                                    </span>
+                                  ) : (
+                                    "Select a form or document..."
+                                  );
+                                })()
+                              : "Select a form or document..."}
+                            <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Search form or document..." />
+                            <CommandList>
+                              <CommandEmpty>No form or document found.</CommandEmpty>
+                              <CommandGroup>
+                                {items.map((item) => (
+                                  <CommandItem
+                                    key={item.id}
+                                    value={item.name}
+                                    onSelect={() => {
+                                      setSelectedId(item.id);
+                                      setComboOpen(false);
+                                    }}
+                                  >
+                                    <span className="flex items-center gap-2">
+                                      {item.name}
+                                      {item.type === "form" ? (
+                                        <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                      ) : (
+                                        <File className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                      )}
+                                    </span>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                     </div>
 
-                    {selectedFormData && (
+                    {selectedItem && (
                       <div className="p-4 bg-muted rounded-lg">
-                        <h3 className="font-medium mb-2">Form Details</h3>
+                        <h3 className="font-medium mb-2">
+                          {selectedItem.type === "form" ? "Form" : "Document"} Details
+                        </h3>
                         <p className="text-sm text-muted-foreground mb-2">
-                          <strong>Name:</strong> {selectedFormData.name}
+                          <strong>Name:</strong> {selectedItem.name}
                         </p>
                         <p className="text-sm text-muted-foreground mb-2">
-                          <strong>Type:</strong> {selectedFormData.type}
+                          <strong>Type:</strong> {selectedItem.type}
                         </p>
                         <p className="text-sm text-muted-foreground break-all">
-                          <strong>URL:</strong> {selectedFormData.url}
+                          <strong>URL:</strong> {selectedItem.url}
                         </p>
                         <p className="text-sm text-muted-foreground mt-2">
                           <strong>Logo Status:</strong> {(business?.squareLogo || business?.defaultLogo) ? 
@@ -432,7 +485,7 @@ export default function QRGeneratorPage() {
 
                     <Button
                       onClick={generateQRCode}
-                      disabled={!selectedForm || generating}
+                      disabled={!selectedId || generating}
                       className="w-full"
                     >
                       {generating ? (
@@ -477,7 +530,7 @@ export default function QRGeneratorPage() {
                     <div className="flex justify-center">
                       <input
                         type="text"
-                        value={selectedFormData?.url || ''}
+                        value={selectedItem?.url ?? ''}
                         readOnly
                         className="w-64 px-4 py-3 border-2 border-primary/30 rounded-lg bg-card text-foreground text-sm font-mono"
                       />
@@ -505,13 +558,13 @@ export default function QRGeneratorPage() {
                       </Button>
                     </div>
                     <div className="text-center text-sm text-muted-foreground">
-                      <p>QR code is ready for use. You can scan it to access the form.</p>
+                      <p>QR code is ready for use. You can scan it to access the form or document.</p>
                     </div>
                   </div>
                   <div className="text-center py-12" style={{ display: qrCodeGenerated ? 'none' : 'block' }}>
                     <QrCode className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
                     <p className="text-muted-foreground">
-                      Select a form and generate a QR code to see it here
+                      Select a form or document and generate a QR code to see it here
                     </p>
                   </div>
                 </div>
