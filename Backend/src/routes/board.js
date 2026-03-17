@@ -5,7 +5,7 @@ import TimeTrack from '../models/TimeTrack.js';
 import { info, error, warn } from '../utils/logger.js';
 import { getBoardAttributes, getAllViews, getItemValues, ITEM_DELETED } from '../services/isoplus.js';
 
-const slugify = (str) => (str || '').toString().toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+const slugify = (str) => (str || '').toString().toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w-]+/g, '').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
 
 const getValueFromItem = (item, attrName) => {
     const entry = item?.values?.find(v => v?.attribute?.name === attrName);
