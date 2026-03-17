@@ -33,6 +33,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import QRCode from 'qrcode';
 
+const qrFetchCache = new Map<string, Promise<any>>();
+
 interface Board {
   id: string;
   name: string;
@@ -80,22 +82,17 @@ export default function QRGeneratorPage() {
   }, [id, setCurrentWorkspaceId]);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const boardsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`);
+    if (!id || !boardId) return;
+
+    const cacheKey = `${id}-${boardId}`;
+    if (!qrFetchCache.has(cacheKey)) {
+      qrFetchCache.set(cacheKey, (async () => {
+        const [boardsResponse, businessResponse, viewsResponse] = await Promise.all([
+          axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`),
+          axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`, { params: { workspaceId: id } }),
+          axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards/views-for-qr?workspaceId=${id}&boardId=${boardId}`),
+        ]);
         const boardData: Board = boardsResponse.data.board.find((b: any) => b.id == boardId);
-        setBoard(boardData);
-        const businessResponse = await axios.get(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`,
-          {
-            params: { workspaceId: id }
-          }
-        );
-        setBusiness(businessResponse.data);
-        const viewsResponse = await axios.get(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards/views-for-qr?workspaceId=${id}&boardId=${boardId}`
-        );
         const viewsData = viewsResponse.data.views || [];
         const mapped = viewsData.map((v: { id: string; name: string; url: string; type: "form" | "document" }) => ({
           id: v.id,
@@ -103,16 +100,32 @@ export default function QRGeneratorPage() {
           url: v.url,
           type: v.type,
         }));
-        setItems(mapped.sort((a: { name: string }, b: { name: string }) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" })));
-      } catch (error: any) {
-        console.error("Error fetching data:", error);
-        showFetchErrorToast("data", error.response?.data?.message || "Failed to load data");
-      } finally {
-        setLoading(false);
-      }
-    };
+        return { boardData, businessData: businessResponse.data, items: mapped };
+      })());
+    }
 
-    fetchData();
+    let cancelled = false;
+    setLoading(true);
+    qrFetchCache.get(cacheKey)!
+      .then((data) => {
+        if (!cancelled && data) {
+          setBoard(data.boardData);
+          setBusiness(data.businessData);
+          setItems(data.items.sort((a: { name: string }, b: { name: string }) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" })));
+        }
+      })
+      .catch((error: any) => {
+        if (!cancelled) {
+          console.error("Error fetching data:", error);
+          showFetchErrorToast("data", error.response?.data?.message || "Failed to load data");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+        qrFetchCache.delete(cacheKey);
+      });
+
+    return () => { cancelled = true; };
   }, [id, boardId]);
 
   const generateQRCode = async () => {
