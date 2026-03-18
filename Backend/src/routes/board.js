@@ -272,7 +272,7 @@ router.get('/views-for-qr', authenticateToken, async (req, res) => {
         for (const documentId of publicDocumentIds) {
             const documentValues = await getItemValues(req.query.workspaceId, req.query.boardId, documentId.id);
             if (documentValues && documentValues !== ITEM_DELETED) {
-                const name = getValueFromItem(documentValues, 'Name') || getValueFromItem(documentValues, 'Document Title');
+                const name = getValueFromItem(documentValues, 'Name') || getValueFromItem(documentValues, 'Documents') || getValueFromItem(documentValues, 'Document Title');
                 const slug = slugify(name) || '';
                 const last5 = documentId.id.toString().slice(-5);
                 sharedDocuments.push({
