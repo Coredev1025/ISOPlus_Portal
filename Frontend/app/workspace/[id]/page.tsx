@@ -377,11 +377,15 @@ export default function WorkspaceDetail() {
                   <TableRow key={board.id}>
                     <TableCell className="font-mono">{board.id}</TableCell>
                     <TableCell>{board.name}</TableCell>
-                    <TableCell className={`font-semibold ${canSeeBoardMeta ? '' : 'hidden'}`}>
-                      <Badge variant="outline" className={LABEL_COLORS[labelKey]}>
-                        {(board.label as BoardLabel) || 'No Label'}
-                      </Badge>
-                    </TableCell>
+                    {
+                      isOwnerOrSupportUser && (                      
+                        <TableCell className={`font-semibold ${canSeeBoardMeta ? '' : 'hidden'}`}>
+                          <Badge variant="outline" className={LABEL_COLORS[labelKey]}>
+                            {(board.label as BoardLabel) || 'No Label'}
+                          </Badge>
+                        </TableCell>
+                      )
+                    }
                     <TableCell>
                       <div className="flex w-[120px] items-center gap-2">
                         <Button

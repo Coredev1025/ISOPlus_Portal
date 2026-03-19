@@ -388,7 +388,7 @@ export default function QRGeneratorPage() {
               <Card className="p-6 space-y-6">
                 <div>
                   <h2 className="text-xl font-semibold mb-4">Select Form or Document</h2>
-                  <p>NOTE: A QR code can be generated once the sharing feature is enabled for the relevant form or document.</p>
+                  <p className="mb-4">NOTE: A QR code can be generated once the sharing feature is enabled for the relevant form or document.</p>
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium mb-2">Choose a form or document to generate QR code</label>
@@ -406,7 +406,7 @@ export default function QRGeneratorPage() {
                                   return sel ? (
                                     <span className="flex items-center gap-2 truncate">
                                       {sel.name}
-                                      {sel.type === "form" ? (
+                                      {sel.type === "document" ? (
                                         <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                                       ) : (
                                         <File className="h-4 w-4 shrink-0 text-muted-foreground" />
