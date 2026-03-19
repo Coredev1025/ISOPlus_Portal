@@ -437,7 +437,7 @@ export default function QRGeneratorPage() {
                                   >
                                     <span className="flex items-center gap-2">
                                       {item.name}
-                                      {item.type === "form" ? (
+                                      {item.type === "document" ? (
                                         <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                                       ) : (
                                         <File className="h-4 w-4 shrink-0 text-muted-foreground" />
