@@ -345,64 +345,69 @@ export default function WorkspaceDetail() {
             ) : (
               <>
                 <Table className="enhanced-table">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="font-semibold">Board ID</TableHead>
-                  <TableHead className="font-semibold">Name</TableHead>
-                  <TableHead className={`font-semibold ${canSeeBoardMeta ? '' : 'hidden'}`}>
-                    <div className="flex items-center gap-2">
-                      Label
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Info className="h-4 w-4 text-muted-foreground cursor-help" />
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-xs">
-                            Label your boards to enable specific integration features and automations.
-                            Different board types have access to different features.
-                            Unlabeled boards will operate normally.
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                  </TableHead>
-                  <TableHead className="font-semibold w-[120px]">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredBoards?.map((board) => {
-                  const boardIsOpenable = canOpenBoard(board);
-                  const labelKey = (Object.prototype.hasOwnProperty.call(LABEL_COLORS, board.label) ? board.label : 'No Label') as BoardLabel;
-                  return (
-                  <TableRow key={board.id}>
-                    <TableCell className="font-mono">{board.id}</TableCell>
-                    <TableCell>{board.name}</TableCell>
-                    {
-                      isOwnerOrSupportUser && (                      
-                        <TableCell className={`font-semibold ${canSeeBoardMeta ? '' : 'hidden'}`}>
-                          <Badge variant="outline" className={LABEL_COLORS[labelKey]}>
-                            {(board.label as BoardLabel) || 'No Label'}
-                          </Badge>
-                        </TableCell>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="font-semibold">Board ID</TableHead>
+                      <TableHead className="font-semibold">Name</TableHead>
+                      {
+                        isOwnerOrSupportUser && (
+                          <TableHead className={`font-semibold ${canSeeBoardMeta ? '' : 'hidden'}`}>
+                            <div className="flex items-center gap-2">
+                              Label
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Info className="h-4 w-4 text-muted-foreground cursor-help" />
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-xs">
+                                    Label your boards to enable specific integration features and automations.
+                                    Different board types have access to different features.
+                                    Unlabeled boards will operate normally.
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            </div>
+                          </TableHead>
+                        )
+                      }
+                      <TableHead className="font-semibold w-[120px]">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredBoards?.map((board) => {
+                      const boardIsOpenable = canOpenBoard(board);
+                      const labelKey = (Object.prototype.hasOwnProperty.call(LABEL_COLORS, board.label) ? board.label : 'No Label') as BoardLabel;
+                      return (
+                        <TableRow key={board.id}>
+                          <TableCell className="font-mono">{board.id}</TableCell>
+                          <TableCell>{board.name}</TableCell>
+                          {
+                            isOwnerOrSupportUser && (
+                              <TableCell className={`font-semibold ${canSeeBoardMeta ? '' : 'hidden'}`}>
+                                <Badge variant="outline" className={LABEL_COLORS[labelKey]}>
+                                  {(board.label as BoardLabel) || 'No Label'}
+                                </Badge>
+                              </TableCell>
+                            )
+                          }
+                          <TableCell>
+                            <div className="flex w-[120px] items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={!boardIsOpenable}
+                                title={openBoardTooltip(board)}
+                                onClick={() => router.push(`/workspace/${workspace?.id}/board/${board.id}`)}
+                              >
+                                Open
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
                       )
-                    }
-                    <TableCell>
-                      <div className="flex w-[120px] items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={!boardIsOpenable}
-                          title={openBoardTooltip(board)}
-                          onClick={() => router.push(`/workspace/${workspace?.id}/board/${board.id}`)}
-                        >
-                          Open
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )})}
-              </TableBody>
-            </Table>
+                    })}
+                  </TableBody>
+                </Table>
 
                 {filteredBoards.length === 0 && (
                   <div className="text-center py-8 text-muted-foreground">
