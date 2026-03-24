@@ -1048,6 +1048,16 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
         }).lean();
         const invoiceNumberMap = new Map(invoiceNumbers.map(inv => [inv.itemId, inv.invoiceNumber || '']));
 
+        // Detect which status field exists in board item data: "Shift Status" or "Job Status"
+        let statusFieldAttributeNames = [NDIS_MASTERPLAN_ATTR.JOB_STATUS, 'Job status', 'JobStatus'];
+        for (const item of masterItems) {
+            const keys = Object.keys(item?.data || {});
+            if (keys.includes('Shift Status')) {
+                statusFieldAttributeNames = ['Shift Status', 'ShiftStatus'];
+                break;
+            }
+        }
+
         // Apply filters (participant, payment status, dates) at item-level
         if (participant) {
             try {
@@ -1076,7 +1086,7 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
         if (jobStatusFilter && jobStatusFilter !== 'all') {
             const desired = String(jobStatusFilter).trim().toLowerCase();
             masterItems = masterItems.filter(item => {
-                const js = formatNdisLabelValue(item?.data?.[NDIS_MASTERPLAN_ATTR.JOB_STATUS]).trim().toLowerCase();
+                const js = formatNdisLabelValue(getNdisValueMulti(item, statusFieldAttributeNames)).trim().toLowerCase();
                 return js === desired;
             });
         }

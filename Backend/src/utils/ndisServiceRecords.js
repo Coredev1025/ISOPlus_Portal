@@ -425,8 +425,10 @@ export function buildNdisMasterPlanServiceRows({
   const groupSize = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.GROUP_SIZE]) || 1;
   const jobStatus = getMasterPlanLabel(masterPlanItem, [
     NDIS_MASTERPLAN_ATTR.JOB_STATUS,
+    'Shift Status',
     'Job status',
     'JobStatus',
+    'ShiftStatus',
   ]);
   const paymentStatus = getMasterPlanLabel(masterPlanItem, [
     NDIS_MASTERPLAN_ATTR.PAYMENT_STATUS,

@@ -79,13 +79,6 @@ const NDIS_PAYMENT_STATUS_OPTIONS = [
   "Refunded"
 ];
 
-const JOB_STATUS_FILTERS = [
-  { value: "all", label: "All Job Status" },
-  { value: "Scheduled", label: "Scheduled" },
-  { value: "Completed", label: "Completed" },
-  { value: "Cancelled", label: "Cancelled" }
-];
-
 const FUNDING_SOURCE_CODE_MAP: Record<string, string> = {
   "Home Support(HS) Quarterly": "ON",
   "Home Support Care Management": "CM",
@@ -226,6 +219,7 @@ export default function InvoiceGenerator() {
   const [transactionStatusFilter, setTransactionStatusFilter] = useState("all");
   const [paymentStatusFilter, setPaymentStatusFilter] = useState("all");
   const [jobStatusFilter, setJobStatusFilter] = useState("all");
+  const [ndisStatusFieldLabel, setNdisStatusFieldLabel] = useState<string>('Job Status');
   const [ndisPaymentStatusOptions, setNdisPaymentStatusOptions] = useState<string[]>(NDIS_PAYMENT_STATUS_OPTIONS);
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortBy, setSortBy] = useState<"scheduledServiceDate" | "serviceDeliveryDate">("scheduledServiceDate");
@@ -707,6 +701,10 @@ export default function InvoiceGenerator() {
         if (response.data?.items) {
           const items = response.data.items;
           const total = response.data.total || 0;
+          const statusFieldLabel = response.data?.statusFieldLabel;
+          if (isNdisBoard && statusFieldLabel) {
+            setNdisStatusFieldLabel(statusFieldLabel);
+          }
 
           setEligibleRecords(items);
           // Auto-select all eligible records by default (including invoiced ones)
@@ -863,11 +861,16 @@ export default function InvoiceGenerator() {
           pending = 0,
           totalAmount = 0,
           totalGovSubsidy = 0,
-          totalParticipantContribution = 0
+          totalParticipantContribution = 0,
+          statusFieldLabel,
         } = response.data;
 
         if (!Array.isArray(items)) {
           throw new Error('Invalid items format received from server');
+        }
+
+        if (isNdisBoard && statusFieldLabel) {
+          setNdisStatusFieldLabel(statusFieldLabel);
         }
 
         // No need to transform since backend now sends formatted data
@@ -1187,7 +1190,7 @@ export default function InvoiceGenerator() {
     },
     {
       key: 'jobStatus',
-      label: 'Job Status',
+      label: ndisStatusFieldLabel,
       className: 'min-w-[160px]',
       render: (record) => record.jobStatus || '-'
     },
@@ -2468,15 +2471,14 @@ export default function InvoiceGenerator() {
                   <SelectTrigger className="w-fit flex-shrink-0 min-w-[180px]">
                     <div className="flex items-center gap-2 min-w-0 w-full">
                       <Filter className="h-4 w-4 flex-shrink-0" />
-                      <SelectValue placeholder="Job Status" className="truncate" />
+                      <SelectValue placeholder={ndisStatusFieldLabel} className="truncate" />
                     </div>
                   </SelectTrigger>
                   <SelectContent>
-                    {JOB_STATUS_FILTERS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="all">All {ndisStatusFieldLabel}</SelectItem>
+                    <SelectItem value="Scheduled">Scheduled</SelectItem>
+                    <SelectItem value="Completed">Completed</SelectItem>
+                    <SelectItem value="Cancelled">Cancelled</SelectItem>
                   </SelectContent>
                 </Select>
               )}
