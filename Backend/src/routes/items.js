@@ -1080,6 +1080,19 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
             return formatNdisLabelValue(value).trim();
         };
 
+        // Detect which status field exists in board item data: "Shift Status" or "Job Status"
+        let statusFieldLabel = 'Job Status';
+        for (const item of masterItems) {
+            const keys = Object.keys(item?.data || {});
+            if (keys.includes('Shift Status')) {
+                statusFieldLabel = 'Shift Status';
+                break;
+            }
+        }
+        const statusFieldAttributeNames = statusFieldLabel === 'Shift Status'
+            ? ['Shift Status', 'ShiftStatus']
+            : [NDIS_MASTERPLAN_ATTR.JOB_STATUS, 'Job status', 'JobStatus'];
+
         // Participant filter (resolved name from Participant Profile)
         if (participant) {
             try {
@@ -1109,7 +1122,7 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
         if (jobStatusFilter && jobStatusFilter !== 'all') {
             const desired = String(jobStatusFilter).trim().toLowerCase();
             masterItems = masterItems.filter(item => {
-                const js = formatNdisLabelValue(item?.data?.[NDIS_MASTERPLAN_ATTR.JOB_STATUS]).trim().toLowerCase();
+                const js = formatNdisLabelValue(getNdisValueMulti(item, statusFieldAttributeNames)).trim().toLowerCase();
                 return js === desired;
             });
         }
@@ -1252,6 +1265,7 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
             totalAmount,
             totalGovSubsidy: 0,
             totalParticipantContribution: 0,
+            statusFieldLabel,
         });
     } catch (err) {
         error('Items-Service', 'Failed to fetch NDIS invoice generator data', { message: err.message, stack: err.stack }, req ?? null);
