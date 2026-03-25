@@ -34,6 +34,7 @@ import {
 import { useAppContext } from "@/app/context/index";
 import { Badge } from "@/components/ui/badge";
 import { TimeEntry } from "./types";
+import { TimeTrackingButton } from "./components/TimeTrackingButton";
 import axios from "@/app/utils/axiosConfig";
 import { isCareManagementLabel, isLowCatCareManagementLabel, isOwnerOrSupport } from "@/lib/access";
 
@@ -333,6 +334,11 @@ export default function BoardDetail() {
                   )}
                 </div>
               </div>
+              <TimeTrackingButton
+                workspaceId={id}
+                boardId={boardId ?? ""}
+                setTimeTrackingEnabled={setTimeTrackingEnabled}
+              />
             </div>
           </Card>
 
