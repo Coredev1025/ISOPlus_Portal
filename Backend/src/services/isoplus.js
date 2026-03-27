@@ -593,27 +593,52 @@ export async function setIntegrationMessage(workspaceId, boardId, itemId, messag
     }
 }
 
-export function putTimeTracking(workspaceId, boardId, itemId, startTime, endTime) {
-    axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`, {
-        "values": [
+function toISoPlusDatetime(date) {
+    return new Date(date).toISOString().replace(/\.(\d{3})Z$/, '.$1000Z');
+}
+
+export async function putTimeTracking(workspaceId, boardId, itemId, startTime, endTime, nativeAttributeId, existingEntries = [], description = '') {
+    if (!nativeAttributeId || !startTime || !endTime) {
+        warn('ISO+™ Service', 'putTimeTracking skipped — missing required params', {
+            workspaceId, boardId, itemId,
+            hasAttrId: !!nativeAttributeId, hasStart: !!startTime, hasEnd: !!endTime
+        });
+        return false;
+    }
+
+    const newEntry = {
+        started_at: toISoPlusDatetime(startTime),
+        ended_at: toISoPlusDatetime(endTime),
+        description: description || '',
+    };
+
+    const cleanExisting = (Array.isArray(existingEntries) ? existingEntries : [])
+        .map(({ _portal_pending, ...rest }) => rest); 
+
+    const updatedEntries = [...cleanExisting, newEntry];
+
+    try {
+        await isoPlusClient.put(
+            `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
+            { values: [{ attribute_id: nativeAttributeId, data: updatedEntries }] },
             {
-                "attribute_id": "b16e64b3-2e79-46af-ae87-3135005d362b",
-                "data": `${new Date(startTime).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}`
-            }, {
-                "attribute_id": "00ece0a4-b3bc-43e1-8580-23854b062439",
-                "data": `${new Date(endTime).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+                headers: {
+                    Authorization: `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    'X-API-Version': '2025-02-26.morava',
+                }
             }
-        ],
-    }, {
-        headers: {
-            "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "X-API-Version": "2025-02-26.morava",
-        }
-    });
-    return true;
-};
+        );
+        return true;
+    } catch (err) {
+        error('ISO+™ Service', 'putTimeTracking failed', {
+            workspaceId, boardId, itemId,
+            message: err.message
+        });
+        return false;
+    }
+}
 
 export const ITEM_DELETED = Symbol('ITEM_DELETED');
 
