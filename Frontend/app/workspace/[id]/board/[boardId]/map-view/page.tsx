@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, MapPin, ExternalLink, Search, Calendar } from "lucide-react";
+import { ArrowLeft, ExternalLink, Search, Calendar } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useEffect, useState } from "react";
@@ -25,6 +25,12 @@ import {
 } from "@/components/ui/table";
 import { useAppContext } from "@/app/context";
 import axios from "@/app/utils/axiosConfig";
+import dynamic from "next/dynamic";
+
+const LeafletMap = dynamic(
+  () => import("@/components/ui/leaflet-map").then(m => m.LeafletMap),
+  { ssr: false }
+);
 
 interface Board {
   id: string;
@@ -36,8 +42,9 @@ export default function MapViewPage() {
   const router = useRouter();
   const pathname = usePathname();
   const { workspaces, setCurrentWorkspaceId } = useAppContext();
-  const [boards, setBoards] = useState<Board[]>([]);
+  const [board, setBoard] = useState<Board | null>(null);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
+  const [tasks, setTasks] = useState<{ id: string; name: string; location?: { latitude: number; longitude: number; address: string } }[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedEntry, setSelectedEntry] = useState<TimeEntry | null>(null);
   const [dateFilter, setDateFilter] = useState<string>("all");
@@ -54,124 +61,44 @@ export default function MapViewPage() {
   }, [id, setCurrentWorkspaceId]);
 
   useEffect(() => {
+    if (!id || !boardId) return;
     const abortController = new AbortController();
+    axios
+      .get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${boardId}`, { signal: abortController.signal })
+      .then(res => setBoard(res.data.board))
+      .catch(err => { if (err.name != "CanceledError" && err.name != "AbortError") console.error(err); });
+    return () => abortController.abort();
+  }, [id, boardId]);
 
-    const fetchBoards = async () => {
-      if (boards.length === 0) {
-        try {
-          const response = await axios.get(
-            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`,
-            {
-              signal: abortController.signal,
-            }
-          );
+  useEffect(() => {
+    if (!id || !boardId) return;
+    const abortController = new AbortController();
+    axios
+      .get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks?workspaceId=${id}&boardId=${boardId}`, { signal: abortController.signal })
+      .then(res => {
+        const withLocation = (res.data.tasks as TimeEntry[]).filter(e => e.location?.lat && e.location?.lng);
+        setTimeEntries(withLocation);
+      })
+      .catch(err => { if (err.name != "CanceledError" && err.name != "AbortError") console.error(err); });
+    return () => abortController.abort();
+  }, [id, boardId]);
 
-          const data: Board[] = await Promise.all(
-            response.data.board.map(async (board: any) => {
-              try {
-                const boardResponse = await axios.get(
-                  `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${boardId}`,
-                  {
-                    signal: abortController.signal,
-                  }
-                );
-                return { ...board, label: boardResponse.data.board.label };
-              } catch (error: any) {
-                if (error.name != "CanceledError" && error.name != "AbortError") {
-                  console.error("Error fetching board:", error);
-                }
-                return { ...board, label: null };
-              }
-            })
-          );
-
-          if (!abortController.signal.aborted) {
-            setBoards(data);
-            setTimeEntries(generateMockTimeEntries());
-          }
-        } catch (error: any) {
-          if (error.name != "CanceledError" && error.name != "AbortError") {
-            console.error("Error fetching boards:", error);
-          }
-        }
-      }
-    };
-
-    fetchBoards();
-
-    return () => {
-      abortController.abort();
-    };
-  }, [id, boards.length]);
+  useEffect(() => {
+    if (!id || !boardId) return;
+    const abortController = new AbortController();
+    axios
+      .get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks/tasks`, { params: { workspaceId: id, boardId }, signal: abortController.signal })
+      .then(res => setTasks(res.data.tasks || []))
+      .catch(err => { if (err.name != "CanceledError" && err.name != "AbortError") console.error(err); });
+    return () => abortController.abort();
+  }, [id, boardId]);
 
   const workspace = workspaces.find((workspace) => workspace.id.toString() === id);
-  const board = boards.find((b) => b.id === boardId);
-
-  // Generate mock time entries with locations
-  const generateMockTimeEntries = (): TimeEntry[] => {
-    const tasks = [
-      "Client consultation",
-      "Site inspection",
-      "Documentation review",
-      "Equipment installation",
-      "Follow-up call",
-      "Maintenance check",
-      "Training session",
-      "Report preparation",
-      "Client meeting",
-      "Emergency repair",
-    ];
-
-    const locations = [
-      { lat: -33.865143, lng: 151.2099, address: "Sydney CBD, NSW" },
-      { lat: -33.891844, lng: 151.199593, address: "Newtown, NSW" },
-      { lat: -33.918861, lng: 151.226263, address: "Randwick, NSW" },
-      { lat: -33.85668, lng: 151.215256, address: "North Sydney, NSW" },
-      { lat: -33.73381, lng: 150.982318, address: "Castle Hill, NSW" },
-      { lat: -33.803482, lng: 151.088196, address: "Parramatta, NSW" },
-      { lat: -33.924374, lng: 151.259052, address: "Maroubra, NSW" },
-      { lat: -33.870666, lng: 151.093674, address: "Strathfield, NSW" },
-      { lat: -33.843082, lng: 151.251343, address: "Bondi, NSW" },
-      { lat: -33.917967, lng: 151.025508, address: "Bankstown, NSW" },
-      { lat: -33.766382, lng: 151.287888, address: "Manly, NSW" },
-      { lat: -33.753746, lng: 150.687042, address: "Penrith, NSW" },
-    ];
-
-    return Array.from({ length: 30 }, (_, i) => {
-      const now = new Date();
-      const startDate = new Date(now);
-      startDate.setDate(now.getDate() - Math.floor(Math.random() * 14)); // Random day in the last 2 weeks
-      startDate.setHours(9 + Math.floor(Math.random() * 8)); // Between 9am and 5pm
-      startDate.setMinutes(Math.floor(Math.random() * 60));
-
-      const durationMinutes = 15 + Math.floor(Math.random() * 240); // 15 min to 4 hours
-      const endDate = new Date(startDate);
-      endDate.setMinutes(startDate.getMinutes() + durationMinutes);
-
-      const taskIndex = Math.floor(Math.random() * tasks.length);
-      const locationIndex = Math.floor(Math.random() * locations.length);
-
-      return {
-        id: `time-${i + 1}`,
-        taskName: tasks[taskIndex],
-        startTime: startDate.toISOString(),
-        endTime: endDate.toISOString(),
-        duration: durationMinutes,
-        location: locations[locationIndex],
-        notes: Math.random() > 0.7 ? "Additional notes for this time entry" : "",
-        userId: `user-${Math.floor(Math.random() * 5) + 1}`,
-        userName: ["John Smith", "Jane Doe", "Mike Johnson", "Sarah Williams", "Alex Brown"][
-          Math.floor(Math.random() * 5)
-        ],
-      };
-    }).sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()); // Sort by most recent
-  };
 
   if (!workspace || !board) {
     return null;
   }
 
-  // Filter time entries based on search query and date filter
   const filteredEntries = timeEntries.filter((entry) => {
     const matchesSearch = entry.taskName.toLowerCase().includes(searchQuery.toLowerCase());
 
@@ -196,13 +123,11 @@ export default function MapViewPage() {
     return matchesSearch && matchesDate;
   });
 
-  // Format date for display
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleString('en-AU');
   };
 
-  // Open Google Maps with the location
   const openGoogleMaps = (location: TimeEntry["location"]) => {
     if (location) {
       window.open(`https://www.google.com/maps/search/?api=1&query=${location.lat},${location.lng}`, "_blank");
@@ -263,124 +188,110 @@ export default function MapViewPage() {
           </div>
 
           {/* Map View */}
-          <div className="relative h-[500px] bg-muted rounded-lg overflow-hidden mb-6">
-            {/* This would be replaced with an actual map component */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <p className="text-muted-foreground mb-2">Interactive Map</p>
-                <p className="text-sm text-muted-foreground mb-4">
-                  Showing {filteredEntries.length} locations
-                </p>
+          <div className="rounded-lg overflow-hidden mb-6">
+            {(() => {
+              const taskMarkers = tasks
+                .filter(t => t.location?.latitude && t.location?.longitude)
+                .map(t => ({
+                  id: `task-${t.id}`,
+                  lat: t.location!.latitude,
+                  lng: t.location!.longitude,
+                  address: t.location!.address,
+                  label: `📍 ${t.name}`,
+                }));
+              const entryMarkers = filteredEntries.map(e => ({
+                id: e.id,
+                lat: e.location!.lat,
+                lng: e.location!.lng,
+                address: e.location?.address,
+                label: e.taskName,
+              }));
+              const allMarkers = [...taskMarkers, ...entryMarkers];
+              return allMarkers.length === 0 ? (
+                <div className="h-[500px] bg-muted flex items-center justify-center rounded-lg">
+                  <p className="text-muted-foreground">No location data to display</p>
+                </div>
+              ) : (
+                <LeafletMap
+                  height="500px"
+                  markers={allMarkers}
+                  onMarkerClick={marker => {
+                    const entry = filteredEntries.find(e => e.id === marker.id) ?? null;
+                    setSelectedEntry(prev => prev?.id === marker.id ? null : entry);
+                  }}
+                />
+              );
+            })()}
+          </div>
+
+          {/* Selected entry card */}
+          {selectedEntry && (
+            <div className="mb-6 p-4 border rounded-lg bg-card shadow flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 className="font-semibold">{selectedEntry.taskName}</h3>
+                <p className="text-sm text-muted-foreground">{formatDate(selectedEntry.startTime)} · {selectedEntry.userName}</p>
+                {selectedEntry.location?.address && (
+                  <p className="text-sm mt-1">{selectedEntry.location.address}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button variant="outline" size="sm" onClick={() => router.push(`/workspace/${id}/board/${boardId}/location/${selectedEntry.id}`)}>
+                  View Details
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => openGoogleMaps(selectedEntry.location)}>
+                  <ExternalLink className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setSelectedEntry(null)}>×</Button>
               </div>
             </div>
-
-            {/* Sample map markers */}
-            {filteredEntries.map((entry, index) => (
-              <div
-                key={entry.id}
-                className="absolute w-6 h-6 bg-primary rounded-full flex items-center justify-center cursor-pointer"
-                style={{
-                  left: `${10 + (index % 6) * 15}%`,
-                  top: `${20 + Math.floor(index / 6) * 15}%`,
-                }}
-                onClick={() => setSelectedEntry(entry)}
-              >
-                <MapPin className="h-4 w-4 text-white" />
-              </div>
-            ))}
-
-            {/* Selected entry popup */}
-            {selectedEntry && (
-              <div
-                className="absolute bg-card p-4 rounded-lg shadow-lg w-64"
-                style={{
-                  left: "50%",
-                  top: "50%",
-                  transform: "translate(-50%, -50%)",
-                }}
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <h3 className="font-medium">{selectedEntry.taskName}</h3>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0"
-                    onClick={() => setSelectedEntry(null)}
-                  >
-                    ×
-                  </Button>
-                </div>
-                <p className="text-sm text-muted-foreground mb-1">
-                  {formatDate(selectedEntry.startTime)}
-                </p>
-                <p className="text-sm text-muted-foreground mb-1">
-                  User: {selectedEntry.userName}
-                </p>
-                {selectedEntry.location && (
-                  <p className="text-sm mb-3">{selectedEntry.location.address}</p>
-                )}
-                <div className="flex justify-between">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => router.push(`/workspace/${id}/board/${boardId}/location/${selectedEntry.id}`)}
-                  >
-                    View Details
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => openGoogleMaps(selectedEntry.location)}
-                  >
-                    Google Maps
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
+          )}
 
           {/* Location List */}
           <div>
             <h2 className="text-xl font-semibold mb-4">All Locations</h2>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Task</TableHead>
-                  <TableHead>Date & Time</TableHead>
-                  <TableHead>User</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredEntries.map((entry) => (
-                  <TableRow key={entry.id}>
-                    <TableCell className="font-medium">{entry.taskName}</TableCell>
-                    <TableCell>{formatDate(entry.startTime)}</TableCell>
-                    <TableCell>{entry.userName}</TableCell>
-                    <TableCell>{entry.location?.address}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => router.push(`/workspace/${id}/board/${boardId}/location/${entry.id}`)}
-                        >
-                          View
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openGoogleMaps(entry.location)}
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
+            {filteredEntries.length === 0 ? (
+              <p className="text-center py-8 text-muted-foreground">No time entries with location data found.</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Task</TableHead>
+                    <TableHead>Date & Time</TableHead>
+                    <TableHead>User</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {filteredEntries.map((entry) => (
+                    <TableRow key={entry.id}>
+                      <TableCell className="font-medium">{entry.taskName}</TableCell>
+                      <TableCell>{formatDate(entry.startTime)}</TableCell>
+                      <TableCell>{entry.userName}</TableCell>
+                      <TableCell>{entry.location?.address || `${entry.location?.lat?.toFixed(4)}, ${entry.location?.lng?.toFixed(4)}`}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => router.push(`/workspace/${id}/board/${boardId}/location/${entry.id}`)}
+                          >
+                            View
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openGoogleMaps(entry.location)}
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </div>
         </Card>
       </div>

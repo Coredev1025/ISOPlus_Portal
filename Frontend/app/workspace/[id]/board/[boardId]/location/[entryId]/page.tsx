@@ -2,13 +2,19 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, MapPin, ExternalLink, Clock, User, Calendar } from "lucide-react";
+import { ArrowLeft, MapPin, ExternalLink, Clock, User } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useEffect, useState } from "react";
 import { useAppContext } from "@/app/context";
 import { TimeEntry } from "../../types";
 import axios from "@/app/utils/axiosConfig";
+import dynamic from "next/dynamic";
+
+const LeafletMap = dynamic(
+  () => import("@/components/ui/leaflet-map").then(m => m.LeafletMap),
+  { ssr: false }
+);
 
 interface Board {
   id: string;
@@ -16,32 +22,6 @@ interface Board {
   label: string
 }
 
-// Generate a mock time entry for the location detail page
-const generateMockTimeEntry = (entryId: string): TimeEntry => {
-  const now = new Date();
-  const startDate = new Date(now);
-  startDate.setHours(startDate.getHours() - 3);
-
-  const durationMinutes = 90; // 1.5 hours
-  const endDate = new Date(startDate);
-  endDate.setMinutes(startDate.getMinutes() + durationMinutes);
-
-  return {
-    id: entryId,
-    taskName: "Client site inspection",
-    startTime: startDate.toISOString(),
-    endTime: endDate.toISOString(),
-    duration: durationMinutes,
-    location: {
-      lat: -33.865143,
-      lng: 151.209900,
-      address: "123 Main Street, Sydney CBD, NSW 2000"
-    },
-    notes: "Completed initial site assessment for renovation project. Client requested additional quotes for kitchen remodeling.",
-    userId: "user-1",
-    userName: "John Smith"
-  };
-};
 
 export default function LocationDetailPage() {
   const router = useRouter();
@@ -50,7 +30,7 @@ export default function LocationDetailPage() {
   const id = pathname.split("/")[2];
   const boardId = pathname.split("/")[4];
   const entryId = pathname.split("/").pop();
-  const [boards, setBoards] = useState<Board[]>([]);
+  const [board, setBoard] = useState<Board | null>(null);
   const [timeEntry, setTimeEntry] = useState<TimeEntry | null>(null);
 
   useEffect(() => {
@@ -62,97 +42,51 @@ export default function LocationDetailPage() {
     };
   }, [id, setCurrentWorkspaceId]);
 
-  // First useEffect for boards fetching
   useEffect(() => {
+    if (!id || !boardId) return;
     const abortController = new AbortController();
+    axios
+      .get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${boardId}`, { signal: abortController.signal })
+      .then(res => setBoard(res.data.board))
+      .catch(err => { if (err.name != "CanceledError" && err.name != "AbortError") console.error(err); });
+    return () => abortController.abort();
+  }, [id, boardId]);
 
-    const fetchBoards = async () => {
-      if (boards.length === 0) {
-        try {
-          const response = await axios.get(
-            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`,
-            {
-              signal: abortController.signal
-            }
-          );
-
-          const data: Board[] = await Promise.all(
-            response.data.board.map(async (board: any) => {
-              try {
-                const boardResponse = await axios.get(
-                  `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${boardId}`,
-                  {
-                    signal: abortController.signal
-                  }
-                );
-                return { ...board, label: boardResponse.data.board.label };
-              } catch (error: any) {
-                if (error.name != "CanceledError" && error.name != "AbortError") {
-                  console.error("Error fetching board:", error);
-                }
-                return { ...board, label: null };
-              }
-            })
-          );
-          if (!abortController.signal.aborted) {
-            setBoards(data);
-          }
-        } catch (error: any) {
-          if (error.name != "CanceledError" && error.name != "AbortError") {
-            console.error("Error fetching boards:", error);
-          }
-        }
-      }
-    };
-
-    fetchBoards();
-
-    return () => {
-      abortController.abort();
-    };
-  }, [id, boards.length]);
-
-  // Second useEffect for time entry
   useEffect(() => {
+    if (!id || !boardId || !entryId) return;
     const abortController = new AbortController();
-
-    const fetchTimeEntry = async () => {
-      // In a real app, we would fetch the time entry from an API
-      // For now, we'll generate a mock entry
-      if (!abortController.signal.aborted) {
-        setTimeEntry(generateMockTimeEntry(entryId?.toString() || ""));
-      }
-    };
-
-    fetchTimeEntry();
-
-    return () => {
-      abortController.abort();
-    };
-  }, [entryId]);
+    axios
+      .get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks?workspaceId=${id}&boardId=${boardId}`, { signal: abortController.signal })
+      .then(res => {
+        const entry = (res.data.tasks as TimeEntry[]).find(e => e.id === entryId);
+        if (entry) setTimeEntry(entry);
+      })
+      .catch(err => { if (err.name != "CanceledError" && err.name != "AbortError") console.error(err); });
+    return () => abortController.abort();
+  }, [id, boardId, entryId]);
 
   const workspace = workspaces.find(workspace => workspace.id.toString() === id);
-  const board = boards.find(b => b.id === boardId);
 
   if (!workspace || !board || !timeEntry) {
     return null;
   }
 
-  // Format duration as hours and minutes
-  const formatDuration = (minutes: number) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hours}h ${mins}m`;
+  const formatDuration = (seconds: number | null) => {
+    if (!seconds) return "—";
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) return `${h}h ${m}m`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
   };
 
-  // Format date for display
   const formatDate = (dateString: string | null) => {
     if (!dateString) return "Ongoing";
     const date = new Date(dateString);
     return date.toLocaleString('en-AU');
   };
 
-  // Open Google Maps with the location
   const openGoogleMaps = () => {
     if (timeEntry.location) {
       window.open(`https://www.google.com/maps/search/?api=1&query=${timeEntry.location.lat},${timeEntry.location.lng}`, '_blank');
@@ -173,7 +107,6 @@ export default function LocationDetailPage() {
         </Button>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Location Map */}
           <Card className="p-6 shadow-lg">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold">Location</h2>
@@ -188,31 +121,41 @@ export default function LocationDetailPage() {
               </Button>
             </div>
 
-            <div className="relative h-[400px] bg-muted rounded-lg overflow-hidden mb-4">
-              {/* This would be replaced with an actual map component */}
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <MapPin className="h-8 w-8 text-primary mb-2" />
-                <p className="text-center font-medium">{timeEntry.location?.address}</p>
-                <p className="text-sm text-muted-foreground mt-2">
-                  Lat: {timeEntry.location?.lat.toFixed(6)}, Lng: {timeEntry.location?.lng.toFixed(6)}
-                </p>
-              </div>
+            <div className="relative rounded-lg overflow-hidden mb-4">
+              {timeEntry.location ? (
+                <LeafletMap
+                  height="400px"
+                  markers={[{
+                    id: timeEntry.id,
+                    lat: timeEntry.location.lat,
+                    lng: timeEntry.location.lng,
+                    address: timeEntry.location.address,
+                    label: timeEntry.taskName,
+                  }]}
+                />
+              ) : (
+                <div className="h-[400px] bg-muted flex flex-col items-center justify-center rounded-lg">
+                  <MapPin className="h-8 w-8 text-muted-foreground mb-2" />
+                  <p className="text-muted-foreground">No location data recorded</p>
+                </div>
+              )}
             </div>
 
-            <div className="p-4 bg-muted/30 rounded-lg">
-              <div className="flex items-start gap-3">
-                <MapPin className="h-5 w-5 text-primary mt-0.5" />
-                <div>
-                  <h3 className="text-sm font-medium">{timeEntry.location?.address}</h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Location tracked at {formatDate(timeEntry.startTime)}
-                  </p>
+            {timeEntry.location && (
+              <div className="p-4 bg-muted/30 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <MapPin className="h-5 w-5 text-primary mt-0.5" />
+                  <div>
+                    <h3 className="text-sm font-medium">{timeEntry.location.address}</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Location tracked at {formatDate(timeEntry.startTime)}
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </Card>
 
-          {/* Time Entry Details */}
           <Card className="p-6 shadow-lg">
             <h2 className="text-xl font-semibold mb-4">Time Entry Details</h2>
 

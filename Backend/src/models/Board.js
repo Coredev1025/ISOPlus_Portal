@@ -127,6 +127,14 @@ const boardSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  timeTrackStartAttributeId: {
+    type: String,
+    default: null
+  },
+  timeTrackEndAttributeId: {
+    type: String,
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now

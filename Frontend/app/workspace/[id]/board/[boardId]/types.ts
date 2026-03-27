@@ -3,7 +3,7 @@ export interface TimeEntry {
   taskName: string;
   startTime: string;
   endTime: string | null;
-  duration: number; // in minutes
+  duration: number; // in seconds
   location: {
     lat: number;
     lng: number;
@@ -12,6 +12,16 @@ export interface TimeEntry {
   userId: string;
   userName: string;
   notes: string;
+}
+
+export interface TrackingTask {
+  id: string;
+  name: string;
+  location?: {
+    latitude: number;
+    longitude: number;
+    address: string;
+  };
 }
 
 export interface ServiceRecord {
