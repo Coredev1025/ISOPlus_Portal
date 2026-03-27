@@ -10,7 +10,6 @@ export const isTokenValid = async (signal: AbortSignal): Promise<any> => {
         return response;
     } catch (error: any) {
         if (error.name === "CanceledError" || error.name === "AbortError") {
-            console.error("Request canceled", error.message);
             return false;
         } else {
             console.error("Error verifying token", error);

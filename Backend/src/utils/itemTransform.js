@@ -70,6 +70,7 @@ export function transformItemData(isoPlusItem) {
   }
 
   const transformedData = {};
+  let primaryAttributeValue = null;
 
   for (const valueObj of isoPlusItem.values) {
     if (valueObj.deleted) {
@@ -82,10 +83,37 @@ export function transformItemData(isoPlusItem) {
     }
 
     try {
+      if (!transformedData._hasTimeTracking) {
+        const attrType = valueObj.attribute?.type;
+        if (typeof attrType === 'string' && /time.?track/i.test(attrType)) {
+          transformedData._hasTimeTracking = true;
+          transformedData._timeTrackingKey = attributeName;
+          transformedData._timeTrackingAttributeId = valueObj.attribute?.id ?? null;
+        }
+      }
+
       const transformedValue = transformValue(valueObj);
       
       if (transformedValue !== null && transformedValue !== undefined) {
         transformedData[attributeName] = transformedValue;
+
+        if (valueObj.attribute?.primary === true && typeof transformedValue === 'string' && transformedValue.trim()) {
+          primaryAttributeValue = transformedValue.trim();
+        }
+
+        if (!transformedData._hasTimeTracking) {
+          if (
+            Array.isArray(transformedValue) &&
+            transformedValue.length > 0 &&
+            typeof transformedValue[0] === 'object' &&
+            transformedValue[0] !== null &&
+            'started_at' in transformedValue[0]
+          ) {
+            transformedData._hasTimeTracking = true;
+            transformedData._timeTrackingKey = attributeName;
+            transformedData._timeTrackingAttributeId = valueObj.attribute?.id ?? null;
+          }
+        }
       }
     } catch (err) {
       warn('ItemTransform', 'Failed to transform value', {
@@ -94,6 +122,14 @@ export function transformItemData(isoPlusItem) {
         error: err.message
       });
     }
+  }
+
+  const topLevelName = typeof isoPlusItem.name === 'string' && isoPlusItem.name.trim()
+    ? isoPlusItem.name.trim()
+    : null;
+  const displayName = topLevelName || primaryAttributeValue || null;
+  if (displayName) {
+    transformedData._primaryValue = displayName;
   }
 
   return transformedData;

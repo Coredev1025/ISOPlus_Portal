@@ -34,8 +34,15 @@ import {
 import { useAppContext } from "@/app/context/index";
 import { Badge } from "@/components/ui/badge";
 import { TimeEntry } from "./types";
+import { TimeTrackingButton } from "./components/TimeTrackingButton";
 import axios from "@/app/utils/axiosConfig";
 import { isCareManagementLabel, isLowCatCareManagementLabel, isOwnerOrSupport } from "@/lib/access";
+import dynamic from "next/dynamic";
+
+const LeafletMap = dynamic(
+  () => import("@/components/ui/leaflet-map").then(m => m.LeafletMap),
+  { ssr: false }
+);
 
 interface Board {
   id: string;
@@ -78,7 +85,7 @@ export default function BoardDetail() {
   const canAccessThisWorkspace = isOwnerOrSupportUser || isWorkspaceOwner || isWorkspaceAdmin;
 
   const calcDuration = (startTime: any, endTime: any) => {
-    return Math.floor((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000);
+    return Math.floor((new Date(endTime).getTime() - new Date(startTime).getTime()) / 1000);
   };
 
   useEffect(() => {
@@ -102,7 +109,6 @@ export default function BoardDetail() {
 
     const fetchBoardData = async () => {
       try {
-        // Fetch board data
         setLoadingBoards(true);
         const boardsResponse = await axios.get(
           `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${boardId}`,
@@ -115,7 +121,6 @@ export default function BoardDetail() {
           const boardData: Board = boardsResponse.data.board;
           setBoard(boardData);
 
-          // Store current board and workspace data in session storage
           const currentBoardData = {
             boardId: boardId,
             boardName: boardData?.name || `Board ${boardId}`,
@@ -146,97 +151,53 @@ export default function BoardDetail() {
     };
   }, [id, boardId, workspace])
 
-  // First useEffect for initial data fetching
-  useEffect(() => {
-    const abortController = new AbortController();
-
-    const fetchData = async () => {
-      try {
-        if (!id || !boardId) return;
-        // Fetch time tracking data
-        const timetracking = await axios.get(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks?workspaceId=${id}&boardId=${boardId}`,
-          {
-            signal: abortController.signal
-          }
-        );
-
-        if (!abortController.signal.aborted) {
-          const data: TimeEntry[] = timetracking.data.tasks.map((entry: any) => ({
-            id: entry.id,
-            taskName: entry.taskName,
-            startTime: entry.startTime ?? "",
-            endTime: entry.endTime ?? "",
-            duration: entry.endTime && entry.startTime ? calcDuration(entry.startTime, entry.endTime) : 0,
-            location: {
-              lat: 0,
-              lng: 0,
-              address: entry.location ?? "",
-            },
-            userId: user.id,
-            userName: user.name,
-            notes: entry.notes
-          }));
-          setTimeEntries(data);
-        }
-
-      } catch (error: any) {
-        if (error.name != "CanceledError" && error.name != "AbortError") {
-          console.error("Error fetching data:", error);
-        }
-      }
-    };
-
-    fetchData();
-
-    return () => {
-      abortController.abort();
-    };
-  }, [id, boardId, user.id, user.name]);
-
-  const getTimeTrackingStatus = useCallback(async () => {
+  const fetchTimeEntries = useCallback(async () => {
     try {
       if (!id || !boardId) return;
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks/status?workspaceId=${id}&boardId=${boardId}`, {}
+      const timetracking = await axios.get(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks?workspaceId=${id}&boardId=${boardId}`
       );
-      if (response.data.active) {
-        setTimeTrackingEnabled(true);
-        setTimeEntries(prev => {
-          const matchedEntry = prev.find(entry => entry.id === response.data.taskId);
-          if (!matchedEntry) return prev;
-          return [
-            { ...matchedEntry, endTime: "" },
-            ...prev.filter(entry => entry.id !== response.data.taskId)
-          ];
-        });
+      const data: TimeEntry[] = timetracking.data.tasks.map((entry: any) => ({
+        id: entry.id,
+        taskName: entry.taskName,
+        startTime: entry.startTime ?? "",
+        endTime: entry.endTime ?? null,
+        duration: entry.duration ?? 0,
+        location: entry.location?.lat
+          ? { lat: entry.location.lat, lng: entry.location.lng, address: entry.location.address ?? "" }
+          : null,
+        userId: entry.userId ?? user.id,
+        userName: entry.userName ?? user.name,
+        notes: entry.notes
+      }));
+      setTimeEntries(data);
+    } catch (error: any) {
+      if (error.name !== "CanceledError" && error.name !== "AbortError") {
+        console.error("Error fetching time entries:", error);
       }
-    } catch (error) {
-      console.error("Error fetching time tracking status:", error);
     }
-  }, [id, boardId]);
+  }, [id, boardId, user.id, user.name]);
 
   useEffect(() => {
-    let intervalId: NodeJS.Timeout;
-    if (timeTrackingEnabled) {
-      getTimeTrackingStatus();
+    fetchTimeEntries();
+  }, [fetchTimeEntries]);
 
-      intervalId = setInterval(() => {
-        setTimeEntries(prev => {
-          const activeEntry = prev.find(entry => !entry.endTime);
-          if (!activeEntry) return prev;
-
-          const updatedEntry = {
-            ...activeEntry,
-            duration: Math.floor((new Date().getTime() - new Date(activeEntry.startTime).getTime()) / 60000)
-          };
-
-          return [updatedEntry, ...prev.filter(entry => entry.endTime)];
-        });
-      }, 1000);
-    }
+  useEffect(() => {
+    if (!timeTrackingEnabled) return;
+    const intervalId = setInterval(() => {
+      setTimeEntries(prev => {
+        const activeIdx = prev.findIndex(entry => !entry.endTime);
+        if (activeIdx === -1) return prev;
+        const updated = [...prev];
+        updated[activeIdx] = {
+          ...updated[activeIdx],
+          duration: Math.floor((Date.now() - new Date(updated[activeIdx].startTime).getTime()) / 1000)
+        };
+        return updated;
+      });
+    }, 1000);
     return () => clearInterval(intervalId);
-  }, [timeTrackingEnabled, getTimeTrackingStatus]);
+  }, [timeTrackingEnabled]);
 
   if (!workspace || !board) {
     return null;
@@ -251,7 +212,6 @@ export default function BoardDetail() {
     (isCareManagementBoard || isLowCatBoard || isNdisCertificationOrVerificationBoard) &&
     (isOwnerOrSupportUser || isWorkspaceOwner || isWorkspaceAdmin);
 
-  // Filter time entries
   const filteredEntries = timeEntries.filter(entry => {
     const matchesSearch = entry.taskName.toLowerCase().includes(searchQuery.toLowerCase());
 
@@ -266,41 +226,40 @@ export default function BoardDetail() {
     return matchesSearch && matchesStatus && matchesLocation;
   });
 
-  // Paginate entries
   const totalPages = Math.ceil(filteredEntries.length / ITEMS_PER_PAGE);
   const paginatedEntries = filteredEntries.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
   );
 
-  // Format duration
   const formatDuration = (entry: TimeEntry) => {
-    let durationInMinutes: number;
-
+    const toHMS = (totalSeconds: number) => {
+      const h = Math.floor(totalSeconds / 3600);
+      const m = Math.floor((totalSeconds % 3600) / 60);
+      const s = totalSeconds % 60;
+      if (h > 0) return `${h}h ${m}m`;
+      if (m > 0) return `${m}m ${s}s`;
+      return `${s}s`;
+    };
     if (!entry.endTime) {
-      if (!entry.startTime) {
-        return `${entry.duration}m`;
-      }
-      // For active entries, calculate duration from start time to now
-      durationInMinutes = Math.floor(
-        (new Date().getTime() - new Date(entry.startTime).getTime()) / 60000
-      );
-    } else {
-      durationInMinutes = entry.duration;
+      if (!entry.startTime) return '0s';
+      const elapsed = Math.floor((Date.now() - new Date(entry.startTime).getTime()) / 1000);
+      return toHMS(elapsed);
     }
-
-    const hours = Math.floor(durationInMinutes / 60);
-    const minutes = durationInMinutes % 60;
-    return `${hours}h ${minutes}m`;
+    const dur = Number(entry.duration);
+    if (Number.isFinite(dur) && dur > 0) return toHMS(dur);
+    if (entry.startTime && entry.endTime) {
+      const elapsed = Math.floor((new Date(entry.endTime).getTime() - new Date(entry.startTime).getTime()) / 1000);
+      return toHMS(elapsed);
+    }
+    return '0s';
   };
 
-  // Format date for display
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
   };
 
-  // Get entries with location for map view
   const entriesWithLocation = filteredEntries.filter(entry => entry.location !== null);
 
   return (
@@ -333,6 +292,12 @@ export default function BoardDetail() {
                   )}
                 </div>
               </div>
+              <TimeTrackingButton
+                workspaceId={id}
+                boardId={boardId ?? ""}
+                setTimeTrackingEnabled={setTimeTrackingEnabled}
+                onSessionChange={fetchTimeEntries}
+              />
             </div>
           </Card>
 
@@ -633,120 +598,62 @@ export default function BoardDetail() {
               ) : (
                 /* Map View */
                 <div className="space-y-4">
-                  <div className="bg-muted rounded-lg p-4 text-center">
-                    <p className="text-muted-foreground">
-                      Showing {entriesWithLocation.length} time entries with location data
-                    </p>
-                  </div>
-
-                  <div className="relative h-[500px] bg-muted rounded-lg overflow-hidden">
-                    {/* This would be replaced with an actual map component */}
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="text-center">
-                        <p className="text-muted-foreground mb-2">Map View</p>
-                        <Button
-                          variant="outline"
-                          onClick={() => router.push(`/workspace/${id}/board/${boardId}/map-view`)}
-                        >
-                          View Full Map
-                        </Button>
+                  <div className="rounded-lg overflow-hidden">
+                    {entriesWithLocation.length === 0 ? (
+                      <div className="h-[500px] bg-muted flex items-center justify-center rounded-lg">
+                        <p className="text-muted-foreground">No location data to display</p>
                       </div>
-                    </div>
-
-                    {/* Sample map markers */}
-                    {entriesWithLocation.slice(0, 5).map((entry, index) => (
-                      <div
-                        key={entry.id}
-                        className="absolute w-6 h-6 bg-primary rounded-full flex items-center justify-center cursor-pointer"
-                        style={{
-                          left: `${20 + (index * 15)}%`,
-                          top: `${30 + (index * 10)}%`
+                    ) : (
+                      <LeafletMap
+                        height="500px"
+                        markers={entriesWithLocation.map(e => ({
+                          id: e.id,
+                          lat: e.location!.lat,
+                          lng: e.location!.lng,
+                          address: e.location?.address,
+                          label: e.taskName,
+                        }))}
+                        onMarkerClick={marker => {
+                          const entry = entriesWithLocation.find(e => e.id === marker.id) ?? null;
+                          setSelectedEntry(prev => prev?.id === marker.id ? null : entry);
                         }}
-                        onClick={() => setSelectedEntry(entry)}
-                      >
-                        <MapPin className="h-4 w-4 text-white" />
-                      </div>
-                    ))}
-
-                    {/* Selected entry popup */}
-                    {selectedEntry && (
-                      <div
-                        className="absolute bg-card p-4 rounded-lg shadow-lg w-64"
-                        style={{
-                          left: '50%',
-                          top: '50%',
-                          transform: 'translate(-50%, -50%)'
-                        }}
-                      >
-                        <div className="flex justify-between items-start mb-2">
-                          <h3 className="font-medium">{selectedEntry.taskName}</h3>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0"
-                            onClick={() => setSelectedEntry(null)}
-                          >
-                            ×
-                          </Button>
-                        </div>
-                        <p className="text-sm text-muted-foreground mb-1">
-                          {formatDate(selectedEntry.startTime)}
-                        </p>
-                        <p className="text-sm text-muted-foreground mb-1">
-                          Duration: {formatDuration(selectedEntry)}
-                        </p>
-                        {selectedEntry.location && (
-                          <p className="text-sm mb-3">{selectedEntry.location.address}</p>
-                        )}
-                        <div className="flex justify-between">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => router.push(`/workspace/${id}/board/${boardId}/location/${selectedEntry.id}`)}
-                          >
-                            View Details
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${selectedEntry.location?.lat},${selectedEntry.location?.lng}`, '_blank')}
-                          >
-                            Google Maps
-                          </Button>
-                        </div>
-                      </div>
+                      />
                     )}
                   </div>
 
-                  {/* List of locations */}
-                  <div className="mt-4">
-                    <h3 className="text-lg font-medium mb-3">All Locations</h3>
-                    <div className="space-y-2">
-                      {entriesWithLocation.slice(0, 5).map((entry) => (
-                        <div key={entry.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50">
-                          <div>
-                            <p className="font-medium">{entry.taskName}</p>
-                            <p className="text-sm text-muted-foreground">{entry.location?.address}</p>
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => router.push(`/workspace/${id}/board/${boardId}/location/${entry.id}`)}
-                          >
-                            View
-                          </Button>
-                        </div>
-                      ))}
-                      {entriesWithLocation.length > 5 && (
+                  {/* Selected entry card */}
+                  {selectedEntry && (
+                    <div className="p-4 border rounded-lg bg-card shadow flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="font-semibold">{selectedEntry.taskName}</p>
+                        <p className="text-sm text-muted-foreground">{formatDate(selectedEntry.startTime)} · {formatDuration(selectedEntry)}</p>
+                        {selectedEntry.location?.address && (
+                          <p className="text-sm mt-1">{selectedEntry.location.address}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Button variant="outline" size="sm" onClick={() => router.push(`/workspace/${id}/board/${boardId}/location/${selectedEntry.id}`)}>
+                          View Details
+                        </Button>
                         <Button
                           variant="outline"
-                          className="w-full"
-                          onClick={() => router.push(`/workspace/${id}/board/${boardId}/map-view`)}
+                          size="sm"
+                          onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${selectedEntry.location?.lat},${selectedEntry.location?.lng}`, '_blank')}
                         >
-                          View All Locations
+                          Google Maps
                         </Button>
-                      )}
+                        <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setSelectedEntry(null)}>×</Button>
+                      </div>
                     </div>
+                  )}
+
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">
+                      Showing {entriesWithLocation.length} time entr{entriesWithLocation.length !== 1 ? "ies" : "y"} with location
+                    </p>
+                    <Button variant="outline" size="sm" onClick={() => router.push(`/workspace/${id}/board/${boardId}/map-view`)}>
+                      View Full Map
+                    </Button>
                   </div>
                 </div>
               )}
