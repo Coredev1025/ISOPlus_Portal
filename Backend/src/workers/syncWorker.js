@@ -1,7 +1,7 @@
 import { Worker } from 'bullmq';
 import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
-import { getBoard, getFolder, iterateBoardItems } from '../services/isoplus.js';
+import { getBoard, iterateBoardItems } from '../services/isoplus.js';
 import Board from '../models/Board.js';
 import Item from '../models/Item.js';
 import SyncExecution from '../models/SyncExecution.js';
@@ -440,20 +440,11 @@ async function processDataBacklogSync(job) {
       }
     );
 
-    // Step 5: Get all folders
-    info('Sync-Worker', 'Fetching folders for board', { jobId: job.id, workspaceId, boardId });
-    const foldersResponse = await getFolder(workspaceId, boardId);
-    
-    if (foldersResponse.status !== 200) {
-      throw new Error('Failed to fetch folders from ISO+');
-    }
-
-    const folders = foldersResponse.folder || [];
-    info('Sync-Worker', 'Found folders', { 
-      jobId: job.id, 
-      workspaceId, 
-      boardId, 
-      folderCount: folders.length 
+    // Step 5: Fetch board items directly without folder filtering
+    info('Sync-Worker', 'Fetching board items without folder filter', {
+      jobId: job.id,
+      workspaceId,
+      boardId
     });
 
     // Initialize counters
@@ -462,248 +453,193 @@ async function processDataBacklogSync(job) {
     let totalItemsUpdated = 0;
     let pageNumber = 0;
     let bulkOps = [];
-    
-    // Step 6: Process each folder
-    for (let folderIndex = 0; folderIndex < folders.length; folderIndex++) {
-      const folder = folders[folderIndex];
-      
-      // Check timeout periodically
-      if (checkSyncTimeout(startTime)) {
-        throw new Error('SYNC_TIMEOUT');
-      }
-      
+    const uniqueFolderIds = new Set();
+    let retryCount = 0;
+    const itemIterator = iterateBoardItems(workspaceId, boardId);
+
+    // Step 6: Process all board items page by page
+    while (true) {
       try {
-        // Update job progress
-        await job.updateProgress({
-          stage: 'syncing_folders',
-          currentFolder: folder.name,
-          foldersProcessed: folderIndex + 1,
-          totalFolders: folders.length,
-          itemsProcessed: totalItemsProcessed,
-          syncGUID
-        });
-
-        info('Sync-Worker', 'Fetching items for folder', { 
-          jobId: job.id,
-          workspaceId, 
-          boardId, 
-          folderId: folder.id,
-          folderName: folder.name 
-        });
-
-        let folderItemsProcessed = 0;
-        let retryCount = 0;
-        
-        // Iterate through pages with retry logic
-        const itemIterator = iterateBoardItems(workspaceId, boardId, folder.id.toString());
-        
-        while (true) {
-          try {
-            // Check timeout before each page
-            if (checkSyncTimeout(startTime)) {
-              throw new Error('SYNC_TIMEOUT');
-            }
-            
-            const { value: itemsPage, done } = await itemIterator.next();
-            
-            if (done) {
-              break;
-            }
-            
-            pageNumber++;
-            retryCount = 0; // Reset retry count on success
-            
-            info('Sync-Worker', 'Processing items page', {
-              jobId: job.id,
-              workspaceId,
-              boardId,
-              folderId: folder.id,
-              pageNumber,
-              pageSize: itemsPage.length,
-              folderItemsProcessed: folderItemsProcessed + itemsPage.length
-            });
-            
-            // Step 7: Build bulk operations for this page with TRANSFORMED data
-            for (const item of itemsPage) {
-              const itemIdStr = item.id.toString();
-              
-              // Transform the item data to flat format
-              const transformedData = transformItemData(item);
-              
-              bulkOps.push({
-                updateOne: {
-                  filter: { itemId: itemIdStr },
-                  update: {
-                    $set: {
-                      workspaceId: workspaceId,
-                      boardId: boardId,
-                      folderId: folder.id.toString(),
-                      itemId: itemIdStr,
-                      isoPlusItemId: itemIdStr,
-                      syncGUID: syncGUID, 
-                      data: transformedData, 
-                      updatedAt: new Date()
-                    },
-                    $setOnInsert: {
-                      createdAt: new Date()
-                    }
-                  },
-                  upsert: true
-                }
-              });
-            }
-            
-            folderItemsProcessed += itemsPage.length;
-            totalItemsProcessed += itemsPage.length;
-            
-            // Step 8: Execute bulk write when batch size is reached (100)
-            if (bulkOps.length >= BULK_BATCH_SIZE) {
-              try {
-                const bulkResult = await Item.bulkWrite(bulkOps, { 
-                  ordered: false,
-                  wtimeout: 10000
-                });
-                
-                totalItemsInserted += bulkResult.upsertedCount || 0;
-                totalItemsUpdated += bulkResult.modifiedCount || 0;
-                
-                info('Sync-Worker', 'Bulk write completed', {
-                  jobId: job.id,
-                  syncGUID,
-                  batchSize: bulkOps.length,
-                  upserted: bulkResult.upsertedCount,
-                  modified: bulkResult.modifiedCount
-                });
-                
-                await job.updateProgress({
-                  stage: 'syncing_folders',
-                  currentFolder: folder.name,
-                  foldersProcessed: folderIndex + 1,
-                  totalFolders: folders.length,
-                  itemsProcessed: totalItemsProcessed,
-                  syncGUID
-                });
-                
-                // Update sync execution progress
-                if (syncExecution) {
-                  await SyncExecution.updateProgress(syncGUID, {
-                    currentPage: pageNumber,
-                    currentFolder: folder.name,
-                    foldersProcessed: folderIndex + 1,
-                    totalFolders: folders.length
-                  }, {
-                    itemsProcessed: totalItemsProcessed,
-                    itemsInserted: totalItemsInserted,
-                    itemsUpdated: totalItemsUpdated
-                  });
-                }
-                
-                // Clear the bulk operations array
-                bulkOps = [];
-                
-                // Small delay to prevent memory buildup
-                await new Promise(resolve => setTimeout(resolve, 50));
-              } catch (bulkErr) {
-                error('Sync-Worker', 'Bulk write failed', {
-                  jobId: job.id,
-                  syncGUID,
-                  batchSize: bulkOps.length,
-                  error: bulkErr.message
-                });
-                
-                // Clear failed batch to continue with next batch
-                bulkOps = [];
-              }
-            }
-            
-          } catch (pageErr) {
-            if (pageErr.message === 'SYNC_TIMEOUT') {
-              throw pageErr;
-            }
-            
-            retryCount++;
-            if (retryCount < MAX_RETRIES) {
-              warn('Sync-Worker', 'Page fetch failed, retrying', {
-                jobId: job.id,
-                folderId: folder.id,
-                retryCount,
-                error: pageErr.message
-              });
-              await waitWithBackoff(retryCount);
-              continue;
-            }
-            
-            error('Sync-Worker', 'Page fetch failed after max retries', {
-              jobId: job.id,
-              folderId: folder.id,
-              error: pageErr.message
-            });
-            throw pageErr;
-          }
+        // Check timeout before each page
+        if (checkSyncTimeout(startTime)) {
+          throw new Error('SYNC_TIMEOUT');
         }
-        
-        // Execute any remaining bulk operations for this folder
-        if (bulkOps.length > 0) {
+
+        const { value: itemsPage, done } = await itemIterator.next();
+
+        if (done) {
+          break;
+        }
+
+        pageNumber++;
+        retryCount = 0;
+
+        info('Sync-Worker', 'Processing board items page', {
+          jobId: job.id,
+          workspaceId,
+          boardId,
+          pageNumber,
+          pageSize: itemsPage.length
+        });
+
+        // Step 7: Build bulk operations for this page with transformed data
+        for (const item of itemsPage) {
+          const itemIdStr = item.id.toString();
+          const itemFolderId = item.folder_id ? item.folder_id.toString() : '';
+
+          if (itemFolderId) {
+            uniqueFolderIds.add(itemFolderId);
+          }
+
+          // Transform the item data to flat format
+          const transformedData = transformItemData(item);
+
+          bulkOps.push({
+            updateOne: {
+              filter: { itemId: itemIdStr },
+              update: {
+                $set: {
+                  workspaceId: workspaceId,
+                  boardId: boardId,
+                  folderId: itemFolderId,
+                  itemId: itemIdStr,
+                  isoPlusItemId: itemIdStr,
+                  syncGUID: syncGUID,
+                  data: transformedData,
+                  updatedAt: new Date()
+                },
+                $setOnInsert: {
+                  createdAt: new Date()
+                }
+              },
+              upsert: true
+            }
+          });
+        }
+
+        totalItemsProcessed += itemsPage.length;
+
+        // Step 8: Execute bulk write when batch size is reached (100)
+        if (bulkOps.length >= BULK_BATCH_SIZE) {
           try {
-            const bulkResult = await Item.bulkWrite(bulkOps, { 
+            const bulkResult = await Item.bulkWrite(bulkOps, {
               ordered: false,
               wtimeout: 10000
             });
-            
+
             totalItemsInserted += bulkResult.upsertedCount || 0;
             totalItemsUpdated += bulkResult.modifiedCount || 0;
-            
-            info('Sync-Worker', 'Final bulk write completed for folder', {
+
+            info('Sync-Worker', 'Bulk write completed', {
               jobId: job.id,
               syncGUID,
-              folderId: folder.id,
               batchSize: bulkOps.length,
               upserted: bulkResult.upsertedCount,
               modified: bulkResult.modifiedCount
             });
-            
+
             await job.updateProgress({
-              stage: 'syncing_folders',
-              currentFolder: folder.name,
-              foldersProcessed: folderIndex + 1,
-              totalFolders: folders.length,
+              stage: 'syncing_items',
+              currentPage: pageNumber,
               itemsProcessed: totalItemsProcessed,
               syncGUID
             });
-            
+
+            // Update sync execution progress
+            if (syncExecution) {
+              await SyncExecution.updateProgress(syncGUID, {
+                currentPage: pageNumber
+              }, {
+                itemsProcessed: totalItemsProcessed,
+                itemsInserted: totalItemsInserted,
+                itemsUpdated: totalItemsUpdated
+              });
+            }
+
+            // Clear the bulk operations array
             bulkOps = [];
+
+            // Small delay to prevent memory buildup
+            await new Promise(resolve => setTimeout(resolve, 50));
           } catch (bulkErr) {
-            error('Sync-Worker', 'Final bulk write failed for folder', {
+            error('Sync-Worker', 'Bulk write failed', {
               jobId: job.id,
               syncGUID,
-              folderId: folder.id,
+              batchSize: bulkOps.length,
               error: bulkErr.message
             });
+
+            // Clear failed batch to continue with next batch
             bulkOps = [];
           }
         }
-        
-        info('Sync-Worker', 'Folder processing completed', {
-          jobId: job.id,
-          folderId: folder.id,
-          folderName: folder.name,
-          itemsProcessed: folderItemsProcessed
-        });
-        
-      } catch (folderErr) {
-        if (folderErr.message === 'SYNC_TIMEOUT') {
-          throw folderErr;
+      } catch (pageErr) {
+        if (pageErr.message === 'SYNC_TIMEOUT') {
+          throw pageErr;
         }
-        
-        error('Sync-Worker', 'Failed to process folder', { 
+
+        retryCount++;
+        if (retryCount < MAX_RETRIES) {
+          warn('Sync-Worker', 'Page fetch failed, retrying', {
+            jobId: job.id,
+            retryCount,
+            error: pageErr.message
+          });
+          await waitWithBackoff(retryCount);
+          continue;
+        }
+
+        error('Sync-Worker', 'Page fetch failed after max retries', {
           jobId: job.id,
-          workspaceId, 
-          boardId, 
-          folderId: folder.id,
-          error: folderErr.message 
+          error: pageErr.message
         });
+        throw pageErr;
       }
     }
+
+    // Execute any remaining bulk operations
+    if (bulkOps.length > 0) {
+      try {
+        const bulkResult = await Item.bulkWrite(bulkOps, {
+          ordered: false,
+          wtimeout: 10000
+        });
+
+        totalItemsInserted += bulkResult.upsertedCount || 0;
+        totalItemsUpdated += bulkResult.modifiedCount || 0;
+
+        info('Sync-Worker', 'Final bulk write completed', {
+          jobId: job.id,
+          syncGUID,
+          batchSize: bulkOps.length,
+          upserted: bulkResult.upsertedCount,
+          modified: bulkResult.modifiedCount
+        });
+
+        await job.updateProgress({
+          stage: 'syncing_items',
+          currentPage: pageNumber,
+          itemsProcessed: totalItemsProcessed,
+          syncGUID
+        });
+
+        bulkOps = [];
+      } catch (bulkErr) {
+        error('Sync-Worker', 'Final bulk write failed', {
+          jobId: job.id,
+          syncGUID,
+          error: bulkErr.message
+        });
+        bulkOps = [];
+      }
+    }
+    
+    info('Sync-Worker', 'Board item processing completed', {
+      jobId: job.id,
+      boardId,
+      pageCount: pageNumber,
+      itemsProcessed: totalItemsProcessed
+    });
     
     // Step 9: Delete old records (items not in current sync)
     info('Sync-Worker', 'Deleting old records not in current sync', {
@@ -746,7 +682,7 @@ async function processDataBacklogSync(job) {
           lastSyncError: null,
           validationErrors: [],
           currentSyncGUID: syncGUID,
-          'syncStats.foldersProcessed': folders.length,
+          'syncStats.foldersProcessed': uniqueFolderIds.size,
           'syncStats.itemsSynced': totalItemsProcessed,
           'syncStats.itemsCreated': totalItemsInserted,
           'syncStats.itemsUpdated': totalItemsUpdated,
@@ -783,7 +719,7 @@ async function processDataBacklogSync(job) {
       syncGUID,
       duration,
       stats: {
-        folders: folders.length,
+        folders: uniqueFolderIds.size,
         itemsProcessed: totalItemsProcessed,
         itemsInserted: totalItemsInserted,
         itemsUpdated: totalItemsUpdated,
@@ -799,7 +735,7 @@ async function processDataBacklogSync(job) {
       nextStep: 'realtime_sync',
       syncGUID,
       stats: {
-        foldersProcessed: folders.length,
+        foldersProcessed: uniqueFolderIds.size,
         itemsProcessed: totalItemsProcessed,
         itemsInserted: totalItemsInserted,
         itemsUpdated: totalItemsUpdated,
