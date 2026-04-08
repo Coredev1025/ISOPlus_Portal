@@ -9,9 +9,20 @@ export interface TimeEntry {
     lng: number;
     address: string;
   } | null;
+  startLocation: {
+    lat: number;
+    lng: number;
+    address: string;
+  } | null;
+  endLocation: {
+    lat: number;
+    lng: number;
+    address: string;
+  } | null;
   userId: string;
   userName: string;
   notes: string;
+  source?: 'portal' | 'isoplus';
 }
 
 export interface TrackingTask {

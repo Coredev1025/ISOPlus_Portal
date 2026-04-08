@@ -89,15 +89,18 @@ router.get('/status', authenticateToken, async (req, res) => {
             }
         }
 
+        const activeStartLoc = active.StartLocation?.lat
+            ? { lat: active.StartLocation.lat, lng: active.StartLocation.lng, address: active.StartLocation.address }
+            : (active.Location?.lat ? { lat: active.Location.lat, lng: active.Location.lng, address: active.Location.address } : null);
+
         res.status(200).json({
             active: {
                 id: active._id,
                 taskName,
                 itemId: active.itemId,
                 startTime: active.started_at ?? active.StartTime,
-                location: active.Location?.lat
-                    ? { lat: active.Location.lat, lng: active.Location.lng, address: active.Location.address }
-                    : null,
+                location: activeStartLoc,
+                startLocation: activeStartLoc,
                 notes: active.notes
             }
         });
@@ -128,6 +131,12 @@ router.get('/', authenticateToken, async (req, res) => {
         const tasks = entries.map(entry => {
             const itemData = itemMap[entry.itemId];
             const taskName = resolveItemName(itemData, entry.Task);
+            const startLoc = entry.StartLocation?.lat
+                ? { lat: entry.StartLocation.lat, lng: entry.StartLocation.lng, address: entry.StartLocation.address }
+                : (entry.Location?.lat ? { lat: entry.Location.lat, lng: entry.Location.lng, address: entry.Location.address } : null);
+            const endLoc = entry.EndLocation?.lat
+                ? { lat: entry.EndLocation.lat, lng: entry.EndLocation.lng, address: entry.EndLocation.address }
+                : null;
             return {
                 id: entry._id,
                 taskName,
@@ -135,13 +144,14 @@ router.get('/', authenticateToken, async (req, res) => {
                 startTime: entry.started_at ?? entry.StartTime,
                 endTime: entry.ended_at ?? entry.EndTime,
                 duration: entry.Duration,
-                location: entry.Location?.lat
-                    ? { lat: entry.Location.lat, lng: entry.Location.lng, address: entry.Location.address }
-                    : null,
+                location: startLoc,
+                startLocation: startLoc,
+                endLocation: endLoc,
                 userId: entry.UserId,
                 userName: entry.UserName,
                 notes: entry.notes,
-                isoPlusSynced: entry.isoPlusSynced
+                isoPlusSynced: entry.isoPlusSynced,
+                source: entry.source || 'portal'
             };
         });
 
@@ -181,6 +191,7 @@ router.post('/start', authenticateToken, async (req, res) => {
         const locationData = location
             ? { lat: location.lat ?? null, lng: location.lng ?? null, address: location.address ?? null }
             : {};
+        const hasLocation = !!(location?.lat && location?.lng);
 
         const entry = await TimeTrack.create({
             workspaceId,
@@ -192,9 +203,11 @@ router.post('/start', authenticateToken, async (req, res) => {
             User: req.user.email,
             UserId: req.user.id || req.user._id || null,
             UserName: req.user.name || req.user.email,
-            Location: locationData,
+            Location: hasLocation ? locationData : {},
+            StartLocation: hasLocation ? locationData : {},
             notes: notes || null,
-            isoPlusSynced: false
+            isoPlusSynced: false,
+            source: 'portal'
         });
 
         info('TimeTrack-Service', 'Clock-in started', { workspaceId, boardId, itemId, user: req.user.email }, req);
@@ -233,10 +246,10 @@ router.post('/stop', authenticateToken, async (req, res) => {
 
         const updateFields = { ended_at: endTimeStamp, Duration: duration };
         if (location) {
-            updateFields.Location = {
-                lat: location.lat ?? entry.Location?.lat,
-                lng: location.lng ?? entry.Location?.lng,
-                address: location.address ?? entry.Location?.address
+            updateFields.EndLocation = {
+                lat: location.lat ?? null,
+                lng: location.lng ?? null,
+                address: location.address ?? null
             };
         }
         if (notes) updateFields.notes = notes;
@@ -267,6 +280,11 @@ router.post('/stop', authenticateToken, async (req, res) => {
             })
             .catch(() => {});
 
+        const startLoc = entry.StartLocation?.lat
+            ? { lat: entry.StartLocation.lat, lng: entry.StartLocation.lng, address: entry.StartLocation.address }
+            : (entry.Location?.lat ? { lat: entry.Location.lat, lng: entry.Location.lng, address: entry.Location.address } : null);
+        const endLoc = updateFields.EndLocation ?? null;
+
         res.status(200).json({
             id: entry._id,
             taskName: entry.Task,
@@ -274,7 +292,9 @@ router.post('/stop', authenticateToken, async (req, res) => {
             startTime: startedAt,
             endTime: endTimeStamp,
             duration,
-            location: updateFields.Location ?? (entry.Location?.lat ? entry.Location : null)
+            location: startLoc,
+            startLocation: startLoc,
+            endLocation: endLoc
         });
     } catch (err) {
         error('TimeTrack-Service', 'Failed to stop time tracking', { err }, req);

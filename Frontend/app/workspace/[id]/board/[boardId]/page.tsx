@@ -598,7 +598,7 @@ export default function BoardDetail() {
               ) : (
                 /* Map View */
                 <div className="space-y-4">
-                  <div className="rounded-lg overflow-hidden">
+                  <div className="rounded-lg overflow-hidden relative z-0">
                     {entriesWithLocation.length === 0 ? (
                       <div className="h-[500px] bg-muted flex items-center justify-center rounded-lg">
                         <p className="text-muted-foreground">No location data to display</p>

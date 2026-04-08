@@ -11,6 +11,7 @@ import { info, error, warn } from '../utils/logger.js';
 import { syncQueue } from '../services/sync/queue.js';
 import { invalidateCacheForBoard } from '../utils/transformCache.js';
 import { transformItemData } from '../utils/itemTransform.js';
+import { syncTimeTrackingFromItem } from '../utils/timeTrackSync.js';
 
 const SYNC_TIMEOUT_MS = 20 * 60 * 1000;
 const BULK_BATCH_SIZE = 100;
@@ -666,6 +667,32 @@ async function processDataBacklogSync(job) {
         jobId: job.id,
         syncGUID,
         error: deleteErr.message
+      });
+    }
+
+    try {
+      const ttItems = await Item.find(
+        { boardId, workspaceId, 'data._hasTimeTracking': true },
+        { itemId: 1, data: 1 }
+      ).lean();
+
+      let totalTTImported = 0;
+      for (const ttItem of ttItems) {
+        const count = await syncTimeTrackingFromItem(workspaceId, boardId, ttItem.itemId, ttItem.data);
+        totalTTImported += count;
+      }
+
+      info('Sync-Worker', 'Time-tracking entries imported from ISO+', {
+        jobId: job.id,
+        boardId,
+        itemsChecked: ttItems.length,
+        entriesImported: totalTTImported
+      });
+    } catch (ttErr) {
+      warn('Sync-Worker', 'Time-tracking sync step failed (non-critical)', {
+        jobId: job.id,
+        boardId,
+        error: ttErr.message
       });
     }
     
