@@ -98,3 +98,17 @@ export const authenticateToken = (req, res, next) => {
     return res.status(403).json({ message: 'Invalid or expired token' });
   }
 };
+
+export const requirePortalOwnerOrSupport = (req, res, next) => {
+  const role = req.user?.role;
+  if (role !== 'owner' && role !== 'support_admin') {
+    warn('Authentication-Service', 'Time tracking requires Owner or Support Admin', {
+      role,
+      userId: req.user?.userId,
+    }, req);
+    return res.status(403).json({
+      message: 'Access denied. Owner or Support Admin permission required for time tracking.',
+    });
+  }
+  next();
+};

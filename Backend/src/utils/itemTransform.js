@@ -77,8 +77,15 @@ export function transformItemData(isoPlusItem) {
       continue;
     }
 
-    const attributeName = valueObj.attribute?.name;
-    if (!attributeName) {
+    const rawName = valueObj.attribute?.name;
+    const attributeId = valueObj.attribute?.id;
+    const attributeKey =
+      typeof rawName === 'string' && rawName.trim()
+        ? rawName.trim()
+        : attributeId != null && String(attributeId).trim() !== ''
+          ? `__attr_${attributeId}`
+          : null;
+    if (!attributeKey) {
       continue;
     }
 
@@ -87,7 +94,7 @@ export function transformItemData(isoPlusItem) {
         const attrType = valueObj.attribute?.type;
         if (typeof attrType === 'string' && /time.?track/i.test(attrType)) {
           transformedData._hasTimeTracking = true;
-          transformedData._timeTrackingKey = attributeName;
+          transformedData._timeTrackingKey = attributeKey;
           transformedData._timeTrackingAttributeId = valueObj.attribute?.id ?? null;
         }
       }
@@ -95,7 +102,7 @@ export function transformItemData(isoPlusItem) {
       const transformedValue = transformValue(valueObj);
       
       if (transformedValue !== null && transformedValue !== undefined) {
-        transformedData[attributeName] = transformedValue;
+        transformedData[attributeKey] = transformedValue;
 
         if (valueObj.attribute?.primary === true && typeof transformedValue === 'string' && transformedValue.trim()) {
           primaryAttributeValue = transformedValue.trim();
@@ -110,14 +117,14 @@ export function transformItemData(isoPlusItem) {
             'started_at' in transformedValue[0]
           ) {
             transformedData._hasTimeTracking = true;
-            transformedData._timeTrackingKey = attributeName;
+            transformedData._timeTrackingKey = attributeKey;
             transformedData._timeTrackingAttributeId = valueObj.attribute?.id ?? null;
           }
         }
       }
     } catch (err) {
       warn('ItemTransform', 'Failed to transform value', {
-        attributeName,
+        attributeKey,
         attributeType: valueObj.attribute?.type,
         error: err.message
       });

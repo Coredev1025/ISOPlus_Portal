@@ -17,9 +17,17 @@ const subscriptionSchema = new mongoose.Schema({
     trim: true,
     lowercase: true
   },
+  sub: {
+    type: String,
+    trim: true,
+    default: null,
+    sparse: true,
+    unique: true
+  },
   xeroUserId: {
     type: String,
     required: true,
+    trim: true,
     unique: true
   },
   status: {

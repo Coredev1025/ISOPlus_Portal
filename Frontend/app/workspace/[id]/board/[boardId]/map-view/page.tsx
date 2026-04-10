@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/table";
 import { useAppContext } from "@/app/context";
 import axios from "@/app/utils/axiosConfig";
+import { isOwnerOrSupport } from "@/lib/access";
 import dynamic from "next/dynamic";
 
 const LeafletMap = dynamic(
@@ -41,7 +42,14 @@ interface Board {
 export default function MapViewPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const { workspaces, setCurrentWorkspaceId } = useAppContext();
+  const { workspaces, user, setCurrentWorkspaceId } = useAppContext();
+  const hasAccess = isOwnerOrSupport(user);
+
+  useEffect(() => {
+    if (!hasAccess) {
+      router.replace("/workspace/access-denied");
+    }
+  }, [hasAccess, router]);
   const [board, setBoard] = useState<Board | null>(null);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [tasks, setTasks] = useState<{ id: string; name: string; location?: { latitude: number; longitude: number; address: string } }[]>([]);
@@ -71,7 +79,7 @@ export default function MapViewPage() {
   }, [id, boardId]);
 
   useEffect(() => {
-    if (!id || !boardId) return;
+    if (!hasAccess || !id || !boardId) return;
     const abortController = new AbortController();
     axios
       .get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks?workspaceId=${id}&boardId=${boardId}`, { signal: abortController.signal })
@@ -83,19 +91,23 @@ export default function MapViewPage() {
       })
       .catch(err => { if (err.name != "CanceledError" && err.name != "AbortError") console.error(err); });
     return () => abortController.abort();
-  }, [id, boardId]);
+  }, [hasAccess, id, boardId]);
 
   useEffect(() => {
-    if (!id || !boardId) return;
+    if (!hasAccess || !id || !boardId) return;
     const abortController = new AbortController();
     axios
       .get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks/tasks`, { params: { workspaceId: id, boardId }, signal: abortController.signal })
       .then(res => setTasks(res.data.tasks || []))
       .catch(err => { if (err.name != "CanceledError" && err.name != "AbortError") console.error(err); });
     return () => abortController.abort();
-  }, [id, boardId]);
+  }, [hasAccess, id, boardId]);
 
   const workspace = workspaces.find((workspace) => workspace.id.toString() === id);
+
+  if (!hasAccess) {
+    return null;
+  }
 
   if (!workspace || !board) {
     return null;

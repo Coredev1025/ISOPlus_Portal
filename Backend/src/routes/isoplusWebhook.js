@@ -210,12 +210,13 @@ async function fetchOrCreateItem(itemId, boardId = null, workspaceId = null) {
     return null;
   }
 
-  const folderId = itemData.folder_id || itemData.folder?.id;
+  const rawFolderId = itemData.folder_id || itemData.folder?.id;
+  const folderId = rawFolderId != null && rawFolderId !== '' ? String(rawFolderId) : '';
   if (!folderId) {
-    warn('Webhook-Handler', 'No folder_id in fetched item data', { 
-      itemId
+    info('Webhook-Handler', 'Item has no folder_id; storing empty folderId (aligned with sync worker)', {
+      itemId,
+      boardId: foundBoardId
     });
-    return null;
   }
 
   const transformedData = transformItemData(itemData);
@@ -228,7 +229,7 @@ async function fetchOrCreateItem(itemId, boardId = null, workspaceId = null) {
         $set: {
           workspaceId: foundWorkspaceId,
           boardId: foundBoardId,
-          folderId: folderId.toString(),
+          folderId,
           itemId: itemId,
           isoPlusItemId: itemId,
           syncGUID: currentSyncGUID,

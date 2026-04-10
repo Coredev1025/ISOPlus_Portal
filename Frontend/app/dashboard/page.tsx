@@ -1138,13 +1138,13 @@ function GlobalApplicationLogs() {
   );
 }
 
-// ─── Subscriptions List Component ──────────────────────────────────────────────
 
 interface Subscription {
   _id: string;
   givenName: string;
   familyName: string;
   email: string;
+  sub?: string | null;
   xeroUserId: string;
   status: string;
   notes: string;
@@ -1328,7 +1328,8 @@ function SubscriptionsList() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
-                  <TableHead>Xero User ID</TableHead>
+                  <TableHead>Sub (JWT)</TableHead>
+                  <TableHead>Xero user id</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Notes</TableHead>
                   <TableHead>Created</TableHead>
@@ -1336,25 +1337,30 @@ function SubscriptionsList() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {subscriptions.map((sub) => (
-                  <TableRow key={sub._id}>
+                {subscriptions.map((row) => (
+                  <TableRow key={row._id}>
                     <TableCell className="font-medium whitespace-nowrap">
-                      {sub.givenName} {sub.familyName}
+                      {row.givenName} {row.familyName}
                     </TableCell>
-                    <TableCell>{sub.email}</TableCell>
-                    <TableCell className="font-mono text-xs">{sub.xeroUserId}</TableCell>
-                    <TableCell>{getStatusBadge(sub.status)}</TableCell>
-                    <TableCell className="max-w-[200px] truncate" title={sub.notes}>
-                      {sub.notes || "—"}
+                    <TableCell>{row.email}</TableCell>
+                    <TableCell className="font-mono text-xs max-w-[140px] truncate" title={row.sub || row.xeroUserId || ""}>
+                      {row.sub || "—"}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs max-w-[140px] truncate" title={row.xeroUserId}>
+                      {row.xeroUserId}
+                    </TableCell>
+                    <TableCell>{getStatusBadge(row.status)}</TableCell>
+                    <TableCell className="max-w-[200px] truncate" title={row.notes}>
+                      {row.notes || "—"}
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
-                      {new Date(sub.createdAt).toLocaleDateString()}
+                      {new Date(row.createdAt).toLocaleDateString()}
                     </TableCell>
                     <TableCell>
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => openEditDialog(sub)}
+                        onClick={() => openEditDialog(row)}
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
@@ -1422,8 +1428,12 @@ function SubscriptionsList() {
                 </div>
               </div>
               <div>
-                <Label className="text-muted-foreground text-xs">Xero User ID</Label>
-                <p className="font-mono text-sm">{editingSub.xeroUserId}</p>
+                <Label className="text-muted-foreground text-xs">Sub (JWT)</Label>
+                <p className="font-mono text-sm break-all">{editingSub.sub || "—"}</p>
+              </div>
+              <div>
+                <Label className="text-muted-foreground text-xs">Xero user id</Label>
+                <p className="font-mono text-sm break-all">{editingSub.xeroUserId}</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-status">Status</Label>

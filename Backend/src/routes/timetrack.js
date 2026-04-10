@@ -1,6 +1,7 @@
 import express from 'express';
-import { authenticateToken } from '../middleware/auth.js';
-import { putTimeTracking } from '../services/isoplus.js';
+import { authenticateToken, requirePortalOwnerOrSupport } from '../middleware/auth.js';
+import { putTimeTracking, getItemValues, ITEM_DELETED } from '../services/isoplus.js';
+import { transformItemData } from '../utils/itemTransform.js';
 import { info, error, warn } from '../utils/logger.js';
 import TimeTrack from '../models/TimeTrack.js';
 import Item from '../models/Item.js';
@@ -9,6 +10,37 @@ const router = express.Router();
 
 function computeDuration(start, end) {
     return Math.floor((end - start) / 1000);
+}
+
+async function pushTimeEntryToIsoPlus(workspaceId, boardId, itemId, startTime, endTime, description = '') {
+    const raw = await getItemValues(workspaceId, boardId, itemId);
+    if (!raw || raw === ITEM_DELETED) {
+        warn('TimeTrack-Service', 'Could not re-fetch item for ISO+ sync', {
+            workspaceId,
+            boardId,
+            itemId,
+            deleted: raw === ITEM_DELETED
+        });
+        return false;
+    }
+    const flat = transformItemData(raw);
+    const ttKey = flat._timeTrackingKey;
+    const ttAttrId = flat._timeTrackingAttributeId;
+    if (!ttAttrId) {
+        warn('TimeTrack-Service', 'No time tracking attribute ID found, skipping ISO+ sync', { itemId });
+        return false;
+    }
+    const existingEntries = ttKey && Array.isArray(flat[ttKey]) ? flat[ttKey] : [];
+    return putTimeTracking(
+        workspaceId,
+        boardId,
+        itemId,
+        startTime,
+        endTime,
+        ttAttrId,
+        existingEntries,
+        description
+    );
 }
 
 function resolveItemName(itemData, fallbackId) {
@@ -22,7 +54,7 @@ function resolveItemName(itemData, fallbackId) {
     return fallbackId;
 }
 
-router.get('/tasks', authenticateToken, async (req, res) => {
+router.get('/tasks', authenticateToken, requirePortalOwnerOrSupport, async (req, res) => {
     const { workspaceId, boardId } = req.query;
     if (!workspaceId || !boardId) {
         return res.status(400).json({ message: 'workspaceId and boardId are required' });
@@ -64,7 +96,7 @@ router.get('/tasks', authenticateToken, async (req, res) => {
     }
 });
 
-router.get('/status', authenticateToken, async (req, res) => {
+router.get('/status', authenticateToken, requirePortalOwnerOrSupport, async (req, res) => {
     const { workspaceId, boardId } = req.query;
     if (!workspaceId || !boardId) {
         return res.status(400).json({ message: 'workspaceId and boardId are required' });
@@ -110,7 +142,7 @@ router.get('/status', authenticateToken, async (req, res) => {
     }
 });
 
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/', authenticateToken, requirePortalOwnerOrSupport, async (req, res) => {
     const { workspaceId, boardId } = req.query;
     if (!workspaceId || !boardId) {
         return res.status(400).json({ message: 'workspaceId and boardId are required' });
@@ -162,7 +194,7 @@ router.get('/', authenticateToken, async (req, res) => {
     }
 });
 
-router.post('/start', authenticateToken, async (req, res) => {
+router.post('/start', authenticateToken, requirePortalOwnerOrSupport, async (req, res) => {
     const { workspaceId, boardId, itemId, location, notes } = req.body || {};
     if (!workspaceId || !boardId || !itemId) {
         return res.status(400).json({ message: 'workspaceId, boardId, and itemId are required' });
@@ -225,7 +257,7 @@ router.post('/start', authenticateToken, async (req, res) => {
     }
 });
 
-router.post('/stop', authenticateToken, async (req, res) => {
+router.post('/stop', authenticateToken, requirePortalOwnerOrSupport, async (req, res) => {
     const { workspaceId, boardId, itemId, location, notes } = req.body || {};
     if (!workspaceId || !boardId || !itemId) {
         return res.status(400).json({ message: 'workspaceId, boardId, and itemId are required' });
@@ -257,23 +289,14 @@ router.post('/stop', authenticateToken, async (req, res) => {
 
         info('TimeTrack-Service', 'Clock-out completed', { workspaceId, boardId, itemId, duration, user: req.user.email }, req);
 
-        Item.findOne({ itemId }, { data: 1 }).lean()
-            .then(fullItem => {
-                const ttKey = fullItem?.data?._timeTrackingKey;
-                const ttAttrId = fullItem?.data?._timeTrackingAttributeId;
-                if (!ttAttrId) {
-                    warn('TimeTrack-Service', 'No time tracking attribute ID found, skipping ISO+ sync', { itemId });
-                    return false;
-                }
-                const existingEntries = (ttKey && Array.isArray(fullItem.data[ttKey]))
-                    ? fullItem.data[ttKey]
-                    : [];
-                return putTimeTracking(
-                    workspaceId, boardId, itemId,
-                    startedAt, endTimeStamp,
-                    ttAttrId, existingEntries, notes || entry.notes
-                );
-            })
+        pushTimeEntryToIsoPlus(
+            workspaceId,
+            boardId,
+            itemId,
+            startedAt,
+            endTimeStamp,
+            notes || entry.notes || ''
+        )
             .then(synced => {
                 TimeTrack.updateOne({ _id: entry._id }, { $set: { isoPlusSynced: !!synced } }).catch(() => {});
                 if (!synced) warn('TimeTrack-Service', 'ISO+ sync failed on clock-out', { itemId, entryId: entry._id });
@@ -302,17 +325,16 @@ router.post('/stop', authenticateToken, async (req, res) => {
     }
 });
 
-router.put('/', authenticateToken, async (req, res) => {
+router.put('/', authenticateToken, requirePortalOwnerOrSupport, async (req, res) => {
     try {
-        const { workspaceId, boardId, itemId, startTime, endTime } = req.body || {};
-        const fullItem = await Item.findOne({ itemId }, { data: 1 }).lean();
-        const ttKey = fullItem?.data?._timeTrackingKey;
-        const ttAttrId = fullItem?.data?._timeTrackingAttributeId;
-        const existingEntries = (ttKey && Array.isArray(fullItem?.data?.[ttKey]))
-            ? fullItem.data[ttKey] : [];
-        const synced = await putTimeTracking(
-            workspaceId, boardId, itemId, startTime, endTime,
-            ttAttrId, existingEntries
+        const { workspaceId, boardId, itemId, startTime, endTime, description } = req.body || {};
+        const synced = await pushTimeEntryToIsoPlus(
+            workspaceId,
+            boardId,
+            itemId,
+            startTime,
+            endTime,
+            description || ''
         );
         info('TimeTrack-Service', 'Time tracking updated (direct)', { workspaceId, boardId, itemId }, req ?? null);
         res.status(200).json({ success: synced });

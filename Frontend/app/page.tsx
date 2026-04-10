@@ -23,56 +23,6 @@ export default function LoginPage() {
   const [isSupportLogin, setIsSupportLogin] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
-  const [isSigningUp, setIsSigningUp] = useState(false);
-
-  const handleXeroSignup = useCallback(async () => {
-    setIsSigningUp(true);
-    setError("");
-    let popup: Window | null = null;
-
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-
-      if (event.data.type === "XERO_SIGNUP_SUCCESS") {
-        showSuccessToast(event.data.message || "Sign-up request received! We'll be in touch.");
-        window.removeEventListener("message", handleMessage);
-        if (popup) popup.close();
-        setIsSigningUp(false);
-      } else if (event.data.type === "XERO_SIGNUP_ERROR") {
-        showErrorToast("Sign-up failed", { description: event.data.error || "An error occurred" });
-        window.removeEventListener("message", handleMessage);
-        if (popup) popup.close();
-        setIsSigningUp(false);
-      }
-    };
-
-    try {
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/subscriptions/xero-auth-url`
-      );
-
-      if (response.status === 200 && response.data.url) {
-        const width = 600;
-        const height = 700;
-        const left = window.screenX + (window.outerWidth - width) / 2;
-        const top = window.screenY + (window.outerHeight - height) / 2;
-
-        popup = window.open(
-          response.data.url,
-          "Xero Sign Up",
-          `width=${width},height=${height},left=${left},top=${top},status=yes,scrollbars=yes`
-        );
-
-        window.addEventListener("message", handleMessage);
-      }
-    } catch (err: any) {
-      showErrorToast("Sign-up failed", {
-        description: err.response?.data?.message || "Failed to initiate Xero sign-up",
-      });
-      setIsSigningUp(false);
-    }
-  }, []);
-
   useEffect(() => {
     let cancelled = false;
 
@@ -327,7 +277,7 @@ export default function LoginPage() {
               onClick={handleISOPlusLogin}
               className="w-full gap-2 font-semibold shadow-md shadow-primary/10"
               size="lg"
-              disabled={isLoading || isSigningUp}
+              disabled={isLoading}
             >
               Sign in with ISO+
               {isLoading && <Spinner />}
@@ -341,14 +291,14 @@ export default function LoginPage() {
               </div>
             </div>
             <Button
-              onClick={handleXeroSignup}
+              type="button"
               variant="outline"
-              className="w-full gap-2 border-border/80 bg-background/50 py-6 font-medium backdrop-blur-sm hover:bg-muted/60"
+              className="w-full border-border/80 bg-background/50 py-6 font-medium backdrop-blur-sm hover:bg-muted/60"
               size="lg"
-              disabled={isLoading || isSigningUp}
+              disabled={isLoading}
+              onClick={() => router.push("/signup/xero")}
             >
               Sign up with Xero
-              {isSigningUp && <Spinner />}
             </Button>
             <div className="text-center text-sm text-muted-foreground leading-relaxed">
               By continuing, you agree to our{" "}
