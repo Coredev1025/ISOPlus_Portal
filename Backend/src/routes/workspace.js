@@ -146,6 +146,12 @@ router.get('/', authenticateToken, async (req, res) => {
       String(req.query?.includeDetails || '') === '1' ||
       (Boolean(q) && String(req.query?.includeDetails || '').toLowerCase() !== 'false');
 
+    // ISO+ board preview per workspace is expensive; skip by default when searching unless opted in
+    const boardsPreviewExplicit =
+      String(req.query?.boardsPreview || '').toLowerCase() === 'true' ||
+      String(req.query?.boardsPreview || '') === '1';
+    const wantBoardsPreview = includeDetails && (!q || boardsPreviewExplicit);
+
     const workspaceMetaById = Array.isArray(req.user?.workspace)
       ? req.user.workspace.reduce((acc, workspace) => {
           const id = workspace?.id?.toString();
@@ -251,18 +257,19 @@ router.get('/', authenticateToken, async (req, res) => {
           }
         }
 
-        // Provide a small boards preview (first page) so UI can quickly show that boards exist after searching
-        const boardsPage = await withTimeout(
-          getBoardPage(authorization, workspaceId, { limit: 10, after: null }),
-          detailTimeoutMs,
-          'Boards preview fetch timed out'
-        );
-        if (boardsPage?.status === 200 && Array.isArray(boardsPage.board)) {
-          detail.boardsPreview = boardsPage.board.map((b) => ({
-            id: b?.id,
-            name: b?.name,
-          }));
-          detail.boardsPreviewHasMore = Boolean(boardsPage.has_more);
+        if (wantBoardsPreview) {
+          const boardsPage = await withTimeout(
+            getBoardPage(authorization, workspaceId, { limit: 10, after: null }),
+            detailTimeoutMs,
+            'Boards preview fetch timed out'
+          );
+          if (boardsPage?.status === 200 && Array.isArray(boardsPage.board)) {
+            detail.boardsPreview = boardsPage.board.map((b) => ({
+              id: b?.id,
+              name: b?.name,
+            }));
+            detail.boardsPreviewHasMore = Boolean(boardsPage.has_more);
+          }
         }
 
         return detail;

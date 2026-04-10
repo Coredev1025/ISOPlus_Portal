@@ -8,11 +8,22 @@ import sanitizeHtml from 'sanitize-html';
 
 const router = express.Router();
 
+/**
+ * Derives the signup callback URL from the existing XERO_REDIRECT_URL.
+ * E.g. https://example.ngrok.app/api/xero/callback → https://example.ngrok.app/api/subscriptions/xero-callback
+ */
+function getSignupRedirectUri() {
+  const xeroRedirectUrl = process.env.XERO_REDIRECT_URL;
+  if (!xeroRedirectUrl) return null;
+  const parsed = new URL(xeroRedirectUrl);
+  return `${parsed.origin}/api/subscriptions/xero-callback`;
+}
+
 // ─── Public: Get Xero OAuth URL for sign-up ───────────────────────────────────
 router.get('/xero-auth-url', (req, res) => {
   try {
     const clientId = process.env.XERO_CLIENT_ID;
-    const redirectUri = process.env.XERO_SIGNUP_REDIRECT_URL;
+    const redirectUri = getSignupRedirectUri();
 
     if (!clientId || !redirectUri) {
       logError('Subscription', 'Xero sign-up not configured', {
@@ -43,19 +54,40 @@ router.get('/xero-auth-url', (req, res) => {
   }
 });
 
-// ─── Public: Handle Xero OAuth callback ────────────────────────────────────────
-router.post('/xero-callback', async (req, res) => {
+// ─── Public: Handle Xero OAuth callback (GET — Xero redirects here) ───────────
+router.get('/xero-callback', async (req, res) => {
+  const sendCallbackPage = (success, message, duplicate = false) => {
+    // Return an HTML page that posts a message to the opener window and closes
+    const type = success ? 'XERO_SIGNUP_SUCCESS' : 'XERO_SIGNUP_ERROR';
+    const payload = success
+      ? JSON.stringify({ type, message, duplicate })
+      : JSON.stringify({ type, error: message });
+
+    res.setHeader('Content-Type', 'text/html');
+    res.send(`<!DOCTYPE html>
+<html><head><title>Xero Sign Up</title></head>
+<body>
+<p>${success ? message : 'An error occurred. You can close this window.'}</p>
+<script>
+  if (window.opener) {
+    window.opener.postMessage(${payload}, '*');
+  }
+  setTimeout(function() { window.close(); }, 2000);
+</script>
+</body></html>`);
+  };
+
   try {
-    const { code, state } = req.body;
+    const { code, state } = req.query;
 
     if (!code || !state) {
-      return res.status(400).json({ message: 'Missing code or state parameter' });
+      return sendCallbackPage(false, 'Missing code or state parameter');
     }
 
     // Validate state to prevent CSRF
     if (state !== req.session.xeroSignupState) {
       logError('Subscription', 'Invalid state parameter in Xero callback', {}, req);
-      return res.status(400).json({ message: 'Invalid state parameter' });
+      return sendCallbackPage(false, 'Invalid state parameter');
     }
 
     // Clear the state after validation
@@ -63,10 +95,10 @@ router.post('/xero-callback', async (req, res) => {
 
     const clientId = process.env.XERO_CLIENT_ID;
     const clientSecret = process.env.XERO_CLIENT_SECRET;
-    const redirectUri = process.env.XERO_SIGNUP_REDIRECT_URL;
+    const redirectUri = getSignupRedirectUri();
 
     if (!clientId || !clientSecret || !redirectUri) {
-      return res.status(500).json({ message: 'Xero sign-up is not configured' });
+      return sendCallbackPage(false, 'Xero sign-up is not configured');
     }
 
     // Exchange authorization code for tokens
@@ -88,7 +120,7 @@ router.post('/xero-callback', async (req, res) => {
 
     if (!id_token) {
       logError('Subscription', 'No id_token in Xero token response', {}, req);
-      return res.status(400).json({ message: 'Failed to retrieve identity information from Xero' });
+      return sendCallbackPage(false, 'Failed to retrieve identity information from Xero');
     }
 
     // Decode the ID token (JWT) to extract user info
@@ -97,7 +129,7 @@ router.post('/xero-callback', async (req, res) => {
 
     if (!decoded || !decoded.sub || !decoded.email) {
       logError('Subscription', 'Invalid ID token payload', { decoded }, req);
-      return res.status(400).json({ message: 'Invalid identity information from Xero' });
+      return sendCallbackPage(false, 'Invalid identity information from Xero');
     }
 
     const { given_name, family_name, email, sub: xeroUserId } = decoded;
@@ -106,11 +138,7 @@ router.post('/xero-callback', async (req, res) => {
     const existing = await Subscription.findOne({ xeroUserId });
     if (existing) {
       info('Subscription', 'Duplicate sign-up attempt', { xeroUserId, email }, req);
-      return res.json({
-        success: true,
-        message: 'You have already signed up. We will be in touch shortly.',
-        duplicate: true
-      });
+      return sendCallbackPage(true, 'You have already signed up. We will be in touch shortly.', true);
     }
 
     // Create new subscription lead
@@ -130,16 +158,13 @@ router.post('/xero-callback', async (req, res) => {
       xeroUserId
     }, req);
 
-    res.json({
-      success: true,
-      message: 'Sign-up request received! We will be in touch shortly.'
-    });
+    sendCallbackPage(true, 'Sign-up request received! We will be in touch shortly.');
   } catch (err) {
     logError('Subscription', 'Error processing Xero callback', {
       message: err.message,
       stack: err.stack
     }, req);
-    res.status(500).json({ message: 'Failed to process sign-up request' });
+    sendCallbackPage(false, 'Failed to process sign-up request');
   }
 });
 
@@ -169,12 +194,25 @@ router.get('/', authenticateToken, async (req, res) => {
       filter.status = req.query.status;
     }
 
-    const total = await Subscription.countDocuments(filter);
-    const subscriptions = await Subscription.find(filter)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .lean();
+    const skip = (page - 1) * limit;
+    const [total, subscriptions] = await Promise.all([
+      Subscription.countDocuments(filter),
+      Subscription.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select({
+          givenName: 1,
+          familyName: 1,
+          email: 1,
+          xeroUserId: 1,
+          status: 1,
+          notes: 1,
+          createdAt: 1,
+          updatedAt: 1,
+        })
+        .lean(),
+    ]);
 
     res.json({
       subscriptions,
