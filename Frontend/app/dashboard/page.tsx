@@ -14,7 +14,7 @@ import {
 import Spinner from "@/components/ui/spin";
 import React, { useEffect, useRef, useState } from "react";
 import axios from "@/app/utils/axiosConfig";
-import { Search, Terminal, Download, Filter, AlertTriangle, AlertCircle, Info, Bug, XCircle } from "lucide-react";
+import { Search, Terminal, Download, Filter, AlertTriangle, AlertCircle, Info, Bug, XCircle, UserPlus, Pencil, ChevronRight, LayoutGrid } from "lucide-react";
 import { Header } from "@/components/ui/header";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -28,6 +28,20 @@ import {
 import { useAppContext } from "../context";
 import { PaginationNext, PaginationPrevious, PaginationItem, PaginationLink } from "@/components/ui/pagination";
 import { showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { showSuccessToast, showErrorToast } from "@/lib/toast-utils";
+import { dedupeByKey } from "@/app/utils/requestDedupe";
 
 interface ItemValue {
   attributeId: string;
@@ -171,7 +185,8 @@ function WorkspacesList() {
   useEffect(() => {
     if (!user?.role) return;
 
-    const abortController = new AbortController();
+    let cancelled = false;
+    const dedupeKey = `workspaces:first:${user.role}:${debouncedQuery}`;
 
     const fetchWorkspaces = async () => {
       setLoading(true);
@@ -180,15 +195,18 @@ function WorkspacesList() {
         setHasMore(false);
         setNextAfter(null);
 
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces`, {
-          withCredentials: true,
-          signal: abortController.signal,
-          params: {
-            limit: 50,
-            ...(debouncedQuery ? { q: debouncedQuery } : {}),
-            ...(debouncedQuery ? { includeDetails: true } : {}),
-          }
-        });
+        const response = await dedupeByKey(dedupeKey, () =>
+          axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces`, {
+            withCredentials: true,
+            params: {
+              limit: 50,
+              ...(debouncedQuery ? { q: debouncedQuery } : {}),
+              ...(debouncedQuery ? { includeDetails: true } : {}),
+            },
+          })
+        );
+
+        if (cancelled) return;
 
         let sortedWorkspace: any[] = [];
 
@@ -220,20 +238,20 @@ function WorkspacesList() {
           router.push(`/workspace/${sortedWorkspace[0].id}`);
         }
       } catch (error: any) {
+        if (cancelled) return;
         if (error.name !== "CanceledError" && error.name !== "AbortError") {
           console.error("Error fetching workspaces:", error);
           showFetchErrorToast("workspaces", error.response?.data?.message || "Failed to load workspaces");
         }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchWorkspaces();
 
     return () => {
-      abortController.abort();
-      setLoading(false);
+      cancelled = true;
     };
   }, [debouncedQuery, router, setWorkspaces, user.role]);
 
@@ -280,69 +298,98 @@ function WorkspacesList() {
   };
 
   return (
-    <Card className="p-6 shadow-sm">
-      <div className="flex justify-between items-center mb-6">
-        <h3 className="text-xl font-semibold">Your Workspaces</h3>
-        <div className="relative w-72">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+    <Card className="overflow-hidden border-border/80 p-6 shadow-sm sm:p-8">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <LayoutGrid className="h-5 w-5" aria-hidden />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold tracking-tight sm:text-xl">Workspaces</h3>
+            <p className="text-sm text-muted-foreground">
+              Open a workspace to manage boards and settings
+            </p>
+          </div>
+        </div>
+        <div className="relative w-full sm:w-80">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <Input
-            placeholder="Search by workspace ID or name..."
+            placeholder="Search by ID or name..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
+            className="h-10 border-border/80 pl-9"
+            aria-label="Search workspaces"
           />
         </div>
       </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Workspace ID</TableHead>
-            <TableHead>Name</TableHead>
-            <TableHead>Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {filteredWorkspaces.map((workspace) => (
-            <TableRow key={workspace.id}>
-              <TableCell className="font-mono">{workspace.id}</TableCell>
-              <TableCell>{workspace.name}</TableCell>
-              <TableCell>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => router.push(`/workspace/${workspace.id} `)}
-                >
-                  Open Workspace
-                </Button>
-              </TableCell>
+      <div className="rounded-xl border border-border/60 bg-muted/20">
+        <Table>
+          <TableHeader>
+            <TableRow className="border-border/60 hover:bg-transparent">
+              <TableHead className="w-[28%] font-medium">Workspace ID</TableHead>
+              <TableHead className="font-medium">Name</TableHead>
+              <TableHead className="w-[160px] text-right font-medium"> </TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      {isLoading ?
-        <div className="text-center py-8 text-muted-foreground">
-          Loading workspaces...
-          <span className="ml-2"><Spinner /></span>
-        </div>
-        :
-        <>
-          {filteredWorkspaces.length === 0 && (
-            <div className="text-center py-8 text-muted-foreground">
-              No workspaces found matching your search.
-            </div>
-          )}
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <TableRow key={`sk-${i}`} className="border-border/40">
+                  <TableCell><Skeleton className="h-4 w-full max-w-[140px]" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-3/4 max-w-[200px]" /></TableCell>
+                  <TableCell className="text-right"><Skeleton className="ml-auto h-8 w-24" /></TableCell>
+                </TableRow>
+              ))
+            ) : (
+              filteredWorkspaces.map((workspace) => (
+                <TableRow
+                  key={workspace.id}
+                  className="group border-border/40 transition-colors hover:bg-muted/40"
+                >
+                  <TableCell className="font-mono text-xs text-muted-foreground sm:text-sm">
+                    {workspace.id}
+                  </TableCell>
+                  <TableCell className="font-medium">{workspace.name}</TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1 text-primary hover:bg-primary/10 hover:text-primary"
+                      onClick={() => router.push(`/workspace/${String(workspace.id).trim()}`)}
+                    >
+                      Open
+                      <ChevronRight className="h-4 w-4 opacity-70 transition-transform group-hover:translate-x-0.5" aria-hidden />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
 
-          {hasMore && (
-            <div className="flex justify-center py-6">
-              <Button variant="outline" onClick={loadMore} disabled={isLoadingMore}>
-                {isLoadingMore ? "Loading..." : "Load more"}
-              </Button>
-            </div>
-          )}
-        </>
-      }
-    </Card >
+      {!isLoading && filteredWorkspaces.length === 0 && (
+        <div className="py-10 text-center text-sm text-muted-foreground">
+          No workspaces match your search.
+        </div>
+      )}
+
+      {hasMore && !isLoading && (
+        <div className="flex justify-center border-t border-border/40 pt-6">
+          <Button variant="outline" onClick={loadMore} disabled={isLoadingMore} className="min-w-[140px]">
+            {isLoadingMore ? (
+              <span className="inline-flex items-center gap-2">
+                <Spinner />
+                Loading…
+              </span>
+            ) : (
+              "Load more"
+            )}
+          </Button>
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -370,7 +417,7 @@ function GlobalAuditTrail() {
   });
 
   return (
-    <Card className="p-6">
+    <Card className="border-border/80 p-6 shadow-sm sm:p-8">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Global Audit Trail</h1>
@@ -597,7 +644,7 @@ function GlobalApplicationLogs() {
   };
 
   return (
-    <Card className="p-6">
+    <Card className="border-border/80 p-6 shadow-sm sm:p-8">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Application Logs</h1>
@@ -1091,6 +1138,344 @@ function GlobalApplicationLogs() {
   );
 }
 
+
+interface Subscription {
+  _id: string;
+  givenName: string;
+  familyName: string;
+  email: string;
+  sub?: string | null;
+  xeroUserId: string;
+  status: string;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const STATUS_OPTIONS = [
+  { value: "request_received", label: "Request Received" },
+  { value: "account_created", label: "Account Created" },
+];
+
+function getStatusBadge(status: string) {
+  switch (status) {
+    case "request_received":
+      return <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800">Request Received</Badge>;
+    case "account_created":
+      return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-400 dark:border-green-800">Account Created</Badge>;
+    default:
+      return <Badge variant="outline">{status}</Badge>;
+  }
+}
+
+function SubscriptionsList() {
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const [editingSub, setEditingSub] = useState<Subscription | null>(null);
+  const [editStatus, setEditStatus] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const perPage = 20;
+  const hasLoadedOnce = useRef(false);
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchInput);
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  // Fetch subscriptions
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    const fetchSubscriptions = async () => {
+      setIsLoading(true);
+      try {
+        const params: Record<string, string | number> = {
+          page: currentPage,
+          limit: perPage,
+        };
+        if (debouncedSearch) params.search = debouncedSearch;
+        if (statusFilter !== "all") params.status = statusFilter;
+
+        const response = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/subscriptions`,
+          { withCredentials: true, signal: abortController.signal, params }
+        );
+
+        if (response.data) {
+          setSubscriptions(response.data.subscriptions || []);
+          setTotalPages(response.data.pagination?.totalPages || 1);
+          setTotalItems(response.data.pagination?.total || 0);
+          if (!hasLoadedOnce.current) hasLoadedOnce.current = true;
+        }
+      } catch (err: any) {
+        if (err.name !== "CanceledError" && err.name !== "AbortError") {
+          showFetchErrorToast(
+            "subscriptions",
+            err.response?.data?.message || err.message || "Failed to load subscriptions"
+          );
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchSubscriptions();
+    return () => abortController.abort();
+  }, [currentPage, debouncedSearch, statusFilter]);
+
+  const openEditDialog = (sub: Subscription) => {
+    setEditingSub(sub);
+    setEditStatus(sub.status);
+    setEditNotes(sub.notes || "");
+  };
+
+  const handleSave = async () => {
+    if (!editingSub) return;
+    setIsSaving(true);
+    try {
+      const response = await axios.patch(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/subscriptions/${editingSub._id}`,
+        { status: editStatus, notes: editNotes },
+        { withCredentials: true }
+      );
+
+      if (response.data.success) {
+        setSubscriptions((prev) =>
+          prev.map((s) =>
+            s._id === editingSub._id
+              ? { ...s, status: editStatus, notes: editNotes }
+              : s
+          )
+        );
+        showSuccessToast("Subscription updated");
+        setEditingSub(null);
+      }
+    } catch (err: any) {
+      showErrorToast("Update failed", {
+        description: err.response?.data?.message || "Failed to update subscription",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const paginationPages = () => {
+    const pages: number[] = [];
+    const maxVisible = 5;
+    let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+    let end = Math.min(totalPages, start + maxVisible - 1);
+    if (end - start + 1 < maxVisible) {
+      start = Math.max(1, end - maxVisible + 1);
+    }
+    for (let i = start; i <= end; i++) pages.push(i);
+    return pages;
+  };
+
+  return (
+    <Card className="border-border/80 p-6 shadow-sm sm:p-8">
+      {/* Search and filter controls */}
+      <div className="flex flex-col sm:flex-row gap-4 mb-6">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search by name, email, or Xero ID..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <Select value={statusFilter} onValueChange={(val) => { setStatusFilter(val); setCurrentPage(1); }}>
+          <SelectTrigger className="w-[200px]">
+            <Filter className="h-4 w-4 mr-2" />
+            <SelectValue placeholder="Filter by status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            {STATUS_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Table */}
+      {isLoading && !hasLoadedOnce.current ? (
+        <div className="flex justify-center py-12">
+          <Spinner />
+        </div>
+      ) : subscriptions.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          {hasLoadedOnce.current ? "No subscriptions found." : "Loading..."}
+        </div>
+      ) : (
+        <>
+          <div className="rounded-md border overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Sub (JWT)</TableHead>
+                  <TableHead>Xero user id</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Notes</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead className="w-[80px]">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {subscriptions.map((row) => (
+                  <TableRow key={row._id}>
+                    <TableCell className="font-medium whitespace-nowrap">
+                      {row.givenName} {row.familyName}
+                    </TableCell>
+                    <TableCell>{row.email}</TableCell>
+                    <TableCell className="font-mono text-xs max-w-[140px] truncate" title={row.sub || row.xeroUserId || ""}>
+                      {row.sub || "—"}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs max-w-[140px] truncate" title={row.xeroUserId}>
+                      {row.xeroUserId}
+                    </TableCell>
+                    <TableCell>{getStatusBadge(row.status)}</TableCell>
+                    <TableCell className="max-w-[200px] truncate" title={row.notes}>
+                      {row.notes || "—"}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {new Date(row.createdAt).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEditDialog(row)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4">
+              <div className="flex items-center gap-1">
+                <PaginationPrevious
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                >
+                  Previous
+                </PaginationPrevious>
+                {paginationPages().map((page) => (
+                  <div key={page}>
+                    <PaginationLink
+                      onClick={() => setCurrentPage(page)}
+                      isActive={currentPage === page}
+                    >
+                      {page}
+                    </PaginationLink>
+                  </div>
+                ))}
+                <PaginationNext
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                >
+                  Next
+                </PaginationNext>
+              </div>
+              <div className="text-sm text-muted-foreground">
+                Page {currentPage} of {totalPages} ({totalItems} subscriptions)
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editingSub} onOpenChange={(open) => !open && setEditingSub(null)}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Edit Subscription</DialogTitle>
+            <DialogDescription>
+              Update the status and notes for this subscription lead.
+            </DialogDescription>
+          </DialogHeader>
+          {editingSub && (
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-muted-foreground text-xs">Name</Label>
+                  <p className="font-medium">{editingSub.givenName} {editingSub.familyName}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-xs">Email</Label>
+                  <p className="font-medium">{editingSub.email}</p>
+                </div>
+              </div>
+              <div>
+                <Label className="text-muted-foreground text-xs">Sub (JWT)</Label>
+                <p className="font-mono text-sm break-all">{editingSub.sub || "—"}</p>
+              </div>
+              <div>
+                <Label className="text-muted-foreground text-xs">Xero user id</Label>
+                <p className="font-mono text-sm break-all">{editingSub.xeroUserId}</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-status">Status</Label>
+                <Select value={editStatus} onValueChange={setEditStatus}>
+                  <SelectTrigger id="edit-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUS_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-notes">Notes</Label>
+                <Textarea
+                  id="edit-notes"
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  placeholder="Add notes about this subscription..."
+                  rows={4}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingSub(null)} disabled={isSaving}>
+              Cancel
+            </Button>
+            <Button onClick={handleSave} disabled={isSaving}>
+              {isSaving ? <><Spinner /> Saving...</> : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
 export default function Dashboard() {
   const { user } = useAppContext();
   const router = useRouter();
@@ -1100,17 +1485,55 @@ export default function Dashboard() {
     }
   }, [user.role, router]);
 
+  const firstName = user.name?.trim().split(/\s+/)[0];
+
   return (
-    <div className="min-h-screen bg-background relative">
+    <div className="relative min-h-screen bg-background">
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-48 bg-gradient-to-b from-primary/[0.06] to-transparent"
+        aria-hidden
+      />
       <Header />
-      <div className="container mx-auto py-8 space-y-8">
+      <div className="relative container mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+            {firstName ? `Welcome back, ${firstName}` : "Welcome"}
+          </h1>
+          <p className="text-sm text-muted-foreground sm:text-base">
+            Choose a workspace or switch tabs for admin tools.
+          </p>
+        </div>
+
         <Tabs defaultValue="workspaces" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="workspaces">Workspaces</TabsTrigger>
+          <TabsList
+            className={`grid h-auto w-full gap-1 rounded-xl border border-border/60 bg-muted/40 p-1.5 shadow-sm ${
+              user.role === "support_admin" || user.role === "owner"
+                ? "grid-cols-1 sm:grid-cols-3"
+                : "grid-cols-1"
+            }`}
+          >
+            <TabsTrigger
+              value="workspaces"
+              className="rounded-lg py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+            >
+              Workspaces
+            </TabsTrigger>
             {(user.role === "support_admin" || user.role === "owner") && (
-              <TabsTrigger value="logs" className="gap-2">
-                <Terminal className="h-4 w-4" />
-                Application Logs
+              <TabsTrigger
+                value="subscriptions"
+                className="gap-2 rounded-lg py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+              >
+                <UserPlus className="h-4 w-4 shrink-0" />
+                Subscriptions
+              </TabsTrigger>
+            )}
+            {(user.role === "support_admin" || user.role === "owner") && (
+              <TabsTrigger
+                value="logs"
+                className="gap-2 rounded-lg py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+              >
+                <Terminal className="h-4 w-4 shrink-0" />
+                Logs
               </TabsTrigger>
             )}
           </TabsList>
@@ -1118,6 +1541,12 @@ export default function Dashboard() {
           <TabsContent value="workspaces">
             <WorkspacesList />
           </TabsContent>
+
+          {(user.role === "support_admin" || user.role === "owner") && (
+            <TabsContent value="subscriptions">
+              <SubscriptionsList />
+            </TabsContent>
+          )}
 
           {(user.role === "support_admin" || user.role === "owner") && (
             <TabsContent value="logs">

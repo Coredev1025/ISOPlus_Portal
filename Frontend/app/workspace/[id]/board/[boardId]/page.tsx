@@ -83,6 +83,7 @@ export default function BoardDetail() {
   const isWorkspaceOwner = user.role === "isoplus_user" && workspace?.user_role === "owner";
   const isWorkspaceAdmin = user.role === "isoplus_user" && workspace?.user_role === "admin";
   const canAccessThisWorkspace = isOwnerOrSupportUser || isWorkspaceOwner || isWorkspaceAdmin;
+  const canUseTimeTracking = isOwnerOrSupportUser;
 
   const calcDuration = (startTime: any, endTime: any) => {
     return Math.floor((new Date(endTime).getTime() - new Date(startTime).getTime()) / 1000);
@@ -153,7 +154,7 @@ export default function BoardDetail() {
 
   const fetchTimeEntries = useCallback(async () => {
     try {
-      if (!id || !boardId) return;
+      if (!id || !boardId || !canUseTimeTracking) return;
       const timetracking = await axios.get(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks?workspaceId=${id}&boardId=${boardId}`
       );
@@ -176,14 +177,14 @@ export default function BoardDetail() {
         console.error("Error fetching time entries:", error);
       }
     }
-  }, [id, boardId, user.id, user.name]);
+  }, [id, boardId, user.id, user.name, canUseTimeTracking]);
 
   useEffect(() => {
     fetchTimeEntries();
   }, [fetchTimeEntries]);
 
   useEffect(() => {
-    if (!timeTrackingEnabled) return;
+    if (!canUseTimeTracking || !timeTrackingEnabled) return;
     const intervalId = setInterval(() => {
       setTimeEntries(prev => {
         const activeIdx = prev.findIndex(entry => !entry.endTime);
@@ -197,7 +198,7 @@ export default function BoardDetail() {
       });
     }, 1000);
     return () => clearInterval(intervalId);
-  }, [timeTrackingEnabled]);
+  }, [timeTrackingEnabled, canUseTimeTracking]);
 
   if (!workspace || !board) {
     return null;
@@ -292,12 +293,14 @@ export default function BoardDetail() {
                   )}
                 </div>
               </div>
-              <TimeTrackingButton
-                workspaceId={id}
-                boardId={boardId ?? ""}
-                setTimeTrackingEnabled={setTimeTrackingEnabled}
-                onSessionChange={fetchTimeEntries}
-              />
+              {canUseTimeTracking && (
+                <TimeTrackingButton
+                  workspaceId={id}
+                  boardId={boardId ?? ""}
+                  setTimeTrackingEnabled={setTimeTrackingEnabled}
+                  onSessionChange={fetchTimeEntries}
+                />
+              )}
             </div>
           </Card>
 
@@ -424,8 +427,7 @@ export default function BoardDetail() {
               </Card>)}
             </div>)}
 
-          {/* Time Tracking Entries */}
-          {timeEntries.length > 0 && (
+          {canUseTimeTracking && timeEntries.length > 0 && (
             <Card className="p-6 shadow-lg">
               <div className="flex items-center justify-between mb-6">
                 <div>
@@ -598,7 +600,7 @@ export default function BoardDetail() {
               ) : (
                 /* Map View */
                 <div className="space-y-4">
-                  <div className="rounded-lg overflow-hidden">
+                  <div className="rounded-lg overflow-hidden relative z-0">
                     {entriesWithLocation.length === 0 ? (
                       <div className="h-[500px] bg-muted flex items-center justify-center rounded-lg">
                         <p className="text-muted-foreground">No location data to display</p>

@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/table";
 import { useAppContext } from "@/app/context";
 import axios from "@/app/utils/axiosConfig";
+import { isOwnerOrSupport } from "@/lib/access";
 import dynamic from "next/dynamic";
 
 const LeafletMap = dynamic(
@@ -41,7 +42,14 @@ interface Board {
 export default function MapViewPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const { workspaces, setCurrentWorkspaceId } = useAppContext();
+  const { workspaces, user, setCurrentWorkspaceId } = useAppContext();
+  const hasAccess = isOwnerOrSupport(user);
+
+  useEffect(() => {
+    if (!hasAccess) {
+      router.replace("/workspace/access-denied");
+    }
+  }, [hasAccess, router]);
   const [board, setBoard] = useState<Board | null>(null);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [tasks, setTasks] = useState<{ id: string; name: string; location?: { latitude: number; longitude: number; address: string } }[]>([]);
@@ -71,29 +79,35 @@ export default function MapViewPage() {
   }, [id, boardId]);
 
   useEffect(() => {
-    if (!id || !boardId) return;
+    if (!hasAccess || !id || !boardId) return;
     const abortController = new AbortController();
     axios
       .get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks?workspaceId=${id}&boardId=${boardId}`, { signal: abortController.signal })
       .then(res => {
-        const withLocation = (res.data.tasks as TimeEntry[]).filter(e => e.location?.lat && e.location?.lng);
+        const withLocation = (res.data.tasks as TimeEntry[]).filter(
+          e => e.startLocation?.lat && e.startLocation?.lng || e.location?.lat && e.location?.lng
+        );
         setTimeEntries(withLocation);
       })
       .catch(err => { if (err.name != "CanceledError" && err.name != "AbortError") console.error(err); });
     return () => abortController.abort();
-  }, [id, boardId]);
+  }, [hasAccess, id, boardId]);
 
   useEffect(() => {
-    if (!id || !boardId) return;
+    if (!hasAccess || !id || !boardId) return;
     const abortController = new AbortController();
     axios
       .get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks/tasks`, { params: { workspaceId: id, boardId }, signal: abortController.signal })
       .then(res => setTasks(res.data.tasks || []))
       .catch(err => { if (err.name != "CanceledError" && err.name != "AbortError") console.error(err); });
     return () => abortController.abort();
-  }, [id, boardId]);
+  }, [hasAccess, id, boardId]);
 
   const workspace = workspaces.find((workspace) => workspace.id.toString() === id);
+
+  if (!hasAccess) {
+    return null;
+  }
 
   if (!workspace || !board) {
     return null;
@@ -128,7 +142,7 @@ export default function MapViewPage() {
     return date.toLocaleString('en-AU');
   };
 
-  const openGoogleMaps = (location: TimeEntry["location"]) => {
+  const openGoogleMaps = (location: { lat: number; lng: number } | null | undefined) => {
     if (location) {
       window.open(`https://www.google.com/maps/search/?api=1&query=${location.lat},${location.lng}`, "_blank");
     }
@@ -188,7 +202,7 @@ export default function MapViewPage() {
           </div>
 
           {/* Map View */}
-          <div className="rounded-lg overflow-hidden mb-6">
+          <div className="rounded-lg overflow-hidden mb-6 relative z-0">
             {(() => {
               const taskMarkers = tasks
                 .filter(t => t.location?.latitude && t.location?.longitude)
@@ -199,13 +213,31 @@ export default function MapViewPage() {
                   address: t.location!.address,
                   label: `📍 ${t.name}`,
                 }));
-              const entryMarkers = filteredEntries.map(e => ({
-                id: e.id,
-                lat: e.location!.lat,
-                lng: e.location!.lng,
-                address: e.location?.address,
-                label: e.taskName,
-              }));
+
+              const entryMarkers = filteredEntries.flatMap(e => {
+                const markers = [];
+                const startLoc = e.startLocation ?? e.location;
+                if (startLoc?.lat && startLoc?.lng) {
+                  markers.push({
+                    id: `${e.id}-start`,
+                    lat: startLoc.lat,
+                    lng: startLoc.lng,
+                    address: startLoc.address,
+                    label: `▶ ${e.taskName} (Start)`,
+                  });
+                }
+                if (e.endLocation?.lat && e.endLocation?.lng) {
+                  markers.push({
+                    id: `${e.id}-end`,
+                    lat: e.endLocation.lat,
+                    lng: e.endLocation.lng,
+                    address: e.endLocation.address,
+                    label: `■ ${e.taskName} (End)`,
+                  });
+                }
+                return markers;
+              });
+
               const allMarkers = [...taskMarkers, ...entryMarkers];
               return allMarkers.length === 0 ? (
                 <div className="h-[500px] bg-muted flex items-center justify-center rounded-lg">
@@ -216,29 +248,40 @@ export default function MapViewPage() {
                   height="500px"
                   markers={allMarkers}
                   onMarkerClick={marker => {
-                    const entry = filteredEntries.find(e => e.id === marker.id) ?? null;
-                    setSelectedEntry(prev => prev?.id === marker.id ? null : entry);
+                    const baseId = marker.id.replace(/-(?:start|end)$/, '');
+                    const entry = filteredEntries.find(e => e.id === baseId) ?? null;
+                    setSelectedEntry(prev => prev?.id === baseId ? null : entry);
                   }}
                 />
               );
             })()}
           </div>
 
-          {/* Selected entry card */}
           {selectedEntry && (
             <div className="mb-6 p-4 border rounded-lg bg-card shadow flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h3 className="font-semibold">{selectedEntry.taskName}</h3>
                 <p className="text-sm text-muted-foreground">{formatDate(selectedEntry.startTime)} · {selectedEntry.userName}</p>
-                {selectedEntry.location?.address && (
-                  <p className="text-sm mt-1">{selectedEntry.location.address}</p>
+                {(selectedEntry.startLocation ?? selectedEntry.location) && (
+                  <p className="text-sm mt-1">
+                    <span className="font-medium">Start: </span>
+                    {(selectedEntry.startLocation ?? selectedEntry.location)?.address ||
+                      `${(selectedEntry.startLocation ?? selectedEntry.location)?.lat?.toFixed(4)}, ${(selectedEntry.startLocation ?? selectedEntry.location)?.lng?.toFixed(4)}`}
+                  </p>
+                )}
+                {selectedEntry.endLocation && (
+                  <p className="text-sm">
+                    <span className="font-medium">End: </span>
+                    {selectedEntry.endLocation.address ||
+                      `${selectedEntry.endLocation.lat?.toFixed(4)}, ${selectedEntry.endLocation.lng?.toFixed(4)}`}
+                  </p>
                 )}
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <Button variant="outline" size="sm" onClick={() => router.push(`/workspace/${id}/board/${boardId}/location/${selectedEntry.id}`)}>
                   View Details
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => openGoogleMaps(selectedEntry.location)}>
+                <Button variant="outline" size="sm" onClick={() => openGoogleMaps(selectedEntry.startLocation ?? selectedEntry.location)}>
                   <ExternalLink className="h-4 w-4" />
                 </Button>
                 <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setSelectedEntry(null)}>×</Button>
@@ -268,7 +311,24 @@ export default function MapViewPage() {
                       <TableCell className="font-medium">{entry.taskName}</TableCell>
                       <TableCell>{formatDate(entry.startTime)}</TableCell>
                       <TableCell>{entry.userName}</TableCell>
-                      <TableCell>{entry.location?.address || `${entry.location?.lat?.toFixed(4)}, ${entry.location?.lng?.toFixed(4)}`}</TableCell>
+                      <TableCell>
+                        <div className="text-sm space-y-0.5">
+                          {(entry.startLocation ?? entry.location) && (
+                            <p>
+                              <span className="font-medium text-muted-foreground">▶ </span>
+                              {(entry.startLocation ?? entry.location)?.address ||
+                                `${(entry.startLocation ?? entry.location)?.lat?.toFixed(4)}, ${(entry.startLocation ?? entry.location)?.lng?.toFixed(4)}`}
+                            </p>
+                          )}
+                          {entry.endLocation && (
+                            <p>
+                              <span className="font-medium text-muted-foreground">■ </span>
+                              {entry.endLocation.address ||
+                                `${entry.endLocation.lat?.toFixed(4)}, ${entry.endLocation.lng?.toFixed(4)}`}
+                            </p>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Button
@@ -281,7 +341,7 @@ export default function MapViewPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => openGoogleMaps(entry.location)}
+                            onClick={() => openGoogleMaps(entry.startLocation ?? entry.location)}
                           >
                             <ExternalLink className="h-4 w-4" />
                           </Button>

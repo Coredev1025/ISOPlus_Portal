@@ -488,8 +488,10 @@ async function buildItemRequest(workspaceId, boardId, folderId, limit, after) {
         "sort_by": "created_at",
         "sort_direction": "desc",
         "expand[0]": "values.attribute",
-        "folder_id": folderId,
     };
+    if (folderId) {
+        params["folder_id"] = folderId;
+    }
     return { url, headers, params: withAfterParam(params, after) };
 }
 
@@ -500,7 +502,7 @@ export function iterateBoardItems(workspaceId, boardId, folderId, options = {}) 
             const requestConfig = await buildItemRequest(workspaceId, boardId, folderId, limit, after);
             return axios.get(requestConfig.url, { headers: requestConfig.headers, params: requestConfig.params });
         },
-        { pageDelayMs: options.pageDelayMs, debugKey: `items:${workspaceId}:${boardId}:${folderId}` }
+        { pageDelayMs: options.pageDelayMs, debugKey: `items:${workspaceId}:${boardId}:${folderId || 'all'}` }
     );
 }
 

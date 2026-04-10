@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { useAppContext } from "@/app/context";
 import { TimeEntry } from "../../types";
 import axios from "@/app/utils/axiosConfig";
+import { isOwnerOrSupport } from "@/lib/access";
 import dynamic from "next/dynamic";
 
 const LeafletMap = dynamic(
@@ -26,7 +27,14 @@ interface Board {
 export default function LocationDetailPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const { workspaces, setCurrentWorkspaceId } = useAppContext();
+  const { workspaces, user, setCurrentWorkspaceId } = useAppContext();
+  const hasAccess = isOwnerOrSupport(user);
+
+  useEffect(() => {
+    if (!hasAccess) {
+      router.replace("/workspace/access-denied");
+    }
+  }, [hasAccess, router]);
   const id = pathname.split("/")[2];
   const boardId = pathname.split("/")[4];
   const entryId = pathname.split("/").pop();
@@ -43,17 +51,17 @@ export default function LocationDetailPage() {
   }, [id, setCurrentWorkspaceId]);
 
   useEffect(() => {
-    if (!id || !boardId) return;
+    if (!hasAccess || !id || !boardId) return;
     const abortController = new AbortController();
     axios
       .get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${boardId}`, { signal: abortController.signal })
       .then(res => setBoard(res.data.board))
       .catch(err => { if (err.name != "CanceledError" && err.name != "AbortError") console.error(err); });
     return () => abortController.abort();
-  }, [id, boardId]);
+  }, [hasAccess, id, boardId]);
 
   useEffect(() => {
-    if (!id || !boardId || !entryId) return;
+    if (!hasAccess || !id || !boardId || !entryId) return;
     const abortController = new AbortController();
     axios
       .get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks?workspaceId=${id}&boardId=${boardId}`, { signal: abortController.signal })
@@ -63,9 +71,13 @@ export default function LocationDetailPage() {
       })
       .catch(err => { if (err.name != "CanceledError" && err.name != "AbortError") console.error(err); });
     return () => abortController.abort();
-  }, [id, boardId, entryId]);
+  }, [hasAccess, id, boardId, entryId]);
 
   const workspace = workspaces.find(workspace => workspace.id.toString() === id);
+
+  if (!hasAccess) {
+    return null;
+  }
 
   if (!workspace || !board || !timeEntry) {
     return null;
@@ -87,11 +99,14 @@ export default function LocationDetailPage() {
     return date.toLocaleString('en-AU');
   };
 
-  const openGoogleMaps = () => {
-    if (timeEntry.location) {
-      window.open(`https://www.google.com/maps/search/?api=1&query=${timeEntry.location.lat},${timeEntry.location.lng}`, '_blank');
+  const openGoogleMaps = (loc?: { lat: number; lng: number } | null) => {
+    if (loc) {
+      window.open(`https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`, '_blank');
     }
   };
+
+  const startLoc = timeEntry.startLocation ?? timeEntry.location;
+  const endLoc   = timeEntry.endLocation ?? null;
 
   return (
     <div className="min-h-screen bg-background">
@@ -106,55 +121,116 @@ export default function LocationDetailPage() {
           Back to Board
         </Button>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="flex flex-col gap-6">
           <Card className="p-6 shadow-lg">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">Location</h2>
+              <h2 className="text-xl font-semibold">Clock-In Location</h2>
               <Button
                 variant="outline"
                 size="sm"
                 className="gap-2"
-                onClick={openGoogleMaps}
+                disabled={!startLoc}
+                onClick={() => openGoogleMaps(startLoc)}
               >
                 <ExternalLink className="h-4 w-4" />
                 Open in Google Maps
               </Button>
             </div>
 
-            <div className="relative rounded-lg overflow-hidden mb-4">
-              {timeEntry.location ? (
+            <div className="relative z-0 rounded-lg overflow-hidden mb-4">
+              {startLoc ? (
                 <LeafletMap
-                  height="400px"
+                  height="300px"
                   markers={[{
-                    id: timeEntry.id,
-                    lat: timeEntry.location.lat,
-                    lng: timeEntry.location.lng,
-                    address: timeEntry.location.address,
-                    label: timeEntry.taskName,
+                    id: `${timeEntry.id}-start`,
+                    lat: startLoc.lat,
+                    lng: startLoc.lng,
+                    address: startLoc.address,
+                    label: `▶ ${timeEntry.taskName} (Start)`,
                   }]}
                 />
               ) : (
-                <div className="h-[400px] bg-muted flex flex-col items-center justify-center rounded-lg">
+                <div className="h-[300px] bg-muted flex flex-col items-center justify-center rounded-lg">
                   <MapPin className="h-8 w-8 text-muted-foreground mb-2" />
-                  <p className="text-muted-foreground">No location data recorded</p>
+                  <p className="text-muted-foreground">No clock-in location recorded</p>
                 </div>
               )}
             </div>
 
-            {timeEntry.location && (
+            {startLoc && (
               <div className="p-4 bg-muted/30 rounded-lg">
                 <div className="flex items-start gap-3">
                   <MapPin className="h-5 w-5 text-primary mt-0.5" />
                   <div>
-                    <h3 className="text-sm font-medium">{timeEntry.location.address}</h3>
+                    <h3 className="text-sm font-medium">{startLoc.address || `${startLoc.lat?.toFixed(6)}, ${startLoc.lng?.toFixed(6)}`}</h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Lat {startLoc.lat?.toFixed(6)} · Lng {startLoc.lng?.toFixed(6)}
+                    </p>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Location tracked at {formatDate(timeEntry.startTime)}
+                      Tracked at {formatDate(timeEntry.startTime)}
                     </p>
                   </div>
                 </div>
               </div>
             )}
           </Card>
+
+          <Card className="p-6 shadow-lg">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold">Clock-Out Location</h2>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                disabled={!endLoc}
+                onClick={() => openGoogleMaps(endLoc)}
+              >
+                <ExternalLink className="h-4 w-4" />
+                Open in Google Maps
+              </Button>
+            </div>
+
+            <div className="relative z-0 rounded-lg overflow-hidden mb-4">
+              {endLoc ? (
+                <LeafletMap
+                  height="300px"
+                  markers={[{
+                    id: `${timeEntry.id}-end`,
+                    lat: endLoc.lat,
+                    lng: endLoc.lng,
+                    address: endLoc.address,
+                    label: `■ ${timeEntry.taskName} (End)`,
+                  }]}
+                />
+              ) : (
+                <div className="h-[300px] bg-muted flex flex-col items-center justify-center rounded-lg">
+                  <MapPin className="h-8 w-8 text-muted-foreground mb-2" />
+                  <p className="text-muted-foreground">
+                    {timeEntry.endTime ? 'No clock-out location recorded' : 'Session still in progress'}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {endLoc && (
+              <div className="p-4 bg-muted/30 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <MapPin className="h-5 w-5 text-primary mt-0.5" />
+                  <div>
+                    <h3 className="text-sm font-medium">{endLoc.address || `${endLoc.lat?.toFixed(6)}, ${endLoc.lng?.toFixed(6)}`}</h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Lat {endLoc.lat?.toFixed(6)} · Lng {endLoc.lng?.toFixed(6)}
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Tracked at {timeEntry.endTime ? formatDate(timeEntry.endTime) : '—'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </Card>
+        </div>
 
           <Card className="p-6 shadow-lg">
             <h2 className="text-xl font-semibold mb-4">Time Entry Details</h2>

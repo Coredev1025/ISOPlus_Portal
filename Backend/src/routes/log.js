@@ -5,6 +5,10 @@ import { warn, info, error } from '../utils/logger.js';
 
 const router = express.Router();
 
+function escapeRegex(str) {
+    return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // Define your Log schema
 const logSchema = new mongoose.Schema({
     message: String,
@@ -19,6 +23,8 @@ const ttlDays = parseInt(process.env.LOG_TTL_DAYS) || 7; // Default to 90 days
 const ttlSeconds = ttlDays * 24 * 60 * 60; // Convert days to seconds
 
 logSchema.index({ timestamp: 1 }, { expireAfterSeconds: ttlSeconds });
+logSchema.index({ timestamp: -1, level: 1 });
+logSchema.index({ 'metadata.source': 1, timestamp: -1 });
 
 // Create a model from the schema
 const Log = mongoose.model('Log', logSchema);
@@ -48,15 +54,16 @@ router.get('/', authenticateToken, async (req, res) => {
         const query = {};
 
         if (level && level !== 'all') {
-            query.level = { $regex: new RegExp(`^${level}$`, 'i') };
+            query.level = { $regex: new RegExp(`^${escapeRegex(level)}$`, 'i') };
         }
 
         if (source && source !== 'all') {
-            query['metadata.source'] = { $regex: new RegExp(source, 'i') };
+            query['metadata.source'] = { $regex: new RegExp(escapeRegex(source), 'i') };
         }
 
         if (search) {
-            const regex = new RegExp(search, 'i');
+            const safe = escapeRegex(search);
+            const regex = new RegExp(safe, 'i');
             query.$or = [
                 { message: regex },
                 { 'metadata.source': regex }

@@ -44,10 +44,29 @@ const TimeTrackSchema = new mongoose.Schema({
         type: String,
         default: null
     },
+    // Legacy combined location field — kept for backward compatibility
     Location: {
         lat: { type: Number, default: null },
         lng: { type: Number, default: null },
         address: { type: String, default: null }
+    },
+    // GPS captured when the user clocked IN
+    StartLocation: {
+        lat: { type: Number, default: null },
+        lng: { type: Number, default: null },
+        address: { type: String, default: null }
+    },
+    // GPS captured when the user clocked OUT
+    EndLocation: {
+        lat: { type: Number, default: null },
+        lng: { type: Number, default: null },
+        address: { type: String, default: null }
+    },
+    // 'portal' = tracked via Portal UI; 'isoplus' = imported from ISO+ sync
+    source: {
+        type: String,
+        enum: ['portal', 'isoplus'],
+        default: 'portal'
     },
     notes: {
         type: String,
