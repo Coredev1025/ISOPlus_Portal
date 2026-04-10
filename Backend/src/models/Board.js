@@ -143,5 +143,6 @@ const boardSchema = new mongoose.Schema({
 
 boardSchema.index({ boardId: 1 });
 boardSchema.index({ workspaceId: 1 });
+boardSchema.index({ workspaceId: 1, boardId: 1 });
 
 export default mongoose.model('Board', boardSchema);

@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useAppContext } from "@/app/context";
 import axios from "@/app/utils/axiosConfig";
+import { isOwnerOrSupport } from "@/lib/access";
 
 interface Board {
   id: string;
@@ -24,7 +25,14 @@ export default function TimeTrackingPage() {
   const [boards, setBoards] = useState<Board[]>([]);
   const [timeTrackingEnabled, setTimeTrackingEnabled] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const { workspaces, setCurrentWorkspaceId } = useAppContext();
+  const { workspaces, user, setCurrentWorkspaceId } = useAppContext();
+  const hasAccess = isOwnerOrSupport(user);
+
+  useEffect(() => {
+    if (!hasAccess) {
+      router.replace("/workspace/access-denied");
+    }
+  }, [hasAccess, router]);
   const id = pathname.split("/")[2];
   const boardId = pathname.split("/")[4];
 
@@ -41,41 +49,40 @@ export default function TimeTrackingPage() {
     const abortController = new AbortController();
 
     const fetchBoards = async () => {
-      if (boards.length === 0) {
-        try {
-          const response = await axios.get(
-            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`,
-            {
-              signal: abortController.signal
-            }
-          );
+      if (!hasAccess || boards.length !== 0) return;
+      try {
+        const response = await axios.get(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/boards?workspaceId=${id}`,
+          {
+            signal: abortController.signal
+          }
+        );
 
-          const data: Board[] = await Promise.all(
-            response.data.board.map(async (board: any) => {
-              try {
-                const boardResponse = await axios.get(
-                  `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${boardId}`,
-                  {
-                    signal: abortController.signal
-                  }
-                );
-                return { ...board, label: boardResponse.data.board.label };
-              } catch (error: any) {
-                if (error.name != "CanceledError" && error.name != "AbortError") {
-                  console.error("Error fetching board:", error);
+        const data: Board[] = await Promise.all(
+          response.data.board.map(async (board: any) => {
+            try {
+              const boardResponse = await axios.get(
+                `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${boardId}`,
+                {
+                  signal: abortController.signal
                 }
-                return { ...board, label: null };
+              );
+              return { ...board, label: boardResponse.data.board.label };
+            } catch (error: any) {
+              if (error.name != "CanceledError" && error.name != "AbortError") {
+                console.error("Error fetching board:", error);
               }
-            })
-          );
+              return { ...board, label: null };
+            }
+          })
+        );
 
-          if (!abortController.signal.aborted) {
-            setBoards(data);
-          }
-        } catch (error: any) {
-          if (error.name != "CanceledError" && error.name != "AbortError") {
-            console.error("Error fetching boards:", error);
-          }
+        if (!abortController.signal.aborted) {
+          setBoards(data);
+        }
+      } catch (error: any) {
+        if (error.name != "CanceledError" && error.name != "AbortError") {
+          console.error("Error fetching boards:", error);
         }
       }
     };
@@ -85,10 +92,14 @@ export default function TimeTrackingPage() {
     return () => {
       abortController.abort();
     };
-  }, [id, boards.length]);
+  }, [id, boards.length, hasAccess]);
 
   const workspace = workspaces.find(workspace => workspace.id.toString() === id);
   const board = boards.find(b => b.id === boardId);
+
+  if (!hasAccess) {
+    return null;
+  }
 
   if (!workspace || !board) {
     return null;

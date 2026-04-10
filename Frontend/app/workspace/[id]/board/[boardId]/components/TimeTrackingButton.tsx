@@ -120,19 +120,14 @@ export function TimeTrackingButton({ workspaceId, boardId, setTimeTrackingEnable
     return distance <= PROXIMITY_THRESHOLD;
   };
 
-  const buildLocationBody = (task: Task, gps: GeolocationPosition | null) => {
-    if (task.location) {
-      return { lat: task.location.latitude, lng: task.location.longitude, address: task.location.address || null };
-    }
-    if (gps) {
-      return { lat: gps.coords.latitude, lng: gps.coords.longitude, address: null };
-    }
-    return null;
+  const buildDeviceLocationBody = (gps: GeolocationPosition | null) => {
+    if (!gps) return null;
+    return { lat: gps.coords.latitude, lng: gps.coords.longitude, address: null as string | null };
   };
 
   const callStartApi = async (task: Task, gps: GeolocationPosition | null) => {
     const body: Record<string, unknown> = { workspaceId, boardId, itemId: task.id };
-    const loc = buildLocationBody(task, gps);
+    const loc = buildDeviceLocationBody(gps);
     if (loc) body.location = loc;
     const res = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks/start`, body);
     return res.data;
@@ -204,7 +199,7 @@ export function TimeTrackingButton({ workspaceId, boardId, setTimeTrackingEnable
     try {
       const gps = await tryGetLocation();
       const body: Record<string, unknown> = { workspaceId, boardId, itemId: selectedTask.id };
-      const loc = buildLocationBody(selectedTask, gps);
+      const loc = buildDeviceLocationBody(gps);
       if (loc) body.location = loc;
       await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks/stop`, body);
       setEndTime(new Date());

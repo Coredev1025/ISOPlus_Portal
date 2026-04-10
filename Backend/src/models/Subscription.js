@@ -17,9 +17,17 @@ const subscriptionSchema = new mongoose.Schema({
     trim: true,
     lowercase: true
   },
+  sub: {
+    type: String,
+    trim: true,
+    default: null,
+    sparse: true,
+    unique: true
+  },
   xeroUserId: {
     type: String,
     required: true,
+    trim: true,
     unique: true
   },
   status: {
@@ -34,5 +42,8 @@ const subscriptionSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
+
+subscriptionSchema.index({ createdAt: -1 });
+subscriptionSchema.index({ status: 1, createdAt: -1 });
 
 export default mongoose.model('Subscription', subscriptionSchema);

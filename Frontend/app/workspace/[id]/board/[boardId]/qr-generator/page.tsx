@@ -133,7 +133,7 @@ export default function QRGeneratorPage() {
 
     try {
       setGenerating(true);
-      const item = items.find((f) => f.id === selectedId);
+      const item = items.find((f) => String(f.id) === String(selectedId));
       if (!item) return;
 
       const canvas = canvasRef.current;
@@ -342,7 +342,7 @@ export default function QRGeneratorPage() {
     }
   };
 
-  const selectedItem = items.find((f) => f.id === selectedId);
+  const selectedItem = items.find((f) => String(f.id) === String(selectedId));
 
   return (
     <div className="min-h-screen bg-background">
@@ -402,7 +402,7 @@ export default function QRGeneratorPage() {
                           >
                             {selectedId
                               ? (() => {
-                                  const sel = items.find((i) => i.id === selectedId);
+                                  const sel = items.find((i) => String(i.id) === String(selectedId));
                                   return sel ? (
                                     <span className="flex items-center gap-2 truncate">
                                       {sel.name}
@@ -428,10 +428,15 @@ export default function QRGeneratorPage() {
                               <CommandGroup>
                                 {items.map((item) => (
                                   <CommandItem
-                                    key={item.id}
-                                    value={item.name}
-                                    onSelect={() => {
-                                      setSelectedId(item.id);
+                                    key={String(item.id)}
+                                    value={String(item.id)}
+                                    keywords={[
+                                      item.name,
+                                      item.type,
+                                      item.url,
+                                    ].filter(Boolean)}
+                                    onSelect={(value) => {
+                                      setSelectedId(value);
                                       setComboOpen(false);
                                     }}
                                   >

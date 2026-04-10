@@ -5,12 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import Link from "next/link";
 import Image from "next/image";
 import { useState, useEffect, useCallback } from "react";
 import axios from "@/app/utils/axiosConfig";
-import { isTokenValid } from "./utils/cookies";
+import { verifySession } from "./utils/cookies";
 import { useAppContext } from "@/app/context/index";
 import Spinner from "@/components/ui/spin";
 import { showSuccessToast, showErrorToast } from "@/lib/toast-utils";
@@ -24,96 +23,46 @@ export default function LoginPage() {
   const [isSupportLogin, setIsSupportLogin] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
-  const [isSigningUp, setIsSigningUp] = useState(false);
-
-  const handleXeroSignup = useCallback(async () => {
-    setIsSigningUp(true);
-    setError("");
-    let popup: Window | null = null;
-
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-
-      if (event.data.type === "XERO_SIGNUP_SUCCESS") {
-        showSuccessToast(event.data.message || "Sign-up request received! We'll be in touch.");
-        window.removeEventListener("message", handleMessage);
-        if (popup) popup.close();
-        setIsSigningUp(false);
-      } else if (event.data.type === "XERO_SIGNUP_ERROR") {
-        showErrorToast("Sign-up failed", { description: event.data.error || "An error occurred" });
-        window.removeEventListener("message", handleMessage);
-        if (popup) popup.close();
-        setIsSigningUp(false);
-      }
-    };
-
-    try {
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/subscriptions/xero-auth-url`
-      );
-
-      if (response.status === 200 && response.data.url) {
-        const width = 600;
-        const height = 700;
-        const left = window.screenX + (window.outerWidth - width) / 2;
-        const top = window.screenY + (window.outerHeight - height) / 2;
-
-        popup = window.open(
-          response.data.url,
-          "Xero Sign Up",
-          `width=${width},height=${height},left=${left},top=${top},status=yes,scrollbars=yes`
-        );
-
-        window.addEventListener("message", handleMessage);
-      }
-    } catch (err: any) {
-      showErrorToast("Sign-up failed", {
-        description: err.response?.data?.message || "Failed to initiate Xero sign-up",
-      });
-      setIsSigningUp(false);
-    }
-  }, []);
-
   useEffect(() => {
-    const abortController = new AbortController();
+    let cancelled = false;
 
     const checkToken = async () => {
       try {
         setIsLoading(true);
-        const valid = await isTokenValid(abortController.signal);
-        if (!abortController.signal.aborted)
-          if (valid.status === 200) {
-            if(valid.data?.user) setUser(valid.data.user);
-            router.push('/dashboard');
-          } else {
-            axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/logout`, {})
-            .then(() => {
-              localStorage.removeItem("user");
-              localStorage.removeItem("workspace");
-              localStorage.removeItem("board");
-              setUser({
-                id: "",
-                name: "",
-                email: "",
-                avatar: "",
-                role: "isoplus_user"
-              });
-              setWorkspaces([]);
-            })
-          }
+        const valid = await verifySession();
+        if (cancelled) return;
+
+        if (valid && typeof valid === "object" && "status" in valid && valid.status === 200) {
+          if (valid.data?.user) setUser(valid.data.user);
+          router.push("/dashboard");
+        } else {
+          await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/logout`, {});
+          if (cancelled) return;
+          localStorage.removeItem("user");
+          localStorage.removeItem("workspace");
+          localStorage.removeItem("board");
+          setUser({
+            id: "",
+            name: "",
+            email: "",
+            avatar: "",
+            role: "isoplus_user"
+          });
+          setWorkspaces([]);
+        }
       } catch (err: any) {
         if (err.name !== "CanceledError" && err.name !== "AbortError") {
           console.error("Token verification failed:", err);
         }
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
 
     checkToken();
 
     return () => {
-      abortController.abort();
+      cancelled = true;
     };
   }, [router, setUser, setWorkspaces]);
 
@@ -215,16 +164,36 @@ export default function LoginPage() {
   }, [router, setUser]);
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-md p-8">
+    <div className="relative min-h-screen bg-background flex items-center justify-center p-4 sm:p-8 overflow-hidden">
+      <div
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,hsl(var(--primary)/0.12),transparent)]"
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none absolute -right-24 top-1/4 h-72 w-72 rounded-full bg-secondary/15 blur-3xl"
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none absolute -left-24 bottom-1/4 h-64 w-64 rounded-full bg-primary/10 blur-3xl"
+        aria-hidden
+      />
+      <Card className="relative w-full max-w-md border border-border/80 bg-card/90 p-8 shadow-xl backdrop-blur-sm sm:p-10">
         {isSupportLogin ? (
           // Support Agent Login
           <div className="space-y-6">
-            <h1 className="text-2xl font-bold text-primary mb-4 text-center">
-              Support Agent Login
-            </h1>
+            <div className="space-y-1 text-center">
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                Support agent sign-in
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Use your ISO+ Portal administrator credentials
+              </p>
+            </div>
             {error && (
-              <div className="mb-4 p-3 text-sm text-red-500 bg-red-50 rounded-md">
+              <div
+                role="alert"
+                className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive"
+              >
                 {error}
               </div>
             )}
@@ -260,68 +229,78 @@ export default function LoginPage() {
             </form>
             <Button
               variant="ghost"
-              className="w-full text-sm text-muted-foreground hover:text-white"
+              className="w-full text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
               onClick={() => setIsSupportLogin(false)}
               disabled={isLoading}
             >
-              Return to ISO+ Login
+              Back to ISO+ sign-in
             </Button>
           </div>
         ) : (
           // ISO+ Login
           <div className="space-y-6">
-            <div className="text-center mb-8">
-              <h1 className="text-3xl font-bold text-primary mb-4">ISO+™ Portal</h1>
-              <div className="flex items-center justify-center">
+            <div className="text-center space-y-4">
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+                ISO+™ Portal
+              </h1>
+              <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+                Sign in with your ISO+ account or register via Xero
+              </p>
+              <div className="flex items-center justify-center pt-2">
                 <Image
                   src="/assets/logo_rgb_black.png"
                   alt="ISO+ Logo"
-                  width={150}
-                  height={150}
-                  className="mx-auto mb-6 dark:hidden"
+                  width={140}
+                  height={140}
+                  className="mx-auto dark:hidden"
+                  priority
                 />
                 <Image
                   src="/assets/logo_rgb_white.png"
                   alt="ISO+ Logo"
-                  width={150}
-                  height={150}
-                  className="mx-auto mb-6 hidden dark:block"
+                  width={140}
+                  height={140}
+                  className="mx-auto hidden dark:block"
+                  priority
                 />
               </div>
             </div>
             {error && (
-              <div className="mb-4 p-3 text-sm text-red-500 bg-red-50 rounded-md">
+              <div
+                role="alert"
+                className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive"
+              >
                 {error}
               </div>
             )}
             <Button
               onClick={handleISOPlusLogin}
-              className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3"
+              className="w-full gap-2 font-semibold shadow-md shadow-primary/10"
               size="lg"
-              disabled={isLoading || isSigningUp}
+              disabled={isLoading}
             >
-              Login
-              {isLoading && <span className="ml-2"><Spinner /></span>}
+              Sign in with ISO+
+              {isLoading && <Spinner />}
             </Button>
-            <div className="relative my-2">
+            <div className="relative py-1">
               <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
+                <span className="w-full border-t border-border/80" />
               </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">or</span>
+              <div className="relative flex justify-center text-xs uppercase tracking-wide">
+                <span className="bg-card px-3 text-muted-foreground">or</span>
               </div>
             </div>
             <Button
-              onClick={handleXeroSignup}
+              type="button"
               variant="outline"
-              className="w-full font-semibold py-3"
+              className="w-full border-border/80 bg-background/50 py-6 font-medium backdrop-blur-sm hover:bg-muted/60"
               size="lg"
-              disabled={isLoading || isSigningUp}
+              disabled={isLoading}
+              onClick={() => router.push("/signup/xero")}
             >
               Sign up with Xero
-              {isSigningUp && <span className="ml-2"><Spinner /></span>}
             </Button>
-            <div className="text-center text-sm text-muted-foreground">
+            <div className="text-center text-sm text-muted-foreground leading-relaxed">
               By continuing, you agree to our{" "}
               <Link
                 href="https://www.isoconsultingservices.com.au/iso-terms-of-service/"
@@ -343,11 +322,11 @@ export default function LoginPage() {
             </div>
             <Button
               variant="ghost"
-              className="w-full text-sm text-muted-foreground hover:text-white"
+              className="w-full text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
               onClick={() => setIsSupportLogin(true)}
               disabled={isLoading}
             >
-              Support Agent Login
+              Support agent sign-in
             </Button>
           </div>
         )}

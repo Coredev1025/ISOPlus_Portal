@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { useAppContext } from "@/app/context";
 import { TimeEntry } from "../../types";
 import axios from "@/app/utils/axiosConfig";
+import { isOwnerOrSupport } from "@/lib/access";
 import dynamic from "next/dynamic";
 
 const LeafletMap = dynamic(
@@ -26,7 +27,14 @@ interface Board {
 export default function LocationDetailPage() {
   const router = useRouter();
   const pathname = usePathname();
-  const { workspaces, setCurrentWorkspaceId } = useAppContext();
+  const { workspaces, user, setCurrentWorkspaceId } = useAppContext();
+  const hasAccess = isOwnerOrSupport(user);
+
+  useEffect(() => {
+    if (!hasAccess) {
+      router.replace("/workspace/access-denied");
+    }
+  }, [hasAccess, router]);
   const id = pathname.split("/")[2];
   const boardId = pathname.split("/")[4];
   const entryId = pathname.split("/").pop();
@@ -43,17 +51,17 @@ export default function LocationDetailPage() {
   }, [id, setCurrentWorkspaceId]);
 
   useEffect(() => {
-    if (!id || !boardId) return;
+    if (!hasAccess || !id || !boardId) return;
     const abortController = new AbortController();
     axios
       .get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${boardId}`, { signal: abortController.signal })
       .then(res => setBoard(res.data.board))
       .catch(err => { if (err.name != "CanceledError" && err.name != "AbortError") console.error(err); });
     return () => abortController.abort();
-  }, [id, boardId]);
+  }, [hasAccess, id, boardId]);
 
   useEffect(() => {
-    if (!id || !boardId || !entryId) return;
+    if (!hasAccess || !id || !boardId || !entryId) return;
     const abortController = new AbortController();
     axios
       .get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/timetracks?workspaceId=${id}&boardId=${boardId}`, { signal: abortController.signal })
@@ -63,9 +71,13 @@ export default function LocationDetailPage() {
       })
       .catch(err => { if (err.name != "CanceledError" && err.name != "AbortError") console.error(err); });
     return () => abortController.abort();
-  }, [id, boardId, entryId]);
+  }, [hasAccess, id, boardId, entryId]);
 
   const workspace = workspaces.find(workspace => workspace.id.toString() === id);
+
+  if (!hasAccess) {
+    return null;
+  }
 
   if (!workspace || !board || !timeEntry) {
     return null;

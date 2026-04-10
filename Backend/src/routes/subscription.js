@@ -1,18 +1,24 @@
 import express from 'express';
 import axios from 'axios';
 import jwt from 'jsonwebtoken';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, requirePortalOwnerOrSupport } from '../middleware/auth.js';
 import Subscription from '../models/Subscription.js';
 import { info, error as logError } from '../utils/logger.js';
 import sanitizeHtml from 'sanitize-html';
 
 const router = express.Router();
 
-// ─── Public: Get Xero OAuth URL for sign-up ───────────────────────────────────
+function getSignupRedirectUri() {
+  const xeroRedirectUrl = process.env.XERO_REDIRECT_URL;
+  if (!xeroRedirectUrl) return null;
+  const parsed = new URL(xeroRedirectUrl);
+  return `${parsed.origin}/api/subscriptions/xero-callback`;
+}
+
 router.get('/xero-auth-url', (req, res) => {
   try {
     const clientId = process.env.XERO_CLIENT_ID;
-    const redirectUri = process.env.XERO_SIGNUP_REDIRECT_URL;
+    const redirectUri = getSignupRedirectUri();
 
     if (!clientId || !redirectUri) {
       logError('Subscription', 'Xero sign-up not configured', {
@@ -43,33 +49,48 @@ router.get('/xero-auth-url', (req, res) => {
   }
 });
 
-// ─── Public: Handle Xero OAuth callback ────────────────────────────────────────
-router.post('/xero-callback', async (req, res) => {
+router.get('/xero-callback', async (req, res) => {
+  const sendCallbackPage = (success, message, duplicate = false) => {
+    const dataObj = success
+      ? { type: 'XERO_SIGNUP_SUCCESS', message, duplicate }
+      : { type: 'XERO_SIGNUP_ERROR', error: message };
+
+    res.setHeader('Content-Type', 'text/html');
+    res.send(`<!DOCTYPE html>
+<html><head><title>Xero Sign Up</title></head>
+<body>
+<p>${success ? message.replace(/</g, '&lt;') : 'An error occurred. You can close this window.'}</p>
+<script>
+  if (window.opener) {
+    window.opener.postMessage(${JSON.stringify(dataObj)}, '*');
+  }
+  setTimeout(function() { window.close(); }, 2000);
+</script>
+</body></html>`);
+  };
+
   try {
-    const { code, state } = req.body;
+    const { code, state } = req.query;
 
     if (!code || !state) {
-      return res.status(400).json({ message: 'Missing code or state parameter' });
+      return sendCallbackPage(false, 'Missing code or state parameter');
     }
 
-    // Validate state to prevent CSRF
     if (state !== req.session.xeroSignupState) {
       logError('Subscription', 'Invalid state parameter in Xero callback', {}, req);
-      return res.status(400).json({ message: 'Invalid state parameter' });
+      return sendCallbackPage(false, 'Invalid state parameter');
     }
 
-    // Clear the state after validation
     delete req.session.xeroSignupState;
 
     const clientId = process.env.XERO_CLIENT_ID;
     const clientSecret = process.env.XERO_CLIENT_SECRET;
-    const redirectUri = process.env.XERO_SIGNUP_REDIRECT_URL;
+    const redirectUri = getSignupRedirectUri();
 
     if (!clientId || !clientSecret || !redirectUri) {
-      return res.status(500).json({ message: 'Xero sign-up is not configured' });
+      return sendCallbackPage(false, 'Xero sign-up is not configured');
     }
 
-    // Exchange authorization code for tokens
     const tokenResponse = await axios.post(
       'https://identity.xero.com/connect/token',
       new URLSearchParams({
@@ -88,37 +109,36 @@ router.post('/xero-callback', async (req, res) => {
 
     if (!id_token) {
       logError('Subscription', 'No id_token in Xero token response', {}, req);
-      return res.status(400).json({ message: 'Failed to retrieve identity information from Xero' });
+      return sendCallbackPage(false, 'Failed to retrieve identity information from Xero');
     }
 
-    // Decode the ID token (JWT) to extract user info
-    // Note: For production hardening, verify against Xero's JWKS endpoint
     const decoded = jwt.decode(id_token);
 
     if (!decoded || !decoded.sub || !decoded.email) {
       logError('Subscription', 'Invalid ID token payload', { decoded }, req);
-      return res.status(400).json({ message: 'Invalid identity information from Xero' });
+      return sendCallbackPage(false, 'Invalid identity information from Xero');
     }
 
-    const { given_name, family_name, email, sub: xeroUserId } = decoded;
+    const { given_name, family_name, email, sub: jwtSub } = decoded;
+    const xeroUidClaim =
+      typeof decoded.xero_userid === 'string' && decoded.xero_userid.trim()
+        ? decoded.xero_userid.trim()
+        : jwtSub;
 
-    // Check for existing subscription with this Xero user
-    const existing = await Subscription.findOne({ xeroUserId });
+    const existing = await Subscription.findOne({
+      $or: [{ sub: jwtSub }, { xeroUserId: jwtSub }, { xeroUserId: xeroUidClaim }]
+    });
     if (existing) {
-      info('Subscription', 'Duplicate sign-up attempt', { xeroUserId, email }, req);
-      return res.json({
-        success: true,
-        message: 'You have already signed up. We will be in touch shortly.',
-        duplicate: true
-      });
+      info('Subscription', 'Duplicate sign-up attempt', { jwtSub, xeroUidClaim, email }, req);
+      return sendCallbackPage(true, 'You have already signed up. We will be in touch shortly.', true);
     }
 
-    // Create new subscription lead
     const subscription = new Subscription({
       givenName: sanitizeHtml(given_name || '', { allowedTags: [], allowedAttributes: {} }),
       familyName: sanitizeHtml(family_name || '', { allowedTags: [], allowedAttributes: {} }),
       email: sanitizeHtml(email, { allowedTags: [], allowedAttributes: {} }),
-      xeroUserId,
+      sub: jwtSub,
+      xeroUserId: xeroUidClaim,
       status: 'request_received'
     });
 
@@ -127,29 +147,22 @@ router.post('/xero-callback', async (req, res) => {
     info('Subscription', 'New subscription lead created', {
       subscriptionId: subscription._id,
       email,
-      xeroUserId
+      sub: jwtSub,
+      xeroUserId: xeroUidClaim
     }, req);
 
-    res.json({
-      success: true,
-      message: 'Sign-up request received! We will be in touch shortly.'
-    });
+    sendCallbackPage(true, 'Sign-up request received! We will be in touch shortly.');
   } catch (err) {
     logError('Subscription', 'Error processing Xero callback', {
       message: err.message,
       stack: err.stack
     }, req);
-    res.status(500).json({ message: 'Failed to process sign-up request' });
+    sendCallbackPage(false, 'Failed to process sign-up request');
   }
 });
 
-// ─── Protected: List subscriptions (owner / support_admin only) ────────────────
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/', authenticateToken, requirePortalOwnerOrSupport, async (req, res) => {
   try {
-    if (req.user.role !== 'owner' && req.user.role !== 'support_admin') {
-      return res.status(403).json({ message: 'Access denied' });
-    }
-
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const search = req.query.search || '';
@@ -161,7 +174,8 @@ router.get('/', authenticateToken, async (req, res) => {
         { givenName: { $regex: sanitized, $options: 'i' } },
         { familyName: { $regex: sanitized, $options: 'i' } },
         { email: { $regex: sanitized, $options: 'i' } },
-        { xeroUserId: { $regex: sanitized, $options: 'i' } }
+        { xeroUserId: { $regex: sanitized, $options: 'i' } },
+        { sub: { $regex: sanitized, $options: 'i' } }
       ];
     }
 
@@ -169,12 +183,26 @@ router.get('/', authenticateToken, async (req, res) => {
       filter.status = req.query.status;
     }
 
-    const total = await Subscription.countDocuments(filter);
-    const subscriptions = await Subscription.find(filter)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .lean();
+    const skip = (page - 1) * limit;
+    const [total, subscriptions] = await Promise.all([
+      Subscription.countDocuments(filter),
+      Subscription.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select({
+          givenName: 1,
+          familyName: 1,
+          email: 1,
+          sub: 1,
+          xeroUserId: 1,
+          status: 1,
+          notes: 1,
+          createdAt: 1,
+          updatedAt: 1,
+        })
+        .lean(),
+    ]);
 
     res.json({
       subscriptions,
@@ -191,13 +219,8 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-// ─── Protected: Update subscription (owner / support_admin only) ───────────────
-router.patch('/:id', authenticateToken, async (req, res) => {
+router.patch('/:id', authenticateToken, requirePortalOwnerOrSupport, async (req, res) => {
   try {
-    if (req.user.role !== 'owner' && req.user.role !== 'support_admin') {
-      return res.status(403).json({ message: 'Access denied' });
-    }
-
     const { id } = req.params;
     const { status, notes } = req.body;
 
