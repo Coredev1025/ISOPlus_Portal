@@ -8,6 +8,39 @@ import sanitizeHtml from 'sanitize-html';
 
 const router = express.Router();
 
+const XERO_SIGNUP_STATE_PURPOSE = 'xero_signup_oauth';
+const LEAD_EXTRA_FIELDS = ['companyName', 'phone', 'applicantMessage'];
+const MAX_LEAD_FIELD_LEN = 240;
+
+function sanitizeLeadExtras(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  const out = {};
+  for (const key of LEAD_EXTRA_FIELDS) {
+    const v = raw[key];
+    if (typeof v !== 'string') continue;
+    out[key] = sanitizeHtml(v, { allowedTags: [], allowedAttributes: {} }).trim().slice(0, MAX_LEAD_FIELD_LEN);
+  }
+  return out;
+}
+
+function signXeroSignupState(extras = {}) {
+  const cleaned = sanitizeLeadExtras(extras);
+  const payload = { purpose: XERO_SIGNUP_STATE_PURPOSE };
+  if (Object.keys(cleaned).length) payload.extras = cleaned;
+  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '15m', algorithm: 'HS256' });
+}
+
+function parseXeroSignupState(state) {
+  if (!state || typeof state !== 'string') return null;
+  try {
+    const decoded = jwt.verify(state, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    if (decoded?.purpose !== XERO_SIGNUP_STATE_PURPOSE) return null;
+    return { extras: sanitizeLeadExtras(decoded.extras || {}) };
+  } catch {
+    return null;
+  }
+}
+
 function getSignupRedirectUri() {
   const xeroRedirectUrl = process.env.XERO_REDIRECT_URL;
   if (!xeroRedirectUrl) return null;
@@ -15,7 +48,7 @@ function getSignupRedirectUri() {
   return `${parsed.origin}/api/subscriptions/xero-callback`;
 }
 
-router.get('/xero-auth-url', (req, res) => {
+function handleXeroAuthUrl(req, res, extras = {}) {
   try {
     const clientId = process.env.XERO_CLIENT_ID;
     const redirectUri = getSignupRedirectUri();
@@ -28,8 +61,7 @@ router.get('/xero-auth-url', (req, res) => {
       return res.status(500).json({ message: 'Xero sign-up is not configured' });
     }
 
-    const state = Math.random().toString(36).substring(2, 15);
-    req.session.xeroSignupState = state;
+    const state = signXeroSignupState(extras);
 
     const params = new URLSearchParams({
       response_type: 'code',
@@ -47,7 +79,11 @@ router.get('/xero-auth-url', (req, res) => {
     logError('Subscription', 'Error generating Xero auth URL', { message: err.message }, req);
     res.status(500).json({ message: 'Failed to generate Xero auth URL' });
   }
-});
+}
+
+router.get('/xero-auth-url', (req, res) => handleXeroAuthUrl(req, res, {}));
+
+router.post('/xero-auth-url', (req, res) => handleXeroAuthUrl(req, res, req.body || {}));
 
 router.get('/xero-callback', async (req, res) => {
   const sendCallbackPage = (success, message, duplicate = false) => {
@@ -70,18 +106,19 @@ router.get('/xero-callback', async (req, res) => {
   };
 
   try {
-    const { code, state } = req.query;
+    const codeParam = Array.isArray(req.query.code) ? req.query.code[0] : req.query.code;
+    const stateParam = Array.isArray(req.query.state) ? req.query.state[0] : req.query.state;
 
-    if (!code || !state) {
+    if (!codeParam || !stateParam) {
       return sendCallbackPage(false, 'Missing code or state parameter');
     }
 
-    if (state !== req.session.xeroSignupState) {
+    const parsedState = parseXeroSignupState(stateParam);
+    if (!parsedState) {
       logError('Subscription', 'Invalid state parameter in Xero callback', {}, req);
       return sendCallbackPage(false, 'Invalid state parameter');
     }
-
-    delete req.session.xeroSignupState;
+    const { extras: leadExtras } = parsedState;
 
     const clientId = process.env.XERO_CLIENT_ID;
     const clientSecret = process.env.XERO_CLIENT_SECRET;
@@ -95,7 +132,7 @@ router.get('/xero-callback', async (req, res) => {
       'https://identity.xero.com/connect/token',
       new URLSearchParams({
         grant_type: 'authorization_code',
-        code,
+        code: codeParam,
         redirect_uri: redirectUri,
         client_id: clientId,
         client_secret: clientSecret
@@ -125,6 +162,10 @@ router.get('/xero-callback', async (req, res) => {
         ? decoded.xero_userid.trim()
         : jwtSub;
 
+    const givenName = sanitizeHtml(given_name || '', { allowedTags: [], allowedAttributes: {} }).trim() || '—';
+    const familyName = sanitizeHtml(family_name || '', { allowedTags: [], allowedAttributes: {} }).trim() || '—';
+    const emailClean = sanitizeHtml(email, { allowedTags: [], allowedAttributes: {} }).trim().toLowerCase();
+
     const existing = await Subscription.findOne({
       $or: [{ sub: jwtSub }, { xeroUserId: jwtSub }, { xeroUserId: xeroUidClaim }]
     });
@@ -134,12 +175,15 @@ router.get('/xero-callback', async (req, res) => {
     }
 
     const subscription = new Subscription({
-      givenName: sanitizeHtml(given_name || '', { allowedTags: [], allowedAttributes: {} }),
-      familyName: sanitizeHtml(family_name || '', { allowedTags: [], allowedAttributes: {} }),
-      email: sanitizeHtml(email, { allowedTags: [], allowedAttributes: {} }),
+      givenName,
+      familyName,
+      email: emailClean,
       sub: jwtSub,
       xeroUserId: xeroUidClaim,
-      status: 'request_received'
+      status: 'request_received',
+      companyName: leadExtras.companyName || '',
+      phone: leadExtras.phone || '',
+      applicantMessage: leadExtras.applicantMessage || ''
     });
 
     await subscription.save();
@@ -174,6 +218,9 @@ router.get('/', authenticateToken, requirePortalOwnerOrSupport, async (req, res)
         { givenName: { $regex: sanitized, $options: 'i' } },
         { familyName: { $regex: sanitized, $options: 'i' } },
         { email: { $regex: sanitized, $options: 'i' } },
+        { companyName: { $regex: sanitized, $options: 'i' } },
+        { phone: { $regex: sanitized, $options: 'i' } },
+        { applicantMessage: { $regex: sanitized, $options: 'i' } },
         { xeroUserId: { $regex: sanitized, $options: 'i' } },
         { sub: { $regex: sanitized, $options: 'i' } }
       ];
@@ -198,6 +245,9 @@ router.get('/', authenticateToken, requirePortalOwnerOrSupport, async (req, res)
           xeroUserId: 1,
           status: 1,
           notes: 1,
+          companyName: 1,
+          phone: 1,
+          applicantMessage: 1,
           createdAt: 1,
           updatedAt: 1,
         })

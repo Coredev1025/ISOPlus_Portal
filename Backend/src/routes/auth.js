@@ -112,21 +112,52 @@ router.post('/logout', (req, res) => {
   });
 });
 
-router.get('/verify', authenticateToken, async (req, res) => {
+router.get('/verify', async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId).select('-password');
+    const sessionToken = req.session?.token;
+    if (!sessionToken) {
+      return res.status(200).json({ authenticated: false });
+    }
+
+    if (!process.env.JWT_SECRET) {
+      warn('Authentication-Service', 'JWT_SECRET not configured', {
+        error: 'JWT_SECRET environment variable not set',
+      }, req);
+      return res.status(500).json({ message: 'Server configuration error' });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(sessionToken, process.env.JWT_SECRET);
+    } catch {
+      delete req.session.token;
+      await req.session.save().catch(() => {});
+      return res.status(200).json({ authenticated: false });
+    }
+
+    const user = await User.findById(decoded.userId).select('-password');
     if (!user) {
       warn('User-Service', 'User not found during verification', {}, req ?? null);
+      delete req.session.token;
+      await req.session.save().catch(() => {});
       return res.status(404).json({ message: 'User not found' });
     }
 
     if (user.disabled) {
-      warn('User-Service', 'Token verification for disabled user', { userId: req.user.userId }, req ?? null);
+      warn('User-Service', 'Token verification for disabled user', { userId: decoded.userId }, req ?? null);
       return res.status(403).json({ message: 'Account is disabled' });
     }
 
     const token = jwt.sign(
-      { userId: user._id, email: user.email, name: user.name, role: user.role, avatar: user.avatar, workspace: req.user.workspace, board: req.user.board },
+      {
+        userId: user._id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        avatar: user.avatar,
+        workspace: decoded.workspace,
+        board: decoded.board
+      },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -135,6 +166,7 @@ router.get('/verify', authenticateToken, async (req, res) => {
     await req.session.save();
 
     res.json({
+      authenticated: true,
       user: {
         id: user._id,
         email: user.email,
@@ -144,7 +176,7 @@ router.get('/verify', authenticateToken, async (req, res) => {
       }
     });
   } catch (err) {
-    error('User-Service', 'Server error during verification', { err, userId: req.user?.userId }, req);
+    error('User-Service', 'Server error during verification', { err }, req);
     res.status(500).json({ message: 'Server error' });
   }
 });

@@ -32,8 +32,14 @@ export default function LoginPage() {
         const valid = await verifySession();
         if (cancelled) return;
 
-        if (valid && typeof valid === "object" && "status" in valid && valid.status === 200) {
-          if (valid.data?.user) setUser(valid.data.user);
+        if (
+          valid &&
+          typeof valid === "object" &&
+          "status" in valid &&
+          valid.status === 200 &&
+          valid.data?.user
+        ) {
+          setUser(valid.data.user);
           router.push("/dashboard");
         } else {
           await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/logout`, {});
