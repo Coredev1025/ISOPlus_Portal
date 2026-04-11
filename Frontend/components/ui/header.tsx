@@ -30,7 +30,13 @@ export function Header() {
         const valid = await verifySession();
         if (cancelled) return;
 
-        if (valid && typeof valid === "object" && "status" in valid && valid.status === 200) {
+        if (
+          valid &&
+          typeof valid === "object" &&
+          "status" in valid &&
+          valid.status === 200 &&
+          valid.data?.user
+        ) {
           setUser(valid.data.user);
         } else {
           setUser({

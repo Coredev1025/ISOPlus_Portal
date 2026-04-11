@@ -82,6 +82,10 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
+app.get('/favicon.ico', (_req, res) => {
+  res.status(204).end();
+});
+
 app.use('/api', (req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
@@ -105,7 +109,7 @@ app.use(session({
   cookie: {
     secure: false,
     httpOnly: true,
-    sameSite: 'strict',
+    sameSite: 'lax',
     maxAge: 1000 * 60 * 60 * 24
   }
 }));

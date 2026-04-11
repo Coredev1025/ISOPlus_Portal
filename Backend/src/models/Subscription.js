@@ -38,6 +38,21 @@ const subscriptionSchema = new mongoose.Schema({
   notes: {
     type: String,
     default: ''
+  },
+  companyName: {
+    type: String,
+    default: '',
+    trim: true
+  },
+  phone: {
+    type: String,
+    default: '',
+    trim: true
+  },
+  applicantMessage: {
+    type: String,
+    default: '',
+    trim: true
   }
 }, {
   timestamps: true
