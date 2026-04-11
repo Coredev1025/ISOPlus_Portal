@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { ArrowLeft, QrCode, Download, FileText, File, Copy, Info, ChevronDown } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
@@ -63,6 +64,8 @@ export default function QRGeneratorPage() {
   const [items, setItems] = useState<FormOrDocument[]>([]);
   const [business, setBusiness] = useState<Business>();
   const [selectedId, setSelectedId] = useState<string>('');
+  const [customUrl, setCustomUrl] = useState('');
+  const [lastGeneratedUrl, setLastGeneratedUrl] = useState('');
   const [comboOpen, setComboOpen] = useState(false);
   const [qrCodeGenerated, setQrCodeGenerated] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
@@ -71,6 +74,27 @@ export default function QRGeneratorPage() {
   const { workspaces, user, setCurrentWorkspaceId } = useAppContext();
   const workspace = workspaces.find(w => w.id.toString() === id);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    setQrCodeGenerated(false);
+    setLastGeneratedUrl('');
+  }, [selectedId]);
+
+  function normalizeUrlForQr(input: string): string | null {
+    const t = input.trim();
+    if (!t) return null;
+    try {
+      if (/^https?:\/\//i.test(t)) {
+        new URL(t);
+        return t;
+      }
+      const withScheme = `https://${t}`;
+      new URL(withScheme);
+      return withScheme;
+    } catch {
+      return null;
+    }
+  }
 
   useEffect(() => {
     if (id) {
@@ -128,13 +152,23 @@ export default function QRGeneratorPage() {
     return () => { cancelled = true; };
   }, [id, boardId]);
 
+  const resolveUrlToEncode = (): string | null => {
+    if (selectedId) {
+      const item = items.find((f) => String(f.id) === String(selectedId));
+      return item?.url ?? null;
+    }
+    return normalizeUrlForQr(customUrl);
+  };
+
   const generateQRCode = async () => {
-    if (!selectedId) return;
+    const targetUrl = resolveUrlToEncode();
+    if (!targetUrl) {
+      showFetchErrorToast("QR code", selectedId ? "Selected item has no URL." : "Enter a valid link (e.g. https://example.com).");
+      return;
+    }
 
     try {
       setGenerating(true);
-      const item = items.find((f) => String(f.id) === String(selectedId));
-      if (!item) return;
 
       const canvas = canvasRef.current;
       if (!canvas) {
@@ -144,7 +178,7 @@ export default function QRGeneratorPage() {
       canvas.width = 400;
       canvas.height = 400;
 
-      await QRCode.toCanvas(canvas, item.url, {
+      await QRCode.toCanvas(canvas, targetUrl, {
         errorCorrectionLevel: 'H',
         margin: 3,
         color: {
@@ -158,6 +192,7 @@ export default function QRGeneratorPage() {
         await overlayLogoOnQR(canvas, `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/qr-logo?workspaceId=${id}`);
       }
 
+      setLastGeneratedUrl(targetUrl);
       setQrCodeGenerated(true);
     } catch (error: any) {
       console.error("Error generating QR code:", error);
@@ -238,7 +273,7 @@ export default function QRGeneratorPage() {
 
     try {
       const link = document.createElement('a');
-      link.download = `qr-code-${selectedId}.png`;
+      link.download = `qr-code-${selectedId || "custom-link"}.png`;
       link.href = canvas.toDataURL('image/png');
       document.body.appendChild(link);
       link.click();
@@ -316,7 +351,7 @@ export default function QRGeneratorPage() {
       // Fallback: Try to download the image
       try {
         const link = document.createElement('a');
-        link.download = `qr-code-${selectedId}.png`;
+        link.download = `qr-code-${selectedId || "custom-link"}.png`;
         link.href = canvas.toDataURL('image/png');
         document.body.appendChild(link);
         link.click();
@@ -344,6 +379,24 @@ export default function QRGeneratorPage() {
 
   const selectedItem = items.find((f) => String(f.id) === String(selectedId));
 
+  /** Substring match (case-insensitive) on name, view id, share URL, or type. */
+  const filterFormDocumentRows = (value: string, search: string) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return 1;
+    const row = items.find((i) => String(i.id) === value);
+    if (!row) return 0;
+    const haystack = [
+      row.name,
+      String(row.id),
+      row.url,
+      row.type,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(q) ? 1 : 0;
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -369,7 +422,7 @@ export default function QRGeneratorPage() {
                   QR Generator
                 </h1>
                 <p className="text-muted-foreground">
-                  Create QR codes for your forms and documents with custom branding
+                  Create QR codes for your forms, documents, or any other links with custom branding.
                 </p>
               </div>
             </div>
@@ -388,17 +441,19 @@ export default function QRGeneratorPage() {
               <Card className="p-6 space-y-6">
                 <div>
                   <h2 className="text-xl font-semibold mb-4">Select Form or Document</h2>
-                  <p className="mb-4">NOTE: A QR code can be generated once the sharing feature is enabled for the relevant form or document.</p>
                   <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Choose a form or document to generate QR code</label>
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium">Choose a form or document to generate a QR code</label>
+                      <p className="text-xs text-muted-foreground">
+                        Search matches any part of the name, id, link URL, or type (form / document).
+                      </p>
                       <Popover open={comboOpen} onOpenChange={setComboOpen}>
                         <PopoverTrigger asChild>
                           <Button
                             variant="outline"
                             role="combobox"
                             aria-expanded={comboOpen}
-                            className="w-full justify-between font-normal h-10"
+                            className="w-full justify-between font-normal h-11 rounded-lg border-border/80 bg-background shadow-sm hover:bg-accent/50"
                           >
                             {selectedId
                               ? (() => {
@@ -420,33 +475,45 @@ export default function QRGeneratorPage() {
                             <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                          <Command>
-                            <CommandInput placeholder="Search form or document..." />
-                            <CommandList>
-                              <CommandEmpty>No form or document found.</CommandEmpty>
-                              <CommandGroup>
+                        <PopoverContent
+                          className="w-[var(--radix-popover-trigger-width)] p-0 shadow-lg border-border/80 rounded-xl overflow-hidden"
+                          align="start"
+                        >
+                          <Command filter={filterFormDocumentRows} shouldFilter>
+                            <CommandInput placeholder="Search by name, id, URL, or type…" className="h-11" />
+                            <CommandList className="max-h-[min(320px,50vh)]">
+                              <CommandEmpty className="py-8 text-muted-foreground text-sm">
+                                No form or document matches your search.
+                              </CommandEmpty>
+                              <CommandGroup className="p-1.5">
                                 {items.map((item) => (
                                   <CommandItem
                                     key={String(item.id)}
                                     value={String(item.id)}
-                                    keywords={[
-                                      item.name,
-                                      item.type,
-                                      item.url,
-                                    ].filter(Boolean)}
+                                    keywords={[item.name, String(item.id), item.url, item.type].filter(
+                                      Boolean
+                                    ) as string[]}
                                     onSelect={(value) => {
                                       setSelectedId(value);
+                                      setCustomUrl("");
                                       setComboOpen(false);
                                     }}
+                                    className="rounded-md py-2.5"
                                   >
-                                    <span className="flex items-center gap-2">
-                                      {item.name}
-                                      {item.type === "document" ? (
-                                        <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                                      ) : (
-                                        <File className="h-4 w-4 shrink-0 text-muted-foreground" />
-                                      )}
+                                    <span className="flex w-full min-w-0 items-center gap-2">
+                                      <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                                        {item.name}
+                                      </span>
+                                      <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
+                                        {item.type === "document" ? (
+                                          <FileText className="h-4 w-4" aria-hidden />
+                                        ) : (
+                                          <File className="h-4 w-4" aria-hidden />
+                                        )}
+                                        <span className="hidden sm:inline text-[10px] font-medium uppercase tracking-wide text-muted-foreground/90">
+                                          {item.type === "document" ? "Doc" : "Form"}
+                                        </span>
+                                      </span>
                                     </span>
                                   </CommandItem>
                                 ))}
@@ -455,6 +522,49 @@ export default function QRGeneratorPage() {
                           </Command>
                         </PopoverContent>
                       </Popover>
+                      {selectedId ? (
+                        <Button
+                          type="button"
+                          variant="link"
+                          size="sm"
+                          className="h-auto p-0 text-sm text-muted-foreground underline-offset-4 hover:text-foreground"
+                          onClick={() => setSelectedId("")}
+                        >
+                          Clear selection
+                        </Button>
+                      ) : null}
+                    </div>
+
+                    <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+                      <h3 className="text-base font-semibold text-foreground">Copy the Link</h3>
+                      <p className="text-sm text-muted-foreground">
+                        <span className="font-medium text-foreground">NOTE:</span> A QR code can be generated once the
+                        sharing feature is enabled for the relevant form or document.
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Copy any link and paste it into the box below to generate a QR code.
+                      </p>
+                      <div className="space-y-2 pt-1">
+                        <Label htmlFor="custom-qr-url" className="sr-only">
+                          Link to encode in QR code
+                        </Label>
+                        <Input
+                          id="custom-qr-url"
+                          type="url"
+                          inputMode="url"
+                          placeholder="https://example.com/your-page"
+                          value={customUrl}
+                          onChange={(e) => setCustomUrl(e.target.value)}
+                          disabled={!!selectedId}
+                          className="font-mono text-sm bg-background"
+                          autoComplete="off"
+                        />
+                        {selectedId ? (
+                          <p className="text-xs text-muted-foreground">
+                            Clear the selection above to paste a custom link.
+                          </p>
+                        ) : null}
+                      </div>
                     </div>
 
                     {selectedItem && (
@@ -492,7 +602,7 @@ export default function QRGeneratorPage() {
                           disabled={!business?.squareLogo && !business?.defaultLogo}
                         />
                         <Label htmlFor="drawLogo" className="text-sm font-medium">
-                          Include business logo on QR code
+                          Include your business logo in the QR code
                         </Label>
                       </div>
                       {!business?.squareLogo && !business?.defaultLogo && (
@@ -503,8 +613,10 @@ export default function QRGeneratorPage() {
                     </div>
 
                     <Button
+                      type="button"
+                      variant="destructive"
                       onClick={generateQRCode}
-                      disabled={!selectedId || generating}
+                      disabled={generating || !resolveUrlToEncode()}
                       className="w-full"
                     >
                       {generating ? (
@@ -519,17 +631,6 @@ export default function QRGeneratorPage() {
                         </>
                       )}
                     </Button>
-                  </div>
-                </div>
-
-                {/* Logo Information */}
-                <div>
-                  <h3 className="text-lg font-semibold mb-3">Logo Information</h3>
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p>• Square logo will be used if available</p>
-                    <p>• Default logo will be used as fallback</p>
-                    <p>• Logo will be placed in the center of the QR code</p>
-                    <p>• QR code uses high error correction for logo overlay</p>
                   </div>
                 </div>
               </Card>
@@ -549,7 +650,7 @@ export default function QRGeneratorPage() {
                     <div className="flex justify-center">
                       <input
                         type="text"
-                        value={selectedItem?.url ?? ''}
+                        value={lastGeneratedUrl || selectedItem?.url || ""}
                         readOnly
                         className="w-64 px-4 py-3 border-2 border-primary/30 rounded-lg bg-card text-foreground text-sm font-mono"
                       />
@@ -583,7 +684,7 @@ export default function QRGeneratorPage() {
                   <div className="text-center py-12" style={{ display: qrCodeGenerated ? 'none' : 'block' }}>
                     <QrCode className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
                     <p className="text-muted-foreground">
-                      Select a form or document and generate a QR code to see it here
+                      Select a form or document or paste a link, then generate a QR code to view it here
                     </p>
                   </div>
                 </div>
