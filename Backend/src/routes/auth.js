@@ -2,13 +2,20 @@ import express from 'express';
 import { body, validationResult } from 'express-validator';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
-import { authenticateToken, validateApiKey } from '../middleware/auth.js';
+import { authenticateToken, validateApiKey, requirePortalOwnerOrSupport } from '../middleware/auth.js';
 import querystring from 'querystring';
 import axios from 'axios';
 import { error, info, warn } from '../utils/logger.js';
-import { getBoard, getWorkspace } from '../services/isoplus.js';
+import { getBoard, getWorkspace, getMember, listWorkspacesForAuthorization } from '../services/isoplus.js';
 
 const router = express.Router();
+
+function csvEscape(value) {
+  if (value === null || value === undefined) return '';
+  const s = String(value);
+  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
 
 router.post('/register',
   [
@@ -112,21 +119,52 @@ router.post('/logout', (req, res) => {
   });
 });
 
-router.get('/verify', authenticateToken, async (req, res) => {
+router.get('/verify', async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId).select('-password');
+    const sessionToken = req.session?.token;
+    if (!sessionToken) {
+      return res.status(200).json({ authenticated: false });
+    }
+
+    if (!process.env.JWT_SECRET) {
+      warn('Authentication-Service', 'JWT_SECRET not configured', {
+        error: 'JWT_SECRET environment variable not set',
+      }, req);
+      return res.status(500).json({ message: 'Server configuration error' });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(sessionToken, process.env.JWT_SECRET);
+    } catch {
+      delete req.session.token;
+      await req.session.save().catch(() => {});
+      return res.status(200).json({ authenticated: false });
+    }
+
+    const user = await User.findById(decoded.userId).select('-password');
     if (!user) {
       warn('User-Service', 'User not found during verification', {}, req ?? null);
+      delete req.session.token;
+      await req.session.save().catch(() => {});
       return res.status(404).json({ message: 'User not found' });
     }
 
     if (user.disabled) {
-      warn('User-Service', 'Token verification for disabled user', { userId: req.user.userId }, req ?? null);
+      warn('User-Service', 'Token verification for disabled user', { userId: decoded.userId }, req ?? null);
       return res.status(403).json({ message: 'Account is disabled' });
     }
 
     const token = jwt.sign(
-      { userId: user._id, email: user.email, name: user.name, role: user.role, avatar: user.avatar, workspace: req.user.workspace, board: req.user.board },
+      {
+        userId: user._id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        avatar: user.avatar,
+        workspace: decoded.workspace,
+        board: decoded.board
+      },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -135,6 +173,7 @@ router.get('/verify', authenticateToken, async (req, res) => {
     await req.session.save();
 
     res.json({
+      authenticated: true,
       user: {
         id: user._id,
         email: user.email,
@@ -144,7 +183,7 @@ router.get('/verify', authenticateToken, async (req, res) => {
       }
     });
   } catch (err) {
-    error('User-Service', 'Server error during verification', { err, userId: req.user?.userId }, req);
+    error('User-Service', 'Server error during verification', { err }, req);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -361,6 +400,111 @@ router.post('/oauth-login', async (req, res) => {
     res.status(500).json({ message: 'Server error during OAuth login' });
   }
 });
+
+router.get(
+  '/users/export-csv',
+  authenticateToken,
+  requirePortalOwnerOrSupport,
+  async (req, res) => {
+    try {
+      const authorization = req.session.Authorization;
+      if (!authorization) {
+        warn('User-Service', 'CSV export missing ISO+ authorization', {}, req ?? null);
+        return res.status(500).json({ message: 'Server configuration error' });
+      }
+
+      const users = await User.find({}).select('-password').lean();
+      const byEmail = new Map();
+      for (const u of users) {
+        byEmail.set(String(u.email).toLowerCase(), u);
+      }
+
+      const wsResult = await listWorkspacesForAuthorization(authorization);
+      if (wsResult.status !== 200) {
+        return res.status(502).json({
+          message: wsResult.message || 'Failed to list workspaces from ISO+',
+        });
+      }
+
+      const workspaceRows = [];
+      for (const w of wsResult.workspaces || []) {
+        const wid = w.id;
+        if (wid == null) continue;
+        const wname = w.name || w.label || '';
+        const mem = await getMember(authorization, wid);
+        if (mem.status !== 200 || !Array.isArray(mem.members)) continue;
+
+        for (const m of mem.members) {
+          const email = m?.email ? String(m.email).toLowerCase() : '';
+          if (!email) continue;
+          const portalUser = byEmail.get(email);
+          if (!portalUser) continue;
+
+          workspaceRows.push({
+            userId: portalUser._id.toString(),
+            name: portalUser.name || '',
+            email: portalUser.email || '',
+            workspaceId: String(wid),
+            workspaceName: String(wname),
+          });
+        }
+      }
+
+      const seenPair = new Set();
+      const finalRows = [];
+      for (const r of workspaceRows) {
+        const key = `${r.userId}:${r.workspaceId}`;
+        if (seenPair.has(key)) continue;
+        seenPair.add(key);
+        finalRows.push(r);
+      }
+
+      const userIdsWithWorkspace = new Set(finalRows.map((r) => r.userId));
+      for (const u of users) {
+        const uid = u._id.toString();
+        if (!userIdsWithWorkspace.has(uid)) {
+          finalRows.push({
+            userId: uid,
+            name: u.name || '',
+            email: u.email || '',
+            workspaceId: '',
+            workspaceName: '',
+          });
+        }
+      }
+
+      finalRows.sort((a, b) => {
+        const byE = a.email.localeCompare(b.email);
+        if (byE !== 0) return byE;
+        return (a.workspaceName || '').localeCompare(b.workspaceName || '');
+      });
+
+      const header = ['user_id', 'name', 'email', 'workspace_id', 'workspace_name'];
+      const lines = [
+        header.join(','),
+        ...finalRows.map((r) =>
+          [
+            csvEscape(r.userId),
+            csvEscape(r.name),
+            csvEscape(r.email),
+            csvEscape(r.workspaceId),
+            csvEscape(r.workspaceName),
+          ].join(','),
+        ),
+      ];
+
+      const dateStamp = new Date().toISOString().slice(0, 10);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="portal-users-${dateStamp}.csv"`);
+      res.send(`\uFEFF${lines.join('\r\n')}`);
+
+      info('User-Service', 'Portal users CSV exported', { rowCount: finalRows.length }, req ?? null);
+    } catch (err) {
+      error('User-Service', 'CSV export failed', { err }, req);
+      res.status(500).json({ message: 'Failed to export users' });
+    }
+  },
+);
 
 router.get('/users', validateApiKey, async (req, res) => {
   try {

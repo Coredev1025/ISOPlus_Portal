@@ -12,7 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import Spinner from "@/components/ui/spin";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import axios from "@/app/utils/axiosConfig";
 import { Search, Terminal, Download, Filter, AlertTriangle, AlertCircle, Info, Bug, XCircle, UserPlus, Pencil, ChevronRight, LayoutGrid } from "lucide-react";
 import { Header } from "@/components/ui/header";
@@ -1148,6 +1148,9 @@ interface Subscription {
   xeroUserId: string;
   status: string;
   notes: string;
+  companyName?: string;
+  phone?: string;
+  applicantMessage?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -1251,10 +1254,15 @@ function SubscriptionsList() {
       );
 
       if (response.data.success) {
+        const upd = response.data.subscription as Subscription | undefined;
         setSubscriptions((prev) =>
           prev.map((s) =>
             s._id === editingSub._id
-              ? { ...s, status: editStatus, notes: editNotes }
+              ? {
+                  ...s,
+                  status: upd?.status ?? editStatus,
+                  notes: upd?.notes ?? editNotes,
+                }
               : s
           )
         );
@@ -1284,12 +1292,19 @@ function SubscriptionsList() {
 
   return (
     <Card className="border-border/80 p-6 shadow-sm sm:p-8">
+      <div className="mb-6 space-y-1 border-b border-border/40 pb-4">
+        <h2 className="text-lg font-semibold tracking-tight text-foreground">Subscription leads</h2>
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          From Sign up with Xero (hosted flow). New rows start as Request received; set Account created after
+          the person has been invited to ISO+.
+        </p>
+      </div>
       {/* Search and filter controls */}
       <div className="flex flex-col sm:flex-row gap-4 mb-6">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search by name, email, or Xero ID..."
+            placeholder="Search name, email, company, phone, message, Xero IDs…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             className="pl-10"
@@ -1328,10 +1343,13 @@ function SubscriptionsList() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
+                  <TableHead>Company</TableHead>
+                  <TableHead>Phone</TableHead>
+                  <TableHead>Applicant</TableHead>
                   <TableHead>Sub (JWT)</TableHead>
                   <TableHead>Xero user id</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Notes</TableHead>
+                  <TableHead>Internal notes</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead className="w-[80px]">Actions</TableHead>
                 </TableRow>
@@ -1343,6 +1361,15 @@ function SubscriptionsList() {
                       {row.givenName} {row.familyName}
                     </TableCell>
                     <TableCell>{row.email}</TableCell>
+                    <TableCell className="max-w-[120px] truncate" title={row.companyName || ""}>
+                      {row.companyName?.trim() || "—"}
+                    </TableCell>
+                    <TableCell className="max-w-[100px] truncate font-mono text-xs" title={row.phone || ""}>
+                      {row.phone?.trim() || "—"}
+                    </TableCell>
+                    <TableCell className="max-w-[140px] truncate text-sm" title={row.applicantMessage || ""}>
+                      {row.applicantMessage?.trim() || "—"}
+                    </TableCell>
                     <TableCell className="font-mono text-xs max-w-[140px] truncate" title={row.sub || row.xeroUserId || ""}>
                       {row.sub || "—"}
                     </TableCell>
@@ -1350,7 +1377,7 @@ function SubscriptionsList() {
                       {row.xeroUserId}
                     </TableCell>
                     <TableCell>{getStatusBadge(row.status)}</TableCell>
-                    <TableCell className="max-w-[200px] truncate" title={row.notes}>
+                    <TableCell className="max-w-[160px] truncate" title={row.notes}>
                       {row.notes || "—"}
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
@@ -1410,9 +1437,10 @@ function SubscriptionsList() {
       <Dialog open={!!editingSub} onOpenChange={(open) => !open && setEditingSub(null)}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>Edit Subscription</DialogTitle>
+            <DialogTitle>Edit subscription lead</DialogTitle>
             <DialogDescription>
-              Update the status and notes for this subscription lead.
+              Update lead status and internal notes (visible only to Owner and Support). Applicant fields
+              come from the sign-up form and Xero; they are read-only here.
             </DialogDescription>
           </DialogHeader>
           {editingSub && (
@@ -1435,6 +1463,20 @@ function SubscriptionsList() {
                 <Label className="text-muted-foreground text-xs">Xero user id</Label>
                 <p className="font-mono text-sm break-all">{editingSub.xeroUserId}</p>
               </div>
+              <div className="grid grid-cols-1 gap-3 rounded-md border border-border/60 bg-muted/20 p-3 sm:grid-cols-2">
+                <div>
+                  <Label className="text-muted-foreground text-xs">Company (applicant)</Label>
+                  <p className="text-sm">{editingSub.companyName?.trim() || "—"}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-xs">Phone (applicant)</Label>
+                  <p className="text-sm">{editingSub.phone?.trim() || "—"}</p>
+                </div>
+                <div className="sm:col-span-2">
+                  <Label className="text-muted-foreground text-xs">Applicant message</Label>
+                  <p className="text-sm whitespace-pre-wrap break-words">{editingSub.applicantMessage?.trim() || "—"}</p>
+                </div>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-status">Status</Label>
                 <Select value={editStatus} onValueChange={setEditStatus}>
@@ -1451,12 +1493,12 @@ function SubscriptionsList() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-notes">Notes</Label>
+                <Label htmlFor="edit-notes">Internal notes</Label>
                 <Textarea
                   id="edit-notes"
                   value={editNotes}
                   onChange={(e) => setEditNotes(e.target.value)}
-                  placeholder="Add notes about this subscription..."
+                  placeholder="Onboarding progress, invite sent, etc. (staff only)"
                   rows={4}
                 />
               </div>
@@ -1479,6 +1521,8 @@ function SubscriptionsList() {
 export default function Dashboard() {
   const { user } = useAppContext();
   const router = useRouter();
+  const [isExportingUsers, setIsExportingUsers] = useState(false);
+
   useEffect(() => {
     if (user.role !== "isoplus_user" && user.role !== "owner" && user.role !== "support_admin") {
       router.replace("/access-denied");
@@ -1486,6 +1530,49 @@ export default function Dashboard() {
   }, [user.role, router]);
 
   const firstName = user.name?.trim().split(/\s+/)[0];
+
+  const handleExportUsersCsv = useCallback(async () => {
+    setIsExportingUsers(true);
+    try {
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/users/export-csv`,
+        { withCredentials: true, responseType: "blob" }
+      );
+      const blob = new Blob([response.data], { type: "text/csv;charset=utf-8;" });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const cd = response.headers["content-disposition"];
+      const match = cd && /filename="?([^";\n]+)"?/i.exec(cd);
+      a.download = match ? match[1] : "portal-users.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      showSuccessToast("Users exported", { description: "CSV download started." });
+    } catch (e: unknown) {
+      let msg = "Failed to export users";
+      const ax = e as { response?: { data?: Blob | { message?: string } } };
+      if (ax.response?.data instanceof Blob) {
+        try {
+          const t = await ax.response.data.text();
+          const j = JSON.parse(t) as { message?: string };
+          if (j.message) msg = j.message;
+        } catch {
+          /* ignore */
+        }
+      } else if (
+        ax.response?.data &&
+        typeof ax.response.data === "object" &&
+        "message" in ax.response.data
+      ) {
+        msg = String((ax.response.data as { message?: string }).message || msg);
+      }
+      showErrorToast("Export failed", { description: msg });
+    } finally {
+      setIsExportingUsers(false);
+    }
+  }, []);
 
   return (
     <div className="relative min-h-screen bg-background">
@@ -1495,13 +1582,28 @@ export default function Dashboard() {
       />
       <Header />
       <div className="relative container mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-            {firstName ? `Welcome back, ${firstName}` : "Welcome"}
-          </h1>
-          <p className="text-sm text-muted-foreground sm:text-base">
-            Choose a workspace or switch tabs for admin tools.
-          </p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+              {firstName ? `Welcome back, ${firstName}` : "Welcome"}
+            </h1>
+            <p className="text-sm text-muted-foreground sm:text-base">
+              Choose a workspace, or use Subscriptions and Application logs if you are an Owner or Support admin.
+            </p>
+          </div>
+          {(user.role === "support_admin" || user.role === "owner") && (
+            <Button
+              type="button"
+              variant="outline"
+              size="default"
+              className="shrink-0 gap-2 self-start"
+              onClick={handleExportUsersCsv}
+              disabled={isExportingUsers}
+            >
+              <Download className="h-4 w-4" />
+              {isExportingUsers ? "Preparing…" : "Download all users (CSV)"}
+            </Button>
+          )}
         </div>
 
         <Tabs defaultValue="workspaces" className="space-y-6">
@@ -1530,10 +1632,12 @@ export default function Dashboard() {
             {(user.role === "support_admin" || user.role === "owner") && (
               <TabsTrigger
                 value="logs"
-                className="gap-2 rounded-lg py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                className="gap-2 rounded-lg py-2.5 text-left leading-tight data-[state=active]:bg-background data-[state=active]:shadow-sm sm:text-center"
               >
-                <Terminal className="h-4 w-4 shrink-0" />
-                Logs
+                <span className="inline-flex items-center gap-2">
+                  <Terminal className="h-4 w-4 shrink-0" />
+                  <span>Application logs</span>
+                </span>
               </TabsTrigger>
             )}
           </TabsList>
