@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, QrCode, Download, FileText, File, Copy, Info, ChevronDown } from "lucide-react";
+import { ArrowLeft, QrCode, Download, FileText, File, Copy, Info, ChevronDown, Link2 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useState, useEffect, useRef } from "react";
@@ -48,6 +48,9 @@ interface FormOrDocument {
   url: string;
   type: "form" | "document";
 }
+
+/** Combobox value: encode the QR from the custom URL field (not a board view id). */
+const CUSTOM_URL_SELECTION_ID = "__qr_custom_url__";
 
 interface Business {
   defaultLogo?: string;
@@ -153,17 +156,26 @@ export default function QRGeneratorPage() {
   }, [id, boardId]);
 
   const resolveUrlToEncode = (): string | null => {
+    if (selectedId === CUSTOM_URL_SELECTION_ID) {
+      return normalizeUrlForQr(customUrl);
+    }
     if (selectedId) {
       const item = items.find((f) => String(f.id) === String(selectedId));
       return item?.url ?? null;
     }
-    return normalizeUrlForQr(customUrl);
+    return null;
   };
 
   const generateQRCode = async () => {
     const targetUrl = resolveUrlToEncode();
     if (!targetUrl) {
-      showFetchErrorToast("QR code", selectedId ? "Selected item has no URL." : "Enter a valid link (e.g. https://example.com).");
+      if (!selectedId) {
+        showFetchErrorToast("QR code", "Select a form, document, or Custom URL from the list.");
+      } else if (selectedId === CUSTOM_URL_SELECTION_ID) {
+        showFetchErrorToast("QR code", "Enter a valid link (e.g. https://example.com).");
+      } else {
+        showFetchErrorToast("QR code", "Selected item has no URL.");
+      }
       return;
     }
 
@@ -273,7 +285,7 @@ export default function QRGeneratorPage() {
 
     try {
       const link = document.createElement('a');
-      link.download = `qr-code-${selectedId || "custom-link"}.png`;
+      link.download = `qr-code-${!selectedId || selectedId === CUSTOM_URL_SELECTION_ID ? "custom-link" : selectedId}.png`;
       link.href = canvas.toDataURL('image/png');
       document.body.appendChild(link);
       link.click();
@@ -351,7 +363,7 @@ export default function QRGeneratorPage() {
       // Fallback: Try to download the image
       try {
         const link = document.createElement('a');
-        link.download = `qr-code-${selectedId || "custom-link"}.png`;
+        link.download = `qr-code-${!selectedId || selectedId === CUSTOM_URL_SELECTION_ID ? "custom-link" : selectedId}.png`;
         link.href = canvas.toDataURL('image/png');
         document.body.appendChild(link);
         link.click();
@@ -381,6 +393,9 @@ export default function QRGeneratorPage() {
 
   /** Substring match (case-insensitive) on name, view id, share URL, or type. */
   const filterFormDocumentRows = (value: string, search: string) => {
+    if (String(value) === CUSTOM_URL_SELECTION_ID) {
+      return 1;
+    }
     const q = search.trim().toLowerCase();
     if (!q) return 1;
     const row = items.find((i) => String(i.id) === value);
@@ -443,7 +458,9 @@ export default function QRGeneratorPage() {
                   <h2 className="text-xl font-semibold mb-4">Select Form or Document</h2>
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <label className="block text-sm font-medium">Choose a form or document to generate a QR code</label>
+                      <label className="block text-sm font-medium">
+                        Choose a form, document, or custom link to generate a QR code
+                      </label>
                       <p className="text-xs text-muted-foreground">
                         Search matches any part of the name, id, link URL, or type (form / document).
                       </p>
@@ -455,23 +472,35 @@ export default function QRGeneratorPage() {
                             aria-expanded={comboOpen}
                             className="w-full justify-between font-normal h-11 rounded-lg border-border/80 bg-background shadow-sm hover:bg-accent/50"
                           >
-                            {selectedId
-                              ? (() => {
-                                  const sel = items.find((i) => String(i.id) === String(selectedId));
-                                  return sel ? (
-                                    <span className="flex items-center gap-2 truncate">
-                                      {sel.name}
-                                      {sel.type === "document" ? (
-                                        <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                                      ) : (
-                                        <File className="h-4 w-4 shrink-0 text-muted-foreground" />
-                                      )}
-                                    </span>
-                                  ) : (
-                                    "Select a form or document..."
-                                  );
-                                })()
-                              : "Select a form or document..."}
+                            {selectedId === CUSTOM_URL_SELECTION_ID ? (
+                              <span className="flex items-center gap-2 truncate">
+                                <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                <span className="truncate">
+                                  Custom URL
+                                  {customUrl.trim()
+                                    ? ` — ${customUrl.trim().length > 36 ? `${customUrl.trim().slice(0, 36)}…` : customUrl.trim()}`
+                                    : ""}
+                                </span>
+                              </span>
+                            ) : selectedId ? (
+                              (() => {
+                                const sel = items.find((i) => String(i.id) === String(selectedId));
+                                return sel ? (
+                                  <span className="flex items-center gap-2 truncate">
+                                    {sel.name}
+                                    {sel.type === "document" ? (
+                                      <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                    ) : (
+                                      <File className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                    )}
+                                  </span>
+                                ) : (
+                                  "Select a form or document..."
+                                );
+                              })()
+                            ) : (
+                              "Select a form or document..."
+                            )}
                             <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                           </Button>
                         </PopoverTrigger>
@@ -486,6 +515,25 @@ export default function QRGeneratorPage() {
                                 No form or document matches your search.
                               </CommandEmpty>
                               <CommandGroup className="p-1.5">
+                                <CommandItem
+                                  value={CUSTOM_URL_SELECTION_ID}
+                                  keywords={["custom", "url", "link", "paste", "own"]}
+                                  onSelect={() => {
+                                    setSelectedId(CUSTOM_URL_SELECTION_ID);
+                                    setComboOpen(false);
+                                  }}
+                                  className="rounded-md py-2.5 border-b border-border/60 mb-1"
+                                >
+                                  <span className="flex w-full min-w-0 items-center gap-2">
+                                    <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                                    <span className="min-w-0 flex-1 font-medium text-foreground">
+                                      Custom URL
+                                    </span>
+                                    <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/90">
+                                      Paste link
+                                    </span>
+                                  </span>
+                                </CommandItem>
                                 {items.map((item) => (
                                   <CommandItem
                                     key={String(item.id)}
@@ -528,67 +576,46 @@ export default function QRGeneratorPage() {
                           variant="link"
                           size="sm"
                           className="h-auto p-0 text-sm text-muted-foreground underline-offset-4 hover:text-foreground"
-                          onClick={() => setSelectedId("")}
+                          onClick={() => {
+                            setSelectedId("");
+                            setCustomUrl("");
+                          }}
                         >
                           Clear selection
                         </Button>
                       ) : null}
                     </div>
 
-                    <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
-                      <h3 className="text-base font-semibold text-foreground">Copy the Link</h3>
-                      <p className="text-sm text-muted-foreground">
-                        <span className="font-medium text-foreground">NOTE:</span> A QR code can be generated once the
-                        sharing feature is enabled for the relevant form or document.
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        Copy any link and paste it into the box below to generate a QR code.
-                      </p>
-                      <div className="space-y-2 pt-1">
-                        <Label htmlFor="custom-qr-url" className="sr-only">
-                          Link to encode in QR code
-                        </Label>
-                        <Input
-                          id="custom-qr-url"
-                          type="url"
-                          inputMode="url"
-                          placeholder="https://example.com/your-page"
-                          value={customUrl}
-                          onChange={(e) => setCustomUrl(e.target.value)}
-                          disabled={!!selectedId}
-                          className="font-mono text-sm bg-background"
-                          autoComplete="off"
-                        />
-                        {selectedId ? (
+                    {selectedId === CUSTOM_URL_SELECTION_ID ? (
+                      <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+                        <h3 className="text-base font-semibold text-foreground">Copy the Link</h3>
+                        <p className="text-sm text-muted-foreground">
+                          <span className="font-medium text-foreground">NOTE:</span> A QR code can be generated once the
+                          sharing feature is enabled for the relevant form or document.
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          Copy any link and paste it into the box below to generate a QR code.
+                        </p>
+                        <div className="space-y-2 pt-1">
+                          <Label htmlFor="custom-qr-url" className="sr-only">
+                            Link to encode in QR code
+                          </Label>
+                          <Input
+                            id="custom-qr-url"
+                            type="url"
+                            inputMode="url"
+                            placeholder="https://example.com/your-page"
+                            value={customUrl}
+                            onChange={(e) => setCustomUrl(e.target.value)}
+                            className="font-mono text-sm bg-background"
+                            autoComplete="off"
+                          />
                           <p className="text-xs text-muted-foreground">
-                            Clear the selection above to paste a custom link.
+                            Enter a full URL (https://…) or a domain; it will be normalized for the QR code.
                           </p>
-                        ) : null}
+                        </div>
                       </div>
-                    </div>
-
-                    {selectedItem && (
-                      <div className="p-4 bg-muted rounded-lg">
-                        <h3 className="font-medium mb-2">
-                          {selectedItem.type === "form" ? "Form" : "Document"} Details
-                        </h3>
-                        <p className="text-sm text-muted-foreground mb-2">
-                          <strong>Name:</strong> {selectedItem.name}
-                        </p>
-                        <p className="text-sm text-muted-foreground mb-2">
-                          <strong>Type:</strong> {selectedItem.type}
-                        </p>
-                        <p className="text-sm text-muted-foreground break-all">
-                          <strong>URL:</strong> {selectedItem.url}
-                        </p>
-                        <p className="text-sm text-muted-foreground mt-2">
-                          <strong>Logo Status:</strong> {(business?.squareLogo || business?.defaultLogo) ? 
-                            <span className="text-green-600">Available</span> : 
-                            <span className="text-orange-600">Not Configured</span>
-                          }
-                        </p>
-                      </div>
-                    )}
+                    ) : null}
 
                     {/* Logo Options */}
                     <div className="space-y-2">
@@ -684,7 +711,7 @@ export default function QRGeneratorPage() {
                   <div className="text-center py-12" style={{ display: qrCodeGenerated ? 'none' : 'block' }}>
                     <QrCode className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
                     <p className="text-muted-foreground">
-                      Select a form or document or paste a link, then generate a QR code to view it here
+                      Select a form, document, or Custom URL, then generate a QR code to view it here
                     </p>
                   </div>
                 </div>

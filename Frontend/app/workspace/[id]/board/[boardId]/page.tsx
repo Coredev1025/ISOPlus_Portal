@@ -336,7 +336,7 @@ export default function BoardDetail() {
                 <div>
                   <h2 className="text-xl font-semibold">QR Generator</h2>
                   <p className="text-muted-foreground mb-4 text-sm">
-                    Create QR codes for your forms and documents
+                    Create QR codes for your forms, documents, or any other links.
                   </p>
                   <Button
                     onClick={() => router.push(`/workspace/${id}/board/${boardId}/qr-generator`)}
