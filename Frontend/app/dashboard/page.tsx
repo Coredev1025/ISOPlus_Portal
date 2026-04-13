@@ -12,7 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import Spinner from "@/components/ui/spin";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import axios from "@/app/utils/axiosConfig";
 import { Search, Terminal, Download, Filter, AlertTriangle, AlertCircle, Info, Bug, XCircle, UserPlus, Pencil, ChevronRight, LayoutGrid } from "lucide-react";
 import { Header } from "@/components/ui/header";
@@ -1521,6 +1521,8 @@ function SubscriptionsList() {
 export default function Dashboard() {
   const { user } = useAppContext();
   const router = useRouter();
+  const [isExportingUsers, setIsExportingUsers] = useState(false);
+
   useEffect(() => {
     if (user.role !== "isoplus_user" && user.role !== "owner" && user.role !== "support_admin") {
       router.replace("/access-denied");
@@ -1528,6 +1530,49 @@ export default function Dashboard() {
   }, [user.role, router]);
 
   const firstName = user.name?.trim().split(/\s+/)[0];
+
+  const handleExportUsersCsv = useCallback(async () => {
+    setIsExportingUsers(true);
+    try {
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/users/export-csv`,
+        { withCredentials: true, responseType: "blob" }
+      );
+      const blob = new Blob([response.data], { type: "text/csv;charset=utf-8;" });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const cd = response.headers["content-disposition"];
+      const match = cd && /filename="?([^";\n]+)"?/i.exec(cd);
+      a.download = match ? match[1] : "portal-users.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      showSuccessToast("Users exported", { description: "CSV download started." });
+    } catch (e: unknown) {
+      let msg = "Failed to export users";
+      const ax = e as { response?: { data?: Blob | { message?: string } } };
+      if (ax.response?.data instanceof Blob) {
+        try {
+          const t = await ax.response.data.text();
+          const j = JSON.parse(t) as { message?: string };
+          if (j.message) msg = j.message;
+        } catch {
+          /* ignore */
+        }
+      } else if (
+        ax.response?.data &&
+        typeof ax.response.data === "object" &&
+        "message" in ax.response.data
+      ) {
+        msg = String((ax.response.data as { message?: string }).message || msg);
+      }
+      showErrorToast("Export failed", { description: msg });
+    } finally {
+      setIsExportingUsers(false);
+    }
+  }, []);
 
   return (
     <div className="relative min-h-screen bg-background">
@@ -1537,13 +1582,28 @@ export default function Dashboard() {
       />
       <Header />
       <div className="relative container mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-            {firstName ? `Welcome back, ${firstName}` : "Welcome"}
-          </h1>
-          <p className="text-sm text-muted-foreground sm:text-base">
-            Choose a workspace, or use Subscriptions and Application logs if you are an Owner or Support admin.
-          </p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+              {firstName ? `Welcome back, ${firstName}` : "Welcome"}
+            </h1>
+            <p className="text-sm text-muted-foreground sm:text-base">
+              Choose a workspace, or use Subscriptions and Application logs if you are an Owner or Support admin.
+            </p>
+          </div>
+          {(user.role === "support_admin" || user.role === "owner") && (
+            <Button
+              type="button"
+              variant="outline"
+              size="default"
+              className="shrink-0 gap-2 self-start"
+              onClick={handleExportUsersCsv}
+              disabled={isExportingUsers}
+            >
+              <Download className="h-4 w-4" />
+              {isExportingUsers ? "Preparing…" : "Download all users (CSV)"}
+            </Button>
+          )}
         </div>
 
         <Tabs defaultValue="workspaces" className="space-y-6">

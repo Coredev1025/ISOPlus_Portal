@@ -181,6 +181,15 @@ function iterateWorkspaces(authorization, options = {}) {
     );
 }
 
+export async function listWorkspacesForAuthorization(authorization) {
+    try {
+        const workspaces = await collectPaginated(iterateWorkspaces(authorization));
+        return { workspaces, status: 200 };
+    } catch (err) {
+        return { workspaces: [], status: 500, message: err.message };
+    }
+}
+
 export async function getWorkspacePage(authorization, options = {}) {
     try {
         const limit = Math.min(Math.max(parseInt(options.limit ?? DEFAULT_COLLECTION_PAGE_SIZE, 10), 1), 100);
