@@ -437,7 +437,7 @@ export default function QRGeneratorPage() {
                   QR Generator
                 </h1>
                 <p className="text-muted-foreground">
-                  Create QR codes for your forms, documents, or any other links with custom branding.
+                  Create QR codes for your forms, documents, or any other links.
                 </p>
               </div>
             </div>
@@ -455,21 +455,27 @@ export default function QRGeneratorPage() {
               {/* Form or Document Selection */}
               <Card className="p-6 space-y-6">
                 <div>
-                  <h2 className="text-xl font-semibold mb-4">Select Form or Document</h2>
+                  <h2
+                    id="qr-generator-source-heading"
+                    className="text-xl font-semibold text-foreground tracking-tight mb-3"
+                  >
+                    Choose a form, document, or custom link to generate a QR code
+                  </h2>
+                  {selectedId !== CUSTOM_URL_SELECTION_ID ? (
+                    <p className="text-sm text-muted-foreground mb-4">
+                      <span className="font-medium text-foreground">NOTE:</span> A QR code can be generated once the
+                      sharing feature is enabled for the relevant form or document.
+                    </p>
+                  ) : null}
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <label className="block text-sm font-medium">
-                        Choose a form, document, or custom link to generate a QR code
-                      </label>
-                      <p className="text-xs text-muted-foreground">
-                        Search matches any part of the name, id, link URL, or type (form / document).
-                      </p>
                       <Popover open={comboOpen} onOpenChange={setComboOpen}>
                         <PopoverTrigger asChild>
                           <Button
                             variant="outline"
                             role="combobox"
                             aria-expanded={comboOpen}
+                            aria-labelledby="qr-generator-source-heading"
                             className="w-full justify-between font-normal h-11 rounded-lg border-border/80 bg-background shadow-sm hover:bg-accent/50"
                           >
                             {selectedId === CUSTOM_URL_SELECTION_ID ? (
@@ -590,10 +596,6 @@ export default function QRGeneratorPage() {
                       <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
                         <h3 className="text-base font-semibold text-foreground">Copy the Link</h3>
                         <p className="text-sm text-muted-foreground">
-                          <span className="font-medium text-foreground">NOTE:</span> A QR code can be generated once the
-                          sharing feature is enabled for the relevant form or document.
-                        </p>
-                        <p className="text-sm text-muted-foreground">
                           Copy any link and paste it into the box below to generate a QR code.
                         </p>
                         <div className="space-y-2 pt-1">
@@ -610,9 +612,6 @@ export default function QRGeneratorPage() {
                             className="font-mono text-sm bg-background"
                             autoComplete="off"
                           />
-                          <p className="text-xs text-muted-foreground">
-                            Enter a full URL (https://…) or a domain; it will be normalized for the QR code.
-                          </p>
                         </div>
                       </div>
                     ) : null}
