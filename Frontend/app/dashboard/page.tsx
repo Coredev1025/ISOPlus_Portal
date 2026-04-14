@@ -14,7 +14,7 @@ import {
 import Spinner from "@/components/ui/spin";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import axios from "@/app/utils/axiosConfig";
-import { Search, Terminal, Download, Filter, AlertTriangle, AlertCircle, Info, Bug, XCircle, UserPlus, Pencil, ChevronRight, LayoutGrid } from "lucide-react";
+import { Search, Terminal, Download, Filter, AlertTriangle, AlertCircle, Info, Bug, XCircle, ChevronRight, LayoutGrid } from "lucide-react";
 import { Header } from "@/components/ui/header";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -30,17 +30,6 @@ import { PaginationNext, PaginationPrevious, PaginationItem, PaginationLink } fr
 import { showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { showSuccessToast, showErrorToast } from "@/lib/toast-utils";
 import { dedupeByKey } from "@/app/utils/requestDedupe";
 
 interface ItemValue {
@@ -123,7 +112,7 @@ const generateAuditTrail = () => Array.from({ length: 50 }, (_, i) => {
     "Updated workspace settings",
     "Generated PDF document",
     "Updated business configuration",
-    "Connected to Xero",
+    "Connected accounting integration",
     "Updated integration settings"
   ];
 
@@ -1139,389 +1128,9 @@ function GlobalApplicationLogs() {
 }
 
 
-interface Subscription {
-  _id: string;
-  givenName: string;
-  familyName: string;
-  email: string;
-  sub?: string | null;
-  xeroUserId: string;
-  status: string;
-  notes: string;
-  companyName?: string;
-  phone?: string;
-  applicantMessage?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-const STATUS_OPTIONS = [
-  { value: "request_received", label: "Request Received" },
-  { value: "account_created", label: "Account Created" },
-];
-
-function getStatusBadge(status: string) {
-  switch (status) {
-    case "request_received":
-      return <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800">Request Received</Badge>;
-    case "account_created":
-      return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-400 dark:border-green-800">Account Created</Badge>;
-    default:
-      return <Badge variant="outline">{status}</Badge>;
-  }
-}
-
-function SubscriptionsList() {
-  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [searchInput, setSearchInput] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalItems, setTotalItems] = useState(0);
-  const [editingSub, setEditingSub] = useState<Subscription | null>(null);
-  const [editStatus, setEditStatus] = useState("");
-  const [editNotes, setEditNotes] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
-  const perPage = 20;
-  const hasLoadedOnce = useRef(false);
-
-  // Debounce search
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchInput);
-      setCurrentPage(1);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
-
-  // Fetch subscriptions
-  useEffect(() => {
-    const abortController = new AbortController();
-
-    const fetchSubscriptions = async () => {
-      setIsLoading(true);
-      try {
-        const params: Record<string, string | number> = {
-          page: currentPage,
-          limit: perPage,
-        };
-        if (debouncedSearch) params.search = debouncedSearch;
-        if (statusFilter !== "all") params.status = statusFilter;
-
-        const response = await axios.get(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/subscriptions`,
-          { withCredentials: true, signal: abortController.signal, params }
-        );
-
-        if (response.data) {
-          setSubscriptions(response.data.subscriptions || []);
-          setTotalPages(response.data.pagination?.totalPages || 1);
-          setTotalItems(response.data.pagination?.total || 0);
-          if (!hasLoadedOnce.current) hasLoadedOnce.current = true;
-        }
-      } catch (err: any) {
-        if (err.name !== "CanceledError" && err.name !== "AbortError") {
-          showFetchErrorToast(
-            "subscriptions",
-            err.response?.data?.message || err.message || "Failed to load subscriptions"
-          );
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchSubscriptions();
-    return () => abortController.abort();
-  }, [currentPage, debouncedSearch, statusFilter]);
-
-  const openEditDialog = (sub: Subscription) => {
-    setEditingSub(sub);
-    setEditStatus(sub.status);
-    setEditNotes(sub.notes || "");
-  };
-
-  const handleSave = async () => {
-    if (!editingSub) return;
-    setIsSaving(true);
-    try {
-      const response = await axios.patch(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/subscriptions/${editingSub._id}`,
-        { status: editStatus, notes: editNotes },
-        { withCredentials: true }
-      );
-
-      if (response.data.success) {
-        const upd = response.data.subscription as Subscription | undefined;
-        setSubscriptions((prev) =>
-          prev.map((s) =>
-            s._id === editingSub._id
-              ? {
-                  ...s,
-                  status: upd?.status ?? editStatus,
-                  notes: upd?.notes ?? editNotes,
-                }
-              : s
-          )
-        );
-        showSuccessToast("Subscription updated");
-        setEditingSub(null);
-      }
-    } catch (err: any) {
-      showErrorToast("Update failed", {
-        description: err.response?.data?.message || "Failed to update subscription",
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const paginationPages = () => {
-    const pages: number[] = [];
-    const maxVisible = 5;
-    let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
-    let end = Math.min(totalPages, start + maxVisible - 1);
-    if (end - start + 1 < maxVisible) {
-      start = Math.max(1, end - maxVisible + 1);
-    }
-    for (let i = start; i <= end; i++) pages.push(i);
-    return pages;
-  };
-
-  return (
-    <Card className="border-border/80 p-6 shadow-sm sm:p-8">
-      <div className="mb-6 space-y-1 border-b border-border/40 pb-4">
-        <h2 className="text-lg font-semibold tracking-tight text-foreground">Subscription leads</h2>
-        <p className="max-w-2xl text-sm text-muted-foreground">
-          From Sign up with Xero (hosted flow). New rows start as Request received; set Account created after
-          the person has been invited to ISO+.
-        </p>
-      </div>
-      {/* Search and filter controls */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search name, email, company, phone, message, Xero IDs…"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-        <Select value={statusFilter} onValueChange={(val) => { setStatusFilter(val); setCurrentPage(1); }}>
-          <SelectTrigger className="w-[200px]">
-            <Filter className="h-4 w-4 mr-2" />
-            <SelectValue placeholder="Filter by status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            {STATUS_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Table */}
-      {isLoading && !hasLoadedOnce.current ? (
-        <div className="flex justify-center py-12">
-          <Spinner />
-        </div>
-      ) : subscriptions.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          {hasLoadedOnce.current ? "No subscriptions found." : "Loading..."}
-        </div>
-      ) : (
-        <>
-          <div className="rounded-md border overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Company</TableHead>
-                  <TableHead>Phone</TableHead>
-                  <TableHead>Applicant</TableHead>
-                  <TableHead>Sub (JWT)</TableHead>
-                  <TableHead>Xero user id</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Internal notes</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="w-[80px]">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {subscriptions.map((row) => (
-                  <TableRow key={row._id}>
-                    <TableCell className="font-medium whitespace-nowrap">
-                      {row.givenName} {row.familyName}
-                    </TableCell>
-                    <TableCell>{row.email}</TableCell>
-                    <TableCell className="max-w-[120px] truncate" title={row.companyName || ""}>
-                      {row.companyName?.trim() || "—"}
-                    </TableCell>
-                    <TableCell className="max-w-[100px] truncate font-mono text-xs" title={row.phone || ""}>
-                      {row.phone?.trim() || "—"}
-                    </TableCell>
-                    <TableCell className="max-w-[140px] truncate text-sm" title={row.applicantMessage || ""}>
-                      {row.applicantMessage?.trim() || "—"}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs max-w-[140px] truncate" title={row.sub || row.xeroUserId || ""}>
-                      {row.sub || "—"}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs max-w-[140px] truncate" title={row.xeroUserId}>
-                      {row.xeroUserId}
-                    </TableCell>
-                    <TableCell>{getStatusBadge(row.status)}</TableCell>
-                    <TableCell className="max-w-[160px] truncate" title={row.notes}>
-                      {row.notes || "—"}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {new Date(row.createdAt).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => openEditDialog(row)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-4">
-              <div className="flex items-center gap-1">
-                <PaginationPrevious
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                >
-                  Previous
-                </PaginationPrevious>
-                {paginationPages().map((page) => (
-                  <div key={page}>
-                    <PaginationLink
-                      onClick={() => setCurrentPage(page)}
-                      isActive={currentPage === page}
-                    >
-                      {page}
-                    </PaginationLink>
-                  </div>
-                ))}
-                <PaginationNext
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                >
-                  Next
-                </PaginationNext>
-              </div>
-              <div className="text-sm text-muted-foreground">
-                Page {currentPage} of {totalPages} ({totalItems} subscriptions)
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Edit Dialog */}
-      <Dialog open={!!editingSub} onOpenChange={(open) => !open && setEditingSub(null)}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle>Edit subscription lead</DialogTitle>
-            <DialogDescription>
-              Update lead status and internal notes (visible only to Owner and Support). Applicant fields
-              come from the sign-up form and Xero; they are read-only here.
-            </DialogDescription>
-          </DialogHeader>
-          {editingSub && (
-            <div className="space-y-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-muted-foreground text-xs">Name</Label>
-                  <p className="font-medium">{editingSub.givenName} {editingSub.familyName}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground text-xs">Email</Label>
-                  <p className="font-medium">{editingSub.email}</p>
-                </div>
-              </div>
-              <div>
-                <Label className="text-muted-foreground text-xs">Sub (JWT)</Label>
-                <p className="font-mono text-sm break-all">{editingSub.sub || "—"}</p>
-              </div>
-              <div>
-                <Label className="text-muted-foreground text-xs">Xero user id</Label>
-                <p className="font-mono text-sm break-all">{editingSub.xeroUserId}</p>
-              </div>
-              <div className="grid grid-cols-1 gap-3 rounded-md border border-border/60 bg-muted/20 p-3 sm:grid-cols-2">
-                <div>
-                  <Label className="text-muted-foreground text-xs">Company (applicant)</Label>
-                  <p className="text-sm">{editingSub.companyName?.trim() || "—"}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground text-xs">Phone (applicant)</Label>
-                  <p className="text-sm">{editingSub.phone?.trim() || "—"}</p>
-                </div>
-                <div className="sm:col-span-2">
-                  <Label className="text-muted-foreground text-xs">Applicant message</Label>
-                  <p className="text-sm whitespace-pre-wrap break-words">{editingSub.applicantMessage?.trim() || "—"}</p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-status">Status</Label>
-                <Select value={editStatus} onValueChange={setEditStatus}>
-                  <SelectTrigger id="edit-status">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STATUS_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-notes">Internal notes</Label>
-                <Textarea
-                  id="edit-notes"
-                  value={editNotes}
-                  onChange={(e) => setEditNotes(e.target.value)}
-                  placeholder="Onboarding progress, invite sent, etc. (staff only)"
-                  rows={4}
-                />
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingSub(null)} disabled={isSaving}>
-              Cancel
-            </Button>
-            <Button onClick={handleSave} disabled={isSaving}>
-              {isSaving ? <><Spinner /> Saving...</> : "Save Changes"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </Card>
-  );
-}
-
 export default function Dashboard() {
   const { user } = useAppContext();
   const router = useRouter();
-  const [isExportingUsers, setIsExportingUsers] = useState(false);
 
   useEffect(() => {
     if (user.role !== "isoplus_user" && user.role !== "owner" && user.role !== "support_admin") {
@@ -1530,49 +1139,6 @@ export default function Dashboard() {
   }, [user.role, router]);
 
   const firstName = user.name?.trim().split(/\s+/)[0];
-
-  const handleExportUsersCsv = useCallback(async () => {
-    setIsExportingUsers(true);
-    try {
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/users/export-csv`,
-        { withCredentials: true, responseType: "blob" }
-      );
-      const blob = new Blob([response.data], { type: "text/csv;charset=utf-8;" });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      const cd = response.headers["content-disposition"];
-      const match = cd && /filename="?([^";\n]+)"?/i.exec(cd);
-      a.download = match ? match[1] : "portal-users.csv";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-      showSuccessToast("Users exported", { description: "CSV download started." });
-    } catch (e: unknown) {
-      let msg = "Failed to export users";
-      const ax = e as { response?: { data?: Blob | { message?: string } } };
-      if (ax.response?.data instanceof Blob) {
-        try {
-          const t = await ax.response.data.text();
-          const j = JSON.parse(t) as { message?: string };
-          if (j.message) msg = j.message;
-        } catch {
-          /* ignore */
-        }
-      } else if (
-        ax.response?.data &&
-        typeof ax.response.data === "object" &&
-        "message" in ax.response.data
-      ) {
-        msg = String((ax.response.data as { message?: string }).message || msg);
-      }
-      showErrorToast("Export failed", { description: msg });
-    } finally {
-      setIsExportingUsers(false);
-    }
-  }, []);
 
   return (
     <div className="relative min-h-screen bg-background">
@@ -1588,29 +1154,16 @@ export default function Dashboard() {
               {firstName ? `Welcome back, ${firstName}` : "Welcome"}
             </h1>
             <p className="text-sm text-muted-foreground sm:text-base">
-              Choose a workspace, or use Subscriptions and Application logs if you are an Owner or Support admin.
+              Choose a workspace, or use Application logs if you are an Owner or Support admin.
             </p>
           </div>
-          {(user.role === "support_admin" || user.role === "owner") && (
-            <Button
-              type="button"
-              variant="outline"
-              size="default"
-              className="shrink-0 gap-2 self-start"
-              onClick={handleExportUsersCsv}
-              disabled={isExportingUsers}
-            >
-              <Download className="h-4 w-4" />
-              {isExportingUsers ? "Preparing…" : "Download all users (CSV)"}
-            </Button>
-          )}
         </div>
 
         <Tabs defaultValue="workspaces" className="space-y-6">
           <TabsList
             className={`grid h-auto w-full gap-1 rounded-xl border border-border/60 bg-muted/40 p-1.5 shadow-sm ${
               user.role === "support_admin" || user.role === "owner"
-                ? "grid-cols-1 sm:grid-cols-3"
+                ? "grid-cols-1 sm:grid-cols-2"
                 : "grid-cols-1"
             }`}
           >
@@ -1620,15 +1173,6 @@ export default function Dashboard() {
             >
               Workspaces
             </TabsTrigger>
-            {(user.role === "support_admin" || user.role === "owner") && (
-              <TabsTrigger
-                value="subscriptions"
-                className="gap-2 rounded-lg py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-              >
-                <UserPlus className="h-4 w-4 shrink-0" />
-                Subscriptions
-              </TabsTrigger>
-            )}
             {(user.role === "support_admin" || user.role === "owner") && (
               <TabsTrigger
                 value="logs"
@@ -1645,13 +1189,6 @@ export default function Dashboard() {
           <TabsContent value="workspaces">
             <WorkspacesList />
           </TabsContent>
-
-          {(user.role === "support_admin" || user.role === "owner") && (
-            <TabsContent value="subscriptions">
-              <SubscriptionsList />
-            </TabsContent>
-          )}
-
           {(user.role === "support_admin" || user.role === "owner") && (
             <TabsContent value="logs">
               <GlobalApplicationLogs />

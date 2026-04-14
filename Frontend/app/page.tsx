@@ -250,7 +250,7 @@ export default function LoginPage() {
                 ISO+™ Portal
               </h1>
               <p className="text-sm text-muted-foreground max-w-xs mx-auto">
-                Sign in with your ISO+ account or register via Xero
+                Sign in with your ISO+ account
               </p>
               <div className="flex items-center justify-center pt-2">
                 <Image
@@ -287,24 +287,6 @@ export default function LoginPage() {
             >
               Sign in with ISO+
               {isLoading && <Spinner />}
-            </Button>
-            <div className="relative py-1">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-border/80" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase tracking-wide">
-                <span className="bg-card px-3 text-muted-foreground">or</span>
-              </div>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full border-border/80 bg-background/50 py-6 font-medium backdrop-blur-sm hover:bg-muted/60"
-              size="lg"
-              disabled={isLoading}
-              onClick={() => router.push("/signup/xero")}
-            >
-              Sign up with Xero
             </Button>
             <div className="text-center text-sm text-muted-foreground leading-relaxed">
               By continuing, you agree to our{" "}
