@@ -42,7 +42,7 @@
     "node-schedule": "^2.1.1",
     "querystring": "^0.2.1",
     "sanitize-html": "^2.12.1",
-    "uuid": "^11.1.0",
+    "uuid": "^14.0.0",
     "winston": "^3.17.0",
     "winston-daily-rotate-file": "^5.0.0",
     "winston-mongodb": "^6.0.0",
