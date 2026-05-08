@@ -14,6 +14,7 @@ import {
 import Spinner from "@/components/ui/spin";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import axios from "@/app/utils/axiosConfig";
+import { isAxiosError } from "axios";
 import { Search, Terminal, Download, Filter, AlertTriangle, AlertCircle, Info, Bug, XCircle, ChevronRight, LayoutGrid } from "lucide-react";
 import { Header } from "@/components/ui/header";
 import { Card } from "@/components/ui/card";
@@ -27,7 +28,7 @@ import {
 } from "@/components/ui/select";
 import { useAppContext } from "../context";
 import { PaginationNext, PaginationPrevious, PaginationItem, PaginationLink } from "@/components/ui/pagination";
-import { showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
+import { showFetchSuccessToast, showFetchErrorToast, showSuccessToast, showErrorToast } from "@/lib/toast-utils";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { dedupeByKey } from "@/app/utils/requestDedupe";
@@ -97,6 +98,44 @@ interface Log {
     metadata: LogMetadata;
   };
 };
+
+function filenameFromContentDisposition(cd: string | undefined): string {
+  if (!cd) return "portal-users.csv";
+  const star = /filename\*=(?:UTF-8'')?([^;\n]+)/i.exec(cd);
+  if (star?.[1]) {
+    const v = star[1].trim().replace(/^["']|["']$/g, "");
+    try {
+      return decodeURIComponent(v.replace(/\+/g, " "));
+    } catch {
+      return v;
+    }
+  }
+  const quoted = /filename="([^"]+)"/i.exec(cd);
+  if (quoted?.[1]) return quoted[1];
+  const single = /filename='([^']+)'/i.exec(cd);
+  if (single?.[1]) return single[1];
+  return "portal-users.csv";
+}
+
+async function messageFromUserExportAxiosError(err: unknown): Promise<string> {
+  if (!isAxiosError(err) || !err.response) {
+    return isAxiosError(err) && err.message ? err.message : "Failed to export users.";
+  }
+  const { status, data } = err.response;
+  if (data instanceof Blob) {
+    try {
+      const t = await data.text();
+      const j = JSON.parse(t) as { message?: string };
+      if (j?.message) return j.message;
+    } catch {
+    }
+  }
+  if (status === 401) return "Authentication required. Please sign in again.";
+  if (status === 403) return "You don't have permission to export users.";
+  if (status === 502) return "Could not reach ISO+ while building the export. Try again later.";
+  if (status === 500) return "Server error while exporting. Try again later.";
+  return "Failed to export users.";
+}
 
 // Mock data for audit trail
 const generateAuditTrail = () => Array.from({ length: 50 }, (_, i) => {
@@ -1131,6 +1170,7 @@ function GlobalApplicationLogs() {
 export default function Dashboard() {
   const { user } = useAppContext();
   const router = useRouter();
+  const [exportingPortalUsers, setExportingPortalUsers] = useState(false);
 
   useEffect(() => {
     if (user.role !== "isoplus_user" && user.role !== "owner" && user.role !== "support_admin") {
@@ -1139,6 +1179,54 @@ export default function Dashboard() {
   }, [user.role, router]);
 
   const firstName = user.name?.trim().split(/\s+/)[0];
+
+  const handleExportPortalUsersCsv = useCallback(async () => {
+    const apiBase = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+    if (!apiBase) {
+      showErrorToast("Missing NEXT_PUBLIC_BACKEND_URL. Set the API base URL in the Frontend environment.");
+      return;
+    }
+    setExportingPortalUsers(true);
+    try {
+      const res = await axios.get(`${apiBase}/api/auth/users/export-csv`, {
+        withCredentials: true,
+        responseType: "blob",
+      });
+      const raw =
+        res.data instanceof Blob
+          ? res.data
+          : new Blob([res.data], { type: "text/csv;charset=utf-8" });
+      const text = await raw.text();
+      const trimmed = text.replace(/^﻿/, "").trimStart();
+      if (trimmed.startsWith("{")) {
+        try {
+          const j = JSON.parse(text.replace(/^﻿/, "")) as { message?: string };
+          if (j?.message) {
+            showErrorToast(j.message);
+            return;
+          }
+        } catch {
+        }
+      }
+      const outBlob = new Blob([text], { type: "text/csv;charset=utf-8" });
+      const cd =
+        (res.headers["content-disposition"] as string | undefined) ??
+        (res.headers["Content-Disposition"] as string | undefined);
+      const filename = filenameFromContentDisposition(cd);
+      const url = window.URL.createObjectURL(outBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      showSuccessToast("Users exported successfully.");
+    } catch (err: unknown) {
+      const msg = await messageFromUserExportAxiosError(err);
+      showErrorToast(msg);
+    } finally {
+      setExportingPortalUsers(false);
+    }
+  }, []);
 
   return (
     <div className="relative min-h-screen bg-background">
@@ -1157,6 +1245,19 @@ export default function Dashboard() {
               Choose a workspace, or use Application logs if you are an Owner or Support admin.
             </p>
           </div>
+          {user.id &&
+            (user.role === "support_admin" || user.role === "owner") && (
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-2 shrink-0 self-start"
+              onClick={handleExportPortalUsersCsv}
+              disabled={exportingPortalUsers}
+            >
+              <Download className="h-4 w-4" />
+              {exportingPortalUsers ? "Exporting…" : "Export all users (CSV)"}
+            </Button>
+          )}
         </div>
 
         <Tabs defaultValue="workspaces" className="space-y-6">
