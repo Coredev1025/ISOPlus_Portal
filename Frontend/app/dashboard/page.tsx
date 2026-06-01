@@ -866,7 +866,65 @@ function GlobalApplicationLogs() {
                                 </div>
                               </div>
                             )}
-                            
+
+                            {log.details.metadata.errorType === 'LOGIN_FAILURE' && (
+                              <div className="p-3 bg-rose-50 border border-rose-200 rounded-md">
+                                <h5 className="text-sm font-semibold text-rose-800 mb-2">Login Failure Diagnostics</h5>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                                  {log.details.metadata.loginMethod && (
+                                    <div>
+                                      <span className="font-medium">Method:</span>
+                                      <span className="ml-2 bg-rose-100 px-2 py-1 rounded text-rose-800">
+                                        {log.details.metadata.loginMethod}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {log.details.metadata.loginStage && (
+                                    <div>
+                                      <span className="font-medium">Stage:</span>
+                                      <code className="ml-2 bg-rose-100 px-2 py-1 rounded text-rose-800">
+                                        {log.details.metadata.loginStage}
+                                      </code>
+                                    </div>
+                                  )}
+                                  {log.details.metadata.httpStatus != null && (
+                                    <div>
+                                      <span className="font-medium">HTTP Status:</span>
+                                      <span className="ml-2 bg-rose-100 px-2 py-1 rounded text-rose-800">
+                                        {log.details.metadata.httpStatus}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {log.details.metadata.upstreamStatus != null && (
+                                    <div>
+                                      <span className="font-medium">Upstream Status:</span>
+                                      <span className="ml-2 bg-rose-100 px-2 py-1 rounded text-rose-800">
+                                        {log.details.metadata.upstreamStatus}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                                {log.details.metadata.failureReason && (
+                                  <div className="mt-2 text-sm">
+                                    <span className="font-medium">Reason:</span>
+                                    <div className="mt-1 bg-rose-100 p-2 rounded text-rose-800">
+                                      {log.details.metadata.failureReason}
+                                    </div>
+                                  </div>
+                                )}
+                                {log.details.metadata.upstreamError && (
+                                  <div className="mt-2 text-sm">
+                                    <span className="font-medium">Upstream Error:</span>
+                                    <pre className="mt-1 text-xs bg-rose-100 p-2 rounded overflow-x-auto text-rose-800">
+                                      {typeof log.details.metadata.upstreamError === 'string'
+                                        ? log.details.metadata.upstreamError
+                                        : JSON.stringify(log.details.metadata.upstreamError, null, 2)}
+                                    </pre>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
                             {/* Request Context */}
                             {log.details.metadata.requestContext && (
                               <div className="p-3 bg-gray-50 border border-gray-200 rounded-md">

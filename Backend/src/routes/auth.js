@@ -5,8 +5,10 @@ import User from '../models/User.js';
 import { authenticateToken, validateApiKey, requirePortalOwnerOrSupport } from '../middleware/auth.js';
 import querystring from 'querystring';
 import axios from 'axios';
-import { error, info, warn } from '../utils/logger.js';
+import { error, info, warn, logLoginFailure } from '../utils/logger.js';
 import { getWorkspace, getMember, listWorkspacesForAuthorization } from '../services/isoplus.js';
+import { getFrontendBaseUrl, signOAuthState, verifyOAuthState } from '../utils/helpers.js';
+import OAuthTicket from '../models/OAuthTicket.js';
 
 const router = express.Router();
 
@@ -143,12 +145,25 @@ router.post('/login',
       const user = await User.findOne({ email });
 
       if (!user || !(await user.comparePassword(password))) {
-        warn('User-Service', 'Invalid credentials', { email }, req ?? null);
+        logLoginFailure('Auth-Service', 'Support admin login failed: invalid credentials', {
+          method: 'support-admin',
+          stage: 'invalid_credentials',
+          reason: user ? 'Password mismatch' : 'No account for email',
+          httpStatus: 401,
+          email,
+          userExists: !!user,
+        }, req ?? null);
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
       if (user.disabled) {
-        warn('User-Service', 'Login attempt for disabled user', { email }, req ?? null);
+        logLoginFailure('Auth-Service', 'Support admin login failed: account disabled', {
+          method: 'support-admin',
+          stage: 'account_disabled',
+          httpStatus: 403,
+          email,
+          userId: user._id?.toString(),
+        }, req ?? null);
         return res.status(403).json({ message: 'Account is disabled' });
       }
 
@@ -164,7 +179,15 @@ router.post('/login',
       info('User-Service', 'User logged in successfully', { email }, req ?? null);
       res.json({ user: { id: user._id, email, name: user.name, role: 'support_admin', avatar: '' } });
     } catch (err) {
-      error('User-Service', 'Server error during login', { err, email: req.body?.email }, req);
+      logLoginFailure('Auth-Service', 'Support admin login failed: server error', {
+        method: 'support-admin',
+        stage: 'server_error',
+        reason: err?.message,
+        httpStatus: 500,
+        level: 'error',
+        email: req.body?.email,
+        err,
+      }, req);
       res.status(500).json({ message: 'Server error' });
     }
   }
@@ -251,7 +274,7 @@ router.get('/verify', async (req, res) => {
 });
 
 router.get("/isoplus/redirect", (req, res) => {
-  const state = Math.random().toString(36).substring(2);
+  const state = signOAuthState({ flow: 'isoplus-login' });
 
   const query = querystring.stringify({
     client_id: process.env.CLIENT_ID,
@@ -266,10 +289,31 @@ router.get("/isoplus/redirect", (req, res) => {
 
 router.get("/isoplus/callback", async (req, res) => {
   const { code, state } = req.query;
+  const frontendBase = getFrontendBaseUrl();
+  const loginErrorRedirect = `${frontendBase}/?login=error`;
 
   if (!code) {
-    warn('User-Service', 'Authorization code is missing', { state }, req ?? null);
-    return res.status(400).json({ error: "Authorization code is missing" });
+    logLoginFailure('Auth-Service', 'ISO+ OAuth callback failed: authorization code missing', {
+      method: 'isoplus-oauth',
+      stage: 'callback_missing_code',
+      reason: 'No authorization code in callback query',
+      hasCode: false,
+      hasState: !!state,
+      oauthError: req.query?.error,
+      oauthErrorDescription: req.query?.error_description,
+    }, req ?? null);
+    return res.redirect(loginErrorRedirect);
+  }
+
+  if (!verifyOAuthState(state)) {
+    logLoginFailure('Auth-Service', 'ISO+ OAuth callback failed: invalid or missing state', {
+      method: 'isoplus-oauth',
+      stage: 'callback_invalid_state',
+      reason: state ? 'State signature invalid or expired (possible CSRF)' : 'State parameter absent',
+      hasCode: true,
+      hasState: !!state,
+    }, req ?? null);
+    return res.redirect(loginErrorRedirect);
   }
 
   try {
@@ -286,18 +330,15 @@ router.get("/isoplus/callback", async (req, res) => {
     });
 
     if (!tokenResponse.data || !tokenResponse.data.access_token) {
-      warn('User-Service', 'Invalid token response',  {
-        url: process.env.TOKEN_ENDPOINT,
-        method: "POST",
-        data: {
-          grant_type: "authorization_code",
-          client_id: process.env.CLIENT_ID,
-          redirect_uri: `${process.env.CALLBACK_URL}`,
-          code: code
-        },
-        response: tokenResponse.data
+      logLoginFailure('Auth-Service', 'ISO+ OAuth callback failed: token endpoint returned no access_token', {
+        method: 'isoplus-oauth',
+        stage: 'token_exchange',
+        reason: 'Token response missing access_token',
+        upstreamStatus: tokenResponse.status,
+        upstreamError: tokenResponse.data,
+        tokenEndpoint: process.env.TOKEN_ENDPOINT,
       }, req ?? null);
-      return res.status(400).json({ error: "Invalid token response" });
+      return res.redirect(loginErrorRedirect);
     }
 
     const accessToken = tokenResponse.data.access_token;
@@ -312,16 +353,17 @@ router.get("/isoplus/callback", async (req, res) => {
     });
 
     if (!userResponse.data) {
-      warn('User-Service', 'Invalid user response', {
-        url: process.env.USER_INFORMATION_ENDPOINT,
-        method: "GET",
-        data: {},
-        response: userResponse.data
+      logLoginFailure('Auth-Service', 'ISO+ OAuth callback failed: profile endpoint returned no data', {
+        method: 'isoplus-oauth',
+        stage: 'profile_fetch',
+        reason: 'User information response was empty',
+        upstreamStatus: userResponse.status,
+        profileEndpoint: process.env.USER_INFORMATION_ENDPOINT,
       }, req ?? null);
-      return res.status(400).json({ error: "Invalid user response" });
+      return res.redirect(loginErrorRedirect);
     }
 
-    info('User-Service', 'OAuth callback successful', { state, user: userResponse.data }, req ?? null);
+    info('User-Service', 'OAuth callback successful', { userId: userResponse.data?.id }, req ?? null);
 
     const safeUserData = {
       id: userResponse.data.id,
@@ -329,136 +371,184 @@ router.get("/isoplus/callback", async (req, res) => {
       name: userResponse.data.name,
       photo_url: userResponse.data.photo_url
     };
-    
-    const messageData = JSON.stringify({
-      type: 'AUTH_SUCCESS',
-      data: safeUserData,
-      accessToken: `Bearer ${accessToken}`
-    }).replace(/</g, '\\u003c').replace(/>/g, '\\u003e'); // Escape HTML tags in JSON
-    
-    res.send(`
-      <html>
-        <body>
-          <script>
-            window.opener.postMessage(${messageData}, '*');
-            window.close();
-          </script>
-        </body>
-      </html>
-    `);
+
+    const { ticket } = await OAuthTicket.create({
+      accessToken,
+      oauthData: safeUserData,
+    });
+
+    return res.redirect(`${frontendBase}/?ticket=${ticket}`);
   } catch (err) {
-    error('User-Service', 'Token exchange error', {
-      url: process.env.TOKEN_ENDPOINT,
-      method: "POST",
-      data: {
-        grant_type: "authorization_code",
-        client_id: process.env.CLIENT_ID,
-        redirect_uri: `${process.env.CALLBACK_URL}`,
-        code: code ? '[REDACTED]' : undefined
-      },
-      error: err.response?.data || err.message,
-      status: err.response?.status
+    // Distinguish which upstream call threw, for faster triage.
+    const failedUrl = err.config?.url;
+    const stage = failedUrl === process.env.USER_INFORMATION_ENDPOINT ? 'profile_fetch' : 'token_exchange';
+    logLoginFailure('Auth-Service', `ISO+ OAuth callback failed: ${stage} request error`, {
+      method: 'isoplus-oauth',
+      stage,
+      reason: err.message,
+      level: 'error',
+      upstreamStatus: err.response?.status,
+      upstreamError: err.response?.data || err.message,
+      failedUrl,
+      err,
     }, req);
-    const rawErrorMessage = err.response?.data?.error || err.message || 'Failed to authenticate';
-    const safeErrorMessage = String(rawErrorMessage).substring(0, 500);
-    
-    const errorData = JSON.stringify({
-      type: 'AUTH_ERROR',
-      error: safeErrorMessage
-    }).replace(/</g, '\\u003c').replace(/>/g, '\\u003e'); // Escape HTML tags in JSON
-    
-    res.send(`
-      <html>
-        <body>
-          <script>
-            window.opener.postMessage(${errorData}, '*');
-            window.close();
-          </script>
-        </body>
-      </html>
-    `);
+    return res.redirect(loginErrorRedirect);
+  }
+});
+
+async function establishOAuthSession(req, { authorization, oauthData, method = 'oauth-exchange' }) {
+  const email = oauthData?.email?.toString();
+  const oauthId = oauthData?.id?.toString();
+  const name = oauthData?.name?.toString();
+  const photo_url = oauthData?.photo_url?.toString();
+
+  let user = await User.findOne({ email, oauthId });
+  const defaultRole = 'isoplus_user';
+  if (!user) {
+    user = new User({
+      email: email,
+      name: name,
+      password: "",
+      oauthId: oauthId,
+      avatar: photo_url,
+      role: defaultRole
+    });
+    await user.save();
+  } else {
+    await User.findOneAndUpdate({ email: email, oauthId: oauthId }, { $set: { avatar: photo_url, name: name } });
+  }
+
+  if (user.disabled) {
+    logLoginFailure('Auth-Service', 'OAuth login failed: account disabled', {
+      method,
+      stage: 'account_disabled',
+      httpStatus: 403,
+      email,
+      userId: user._id?.toString(),
+    }, req ?? null);
+    return { status: 403, body: { message: 'Account is disabled' } };
+  }
+
+  req.session.Authorization = authorization;
+  const workspaceResponse = await getWorkspace(req.session.Authorization, user.email);
+
+  if (workspaceResponse.status !== 200) {
+    logLoginFailure('Auth-Service', 'OAuth login failed: could not fetch ISO+ workspaces', {
+      method,
+      stage: 'workspace_fetch',
+      reason: workspaceResponse.message || 'Workspace lookup did not return 200',
+      httpStatus: workspaceResponse.status || 500,
+      upstreamStatus: workspaceResponse.status,
+      level: (workspaceResponse.status || 500) >= 500 ? 'error' : 'warn',
+      email: user.email,
+      userId: user._id?.toString(),
+    }, req ?? null);
+    return {
+      status: workspaceResponse.status || 500,
+      body: { message: workspaceResponse.message || 'Failed to fetch workspace data' }
+    };
+  }
+
+  const role = workspaceResponse.workspace[0]?.user_role || "isoplus_user";
+  if (role === "owner" && user.role !== "owner") {
+    await User.findByIdAndUpdate({ _id: user._id }, { $set: { role: "owner" } });
+    user.role = "owner";
+  }
+
+  const workspace = workspaceResponse.workspace.map(w => {
+    const board = w.board.map(b => b.id);
+    return {
+      id: w.id,
+      board: board,
+      user_role: w.user_role
+    };
+  });
+
+  const token = jwt.sign(
+    { userId: user._id, email: user.email, name: user.name, role: user.role, avatar: user.avatar, workspace: workspace },
+    process.env.JWT_SECRET,
+    { expiresIn: '24h' }
+  );
+
+  req.session.token = token;
+  await req.session.save();
+  info('User-Service', 'OAuth login successful', { email: user.email }, req ?? null);
+  return {
+    status: 200,
+    body: {
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        avatar: user.avatar,
+        role: user.role
+      }
+    }
+  };
+}
+
+router.post('/oauth-exchange', async (req, res) => {
+  try {
+    const { ticket } = req.body;
+    if (!ticket || typeof ticket !== 'string') {
+      logLoginFailure('Auth-Service', 'OAuth exchange failed: ticket missing or malformed', {
+        method: 'oauth-exchange',
+        stage: 'ticket_missing',
+        httpStatus: 400,
+        ticketType: typeof ticket,
+      }, req ?? null);
+      return res.status(400).json({ message: 'Ticket is required' });
+    }
+
+    const record = await OAuthTicket.findOneAndDelete({ ticket });
+    if (!record) {
+      logLoginFailure('Auth-Service', 'OAuth exchange failed: ticket invalid, expired, or already used', {
+        method: 'oauth-exchange',
+        stage: 'ticket_redeem',
+        reason: 'No matching ticket (single-use, 120s TTL — likely already redeemed or expired)',
+        httpStatus: 401,
+      }, req ?? null);
+      return res.status(401).json({ message: 'Invalid or expired login ticket' });
+    }
+
+    const result = await establishOAuthSession(req, {
+      authorization: `Bearer ${record.accessToken}`,
+      oauthData: record.oauthData,
+      method: 'oauth-exchange',
+    });
+    return res.status(result.status).json(result.body);
+  } catch (err) {
+    logLoginFailure('Auth-Service', 'OAuth exchange failed: server error', {
+      method: 'oauth-exchange',
+      stage: 'server_error',
+      reason: err?.message,
+      httpStatus: 500,
+      level: 'error',
+      err,
+    }, req);
+    res.status(500).json({ message: 'Server error during OAuth exchange' });
   }
 });
 
 router.post('/oauth-login', async (req, res) => {
   try {
     const { oauthData } = req.body;
-
-    const email = oauthData.email?.toString();
-    const oauthId = oauthData.id?.toString();
-    const name = oauthData.name?.toString();
-    const photo_url = oauthData.photo_url?.toString();
-
-    let user = await User.findOne({ email, oauthId });
-    let role = 'isoplus_user';
-    if (!user) {
-      user = new User({
-        email: email,
-        name: name,
-        password: "",
-        oauthId: oauthId,
-        avatar: photo_url,
-        role: role
-      });
-      await user.save();
-    } else {
-      await User.findOneAndUpdate({ email: email, oauthId: oauthId }, { $set: { avatar: photo_url, name: name } });
-    }
-
-    if (user.disabled) {
-      warn('User-Service', 'OAuth login attempt for disabled user', { email }, req ?? null);
-      return res.status(403).json({ message: 'Account is disabled' });
-    }
-
-    req.session.Authorization = req.headers['authorization'];
-    const workspaceResponse = await getWorkspace(req.session.Authorization, user.email);
-
-    if (workspaceResponse.status === 200) {
-      role = workspaceResponse.workspace[0]?.user_role || "isoplus_user";
-      if (role === "owner" && user.role !== "owner") {
-        await User.findByIdAndUpdate({ _id: user._id }, { $set: { role: "owner" } });
-      }
-
-      const workspace = workspaceResponse.workspace.map(w => {
-        const board = w.board.map(b => {
-          return b.id
-        });
-        return {
-          id: w.id,
-          board: board,
-          user_role: w.user_role
-        }
-      });
-
-      const token = jwt.sign(
-        { userId: user._id, email: user.email, name: user.name, role: user.role, avatar: user.avatar, workspace: workspace },
-        process.env.JWT_SECRET,
-        { expiresIn: '24h' }
-      );
-
-      req.session.token = token;
-      await req.session.save();      
-      info('User-Service', 'OAuth login successful', { email: user.email }, req ?? null);
-      res.json({
-        user: {
-          id: user._id,
-          email: user.email,
-          name: user.name,
-          avatar: user.avatar,
-          role: user.role
-        }
-      });
-    } else {
-      warn('User-Service', 'Failed to fetch workspaces during OAuth login', { 
-        status: workspaceResponse.status, 
-        email: user.email 
-      }, req ?? null);
-      res.status(workspaceResponse.status || 500).json({ 
-        message: workspaceResponse.message || 'Failed to fetch workspace data' 
-      });
-    }
+    const result = await establishOAuthSession(req, {
+      authorization: req.headers['authorization'],
+      oauthData,
+      method: 'oauth-login',
+    });
+    return res.status(result.status).json(result.body);
   } catch (err) {
-    error('User-Service', 'Server error during OAuth login', { err, email: req.body?.oauthData?.email }, req);
+    logLoginFailure('Auth-Service', 'Legacy OAuth login failed: server error', {
+      method: 'oauth-login',
+      stage: 'server_error',
+      reason: err?.message,
+      httpStatus: 500,
+      level: 'error',
+      email: req.body?.oauthData?.email,
+      err,
+    }, req);
     res.status(500).json({ message: 'Server error during OAuth login' });
   }
 });

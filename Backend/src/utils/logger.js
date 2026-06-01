@@ -492,6 +492,66 @@ export const logApiError = (source, message, apiContext, context = null) => {
   error(source, message, errorContext, context);
 };
 
+/**
+ * Deep diagnostic logging for login / authentication failures.
+ *
+ * Captures the exact stage a login broke at plus structured diagnostic flags,
+ * so failures can be triaged from the Application Logs viewer without needing
+ * to reproduce. Tagged with errorType 'LOGIN_FAILURE' for filtering.
+ *
+ * @param {string} source - Log source (e.g. 'Auth-Service').
+ * @param {string} message - Human-readable summary.
+ * @param {object} diagnostics - Diagnostic fields:
+ *   @param {string} diagnostics.method - Login method ('isoplus-oauth' | 'support-admin' | 'oauth-exchange' | 'oauth-login').
+ *   @param {string} diagnostics.stage - Where it failed (e.g. 'token_exchange', 'profile_fetch', 'ticket_redeem', 'workspace_fetch', 'account_disabled', 'invalid_credentials').
+ *   @param {string} [diagnostics.reason] - Specific reason (defaults to message).
+ *   @param {number} [diagnostics.httpStatus] - HTTP status we returned to the client.
+ *   @param {number} [diagnostics.upstreamStatus] - HTTP status from an upstream call (ISO+ token/profile/workspace).
+ *   @param {any}    [diagnostics.upstreamError] - Upstream error body/message (truncated/stringified).
+ *   @param {string} [diagnostics.level] - winston level to emit ('warn' default, 'error' for system/upstream faults).
+ * @param {object} context - Express req or context object.
+ */
+export const logLoginFailure = (source, message, diagnostics = {}, context = null) => {
+  const {
+    method,
+    stage,
+    reason,
+    httpStatus,
+    upstreamStatus,
+    upstreamError,
+    level = 'warn',
+    ...rest
+  } = diagnostics;
+
+  let upstreamErrorStr;
+  if (upstreamError !== undefined && upstreamError !== null) {
+    upstreamErrorStr = typeof upstreamError === 'string'
+      ? truncateString(upstreamError, MAX_STRING_LENGTH)
+      : truncateString(JSON.stringify(upstreamError), MAX_STRING_LENGTH);
+  }
+
+  const errorContext = {
+    errorType: 'LOGIN_FAILURE',
+    loginMethod: method,
+    loginStage: stage,
+    failureReason: reason || message,
+    httpStatus,
+    upstreamStatus,
+    upstreamError: upstreamErrorStr,
+    ...rest,
+    diagnosticInfo: {
+      method: method || null,
+      stage: stage || null,
+      reason: reason || message,
+      httpStatus: httpStatus ?? null,
+      upstreamStatus: upstreamStatus ?? null,
+      timestamp: new Date().toISOString(),
+    },
+  };
+
+  return log(level, source, message, errorContext, context);
+};
+
 // Context-aware logging for operation flow tracking
 export const logOperationStart = (source, operation, metadata, context = {}) => {
   const ctx = normalizeContext(context);
