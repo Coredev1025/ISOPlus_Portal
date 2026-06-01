@@ -14,6 +14,8 @@ import { useAppContext } from "@/app/context/index";
 import Spinner from "@/components/ui/spin";
 import { showSuccessToast, showErrorToast } from "@/lib/toast-utils";
 
+const exchangedTickets = new Set<string>();
+
 export default function LoginPage() {
   const router = useRouter();
   const { setUser, setWorkspaces } = useAppContext();
@@ -25,6 +27,57 @@ export default function LoginPage() {
   
   useEffect(() => {
     let cancelled = false;
+
+    const cleanUrl = () =>
+      window.history.replaceState({}, "", window.location.pathname);
+
+    const redeemTicket = async (ticket: string) => {
+      if (exchangedTickets.has(ticket)) return;
+      exchangedTickets.add(ticket);
+      setIsLoading(true);
+      try {
+        const response = await axios.post(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/oauth-exchange`,
+          { ticket },
+          { withCredentials: true }
+        );
+        if (response.status === 200) {
+          setUser(response.data.user);
+          showSuccessToast("Login successful");
+          cleanUrl();
+          router.push("/dashboard");
+          return;
+        }
+      } catch (err: any) {
+        if (err.name !== "CanceledError" && err.name !== "AbortError") {
+          console.error("OAuth ticket exchange failed:", err);
+          showErrorToast("OAuth login failed", {
+            description:
+              err.response?.data?.message || "An error occurred during OAuth login",
+          });
+        }
+        cleanUrl();
+        setIsLoading(false);
+      }
+    };
+
+    const params = new URLSearchParams(window.location.search);
+    const ticket = params.get("ticket");
+    const loginError = params.get("login");
+
+    if (ticket) {
+      redeemTicket(ticket);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (loginError === "error") {
+      showErrorToast("OAuth login failed", {
+        description: "Authentication failed. Please try again.",
+      });
+      cleanUrl();
+    }
 
     const checkToken = async () => {
       try {
@@ -103,41 +156,6 @@ export default function LoginPage() {
   const handleISOPlusLogin = useCallback(async () => {
     setIsLoading(true);
     setError("");
-    let popup: Window | null = null;
-    const handleMessage = async (event: MessageEvent) => {
-      if (event.data.type === 'AUTH_SUCCESS') {
-        try {
-          const response = await axios.post(
-            `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/oauth-login`,
-            { oauthData: event.data.data },
-            {
-              headers: { Authorization: event.data.accessToken },
-            }
-          );
-
-          if (response.status === 200) {
-            setUser(response.data.user);
-            showSuccessToast("Login successful");
-            router.push('/dashboard');
-          }
-        } catch (err: any) {
-          if (err.name !== "CanceledError" && err.name !== "AbortError") {
-            console.error("Token verification failed:", err);
-            showErrorToast("OAuth login failed", { description: err.response?.data?.message || "An error occurred during OAuth login" });
-          }
-        } finally {
-          window.removeEventListener('message', handleMessage);
-          if (popup) popup.close();
-          setIsLoading(false);
-        }
-      } else if (event.data.type === 'AUTH_ERROR') {
-        console.error("Token verification failed:", event.data.error);
-        showErrorToast("OAuth login failed", { description: event.data.error || "Authentication error occurred" });
-        window.removeEventListener('message', handleMessage);
-        if (popup) popup.close();
-        setIsLoading(false);
-      }
-    };
     try {
       const redirectUrl = await axios.get(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/isoplus/redirect`,
@@ -146,28 +164,19 @@ export default function LoginPage() {
         }
       );
 
-      if (redirectUrl.status === 200) {
-        const width = 600;
-        const height = 600;
-        const left = window.screenX + (window.outerWidth - width) / 2;
-        const top = window.screenY + (window.outerHeight - height) / 2;
-
-        popup = window.open(
-          redirectUrl.data.redirect_uri,
-          'OAuth2 Login',
-          `width=${width},height=${height},left=${left},top=${top},status=yes,scrollbars=yes`
-        );
-
-        window.addEventListener('message', handleMessage);
+      if (redirectUrl.status === 200 && redirectUrl.data?.redirect_uri) {
+        window.location.href = redirectUrl.data.redirect_uri;
+        return;
       }
+      setIsLoading(false);
     } catch (err: any) {
       if (err.name !== "CanceledError" && err.name !== "AbortError") {
-        console.error("Token verification failed:", err);
+        console.error("Failed to initiate OAuth login:", err);
         showErrorToast("OAuth redirect failed", { description: err.response?.data?.message || "Failed to initiate OAuth login" });
       }
       setIsLoading(false);
     }
-  }, [router, setUser]);
+  }, []);
 
   return (
     <div className="relative min-h-screen bg-background flex items-center justify-center p-4 sm:p-8 overflow-hidden">

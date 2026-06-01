@@ -1,3 +1,5 @@
+import jwt from 'jsonwebtoken';
+
 export const stripHtmlTags = (str) => {
     const regex = /(<([^>]+)>)/gi;
     return str.replace(regex, '');
@@ -180,6 +182,31 @@ export async function processParallel(items, processor, concurrencyLimit = 50) {
             results.push(result.status === 'fulfilled' ? result.value : null);
         }
     }
-    
+
     return results;
+}
+
+export function getFrontendBaseUrl() {
+    const explicit = process.env.FRONTEND_URL;
+    if (explicit) return explicit.replace(/\/+$/, '');
+
+    const origins = (process.env.ALLOWED_ORIGINS || '')
+        .split(/[\s,]+/)
+        .filter(Boolean);
+    if (origins.length > 0) return origins[0].replace(/\/+$/, '');
+
+    return 'http://localhost:3000';
+}
+
+export function signOAuthState(payload = {}, expiresIn = '10m') {
+    return jwt.sign({ ...payload, nonce: Math.random().toString(36).slice(2) }, process.env.JWT_SECRET, { expiresIn });
+}
+
+export function verifyOAuthState(state) {
+    if (!state) return null;
+    try {
+        return jwt.verify(state, process.env.JWT_SECRET);
+    } catch {
+        return null;
+    }
 }
