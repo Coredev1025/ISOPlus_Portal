@@ -55,6 +55,8 @@ const app = express();
 
 app.set('etag', false);
 
+app.set('trust proxy', 1);
+
 // Attach requestId and request lifecycle logging early
 app.use(requestContextMiddleware);
 
