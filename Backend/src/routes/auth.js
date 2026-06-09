@@ -5,7 +5,7 @@ import User from '../models/User.js';
 import { authenticateToken, validateApiKey, requirePortalOwnerOrSupport } from '../middleware/auth.js';
 import querystring from 'querystring';
 import axios from 'axios';
-import { error, info, warn, logLoginFailure } from '../utils/logger.js';
+import { error, info, warn, logLoginFailure, logLoginSuccess } from '../utils/logger.js';
 import { getWorkspace, getMember, listWorkspacesForAuthorization } from '../services/isoplus.js';
 import { getFrontendBaseUrl, signOAuthState, verifyOAuthState } from '../utils/helpers.js';
 import OAuthTicket from '../models/OAuthTicket.js';
@@ -390,6 +390,8 @@ router.get("/isoplus/callback", async (req, res) => {
       upstreamStatus: err.response?.status,
       upstreamError: err.response?.data || err.message,
       failedUrl,
+      errorCode: err.code,
+      isTimeout: err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT',
       err,
     }, req);
     return res.redirect(loginErrorRedirect);
@@ -438,7 +440,9 @@ async function establishOAuthSession(req, { authorization, oauthData, method = '
       stage: 'workspace_fetch',
       reason: workspaceResponse.message || 'Workspace lookup did not return 200',
       httpStatus: workspaceResponse.status || 500,
-      upstreamStatus: workspaceResponse.status,
+      upstreamStatus: workspaceResponse.upstreamStatus ?? workspaceResponse.status,
+      errorCode: workspaceResponse.errorCode,
+      isTimeout: workspaceResponse.errorCode === 'ECONNABORTED' || workspaceResponse.errorCode === 'ETIMEDOUT',
       level: (workspaceResponse.status || 500) >= 500 ? 'error' : 'warn',
       email: user.email,
       userId: user._id?.toString(),
@@ -472,7 +476,7 @@ async function establishOAuthSession(req, { authorization, oauthData, method = '
 
   req.session.token = token;
   await req.session.save();
-  info('User-Service', 'OAuth login successful', { email: user.email }, req ?? null);
+  logLoginSuccess('User-Service', 'OAuth login successful', { method: 'isoplus-oauth', email: user.email }, req ?? null);
   return {
     status: 200,
     body: {

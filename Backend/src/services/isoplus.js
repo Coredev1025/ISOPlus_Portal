@@ -437,7 +437,12 @@ export async function getWorkspace(authorization, userEmail = null, options = {}
 
         return { workspace: workspaceResults, status: 200 };
     } catch (err) {
-        return { message: err.message, status: 500 };
+        return {
+            message: err.message,
+            status: 500,
+            upstreamStatus: err?.response?.status,
+            errorCode: err?.code,
+        };
     }
 }
 
