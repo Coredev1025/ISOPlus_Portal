@@ -20,6 +20,7 @@
     "@pdfme/common": "^5.5.8",
     "@pdfme/generator": "^5.5.8",
     "@pdfme/schemas": "^5.5.8",
+    "@sentry/node": "^10.56.0",
     "aws-sdk": "^2.1692.0",
     "axios": "^1.15.2",
     "bcryptjs": "^2.4.3",

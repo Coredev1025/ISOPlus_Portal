@@ -1,4 +1,5 @@
 import winston from "winston";
+import * as Sentry from "@sentry/node";
 const { combine, timestamp, printf, colorize, json } = winston.format;
 import "winston-daily-rotate-file";
 import "winston-mongodb";
@@ -549,8 +550,70 @@ export const logLoginFailure = (source, message, diagnostics = {}, context = nul
     },
   };
 
+  forwardLoginLogToSentry(level, message, errorContext, context);
   return log(level, source, message, errorContext, context);
 };
+
+export const logLoginSuccess = (source, message, diagnostics = {}, context = null) => {
+  const successContext = {
+    eventType: 'LOGIN_SUCCESS',
+    loginMethod: diagnostics.method,
+    ...diagnostics,
+  };
+
+  forwardLoginLogToSentry('info', message, successContext, context);
+  return log('info', source, message, successContext, context);
+};
+
+const ISOPLUS_LOGIN_METHODS = new Set(['isoplus-oauth', 'oauth-exchange', 'oauth-login']);
+
+const SENTRY_DIAGNOSTIC_SKIP = new Set([
+  'errorType', 'eventType', 'loginMethod', 'method', 'loginStage', 'stage',
+  'failureReason', 'reason', 'httpStatus', 'upstreamStatus', 'email',
+  'requestId', 'diagnosticInfo', 'err', 'error', 'stack', 'stackTrace',
+]);
+
+function coerceSentryAttribute(value) {
+  const t = typeof value;
+  if (t === 'string') return truncateString(value, MAX_STRING_LENGTH);
+  if (t === 'number' || t === 'boolean') return value;
+  try {
+    return truncateString(JSON.stringify(value), MAX_STRING_LENGTH);
+  } catch {
+    return String(value);
+  }
+}
+
+function forwardLoginLogToSentry(level, message, diagnostics = {}, context = null) {
+  if (!Sentry.isInitialized?.()) return;
+
+  const method = diagnostics.loginMethod ?? diagnostics.method;
+  if (!ISOPLUS_LOGIN_METHODS.has(method)) return;
+
+  const ctx = normalizeContext(context);
+  const attributes = {
+    feature: 'isoplus-login',
+    loginMethod: method ?? null,
+    loginStage: diagnostics.loginStage ?? diagnostics.stage ?? null,
+    failureReason: diagnostics.failureReason ?? diagnostics.reason ?? null,
+    httpStatus: diagnostics.httpStatus ?? null,
+    upstreamStatus: diagnostics.upstreamStatus ?? null,
+    ip: ctx.ip || undefined,
+    email: ctx.email || diagnostics.email || undefined,
+    requestId: ctx.requestId || diagnostics.requestId || undefined,
+  };
+
+  for (const [key, value] of Object.entries(diagnostics)) {
+    if (SENTRY_DIAGNOSTIC_SKIP.has(key)) continue;
+    if (value === undefined || value === null) continue;
+    if (attributes[key] !== undefined) continue;
+    attributes[key] = coerceSentryAttribute(value);
+  }
+
+  const sentryLevel = level === 'fatal' ? 'error' : level;
+  const emit = Sentry.logger?.[sentryLevel] ?? Sentry.logger?.info;
+  emit?.(message, attributes);
+}
 
 // Context-aware logging for operation flow tracking
 export const logOperationStart = (source, operation, metadata, context = {}) => {

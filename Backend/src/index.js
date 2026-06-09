@@ -1,3 +1,4 @@
+import './instrument.js';
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -99,6 +100,8 @@ app.use('/api', (req, res, next) => {
 const requestBodyLimit = process.env.REQUEST_BODY_LIMIT || '25mb';
 app.use(express.json({ limit: requestBodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: requestBodyLimit }));
+
+const isProduction = process.env.NODE_ENV === 'production';
 app.use(session({
   secret: process.env.SESSION_SECRET || 'default_secret',
   resave: false,
@@ -109,9 +112,9 @@ app.use(session({
     autoRemove: 'native'
   }),
   cookie: {
-    secure: false,
+    secure: isProduction,
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: isProduction ? 'none' : 'lax',
     maxAge: 1000 * 60 * 60 * 24
   }
 }));
