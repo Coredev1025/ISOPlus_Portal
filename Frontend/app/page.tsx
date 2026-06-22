@@ -201,7 +201,7 @@ export default function LoginPage() {
                 Support agent sign-in
               </h1>
               <p className="text-sm text-muted-foreground">
-                Use your ISO+ Portal administrator credentials
+                Use your ISO+™ Portal administrator credentials
               </p>
             </div>
             {error && (
@@ -248,7 +248,7 @@ export default function LoginPage() {
               onClick={() => setIsSupportLogin(false)}
               disabled={isLoading}
             >
-              Back to ISO+ sign-in
+              Back to ISO+™ sign-in
             </Button>
           </div>
         ) : (
@@ -259,7 +259,7 @@ export default function LoginPage() {
                 ISO+™ Portal
               </h1>
               <p className="text-sm text-muted-foreground max-w-xs mx-auto">
-                Sign in with your ISO+ account
+                Sign in with your ISO+™ account
               </p>
               <div className="flex items-center justify-center pt-2">
                 <Image
@@ -294,7 +294,7 @@ export default function LoginPage() {
               size="lg"
               disabled={isLoading}
             >
-              Sign in with ISO+
+              Sign in with ISO+™
               {isLoading && <Spinner />}
             </Button>
             <div className="text-center text-sm text-muted-foreground leading-relaxed">
