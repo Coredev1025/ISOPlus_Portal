@@ -1,7 +1,7 @@
 import syncQueue from './sync/queue.js';
 import Board from '../models/Board.js';
 import SyncExecution from '../models/SyncExecution.js';
-import { unregisterBoardWebhooks } from './webhookService.js';
+import { registerBoardWebhooks, unregisterBoardWebhooks } from './webhookService.js';
 import { info, error, warn } from '../utils/logger.js';
 
 export async function enableBoardSync(authorization, workspaceId, boardId) {
@@ -32,6 +32,25 @@ export async function enableBoardSync(authorization, workspaceId, boardId) {
       },
       { upsert: true, new: true }
     );
+
+    const hookResult = await registerBoardWebhooks(authorization, workspaceId, boardId);
+    if (hookResult.success) {
+      await Board.findOneAndUpdate(
+        { boardId },
+        { $set: { hookId: hookResult.hookId, hookSecret: hookResult.secret } }
+      );
+      info('Sync-Service', 'Hook created on sync enable', {
+        workspaceId,
+        boardId,
+        hookId: hookResult.hookId,
+      });
+    } else {
+      warn('Sync-Service', 'Hook creation failed on sync enable (non-fatal, will retry after backlog sync)', {
+        workspaceId,
+        boardId,
+        error: hookResult.error,
+      });
+    }
 
     const job = await syncQueue.add('board_validation', {
       jobType: 'board_validation',
