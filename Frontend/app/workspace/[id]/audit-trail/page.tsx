@@ -116,6 +116,7 @@ function normalizeAuditDetail(item: any) {
 export default function AuditTrailPage() {
   const router = useRouter();
   const id = usePathname().split('/')[2];
+  const [businessTimezone, setBusinessTimezone] = useState<string>("Australia/Sydney");
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -127,6 +128,16 @@ export default function AuditTrailPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [knownActions, setKnownActions] = useState<string[]>([]);
   const [knownUsers, setKnownUsers] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!id) return;
+    const abort = new AbortController();
+    axios
+      .get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`, { params: { workspaceId: id }, signal: abort.signal })
+      .then(res => { if (res.data?.headOfficeTimezone) setBusinessTimezone(res.data.headOfficeTimezone); })
+      .catch(err => { if (err.name !== "CanceledError" && err.name !== "AbortError") console.error(err); });
+    return () => abort.abort();
+  }, [id]);
 
   // Debounce search query
   useEffect(() => {
@@ -166,21 +177,28 @@ export default function AuditTrailPage() {
         // Backend now returns paginated response
         const { items, total, page, totalPages: apiTotalPages } = response.data;
 
-        let auditData: AuditTrailItem[] = items.map((item: any) => ({
-          action: normalizeAuditAction(item),
-          user: item.userEmail,
-          ipAddress: item.userIp,
-          detail: normalizeAuditDetail(item),
-          timestamp: new Date(item.createdAt).toLocaleString('en-AU', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: true
-          })
-        }));
+        let auditData: AuditTrailItem[] = items.map((item: any) => {
+          const d = new Date(item.createdAt);
+          const timestamp = isNaN(d.getTime())
+            ? ""
+            : new Intl.DateTimeFormat("en-AU", {
+                timeZone: businessTimezone,
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+                hour12: true,
+              }).format(d);
+          return {
+            action: normalizeAuditAction(item),
+            user: item.userEmail,
+            ipAddress: item.userIp,
+            detail: normalizeAuditDetail(item),
+            timestamp,
+          };
+        });
 
         // Client-side filtering for current page only (reduces memory)
         if (debouncedSearch || actionFilter !== "all" || userFilter !== "all") {
@@ -235,7 +253,7 @@ export default function AuditTrailPage() {
     return () => {
       abortController.abort();
     };
-  }, [id, currentPage, debouncedSearch, actionFilter, userFilter]);
+  }, [id, currentPage, debouncedSearch, actionFilter, userFilter, businessTimezone]);
 
   // Use known actions and users for filters (from all pages visited)
   const uniqueActions = knownActions.length ? knownActions : Array.from(new Set(auditTrail.map(item => item.action)));

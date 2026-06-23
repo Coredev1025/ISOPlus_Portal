@@ -26,7 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import axios from "@/app/utils/axiosConfig";
 import { useAppContext } from "@/app/context";
 import { fetchMonthlyStatementItems } from "@/app/utils/items";
-import { format, startOfMonth, endOfMonth, isValid, parse } from "date-fns";
+import { format, isValid, parse } from "date-fns";
 import Spinner from "@/components/ui/spin";
 import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast } from "@/lib/toast-utils";
 import { isCareManagementLabel, isLowCatCareManagementLabel } from "@/lib/access";
@@ -52,6 +52,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { dateOnlyToStartOfDayISO, dateOnlyToEndOfDayISO, formatDateDDMMYYYY, getMonthBoundaryDates } from "@/lib/timezone";
 
 interface ServiceRecord {
   id: string;
@@ -653,6 +654,7 @@ export default function MonthlyStatement() {
   const [showHelpDialog, setShowHelpDialog] = useState(false);
   const syncCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const previousSyncStatusRef = useRef<{ boardId: string; status: string; startTime?: number; seenInContext?: boolean } | null>(null);
+  const [businessTimezone, setBusinessTimezone] = useState<string>("Australia/Sydney");
 
 
   // Budget data will come from the API response
@@ -780,6 +782,9 @@ export default function MonthlyStatement() {
             postcode: response.data.address?.postcode || "",
             companyRegistrationId: response.data.companyRegistrationId || "",
           });
+          if (response.data.headOfficeTimezone) {
+            setBusinessTimezone(response.data.headOfficeTimezone);
+          }
         }
       } catch (err) {
         console.error('Error loading business details:', err);
@@ -818,14 +823,11 @@ export default function MonthlyStatement() {
       return null;
     }
 
-    const monthDate = new Date(yearNum, monthNum - 1, 1);
-    const startDate = startOfMonth(monthDate);
-    const endDate = new Date(endOfMonth(monthDate));
-    endDate.setHours(23, 59, 59, 999);
+    const { firstDay, lastDay } = getMonthBoundaryDates(yearNum, monthNum);
 
     return {
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString(),
+      startDate: dateOnlyToStartOfDayISO(firstDay, businessTimezone),
+      endDate: dateOnlyToEndOfDayISO(lastDay, businessTimezone),
     };
   };
 
@@ -884,18 +886,17 @@ export default function MonthlyStatement() {
     try {
       const monthNum = parseInt(selectedMonth);
       const yearNum = parseInt(selectedYear);
-      const monthDate = new Date(yearNum, monthNum - 1, 1);
-      const startDate = startOfMonth(monthDate);
-      const endDate = new Date(endOfMonth(monthDate));
-      endDate.setHours(23, 59, 59, 999);
+      const { firstDay, lastDay } = getMonthBoundaryDates(yearNum, monthNum);
+      const startDateISO = dateOnlyToStartOfDayISO(firstDay, businessTimezone);
+      const endDateISO = dateOnlyToEndOfDayISO(lastDay, businessTimezone);
 
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/monthly-statement`,
         {
           params: {
             participant: selectedParticipant,
-            startDate: startDate.toISOString(),
-            endDate: endDate.toISOString(),
+            startDate: startDateISO,
+            endDate: endDateISO,
             month: selectedMonth,
             year: selectedYear,
             servicePage: page,
@@ -1412,23 +1413,22 @@ export default function MonthlyStatement() {
     setServiceTransactionStatusFilter('all');
     setServiceFundingSourceFilter('all');
     try {
-      // Calculate date range for selected month using date-fns for better timezone handling
-      const monthDate = new Date(yearNum, monthNum - 1, 1);
-      if (!isValid(monthDate)) {
+      // Calculate date range for selected month using timezone-aware boundaries
+      if (Number.isNaN(monthNum) || Number.isNaN(yearNum)) {
         showErrorToast('Invalid date selected');
         return;
       }
-      const startDate = startOfMonth(monthDate);
-      const endDate = new Date(endOfMonth(monthDate));
-      endDate.setHours(23, 59, 59, 999);
+      const { firstDay: fd, lastDay: ld } = getMonthBoundaryDates(yearNum, monthNum);
+      const startDateISO2 = dateOnlyToStartOfDayISO(fd, businessTimezone);
+      const endDateISO2 = dateOnlyToEndOfDayISO(ld, businessTimezone);
 
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/monthly-statement`,
         {
           params: {
             participant: selectedParticipant,
-            startDate: startDate.toISOString(),
-            endDate: endDate.toISOString(),
+            startDate: startDateISO2,
+            endDate: endDateISO2,
             month: selectedMonth,
             year: selectedYear,
             budgetPage: budgetPagination.page,
@@ -2221,21 +2221,8 @@ export default function MonthlyStatement() {
           return format(parsedLocal, 'dd/MM/yyyy');
         }
       }
-      // Handle date-only strings (YYYY-MM-DD) by adding time component if needed
-      let dateStr = dateString;
-      if (dateStr && !dateStr.includes('T') && !dateStr.includes(' ')) {
-        // It's a date-only string, parse it directly
-        const parts = dateStr.split('-');
-        if (parts.length === 3) {
-          const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-          if (!isNaN(date.getTime())) {
-            return format(date, 'dd/MM/yyyy');
-          }
-        }
-      }
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return 'N/A';
-      return format(date, 'dd/MM/yyyy');
+      const result = formatDateDDMMYYYY(dateString, businessTimezone);
+      return result || 'N/A';
     } catch (e) {
       return 'N/A';
     }

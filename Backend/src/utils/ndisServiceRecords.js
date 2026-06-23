@@ -215,12 +215,33 @@ export function isNonZero(value) {
   return Math.abs(parseNumberValue(value)) > 0;
 }
 
-export function getDateOnlyIso(value) {
+export function dateOnlyToISOWithOffset(dateStr, timeZone = SYDNEY_TIME_ZONE) {
+  if (!dateStr) return dateStr;
+  const str = String(dateStr).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(str)) return dateStr;
+  const [y, m, d] = str.split('-').map(Number);
+  const noonUtc = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  }).formatToParts(noonUtc);
+  const get = (t) => Number(parts.find((p) => p.type === t)?.value ?? '0');
+  const localMs = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
+  const offsetMs = localMs - noonUtc.getTime();
+  const offsetMin = Math.round(offsetMs / 60000);
+  const sign = offsetMin >= 0 ? '+' : '-';
+  const absMin = Math.abs(offsetMin);
+  const hh = String(Math.floor(absMin / 60)).padStart(2, '0');
+  const mm = String(absMin % 60).padStart(2, '0');
+  return `${str}T00:00:00.000${sign}${hh}:${mm}`;
+}
+
+export function getDateOnlyIso(value, timeZone = SYDNEY_TIME_ZONE) {
   if (!value) return null;
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return null;
   const parts = new Intl.DateTimeFormat('en-AU', {
-    timeZone: SYDNEY_TIME_ZONE,
+    timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -247,6 +268,27 @@ export function formatDdMmYyyy(value, timeZone = SYDNEY_TIME_ZONE) {
   const year = parts.find((p) => p.type === 'year')?.value;
   if (!day || !month || !year) return '';
   return `${day}/${month}/${year}`;
+}
+
+export function formatDateInValueZone(value, timeZone = SYDNEY_TIME_ZONE) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return formatDdMmYyyy(value, timeZone);
+}
+
+export function formatDateTimeInValueZone(value, timeZone = SYDNEY_TIME_ZONE) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('en-AU', {
+    timeZone,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 export function hoursToHhhMm(hours) {

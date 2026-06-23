@@ -69,13 +69,39 @@ function resolveValueToNames(value, refItemsMap) {
 export function getParticipantProfileFields(participantProfileItem) {
   const data = participantProfileItem?.data || {};
   const get = (k) => formatLabelValue(data?.[k]).trim();
+  const getMulti = (...keys) => {
+    for (const k of keys) {
+      const v = formatLabelValue(data?.[k]).trim();
+      if (v) return v;
+    }
+    return '';
+  };
+
+  const displayName = getParticipantDisplayName(participantProfileItem);
+  const fullName = get('Full Name/Preferred Name');
+  let firstName = getMulti('First Name', "Contact Person's First Name", 'ContactPersonsFirstName');
+  let lastName = getMulti('Last Name', "Contact Person's Last Name", 'ContactPersonsLastName');
+
+  if ((!firstName || !lastName) && (fullName || displayName)) {
+    const nameToParse = (fullName || displayName).trim();
+    const parts = nameToParse.split(/\s+/);
+    if (parts.length >= 2) {
+      if (!firstName) firstName = parts[0];
+      if (!lastName) lastName = parts.slice(1).join(' ');
+    } else if (parts.length === 1 && parts[0]) {
+      if (!firstName) firstName = parts[0];
+      if (!lastName) lastName = parts[0];
+    }
+  }
+
   return {
-    displayName: getParticipantDisplayName(participantProfileItem),
+    displayName,
     billingContact: get('Billing Contact'),
+    billingEmail: get('Billing Email'),
     billingAddress: get('Billing Address'),
-    firstName: get('First Name'),
-    lastName: get('Last Name'),
-    fullName: get('Full Name/Preferred Name'),
+    firstName,
+    lastName,
+    fullName,
     email: get('Email'),
     address: get('Address'),
     suburb: get('Suburb'),

@@ -40,6 +40,9 @@ import {
   buildNdisMasterPlanServiceRows,
   extractRefId as extractNdisRefId,
   formatDdMmYyyy,
+  formatDateTimeInValueZone,
+  formatDateInValueZone,
+  getDateOnlyIso,
 } from '../utils/ndisServiceRecords.js';
 import {
   getNdisInvoiceGeneratorContextFromMasterItems,
@@ -232,6 +235,7 @@ function mapInvoiceValuesToJobDTO(values) {
 
 const REF_ATTRIBUTE_NAMES = {
   PROFILE_EMAIL_ADDRESS: 'Email',
+  PROFILE_BILLING_EMAIL: 'Billing Email',
   PROFILE_BILLING_CONTACT: 'Billing Contact',
   PROFILE_BILLING_ADDRESS: 'Billing Address',
   PROFILE_PHONE_NUMBER: 'Primary Phone Number'
@@ -386,8 +390,8 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       contact: { contactID: contact.contactID },
       reference: jobPlanningValues.jobNumber,
       lineItems: [],
-      date: new Date().toISOString().split('T')[0],
-      dueDate: new Date(new Date().setDate(new Date().getDate() + 30)).toISOString().split('T')[0],
+      date: getDateOnlyIso(new Date(), business?.headOfficeTimezone || 'Australia/Sydney'),
+      dueDate: (() => { const d = new Date(); d.setDate(d.getDate() + 30); return getDateOnlyIso(d, business?.headOfficeTimezone || 'Australia/Sydney'); })(),
       status: "DRAFT"
     };
 
@@ -464,7 +468,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
       : dateOnly(actualShiftStart || scheduledShiftStart);
 
   try {
-    await initializeXeroOperation(workspaceId, boardId, item);
+    const business = await initializeXeroOperation(workspaceId, boardId, item);
+    const timezone = business?.headOfficeTimezone || 'Australia/Sydney';
 
     const [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues] = await getNDISMasterPlanReferencedItems(workspaceId, boardId, item.id);
     if (!servicePlanValues) {
@@ -538,7 +543,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
 
     let lineItems = [];
     const gstType = "EXEMPTOUTPUT"; // GST Free for NDIS
-    const nowISO = new Date().toISOString();
+    const nowISO = getDateOnlyIso(new Date(), timezone);
     const groupSize = Number(invoiceValues['Group Size']) || 1;
 
     // Get valid account codes
@@ -1434,7 +1439,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
     // Fallbacks for required fields
     const firstLine = lineItems[0] || {};
     // Use current date in ISO format if missing
-    const nowISO = new Date().toISOString();
+    const nowISO = getDateOnlyIso(new Date(), business?.headOfficeTimezone || 'Australia/Sydney');
     const mappedQuote = {
       issueDate: NDISQuoteValues['Issue Date'] || nowISO,
       expiryDate: NDISQuoteValues['Expiry Date'] || nowISO,
@@ -1694,39 +1699,61 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
 
     const participantProfile = getParticipantProfileFields(participantProfileItem);
 
-    const email = (participantProfile.email || '').toString().trim();
-    const firstName = (participantProfile.firstName || '').toString().trim();
-    const lastName = (participantProfile.lastName || '').toString().trim();
+    const billingContact = (participantProfile.billingContact || '').toString().trim();
+    const email = (participantProfile.billingEmail || '').toString().trim();
+
+    if (!billingContact) {
+      throw new Error(
+        'Billing Contact is required for NDIS invoice contact creation. Please ensure the Participant Profile has a Billing Contact.'
+      );
+    }
+
+    const firstName = billingContact.split(' ')[0] || '';
+    const lastName = billingContact.split(' ').slice(1).join(' ') || '';
 
     let contact = email ? await getContactByEmail(email) : null;
     if (!contact) {
-      if (!firstName || !lastName) {
-        throw new Error(
-          'First name and last name are required for NDIS invoice contact creation. Please ensure the participant profile contains both first and last name.'
-        );
+      const nameContact = await getContactByName(billingContact);
+      if (nameContact) {
+        if (email && participantProfile.updatedAt) {
+          const xeroUpdated = new Date(nameContact.updatedDateUTC);
+          const isoUpdated = new Date(participantProfile.updatedAt);
+          if (!isNaN(isoUpdated.getTime()) && !isNaN(xeroUpdated.getTime()) && isoUpdated > xeroUpdated) {
+            contact = await createOrUpdateContact({ contactID: nameContact.contactID, EmailAddress: email });
+          } else {
+            contact = nameContact;
+          }
+        } else {
+          contact = nameContact;
+        }
       }
-      contact = await createOrUpdateContact({
-        name: participantProfile.fullName || participantProfile.displayName || `${firstName} ${lastName}`,
-        firstName,
-        lastName,
-        addresses: [
+    }
+    if (!contact) {
+      const addressParts = (participantProfile.billingAddress || '').trim()
+        ? participantProfile.billingAddress.split(',').map(p => p.trim()).filter(p => p)
+        : [];
+
+      const contactPayload = {
+        Name: billingContact,
+        FirstName: firstName,
+        LastName: lastName,
+        ContactStatus: 'ACTIVE',
+        EmailAddress: email || undefined,
+      };
+
+      if (addressParts.length >= 1) {
+        contactPayload.Addresses = [
           {
-            addressType: 'POBOX',
-            addressLine1: participantProfile.address || ' ',
-            city: participantProfile.suburb || ' ',
-            region: participantProfile.state || ' ',
-            postalCode: (participantProfile.postcode || '').toString() || ' ',
+            AddressType: 'STREET',
+            AddressLine1: addressParts[0],
+            City: addressParts[1] || undefined,
+            Region: addressParts[2] || undefined,
+            PostalCode: addressParts[3] || undefined,
           },
-          {
-            addressType: 'STREET',
-            addressLine1: participantProfile.address || ' ',
-            city: participantProfile.suburb || ' ',
-            region: participantProfile.state || ' ',
-            postalCode: (participantProfile.postcode || '').toString() || ' ',
-          },
-        ],
-        emailAddress: email || undefined,
-      });
+        ];
+      }
+
+      contact = await createOrUpdateContact(contactPayload);
     }
 
     const invoiceDateRaw = req.body?.invoiceDate || new Date().toISOString();

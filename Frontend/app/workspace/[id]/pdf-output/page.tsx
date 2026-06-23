@@ -34,6 +34,7 @@ import {
 import { useState, useEffect } from "react";
 import { PDFOutput } from "./types";
 import axios from "@/app/utils/axiosConfig";
+import { formatDateTimeDDMMYYYY } from "@/lib/timezone";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -45,6 +46,7 @@ export default function PDFOutputPage() {
     const [selectedSignatureProvider, setSelectedSignatureProvider] = useState<string | null>("docusign");
     const [currentPage, setCurrentPage] = useState(1);
     const [allPdfOutputs, setAllPdfOutputs] = useState<PDFOutput[]>([]);
+    const [businessTimezone, setBusinessTimezone] = useState<string>("Australia/Sydney");
     const usageData = [
         {
             type: "Purchase Order",
@@ -74,6 +76,16 @@ export default function PDFOutputPage() {
     ];
 
     useEffect(() => {
+        if (!id) return;
+        const abort = new AbortController();
+        axios
+            .get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`, { params: { workspaceId: id }, signal: abort.signal })
+            .then(res => { if (res.data?.headOfficeTimezone) setBusinessTimezone(res.data.headOfficeTimezone); })
+            .catch(err => { if (err.name !== "CanceledError" && err.name !== "AbortError") console.error(err); });
+        return () => abort.abort();
+    }, [id]);
+
+    useEffect(() => {
         const abortController = new AbortController();
 
         const fetchPDFOutputHistory = async () => {
@@ -90,15 +102,7 @@ export default function PDFOutputPage() {
                     const result = response.data.map((item: any) => ({
                         id: item.itemId,
                         type: item.type,
-                        createdAt: new Date(item.createdAt).toLocaleString('en-AU', {
-                            month: 'numeric',
-                            day: 'numeric',
-                            year: 'numeric',
-                            hour: 'numeric',
-                            minute: 'numeric',
-                            second: 'numeric',
-                            hour12: true
-                        }),
+                        createdAt: item.createdAt,
                         createdBy: item.createdBy,
                         signatureProvider: "ISOPlus",
                         signed: item.SignatureStatus,
@@ -269,7 +273,7 @@ export default function PDFOutputPage() {
                                             onClick={() => router.push(`/workspace/${id}/pdf-output/${output.id}`)}
                                         >
                                             <TableCell>{output.type}</TableCell>
-                                            <TableCell>{new Date(output.createdAt).toLocaleString('en-AU')}</TableCell>
+                                            <TableCell>{formatDateTimeDDMMYYYY(output.createdAt, businessTimezone) || "—"}</TableCell>
                                             <TableCell>{output.createdBy}</TableCell>
                                             <TableCell>
                                                 {output.signed ? (

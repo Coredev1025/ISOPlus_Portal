@@ -2,7 +2,7 @@ import axios from 'axios';
 import { info, error, warn } from '../utils/logger.js';
 
 const ISO_PLUS_API_BASE = 'https://app.isoplus.online/api/v2';
-const ISO_PLUS_API_VERSION = '2025-02-26.morava';
+const ISO_PLUS_API_VERSION = '2026-04-20.morava';
 
 /**
  * Get all hooks for a board

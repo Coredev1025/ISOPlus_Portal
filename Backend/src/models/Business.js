@@ -89,6 +89,10 @@ const businessSchema = new mongoose.Schema({
       type: String
     }
   },
+  headOfficeTimezone: {
+    type: String,
+    default: 'Australia/Sydney'
+  },
   documentNumbering: {
     invoice: {
       prefix: {
