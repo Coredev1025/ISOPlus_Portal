@@ -131,8 +131,8 @@ function addDaysDateOnlyUTC(yyyyMmDd: string, days: number) {
   return `${dt.getUTCFullYear()}-${pad2(dt.getUTCMonth() + 1)}-${pad2(dt.getUTCDate())}`;
 }
 
-function getDefaultInvoiceDates() {
-  const invoiceDate = formatDateOnlyInTimeZone(new Date(), SYDNEY_TIME_ZONE);
+function getDefaultInvoiceDates(timeZone: string = SYDNEY_TIME_ZONE) {
+  const invoiceDate = formatDateOnlyInTimeZone(new Date(), timeZone);
   const dueDate = addDaysDateOnlyUTC(invoiceDate, 14);
   return { invoiceDate, dueDate };
 }
@@ -257,6 +257,7 @@ export default function InvoiceGenerator() {
   const [showHelpDialog, setShowHelpDialog] = useState(false);
   const [generatingPDF, setGeneratingPDF] = useState(false);
   const [generatingXero, setGeneratingXero] = useState(false);
+  const [businessTimezone, setBusinessTimezone] = useState<string>("Australia/Sydney");
 
   const clearAllFilters = useCallback(() => {
     setParticipantFilter("all");
@@ -276,6 +277,16 @@ export default function InvoiceGenerator() {
       setCurrentWorkspaceId(null);
     };
   }, [id, setCurrentWorkspaceId]);
+
+  useEffect(() => {
+    if (!id) return;
+    const abort = new AbortController();
+    axios
+      .get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`, { params: { workspaceId: id }, signal: abort.signal })
+      .then(res => { if (res.data?.headOfficeTimezone) setBusinessTimezone(res.data.headOfficeTimezone); })
+      .catch(err => { if (err.name !== "CanceledError" && err.name !== "AbortError") console.error(err); });
+    return () => abort.abort();
+  }, [id]);
 
   useEffect(() => {
     const fetchBoardLabel = async () => {
@@ -974,7 +985,9 @@ export default function InvoiceGenerator() {
   const formatDate = (dateString: string | null) => {
     if (!dateString) return '-';
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '-';
     return date.toLocaleDateString('en-AU', {
+      timeZone: businessTimezone,
       day: '2-digit',
       month: '2-digit',
       year: '2-digit',
@@ -1995,7 +2008,7 @@ export default function InvoiceGenerator() {
   const handleOpenInvoiceModal = () => {
     setSelectedItems(new Set()); // Reset selected items
     // Set default dates
-    const { invoiceDate: defaultInvoiceDate, dueDate: defaultDueDate } = getDefaultInvoiceDates();
+    const { invoiceDate: defaultInvoiceDate, dueDate: defaultDueDate } = getDefaultInvoiceDates(businessTimezone);
     setInvoiceDate(defaultInvoiceDate);
     setDueDate(defaultDueDate);
     setShowInvoiceModal(true);

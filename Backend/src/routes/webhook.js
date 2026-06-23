@@ -33,6 +33,8 @@ import {
     buildNdisMasterPlanServiceRows,
     extractRefId as extractNdisRefId,
     formatDdMmYyyy,
+    formatDateInValueZone,
+    formatDateTimeInValueZone,
 } from '../utils/ndisServiceRecords.js';
 import {
     getNdisInvoiceGeneratorContextFromMasterItems,
@@ -2068,7 +2070,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                 const invoiceDate = invoiceValues["Invoice Date"] ? invoiceValues["Invoice Date"].replace('Z', '') : "";
                 const dueDate = invoiceValues["Due Date"] ? invoiceValues["Due Date"].replace('Z', '') : "";
 
-                const dateOnly = (d) => d ? new Date(d).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+                const tz = business?.headOfficeTimezone || 'Australia/Sydney';
+                const dateOnly = (d) => d ? new Date(d).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: tz }) : '';
                 const scheduledShiftStart =
                     invoiceValues["Scheduled Shift Start Date & Time"] ||
                     invoiceValues["Scheduled Shift Start Date and Time"] ||
@@ -2094,8 +2097,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                         const unitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) / groupSize || 0;
                         const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
                         const itemName1 = servicePlanValues?.directSupportItemName || '';
-                        const startTime1 = invoiceValues["Actual Shift Start Date and Time"] ? new Date(invoiceValues["Actual Shift Start Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-                        const endTime1 = invoiceValues["Actual Shift End Date and Time"] ? new Date(invoiceValues["Actual Shift End Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+                        const startTime1 = invoiceValues["Actual Shift Start Date and Time"] ? new Date(invoiceValues["Actual Shift Start Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: tz }) : '';
+                        const endTime1 = invoiceValues["Actual Shift End Date and Time"] ? new Date(invoiceValues["Actual Shift End Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: tz }) : '';
                         let qty1 = 0;
                         let actualShiftDuration1 = Number(invoiceValues["Actual Shift Duration(Hr.)"]);
                         if (typeof actualShiftDuration1 === 'number' && !isNaN(actualShiftDuration1)) {
@@ -2691,12 +2694,13 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
 
         let subTotalNum = 0;
         const gstLabel = 'GST Free';
+        const invoiceGenTz = business?.headOfficeTimezone || 'Australia/Sydney';
         const ordersArr = allRows.map((r) => {
             const jobStatus = (r.jobStatus || '').toString().trim().toLowerCase();
             const dateIso = jobStatus === 'cancelled'
                 ? (r.scheduledServiceDate || r.serviceDeliveryDate || '')
                 : (r.serviceDeliveryDate || r.scheduledServiceDate || '');
-            const rowDate = formatDdMmYyyy(dateIso) || ' ';
+            const rowDate = formatDdMmYyyy(dateIso, invoiceGenTz) || ' ';
 
             subTotalNum += Number(r.totalAmount || 0);
             return [
@@ -3131,7 +3135,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             statementData,
             businessDetails,
             chartImage,
-            timezone,
+            timezone: clientTimezone,
             startDate: requestStartDate,
             endDate: requestEndDate
         } = req.body;
@@ -3141,6 +3145,7 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
         }
 
         const business = await getValidatedBusiness(workspaceId);
+        const timezone = business?.headOfficeTimezone || clientTimezone || 'Australia/Sydney';
 
         try {
             // Use the monthlyStatement.json template
@@ -3188,14 +3193,28 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
                 }
             }
 
-            // Fallback: compute a UTC month range when request didn't provide valid dates.
+            // Fallback: compute a timezone-aware month range when request didn't provide valid dates.
             if ((!startDate || !endDate) && monthNum && yearVal) {
                 const mi = Number(monthNum) - 1, yi = Number(yearVal);
                 if (!isNaN(mi) && !isNaN(yi)) {
-                    const computedStart = new Date(Date.UTC(yi, mi, 1)).toISOString();
-                    const computedEnd = new Date(Date.UTC(yi, mi + 1, 0, 23, 59, 59, 999)).toISOString();
-                    startDate = startDate || computedStart;
-                    endDate = endDate || computedEnd;
+                    const getUtcOffsetMs = (at, timeZone) => {
+                        const toMs = (tz) => {
+                            const parts = new Intl.DateTimeFormat('en-CA', {
+                                timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+                                hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+                            }).formatToParts(at);
+                            const get = (t) => Number(parts.find((p) => p.type === t)?.value ?? '0');
+                            return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
+                        };
+                        return toMs(timeZone) - toMs('UTC');
+                    };
+                    const lastDay = new Date(Date.UTC(yi, mi + 1, 0));
+                    const firstNoon = new Date(Date.UTC(yi, mi, 1, 12, 0, 0));
+                    const lastNoon = new Date(Date.UTC(yi, mi + 1, 0, 12, 0, 0));
+                    const startOffset = getUtcOffsetMs(firstNoon, timezone);
+                    const endOffset = getUtcOffsetMs(lastNoon, timezone);
+                    startDate = startDate || new Date(Date.UTC(yi, mi, 1) - startOffset).toISOString();
+                    endDate = endDate || new Date(Date.UTC(lastDay.getUTCFullYear(), lastDay.getUTCMonth(), lastDay.getUTCDate(), 23, 59, 59, 999) - endOffset).toISOString();
                 }
             }
 

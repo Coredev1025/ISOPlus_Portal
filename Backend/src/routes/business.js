@@ -165,7 +165,7 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
   try {
     const workspaceId = req.body.workspaceId?.toString();
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
-    const { name, phone, email, abn, acn, companyRegistrationId, state, suburb, country, postcode, street, bankAccountName, bankName, bsb, accountNumber, paymentReference, accountsReceivableTerms, accountsPayableTerms } = req.body;
+    const { name, phone, email, abn, acn, companyRegistrationId, state, suburb, country, postcode, street, bankAccountName, bankName, bsb, accountNumber, paymentReference, accountsReceivableTerms, accountsPayableTerms, headOfficeTimezone } = req.body;
     const files = req.files || {};
     const parseBoolean = (value) => value === true || value === 'true';
     const { defaultLogoRemoved, squareLogoRemoved, wideLogoRemoved } = req.body;
@@ -201,7 +201,8 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
         accountsReceivableTerms,
         accountsPayableTerms
       },
-      documentNumbering
+      documentNumbering,
+      headOfficeTimezone: headOfficeTimezone || 'Australia/Sydney'
     };
 
     // Handle file uploads to S3
