@@ -97,6 +97,7 @@ export function getParticipantProfileFields(participantProfileItem) {
   return {
     displayName,
     billingContact: get('Billing Contact'),
+    billingEmail: get('Billing Email'),
     billingAddress: get('Billing Address'),
     firstName,
     lastName,

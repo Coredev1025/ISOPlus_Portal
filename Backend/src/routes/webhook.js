@@ -2651,7 +2651,8 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
             const spId = extractNdisRefId(masterPlanItem?.data?.[NDIS_MASTERPLAN_ATTR_DB.SERVICE_PLAN]);
             const servicePlanItem = spId ? refItemsMap.get(spId) : null;
             if (!servicePlanItem) {
-                throw new Error('Master plan information is required. Master plan is missing a service plan reference.');
+                warn('Webhook-Service', 'Master plan item skipped — missing service plan reference', { itemId: masterPlanItem?.itemId, spId });
+                continue;
             }
 
             const ctId = extractNdisRefId(masterPlanItem?.data?.['Cancellation Type']);
