@@ -947,7 +947,7 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
         }
 
         const business = await Business.findOne({ workspaceId: workspaceId.toString() })
-            .select('abn companyRegistrationId')
+            .select('abn companyRegistrationId headOfficeTimezone')
             .lean();
 
         const registrationNumber = sanitizeDigits(business?.companyRegistrationId || '', 30);
@@ -1309,6 +1309,7 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
                 cancellationTypeItem,
                 invoiceNumber: claimReference,
                 invoicePdfLink: null,
+                timeZone: business?.headOfficeTimezone || 'Australia/Sydney',
             });
 
             // Resolve cancellation reason label/code once per source item

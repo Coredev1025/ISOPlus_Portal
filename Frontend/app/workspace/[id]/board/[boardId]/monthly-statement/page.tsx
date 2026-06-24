@@ -26,7 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import axios from "@/app/utils/axiosConfig";
 import { useAppContext } from "@/app/context";
 import { fetchMonthlyStatementItems } from "@/app/utils/items";
-import { format, isValid, parse } from "date-fns";
+import { format } from "date-fns";
 import Spinner from "@/components/ui/spin";
 import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast } from "@/lib/toast-utils";
 import { isCareManagementLabel, isLowCatCareManagementLabel } from "@/lib/access";
@@ -858,14 +858,11 @@ export default function MonthlyStatement() {
   };
 
   const formatDateForCsv = (dateString: string | null | undefined) => {
-    if (!dateString) {
-      return '';
+    if (!dateString) return '';
+    if (typeof dateString === 'string' && /^\d{2}\/\d{2}\/\d{4}$/.test(dateString.trim())) {
+      return dateString.trim();
     }
-    const date = new Date(dateString);
-    if (Number.isNaN(date.getTime())) {
-      return dateString;
-    }
-    return format(date, 'dd/MM/yyyy');
+    return formatDateDDMMYYYY(dateString, businessTimezone) || '';
   };
 
   const handleServicePageChange = (page: number) => {
@@ -1820,7 +1817,7 @@ export default function MonthlyStatement() {
           startDate: dateRange.startDate,
           endDate: dateRange.endDate,
           businessDetails,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          timezone: businessTimezone,
           ...(chartImage ? { chartImage } : {}),
         }
         ,
@@ -2211,18 +2208,10 @@ export default function MonthlyStatement() {
   const formatDate = (dateString: string | null | undefined) => {
     if (!dateString) return 'N/A';
     try {
-      if (typeof dateString === 'string') {
-        const trimmed = dateString.trim();
-        if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
-          return trimmed;
-        }
-        const parsedLocal = parse(trimmed, 'dd/MM/yyyy', new Date());
-        if (isValid(parsedLocal)) {
-          return format(parsedLocal, 'dd/MM/yyyy');
-        }
+      if (typeof dateString === 'string' && /^\d{2}\/\d{2}\/\d{4}$/.test(dateString.trim())) {
+        return dateString.trim();
       }
-      const result = formatDateDDMMYYYY(dateString, businessTimezone);
-      return result || 'N/A';
+      return formatDateDDMMYYYY(dateString, businessTimezone) || 'N/A';
     } catch (e) {
       return 'N/A';
     }

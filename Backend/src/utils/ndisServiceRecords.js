@@ -443,11 +443,11 @@ function buildSimpleItemDesc({ itemNumber, itemName, fallback }) {
   return desc;
 }
 
-function formatDateTimeForDesc(value) {
+function formatDateTimeForDesc(value, timeZone = SYDNEY_TIME_ZONE) {
   if (!value) return '';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone });
 }
 
 export function buildNdisMasterPlanServiceRows({
@@ -459,6 +459,7 @@ export function buildNdisMasterPlanServiceRows({
   cancellationTypeItem,
   invoiceNumber,
   invoicePdfLink,
+  timeZone = SYDNEY_TIME_ZONE,
 }) {
   const rows = [];
   const itemId = masterPlanItem?.itemId;
@@ -526,8 +527,8 @@ export function buildNdisMasterPlanServiceRows({
     scheduledDurationHr = computeDurationHr(scheduledStart, scheduledEnd);
   }
 
-  const scheduledServiceDate = getDateOnlyIso(scheduledStart);
-  const serviceDeliveryDate = getDateOnlyIso(actualStart);
+  const scheduledServiceDate = scheduledStart || null;
+  const serviceDeliveryDate = actualStart || null;
 
   const status = invoiceNumber ? 'invoiced' : 'pending';
 
@@ -619,8 +620,8 @@ export function buildNdisMasterPlanServiceRows({
   );
   const centreCapitalItemName = getSupportItemName(supportCatalogue?.centreCapital, '');
 
-  const actualStartDesc = formatDateTimeForDesc(actualStart);
-  const actualEndDesc = formatDateTimeForDesc(actualEnd);
+  const actualStartDesc = formatDateTimeForDesc(actualStart, timeZone);
+  const actualEndDesc = formatDateTimeForDesc(actualEnd, timeZone);
   const serviceDeliveryModeValue = getValueMulti(masterPlanItem, [
     NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE,
     'Service Delivery Mode',

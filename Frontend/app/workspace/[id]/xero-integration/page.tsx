@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import axios from "@/app/utils/axiosConfig";
 import { Header } from "@/components/ui/header";
+import { showErrorToast, showSuccessToast } from "@/lib/toast-utils";
 
 export default function XeroIntegrationPage() {
   const router = useRouter();
@@ -97,15 +98,17 @@ export default function XeroIntegrationPage() {
                   tokens: event.data.tokenSet,
                   organization: event.data.organization
                 },
-                { 
+                {
                   signal: abortController.signal
                 }
               );
               setIsConnected(true);
               setOrganizationInfo(event.data.organization);
               setResultContent('Successfully connected to Xero!');
+              showSuccessToast('Successfully connected to Xero!');
             } else {
               setResultContent('Error completing Xero connection. Please try again.');
+              showErrorToast('Failed to connect to Xero', { description: 'Could not complete the Xero authentication. Please try again.' });
             }
             window.removeEventListener('message', handleMessage);
             if (popup) popup.close();
@@ -117,11 +120,17 @@ export default function XeroIntegrationPage() {
           window.removeEventListener('message', handleMessage);
           abortController.abort();
         };
+      } else if (!abortController.signal.aborted) {
+        const reason = response.data.error || response.data.message || 'Failed to get Xero redirect URL.';
+        setResultContent(`Error: ${reason}`);
+        showErrorToast('Failed to connect to Xero', { description: reason });
       }
     } catch (error: any) {
       if (error.name != "CanceledError" && error.name != "AbortError") {
         console.error(error);
-        setResultContent('Error initiating Xero connection. Please try again.');
+        const reason = (error as any).response?.data?.error || (error as any).response?.data?.message || error.message || 'Please try again.';
+        setResultContent(`Error: ${reason}`);
+        showErrorToast('Failed to connect to Xero', { description: reason });
       }
     } finally {
       if (!abortController.signal.aborted) {
@@ -198,15 +207,17 @@ export default function XeroIntegrationPage() {
                   tokens: event.data.tokenSet,
                   organization: event.data.organization
                 },
-                { 
+                {
                   signal: abortController.signal
                 }
               );
               setIsConnected(true);
               setOrganizationInfo(event.data.organization);
               setResultContent('Successfully connected to Xero!');
+              showSuccessToast('Successfully reconnected to Xero!');
             } else {
               setResultContent('Error completing Xero connection. Please try again.');
+              showErrorToast('Failed to reconnect to Xero', { description: 'Could not complete the Xero authentication. Please try again.' });
             }
             window.removeEventListener('message', handleMessage);
             if (popup) popup.close();
@@ -218,11 +229,17 @@ export default function XeroIntegrationPage() {
           window.removeEventListener('message', handleMessage);
           abortController.abort();
         };
+      } else if (!abortController.signal.aborted) {
+        const reason = response.data.error || response.data.message || 'Failed to get Xero redirect URL.';
+        setResultContent(`Error: ${reason}`);
+        showErrorToast('Failed to reconnect to Xero', { description: reason });
       }
     } catch (error: any) {
       if (error.name != "CanceledError" && error.name != "AbortError") {
         console.error(error);
-        setResultContent('Error initiating Xero connection. Please try again.');
+        const reason = (error as any).response?.data?.error || (error as any).response?.data?.message || error.message || 'Please try again.';
+        setResultContent(`Error: ${reason}`);
+        showErrorToast('Failed to reconnect to Xero', { description: reason });
       }
     } finally {
       if (!abortController.signal.aborted) {

@@ -41,6 +41,7 @@ import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format, formatDistanceToNow } from "date-fns";
 import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast } from "@/lib/toast-utils";
 import { canAccessWorkspace, isCareManagementLabel } from "@/lib/access";
+import { dateToStartOfDayISO, dateToEndOfDayISO, formatDateOnlyYYYYMMDD, formatDateDDMMYYYY } from "@/lib/timezone";
 import {
   Dialog,
   DialogContent,
@@ -283,7 +284,15 @@ export default function InvoiceGenerator() {
     const abort = new AbortController();
     axios
       .get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`, { params: { workspaceId: id }, signal: abort.signal })
-      .then(res => { if (res.data?.headOfficeTimezone) setBusinessTimezone(res.data.headOfficeTimezone); })
+      .then(res => {
+        if (res.data?.headOfficeTimezone) {
+          const tz = res.data.headOfficeTimezone;
+          setBusinessTimezone(tz);
+          const dates = getDefaultInvoiceDates(tz);
+          setInvoiceDate(dates.invoiceDate);
+          setDueDate(dates.dueDate);
+        }
+      })
       .catch(err => { if (err.name !== "CanceledError" && err.name !== "AbortError") console.error(err); });
     return () => abort.abort();
   }, [id]);
@@ -656,27 +665,19 @@ export default function InvoiceGenerator() {
         }
 
         if (scheduledServiceDateRange?.from) {
-          const from = new Date(scheduledServiceDateRange.from);
-          from.setHours(0, 0, 0, 0);
-          params.append('startDate', from.toISOString());
+          params.append('startDate', dateToStartOfDayISO(new Date(scheduledServiceDateRange.from), businessTimezone));
         }
         if (scheduledServiceDateRange?.to || scheduledServiceDateRange?.from) {
           const toSource = scheduledServiceDateRange?.to || scheduledServiceDateRange?.from;
-          const to = new Date(toSource as Date);
-          to.setHours(23, 59, 59, 999);
-          params.append('endDate', to.toISOString());
+          params.append('endDate', dateToEndOfDayISO(new Date(toSource as Date), businessTimezone));
         }
 
         if (serviceDeliveryDateRange?.from) {
-          const from = new Date(serviceDeliveryDateRange.from);
-          from.setHours(0, 0, 0, 0);
-          params.append('serviceDeliveryStart', from.toISOString());
+          params.append('serviceDeliveryStart', dateToStartOfDayISO(new Date(serviceDeliveryDateRange.from), businessTimezone));
         }
         if (serviceDeliveryDateRange?.to || serviceDeliveryDateRange?.from) {
           const toSource = serviceDeliveryDateRange?.to || serviceDeliveryDateRange?.from;
-          const to = new Date(toSource as Date);
-          to.setHours(23, 59, 59, 999);
-          params.append('serviceDeliveryEnd', to.toISOString());
+          params.append('serviceDeliveryEnd', dateToEndOfDayISO(new Date(toSource as Date), businessTimezone));
         }
 
         const transactionStatusParam = getTransactionStatusSearchValue(transactionStatusFilter);
@@ -816,30 +817,21 @@ export default function InvoiceGenerator() {
           params.append('jobStatus', jobStatusFilter);
         }
 
-        // Date range filter for scheduled service dates
+        // Date range filter for scheduled service dates (use head office timezone boundaries)
         if (scheduledServiceDateRange?.from) {
-          const from = new Date(scheduledServiceDateRange.from);
-          from.setHours(0, 0, 0, 0); // start of day local
-          params.append('startDate', from.toISOString());
+          params.append('startDate', dateToStartOfDayISO(new Date(scheduledServiceDateRange.from), businessTimezone));
         }
         if (scheduledServiceDateRange?.to || scheduledServiceDateRange?.from) {
-          // If only one date picked, use same day end-of-day
           const toSource = scheduledServiceDateRange?.to || scheduledServiceDateRange?.from;
-          const to = new Date(toSource as Date);
-          to.setHours(23, 59, 59, 999); // end of day local
-          params.append('endDate', to.toISOString());
+          params.append('endDate', dateToEndOfDayISO(new Date(toSource as Date), businessTimezone));
         }
 
         if (serviceDeliveryDateRange?.from) {
-          const from = new Date(serviceDeliveryDateRange.from);
-          from.setHours(0, 0, 0, 0);
-          params.append('serviceDeliveryStart', from.toISOString());
+          params.append('serviceDeliveryStart', dateToStartOfDayISO(new Date(serviceDeliveryDateRange.from), businessTimezone));
         }
         if (serviceDeliveryDateRange?.to || serviceDeliveryDateRange?.from) {
           const toSource = serviceDeliveryDateRange?.to || serviceDeliveryDateRange?.from;
-          const to = new Date(toSource as Date);
-          to.setHours(23, 59, 59, 999);
-          params.append('serviceDeliveryEnd', to.toISOString());
+          params.append('serviceDeliveryEnd', dateToEndOfDayISO(new Date(toSource as Date), businessTimezone));
         }
 
         params.append('sortBy', sortBy);
@@ -1013,7 +1005,8 @@ export default function InvoiceGenerator() {
 
   const formatDisplayDate = (dateString: string | null | undefined) => {
     if (!dateString) return '-';
-    return dateString;
+    const formatted = formatDateDDMMYYYY(dateString, businessTimezone);
+    return formatted || '-';
   };
 
   const stripHtml = (value?: string) => {
@@ -1145,11 +1138,7 @@ export default function InvoiceGenerator() {
     if (!dateString) {
       return '';
     }
-    const date = new Date(dateString);
-    if (Number.isNaN(date.getTime())) {
-      return '';
-    }
-    return date.toISOString().split('T')[0];
+    return formatDateOnlyYYYYMMDD(dateString, businessTimezone);
   };
 
   const formatNumberForCsv = (value: number | string | undefined | null) => {
@@ -1496,25 +1485,17 @@ export default function InvoiceGenerator() {
           params.append('participant', participantFilter);
         }
         if (scheduledServiceDateRange?.from) {
-          const from = new Date(scheduledServiceDateRange.from);
-          from.setHours(0, 0, 0, 0);
-          params.append('startDate', from.toISOString());
+          params.append('startDate', dateToStartOfDayISO(new Date(scheduledServiceDateRange.from), businessTimezone));
         }
         if (scheduledServiceDateRange?.to) {
-          const to = new Date(scheduledServiceDateRange.to);
-          to.setHours(23, 59, 59, 999);
-          params.append('endDate', to.toISOString());
+          params.append('endDate', dateToEndOfDayISO(new Date(scheduledServiceDateRange.to), businessTimezone));
         }
 
         if (serviceDeliveryDateRange?.from) {
-          const from = new Date(serviceDeliveryDateRange.from);
-          from.setHours(0, 0, 0, 0);
-          params.append('serviceDeliveryStart', from.toISOString());
+          params.append('serviceDeliveryStart', dateToStartOfDayISO(new Date(serviceDeliveryDateRange.from), businessTimezone));
         }
         if (serviceDeliveryDateRange?.to) {
-          const to = new Date(serviceDeliveryDateRange.to);
-          to.setHours(23, 59, 59, 999);
-          params.append('serviceDeliveryEnd', to.toISOString());
+          params.append('serviceDeliveryEnd', dateToEndOfDayISO(new Date(serviceDeliveryDateRange.to), businessTimezone));
         }
 
         if (paymentStatusFilter !== 'all') {
@@ -1641,25 +1622,17 @@ export default function InvoiceGenerator() {
         params.append('participant', participantFilter);
       }
       if (scheduledServiceDateRange?.from) {
-        const from = new Date(scheduledServiceDateRange.from);
-        from.setHours(0, 0, 0, 0);
-        params.append('startDate', from.toISOString());
+        params.append('startDate', dateToStartOfDayISO(new Date(scheduledServiceDateRange.from), businessTimezone));
       }
       if (scheduledServiceDateRange?.to) {
-        const to = new Date(scheduledServiceDateRange.to);
-        to.setHours(23, 59, 59, 999);
-        params.append('endDate', to.toISOString());
+        params.append('endDate', dateToEndOfDayISO(new Date(scheduledServiceDateRange.to), businessTimezone));
       }
 
       if (serviceDeliveryDateRange?.from) {
-        const from = new Date(serviceDeliveryDateRange.from);
-        from.setHours(0, 0, 0, 0);
-        params.append('serviceDeliveryStart', from.toISOString());
+        params.append('serviceDeliveryStart', dateToStartOfDayISO(new Date(serviceDeliveryDateRange.from), businessTimezone));
       }
       if (serviceDeliveryDateRange?.to) {
-        const to = new Date(serviceDeliveryDateRange.to);
-        to.setHours(23, 59, 59, 999);
-        params.append('serviceDeliveryEnd', to.toISOString());
+        params.append('serviceDeliveryEnd', dateToEndOfDayISO(new Date(serviceDeliveryDateRange.to), businessTimezone));
       }
 
       const transactionStatusParam = getTransactionStatusSearchValue(transactionStatusFilter);
@@ -2093,6 +2066,13 @@ export default function InvoiceGenerator() {
       if (resp.status === 200 && resp.data) {
         const { invoiceNumber, fileUrl, itemCount } = resp.data;
 
+        if (!invoiceNumber) {
+          isGeneratingInvoiceRef.current = false;
+          const reason = resp.data.message || 'Invoice could not be generated.';
+          showErrorToast(`Failed to generate ${invoiceLabel}`, { description: reason });
+          return;
+        }
+
         if (!isNdisBoard) {
           try {
             const updateUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/update-status`;
@@ -2217,6 +2197,13 @@ export default function InvoiceGenerator() {
 
       if (resp.status === 200 && resp.data) {
         const { invoiceNumber, invoiceUrl, itemCount } = resp.data;
+
+        if (!invoiceNumber) {
+          isGeneratingInvoiceRef.current = false;
+          const reason = resp.data.message || 'Invoice could not be created in Xero.';
+          showErrorToast(`Failed to generate Xero ${invoiceLabel}`, { description: reason });
+          return;
+        }
 
         if (!isNdisBoard) {
           try {

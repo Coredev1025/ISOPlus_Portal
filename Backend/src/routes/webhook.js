@@ -844,6 +844,13 @@ function formatDateToAU(value, timezone) {
     return new Intl.DateTimeFormat('en-AU', options).format(date);
 }
 
+function formatDateNumericAU(value, timeZone) {
+    if (!value) return new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric', timeZone: timeZone || 'Australia/Sydney' });
+    const d = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric', timeZone: timeZone || 'Australia/Sydney' });
+}
+
 function safeString(value) {
     if (!value) return '';
     if (typeof value === 'string') return value;
@@ -1574,7 +1581,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                             total: total,
                             clientDetails: JSON.stringify(clientDetails),
                             invoiceDetails: JSON.stringify({
-                                Date: invoiceDate && invoiceDate != "" ? new Date(invoiceDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                                Date: formatDateNumericAU(invoiceDate || null, business?.headOfficeTimezone),
                                 "Invoice Number": invoiceNumber
                             }),
                             companyName: JSON.stringify({ "Company Name": business.name }),
@@ -1587,7 +1594,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                                 Country: business.address.country
                             }),
                             orders: invoiceDescription,
-                            "dueDate": dueDate && dueDate != "" ? new Date(dueDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                            "dueDate": formatDateNumericAU(dueDate || null, business?.headOfficeTimezone),
                             "Bank Details": JSON.stringify({
                                 "Account Name": business.bankDetails.accountName,
                                 "Bank Name": business.bankDetails.bankName,
@@ -1681,8 +1688,8 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                         Country: business.address.country
                     }),
                     quoteDetails: JSON.stringify({
-                        "Issue Date": issueDate && issueDate != "" ? new Date(issueDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
-                        "expiry Date": deliveryDate && deliveryDate != "" ? new Date(deliveryDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                        "Issue Date": formatDateNumericAU(issueDate || null, business?.headOfficeTimezone),
+                        "expiry Date": formatDateNumericAU(deliveryDate || null, business?.headOfficeTimezone),
                         "PO Number": purchaseOrderNumber
                     }),
                     companyName: JSON.stringify({ "Company Name": business.name }),
@@ -1781,8 +1788,8 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                             total: total,
                             clientDetails: JSON.stringify(clientDetails),
                             quoteDetails: JSON.stringify({
-                                "Issue Date": issueDate && issueDate != "" ? new Date(issueDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
-                                "expiry Date": expiryDate && expiryDate != "" ? new Date(expiryDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                                "Issue Date": formatDateNumericAU(issueDate || null, business?.headOfficeTimezone),
+                                "expiry Date": formatDateNumericAU(expiryDate || null, business?.headOfficeTimezone),
                                 "Quote Number": quoteNumber
                             }),
                             companyName: JSON.stringify({ "Company Name": business.name }),
@@ -1994,8 +2001,8 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                             total: total,
                             clientDetails: JSON.stringify(clientDetails),
                             quoteDetails: JSON.stringify({
-                                "Issue Date": issueDate && issueDate != "" ? new Date(issueDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
-                                "expiry Date": expiryDate && expiryDate != "" ? new Date(expiryDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                                "Issue Date": formatDateNumericAU(issueDate || null, business?.headOfficeTimezone),
+                                "expiry Date": formatDateNumericAU(expiryDate || null, business?.headOfficeTimezone),
                                 "Quote Number": quoteNumber
                             }),
                             companyName: JSON.stringify({ "Company Name": business.name }),
@@ -2012,8 +2019,8 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                                 "Accounts Receivable Payment Terms": `${business.bankDetails.accountsReceivableTerms ? business.bankDetails.accountsReceivableTerms : ' '}`
                             }),
                             field17: JSON.stringify({
-                                "From Date": fromDate && fromDate != "" ? new Date(fromDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
-                                "To Date": toDate && toDate != "" ? new Date(toDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                                "From Date": formatDateNumericAU(fromDate || null, business?.headOfficeTimezone),
+                                "To Date": formatDateNumericAU(toDate || null, business?.headOfficeTimezone),
                                 "Days of the week": daysOfWeek
                             })
                         }
@@ -2547,7 +2554,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                             total: total,
                             clientDetails: JSON.stringify(clientDetails),
                             invoiceDetails: JSON.stringify({
-                                Date: invoiceDate && invoiceDate != "" ? new Date(invoiceDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                                Date: formatDateNumericAU(invoiceDate || null, business?.headOfficeTimezone),
                                 "Invoice Number": invoiceNumber
                             }),
                             companyName: JSON.stringify({ "Company Name": business.name }),
@@ -2560,7 +2567,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                                 Country: business.address.country
                             }),
                             orders: orders,
-                            "dueDate": dueDate && dueDate != "" ? new Date(dueDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }) : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                            "dueDate": formatDateNumericAU(dueDate || null, business?.headOfficeTimezone),
                             "Bank Details": JSON.stringify({
                                 "Account Name": business.bankDetails.accountName,
                                 "Bank Name": business.bankDetails.bankName,
@@ -2680,6 +2687,7 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
                 cancellationTypeItem,
                 invoiceNumber,
                 invoicePdfLink: null,
+                timeZone: business?.headOfficeTimezone || 'Australia/Sydney',
             }));
         }
 
@@ -2735,9 +2743,7 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
                     total: total,
                     clientDetails: JSON.stringify(clientDetails),
                     invoiceDetails: JSON.stringify({
-                        Date: invoiceDate && invoiceDate !== ''
-                            ? new Date(invoiceDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })
-                            : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                        Date: formatDateNumericAU(invoiceDate || null, business?.headOfficeTimezone),
                         'Invoice Number': invoiceNumberBase,
                     }),
                     companyName: JSON.stringify({ 'Company Name': business.name }),
@@ -2750,9 +2756,7 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
                         Country: business.address.country,
                     }),
                     orders: JSON.stringify(ordersArr),
-                    dueDate: dueDate && dueDate !== ''
-                        ? new Date(dueDate).toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' })
-                        : new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+                    dueDate: formatDateNumericAU(dueDate || null, business?.headOfficeTimezone),
                     'Bank Details': JSON.stringify({
                         'Account Name': business.bankDetails.accountName,
                         'Bank Name': business.bankDetails.bankName,
@@ -2852,7 +2856,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
             }
 
             // Helper functions
-            const dateFmt = (d) => d ? new Date(d).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+            const dateFmt = (d) => d ? new Date(d).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: business?.headOfficeTimezone || 'Australia/Sydney' }) : '';
             const toNumber = (v) => typeof v === 'number' ? v : Number(v || 0);
             const fmt = (v) => formatValue(toNumber(v));
 
@@ -3057,7 +3061,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                             "Billing Address": billingAddress
                         }),
                         invoiceDetails: JSON.stringify({
-                            Date: new Date(invoiceDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Australia/Sydney' }),
+                            Date: new Date(invoiceDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: business?.headOfficeTimezone || 'Australia/Sydney' }),
                             "Invoice Number": invoiceNumber
                         }),
                         companyName: JSON.stringify({ "Company Name": business.name }),
@@ -3070,7 +3074,7 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
                             Country: business.address.country
                         }),
                         orders: ordersArr,
-                        "dueDate": new Date(dueDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Australia/Sydney' }),
+                        "dueDate": new Date(dueDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: business?.headOfficeTimezone || 'Australia/Sydney' }),
                         "Bank Details": JSON.stringify({
                             "Account Name": business.bankDetails.accountName,
                             "Bank Name": business.bankDetails.bankName,
