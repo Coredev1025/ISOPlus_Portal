@@ -1100,7 +1100,8 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
         // Participant filter (resolved name from Participant Profile)
         if (participant) {
             try {
-                const participantRegex = new RegExp(participant, 'i');
+                const escapedParticipant = participant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const participantRegex = new RegExp(escapedParticipant, 'i');
                 masterItems = masterItems.filter(item => {
                     const ppId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_PROFILE]);
                     const profileItem = ppId ? refItemsMap.get(ppId) : null;
@@ -1552,7 +1553,8 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
         if (participant) {
             try {
-                const participantRegex = new RegExp(participant, 'i');
+                const escapedParticipant = participant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const participantRegex = new RegExp(escapedParticipant, 'i');
                 filteredItems = filteredItems.filter(p =>
                     participantRegex.test(p.participantName)
                 );
@@ -2911,7 +2913,8 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
 
         if (participant) {
             try {
-                const participantRegex = new RegExp(participant, 'i');
+                const escapedParticipant = participant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const participantRegex = new RegExp(escapedParticipant, 'i');
                 filteredServiceItems = filteredServiceItems.filter(p =>
                     participantRegex.test(p.participantName) ||
                     (p.participantProfileValue && (

@@ -690,7 +690,8 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
 
         // Apply participant filter now that participant names are populated
         if (participant && participant !== 'all') {
-            const participantRegex = new RegExp(participant, 'i');
+            const escapedParticipant = participant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const participantRegex = new RegExp(escapedParticipant, 'i');
             processedItems = processedItems.filter(p => participantRegex.test(p.participantName));
         }
 
@@ -1061,7 +1062,8 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
         // Apply filters (participant, payment status, dates) at item-level
         if (participant) {
             try {
-                const participantRegex = new RegExp(participant, 'i');
+                const escapedParticipant = participant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const participantRegex = new RegExp(escapedParticipant, 'i');
                 masterItems = masterItems.filter(item => {
                     const ppId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_PROFILE]);
                     const profileItem = ppId ? refItemsMap.get(ppId) : null;
