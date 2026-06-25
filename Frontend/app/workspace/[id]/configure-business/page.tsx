@@ -743,6 +743,37 @@ export default function ConfigureBusinessPage() {
                       />
                     </div>
                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="headOfficeTimezone">Head Office Timezone</Label>
+                    <Select
+                      value={formData.headOfficeTimezone}
+                      onValueChange={(value) =>
+                        setFormData((prevData) => ({
+                          ...prevData,
+                          headOfficeTimezone: value,
+                        }))
+                      }
+                    >
+                      <SelectTrigger id="headOfficeTimezone">
+                        <SelectValue placeholder="Select timezone" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</SelectItem>
+                        <SelectItem value="Australia/Melbourne">Australia/Melbourne (AEST/AEDT)</SelectItem>
+                        <SelectItem value="Australia/Brisbane">Australia/Brisbane (AEST)</SelectItem>
+                        <SelectItem value="Australia/Adelaide">Australia/Adelaide (ACST/ACDT)</SelectItem>
+                        <SelectItem value="Australia/Darwin">Australia/Darwin (ACST)</SelectItem>
+                        <SelectItem value="Australia/Perth">Australia/Perth (AWST)</SelectItem>
+                        <SelectItem value="Australia/Hobart">Australia/Hobart (AEST/AEDT)</SelectItem>
+                        <SelectItem value="Pacific/Auckland">Pacific/Auckland (NZST/NZDT)</SelectItem>
+                        <SelectItem value="UTC">UTC</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-sm text-muted-foreground">
+                      Used to display invoice item dates and times in your local time
+                    </p>
+                  </div>
                 </div>
 
                 <div className="space-y-4  border rounded-lg p-5">
@@ -920,36 +951,6 @@ export default function ConfigureBusinessPage() {
                         value={formData.accountsPayableTerms}
                         onChange={handleInputChange}
                       />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="headOfficeTimezone">Head Office Timezone</Label>
-                      <Select
-                        value={formData.headOfficeTimezone}
-                        onValueChange={(value) =>
-                          setFormData((prevData) => ({
-                            ...prevData,
-                            headOfficeTimezone: value,
-                          }))
-                        }
-                      >
-                        <SelectTrigger id="headOfficeTimezone">
-                          <SelectValue placeholder="Select timezone" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</SelectItem>
-                          <SelectItem value="Australia/Melbourne">Australia/Melbourne (AEST/AEDT)</SelectItem>
-                          <SelectItem value="Australia/Brisbane">Australia/Brisbane (AEST)</SelectItem>
-                          <SelectItem value="Australia/Adelaide">Australia/Adelaide (ACST/ACDT)</SelectItem>
-                          <SelectItem value="Australia/Darwin">Australia/Darwin (ACST)</SelectItem>
-                          <SelectItem value="Australia/Perth">Australia/Perth (AWST)</SelectItem>
-                          <SelectItem value="Australia/Hobart">Australia/Hobart (AEST/AEDT)</SelectItem>
-                          <SelectItem value="Pacific/Auckland">Pacific/Auckland (NZST/NZDT)</SelectItem>
-                          <SelectItem value="UTC">UTC</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p className="text-sm text-muted-foreground">
-                        Used to display invoice item dates and times in your local time
-                      </p>
                     </div>
                   </div>
                 </div>
