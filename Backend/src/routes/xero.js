@@ -1840,7 +1840,7 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
         jobStatus === 'cancelled'
           ? r.scheduledServiceDate || r.serviceDeliveryDate || ''
           : r.serviceDeliveryDate || r.scheduledServiceDate || '';
-      const rowDate = formatDdMmYyyy(dateIso);
+      const rowDate = formatDdMmYyyy(dateIso, xeroNdisTimezone);
 
       invoice.lineItems.push({
         description: appendDateSuffix(r.service, rowDate),
@@ -1991,7 +1991,8 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
         description = 'Service';
       }
 
-      const rowDate = getXeroServiceRowDate(item);
+      const rowDateRaw = getXeroServiceRowDate(item);
+      const rowDate = formatDdMmYyyy(rowDateRaw, business?.headOfficeTimezone || 'Australia/Sydney');
       const xeroLineDescription = appendDateSuffix(description, rowDate);
       
       const quantityRaw = typeof item.quantity === 'number' ? item.quantity : Number(item.quantity || 0);
