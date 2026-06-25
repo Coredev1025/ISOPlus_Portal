@@ -654,9 +654,10 @@ export function buildNdisMasterPlanServiceRows({
     if (directTimeAmount > 0 && spDirectUnit.includes('Hour')) {
       let unitPrice = groupSize > 0 ? spDirectUnitPrice / groupSize : 0;
       let qty = round1(actualDurationHr);
-      // If duration is not stored, derive qty from amount/unit price (matches NDIS invoice output)
-      if (qty <= 0 && directTimeAmount > 0 && unitPrice > 0) {
-        qty = round1(directTimeAmount / unitPrice);
+      // If duration is not stored, derive qty using the catalog rate (before group division)
+      // so that quantity reflects hours, not a doubled value for group > 1
+      if (qty <= 0 && directTimeAmount > 0 && spDirectUnitPrice > 0) {
+        qty = round1(directTimeAmount / spDirectUnitPrice);
       }
       // If unit price is missing but qty exists, derive unit price from amount/qty
       if (unitPrice <= 0 && directTimeAmount > 0 && qty > 0) {
@@ -677,7 +678,7 @@ export function buildNdisMasterPlanServiceRows({
           unit: spDirectUnit || 'Hour(H)',
           quantity: qty,
           unitPrice,
-          totalAmount: directTimeAmount,
+          totalAmount: parseFloat((qty * unitPrice).toFixed(2)),
           supportNumber: directSupportItemNumber,
           claimType: '',
         });
