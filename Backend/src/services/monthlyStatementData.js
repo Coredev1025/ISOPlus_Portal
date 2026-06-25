@@ -846,7 +846,8 @@ export async function fetchServiceItems(workspaceId, boardId, options = {}) {
 
     if (participantParam && participantParam !== 'all') {
         try {
-            const re = new RegExp(participantParam, 'i');
+            const escapedParticipantParam = participantParam.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const re = new RegExp(escapedParticipantParam, 'i');
             processed = processed.filter(p =>
                 re.test(p.participantName) ||
                 (p.profileValue && (
