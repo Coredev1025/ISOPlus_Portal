@@ -453,7 +453,6 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
   const invoiceValues = item.values;
   const invoiceDate = invoiceValues["Invoice Date"];
   const dueDate = invoiceValues["Due Date"];
-  const dateOnly = (d) => d ? new Date(d).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
   const scheduledShiftStart =
     invoiceValues["Scheduled Shift Start Date & Time"] ||
     invoiceValues["Scheduled Shift Start Date and Time"] ||
@@ -462,14 +461,15 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
     invoiceValues["Actual Shift Start Date and Time"] ||
     invoiceValues["Actual Shift Start Date & Time"] ||
     '';
-  const serviceDate =
-    invoiceValues['Job Status'] === 'Cancelled'
-      ? dateOnly(scheduledShiftStart || actualShiftStart)
-      : dateOnly(actualShiftStart || scheduledShiftStart);
 
   try {
     const business = await initializeXeroOperation(workspaceId, boardId, item);
     const timezone = business?.headOfficeTimezone || 'Australia/Sydney';
+    const dateOnly = (d) => d ? new Date(d).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: timezone }) : '';
+    const serviceDate =
+      invoiceValues['Job Status'] === 'Cancelled'
+        ? dateOnly(scheduledShiftStart || actualShiftStart)
+        : dateOnly(actualShiftStart || scheduledShiftStart);
 
     const [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues] = await getNDISMasterPlanReferencedItems(workspaceId, boardId, item.id);
     if (!servicePlanValues) {
@@ -568,8 +568,8 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         const unitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) / groupSize || 0;
         const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
         const itemName1 = servicePlanValues?.directSupportItemName || '';
-        const startTime1 = invoiceValues["Actual Shift Start Date and Time"] ? new Date(invoiceValues["Actual Shift Start Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-        const endTime1 = invoiceValues["Actual Shift End Date and Time"] ? new Date(invoiceValues["Actual Shift End Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+        const startTime1 = invoiceValues["Actual Shift Start Date and Time"] ? new Date(invoiceValues["Actual Shift Start Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: timezone }) : '';
+        const endTime1 = invoiceValues["Actual Shift End Date and Time"] ? new Date(invoiceValues["Actual Shift End Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: timezone }) : '';
         let qty1 = 0;
         const actualShiftDuration1 = Number(invoiceValues["Actual Shift Duration(Hr.)"]);
         if (typeof actualShiftDuration1 === 'number' && !isNaN(actualShiftDuration1)) {
@@ -1756,6 +1756,10 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
       contact = await createOrUpdateContact(contactPayload);
     }
 
+    const businessForTz = await Business.findOne({ workspaceId: workspaceId.toString() })
+      .select('headOfficeTimezone').lean().catch(() => null);
+    const xeroNdisTimezone = businessForTz?.headOfficeTimezone || 'Australia/Sydney';
+
     const invoiceDateRaw = req.body?.invoiceDate || new Date().toISOString();
     const dueDateRaw = req.body?.dueDate || '';
     const invoiceDate = invoiceDateRaw ? String(invoiceDateRaw).split('T')[0] : new Date().toISOString().split('T')[0];
@@ -1821,6 +1825,7 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
           cancellationTypeItem,
           invoiceNumber: '',
           invoicePdfLink: null,
+          timeZone: xeroNdisTimezone,
         })
       );
     }

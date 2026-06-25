@@ -982,6 +982,10 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
         const pageNumber = applyPagination ? (parseInt(page, 10) > 0 ? parseInt(page, 10) : 1) : 1;
         const skip = applyPagination && limitNumber ? (pageNumber - 1) * limitNumber : 0;
 
+        const businessForTz = await Business.findOne({ workspaceId: workspaceId.toString() })
+            .select('headOfficeTimezone').lean().catch(() => null);
+        const headOfficeTimezone = businessForTz?.headOfficeTimezone || 'Australia/Sydney';
+
         const baseQuery = { workspaceId, boardId };
         const folderIds = await getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
         if (folderIds && folderIds.length > 0) {
@@ -1239,6 +1243,7 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
                 cancellationTypeItem,
                 invoiceNumber: invNo,
                 invoicePdfLink: invLink,
+                timeZone: headOfficeTimezone,
             });
 
             expandedRows.push(...rows);
@@ -1392,6 +1397,10 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
         const skip = applyPagination && limitNumber
             ? (pageNumber - 1) * limitNumber
             : 0;
+
+        const businessForTz2 = await Business.findOne({ workspaceId: workspaceId.toString() })
+            .select('headOfficeTimezone').lean().catch(() => null);
+        const headOfficeTimezone2 = businessForTz2?.headOfficeTimezone || 'Australia/Sydney';
 
         // STABLE VERSION: Use find() instead of aggregate() for better stability
         // Base query - only from Master Plan,Shift Planning and Reporting
@@ -1918,18 +1927,8 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
             }
 
             const actualEnd = getValue(ATTRIBUTE_NAMES.ACTUAL_END) || null;
-            const serviceDeliveryDate = actualEnd
-                ? (() => {
-                    const date = new Date(actualEnd);
-                    return isNaN(date.getTime()) ? null : date.toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                })()
-                : null;
-            const scheduledServiceDate = scheduledStart
-                ? (() => {
-                    const date = new Date(scheduledStart);
-                    return isNaN(date.getTime()) ? null : date.toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                })()
-                : null;
+            const serviceDeliveryDate = actualEnd || null;
+            const scheduledServiceDate = scheduledStart || null;
 
             // Get Delivered By for deliveredByThirdParty calculation
             const deliveredBy = formatStatus(getValue(ATTRIBUTE_NAMES.DELIVERED_BY));
@@ -2054,7 +2053,7 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
         let businessProfile = null;
         try {
             businessProfile = await Business.findOne({ workspaceId: workspaceId.toString() })
-                .select('name phone email companyRegistrationId address')
+                .select('name phone email companyRegistrationId address headOfficeTimezone')
                 .lean();
         } catch (err) {
             warn('Items-Service', 'Failed to fetch business name', {
@@ -2360,22 +2359,25 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
             return 'HSQ';
         };
 
+        const stmtTimezone = businessProfile?.headOfficeTimezone || 'Australia/Sydney';
+
         const getMonthLabelFromDate = (dateValue) => {
             if (!dateValue) return '';
             const date = new Date(dateValue);
             if (isNaN(date.getTime())) return '';
+            const monthNum = parseInt(new Intl.DateTimeFormat('en-AU', { timeZone: stmtTimezone, month: 'numeric' }).format(date), 10);
             const monthLabelLookupLocal = [
                 'January', 'February', 'March', 'April', 'May', 'June',
                 'July', 'August', 'September', 'October', 'November', 'December'
             ];
-            return monthLabelLookupLocal[date.getMonth()] || '';
+            return monthLabelLookupLocal[monthNum - 1] || '';
         };
 
         const getYearFromDate = (dateValue) => {
             if (!dateValue) return '';
             const date = new Date(dateValue);
             if (isNaN(date.getTime())) return '';
-            return date.getFullYear().toString();
+            return new Intl.DateTimeFormat('en-AU', { timeZone: stmtTimezone, year: 'numeric' }).format(date);
         };
 
         const determineCategoryCodeForService = (service = {}) => {
