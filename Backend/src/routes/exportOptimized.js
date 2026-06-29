@@ -8,6 +8,8 @@ import { getFolder } from '../services/isoplus.js';
 import { fetchBudgetItems, fetchServiceItems } from '../services/monthlyStatementData.js';
 import {
     buildNdisMasterPlanServiceRows,
+    buildNdisSupportCatalogueForServicePlan,
+    collectNdisSupportCatalogueRefIds,
     NDIS_MASTERPLAN_ATTR,
     NDIS_SERVICEPLAN_ATTR,
     extractRefId as extractNdisRefId,
@@ -24,6 +26,7 @@ import {
     resolveNdisClaimType,
     isUuidLike as isUuidLikeNdis,
 } from '../utils/ndisServiceRecords.js';
+import { resolveNdisPricingRuleForServicePlan } from '../utils/ndisPricingRules.js';
 
 const router = express.Router();
 
@@ -555,7 +558,9 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
         } = req.query;
 
         if (!workspaceId || !boardId) {
-            return res.status(400).json({ message: 'WorkspaceId and boardId are required' });
+            return res.status(400).json({
+                message: 'Invoice CSV export could not start because the workspace or board is missing. Return to your workspace list, open the board again, and try the export again.'
+            });
         }
 
         info('Export-Service', 'Starting optimized CSV export (DB only)', {
@@ -918,7 +923,9 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
         });
     } catch (err) {
         error('Export-Service', 'Failed to export invoice CSV', { err }, req);
-        res.status(500).json({ message: 'Server error', error: err.message });
+        res.status(500).json({
+            message: 'Invoice CSV export failed due to a server problem. Please try again. If this keeps happening, contact support.'
+        });
     }
 });
 
@@ -944,7 +951,9 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
             String(process.env.NDIS_EXPORT_DEBUG || '').toLowerCase() === 'true';
 
         if (!workspaceId || !boardId) {
-            return res.status(400).json({ message: 'WorkspaceId and boardId are required' });
+            return res.status(400).json({
+                message: 'NDIS claim CSV export could not start because the workspace or board is missing. Return to your workspace list, open the board again, and try the export again.'
+            });
         }
 
         const business = await Business.findOne({ workspaceId: workspaceId.toString() })
@@ -955,12 +964,12 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
         const abn = sanitizeDigits(business?.abn || '', 20);
         if (!registrationNumber) {
             return res.status(400).json({
-                message: 'Company Registration ID is required to export NDIS claims. Please set it in ISO+ Portal → Business Configuration (it is stored in the Business profile record in MongoDB).'
+                message: 'NDIS claim CSV export requires a Company Registration ID. Open ISO+ Portal → Business Configuration, enter your Company Registration ID, save your changes, and try the export again.'
             });
         }
         if (!abn) {
             return res.status(400).json({
-                message: 'ABN is required to export NDIS claims. Please set it in ISO+ Portal → Business Configuration (it is stored as Business.abn in MongoDB).'
+                message: 'NDIS claim CSV export requires an ABN. Open ISO+ Portal → Business Configuration, enter your ABN, save your changes, and try the export again.'
             });
         }
 
@@ -1025,13 +1034,8 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
         for (const spId of servicePlanIds) {
             const spItem = refItemsMap.get(spId);
             if (!spItem?.data) continue;
-            const dsId = extractNdisRefId(spItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_DIRECT_SUPPORT]);
-            const ptId = extractNdisRefId(spItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR]);
-            const abtId = extractNdisRefId(spItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT]);
-            const cccId = extractNdisRefId(spItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_CENTRE_CAPITAL]);
-            [dsId, ptId, abtId, cccId].forEach(id => {
-                if (id && isUuidLikeNdis(id)) supportItemIds.add(id);
-            });
+            const pricingRule = await resolveNdisPricingRuleForServicePlan(workspaceId, spItem, boardId);
+            collectNdisSupportCatalogueRefIds(spItem.data, pricingRule).forEach((id) => supportItemIds.add(id));
         }
         if (supportItemIds.size > 0) {
             const supportMap = await bulkFetchItemsFromDB(workspaceId, boardId, [...supportItemIds]);
@@ -1216,19 +1220,8 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
                 getNdisParticipantDisplayName(participantProfileItem) ||
                 (item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_FULL_NAME] ? String(item.data[NDIS_MASTERPLAN_ATTR.PARTICIPANT_FULL_NAME]).trim() : '');
 
-            const supportCatalogue = (() => {
-                if (!servicePlanItem?.data) return {};
-                const dsId = extractNdisRefId(servicePlanItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_DIRECT_SUPPORT]);
-                const ptId = extractNdisRefId(servicePlanItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR]);
-                const abtId = extractNdisRefId(servicePlanItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT]);
-                const cccId = extractNdisRefId(servicePlanItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_CENTRE_CAPITAL]);
-                return {
-                    directSupport: dsId ? refItemsMap.get(dsId) : null,
-                    providerTravelNonLabour: ptId ? refItemsMap.get(ptId) : null,
-                    activityTransport: abtId ? refItemsMap.get(abtId) : null,
-                    centreCapital: cccId ? refItemsMap.get(cccId) : null,
-                };
-            })();
+            const pricingRule = await resolveNdisPricingRuleForServicePlan(workspaceId, servicePlanItem, boardId);
+            const supportCatalogue = buildNdisSupportCatalogueForServicePlan(servicePlanItem, refItemsMap, pricingRule);
 
             const claimReference =
                 invoiceNumberMap.get(itemId) ||
@@ -1312,6 +1305,7 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
                 invoiceNumber: claimReference,
                 invoicePdfLink: null,
                 timeZone: business?.headOfficeTimezone || 'Australia/Sydney',
+                pricingRule,
             });
 
             // Resolve cancellation reason label/code once per source item
@@ -1359,7 +1353,8 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
                 const claimType = resolveNdisClaimType(
                     r.claimType,
                     itemForRows?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE],
-                    r.code
+                    r.code,
+                    r.supportNumber || ''
                 );
 
                 let quantity = '';
@@ -1369,7 +1364,7 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
                 const isHourUnit = unitStr.toLowerCase().includes('hour');
                 const code = String(r.code || '');
 
-                if (code === 'direct_support_time') {
+                if (code === 'direct_support_time' || code === 'support') {
                     // Direct support quantity is hour-based and may be derived even when actual duration is missing.
                     hours = formatDurationHhhMm(r.quantity, 'hours');
                 } else if (code === 'centre_capital_costs') {
@@ -1456,7 +1451,9 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
         });
     } catch (err) {
         error('Export-Service', 'Failed to export NDIS invoice CSV', { err }, req);
-        res.status(500).json({ message: 'Server error', error: err.message });
+        res.status(500).json({
+            message: 'NDIS claim CSV export failed due to a server problem. Please try again. If this keeps happening, contact support.'
+        });
     }
 });
 
@@ -1477,7 +1474,9 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
         } = req.query;
 
         if (!workspaceId || !boardId) {
-            return res.status(400).json({ message: 'WorkspaceId and boardId are required' });
+            return res.status(400).json({
+                message: 'Monthly statement CSV export could not start because the workspace or board is missing. Return to your workspace list, open the board again, and try the export again.'
+            });
         }
 
         info('Export-Service', 'Starting monthly statement CSV export (DB only)', {
@@ -1509,7 +1508,9 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
         });
     } catch (err) {
         error('Export-Service', 'Failed to export monthly statement CSV', { err }, req);
-        res.status(500).json({ message: 'Server error', error: err.message });
+        res.status(500).json({
+            message: 'Monthly statement CSV export failed due to a server problem. Please try again. If this keeps happening, contact support.'
+        });
     }
 });
 

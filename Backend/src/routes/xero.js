@@ -36,14 +36,15 @@ import { Item as ItemPayloadDTO } from '../dto/itemsPayload.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
 import {
   NDIS_MASTERPLAN_ATTR as NDIS_MASTERPLAN_ATTR_DB,
-  NDIS_SERVICEPLAN_ATTR as NDIS_SERVICEPLAN_ATTR_DB,
   buildNdisMasterPlanServiceRows,
+  buildNdisSupportCatalogueForServicePlan,
   extractRefId as extractNdisRefId,
   formatDdMmYyyy,
   formatDateTimeInValueZone,
   formatDateInValueZone,
   getDateOnlyIso,
 } from '../utils/ndisServiceRecords.js';
+import { resolveNdisPricingRuleForServicePlan } from '../utils/ndisPricingRules.js';
 import {
   getNdisInvoiceGeneratorContextFromMasterItems,
   getParticipantProfileFields,
@@ -1802,18 +1803,8 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
       const ctId = extractNdisRefId(masterPlanItem?.data?.['Cancellation Type']);
       const cancellationTypeItem = ctId ? refItemsMap.get(ctId) : null;
 
-      const supportCatalogue = (() => {
-        const dsId = extractNdisRefId(servicePlanItem?.data?.[NDIS_SERVICEPLAN_ATTR_DB.ITEM_DIRECT_SUPPORT]);
-        const ptId = extractNdisRefId(servicePlanItem?.data?.[NDIS_SERVICEPLAN_ATTR_DB.ITEM_PROVIDER_TRAVEL_NON_LABOUR]);
-        const abtId = extractNdisRefId(servicePlanItem?.data?.[NDIS_SERVICEPLAN_ATTR_DB.ITEM_ACTIVITY_TRANSPORT]);
-        const cccId = extractNdisRefId(servicePlanItem?.data?.[NDIS_SERVICEPLAN_ATTR_DB.ITEM_CENTRE_CAPITAL]);
-        return {
-          directSupport: dsId ? refItemsMap.get(dsId) : null,
-          providerTravelNonLabour: ptId ? refItemsMap.get(ptId) : null,
-          activityTransport: abtId ? refItemsMap.get(abtId) : null,
-          centreCapital: cccId ? refItemsMap.get(cccId) : null,
-        };
-      })();
+      const pricingRule = await resolveNdisPricingRuleForServicePlan(workspaceId, servicePlanItem, boardId);
+      const supportCatalogue = buildNdisSupportCatalogueForServicePlan(servicePlanItem, refItemsMap, pricingRule);
 
       allRows.push(
         ...buildNdisMasterPlanServiceRows({
@@ -1826,6 +1817,7 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
           invoiceNumber: '',
           invoicePdfLink: null,
           timeZone: xeroNdisTimezone,
+          pricingRule,
         })
       );
     }
