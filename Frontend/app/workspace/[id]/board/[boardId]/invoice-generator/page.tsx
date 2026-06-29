@@ -39,7 +39,7 @@ import axios from "@/app/utils/axiosConfig";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format, formatDistanceToNow } from "date-fns";
-import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast } from "@/lib/toast-utils";
+import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast, getApiErrorMessage } from "@/lib/toast-utils";
 import { canAccessWorkspace, isCareManagementLabel } from "@/lib/access";
 import { dateToStartOfDayISO, dateToEndOfDayISO, formatDateOnlyYYYYMMDD, formatDateDDMMYYYY } from "@/lib/timezone";
 import {
@@ -1812,7 +1812,12 @@ export default function InvoiceGenerator() {
       showSuccessToast(`Successfully exported ${allItems.length} records to CSV${durationText}.`);
     } catch (err: any) {
       console.error('Error exporting CSV:', err);
-      showErrorToast('Failed to export CSV', { description: err.message });
+      showErrorToast('CSV export failed', {
+        description: getApiErrorMessage(
+          err,
+          'Unable to export invoice CSV right now. Please try again.'
+        ),
+      });
       setExportingCSV(false);
     }
   };

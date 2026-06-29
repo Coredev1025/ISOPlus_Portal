@@ -558,7 +558,9 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
         } = req.query;
 
         if (!workspaceId || !boardId) {
-            return res.status(400).json({ message: 'WorkspaceId and boardId are required' });
+            return res.status(400).json({
+                message: 'Invoice CSV export could not start because the workspace or board is missing. Return to your workspace list, open the board again, and try the export again.'
+            });
         }
 
         info('Export-Service', 'Starting optimized CSV export (DB only)', {
@@ -921,7 +923,9 @@ router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, 
         });
     } catch (err) {
         error('Export-Service', 'Failed to export invoice CSV', { err }, req);
-        res.status(500).json({ message: 'Server error', error: err.message });
+        res.status(500).json({
+            message: 'Invoice CSV export failed due to a server problem. Please try again. If this keeps happening, contact support.'
+        });
     }
 });
 
@@ -947,7 +951,9 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
             String(process.env.NDIS_EXPORT_DEBUG || '').toLowerCase() === 'true';
 
         if (!workspaceId || !boardId) {
-            return res.status(400).json({ message: 'WorkspaceId and boardId are required' });
+            return res.status(400).json({
+                message: 'NDIS claim CSV export could not start because the workspace or board is missing. Return to your workspace list, open the board again, and try the export again.'
+            });
         }
 
         const business = await Business.findOne({ workspaceId: workspaceId.toString() })
@@ -958,12 +964,12 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
         const abn = sanitizeDigits(business?.abn || '', 20);
         if (!registrationNumber) {
             return res.status(400).json({
-                message: 'Company Registration ID is required to export NDIS claims. Please set it in ISO+ Portal → Business Configuration (it is stored in the Business profile record in MongoDB).'
+                message: 'NDIS claim CSV export requires a Company Registration ID. Open ISO+ Portal → Business Configuration, enter your Company Registration ID, save your changes, and try the export again.'
             });
         }
         if (!abn) {
             return res.status(400).json({
-                message: 'ABN is required to export NDIS claims. Please set it in ISO+ Portal → Business Configuration (it is stored as Business.abn in MongoDB).'
+                message: 'NDIS claim CSV export requires an ABN. Open ISO+ Portal → Business Configuration, enter your ABN, save your changes, and try the export again.'
             });
         }
 
@@ -1445,7 +1451,9 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
         });
     } catch (err) {
         error('Export-Service', 'Failed to export NDIS invoice CSV', { err }, req);
-        res.status(500).json({ message: 'Server error', error: err.message });
+        res.status(500).json({
+            message: 'NDIS claim CSV export failed due to a server problem. Please try again. If this keeps happening, contact support.'
+        });
     }
 });
 
@@ -1466,7 +1474,9 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
         } = req.query;
 
         if (!workspaceId || !boardId) {
-            return res.status(400).json({ message: 'WorkspaceId and boardId are required' });
+            return res.status(400).json({
+                message: 'Monthly statement CSV export could not start because the workspace or board is missing. Return to your workspace list, open the board again, and try the export again.'
+            });
         }
 
         info('Export-Service', 'Starting monthly statement CSV export (DB only)', {
@@ -1498,7 +1508,9 @@ router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, as
         });
     } catch (err) {
         error('Export-Service', 'Failed to export monthly statement CSV', { err }, req);
-        res.status(500).json({ message: 'Server error', error: err.message });
+        res.status(500).json({
+            message: 'Monthly statement CSV export failed due to a server problem. Please try again. If this keeps happening, contact support.'
+        });
     }
 });
 
