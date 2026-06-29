@@ -195,4 +195,47 @@ export const showDeleteErrorToast = (resource: string, error?: string) => {
   showErrorToast(`Failed to delete ${resource}`, {
     description: error || 'Please try again later',
   });
+};
+
+type AxiosLikeError = {
+  response?: {
+    status?: number;
+    data?: {
+      message?: string;
+      error?: string;
+    };
+  };
+  message?: string;
+};
+
+export const getApiErrorMessage = (
+  err: unknown,
+  fallback = 'Something went wrong. Please try again.'
+): string => {
+  const error = err as AxiosLikeError;
+  const serverMessage = error.response?.data?.message || error.response?.data?.error;
+  if (typeof serverMessage === 'string' && serverMessage.trim()) {
+    return serverMessage.trim();
+  }
+
+  const status = error.response?.status;
+  if (status === 401) {
+    return 'Your session has expired. Please sign in again, then try the export again.';
+  }
+  if (status === 403) {
+    return 'You do not have permission to perform this export. Contact your workspace administrator if you need access.';
+  }
+
+  const clientMessage = typeof error.message === 'string' ? error.message.trim() : '';
+  if (clientMessage) {
+    if (/request failed with status code \d+/i.test(clientMessage)) {
+      return fallback;
+    }
+    if (/network error/i.test(clientMessage)) {
+      return 'Unable to reach the server. Check your internet connection and try again.';
+    }
+    return clientMessage;
+  }
+
+  return fallback;
 }; 

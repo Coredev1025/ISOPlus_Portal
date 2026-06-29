@@ -28,7 +28,7 @@ import { useAppContext } from "@/app/context";
 import { fetchMonthlyStatementItems } from "@/app/utils/items";
 import { format } from "date-fns";
 import Spinner from "@/components/ui/spin";
-import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast } from "@/lib/toast-utils";
+import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast, getApiErrorMessage } from "@/lib/toast-utils";
 import { isCareManagementLabel, isLowCatCareManagementLabel } from "@/lib/access";
 import { ChartContainer, ChartStyle, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from "recharts";
@@ -1960,7 +1960,12 @@ export default function MonthlyStatement() {
       showSuccessToast(`Exported ${items.length} budget item${items.length === 1 ? '' : 's'} to CSV${durationText}.`);
     } catch (err: any) {
       console.error('Error exporting budget items:', err);
-      showErrorToast('Failed to export budget items', { description: err?.message || 'Unknown error' });
+      showErrorToast('Budget CSV export failed', {
+        description: getApiErrorMessage(
+          err,
+          'Unable to export budget items right now. Please try again.'
+        ),
+      });
     } finally {
       setExportingSection(null);
     }
@@ -2003,7 +2008,12 @@ export default function MonthlyStatement() {
       showSuccessToast(`Exported ${items.length} ${categoryTitle} item${items.length === 1 ? '' : 's'} to CSV.`);
     } catch (err: any) {
       console.error(`Error exporting budget items for ${categoryCode}:`, err);
-      showErrorToast(`Failed to export ${categoryTitle} budget items`, { description: err?.message || 'Unknown error' });
+      showErrorToast(`${categoryTitle} budget CSV export failed`, {
+        description: getApiErrorMessage(
+          err,
+          `Unable to export ${categoryTitle} budget items right now. Please try again.`
+        ),
+      });
     } finally {
       setExportingSection(null);
     }
@@ -2103,7 +2113,12 @@ export default function MonthlyStatement() {
       showSuccessToast(`Service records CSV exported successfully. ${items.length} record${items.length === 1 ? '' : 's'} exported${durationText}.`);
     } catch (err: any) {
       console.error('Error exporting service records:', err);
-      showErrorToast('Failed to export service records', { description: err?.message || 'Unknown error' });
+      showErrorToast('Service records CSV export failed', {
+        description: getApiErrorMessage(
+          err,
+          'Unable to export service records right now. Please try again.'
+        ),
+      });
     } finally {
       setExportingSection(null);
     }
