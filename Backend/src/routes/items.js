@@ -9,6 +9,8 @@ import { batchProcess } from '../utils/helpers.js';
 import { getCachedTransform, setCachedTransform, getCacheStats, invalidateCacheForItem, getCachedMSBudget, setCachedMSBudget, getCachedMSService, setCachedMSService, invalidateMSCacheForItem } from '../utils/transformCache.js';
 import {
     buildNdisMasterPlanServiceRows,
+    buildNdisSupportCatalogueForServicePlan,
+    collectNdisSupportCatalogueRefIds,
     formatLabelValue as formatNdisLabelValue,
     NDIS_MASTERPLAN_ATTR,
     NDIS_SERVICEPLAN_ATTR,
@@ -18,6 +20,7 @@ import {
     getValueMulti as getNdisValueMulti,
     getParticipantDisplayName as getNdisParticipantDisplayName,
 } from '../utils/ndisServiceRecords.js';
+import { resolveNdisPricingRuleForServicePlan } from '../utils/ndisPricingRules.js';
 
 const router = express.Router();
 
@@ -1036,14 +1039,9 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
         const supportItemIds = new Set();
         for (const spId of servicePlanIds) {
             const spItem = refItemsMap.get(spId);
-            if (!spItem) continue;
-            const dsId = extractNdisRefId(spItem?.data?.[NDIS_SERVICEPLAN_ATTR.ITEM_DIRECT_SUPPORT]);
-            const ptId = extractNdisRefId(spItem?.data?.[NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR]);
-            const abtId = extractNdisRefId(spItem?.data?.[NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT]);
-            const cccId = extractNdisRefId(spItem?.data?.[NDIS_SERVICEPLAN_ATTR.ITEM_CENTRE_CAPITAL]);
-            [dsId, ptId, abtId, cccId].forEach(id => {
-                if (id && isUuidLike(id)) supportItemIds.add(id);
-            });
+            if (!spItem?.data) continue;
+            const pricingRule = await resolveNdisPricingRuleForServicePlan(workspaceId, spItem, boardId);
+            collectNdisSupportCatalogueRefIds(spItem.data, pricingRule).forEach((id) => supportItemIds.add(id));
         }
         if (supportItemIds.size > 0) {
             const supportMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, [...supportItemIds]);
@@ -1218,19 +1216,8 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
                 getNdisParticipantDisplayName(participantProfileItem) ||
                 (item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_FULL_NAME] ? String(item.data[NDIS_MASTERPLAN_ATTR.PARTICIPANT_FULL_NAME]).trim() : '');
 
-            const supportCatalogue = (() => {
-                if (!servicePlanItem?.data) return {};
-                const dsId = extractNdisRefId(servicePlanItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_DIRECT_SUPPORT]);
-                const ptId = extractNdisRefId(servicePlanItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR]);
-                const abtId = extractNdisRefId(servicePlanItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT]);
-                const cccId = extractNdisRefId(servicePlanItem.data[NDIS_SERVICEPLAN_ATTR.ITEM_CENTRE_CAPITAL]);
-                return {
-                    directSupport: dsId ? refItemsMap.get(dsId) : null,
-                    providerTravelNonLabour: ptId ? refItemsMap.get(ptId) : null,
-                    activityTransport: abtId ? refItemsMap.get(abtId) : null,
-                    centreCapital: cccId ? refItemsMap.get(cccId) : null,
-                };
-            })();
+            const pricingRule = await resolveNdisPricingRuleForServicePlan(workspaceId, servicePlanItem, boardId);
+            const supportCatalogue = buildNdisSupportCatalogueForServicePlan(servicePlanItem, refItemsMap, pricingRule);
 
             const invNo = invoiceNumberMap.get(item.itemId);
             const invLink = invoiceFileUrlMap.get(item.itemId);
@@ -1245,6 +1232,7 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
                 invoiceNumber: invNo,
                 invoicePdfLink: invLink,
                 timeZone: headOfficeTimezone,
+                pricingRule,
             });
 
             expandedRows.push(...rows);

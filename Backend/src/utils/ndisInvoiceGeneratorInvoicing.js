@@ -2,12 +2,14 @@ import Item from '../models/Item.js';
 import {
   NDIS_MASTERPLAN_ATTR,
   NDIS_SERVICEPLAN_ATTR,
+  collectNdisSupportCatalogueRefIds,
   extractAllRefIds,
   extractRefId,
   formatLabelValue,
   getParticipantDisplayName,
   isUuidLike,
 } from './ndisServiceRecords.js';
+import { resolveNdisPricingRuleForServicePlan } from './ndisPricingRules.js';
 
 export async function bulkFetchReferenceItemsFromDB(workspaceId, boardId, itemIds) {
   if (!itemIds || itemIds.length === 0) return new Map();
@@ -177,14 +179,9 @@ export async function getNdisInvoiceGeneratorContextFromMasterItems({
   const supportItemIds = new Set();
   for (const spId of servicePlanIds) {
     const spItem = refItemsMap.get(spId);
-    if (!spItem) continue;
-    const dsId = extractRefId(spItem?.data?.[NDIS_SERVICEPLAN_ATTR.ITEM_DIRECT_SUPPORT]);
-    const ptId = extractRefId(spItem?.data?.[NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR]);
-    const abtId = extractRefId(spItem?.data?.[NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT]);
-    const cccId = extractRefId(spItem?.data?.[NDIS_SERVICEPLAN_ATTR.ITEM_CENTRE_CAPITAL]);
-    [dsId, ptId, abtId, cccId].forEach((id) => {
-      if (id && isUuidLike(id)) supportItemIds.add(id);
-    });
+    if (!spItem?.data) continue;
+    const pricingRule = await resolveNdisPricingRuleForServicePlan(workspaceId, spItem, boardId);
+    collectNdisSupportCatalogueRefIds(spItem.data, pricingRule).forEach((id) => supportItemIds.add(id));
   }
   if (supportItemIds.size > 0) {
     const supportMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, [...supportItemIds]);
