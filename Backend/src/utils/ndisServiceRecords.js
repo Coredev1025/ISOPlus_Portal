@@ -1,5 +1,7 @@
 const SYDNEY_TIME_ZONE = 'Australia/Sydney';
 
+import { buildNewNdisMasterPlanServiceRows } from './ndisServiceRecordsNew.js';
+
 export const NDIS_MASTERPLAN_ATTR = {
   PARTICIPANT_PROFILE: 'Participant Profile',
   PARTICIPANT_FULL_NAME: 'Participant Full Name',
@@ -49,6 +51,10 @@ export const NDIS_MASTERPLAN_ATTR = {
 
   CANCELLATION_REASON: 'Cancellation Reason',
   SERVICE_DELIVERY_MODE: 'Service Delivery Mode',
+
+  // 2026-27 NDIS Pricing Schedule (master plan amount fields)
+  SUPPORT_VALUE: 'Support Value($)',
+  QUANTITY_NON_TIME_BASED: 'Quantity (Non-Time-Based Support)',
 };
 
 export const NDIS_SERVICEPLAN_ATTR = {
@@ -78,6 +84,15 @@ export const NDIS_SERVICEPLAN_ATTR = {
   PRICE_NON_FACE_TO_FACE: 'Agreed Unit Price for Non-Face-to-Face Support($)',
 
   ALLOWANCES_TYPE: 'Allowances',
+
+  // 2026-27 NDIS Pricing Schedule (service plan fields)
+  ITEM_SUPPORT: 'Support Item Number',
+  UNIT_SUPPORT: 'Unit (Support)',
+  PRICE_SUPPORT: 'Agreed Unit Price for Support ($)',
+  ITEM_LABOUR_TRAVEL_TIME: 'Provider Travel - Labour Travel Time Costs Item Number',
+  ITEM_CANCELLATION: 'Cancellation Item Number',
+  UNIT_CANCELLATION: 'Unit (Cancellation)',
+  PRICE_CANCELLATION: 'Agreed Unit Price for Cancellation ($)',
 };
 
 export const NDIS_SUPPORT_CATALOGUE_ATTR = {
@@ -412,17 +427,27 @@ export function isTelehealthServiceMode(serviceDeliveryModeValue) {
   return /\btelehealth\b|\bthlt\b/.test(label);
 }
 
-export function resolveNdisClaimType(baseClaimType, serviceDeliveryModeValue, rowCode = '') {
+export function resolveNdisClaimType(baseClaimType, serviceDeliveryModeValue, rowCode = '', itemNumber = '') {
   const normalizedBase = String(baseClaimType || '').trim().toUpperCase();
   if (normalizedBase) return normalizedBase;
 
+  if (itemNumber) {
+    const upper = String(itemNumber).toUpperCase().trim();
+    if (upper.endsWith('_TH')) return 'TH';
+    if (upper.endsWith('_NF')) return 'NF';
+    if (upper.endsWith('_RR')) return 'RR';
+    if (upper.endsWith('_PT')) return 'PT';
+    if (upper.endsWith('_CA')) return 'CA';
+  }
+
   if (!isTelehealthServiceMode(serviceDeliveryModeValue)) return '';
 
-  // THLT applies to direct service rows only when no stronger claim type is already set.
   const eligibleTelehealthCodes = new Set([
     'direct_support_time',
     'direct_support_non_time',
     'centre_capital_costs',
+    'support',
+    'support_non_time',
   ]);
   return eligibleTelehealthCodes.has(String(rowCode || '').trim()) ? 'THLT' : '';
 }
@@ -450,7 +475,7 @@ function formatDateTimeForDesc(value, timeZone = SYDNEY_TIME_ZONE) {
   return d.toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone });
 }
 
-export function buildNdisMasterPlanServiceRows({
+export function buildLegacyNdisMasterPlanServiceRows({
   masterPlanItem,
   participantName,
   participantProfileItem,
@@ -1032,5 +1057,66 @@ export function buildNdisMasterPlanServiceRows({
   }
 
   return rows;
+}
+
+export function collectNdisSupportCatalogueRefIds(servicePlanData, pricingRule = 'legacy') {
+  if (!servicePlanData || typeof servicePlanData !== 'object') return [];
+  const ids = [];
+  const addId = (value) => {
+    const id = extractRefId(value);
+    if (id && isUuidLike(id)) ids.push(id);
+  };
+
+  const useNew = pricingRule === 'new';
+
+  if (useNew) {
+    addId(servicePlanData[NDIS_SERVICEPLAN_ATTR.ITEM_SUPPORT]);
+    addId(servicePlanData[NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR]);
+    addId(servicePlanData[NDIS_SERVICEPLAN_ATTR.ITEM_LABOUR_TRAVEL_TIME]);
+    addId(servicePlanData[NDIS_SERVICEPLAN_ATTR.ITEM_CANCELLATION]);
+    return ids;
+  }
+
+  addId(servicePlanData[NDIS_SERVICEPLAN_ATTR.ITEM_DIRECT_SUPPORT]);
+  addId(servicePlanData[NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR]);
+  addId(servicePlanData[NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT]);
+  addId(servicePlanData[NDIS_SERVICEPLAN_ATTR.ITEM_CENTRE_CAPITAL]);
+  return ids;
+}
+
+export function buildNdisSupportCatalogueForServicePlan(servicePlanItem, refItemsMap, pricingRule = 'legacy') {
+  if (!servicePlanItem?.data || !refItemsMap) return {};
+  const data = servicePlanItem.data;
+
+  if (pricingRule === 'new') {
+    const supportId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_SUPPORT]);
+    const ptId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR]);
+    const ltId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_LABOUR_TRAVEL_TIME]);
+    const cancId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_CANCELLATION]);
+    return {
+      support: supportId ? refItemsMap.get(supportId) : null,
+      providerTravelNonLabour: ptId ? refItemsMap.get(ptId) : null,
+      labourTravelTime: ltId ? refItemsMap.get(ltId) : null,
+      cancellation: cancId ? refItemsMap.get(cancId) : null,
+    };
+  }
+
+  const dsId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_DIRECT_SUPPORT]);
+  const ptId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR]);
+  const abtId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT]);
+  const cccId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_CENTRE_CAPITAL]);
+  return {
+    directSupport: dsId ? refItemsMap.get(dsId) : null,
+    providerTravelNonLabour: ptId ? refItemsMap.get(ptId) : null,
+    activityTransport: abtId ? refItemsMap.get(abtId) : null,
+    centreCapital: cccId ? refItemsMap.get(cccId) : null,
+  };
+}
+
+export function buildNdisMasterPlanServiceRows(args) {
+  if (args?.pricingRule === 'new') {
+    return buildNewNdisMasterPlanServiceRows(args);
+  }
+  return buildLegacyNdisMasterPlanServiceRows(args);
 }
 
