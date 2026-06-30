@@ -39,8 +39,14 @@ import {
 import { resolveNdisPricingRuleForServicePlan } from '../utils/ndisPricingRules.js';
 import {
     getNdisInvoiceGeneratorContextFromMasterItems,
-    getParticipantProfileFields,
+    fetchParticipantProfileItemForMasterPlan,
+    prepareParticipantForInvoiceGenerator,
 } from '../utils/ndisInvoiceGeneratorInvoicing.js';
+import {
+    buildMasterItemsMap,
+    buildNdisInvoicePdfClientDetails,
+    enrichNdisInvoiceGeneratorRows,
+} from '../utils/ndisInvoiceGeneratorOutput.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2540,10 +2546,17 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                 const gstTotal = formatValue((parseFloat(subTotal) * parseFloat(gst) / 100));
                 const total = formatValue(parseFloat(subTotal) + parseFloat(gstTotal));
 
-                const clientDetails = {
-                    Contact: participantProfileValues.billingContact || ' ',
-                    Address: participantProfileValues.billingAddress || ' '
-                };
+                const participantProfileItemForPdf = await fetchParticipantProfileItemForMasterPlan(
+                    workspaceId,
+                    boardId,
+                    item.id,
+                );
+
+                const clientDetails = buildNdisInvoicePdfClientDetails({
+                    participantProfileItem: participantProfileItemForPdf,
+                    apiProfileValues: participantProfileValues,
+                    fallbackParticipantName: participantProfileValues?.fullName || '',
+                });
 
                 const pdfBytes = await generate({
                     template: template,
@@ -2631,7 +2644,26 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
                 masterItemIds,
             });
 
-        const participantProfile = getParticipantProfileFields(participantProfileItem);
+        const fallbackParticipantName =
+            String(req.body?.participantName || '').trim() ||
+            masterItems
+                .map((m) => formatLabelValue(m?.data?.['Participant Full Name']).trim())
+                .find(Boolean) ||
+            '';
+
+        const { participantProfile, participantProfileItem: profileItem, participantName } =
+            await prepareParticipantForInvoiceGenerator({
+                workspaceId,
+                boardId,
+                participantProfileItem,
+                fallbackParticipantName,
+            });
+
+        const clientDetails = buildNdisInvoicePdfClientDetails({
+            participantProfile,
+            participantProfileItem: profileItem,
+            fallbackParticipantName: participantName,
+        });
 
         const invoiceDateRaw = req.body?.invoiceDate || new Date().toISOString();
         const dueDateRaw = req.body?.dueDate || '';
@@ -2659,8 +2691,9 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
             const spId = extractNdisRefId(masterPlanItem?.data?.[NDIS_MASTERPLAN_ATTR_DB.SERVICE_PLAN]);
             const servicePlanItem = spId ? refItemsMap.get(spId) : null;
             if (!servicePlanItem) {
-                warn('Webhook-Service', 'Master plan item skipped — missing service plan reference', { itemId: masterPlanItem?.itemId, spId });
-                continue;
+                throw new Error(
+                    'Master plan information is required. Master plan is missing a service plan reference.'
+                );
             }
 
             const ctId = extractNdisRefId(masterPlanItem?.data?.['Cancellation Type']);
@@ -2671,8 +2704,8 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
 
             allRows.push(...buildNdisMasterPlanServiceRows({
                 masterPlanItem,
-                participantName: participantProfile.displayName,
-                participantProfileItem,
+                participantName,
+                participantProfileItem: profileItem,
                 servicePlanItem,
                 supportCatalogue,
                 cancellationTypeItem,
@@ -2687,6 +2720,13 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
             return res.status(200).json({ message: 'There is nothing to invoice!' });
         }
 
+        const invoiceGenTz = business?.headOfficeTimezone || 'Australia/Sydney';
+        const enrichedRows = enrichNdisInvoiceGeneratorRows(
+            allRows,
+            buildMasterItemsMap(masterItems),
+            invoiceGenTz
+        );
+
         const fmt2 = (val) => {
             const n = Number(val);
             if (!Number.isFinite(n)) return '0.00';
@@ -2695,8 +2735,7 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
 
         let subTotalNum = 0;
         const gstLabel = 'GST Free';
-        const invoiceGenTz = business?.headOfficeTimezone || 'Australia/Sydney';
-        const ordersArr = allRows.map((r) => {
+        const ordersArr = enrichedRows.map((r) => {
             const jobStatus = (r.jobStatus || '').toString().trim().toLowerCase();
             const dateIso = jobStatus === 'cancelled'
                 ? (r.scheduledServiceDate || r.serviceDeliveryDate || '')
@@ -2719,11 +2758,6 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
         const gst = '0%';
         const gstTotal = fmt2((Number(subTotal) * parseFloat(gst)) / 100);
         const total = fmt2(Number(subTotal) + Number(gstTotal));
-
-        const clientDetails = {
-            Contact: participantProfile.billingContact || participantProfile.fullName || participantProfile.displayName || ' ',
-            Address: participantProfile.billingAddress || participantProfile.address || ' ',
-        };
 
         const pdfBytes = await generate({
             template,
@@ -2761,7 +2795,7 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
             plugins: { text, image, line, table, multiVariableText },
         });
 
-        const safeSuffix = (participantProfile.displayName || 'Multiple').replace(/[^a-zA-Z0-9-_]+/g, '_').slice(0, 40);
+        const safeSuffix = (participantName || participantProfile.displayName || 'Multiple').replace(/[^a-zA-Z0-9-_]+/g, '_').slice(0, 40);
         const filename = `output/${workspaceId}/${boardId}/NDIS-invoices/${invoiceNumberBase + '-ISO+™-' + safeSuffix}.pdf`;
         const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
         if (uploadResult?.$metadata?.httpStatusCode !== 200) {

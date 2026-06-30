@@ -3,6 +3,7 @@ import Item from '../models/Item.js';
 import { getReferences, getAttribute } from '../services/isoplus.js';
 
 export const LEGACY_DIRECT_SUPPORT_ATTR = 'Direct Support Item Number';
+export const NEW_SUPPORT_ITEM_ATTR = 'Support Item Number';
 
 const BOARD_RULE_CACHE_MS = 5 * 60 * 1000;
 const boardRuleCache = new Map();
@@ -27,6 +28,20 @@ export function boardAttributesUseNewNdisPricing(attributes) {
     return !boardAttributesUseLegacyNdisPricing(attributes);
 }
 
+/** @returns {'legacy' | 'new' | null} */
+export function inferPricingRuleFromServicePlanData(servicePlanData) {
+    if (!servicePlanData || typeof servicePlanData !== 'object') return null;
+    const hasLegacyKey = Object.prototype.hasOwnProperty.call(servicePlanData, LEGACY_DIRECT_SUPPORT_ATTR);
+    const hasNewKey = Object.prototype.hasOwnProperty.call(servicePlanData, NEW_SUPPORT_ITEM_ATTR);
+    if (hasLegacyKey && !hasNewKey) return 'legacy';
+    if (hasNewKey && !hasLegacyKey) return 'new';
+    if (hasLegacyKey && hasNewKey) {
+        if (hasSelectionValue(servicePlanData, NEW_SUPPORT_ITEM_ATTR)) return 'new';
+        return 'legacy';
+    }
+    return null;
+}
+
 export async function boardUsesLegacyNdisPricing(workspaceId, boardId) {
     if (!workspaceId || !boardId) return true;
 
@@ -37,7 +52,17 @@ export async function boardUsesLegacyNdisPricing(workspaceId, boardId) {
     }
 
     const result = await getBoardAttributes(workspaceId, boardId);
+    if (result?.status !== 200) {
+        boardRuleCache.set(cacheKey, { legacy: true, fetchedAt: Date.now() });
+        return true;
+    }
+
     const attributes = result?.attribute || [];
+    if (attributes.length === 0) {
+        boardRuleCache.set(cacheKey, { legacy: true, fetchedAt: Date.now() });
+        return true;
+    }
+
     const legacy = boardAttributesUseLegacyNdisPricing(attributes);
     boardRuleCache.set(cacheKey, { legacy, fetchedAt: Date.now() });
     return legacy;
@@ -55,6 +80,9 @@ export async function resolveNdisPricingRuleForBoard(workspaceId, boardId) {
 
 /** @returns {'legacy' | 'new'} */
 export async function resolveNdisPricingRuleForServicePlan(workspaceId, servicePlanItem, fallbackBoardId) {
+    const inferred = inferPricingRuleFromServicePlanData(servicePlanItem?.data);
+    if (inferred) return inferred;
+
     const boardId = servicePlanItem?.boardId || fallbackBoardId;
     if (!boardId) return 'legacy';
     return resolveNdisPricingRuleForBoard(workspaceId, boardId);
