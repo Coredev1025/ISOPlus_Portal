@@ -47,8 +47,13 @@ import {
 import { resolveNdisPricingRuleForServicePlan } from '../utils/ndisPricingRules.js';
 import {
   getNdisInvoiceGeneratorContextFromMasterItems,
-  getParticipantProfileFields,
+  prepareParticipantForInvoiceGenerator,
 } from '../utils/ndisInvoiceGeneratorInvoicing.js';
+import {
+  buildMasterItemsMap,
+  buildNdisXeroInvoiceReference,
+  enrichNdisInvoiceGeneratorRows,
+} from '../utils/ndisInvoiceGeneratorOutput.js';
 
 dotenv.config();
 const router = express.Router();
@@ -1698,19 +1703,24 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
         masterItemIds,
       });
 
-    const participantProfile = getParticipantProfileFields(participantProfileItem);
-
-    const billingContact = (participantProfile.billingContact || '').toString().trim();
-    const email = (participantProfile.billingEmail || '').toString().trim();
+    const fallbackParticipantName = String(req.body?.participantName || '').trim();
+    const { participantProfile, participantProfileItem: profileItem, participantName, billingContact } =
+      await prepareParticipantForInvoiceGenerator({
+        workspaceId,
+        boardId,
+        participantProfileItem,
+        fallbackParticipantName,
+      });
 
     if (!billingContact) {
       throw new Error(
-        'Billing Contact is required for NDIS invoice contact creation. Please ensure the Participant Profile has a Billing Contact.'
+        'Billing Contact is required for NDIS invoice contact creation. Please ensure the Participant Profile has a Billing Contact, Full Name/Preferred Name, or Preferred Name.'
       );
     }
 
     const firstName = billingContact.split(' ')[0] || '';
     const lastName = billingContact.split(' ').slice(1).join(' ') || '';
+    const email = (participantProfile.billingEmail || '').toString().trim();
 
     let contact = email ? await getContactByEmail(email) : null;
     if (!contact) {
@@ -1775,10 +1785,7 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
     const salesAccountCode = accounts.find((acc) => acc.Type === 'REVENUE')?.Code || '200';
     const gstType = 'EXEMPTOUTPUT';
 
-    const reference =
-      masterItems.length === 1
-        ? masterItems[0].itemId
-        : `${masterItems[0].itemId} (+${masterItems.length - 1})`;
+    const reference = buildNdisXeroInvoiceReference(participantProfile, profileItem);
 
     const invoice = {
       type: 'ACCREC',
@@ -1809,8 +1816,8 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
       allRows.push(
         ...buildNdisMasterPlanServiceRows({
           masterPlanItem,
-          participantName: participantProfile.displayName,
-          participantProfileItem,
+          participantName,
+          participantProfileItem: profileItem,
           servicePlanItem,
           supportCatalogue,
           cancellationTypeItem,
@@ -1826,7 +1833,13 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
       return res.status(200).json({ message: 'There is nothing to invoice!' });
     }
 
-    for (const r of allRows) {
+    const enrichedRows = enrichNdisInvoiceGeneratorRows(
+      allRows,
+      buildMasterItemsMap(masterItems),
+      xeroNdisTimezone
+    );
+
+    for (const r of enrichedRows) {
       const jobStatus = (r.jobStatus || '').toString().trim().toLowerCase();
       const dateIso =
         jobStatus === 'cancelled'

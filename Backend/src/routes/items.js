@@ -21,6 +21,10 @@ import {
     getParticipantDisplayName as getNdisParticipantDisplayName,
 } from '../utils/ndisServiceRecords.js';
 import { resolveNdisPricingRuleForServicePlan } from '../utils/ndisPricingRules.js';
+import {
+    buildMasterItemsMap,
+    enrichNdisInvoiceGeneratorRows,
+} from '../utils/ndisInvoiceGeneratorOutput.js';
 
 const router = express.Router();
 
@@ -1238,18 +1242,24 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
             expandedRows.push(...rows);
         }
 
+        const enrichedExpandedRows = enrichNdisInvoiceGeneratorRows(
+            expandedRows,
+            buildMasterItemsMap(masterItems),
+            headOfficeTimezone
+        );
+
         // Aggregate totals on expanded rows
         let invoiced = 0;
         let pending = 0;
         let totalAmount = 0;
-        for (const r of expandedRows) {
+        for (const r of enrichedExpandedRows) {
             if (r.status === 'invoiced') invoiced += 1;
             else pending += 1;
             totalAmount += parseNdisNumber(r.totalAmount);
         }
 
-        const total = expandedRows.length;
-        const items = applyPagination && limitNumber ? expandedRows.slice(skip, skip + limitNumber) : expandedRows;
+        const total = enrichedExpandedRows.length;
+        const items = applyPagination && limitNumber ? enrichedExpandedRows.slice(skip, skip + limitNumber) : enrichedExpandedRows;
 
         res.status(200).json({
             items,

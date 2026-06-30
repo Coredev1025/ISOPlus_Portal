@@ -7,8 +7,10 @@ import {
   extractRefId,
   formatLabelValue,
   getParticipantDisplayName,
+  getParticipantNdisNumber,
   isUuidLike,
 } from './ndisServiceRecords.js';
+import { getItemValues } from '../services/isoplus.js';
 import { resolveNdisPricingRuleForServicePlan } from './ndisPricingRules.js';
 
 export async function bulkFetchReferenceItemsFromDB(workspaceId, boardId, itemIds) {
@@ -68,7 +70,7 @@ function resolveValueToNames(value, refItemsMap) {
   return formatLabelValue(value).trim();
 }
 
-export function getParticipantProfileFields(participantProfileItem) {
+function getParticipantProfileFields(participantProfileItem) {
   const data = participantProfileItem?.data || {};
   const get = (k) => formatLabelValue(data?.[k]).trim();
   const getMulti = (...keys) => {
@@ -111,6 +113,89 @@ export function getParticipantProfileFields(participantProfileItem) {
     postcode: get('Postcode'),
     updatedAt: participantProfileItem?.updatedAt,
   };
+}
+
+function needsProfileHydration(participantProfile, participantProfileItem) {
+  const hasName = Boolean(
+    participantProfile.fullName ||
+    participantProfile.displayName ||
+    participantProfile.billingContact,
+  );
+  const hasNdis = Boolean(getParticipantNdisNumber(participantProfileItem));
+  return !hasName || !hasNdis;
+}
+
+async function hydrateParticipantProfileForInvoicePdf(workspaceId, boardId, participantProfileItem, participantProfile) {
+  if (!participantProfileItem?.itemId || !needsProfileHydration(participantProfile, participantProfileItem)) {
+    return { participantProfile, participantProfileItem };
+  }
+
+  try {
+    const live = await getItemValues(
+      workspaceId,
+      participantProfileItem.boardId || boardId,
+      participantProfileItem.itemId,
+    );
+    if (!live?.values?.length) {
+      return { participantProfile, participantProfileItem };
+    }
+
+    const mergedData = { ...(participantProfileItem.data || {}) };
+    for (const entry of live.values) {
+      const name = entry?.attribute?.name;
+      if (!name || entry.data === undefined || entry.data === null) continue;
+      mergedData[name] = entry.data;
+    }
+
+    const mergedItem = { ...participantProfileItem, data: mergedData };
+    return {
+      participantProfile: getParticipantProfileFields(mergedItem),
+      participantProfileItem: mergedItem,
+    };
+  } catch {
+    return { participantProfile, participantProfileItem };
+  }
+}
+
+export async function prepareParticipantForInvoiceGenerator({
+  workspaceId,
+  boardId,
+  participantProfileItem,
+  fallbackParticipantName = '',
+}) {
+  let participantProfile = getParticipantProfileFields(participantProfileItem);
+  let profileItem = participantProfileItem;
+
+  if (needsProfileHydration(participantProfile, profileItem)) {
+    const hydrated = await hydrateParticipantProfileForInvoicePdf(workspaceId, boardId, profileItem, participantProfile);
+    participantProfile = hydrated.participantProfile;
+    profileItem = hydrated.participantProfileItem;
+  }
+
+  const participantName = [fallbackParticipantName, participantProfile.fullName, participantProfile.displayName]
+    .map((value) => (value ?? '').toString().trim())
+    .find(Boolean) || '';
+
+  const billingContact = [participantProfile.billingContact, participantProfile.fullName, participantProfile.displayName, participantName]
+    .map((value) => (value ?? '').toString().trim())
+    .find(Boolean) || '';
+
+  return { participantProfile, participantProfileItem: profileItem, participantName, billingContact };
+}
+
+export async function fetchParticipantProfileItemForMasterPlan(workspaceId, boardId, masterPlanItemId) {
+  const masterItem = await Item.findOne({
+    workspaceId: workspaceId.toString(),
+    boardId: boardId.toString(),
+    itemId: masterPlanItemId.toString(),
+  }).lean();
+  const profileId = extractRefId(masterItem?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_PROFILE]);
+  if (!profileId) return null;
+
+  return Item.findOne({
+    workspaceId: workspaceId.toString(),
+    itemId: profileId.toString(),
+  }).lean();
 }
 
 export async function getNdisInvoiceGeneratorContextFromMasterItems({

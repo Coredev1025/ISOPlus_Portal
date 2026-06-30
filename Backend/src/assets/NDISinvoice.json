@@ -42,7 +42,7 @@
             {
                 "name": "clientDetails",
                 "type": "multiVariableText",
-                "content": "{\"Contact\":\"CONTACT\",\"Address\":\"ADDRESS\"}",
+                "content": "{\"Contact\":\"CONTACT\",\"Address\":\"ADDRESS\",\"Participant Name\":\"PARTICIPANT NAME\",\"NDIS Number\":\"NDIS NUMBER\"}",
                 "position": {
                     "x": 20.26,
                     "y": 54.78
@@ -66,10 +66,12 @@
                 "strikethrough": false,
                 "underline": false,
                 "readOnly": false,
-                "text": "Invoiced  to:\n\n{Contact}\n{Address}\n",
+                "text": "Invoiced  to:\n\n{Contact}\n{Address}\n\n{Participant Name}\n{NDIS Number}\n",
                 "variables": [
                     "Contact",
-                    "Address"
+                    "Address",
+                    "Participant Name",
+                    "NDIS Number"
                 ],
                 "required": false
             },

@@ -2188,7 +2188,12 @@ export default function InvoiceGenerator() {
         ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/${id}/${boardId}/invoicendis-invoice-generator`
         : `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/${id}/${boardId}/invoiceparticipanttax`;
 
+      const itemIds = isNdisBoard
+        ? Array.from(new Set(selectedRecords.map((r: any) => (r?.sourceItemId || String(r?.id || '')).toString().split(':')[0]).filter(Boolean)))
+        : selectedRecords.map(record => record.id);
+
       const payload = {
+        itemIds: itemIds,
         items: selectedRecords,
         participantName: participantName,
         invoiceDate: invoiceDate,
