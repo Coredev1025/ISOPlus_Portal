@@ -452,7 +452,73 @@ export function resolveNdisClaimType(baseClaimType, serviceDeliveryModeValue, ro
   return eligibleTelehealthCodes.has(String(rowCode || '').trim()) ? 'THLT' : '';
 }
 
-function buildDirectSupportDesc({ itemNumber, itemName, startTime, endTime, groupSize, fallback }) {
+function formatDateTimeForDesc(value, timeZone = SYDNEY_TIME_ZONE) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone });
+}
+
+export function isHourUnitLabel(unit) {
+  if (!unit) return false;
+  return String(unit).trim().toLowerCase().includes('hour');
+}
+
+export function isCompletedShiftStatus(jobStatus) {
+  return String(jobStatus || '').trim().toLowerCase() === 'completed';
+}
+
+export function buildServiceItemDescription({
+  itemNumber,
+  itemName,
+  unit,
+  jobStatus,
+  actualStart,
+  actualEnd,
+  scheduledStart,
+  scheduledEnd,
+  fallback,
+  groupSize,
+  timeZone = SYDNEY_TIME_ZONE,
+}) {
+  let desc = itemName || '';
+  if (itemNumber) desc += `${desc ? ' - ' : ''}${itemNumber}`;
+
+  if (isHourUnitLabel(unit)) {
+    let startRaw = null;
+    let endRaw = null;
+    if (isCompletedShiftStatus(jobStatus)) {
+      startRaw = actualStart;
+      endRaw = actualEnd;
+    }
+    const startTime = formatDateTimeForDesc(startRaw, timeZone);
+    const endTime = formatDateTimeForDesc(endRaw, timeZone);
+    if (startTime && endTime) {
+      desc += `${desc ? ' - ' : ''}from ${startTime} to ${endTime}`;
+    }
+  }
+
+  if (!desc) desc = fallback || 'Service';
+  if (groupSize && Number(groupSize) !== 1) desc += ` - Group Size: ${groupSize}`;
+  return desc;
+}
+
+function buildDirectSupportDesc({ itemNumber, itemName, startTime, endTime, groupSize, fallback, unit, jobStatus, actualStart, actualEnd, scheduledStart, scheduledEnd, timeZone }) {
+  if (unit !== undefined || jobStatus !== undefined) {
+    return buildServiceItemDescription({
+      itemNumber,
+      itemName,
+      unit: unit || 'Hour(H)',
+      jobStatus,
+      actualStart,
+      actualEnd,
+      scheduledStart,
+      scheduledEnd,
+      fallback: fallback || 'Direct Support',
+      groupSize,
+      timeZone,
+    });
+  }
   let desc = itemName || '';
   if (itemNumber) desc += `${desc ? ' - ' : ''}${itemNumber}`;
   if (startTime && endTime) desc += `${desc ? ' - ' : ''}from ${startTime} to ${endTime}`;
@@ -461,18 +527,25 @@ function buildDirectSupportDesc({ itemNumber, itemName, startTime, endTime, grou
   return desc;
 }
 
-function buildSimpleItemDesc({ itemNumber, itemName, fallback }) {
+function buildSimpleItemDesc({ itemNumber, itemName, fallback, unit, jobStatus, actualStart, actualEnd, scheduledStart, scheduledEnd, timeZone }) {
+  if (unit !== undefined || jobStatus !== undefined) {
+    return buildServiceItemDescription({
+      itemNumber,
+      itemName,
+      unit,
+      jobStatus,
+      actualStart,
+      actualEnd,
+      scheduledStart,
+      scheduledEnd,
+      fallback: fallback || 'Service',
+      timeZone,
+    });
+  }
   let desc = itemName || '';
   if (itemNumber) desc += `${desc ? ' - ' : ''}${itemNumber}`;
   if (!desc) desc = fallback || 'Service';
   return desc;
-}
-
-function formatDateTimeForDesc(value, timeZone = SYDNEY_TIME_ZONE) {
-  if (!value) return '';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone });
 }
 
 export function buildLegacyNdisMasterPlanServiceRows({
@@ -645,8 +718,6 @@ export function buildLegacyNdisMasterPlanServiceRows({
   );
   const centreCapitalItemName = getSupportItemName(supportCatalogue?.centreCapital, '');
 
-  const actualStartDesc = formatDateTimeForDesc(actualStart, timeZone);
-  const actualEndDesc = formatDateTimeForDesc(actualEnd, timeZone);
   const serviceDeliveryModeValue = getValueMulti(masterPlanItem, [
     NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE,
     'Service Delivery Mode',
@@ -692,13 +763,18 @@ export function buildLegacyNdisMasterPlanServiceRows({
       if (qty > 0 && unitPrice > 0) {
         addRow({
           code: 'direct_support_time',
-          service: buildDirectSupportDesc({
+          service: buildServiceItemDescription({
             itemNumber: directSupportItemNumber,
             itemName: directSupportItemName,
-            startTime: actualStartDesc,
-            endTime: actualEndDesc,
-            groupSize,
+            unit: spDirectUnit || 'Hour(H)',
+            jobStatus,
+            actualStart,
+            actualEnd,
+            scheduledStart,
+            scheduledEnd,
             fallback: 'Direct Support - Hour based',
+            groupSize,
+            timeZone,
           }),
           unit: spDirectUnit || 'Hour(H)',
           quantity: qty,
@@ -862,10 +938,17 @@ export function buildLegacyNdisMasterPlanServiceRows({
       if (qty > 0 && unitPrice > 0) {
         addRow({
           code: 'centre_capital_costs',
-          service: buildSimpleItemDesc({
+          service: buildServiceItemDescription({
             itemNumber: centreCapitalItemNumber,
             itemName: centreCapitalItemName,
+            unit: spCentreUnit || 'Hour(H)',
+            jobStatus,
+            actualStart,
+            actualEnd,
+            scheduledStart,
+            scheduledEnd,
             fallback: 'Centre Capital Costs Item',
+            timeZone,
           }),
           unit: spCentreUnit || 'Hour(H)',
           quantity: qty,
@@ -884,7 +967,18 @@ export function buildLegacyNdisMasterPlanServiceRows({
       if (qty > 0 && spLabourUnitPrice > 0) {
         addRow({
           code: 'labour_travel_time',
-          service: 'Provider Travel - Labour Travel Time Costs',
+          service: buildServiceItemDescription({
+            itemNumber: directSupportItemNumber,
+            itemName: 'Provider Travel - Labour Travel Time Costs',
+            unit: spLabourUnit || 'Hour(H)',
+            jobStatus,
+            actualStart,
+            actualEnd,
+            scheduledStart,
+            scheduledEnd,
+            fallback: 'Provider Travel - Labour Travel Time Costs',
+            timeZone,
+          }),
           unit: spLabourUnit || '',
           quantity: qty,
           unitPrice: spLabourUnitPrice,
@@ -927,7 +1021,18 @@ export function buildLegacyNdisMasterPlanServiceRows({
       if (qty > 0 && spNonFaceUnitPrice > 0) {
         addRow({
           code: 'non_face_to_face',
-          service: `Non-Face-to-Face Support${nf2fType ? ` - ${nf2fType}` : ''}`,
+          service: buildServiceItemDescription({
+            itemNumber: directSupportItemNumber,
+            itemName: `Non-Face-to-Face Support${nf2fType ? ` - ${nf2fType}` : ''}`,
+            unit: spNonFaceUnit || 'Hour(H)',
+            jobStatus,
+            actualStart,
+            actualEnd,
+            scheduledStart,
+            scheduledEnd,
+            fallback: 'Non-Face-to-Face Support',
+            timeZone,
+          }),
           unit: spNonFaceUnit || '',
           quantity: qty,
           unitPrice: spNonFaceUnitPrice,

@@ -41,6 +41,10 @@ import {
     getNdisInvoiceGeneratorContextFromMasterItems,
     getParticipantProfileFields,
 } from '../utils/ndisInvoiceGeneratorInvoicing.js';
+import {
+    buildMasterItemsMap,
+    enrichNdisInvoiceGeneratorRows,
+} from '../utils/ndisInvoiceGeneratorOutput.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2687,6 +2691,13 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
             return res.status(200).json({ message: 'There is nothing to invoice!' });
         }
 
+        const invoiceGenTz = business?.headOfficeTimezone || 'Australia/Sydney';
+        const enrichedRows = enrichNdisInvoiceGeneratorRows(
+            allRows,
+            buildMasterItemsMap(masterItems),
+            invoiceGenTz
+        );
+
         const fmt2 = (val) => {
             const n = Number(val);
             if (!Number.isFinite(n)) return '0.00';
@@ -2695,8 +2706,7 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
 
         let subTotalNum = 0;
         const gstLabel = 'GST Free';
-        const invoiceGenTz = business?.headOfficeTimezone || 'Australia/Sydney';
-        const ordersArr = allRows.map((r) => {
+        const ordersArr = enrichedRows.map((r) => {
             const jobStatus = (r.jobStatus || '').toString().trim().toLowerCase();
             const dateIso = jobStatus === 'cancelled'
                 ? (r.scheduledServiceDate || r.serviceDeliveryDate || '')

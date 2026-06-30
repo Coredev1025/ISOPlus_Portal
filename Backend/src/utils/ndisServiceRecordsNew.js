@@ -8,6 +8,8 @@ import {
   parseNumberValue,
   resolveNdisClaimType,
   round1,
+  buildServiceItemDescription,
+  isHourUnitLabel,
 } from './ndisServiceRecords.js';
 
 const SYDNEY_TIME_ZONE = 'Australia/Sydney';
@@ -209,8 +211,6 @@ export function buildNewNdisMasterPlanServiceRows({
   );
   const cancellationItemName = getSupportItemName(supportCatalogue?.cancellation, '');
 
-  const actualStartDesc = formatDateTimeForDesc(actualStart, timeZone);
-  const actualEndDesc = formatDateTimeForDesc(actualEnd, timeZone);
   const serviceDeliveryModeValue = getValueMulti(masterPlanItem, [
     NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE,
     'Service Delivery Mode',
@@ -243,7 +243,7 @@ export function buildNewNdisMasterPlanServiceRows({
       NDIS_MASTERPLAN_ATTR.DIRECT_SUPPORT_VALUE_TIME,
       NDIS_MASTERPLAN_ATTR.DIRECT_SUPPORT_VALUE_NON_TIME,
     ]));
-    const isHourUnit = spSupportUnit.toLowerCase().includes('hour');
+    const isHourUnit = isHourUnitLabel(spSupportUnit);
 
     if (isHourUnit) {
       const baseUnitPrice = groupSize > 0 ? spSupportUnitPrice / groupSize : spSupportUnitPrice;
@@ -258,13 +258,18 @@ export function buildNewNdisMasterPlanServiceRows({
       if (qty > 0 && unitPrice > 0) {
         addRow({
           code: 'support',
-          service: buildDirectSupportDesc({
+          service: buildServiceItemDescription({
             itemNumber: supportItemNumber,
             itemName: supportItemName,
-            startTime: actualStartDesc,
-            endTime: actualEndDesc,
-            groupSize,
+            unit: spSupportUnit || 'Hour',
+            jobStatus,
+            actualStart,
+            actualEnd,
+            scheduledStart,
+            scheduledEnd,
             fallback: 'Support',
+            groupSize,
+            timeZone,
           }),
           unit: spSupportUnit || 'Hour',
           quantity: qty,
@@ -356,10 +361,17 @@ export function buildNewNdisMasterPlanServiceRows({
       if (qty > 0 && unitPrice > 0) {
         addRow({
           code: 'labour_travel_time',
-          service: buildSimpleItemDesc({
+          service: buildServiceItemDescription({
             itemNumber: labourTravelTimeItemNumber,
-            itemName: labourTravelTimeItemName,
+            itemName: labourTravelTimeItemName || 'Provider Travel - Labour Travel Time Costs',
+            unit: spLabourUnit || 'Hour',
+            jobStatus,
+            actualStart,
+            actualEnd,
+            scheduledStart,
+            scheduledEnd,
             fallback: 'Provider Travel - Labour Travel Time Costs',
+            timeZone,
           }),
           unit: spLabourUnit || 'Hour',
           quantity: qty,

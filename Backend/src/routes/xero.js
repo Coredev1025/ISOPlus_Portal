@@ -49,6 +49,10 @@ import {
   getNdisInvoiceGeneratorContextFromMasterItems,
   getParticipantProfileFields,
 } from '../utils/ndisInvoiceGeneratorInvoicing.js';
+import {
+  buildMasterItemsMap,
+  enrichNdisInvoiceGeneratorRows,
+} from '../utils/ndisInvoiceGeneratorOutput.js';
 
 dotenv.config();
 const router = express.Router();
@@ -1826,7 +1830,13 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
       return res.status(200).json({ message: 'There is nothing to invoice!' });
     }
 
-    for (const r of allRows) {
+    const enrichedRows = enrichNdisInvoiceGeneratorRows(
+      allRows,
+      buildMasterItemsMap(masterItems),
+      xeroNdisTimezone
+    );
+
+    for (const r of enrichedRows) {
       const jobStatus = (r.jobStatus || '').toString().trim().toLowerCase();
       const dateIso =
         jobStatus === 'cancelled'
