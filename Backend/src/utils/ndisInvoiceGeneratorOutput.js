@@ -168,6 +168,16 @@ export function buildNdisInvoicePdfClientDetails({
   };
 }
 
+export function buildNdisXeroInvoiceReference(participantProfile, participantProfileItem) {
+  const name = firstNonEmpty(
+    participantProfile?.fullName,
+    participantProfile?.displayName,
+    getParticipantDisplayName(participantProfileItem),
+  );
+  const ndisNumber = getParticipantNdisNumber(participantProfileItem);
+  return [name, ndisNumber].filter(Boolean).join(' - ') || ' ';
+}
+
 export function buildMasterItemsMap(masterItems) {
   return new Map(
     (masterItems || [])
