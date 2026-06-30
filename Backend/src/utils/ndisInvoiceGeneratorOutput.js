@@ -1,6 +1,7 @@
 import {
   formatLabelValue,
   getValue,
+  isCancelledShiftStatus,
   isCompletedShiftStatus,
   isHourUnitLabel,
 } from './ndisServiceRecords.js';
@@ -8,8 +9,12 @@ import {
 const SYDNEY_TIME_ZONE = 'Australia/Sydney';
 
 const SHIFT_STATUS_KEYS = ['Shift Status', 'ShiftStatus', 'Job Status', 'Job status', 'JobStatus'];
-const ACTUAL_START_KEYS = ['Actual Shift Start Date and Time', 'Actual Shift Start Date & Time'];
-const ACTUAL_END_KEYS = ['Actual Shift End Date and Time', 'Actual Shift End Date & Time'];
+const DATE_KEYS = {
+  actualStart: ['Actual Shift Start Date and Time', 'Actual Shift Start Date & Time'],
+  actualEnd: ['Actual Shift End Date and Time', 'Actual Shift End Date & Time'],
+  scheduledStart: ['Scheduled Shift Start Date & Time', 'Scheduled Shift Start Date and Time'],
+  scheduledEnd: ['Scheduled Shift End Date & Time', 'Scheduled Shift End Date and Time'],
+};
 
 function readItemField(item, keys) {
   if (!item?.data) return null;
@@ -41,20 +46,41 @@ function resolveShiftStatus(masterPlanItem) {
     .map((key) => formatLabelValue(data[key]).trim())
     .filter(Boolean);
 
-  return candidates.find(isCompletedShiftStatus) || candidates[0] || '';
+  return (
+    candidates.find(isCancelledShiftStatus) ||
+    candidates.find(isCompletedShiftStatus) ||
+    candidates[0] ||
+    ''
+  );
+}
+
+function extractShiftTimes(masterPlanItem, shiftStatus, timeZone) {
+  const keys = isCompletedShiftStatus(shiftStatus)
+    ? [DATE_KEYS.actualStart, DATE_KEYS.actualEnd]
+    : isCancelledShiftStatus(shiftStatus)
+      ? [DATE_KEYS.scheduledStart, DATE_KEYS.scheduledEnd]
+      : null;
+
+  if (!keys) return { start: '', end: '' };
+
+  const startRaw = readItemField(masterPlanItem, keys[0]);
+  const endRaw = readItemField(masterPlanItem, keys[1]);
+  return {
+    start: formatDateTimeForDesc(startRaw, timeZone),
+    end: formatDateTimeForDesc(endRaw, timeZone),
+  };
 }
 
 function enrichRowDescription(row, masterPlanItem, timeZone) {
   if (!row || !masterPlanItem || !isHourUnitLabel(row.unit)) return row?.service || '';
 
   const shiftStatus = resolveShiftStatus(masterPlanItem);
-  if (!isCompletedShiftStatus(shiftStatus)) return row.service || '';
+  if (!isCompletedShiftStatus(shiftStatus) && !isCancelledShiftStatus(shiftStatus)) {
+    return row.service || '';
+  }
 
   const itemNumber = (row.supportNumber || '').toString().trim();
-  const startRaw = readItemField(masterPlanItem, ACTUAL_START_KEYS);
-  const endRaw = readItemField(masterPlanItem, ACTUAL_END_KEYS);
-  const start = formatDateTimeForDesc(startRaw, timeZone);
-  const end = formatDateTimeForDesc(endRaw, timeZone);
+  const { start, end } = extractShiftTimes(masterPlanItem, shiftStatus, timeZone);
   if (!itemNumber || !start || !end || /\bfrom\s+.+\s+to\s+.+/i.test(row.service || '')) {
     return row.service || '';
   }

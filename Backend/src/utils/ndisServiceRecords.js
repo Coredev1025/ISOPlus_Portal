@@ -468,6 +468,10 @@ export function isCompletedShiftStatus(jobStatus) {
   return String(jobStatus || '').trim().toLowerCase() === 'completed';
 }
 
+export function isCancelledShiftStatus(jobStatus) {
+  return String(jobStatus || '').trim().toLowerCase() === 'cancelled';
+}
+
 export function buildServiceItemDescription({
   itemNumber,
   itemName,
@@ -490,6 +494,9 @@ export function buildServiceItemDescription({
     if (isCompletedShiftStatus(jobStatus)) {
       startRaw = actualStart;
       endRaw = actualEnd;
+    } else if (isCancelledShiftStatus(jobStatus)) {
+      startRaw = scheduledStart;
+      endRaw = scheduledEnd;
     }
     const startTime = formatDateTimeForDesc(startRaw, timeZone);
     const endTime = formatDateTimeForDesc(endRaw, timeZone);
@@ -1067,11 +1074,19 @@ export function buildLegacyNdisMasterPlanServiceRows({
           addRow({
             code: 'canc_direct_support',
             service: (() => {
-              let desc = 'Cancellation Fee';
-              if (directSupportItemName) desc += ` - ${directSupportItemName}`;
-              if (directSupportItemNumber) desc += ` - ${directSupportItemNumber}`;
+              let desc = buildServiceItemDescription({
+                itemNumber: directSupportItemNumber,
+                itemName: directSupportItemName
+                  ? `Cancellation Fee - ${directSupportItemName}`
+                  : 'Cancellation Fee',
+                unit: spDirectUnit,
+                jobStatus: 'Cancelled',
+                scheduledStart,
+                scheduledEnd,
+                groupSize,
+                timeZone,
+              });
               if (billablePct) desc += ` - ${billablePct}%`;
-              if (groupSize !== 1) desc += ` - Group Size: ${groupSize}`;
               return desc;
             })(),
             unit: spDirectUnit || '',
@@ -1093,9 +1108,17 @@ export function buildLegacyNdisMasterPlanServiceRows({
           addRow({
             code: 'canc_provider_travel',
             service: (() => {
-              let desc = 'Cancellation Fee';
-              if (providerTravelItemName) desc += ` - ${providerTravelItemName}`;
-              if (providerTravelItemNumber) desc += ` - ${providerTravelItemNumber}`;
+              let desc = buildServiceItemDescription({
+                itemNumber: providerTravelItemNumber,
+                itemName: providerTravelItemName
+                  ? `Cancellation Fee - ${providerTravelItemName}`
+                  : 'Cancellation Fee',
+                unit: spNonLabourUnit,
+                jobStatus: 'Cancelled',
+                scheduledStart,
+                scheduledEnd,
+                timeZone,
+              });
               if (billablePct) desc += ` - ${billablePct}%`;
               return desc;
             })(),
@@ -1118,9 +1141,17 @@ export function buildLegacyNdisMasterPlanServiceRows({
           addRow({
             code: 'canc_activity_transport',
             service: (() => {
-              let desc = 'Cancellation Fee';
-              if (activityItemName) desc += ` - ${activityItemName}`;
-              if (activityItemNumber) desc += ` - ${activityItemNumber}`;
+              let desc = buildServiceItemDescription({
+                itemNumber: activityItemNumber,
+                itemName: activityItemName
+                  ? `Cancellation Fee - ${activityItemName}`
+                  : 'Cancellation Fee',
+                unit: spActivityUnit,
+                jobStatus: 'Cancelled',
+                scheduledStart,
+                scheduledEnd,
+                timeZone,
+              });
               if (billablePct) desc += ` - ${billablePct}%`;
               return desc;
             })(),
@@ -1143,9 +1174,17 @@ export function buildLegacyNdisMasterPlanServiceRows({
           addRow({
             code: 'canc_centre_capital',
             service: (() => {
-              let desc = 'Cancellation Fee';
-              if (centreCapitalItemName) desc += ` - ${centreCapitalItemName}`;
-              if (centreCapitalItemNumber) desc += ` - ${centreCapitalItemNumber}`;
+              let desc = buildServiceItemDescription({
+                itemNumber: centreCapitalItemNumber,
+                itemName: centreCapitalItemName
+                  ? `Cancellation Fee - ${centreCapitalItemName}`
+                  : 'Cancellation Fee',
+                unit: spCentreUnit,
+                jobStatus: 'Cancelled',
+                scheduledStart,
+                scheduledEnd,
+                timeZone,
+              });
               if (billablePct) desc += ` - ${billablePct}%`;
               return desc;
             })(),
