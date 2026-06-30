@@ -1,5 +1,7 @@
 import {
   formatLabelValue,
+  getParticipantDisplayName,
+  getParticipantNdisNumber,
   getValue,
   isCancelledShiftStatus,
   isCompletedShiftStatus,
@@ -15,6 +17,23 @@ const DATE_KEYS = {
   scheduledStart: ['Scheduled Shift Start Date & Time', 'Scheduled Shift Start Date and Time'],
   scheduledEnd: ['Scheduled Shift End Date & Time', 'Scheduled Shift End Date and Time'],
 };
+
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    const text = (value ?? '').toString().trim();
+    if (text) return text;
+  }
+  return '';
+}
+
+function readDataFields(data, ...keys) {
+  if (!data) return '';
+  for (const key of keys) {
+    const text = formatLabelValue(data[key]).trim();
+    if (text) return text;
+  }
+  return '';
+}
 
 function readItemField(item, keys) {
   if (!item?.data) return null;
@@ -102,6 +121,51 @@ export function enrichNdisInvoiceGeneratorRows(rows, masterItemsById, timeZone =
     const service = enrichRowDescription(row, masterPlanItem, timeZone);
     return service === row.service ? row : { ...row, service };
   });
+}
+
+export function buildNdisInvoicePdfClientDetails({
+  participantProfile = {},
+  participantProfileItem = null,
+  apiProfileValues = null,
+  fallbackParticipantName = '',
+} = {}) {
+  const data = participantProfileItem?.data || {};
+  const api = apiProfileValues || {};
+
+  const participantName = firstNonEmpty(
+    participantProfile.fullName,
+    participantProfile.displayName,
+    readDataFields(data, 'Full Name/Preferred Name', 'Preferred Name', 'Full Name', 'Name'),
+    api.fullName,
+    fallbackParticipantName,
+    getParticipantDisplayName(participantProfileItem),
+  );
+
+  const contact = firstNonEmpty(
+    participantProfile.billingContact,
+    readDataFields(data, 'Billing Contact', 'Invoice To', 'Plan Manager'),
+    api.billingContact,
+    participantName,
+  );
+
+  const billingAddress = firstNonEmpty(
+    participantProfile.billingAddress,
+    api.billingAddress,
+    readDataFields(data, 'Billing Address', 'Invoice Address'),
+  );
+  const street = firstNonEmpty(participantProfile.address, api.address, readDataFields(data, 'Address', 'Street Address'));
+  const suburb = firstNonEmpty(participantProfile.suburb, api.suburb, readDataFields(data, 'Suburb'));
+  const state = firstNonEmpty(participantProfile.state, api.state, readDataFields(data, 'State'));
+  const postcode = firstNonEmpty(participantProfile.postcode, api.postcode, readDataFields(data, 'Postcode', 'Post Code'));
+  const address = billingAddress || [street, suburb, [state, postcode].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  const ndisNumber = firstNonEmpty(getParticipantNdisNumber(participantProfileItem), readDataFields(data, 'NDIS Number', 'NDISNumber'));
+
+  return {
+    Contact: contact || ' ',
+    Address: address || ' ',
+    'Participant Name': participantName || contact || ' ',
+    'NDIS Number': ndisNumber || ' ',
+  };
 }
 
 export function buildMasterItemsMap(masterItems) {
