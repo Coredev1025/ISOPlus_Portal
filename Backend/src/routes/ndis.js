@@ -34,6 +34,36 @@ function formatValue(val) {
     }
   }
 
+function toApiNumber(val) {
+    const num = Number(formatValue(val));
+    return Number.isFinite(num) ? num : 0;
+}
+
+const ISOPLUS_API_HEADERS = {
+    "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+    "X-API-Version": "2025-02-26.morava",
+};
+
+async function putMasterPlanItemValues(workspaceId, boardId, itemId, values) {
+    if (!Array.isArray(values) || values.length === 0) return { status: 200, skipped: true };
+    return axios.put(
+        `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
+        { values },
+        { headers: ISOPLUS_API_HEADERS }
+    );
+}
+
+function extractIsoPlusErrorDetail(err) {
+    const data = err?.response?.data;
+    if (!data) return err?.message || 'Unknown error';
+    if (typeof data === 'string') return data;
+    if (data.message) return data.message;
+    if (data.error) return typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
+    return JSON.stringify(data);
+}
+
 function extractUnit(unitString) {
     switch (unitString) {
         case 'E':
@@ -562,8 +592,8 @@ async function updateVariablesParticipantsServicePlanNew(workspaceId, boardId, i
             integrationMessage = 'Error: The selected Item Number for Cancellation Costs is invalid.';
             fallbackColor = '#FFA2A2';
         } else if (hasSelectionValue(itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT) && resolvedActivityBasedTransportValues?.itemName && !resolvedActivityBasedTransportValues.itemName.toLowerCase().includes('activity based transport')) {
-            integrationMessage = 'Error: The selected Item Number for Activity Based Transport is invalid.';
-            fallbackColor = '#9B59B6';
+            integrationMessage = 'Error: The selected Item Number for Activity Based Transport Cost is invalid.';
+            fallbackColor = '#FFE197';
         }
 
         const updateValues = [];
@@ -765,22 +795,21 @@ async function handleMasterPlanNew(req, res) {
         NDIS_MASTERPLAN_ATTR.LABOUR_TRAVEL_TIME_AMOUNT,
         NDIS_MASTERPLAN_ATTR.ALLOWANCES_AMOUNT,
         NDIS_MASTERPLAN_ATTR.CANCELLATION_FEE,
-        'Total Invoiceable Value($)',
     ].forEach(name => {
         const id = findAttrId(name);
         if (id) resetValues.push({ data: 0, attribute_id: id });
     });
-    await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${items.id}`,
-        { values: resetValues },
-        {
-            headers: {
-                "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "X-API-Version": "2025-02-26.morava",
-            }
+    if (resetValues.length > 0) {
+        try {
+            await putMasterPlanItemValues(workspaceId, boardId, items.id, resetValues);
+        } catch (resetErr) {
+            warn('Xero-Service', 'Master plan reset values failed (continuing with calculated values)', {
+                workspaceId, boardId, itemId: items.id,
+                status: resetErr?.response?.status,
+                detail: extractIsoPlusErrorDetail(resetErr),
+            }, req ?? null);
         }
-    );
+    }
 
     let supportValueNum = 0;
     let providerTravelAmountNum = 0;
@@ -801,8 +830,8 @@ async function handleMasterPlanNew(req, res) {
                 const qty = Number(itemsValues['Quantity (Non-Time-Based Support)']) || 0;
                 supportValue = formatValue((servicePlanValues?.supportUnitPrice || 0) * qty);
             }
-            supportValueNum = Number(supportValue) || 0;
-            updateValues.push({ data: supportValue, attribute_id: supportAttrId });
+            supportValueNum = toApiNumber(supportValue);
+            updateValues.push({ data: supportValueNum, attribute_id: supportAttrId });
         }
 
         if (servicePlanValues?.nonLabourTravelUnitPrice) {
@@ -811,8 +840,8 @@ async function handleMasterPlanNew(req, res) {
                 const mileage = Number(itemsValues[NDIS_MASTERPLAN_ATTR.PROVIDER_TRAVEL_MILEAGE]) || 0;
                 const otherCosts = Number(itemsValues['Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied ($)'] || itemsValues[NDIS_MASTERPLAN_ATTR.PROVIDER_TRAVEL_OTHER_COSTS]) || 0;
                 const amount = formatValue(computeProviderTravelNonLabourAmount(servicePlanValues.nonLabourTravelUnitPrice, mileage, otherCosts));
-                providerTravelAmountNum = Number(amount) || 0;
-                updateValues.push({ data: amount, attribute_id: ptId });
+                providerTravelAmountNum = toApiNumber(amount);
+                updateValues.push({ data: providerTravelAmountNum, attribute_id: ptId });
             }
         }
 
@@ -822,8 +851,8 @@ async function handleMasterPlanNew(req, res) {
                 const mileage = Number(itemsValues[NDIS_MASTERPLAN_ATTR.ACTIVITY_TRANSPORT_MILEAGE]) || 0;
                 const otherCosts = Number(itemsValues[NDIS_MASTERPLAN_ATTR.ACTIVITY_TRANSPORT_OTHER_COSTS]) || 0;
                 const amount = formatValue(computeActivityBaseTransportAmount(servicePlanValues.activityBasedTransportUnitPrice, mileage, otherCosts));
-                activityTransportAmountNum = Number(amount) || 0;
-                updateValues.push({ data: amount, attribute_id: abtId });
+                activityTransportAmountNum = toApiNumber(amount);
+                updateValues.push({ data: activityTransportAmountNum, attribute_id: abtId });
             }
         }
 
@@ -832,8 +861,8 @@ async function handleMasterPlanNew(req, res) {
             if (lttId) {
                 const minutes = Number(itemsValues[NDIS_MASTERPLAN_ATTR.LABOUR_TRAVEL_TIME_MIN]) || 0;
                 const amount = formatValue(computeLabourTravelTimeAmount(servicePlanValues.labourTravelTimeUnitPrice, minutes));
-                labourTravelAmountNum = Number(amount) || 0;
-                updateValues.push({ data: amount, attribute_id: lttId });
+                labourTravelAmountNum = toApiNumber(amount);
+                updateValues.push({ data: labourTravelAmountNum, attribute_id: lttId });
             }
         }
 
@@ -841,8 +870,8 @@ async function handleMasterPlanNew(req, res) {
             const allowId = findAttrId(NDIS_MASTERPLAN_ATTR.ALLOWANCES_AMOUNT);
             if (allowId) {
                 const amount = formatValue(itemsValues[NDIS_MASTERPLAN_ATTR.USED_ALLOWANCE_AMOUNT] || 0);
-                allowancesAmountNum = Number(amount) || 0;
-                updateValues.push({ data: amount, attribute_id: allowId });
+                allowancesAmountNum = toApiNumber(amount);
+                updateValues.push({ data: allowancesAmountNum, attribute_id: allowId });
             }
         }
     }
@@ -855,40 +884,34 @@ async function handleMasterPlanNew(req, res) {
                 : 0;
             const cancUnitPrice = Number(servicePlanValues?.cancellationUnitPrice) || 0;
             const amount = formatValue(scheduledDuration * cancUnitPrice);
-            cancellationFeeNum = Number(amount) || 0;
-            updateValues.push({ data: amount, attribute_id: cancFeeId });
+            cancellationFeeNum = toApiNumber(amount);
+            updateValues.push({ data: cancellationFeeNum, attribute_id: cancFeeId });
         }
-    }
-
-    const totalInvoiceableAttrId = findAttrId('Total Invoiceable Value($)');
-    if (totalInvoiceableAttrId) {
-        const totalInvoiceable = cancelled
-            ? cancellationFeeNum
-            : supportValueNum + providerTravelAmountNum + activityTransportAmountNum + labourTravelAmountNum + allowancesAmountNum;
-        updateValues.push({
-            data: formatValue(totalInvoiceable),
-            attribute_id: totalInvoiceableAttrId,
-        });
     }
 
     if (fundValues) {
-        updateValues.push({
-            data: fundValues.fundingBudgetStatus,
-            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Funding Budget Status').attribute.id
-        });
-    }
-
-    const response = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${items.id}`,
-        { values: updateValues },
-        {
-            headers: {
-                "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "X-API-Version": "2025-02-26.morava",
+        const fundStatusAttr = itemValuesWithAttributeId.find(v => v.attribute?.name === 'Funding Budget Status');
+        if (fundStatusAttr?.attribute?.id) {
+            const statusLabelId = resolveConfigurationStatusLabelId(
+                fundStatusAttr,
+                fundValues.fundingBudgetStatus,
+                '#388903'
+            );
+            if (statusLabelId) {
+                updateValues.push({
+                    data: [statusLabelId],
+                    attribute_id: fundStatusAttr.attribute.id,
+                });
             }
         }
-    );
+    }
+
+    if (updateValues.length === 0) {
+        setIntegrationMessage(workspaceId, boardId, items.id, "No master plan values to update");
+        return res.status(200).json({ message: 'No master plan values to update' });
+    }
+
+    const response = await putMasterPlanItemValues(workspaceId, boardId, items.id, updateValues);
     if (response.status === 200) {
         setIntegrationMessage(workspaceId, boardId, items.id, "Master plan processed successfully");
         return res.status(200).json({ message: 'Master plan processed' });
@@ -896,13 +919,22 @@ async function handleMasterPlanNew(req, res) {
     setIntegrationMessage(workspaceId, boardId, items.id, "Failed to update master plan");
     return res.status(200).json({ error: 'Failed to update master plan' });
     } catch (err) {
+        const isoPlusDetail = extractIsoPlusErrorDetail(err);
         error('Xero-Service', 'Master plan new pricing automation failed', {
             workspaceId: req.params.workspaceId,
             boardId: req.params.boardId,
+            status: err?.response?.status,
+            detail: isoPlusDetail,
             message: err?.message,
             stack: err?.stack,
         }, req ?? null);
-        return res.status(200).json({ error: 'Master plan failed', message: err?.message || 'Server error' });
+        setIntegrationMessage(
+            workspaceId,
+            boardId,
+            items?.id,
+            `Master plan update failed: ${isoPlusDetail}`
+        );
+        return res.status(200).json({ error: 'Master plan failed', message: isoPlusDetail || err?.message || 'Server error' });
     }
 }
 
