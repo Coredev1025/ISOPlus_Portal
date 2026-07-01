@@ -10,6 +10,9 @@ import {
   round1,
   buildServiceItemDescription,
   isHourUnitLabel,
+  computeProviderTravelNonLabourAmount,
+  computeActivityBaseTransportAmount,
+  computeLabourTravelTimeAmount,
 } from './ndisServiceRecords.js';
 
 const SYDNEY_TIME_ZONE = 'Australia/Sydney';
@@ -181,6 +184,14 @@ export function buildNewNdisMasterPlanServiceRows({
     NDIS_SERVICEPLAN_ATTR.PRICE_CANCELLATION,
     'Agreed Unit Price for Cancellation ($)',
   ]);
+  const spActivityUnit = getServicePlanLabel(servicePlan, [
+    NDIS_SERVICEPLAN_ATTR.UNIT_ACTIVITY_TRANSPORT,
+    'Unit (Activity Based Transport)',
+  ]);
+  const spActivityUnitPrice = getServicePlanNumber(servicePlan, [
+    NDIS_SERVICEPLAN_ATTR.PRICE_ACTIVITY_TRANSPORT,
+    'Agreed Price for Activity Based Transport ($)',
+  ]);
 
   const supportItemNumber = getSupportItemNumber(
     supportCatalogue?.support,
@@ -202,6 +213,11 @@ export function buildNewNdisMasterPlanServiceRows({
     getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.ITEM_CANCELLATION)
   );
   const cancellationItemName = getSupportItemName(supportCatalogue?.cancellation, '');
+  const activityItemNumber = getSupportItemNumber(
+    supportCatalogue?.activityTransport,
+    getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT)
+  );
+  const activityItemName = getSupportItemName(supportCatalogue?.activityTransport, '');
 
   const serviceDeliveryModeValue = getValueMulti(masterPlanItem, [
     NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE,
@@ -317,9 +333,7 @@ export function buildNewNdisMasterPlanServiceRows({
       'Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied ($)',
     ]));
     if (providerAmount <= 0) {
-      const computed = providerMileageNum > 0 && spNonLabourUnitPrice > 0
-        ? providerMileageNum * spNonLabourUnitPrice + providerOthersNum
-        : providerOthersNum;
+      const computed = computeProviderTravelNonLabourAmount(spNonLabourUnitPrice, providerMileageNum, providerOthersNum);
       if (computed > 0) providerAmount = computed;
     }
 
@@ -341,6 +355,47 @@ export function buildNewNdisMasterPlanServiceRows({
         unitPrice: 1,
         totalAmount: providerAmount,
         supportNumber: providerTravelItemNumber,
+        claimType: '',
+      });
+    }
+
+    let activityAmount = getMasterPlanNumber(masterPlanItem, [
+      NDIS_MASTERPLAN_ATTR.ACTIVITY_BASE_TRANSPORT_AMOUNT,
+      'Activity Based Transport Amount($)',
+      'Activity Based Transport Amount ($)',
+      'Activity Base Transport Amount ($)',
+    ]);
+    const activityMileageNum = parseNumberValue(getValueMulti(masterPlanItem, [
+      NDIS_MASTERPLAN_ATTR.ACTIVITY_TRANSPORT_MILEAGE,
+      'Activity Based Transport Mileage(Kms) as per the Service Plan, if a vehicle is used.',
+    ]));
+    const activityOthersNum = parseNumberValue(getValueMulti(masterPlanItem, [
+      NDIS_MASTERPLAN_ATTR.ACTIVITY_TRANSPORT_OTHER_COSTS,
+      'Activity Based Transport Costs as per the Service Plan, if other costs are applied.',
+    ]));
+    if (activityAmount <= 0) {
+      const computed = computeActivityBaseTransportAmount(spActivityUnitPrice, activityMileageNum, activityOthersNum);
+      if (computed > 0) activityAmount = computed;
+    }
+
+    if (activityAmount > 0) {
+      addRow({
+        code: 'activity_transport',
+        service: (() => {
+          let desc = buildSimpleItemDesc({
+            itemNumber: activityItemNumber,
+            itemName: activityItemName,
+            fallback: 'Activity Based Transport Item',
+          });
+          if (activityMileageNum) desc += ` - ${activityMileageNum}km`;
+          if (activityOthersNum) desc += ` - Others: ${activityOthersNum}`;
+          return desc;
+        })(),
+        unit: spActivityUnit || 'Each(E)',
+        quantity: activityAmount,
+        unitPrice: 1,
+        totalAmount: activityAmount,
+        supportNumber: activityItemNumber,
         claimType: '',
       });
     }
@@ -368,7 +423,7 @@ export function buildNewNdisMasterPlanServiceRows({
           unit: spLabourUnit || 'Hour',
           quantity: qty,
           unitPrice,
-          totalAmount: parseFloat((qty * unitPrice).toFixed(2)),
+          totalAmount: labourAmount,
           supportNumber: labourTravelTimeItemNumber,
           claimType: '',
         });
