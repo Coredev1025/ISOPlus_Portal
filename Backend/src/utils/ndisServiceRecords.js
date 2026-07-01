@@ -220,6 +220,29 @@ export function parseNumberValue(rawValue) {
   return negative ? -Math.abs(parsed) : parsed;
 }
 
+export function computeProviderTravelNonLabourAmount(unitPrice, mileage, otherCosts) {
+  const price = parseNumberValue(unitPrice);
+  const mileageNum = parseNumberValue(mileage);
+  const othersNum = parseNumberValue(otherCosts);
+  if (price <= 0) return othersNum > 0 ? parseFloat(othersNum.toFixed(2)) : 0;
+  return parseFloat((price * mileageNum + othersNum).toFixed(2));
+}
+
+export function computeActivityBaseTransportAmount(unitPrice, mileage, otherCosts) {
+  const price = parseNumberValue(unitPrice);
+  const mileageNum = parseNumberValue(mileage);
+  const othersNum = parseNumberValue(otherCosts);
+  if (price <= 0) return othersNum > 0 ? parseFloat(othersNum.toFixed(2)) : 0;
+  return parseFloat((price * mileageNum + othersNum).toFixed(2));
+}
+
+export function computeLabourTravelTimeAmount(unitPrice, minutes) {
+  const price = parseNumberValue(unitPrice);
+  const minutesNum = parseNumberValue(minutes);
+  if (price <= 0 || minutesNum <= 0) return 0;
+  return parseFloat((price * (minutesNum / 60)).toFixed(2));
+}
+
 export function round1(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
@@ -844,10 +867,7 @@ export function buildLegacyNdisMasterPlanServiceRows({
     const providerMileageNum = parseNumberValue(providerMileageRaw);
     const providerOthersNum = parseNumberValue(providerOthersRaw);
     if (providerAmount <= 0) {
-      const computed =
-        providerMileageNum > 0 && spNonLabourUnitPrice > 0
-          ? providerMileageNum * spNonLabourUnitPrice + providerOthersNum
-          : providerOthersNum;
+      const computed = computeProviderTravelNonLabourAmount(spNonLabourUnitPrice, providerMileageNum, providerOthersNum);
       if (computed > 0) providerAmount = computed;
     }
 
@@ -891,10 +911,7 @@ export function buildLegacyNdisMasterPlanServiceRows({
     const activityMileageNum = parseNumberValue(activityMileageRaw);
     const activityOthersNum = parseNumberValue(activityOthersRaw);
     if (activityAmount <= 0) {
-      const computed =
-        activityMileageNum > 0 && spActivityUnitPrice > 0
-          ? activityMileageNum * spActivityUnitPrice + activityOthersNum
-          : activityOthersNum;
+      const computed = computeActivityBaseTransportAmount(spActivityUnitPrice, activityMileageNum, activityOthersNum);
       if (computed > 0) activityAmount = computed;
     }
 

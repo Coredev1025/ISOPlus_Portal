@@ -10,6 +10,9 @@ import {
   round1,
   buildServiceItemDescription,
   isHourUnitLabel,
+  computeProviderTravelNonLabourAmount,
+  computeActivityBaseTransportAmount,
+  computeLabourTravelTimeAmount,
 } from './ndisServiceRecords.js';
 
 const SYDNEY_TIME_ZONE = 'Australia/Sydney';
@@ -330,9 +333,7 @@ export function buildNewNdisMasterPlanServiceRows({
       'Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied ($)',
     ]));
     if (providerAmount <= 0) {
-      const computed = providerMileageNum > 0 && spNonLabourUnitPrice > 0
-        ? providerMileageNum * spNonLabourUnitPrice + providerOthersNum
-        : providerOthersNum;
+      const computed = computeProviderTravelNonLabourAmount(spNonLabourUnitPrice, providerMileageNum, providerOthersNum);
       if (computed > 0) providerAmount = computed;
     }
 
@@ -373,10 +374,7 @@ export function buildNewNdisMasterPlanServiceRows({
       'Activity Based Transport Costs as per the Service Plan, if other costs are applied.',
     ]));
     if (activityAmount <= 0) {
-      const computed =
-        activityMileageNum > 0 && spActivityUnitPrice > 0
-          ? activityMileageNum * spActivityUnitPrice + activityOthersNum
-          : activityOthersNum;
+      const computed = computeActivityBaseTransportAmount(spActivityUnitPrice, activityMileageNum, activityOthersNum);
       if (computed > 0) activityAmount = computed;
     }
 
@@ -425,7 +423,7 @@ export function buildNewNdisMasterPlanServiceRows({
           unit: spLabourUnit || 'Hour',
           quantity: qty,
           unitPrice,
-          totalAmount: parseFloat((qty * unitPrice).toFixed(2)),
+          totalAmount: labourAmount,
           supportNumber: labourTravelTimeItemNumber,
           claimType: '',
         });

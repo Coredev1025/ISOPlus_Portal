@@ -16,7 +16,7 @@ import {
     masterPlanBoardUsesNewNdisPricing,
     isShiftCancelled,
 } from '../utils/ndisPricingRules.js';
-import { NDIS_MASTERPLAN_ATTR, NDIS_SERVICEPLAN_ATTR } from '../utils/ndisServiceRecords.js';
+import { NDIS_MASTERPLAN_ATTR, NDIS_SERVICEPLAN_ATTR, computeProviderTravelNonLabourAmount, computeActivityBaseTransportAmount, computeLabourTravelTimeAmount } from '../utils/ndisServiceRecords.js';
 import axios from 'axios';
 
 dotenv.config();
@@ -810,7 +810,7 @@ async function handleMasterPlanNew(req, res) {
             if (ptId) {
                 const mileage = Number(itemsValues[NDIS_MASTERPLAN_ATTR.PROVIDER_TRAVEL_MILEAGE]) || 0;
                 const otherCosts = Number(itemsValues['Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied ($)'] || itemsValues[NDIS_MASTERPLAN_ATTR.PROVIDER_TRAVEL_OTHER_COSTS]) || 0;
-                const amount = formatValue(servicePlanValues.nonLabourTravelUnitPrice * mileage + otherCosts);
+                const amount = formatValue(computeProviderTravelNonLabourAmount(servicePlanValues.nonLabourTravelUnitPrice, mileage, otherCosts));
                 providerTravelAmountNum = Number(amount) || 0;
                 updateValues.push({ data: amount, attribute_id: ptId });
             }
@@ -821,7 +821,7 @@ async function handleMasterPlanNew(req, res) {
             if (abtId) {
                 const mileage = Number(itemsValues[NDIS_MASTERPLAN_ATTR.ACTIVITY_TRANSPORT_MILEAGE]) || 0;
                 const otherCosts = Number(itemsValues[NDIS_MASTERPLAN_ATTR.ACTIVITY_TRANSPORT_OTHER_COSTS]) || 0;
-                const amount = formatValue(servicePlanValues.activityBasedTransportUnitPrice * (mileage + otherCosts));
+                const amount = formatValue(computeActivityBaseTransportAmount(servicePlanValues.activityBasedTransportUnitPrice, mileage, otherCosts));
                 activityTransportAmountNum = Number(amount) || 0;
                 updateValues.push({ data: amount, attribute_id: abtId });
             }
@@ -831,7 +831,7 @@ async function handleMasterPlanNew(req, res) {
             const lttId = findAttrId(NDIS_MASTERPLAN_ATTR.LABOUR_TRAVEL_TIME_AMOUNT);
             if (lttId) {
                 const minutes = Number(itemsValues[NDIS_MASTERPLAN_ATTR.LABOUR_TRAVEL_TIME_MIN]) || 0;
-                const amount = formatValue(servicePlanValues.labourTravelTimeUnitPrice * (minutes / 60));
+                const amount = formatValue(computeLabourTravelTimeAmount(servicePlanValues.labourTravelTimeUnitPrice, minutes));
                 labourTravelAmountNum = Number(amount) || 0;
                 updateValues.push({ data: amount, attribute_id: lttId });
             }
@@ -1320,8 +1320,12 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
     }
     if (servicePlanValues?.activityBasedTransportUnitPrice) {
         updateValues.push({
-            data: formatValue(servicePlanValues.activityBasedTransportUnitPrice * ((itemsValues['Activity Base Transport Mileage(Kms) as per the Service Plan, if a vehicle is used.'] || 0) + (itemsValues['Activity Base Transport Costs as per the Service Plan, if other costs are applied.'] || 0))),
-            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === 'Activity Base Transport Amount($)').attribute.id
+            data: formatValue(computeActivityBaseTransportAmount(
+                servicePlanValues.activityBasedTransportUnitPrice,
+                itemsValues[NDIS_MASTERPLAN_ATTR.ACTIVITY_TRANSPORT_MILEAGE] || 0,
+                itemsValues[NDIS_MASTERPLAN_ATTR.ACTIVITY_TRANSPORT_OTHER_COSTS] || 0,
+            )),
+            attribute_id: itemValuesWithAttributeId.find(v => v.attribute.name === NDIS_MASTERPLAN_ATTR.ACTIVITY_BASE_TRANSPORT_AMOUNT).attribute.id
         });
     }
     if (servicePlanValues?.centreCapitalCostsUnitPrice) {
