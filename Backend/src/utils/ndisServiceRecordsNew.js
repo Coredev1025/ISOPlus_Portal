@@ -181,6 +181,14 @@ export function buildNewNdisMasterPlanServiceRows({
     NDIS_SERVICEPLAN_ATTR.PRICE_CANCELLATION,
     'Agreed Unit Price for Cancellation ($)',
   ]);
+  const spActivityUnit = getServicePlanLabel(servicePlan, [
+    NDIS_SERVICEPLAN_ATTR.UNIT_ACTIVITY_TRANSPORT,
+    'Unit (Activity Based Transport)',
+  ]);
+  const spActivityUnitPrice = getServicePlanNumber(servicePlan, [
+    NDIS_SERVICEPLAN_ATTR.PRICE_ACTIVITY_TRANSPORT,
+    'Agreed Price for Activity Based Transport ($)',
+  ]);
 
   const supportItemNumber = getSupportItemNumber(
     supportCatalogue?.support,
@@ -202,6 +210,11 @@ export function buildNewNdisMasterPlanServiceRows({
     getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.ITEM_CANCELLATION)
   );
   const cancellationItemName = getSupportItemName(supportCatalogue?.cancellation, '');
+  const activityItemNumber = getSupportItemNumber(
+    supportCatalogue?.activityTransport,
+    getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT)
+  );
+  const activityItemName = getSupportItemName(supportCatalogue?.activityTransport, '');
 
   const serviceDeliveryModeValue = getValueMulti(masterPlanItem, [
     NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE,
@@ -341,6 +354,50 @@ export function buildNewNdisMasterPlanServiceRows({
         unitPrice: 1,
         totalAmount: providerAmount,
         supportNumber: providerTravelItemNumber,
+        claimType: '',
+      });
+    }
+
+    let activityAmount = getMasterPlanNumber(masterPlanItem, [
+      NDIS_MASTERPLAN_ATTR.ACTIVITY_BASE_TRANSPORT_AMOUNT,
+      'Activity Based Transport Amount($)',
+      'Activity Based Transport Amount ($)',
+      'Activity Base Transport Amount ($)',
+    ]);
+    const activityMileageNum = parseNumberValue(getValueMulti(masterPlanItem, [
+      NDIS_MASTERPLAN_ATTR.ACTIVITY_TRANSPORT_MILEAGE,
+      'Activity Based Transport Mileage(Kms) as per the Service Plan, if a vehicle is used.',
+    ]));
+    const activityOthersNum = parseNumberValue(getValueMulti(masterPlanItem, [
+      NDIS_MASTERPLAN_ATTR.ACTIVITY_TRANSPORT_OTHER_COSTS,
+      'Activity Based Transport Costs as per the Service Plan, if other costs are applied.',
+    ]));
+    if (activityAmount <= 0) {
+      const computed =
+        activityMileageNum > 0 && spActivityUnitPrice > 0
+          ? activityMileageNum * spActivityUnitPrice + activityOthersNum
+          : activityOthersNum;
+      if (computed > 0) activityAmount = computed;
+    }
+
+    if (activityAmount > 0) {
+      addRow({
+        code: 'activity_transport',
+        service: (() => {
+          let desc = buildSimpleItemDesc({
+            itemNumber: activityItemNumber,
+            itemName: activityItemName,
+            fallback: 'Activity Based Transport Item',
+          });
+          if (activityMileageNum) desc += ` - ${activityMileageNum}km`;
+          if (activityOthersNum) desc += ` - Others: ${activityOthersNum}`;
+          return desc;
+        })(),
+        unit: spActivityUnit || 'Each(E)',
+        quantity: activityAmount,
+        unitPrice: 1,
+        totalAmount: activityAmount,
+        supportNumber: activityItemNumber,
         claimType: '',
       });
     }

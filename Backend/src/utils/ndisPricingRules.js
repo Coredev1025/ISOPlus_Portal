@@ -4,6 +4,7 @@ import { getReferences, getAttribute } from '../services/isoplus.js';
 
 export const LEGACY_DIRECT_SUPPORT_ATTR = 'Direct Support Item Number';
 export const NEW_SUPPORT_ITEM_ATTR = 'Support Item Number';
+export const NEW_ACTIVITY_TRANSPORT_ITEM_ATTR = 'Activity Based Transport Item Number';
 
 const BOARD_RULE_CACHE_MS = 5 * 60 * 1000;
 const boardRuleCache = new Map();

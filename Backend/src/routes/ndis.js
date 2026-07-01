@@ -16,6 +16,7 @@ import {
     masterPlanBoardUsesNewNdisPricing,
     isShiftCancelled,
 } from '../utils/ndisPricingRules.js';
+import { NDIS_MASTERPLAN_ATTR, NDIS_SERVICEPLAN_ATTR } from '../utils/ndisServiceRecords.js';
 import axios from 'axios';
 
 dotenv.config();
@@ -150,30 +151,37 @@ const NDIS_SERVICE_PLAN_PRICING_MAPPINGS = {
     support: {
         type: 'support',
         label: 'Support',
-        itemNumberKey: 'Support Item Number',
-        unitAttr: 'Unit (Support)',
-        unitPriceAttr: 'Agreed Unit Price for Support ($)',
+        itemNumberKey: NDIS_SERVICEPLAN_ATTR.ITEM_SUPPORT,
+        unitAttr: NDIS_SERVICEPLAN_ATTR.UNIT_SUPPORT,
+        unitPriceAttr: NDIS_SERVICEPLAN_ATTR.PRICE_SUPPORT,
     },
     provider_travel_non_labour_cost: {
         type: 'provider_travel_non_labour_cost',
         label: 'Provider Travel Non Labour Cost',
-        itemNumberKey: 'Provider Travel - Non-Labour Cost Item Number',
-        unitAttr: 'Unit (Provider Travel - Non-Labour Cost)',
-        unitPriceAttr: 'Agreed Unit Price for Non-Labour Travel ($)',
+        itemNumberKey: NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR,
+        unitAttr: NDIS_SERVICEPLAN_ATTR.UNIT_PROVIDER_TRAVEL_NON_LABOUR,
+        unitPriceAttr: NDIS_SERVICEPLAN_ATTR.PRICE_PROVIDER_TRAVEL_NON_LABOUR,
     },
     labour_travel_time_cost: {
         type: 'labour_travel_time_cost',
         label: 'Labour Travel Time Cost',
-        itemNumberKey: 'Provider Travel - Labour Travel Time Costs Item Number',
-        unitAttr: 'Unit (Labour Travel Time)',
-        unitPriceAttr: 'Agreed Unit Price for Labour Travel Time ($)',
+        itemNumberKey: NDIS_SERVICEPLAN_ATTR.ITEM_LABOUR_TRAVEL_TIME,
+        unitAttr: NDIS_SERVICEPLAN_ATTR.UNIT_LABOUR_TRAVEL_TIME,
+        unitPriceAttr: NDIS_SERVICEPLAN_ATTR.PRICE_LABOUR_TRAVEL_TIME,
     },
     cancellation_cost: {
         type: 'cancellation_cost',
         label: 'Cancellation Cost',
-        itemNumberKey: 'Cancellation Item Number',
-        unitAttr: 'Unit (Cancellation)',
-        unitPriceAttr: 'Agreed Unit Price for Cancellation ($)',
+        itemNumberKey: NDIS_SERVICEPLAN_ATTR.ITEM_CANCELLATION,
+        unitAttr: NDIS_SERVICEPLAN_ATTR.UNIT_CANCELLATION,
+        unitPriceAttr: NDIS_SERVICEPLAN_ATTR.PRICE_CANCELLATION,
+    },
+    activity_based_transport: {
+        type: 'activity_based_transport',
+        label: 'Activity Based Transport',
+        itemNumberKey: NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT,
+        unitAttr: NDIS_SERVICEPLAN_ATTR.UNIT_ACTIVITY_TRANSPORT,
+        unitPriceAttr: NDIS_SERVICEPLAN_ATTR.PRICE_ACTIVITY_TRANSPORT,
     },
 };
 
@@ -185,6 +193,7 @@ async function resolveAllServicePlanPricing(workspaceId, boardId, itemId, itemsV
         ,
         labourTravelTimeValues,
         cancellationValues,
+        activityBasedTransportValues,
     ] = await getNDISParticipantsServicePlanNewPricingReferencedItems(workspaceId, boardId, itemId);
 
     if (serviceAreaValues == null || serviceAreaValues.serviceAreaType == null) {
@@ -193,20 +202,22 @@ async function resolveAllServicePlanPricing(workspaceId, boardId, itemId, itemsV
 
     return {
         serviceAreaValues,
-        supportValues: await resolvePricingValues(supportValues, workspaceId, boardId, itemsValues, 'Support Item Number'),
-        providerTravelValues: await resolvePricingValues(providerTravelValues, workspaceId, boardId, itemsValues, 'Provider Travel - Non-Labour Cost Item Number'),
-        labourTravelTimeValues: await resolvePricingValues(labourTravelTimeValues, workspaceId, boardId, itemsValues, 'Provider Travel - Labour Travel Time Costs Item Number'),
-        cancellationValues: await resolvePricingValues(cancellationValues, workspaceId, boardId, itemsValues, 'Cancellation Item Number'),
+        supportValues: await resolvePricingValues(supportValues, workspaceId, boardId, itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_SUPPORT),
+        providerTravelValues: await resolvePricingValues(providerTravelValues, workspaceId, boardId, itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR),
+        labourTravelTimeValues: await resolvePricingValues(labourTravelTimeValues, workspaceId, boardId, itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_LABOUR_TRAVEL_TIME),
+        cancellationValues: await resolvePricingValues(cancellationValues, workspaceId, boardId, itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_CANCELLATION),
+        activityBasedTransportValues: await resolvePricingValues(activityBasedTransportValues, workspaceId, boardId, itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT),
     };
 }
 
 async function applyAllSelectedServicePlanPricing(workspaceId, boardId, itemId, itemsValues, webhookType = 'Participants-Service-Plan') {
     const pricing = await resolveAllServicePlanPricing(workspaceId, boardId, itemId, itemsValues);
     const selectedUpdates = [
-        { mappingKey: 'support', values: pricing.supportValues, keys: ['Support Item Number'] },
-        { mappingKey: 'provider_travel_non_labour_cost', values: pricing.providerTravelValues, keys: ['Provider Travel - Non-Labour Cost Item Number'] },
-        { mappingKey: 'labour_travel_time_cost', values: pricing.labourTravelTimeValues, keys: ['Provider Travel - Labour Travel Time Costs Item Number'] },
-        { mappingKey: 'cancellation_cost', values: pricing.cancellationValues, keys: ['Cancellation Item Number'] },
+        { mappingKey: 'support', values: pricing.supportValues, keys: [NDIS_SERVICEPLAN_ATTR.ITEM_SUPPORT] },
+        { mappingKey: 'provider_travel_non_labour_cost', values: pricing.providerTravelValues, keys: [NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR] },
+        { mappingKey: 'labour_travel_time_cost', values: pricing.labourTravelTimeValues, keys: [NDIS_SERVICEPLAN_ATTR.ITEM_LABOUR_TRAVEL_TIME] },
+        { mappingKey: 'cancellation_cost', values: pricing.cancellationValues, keys: [NDIS_SERVICEPLAN_ATTR.ITEM_CANCELLATION] },
+        { mappingKey: 'activity_based_transport', values: pricing.activityBasedTransportValues, keys: [NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT] },
     ];
 
     for (const entry of selectedUpdates) {
@@ -229,6 +240,7 @@ async function runServicePlanPricingUpdate(workspaceId, boardId, itemId, itemsVa
         provider_travel_non_labour_cost: pricing.providerTravelValues,
         labour_travel_time_cost: pricing.labourTravelTimeValues,
         cancellation_cost: pricing.cancellationValues,
+        activity_based_transport: pricing.activityBasedTransportValues,
     };
     const pricingValues = pricingValuesMap[mappingKey];
     const itemNumberKey = mapping.itemNumberKey;
@@ -476,38 +488,44 @@ async function updateVariablesParticipantsServicePlanNew(workspaceId, boardId, i
             providerTravelValues,
             participantProfileValues,
             labourTravelTimeValues,
-            cancellationValues
+            cancellationValues,
+            activityBasedTransportValues,
         ] = await getNDISParticipantsServicePlanNewPricingReferencedItems(workspaceId, boardId, itemId);
 
         const resolvedProviderTravelValues = await resolvePricingValues(
-            providerTravelValues, workspaceId, boardId, itemsValues, 'Provider Travel - Non-Labour Cost Item Number'
+            providerTravelValues, workspaceId, boardId, itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR
         );
         const resolvedLabourTravelValues = await resolvePricingValues(
-            labourTravelTimeValues, workspaceId, boardId, itemsValues, 'Provider Travel - Labour Travel Time Costs Item Number'
+            labourTravelTimeValues, workspaceId, boardId, itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_LABOUR_TRAVEL_TIME
         );
         const resolvedCancellationValues = await resolvePricingValues(
-            cancellationValues, workspaceId, boardId, itemsValues, 'Cancellation Item Number'
+            cancellationValues, workspaceId, boardId, itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_CANCELLATION
         );
         const resolvedSupportValues = await resolvePricingValues(
-            supportValues, workspaceId, boardId, itemsValues, 'Support Item Number'
+            supportValues, workspaceId, boardId, itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_SUPPORT
+        );
+        const resolvedActivityBasedTransportValues = await resolvePricingValues(
+            activityBasedTransportValues, workspaceId, boardId, itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT
         );
 
         const itemNumberFields = [
-            { key: 'Support Item Number', itemValues: resolvedSupportValues },
-            { key: 'Provider Travel - Non-Labour Cost Item Number', itemValues: resolvedProviderTravelValues },
-            { key: 'Provider Travel - Labour Travel Time Costs Item Number', itemValues: resolvedLabourTravelValues },
-            { key: 'Cancellation Item Number', itemValues: resolvedCancellationValues },
+            { key: NDIS_SERVICEPLAN_ATTR.ITEM_SUPPORT, itemValues: resolvedSupportValues },
+            { key: NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR, itemValues: resolvedProviderTravelValues },
+            { key: NDIS_SERVICEPLAN_ATTR.ITEM_LABOUR_TRAVEL_TIME, itemValues: resolvedLabourTravelValues },
+            { key: NDIS_SERVICEPLAN_ATTR.ITEM_CANCELLATION, itemValues: resolvedCancellationValues },
+            { key: NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT, itemValues: resolvedActivityBasedTransportValues },
         ];
 
-        const selectedItem = itemNumberFields.find(item => hasSelectionValue(itemsValues, item.key));
-        const selectedPricingItem = selectedItem?.itemValues || null;
-        const selectedItemNumber = selectedPricingItem?.itemNumber || '';
+        const hasAnyItemNumber = itemNumberFields.some(item => hasSelectionValue(itemsValues, item.key));
         const prioritizedItemNumber = itemNumberFields
             .map(item => normalizeStringValue(item?.itemValues?.itemNumber))
             .find(itemNumber => itemNumber !== '') || '';
 
         const sdm = normalizeStringValue(itemsValues?.['Service Delivery Mode']);
-        const selectedSuffix = getItemNumberSuffix(selectedItemNumber);
+        const supportItemNumber = hasSelectionValue(itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_SUPPORT)
+            ? (resolvedSupportValues?.itemNumber || '')
+            : '';
+        const supportSuffix = getItemNumberSuffix(supportItemNumber);
         const expectedSuffix = getSdmExpectedSuffix(sdm);
 
         let integrationMessage = 'Aligned and Correct Selection';
@@ -524,21 +542,28 @@ async function updateVariablesParticipantsServicePlanNew(workspaceId, boardId, i
         } else if (!hasParticipantIntakeForm) {
             integrationMessage = 'Error: No Participant Intake Form Selected';
             fallbackColor = '#F36363';
-        } else if (!selectedItem) {
+        } else if (!hasAnyItemNumber) {
             integrationMessage = 'Error: No Item Number Selected';
             fallbackColor = '#C60909';
-        } else if (expectedSuffix !== null && selectedSuffix !== expectedSuffix) {
+        } else if (
+            hasSelectionValue(itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_SUPPORT) &&
+            expectedSuffix !== null &&
+            supportSuffix !== expectedSuffix
+        ) {
             integrationMessage = 'Error: The selected Item Number does not match the selected Service Delivery Mode.';
             fallbackColor = '#EE691E';
-        } else if (hasSelectionValue(itemsValues, 'Provider Travel - Non-Labour Cost Item Number') && resolvedProviderTravelValues?.itemName && !resolvedProviderTravelValues.itemName.toLowerCase().includes('non-labour cost')) {
+        } else if (hasSelectionValue(itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR) && resolvedProviderTravelValues?.itemName && !resolvedProviderTravelValues.itemName.toLowerCase().includes('non-labour cost')) {
             integrationMessage = 'Error: The selected Item Number for Provider Travel - Non-Labour Cost is invalid.';
             fallbackColor = '#D99C05';
-        } else if (hasSelectionValue(itemsValues, 'Provider Travel - Labour Travel Time Costs Item Number') && resolvedLabourTravelValues?.itemNumber && getItemNumberSuffix(resolvedLabourTravelValues.itemNumber) !== 'PT') {
+        } else if (hasSelectionValue(itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_LABOUR_TRAVEL_TIME) && resolvedLabourTravelValues?.itemNumber && getItemNumberSuffix(resolvedLabourTravelValues.itemNumber) !== 'PT') {
             integrationMessage = 'Error: The selected Item Number for Provider Travel - Labour Travel Time Costs is invalid.';
             fallbackColor = '#CA56A8';
-        } else if (hasSelectionValue(itemsValues, 'Cancellation Item Number') && resolvedCancellationValues?.itemName && !resolvedCancellationValues.itemName.toLowerCase().includes('cancellation')) {
+        } else if (hasSelectionValue(itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_CANCELLATION) && resolvedCancellationValues?.itemName && !resolvedCancellationValues.itemName.toLowerCase().includes('cancellation')) {
             integrationMessage = 'Error: The selected Item Number for Cancellation Costs is invalid.';
             fallbackColor = '#FFA2A2';
+        } else if (hasSelectionValue(itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT) && resolvedActivityBasedTransportValues?.itemName && !resolvedActivityBasedTransportValues.itemName.toLowerCase().includes('activity based transport')) {
+            integrationMessage = 'Error: The selected Item Number for Activity Based Transport is invalid.';
+            fallbackColor = '#9B59B6';
         }
 
         const updateValues = [];
@@ -690,7 +715,8 @@ async function handleParticipantsServicePlanNew(req, res) {
         case 'support':
         case 'provider_travel_non_labour_cost':
         case 'labour_travel_time_cost':
-        case 'cancellation_cost': {
+        case 'cancellation_cost':
+        case 'activity_based_transport': {
             const result = await runServicePlanPricingUpdate(workspaceId, boardId, items.id, itemsValues, normalizedType);
             return res.status(200).json(result);
         }
@@ -711,6 +737,7 @@ async function handleParticipantsServicePlanNew(req, res) {
 
 async function handleMasterPlanNew(req, res) {
     const { workspaceId, boardId } = req.params;
+    try {
     const payload = req.body;
     const items = payload.items[0];
     const itemsValues = items.values;
@@ -732,11 +759,13 @@ async function handleMasterPlanNew(req, res) {
     await setIntegrationMessage(workspaceId, boardId, items.id, "Calculating values...");
     const resetValues = [];
     [
-        'Support Value($)',
-        'Provider Travel - Non-Labour Cost Amount($)',
-        'Labour Travel Time Amount($)',
-        'Allowances Amount($)',
-        'Cancellation Fee($)',
+        NDIS_MASTERPLAN_ATTR.SUPPORT_VALUE,
+        NDIS_MASTERPLAN_ATTR.PROVIDER_TRAVEL_NON_LABOUR_AMOUNT,
+        NDIS_MASTERPLAN_ATTR.ACTIVITY_BASE_TRANSPORT_AMOUNT,
+        NDIS_MASTERPLAN_ATTR.LABOUR_TRAVEL_TIME_AMOUNT,
+        NDIS_MASTERPLAN_ATTR.ALLOWANCES_AMOUNT,
+        NDIS_MASTERPLAN_ATTR.CANCELLATION_FEE,
+        'Total Invoiceable Value($)',
     ].forEach(name => {
         const id = findAttrId(name);
         if (id) resetValues.push({ data: 0, attribute_id: id });
@@ -753,8 +782,15 @@ async function handleMasterPlanNew(req, res) {
         }
     );
 
+    let supportValueNum = 0;
+    let providerTravelAmountNum = 0;
+    let activityTransportAmountNum = 0;
+    let labourTravelAmountNum = 0;
+    let allowancesAmountNum = 0;
+    let cancellationFeeNum = 0;
+
     if (!cancelled) {
-        const supportAttrId = findAttrId('Support Value($)');
+        const supportAttrId = findAttrId(NDIS_MASTERPLAN_ATTR.SUPPORT_VALUE);
         if (supportAttrId) {
             const duration = Number(itemsValues['Actual Shift Duration(Hr.)']);
             let supportValue;
@@ -765,43 +801,74 @@ async function handleMasterPlanNew(req, res) {
                 const qty = Number(itemsValues['Quantity (Non-Time-Based Support)']) || 0;
                 supportValue = formatValue((servicePlanValues?.supportUnitPrice || 0) * qty);
             }
+            supportValueNum = Number(supportValue) || 0;
             updateValues.push({ data: supportValue, attribute_id: supportAttrId });
         }
 
         if (servicePlanValues?.nonLabourTravelUnitPrice) {
-            const ptId = findAttrId('Provider Travel - Non-Labour Cost Amount($)');
+            const ptId = findAttrId(NDIS_MASTERPLAN_ATTR.PROVIDER_TRAVEL_NON_LABOUR_AMOUNT);
             if (ptId) {
-                const mileage = Number(itemsValues['Provider Travel - Non-Labour - Mileage (kms) as per the Service Plan, if a vehicle is used.']) || 0;
-                const otherCosts = Number(itemsValues['Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied ($)'] || itemsValues['Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied.']) || 0;
-                updateValues.push({ data: formatValue(servicePlanValues.nonLabourTravelUnitPrice * mileage + otherCosts), attribute_id: ptId });
+                const mileage = Number(itemsValues[NDIS_MASTERPLAN_ATTR.PROVIDER_TRAVEL_MILEAGE]) || 0;
+                const otherCosts = Number(itemsValues['Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied ($)'] || itemsValues[NDIS_MASTERPLAN_ATTR.PROVIDER_TRAVEL_OTHER_COSTS]) || 0;
+                const amount = formatValue(servicePlanValues.nonLabourTravelUnitPrice * mileage + otherCosts);
+                providerTravelAmountNum = Number(amount) || 0;
+                updateValues.push({ data: amount, attribute_id: ptId });
+            }
+        }
+
+        if (servicePlanValues?.activityBasedTransportUnitPrice) {
+            const abtId = findAttrId(NDIS_MASTERPLAN_ATTR.ACTIVITY_BASE_TRANSPORT_AMOUNT);
+            if (abtId) {
+                const mileage = Number(itemsValues[NDIS_MASTERPLAN_ATTR.ACTIVITY_TRANSPORT_MILEAGE]) || 0;
+                const otherCosts = Number(itemsValues[NDIS_MASTERPLAN_ATTR.ACTIVITY_TRANSPORT_OTHER_COSTS]) || 0;
+                const amount = formatValue(servicePlanValues.activityBasedTransportUnitPrice * (mileage + otherCosts));
+                activityTransportAmountNum = Number(amount) || 0;
+                updateValues.push({ data: amount, attribute_id: abtId });
             }
         }
 
         if (servicePlanValues?.labourTravelTimeUnitPrice) {
-            const lttId = findAttrId('Labour Travel Time Amount($)');
+            const lttId = findAttrId(NDIS_MASTERPLAN_ATTR.LABOUR_TRAVEL_TIME_AMOUNT);
             if (lttId) {
-                const minutes = Number(itemsValues['Labour Travel Time (Min.) as per the Service Plan, regarding the Time Cap, if applicable.']) || 0;
-                updateValues.push({ data: formatValue(servicePlanValues.labourTravelTimeUnitPrice * (minutes / 60)), attribute_id: lttId });
+                const minutes = Number(itemsValues[NDIS_MASTERPLAN_ATTR.LABOUR_TRAVEL_TIME_MIN]) || 0;
+                const amount = formatValue(servicePlanValues.labourTravelTimeUnitPrice * (minutes / 60));
+                labourTravelAmountNum = Number(amount) || 0;
+                updateValues.push({ data: amount, attribute_id: lttId });
             }
         }
 
         if (itemsValues['Used Allowance Amount($) as per the Service Plan']) {
-            const allowId = findAttrId('Allowances Amount($)');
+            const allowId = findAttrId(NDIS_MASTERPLAN_ATTR.ALLOWANCES_AMOUNT);
             if (allowId) {
-                updateValues.push({ data: formatValue(itemsValues['Used Allowance Amount($) as per the Service Plan'] || 0), attribute_id: allowId });
+                const amount = formatValue(itemsValues[NDIS_MASTERPLAN_ATTR.USED_ALLOWANCE_AMOUNT] || 0);
+                allowancesAmountNum = Number(amount) || 0;
+                updateValues.push({ data: amount, attribute_id: allowId });
             }
         }
     }
 
     if (cancelled) {
-        const cancFeeId = findAttrId('Cancellation Fee($)');
+        const cancFeeId = findAttrId(NDIS_MASTERPLAN_ATTR.CANCELLATION_FEE);
         if (cancFeeId) {
             const scheduledDuration = Number(itemsValues['Scheduled Shift Duration(Hr.)']) > 0
                 ? Number(Number(itemsValues['Scheduled Shift Duration(Hr.)']).toFixed(1))
                 : 0;
             const cancUnitPrice = Number(servicePlanValues?.cancellationUnitPrice) || 0;
-            updateValues.push({ data: formatValue(scheduledDuration * cancUnitPrice), attribute_id: cancFeeId });
+            const amount = formatValue(scheduledDuration * cancUnitPrice);
+            cancellationFeeNum = Number(amount) || 0;
+            updateValues.push({ data: amount, attribute_id: cancFeeId });
         }
+    }
+
+    const totalInvoiceableAttrId = findAttrId('Total Invoiceable Value($)');
+    if (totalInvoiceableAttrId) {
+        const totalInvoiceable = cancelled
+            ? cancellationFeeNum
+            : supportValueNum + providerTravelAmountNum + activityTransportAmountNum + labourTravelAmountNum + allowancesAmountNum;
+        updateValues.push({
+            data: formatValue(totalInvoiceable),
+            attribute_id: totalInvoiceableAttrId,
+        });
     }
 
     if (fundValues) {
@@ -828,6 +895,15 @@ async function handleMasterPlanNew(req, res) {
     }
     setIntegrationMessage(workspaceId, boardId, items.id, "Failed to update master plan");
     return res.status(200).json({ error: 'Failed to update master plan' });
+    } catch (err) {
+        error('Xero-Service', 'Master plan new pricing automation failed', {
+            workspaceId: req.params.workspaceId,
+            boardId: req.params.boardId,
+            message: err?.message,
+            stack: err?.stack,
+        }, req ?? null);
+        return res.status(200).json({ error: 'Master plan failed', message: err?.message || 'Server error' });
+    }
 }
 
 router.post('/:workspaceId/:boardId/set-unit-and-unitprice', async (req, res) => {
@@ -1363,7 +1439,7 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
     }
 });
 
-router.post('/:workspaceId/:boardId/participants-support-item', async (req, res) => {
+async function runParticipantsServicePlanItemAutomation(req, res, mappingKey, webhookType, routeName) {
     const { workspaceId, boardId } = req.params;
     try {
         const items = Array.isArray(req.body?.items) ? req.body.items[0] : null;
@@ -1372,11 +1448,15 @@ router.post('/:workspaceId/:boardId/participants-support-item', async (req, res)
         if (await boardUsesLegacyNdisPricing(workspaceId, boardId)) {
             return res.status(200).json({ error: 'Legacy pricing rule applies for this service plan board.' });
         }
-        const result = await runServicePlanPricingUpdate(workspaceId, boardId, items.id, itemsValues, 'support', 'Participants-Support-Item');
+        const result = await runServicePlanPricingUpdate(workspaceId, boardId, items.id, itemsValues, mappingKey, webhookType);
         return res.status(200).json(result);
     } catch (err) {
-        return res.status(200).json({ error: 'participants-support-item failed', message: err?.message || 'Server error' });
+        return res.status(200).json({ error: `${routeName} failed`, message: err?.message || 'Server error' });
     }
+}
+
+router.post('/:workspaceId/:boardId/participants-support-item', async (req, res) => {
+    return runParticipantsServicePlanItemAutomation(req, res, 'support', 'Participants-Support-Item', 'participants-support-item');
 });
 
 router.post('/:workspaceId/:boardId/participants-provider-travel-item', async (req, res) => {
@@ -1425,6 +1505,14 @@ router.post('/:workspaceId/:boardId/participants-cancellation-item', async (req,
     } catch (err) {
         return res.status(200).json({ error: 'participants-cancellation-item failed', message: err?.message || 'Server error' });
     }
+});
+
+router.post('/:workspaceId/:boardId/participants-activity-transport-item', async (req, res) => {
+    return runParticipantsServicePlanItemAutomation(req, res, 'activity_based_transport', 'Participants-Activity-Transport-Item', 'participants-activity-transport-item');
+});
+
+router.post('/:workspaceId/:boardId/participants-activity-based-transport-item', async (req, res) => {
+    return runParticipantsServicePlanItemAutomation(req, res, 'activity_based_transport', 'Participants-Activity-Based-Transport-Item', 'participants-activity-based-transport-item');
 });
 
 export default router;

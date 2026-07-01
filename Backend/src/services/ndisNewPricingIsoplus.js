@@ -5,6 +5,7 @@ import {
     getAttribute,
     ITEM_DELETED,
 } from './isoplus.js';
+import { NDIS_SERVICEPLAN_ATTR } from '../utils/ndisServiceRecords.js';
 
 const NEW_SERVICE_AREA_MAP = {
     'Non-Remote (ACT)': 'National($)',
@@ -83,7 +84,7 @@ export async function getQuoteNDISNewPricingReferencedItems(workspaceId, boardId
                 };
                 break;
             }
-            case 'Support Item Number': {
+            case NDIS_SERVICEPLAN_ATTR.ITEM_SUPPORT: {
                 const supportItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
                 if (supportItemValues === ITEM_DELETED || !supportItemValues) continue;
                 const values = Array.isArray(supportItemValues.values) ? supportItemValues.values : [];
@@ -92,7 +93,7 @@ export async function getQuoteNDISNewPricingReferencedItems(workspaceId, boardId
                 supportValues = { id: supportItemValues.id, ...catalog };
                 break;
             }
-            case 'Provider Travel - Non-Labour Cost Item Number': {
+            case NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR: {
                 const ptItemValues = await getItemValues(workspaceId, boardId, reference.to_item_id);
                 if (ptItemValues === ITEM_DELETED || !ptItemValues) continue;
                 const values = Array.isArray(ptItemValues.values) ? ptItemValues.values : [];
@@ -114,12 +115,13 @@ export async function getNDISParticipantsServicePlanNewPricingReferencedItems(wo
     let participantProfileValues = null;
     let labourTravelTimeValues = null;
     let cancellationValues = null;
+    let activityBasedTransportValues = null;
 
     const referenceResponse = await getReferences(workspaceId, boardId, itemId);
     const refs = Array.isArray(referenceResponse?.data) ? referenceResponse.data : [];
     if (!refs.length) {
         warn('ISO+™ Service', 'Missing references for Participants Service Plan item', { ...ctx });
-        return [null, null, null, null, null, null];
+        return [null, null, null, null, null, null, null];
     }
 
     const loadReferencedItemValues = async (referencedItemId, referenceName) => {
@@ -163,7 +165,7 @@ export async function getNDISParticipantsServicePlanNewPricingReferencedItems(wo
                 };
                 break;
             }
-            case 'Support Item Number': {
+            case NDIS_SERVICEPLAN_ATTR.ITEM_SUPPORT: {
                 const supportItemValues = await loadReferencedItemValues(reference.to_item_id, attribute.name);
                 if (!supportItemValues) break;
                 const values = Array.isArray(supportItemValues.values) ? supportItemValues.values : [];
@@ -172,7 +174,7 @@ export async function getNDISParticipantsServicePlanNewPricingReferencedItems(wo
                 supportValues = { id: supportItemValues.id, ...catalog };
                 break;
             }
-            case 'Provider Travel - Non-Labour Cost Item Number': {
+            case NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR: {
                 const ptItemValues = await loadReferencedItemValues(reference.to_item_id, attribute.name);
                 if (!ptItemValues) break;
                 const values = Array.isArray(ptItemValues.values) ? ptItemValues.values : [];
@@ -181,7 +183,7 @@ export async function getNDISParticipantsServicePlanNewPricingReferencedItems(wo
                 providerTravelValues = { id: ptItemValues.id, ...catalog };
                 break;
             }
-            case 'Provider Travel - Labour Travel Time Costs Item Number': {
+            case NDIS_SERVICEPLAN_ATTR.ITEM_LABOUR_TRAVEL_TIME: {
                 const ltItemValues = await loadReferencedItemValues(reference.to_item_id, attribute.name);
                 if (!ltItemValues) break;
                 const values = Array.isArray(ltItemValues.values) ? ltItemValues.values : [];
@@ -190,13 +192,22 @@ export async function getNDISParticipantsServicePlanNewPricingReferencedItems(wo
                 labourTravelTimeValues = { id: ltItemValues.id, ...catalog };
                 break;
             }
-            case 'Cancellation Item Number': {
+            case NDIS_SERVICEPLAN_ATTR.ITEM_CANCELLATION: {
                 const cancItemValues = await loadReferencedItemValues(reference.to_item_id, attribute.name);
                 if (!cancItemValues) break;
                 const values = Array.isArray(cancItemValues.values) ? cancItemValues.values : [];
                 const catalog = buildNdisPricingCatalogFromValues(values);
                 if (!catalog.itemNumber) break;
                 cancellationValues = { id: cancItemValues.id, ...catalog };
+                break;
+            }
+            case NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT: {
+                const abtItemValues = await loadReferencedItemValues(reference.to_item_id, attribute.name);
+                if (!abtItemValues) break;
+                const values = Array.isArray(abtItemValues.values) ? abtItemValues.values : [];
+                const catalog = buildNdisPricingCatalogFromValues(values);
+                if (!catalog.itemNumber) break;
+                activityBasedTransportValues = { id: abtItemValues.id, ...catalog };
                 break;
             }
             case 'Participant Intake Form': {
@@ -214,7 +225,7 @@ export async function getNDISParticipantsServicePlanNewPricingReferencedItems(wo
         }
     }
 
-    return [serviceAreaValues, supportValues, providerTravelValues, participantProfileValues, labourTravelTimeValues, cancellationValues];
+    return [serviceAreaValues, supportValues, providerTravelValues, participantProfileValues, labourTravelTimeValues, cancellationValues, activityBasedTransportValues];
 }
 
 export async function getNDISMasterPlanNewPricingReferencedItems(workspaceId, boardId, itemId) {
@@ -236,7 +247,7 @@ export async function getNDISMasterPlanNewPricingReferencedItems(workspaceId, bo
             case 'Service Plan': {
                 const servicePlan = await getItemValues(workspaceId, boardId, reference.to_item_id);
                 if (servicePlan === ITEM_DELETED || !servicePlan) continue;
-                const [, , providerTravelValues, , labourTravelTimeValues, cancellationValues] =
+                const [, , providerTravelValues, , labourTravelTimeValues, cancellationValues, activityBasedTransportValues] =
                     await getNDISParticipantsServicePlanNewPricingReferencedItems(workspaceId, boardId, reference.to_item_id);
                 const values = Array.isArray(servicePlan.values) ? servicePlan.values : [];
                 const findVal = (name) => {
@@ -245,19 +256,24 @@ export async function getNDISMasterPlanNewPricingReferencedItems(workspaceId, bo
                 };
 
                 servicePlanValues = {
-                    supportItemNumber: findVal('Support Item Number') || '',
-                    supportUnit: findVal('Unit (Support)'),
-                    supportUnitPrice: findVal('Agreed Unit Price for Support ($)'),
+                    supportItemNumber: findVal(NDIS_SERVICEPLAN_ATTR.ITEM_SUPPORT) || '',
+                    supportUnit: findVal(NDIS_SERVICEPLAN_ATTR.UNIT_SUPPORT),
+                    supportUnitPrice: findVal(NDIS_SERVICEPLAN_ATTR.PRICE_SUPPORT),
                     providerTravelItemNumber: providerTravelValues?.itemNumber || '',
                     providerTravelItemName: providerTravelValues?.itemName || '',
-                    nonLabourTravelUnit: findVal('Unit (Provider Travel - Non-Labour Cost)'),
-                    nonLabourTravelUnitPrice: findVal('Agreed Unit Price for Non-Labour Travel ($)'),
-                    labourTravelTimeUnit: findVal('Unit (Labour Travel Time)') || labourTravelTimeValues?.unit || null,
-                    labourTravelTimeUnitPrice: findVal('Agreed Unit Price for Labour Travel Time ($)'),
-                    usedAllowanceUnit: findVal('Unit (Allowances)'),
-                    usedAllowanceAmount: findVal('Agreed Price for Allowances($)'),
-                    cancellationUnit: findVal('Unit (Cancellation)'),
-                    cancellationUnitPrice: findVal('Agreed Unit Price for Cancellation ($)'),
+                    nonLabourTravelUnit: findVal(NDIS_SERVICEPLAN_ATTR.UNIT_PROVIDER_TRAVEL_NON_LABOUR),
+                    nonLabourTravelUnitPrice: findVal(NDIS_SERVICEPLAN_ATTR.PRICE_PROVIDER_TRAVEL_NON_LABOUR),
+                    activityBasedTransportItemNumber: activityBasedTransportValues?.itemNumber || '',
+                    activityBasedTransportItemName: activityBasedTransportValues?.itemName || '',
+                    activityBasedTransportUnit: findVal(NDIS_SERVICEPLAN_ATTR.UNIT_ACTIVITY_TRANSPORT),
+                    activityBasedTransportUnitPrice: findVal(NDIS_SERVICEPLAN_ATTR.PRICE_ACTIVITY_TRANSPORT),
+                    activityBasedTransportShortNoticeCancellations: activityBasedTransportValues?.shortNoticeCancellations || '',
+                    labourTravelTimeUnit: findVal(NDIS_SERVICEPLAN_ATTR.UNIT_LABOUR_TRAVEL_TIME) || labourTravelTimeValues?.unit || null,
+                    labourTravelTimeUnitPrice: findVal(NDIS_SERVICEPLAN_ATTR.PRICE_LABOUR_TRAVEL_TIME),
+                    usedAllowanceUnit: findVal(NDIS_SERVICEPLAN_ATTR.UNIT_ALLOWANCES),
+                    usedAllowanceAmount: findVal(NDIS_SERVICEPLAN_ATTR.PRICE_ALLOWANCES),
+                    cancellationUnit: findVal(NDIS_SERVICEPLAN_ATTR.UNIT_CANCELLATION),
+                    cancellationUnitPrice: findVal(NDIS_SERVICEPLAN_ATTR.PRICE_CANCELLATION),
                     cancellationShortNoticeCancellations: cancellationValues?.shortNoticeCancellations || '',
                 };
                 break;

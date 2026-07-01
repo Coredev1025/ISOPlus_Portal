@@ -1218,6 +1218,7 @@ export function collectNdisSupportCatalogueRefIds(servicePlanData, pricingRule =
     addId(servicePlanData[NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR]);
     addId(servicePlanData[NDIS_SERVICEPLAN_ATTR.ITEM_LABOUR_TRAVEL_TIME]);
     addId(servicePlanData[NDIS_SERVICEPLAN_ATTR.ITEM_CANCELLATION]);
+    addId(servicePlanData[NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT]);
     return ids;
   }
 
@@ -1237,11 +1238,13 @@ export function buildNdisSupportCatalogueForServicePlan(servicePlanItem, refItem
     const ptId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR]);
     const ltId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_LABOUR_TRAVEL_TIME]);
     const cancId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_CANCELLATION]);
+    const abtId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT]);
     return {
       support: supportId ? refItemsMap.get(supportId) : null,
       providerTravelNonLabour: ptId ? refItemsMap.get(ptId) : null,
       labourTravelTime: ltId ? refItemsMap.get(ltId) : null,
       cancellation: cancId ? refItemsMap.get(cancId) : null,
+      activityTransport: abtId ? refItemsMap.get(abtId) : null,
     };
   }
 
