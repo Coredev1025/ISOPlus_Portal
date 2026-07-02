@@ -10,7 +10,7 @@ import PDFLink from '../models/PDFLink.js';
 import Item from '../models/Item.js';
 import InvoiceNumber from '../models/InvoiceNumber.js';
 import Board from '../models/Board.js';
-import { getS3FileUrl, uploadFileToS3 } from '../utils/uploadS3.js';
+import { getS3File, uploadFileToS3, getS3FileUrl } from '../utils/uploadS3.js';
 import { isEmpty } from '../utils/helpers.js';
 import {
     validateItemBelongsToTenant,
@@ -280,20 +280,15 @@ async function getLogoData(business, req = null) {
     const logoKey = business.defaultLogo;
     if (!logoKey) return '';
 
-    const logoUrl = await getS3FileUrl(logoKey, 3600, false);
-    if (!logoUrl) throw new Error('Failed to retrieve logo from S3');
+    const buffer = await getS3File(logoKey, false);
+    if (!buffer) throw new Error('Failed to retrieve logo from S3');
 
-    const response = await fetch(logoUrl);
-    if (!response.ok) throw new Error('Failed to fetch logo from URL');
-
-    const buffer = await response.arrayBuffer();
-    // Persist diagnostic info without dumping the whole object
     info('Webhook-Service', 'Embedding default logo for PDF generation', {
       workspaceId: business?.workspaceId,
       hasDefaultLogo: !!business?.defaultLogo
     }, req ?? null);
-    const type = business.defaultLogo.split('.').pop();
-    return `data:image/${type};base64,${Buffer.from(buffer).toString('base64')}`;
+    const type = logoKey.split('.').pop();
+    return `data:image/${type};base64,${buffer.toString('base64')}`;
 }
 
 async function fetchImageUrlAsBase64(url) {
@@ -1615,10 +1610,10 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
                 });
 
                 const filename = `output/${workspaceId}/${boardId}/invoices/${invoiceNumber + '-ISO+™-' + item.id}.pdf`;
-                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
 
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
-                    const fileUrl = await getS3FileUrl(filename);
+                    const fileUrl = await getS3FileUrl(filename, 3600, true);
                     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'Invoice', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
                     await saveInvoiceNumber(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`, 'PDF', fileUrl);
@@ -1721,10 +1716,10 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                 });
 
                 const filename = `output/${workspaceId}/${boardId}/purchaseorder/${purchaseOrderNumber + '-ISO+™-' + item.id}.pdf`;
-                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
 
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
-                    const fileUrl = await getS3FileUrl(filename);
+                    const fileUrl = await getS3FileUrl(filename, 3600, true);
                     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'Purchase Order', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${purchaseOrderNumber} (ISO+™)`);
                     business.documentNumbering.purchaseOrder.nextNumber += 1;
@@ -1818,10 +1813,10 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                 });
 
                 const filename = `output/${workspaceId}/${boardId}/quote/${quoteNumber + '-ISO+™-' + item.id}.pdf`;
-                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
 
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
-                    const fileUrl = await getS3FileUrl(filename);
+                    const fileUrl = await getS3FileUrl(filename, 3600, true);
                     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'Quote', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${quoteNumber} (ISO+™)`);
                     business.documentNumbering.quote.nextNumber += 1;
@@ -2036,9 +2031,9 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
                 });
 
                 const filename = `output/${workspaceId}/${boardId}/NDIS-quote/${quoteNumber + '-ISO+™-' + item.id}.pdf`;
-                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
-                    const fileUrl = await getS3FileUrl(filename);
+                    const fileUrl = await getS3FileUrl(filename, 3600, true);
                     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS Quote', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${quoteNumber} (ISO+™)`);
                     business.documentNumbering.quote.nextNumber += 1;
@@ -2595,10 +2590,10 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
                 });
 
                 const filename = `output/${workspaceId}/${boardId}/NDIS-invoices/${invoiceNumber + '-ISO+™-' + item.id}.pdf`;
-                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
 
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
-                    const fileUrl = await getS3FileUrl(filename);
+                    const fileUrl = await getS3FileUrl(filename, 3600, true);
                     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS Invoice', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
                     await saveInvoiceNumber(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`, 'PDF', fileUrl);
@@ -2797,11 +2792,11 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
 
         const safeSuffix = (participantName || participantProfile.displayName || 'Multiple').replace(/[^a-zA-Z0-9-_]+/g, '_').slice(0, 40);
         const filename = `output/${workspaceId}/${boardId}/NDIS-invoices/${invoiceNumberBase + '-ISO+™-' + safeSuffix}.pdf`;
-        const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+        const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
         if (uploadResult?.$metadata?.httpStatusCode !== 200) {
             throw new Error('Upload of PDF failed, please provide correct information.');
         }
-        const fileUrl = await getS3FileUrl(filename);
+        const fileUrl = await getS3FileUrl(filename, 3600, true);
 
         await Promise.all(masterItems.map(async (it) => {
             await saveInvoiceNumber(workspaceId, boardId, it.itemId, invoiceNumber, 'PDF', fileUrl);
@@ -3115,10 +3110,10 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 
             // Upload the single PDF for all items
             const filename = `output/${workspaceId}/${boardId}/Participant-invoices/${invoiceNumber + '-ISO+™-' + participantName.replace(/\s+/g, '-')}.pdf`;
-            const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+            const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
 
             if (uploadResult['$metadata'].httpStatusCode === 200) {
-                const fileUrl = await getS3FileUrl(filename);
+                const fileUrl = await getS3FileUrl(filename, 3600, true);
 
                 // Update integration messages and generated fields for all items
                 await Promise.all(dbItems.map(async (item) => {
@@ -3690,10 +3685,10 @@ router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
             const participantSlug = participantName.replace(/[^a-zA-Z0-9]/g, '-');
             const monthYear = `${statementData.month || 'Month'}_${yearValue || 'Year'}`.replace(/\s+/g, '_');
             const filename = `output/${workspaceId}/${boardId}/monthly-statements/${participantSlug}_${monthYear}_Statement.pdf`;
-            const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename);
+            const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
 
             if (uploadResult['$metadata'].httpStatusCode === 200) {
-                const fileUrl = await getS3FileUrl(filename);
+                const fileUrl = await getS3FileUrl(filename, 3600, true);
 
                 info('Webhook-Service', 'Monthly statement PDF generated successfully', {
                     participant: participantName,

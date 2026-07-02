@@ -5,7 +5,14 @@ import Business from '../models/Business.js';
 import { info, error, warn } from '../utils/logger.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { uploadFileToS3, getS3FileUrl, deleteFileFromS3, getS3File, getContentType } from '../utils/uploadS3.js'; // Import S3 utility functions
+import { uploadFileToS3, deleteFileFromS3 } from '../utils/uploadS3.js';
+import {
+  formatBusinessProfileResponse,
+  isValidLogoField,
+  loadBusinessLogoAsset,
+  resolveQrLogoField,
+  buildLogoUrls,
+} from '../utils/businessLogo.js';
 import { setLogo } from '../services/isoplus.js';
 import { updateOrganizationInfo } from '../services/xero.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
@@ -91,6 +98,23 @@ const multiupload = upload.fields([
   { name: 'wideLogo', maxCount: 1 },
 ]);
 
+const streamLogoResponse = async (req, res, business, logoKey) => {
+  const asset = await loadBusinessLogoAsset(business, logoKey);
+  if (!asset) {
+    return res.status(404).json({ message: 'Logo file not found' });
+  }
+
+  info('Business-Service', 'Logo retrieved successfully', {
+    workspaceId: business.workspaceId,
+    logoKey,
+    logoPath: asset.logoPath,
+  }, req ?? null);
+
+  res.setHeader('Content-Type', asset.contentType);
+  res.setHeader('Cache-Control', 'private, no-store');
+  return res.send(asset.buffer);
+};
+
 router.get('/profile', authenticateToken, async (req, res) => {
   try {
     const workspaceId = req.query.workspaceId?.toString();
@@ -100,31 +124,28 @@ router.get('/profile', authenticateToken, async (req, res) => {
       warn('Business-Service', 'Business profile not found', {}, req ?? null);
       return res.status(404).json({ message: 'Business profile not found' });
     }
-    if (business.defaultLogo) {
-      business.defaultLogo = await getS3FileUrl(business.defaultLogo, 3600, false);
-    }
-    if (business.squareLogo) {
-      business.squareLogo = await getS3FileUrl(business.squareLogo, 3600, false);
-    }
-    if (business.wideLogo) {
-      business.wideLogo = await getS3FileUrl(business.wideLogo, 3600, false);
-    }
 
-    info('Business-Service', 'Fetching Business profile data successfully', { businessName: business.name }, req ?? null);
-    res.json(business);
+    const response = await formatBusinessProfileResponse(business);
+
+    info('Business-Service', 'Fetching Business profile data successfully', { businessName: response.name }, req ?? null);
+    res.json(response);
   } catch (err) {
     error('Business-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-// Get logo URL for QR code generation
+// Get a short-lived presigned URL when a direct S3 link is required.
 router.get('/logo', authenticateToken, async (req, res) => {
   try {
     const { workspaceId, logoKey } = req.query;
     
     if (!workspaceId || !logoKey) {
       return res.status(400).json({ message: 'workspaceId and logoKey are required' });
+    }
+
+    if (!isValidLogoField(logoKey)) {
+      return res.status(400).json({ message: 'Invalid logoKey' });
     }
 
     const business = await Business.findOne({ workspaceId: workspaceId.toString() }).lean();
@@ -137,8 +158,9 @@ router.get('/logo', authenticateToken, async (req, res) => {
       return res.status(404).json({ message: 'Logo not found' });
     }
 
-    const logoUrl = await getS3FileUrl(logoPath, 3600, false);
-    if (!logoUrl) {
+    const logoUrls = await buildLogoUrls({ [logoKey]: logoPath });
+    const logoUrlInfo = logoUrls[logoKey];
+    if (!logoUrlInfo?.url) {
       return res.status(404).json({ message: 'Logo file not found' });
     }
 
@@ -148,7 +170,7 @@ router.get('/logo', authenticateToken, async (req, res) => {
       logoPath 
     }, req ?? null);
 
-    res.json({ logoUrl });
+    res.json(logoUrlInfo);
 
   } catch (err) {
     error('Business-Service', 'Error retrieving logo URL', { 
@@ -290,51 +312,68 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
       });
     }
 
-    res.status(200).json(business);
+    const response = await formatBusinessProfileResponse(business);
+    res.status(200).json(response);
   } catch (err) {
     error('Business-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-router.get('/qr-logo', async (req, res) => {
+router.get('/logo-image', authenticateToken, async (req, res) => {
   try {
-    const { workspaceId } = req.query;
-    
+    const workspaceId = req.query.workspaceId?.toString();
+    const logoKey = req.query.logoKey?.toString();
+
     if (!workspaceId) {
       return res.status(400).json({ message: 'workspaceId is required' });
     }
 
-    const business = await Business.findOne({ workspaceId: workspaceId.toString() });
-
+    const business = await Business.findOne({ workspaceId });
     if (!business) {
       return res.status(404).json({ message: 'Business not found' });
     }
 
-    const logoPath = business.squareLogo || business.defaultLogo;
-    if (!logoPath) {
+    const resolvedLogoKey = logoKey || resolveQrLogoField(business);
+    if (!resolvedLogoKey) {
       return res.status(404).json({ message: 'Logo not found' });
     }
 
-    // Get the logo file from S3
-    const logoBuffer = await getS3File(logoPath);
-    if (!logoBuffer) {
-      return res.status(404).json({ message: 'Logo file not found' });
+    if (logoKey && !isValidLogoField(logoKey)) {
+      return res.status(400).json({ message: 'Invalid logoKey' });
     }
 
-    info('Business-Service', 'Logo retrieved successfully', { 
-      workspaceId, 
-      logoPath 
+    return streamLogoResponse(req, res, business, resolvedLogoKey);
+  } catch (err) {
+    error('Business-Service', 'Error retrieving logo', {
+      error: err.message,
+      stack: err.stack,
+      workspaceId: req.query.workspaceId,
+      logoKey: req.query.logoKey,
     }, req ?? null);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
-    // Set appropriate headers for image response
-    const fileExtension = logoPath.split('.').pop().toLowerCase();
-    const contentType = getContentType(fileExtension);
-    
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Cache-Control', 'public, max-age=3600');
-    res.send(logoBuffer);
+router.get('/qr-logo', authenticateToken, async (req, res) => {
+  try {
+    const workspaceId = req.query.workspaceId?.toString();
 
+    if (!workspaceId) {
+      return res.status(400).json({ message: 'workspaceId is required' });
+    }
+
+    const business = await Business.findOne({ workspaceId });
+    if (!business) {
+      return res.status(404).json({ message: 'Business not found' });
+    }
+
+    const logoKey = resolveQrLogoField(business);
+    if (!logoKey) {
+      return res.status(404).json({ message: 'Logo not found' });
+    }
+
+    return streamLogoResponse(req, res, business, logoKey);
   } catch (err) {
     error('Business-Service', 'Error retrieving logo', { 
       error: err.message,
