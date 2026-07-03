@@ -1,13 +1,20 @@
-import { toast } from 'sonner';
+import Toastify from 'toastify-js';
 
 export interface ToastOptions {
   duration?: number;
   description?: string;
 }
 
+type ToastType = 'success' | 'error' | 'info' | 'warning' | 'loading';
+
+type ToastInstance = ReturnType<typeof Toastify>;
+
 // Track recent toasts to prevent duplicates
 const recentToasts = new Map<string, number>();
 const DEDUPE_WINDOW_MS = 2000; // Prevent same toast within 2 seconds
+
+let nextToastId = 1;
+const activeToasts = new Map<number, ToastInstance>();
 
 const getToastKey = (message: string, description?: string) => {
   return `${message}|${description || ''}`;
@@ -36,6 +43,84 @@ const recordToast = (key: string) => {
   keysToDelete.forEach(k => recentToasts.delete(k));
 };
 
+const TOAST_BACKGROUNDS: Record<ToastType, string> = {
+  success: '#16a34a', // green-600
+  error: '#dc2626', // red-600
+  info: '#2563eb', // blue-600
+  warning: '#d97706', // amber-600
+  loading: '#334155', // slate-700
+};
+
+const baseStyle = (type: ToastType): { [cssRule: string]: string } => ({
+  background: TOAST_BACKGROUNDS[type],
+  color: '#ffffff',
+  borderRadius: '8px',
+  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+  fontFamily: 'inherit',
+  fontSize: '0.9rem',
+  padding: '12px 16px',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '12px',
+});
+
+const buildNode = (message: string, description?: string): HTMLElement => {
+  const container = document.createElement('div');
+  container.style.display = 'flex';
+  container.style.flexDirection = 'column';
+  container.style.gap = '2px';
+  container.style.textAlign = 'left';
+
+  const title = document.createElement('span');
+  title.textContent = message;
+  title.style.fontWeight = '600';
+  container.appendChild(title);
+
+  if (description) {
+    const desc = document.createElement('span');
+    desc.textContent = description;
+    desc.style.fontSize = '0.8rem';
+    desc.style.opacity = '0.9';
+    container.appendChild(desc);
+  }
+
+  return container;
+};
+
+interface ShowToastConfig {
+  type: ToastType;
+  message: string;
+  description?: string;
+  duration: number;
+}
+
+const showToast = ({
+  type,
+  message,
+  description,
+  duration,
+}: ShowToastConfig): number => {
+  const id = nextToastId++;
+
+  const instance = Toastify({
+    node: buildNode(message, description),
+    duration,
+    gravity: 'bottom',
+    position: 'right',
+    close: true,
+    stopOnFocus: true,
+    style: baseStyle(type),
+    className: `isoplus-toast isoplus-toast-${type}`,
+    callback: () => {
+      activeToasts.delete(id);
+    },
+  });
+
+  activeToasts.set(id, instance);
+  instance.showToast();
+  return id;
+};
+
 /**
  * Show a success toast notification
  */
@@ -49,9 +134,11 @@ export const showSuccessToast = (message: string, options?: ToastOptions) => {
     return; // Skip duplicate toast
   }
   recordToast(key);
-  toast.success(message, {
-    duration: options?.duration || 4000,
+  return showToast({
+    type: 'success',
+    message,
     description: options?.description,
+    duration: options?.duration ?? 4000,
   });
 };
 
@@ -68,9 +155,11 @@ export const showErrorToast = (message: string, options?: ToastOptions) => {
     return; // Skip duplicate toast
   }
   recordToast(key);
-  toast.error(message, {
-    duration: options?.duration || 6000,
+  return showToast({
+    type: 'error',
+    message,
     description: options?.description,
+    duration: options?.duration ?? 6000,
   });
 };
 
@@ -87,9 +176,11 @@ export const showInfoToast = (message: string, options?: ToastOptions) => {
     return; // Skip duplicate toast
   }
   recordToast(key);
-  toast.info(message, {
-    duration: options?.duration || 4000,
+  return showToast({
+    type: 'info',
+    message,
     description: options?.description,
+    duration: options?.duration ?? 4000,
   });
 };
 
@@ -106,31 +197,45 @@ export const showWarningToast = (message: string, options?: ToastOptions) => {
     return; // Skip duplicate toast
   }
   recordToast(key);
-  toast.warning(message, {
-    duration: options?.duration || 5000,
+  return showToast({
+    type: 'warning',
+    message,
     description: options?.description,
+    duration: options?.duration ?? 5000,
   });
 };
 
 /**
- * Show a loading toast notification
+ * Show a loading toast notification. Stays visible until dismissed via the
+ * returned id (duration -1 keeps it on screen).
  */
-export const showLoadingToast = (message: string) => {
-  return toast.loading(message);
+export const showLoadingToast = (message: string): number => {
+  return showToast({
+    type: 'loading',
+    message,
+    duration: -1,
+  });
 };
 
 /**
- * Dismiss a specific toast
+ * Dismiss a specific toast by the id returned from a show* helper
  */
-export const dismissToast = (toastId: string | number) => {
-  toast.dismiss(toastId);
+export const dismissToast = (toastId: number) => {
+  const instance = activeToasts.get(toastId);
+  if (instance) {
+    instance.hideToast();
+    activeToasts.delete(toastId);
+  }
 };
 
 /**
  * Dismiss all toasts
  */
 export const dismissAllToasts = () => {
-  toast.dismiss();
+  activeToasts.forEach((instance) => {
+    instance.hideToast();
+  });
+  activeToasts.clear();
 };
 
 /**
@@ -238,4 +343,4 @@ export const getApiErrorMessage = (
   }
 
   return fallback;
-}; 
+};
