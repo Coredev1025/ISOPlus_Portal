@@ -8,6 +8,12 @@ import util from 'util';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import {
+  sanitizeArrayForStorage,
+  sanitizeObjectEntriesForStorage,
+  filterMetaForLog,
+  buildRequestContext,
+} from './loggerSanitizeHelpers.js';
 
 dotenv.config();
 
@@ -202,59 +208,17 @@ function sanitizeMetadataForStorage(obj, depth = 0, path = '') {
 
   // Handle arrays
   if (Array.isArray(obj)) {
-    if (obj.length > MAX_ARRAY_LENGTH) {
-      const truncated = obj.slice(0, MAX_ARRAY_LENGTH);
-      return [
-        ...truncated.map((item, idx) => 
-          sanitizeMetadataForStorage(item, depth + 1, `${path}[${idx}]`)
-        ),
-        `[${obj.length - MAX_ARRAY_LENGTH} more items...]`
-      ];
-    }
-    return obj.map((item, idx) => 
-      sanitizeMetadataForStorage(item, depth + 1, `${path}[${idx}]`)
-    );
+    return sanitizeArrayForStorage(obj, depth, path, sanitizeMetadataForStorage, MAX_ARRAY_LENGTH);
   }
 
   // Handle objects
-  const sanitized = {};
-  let currentSize = 0;
-
-  for (const [key, value] of Object.entries(obj)) {
-    // Skip excluded fields that are known to be large
-    if (EXCLUDED_FIELDS.has(key.toLowerCase())) {
-      sanitized[key] = '[Excluded - too large]';
-      continue;
-    }
-
-    // Skip functions, buffers, streams, and other non-serializable objects
-    if (typeof value === 'function' || 
-        value instanceof Buffer || 
-        (value && typeof value === 'object' && value.constructor && 
-         (value.constructor.name === 'Stream' || value.constructor.name === 'Socket'))) {
-      sanitized[key] = `[${value.constructor?.name || 'Non-serializable'}]`;
-      continue;
-    }
-
-    // Recursively sanitize nested objects
-    const sanitizedValue = value instanceof Error
-      ? sanitizeMetadataForStorage(normalizeErrorMeta(value), depth + 1, `${path}.${key}`)
-      : sanitizeMetadataForStorage(value, depth + 1, `${path}.${key}`);
-    
-    // Estimate size of this field
-    const fieldSize = getObjectSize({ [key]: sanitizedValue });
-    
-    // If adding this field would exceed max size, stop adding more fields
-    if (currentSize + fieldSize > MAX_METADATA_SIZE) {
-      sanitized['_truncated'] = '[Metadata size limit reached]';
-      break;
-    }
-
-    sanitized[key] = sanitizedValue;
-    currentSize += fieldSize;
-  }
-
-  return sanitized;
+  return sanitizeObjectEntriesForStorage(obj, depth, path, {
+    excludedFields: EXCLUDED_FIELDS,
+    getObjectSize,
+    maxMetadataSize: MAX_METADATA_SIZE,
+    sanitizeFn: sanitizeMetadataForStorage,
+    normalizeErrorMeta,
+  });
 }
 
 // Custom format for MongoDB that sanitizes metadata
@@ -394,34 +358,12 @@ const log = (level, source, message, meta = {}, context = null) => {
     meta = normalizeErrorMeta(meta);
   }
 
-  // Filter out large/unnecessary fields from meta before processing
-  const filteredMeta = {};
-  for (const [key, value] of Object.entries(meta || {})) {
-    // Skip excluded fields
-    if (EXCLUDED_FIELDS.has(key.toLowerCase())) {
-      continue;
-    }
-    
-    // Skip very large objects/arrays
-    if (typeof value === 'object' && value !== null) {
-      const size = getObjectSize(value);
-      if (size > MAX_METADATA_SIZE / 2) {
-        // If a single field is too large, replace with summary
-        if (Array.isArray(value)) {
-          filteredMeta[key] = `[Array with ${value.length} items - too large to store]`;
-        } else {
-          filteredMeta[key] = '[Object too large to store]';
-        }
-        continue;
-      }
-    }
-    
-    filteredMeta[key] = value;
-  }
+  const filteredMeta = filterMetaForLog(meta, {
+    excludedFields: EXCLUDED_FIELDS,
+    getObjectSize,
+    maxMetadataSize: MAX_METADATA_SIZE,
+  });
 
-  // Enhanced metadata structure for better diagnostics (only essential fields)
-  // Note: Don't include 'message' or 'level' here - winston stores these at the top level
-  // Don't include 'timestamp' either - winston adds its own timestamp
   const enhancedMeta = {
     source,
     ip,
@@ -429,16 +371,7 @@ const log = (level, source, message, meta = {}, context = null) => {
     userId,
     userRole,
     ...filteredMeta,
-    // Add request context if available (only essential fields)
-    requestContext: ctx.method ? {
-      method: ctx.method,
-      url: truncateString(ctx.url || '', 200), // Truncate long URLs
-      workspaceId: ctx.workspaceId || meta.workspaceId,
-      boardId: ctx.boardId || meta.boardId,
-      requestId: ctx.requestId,
-      userAction: ctx.userAction
-      // Exclude userAgent and referer to save space (can be added back if needed)
-    } : {}
+    requestContext: buildRequestContext(ctx, meta, truncateString),
   };
 
   // Sanitize error messages and stack traces in metadata

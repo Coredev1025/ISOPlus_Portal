@@ -12,6 +12,16 @@ import InvoiceNumber from '../models/InvoiceNumber.js';
 import Board from '../models/Board.js';
 import { getS3File, uploadFileToS3, getS3FileUrl } from '../utils/uploadS3.js';
 import { isEmpty } from '../utils/helpers.js';
+import { applyTemplateTextDefaultsToPages } from '../utils/webhookTemplateHelpers.js';
+import { paginatePdfmeTemplateTableByRows } from '../utils/webhookPdfPaginationHelpers.js';
+import { processWebhookNdisQuotePdfItem, processWebhookNdisInvoicePdfItem } from '../utils/webhookNdisPdfHandlers.js';
+import { handleParticipantTaxInvoiceRoute } from '../utils/webhookParticipantTaxPdfHelpers.js';
+import { handleMonthlyStatementRoute } from '../utils/webhookMonthlyStatementPdfHelpers.js';
+
+import {
+    enrichNumericAggregateFields,
+    enrichLabelAggregateFields,
+} from '../utils/webhookAggregateHelpers.js';
 import {
     validateItemBelongsToTenant,
     setIntegrationMessage,
@@ -66,161 +76,6 @@ function enableRepeatHeadOnTables(template) {
             }
         }
     }
-}
-
-function paginatePdfmeTemplateTableByRows(template, tableSchemaName, rows) {
-    const safeRows = Array.isArray(rows) ? rows : [];
-    const pages = template?.schemas;
-    if (!template || !Array.isArray(pages) || pages.length === 0) {
-        return { template, tableInputs: { [tableSchemaName]: JSON.stringify(safeRows) } };
-    }
-
-    const basePageSchemas = pages[0];
-    if (!Array.isArray(basePageSchemas)) {
-        return { template, tableInputs: { [tableSchemaName]: JSON.stringify(safeRows) } };
-    }
-
-    const baseTableSchema = basePageSchemas.find(s => s?.type === 'table' && s?.name === tableSchemaName);
-    if (!baseTableSchema) {
-        return { template, tableInputs: { [tableSchemaName]: JSON.stringify(safeRows) } };
-    }
-
-    let rowsPerPage = 0;
-    let baseTableCols = 0;
-    try {
-        const parsed = JSON.parse(baseTableSchema.content ?? '[]');
-        if (Array.isArray(parsed)) {
-            rowsPerPage = parsed.length;
-            const firstRow = parsed[0];
-            if (Array.isArray(firstRow)) {
-                baseTableCols = firstRow.length;
-            }
-        }
-    } catch { }
-    if (!rowsPerPage || rowsPerPage <= 0) {
-        rowsPerPage = 10;
-    }
-    if (!baseTableCols || baseTableCols <= 0) {
-        baseTableCols = Array.isArray(baseTableSchema.head) ? baseTableSchema.head.length : 1;
-    }
-
-    if (safeRows.length <= rowsPerPage) {
-        return { template, tableInputs: { [tableSchemaName]: JSON.stringify(safeRows) } };
-    }
-
-    const tableTopY = Number(baseTableSchema.position?.y) || 0;
-    const tableHeight = Number(baseTableSchema.height) || 0;
-    const tableBottomY = tableTopY + tableHeight;
-
-    const padding = template?.basePdf?.padding;
-    const topPadding = Array.isArray(padding) ? (Number(padding[0]) || 20) : 20;
-    const bottomPadding = Array.isArray(padding) ? (Number(padding[2]) || 20) : 20;
-    const pageHeight = Number(template?.basePdf?.height) || 297;
-    const EPS = 0.5;
-
-    const buildEmptyTableContent = (rowCount, colCount) =>
-        JSON.stringify(Array.from({ length: rowCount }, () => Array.from({ length: colCount }, () => '')));
-
-    // Estimate row height from the base template.
-    // We intentionally apply a safety factor because if we over-estimate how many rows fit,
-    // pdfme will auto-paginate the table inside our "manual" pages, creating extra pages
-    // with only a few rows (the large blank blocks you were seeing).
-    const approxRowHeightBase = (tableHeight > 0 && rowsPerPage > 0) ? (tableHeight / rowsPerPage) : 12;
-    const ROW_HEIGHT_SAFETY_FACTOR = 1.3;
-    const approxRowHeight = approxRowHeightBase * ROW_HEIGHT_SAFETY_FACTOR;
-    const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
-
-    const availableHeightNoFooter = clamp(pageHeight - topPadding - bottomPadding, 40, pageHeight);
-
-    // Find where the footer/totals start on the base page so the last page can keep them.
-    let footerMinY = pageHeight - bottomPadding;
-    for (const s of basePageSchemas) {
-        if (!s || s.type === 'table') continue;
-        const y = s.position?.y;
-        if (typeof y === 'number' && y > (tableBottomY + EPS)) {
-            footerMinY = Math.min(footerMinY, y);
-        }
-    }
-    const availableHeightWithFooter = clamp((footerMinY - topPadding - EPS), 40, availableHeightNoFooter);
-
-    const rowsPerPageNoFooter = clamp(Math.floor(availableHeightNoFooter / approxRowHeight), rowsPerPage, 200);
-    const rowsPerPageLastWithFooter = clamp(Math.floor(availableHeightWithFooter / approxRowHeight), rowsPerPage, 200);
-
-    // Build chunks with variable sizes: page 1 uses the template row count; pages 2+ use larger counts.
-    const chunks = [];
-    let cursor = 0;
-    chunks.push(safeRows.slice(cursor, cursor + rowsPerPage));
-    cursor += rowsPerPage;
-    while (cursor < safeRows.length) {
-        const remaining = safeRows.length - cursor;
-        if (remaining <= rowsPerPageLastWithFooter) {
-            chunks.push(safeRows.slice(cursor));
-            break;
-        }
-        chunks.push(safeRows.slice(cursor, cursor + rowsPerPageNoFooter));
-        cursor += rowsPerPageNoFooter;
-    }
-
-    const newSchemas = [];
-    const tableInputs = {};
-
-    for (let pageIndex = 0; pageIndex < chunks.length; pageIndex++) {
-        const isLast = pageIndex === chunks.length - 1;
-        const pageSchemasClone = JSON.parse(JSON.stringify(basePageSchemas));
-
-        const tableClone = pageSchemasClone.find(s => s?.type === 'table' && s?.name === tableSchemaName);
-        const pageTableName = `${tableSchemaName}_${pageIndex + 1}`;
-        if (tableClone) {
-            tableClone.name = pageTableName;
-            // For pages 2+, move the table to the top margin and do not repeat invoice header blocks.
-            if (pageIndex > 0 && tableClone.position) {
-                tableClone.position.y = topPadding;
-                // Expand the table to use available space on pages 2+ to avoid large blank areas.
-                tableClone.height = isLast ? availableHeightWithFooter : availableHeightNoFooter;
-                // IMPORTANT: pdfme table renders only as many body rows as exist in schema.content.
-                // Increase row capacity on pages 2+ so we can actually render more rows per page.
-                const pageRowCapacity = isLast ? rowsPerPageLastWithFooter : rowsPerPageNoFooter;
-                tableClone.content = buildEmptyTableContent(pageRowCapacity, baseTableCols);
-            }
-        }
-
-        // Only render actual data rows; schema.content above controls capacity, not the data itself.
-        const pageRows = Array.isArray(chunks[pageIndex]) ? chunks[pageIndex] : [];
-        tableInputs[pageTableName] = JSON.stringify(pageRows);
-
-        // Page 1 keeps the invoice header; pages 2+ remove it entirely.
-        if (pageIndex === 0) {
-            if (!isLast) {
-                const filtered = pageSchemasClone.filter(s => {
-                    if (s?.type === 'table' && s?.name === pageTableName) return true;
-                    const y = s?.position?.y;
-                    if (typeof y !== 'number') return true;
-                    return y <= (tableBottomY + EPS);
-                });
-                newSchemas.push(filtered);
-            } else {
-                newSchemas.push(pageSchemasClone);
-            }
-            continue;
-        }
-
-        // Pages 2+ (non-last): only show the table (with its repeated column header).
-        if (!isLast) {
-            newSchemas.push(pageSchemasClone.filter(s => s?.type === 'table' && s?.name === pageTableName));
-            continue;
-        }
-
-        // Pages 2+ (last): keep table + footer/totals, but remove invoice header (everything above original table top).
-        newSchemas.push(pageSchemasClone.filter(s => {
-            if (s?.type === 'table' && s?.name === pageTableName) return true;
-            const y = s?.position?.y;
-            if (typeof y !== 'number') return true;
-            return y >= (tableTopY - EPS);
-        }));
-    }
-
-    const newTemplate = { ...template, schemas: newSchemas };
-    return { template: newTemplate, tableInputs };
 }
 
 // Attribute names constants (matching items.js)
@@ -308,38 +163,28 @@ async function fetchImageUrlAsBase64(url) {
     }
 }
 
-async function resolveTemplateImageUrls(template, templateInputs) {
-    const pages = template.schemas;
-    if (!Array.isArray(pages)) return;
-    for (const pageSchemas of pages) {
-        if (!Array.isArray(pageSchemas)) continue;
-        for (const schema of pageSchemas) {
-            if (schema.type !== 'image' || !schema.name) continue;
-            const content = schema.content;
-            if (typeof content === 'string' && (content.startsWith('http://') || content.startsWith('https://'))) {
-                const base64 = await fetchImageUrlAsBase64(content);
-                if (base64) templateInputs[schema.name] = base64;
-            }
+async function processPageImageSchemas(pageSchemas, templateInputs) {
+    if (!Array.isArray(pageSchemas)) return;
+    for (const schema of pageSchemas) {
+        if (schema.type !== 'image' || !schema.name) continue;
+        const content = schema.content;
+        if (typeof content === 'string' && (content.startsWith('http://') || content.startsWith('https://'))) {
+            const base64 = await fetchImageUrlAsBase64(content);
+            if (base64) templateInputs[schema.name] = base64;
         }
     }
 }
 
-function applyTemplateTextDefaults(template, templateInputs) {
-    const pages = template?.schemas;
+async function resolveTemplateImageUrls(template, templateInputs) {
+    const pages = template.schemas;
     if (!Array.isArray(pages)) return;
     for (const pageSchemas of pages) {
-        if (!Array.isArray(pageSchemas)) continue;
-        for (const schema of pageSchemas) {
-            if (!schema?.name) continue;
-            if (templateInputs[schema.name] !== undefined) continue;
-            if (schema.type === 'text') {
-                templateInputs[schema.name] = typeof schema.content === 'string' ? schema.content : '';
-            }
-            if (schema.type === 'multiVariableText') {
-                templateInputs[schema.name] = typeof schema.content === 'string' ? schema.content : '{}';
-            }
-        }
+        await processPageImageSchemas(pageSchemas, templateInputs);
     }
+}
+
+function applyTemplateTextDefaults(template, templateInputs) {
+    applyTemplateTextDefaultsToPages(template?.schemas, templateInputs);
 }
 
 function getTemplateImageContentByName(template, schemaName) {
@@ -999,45 +844,8 @@ function enrichAggregateFromCategory(aggregate, category) {
         { aggField: 'remainingBalance', catFields: ['remainingBalance', 'remainingBudget'] }
     ];
 
-    // Enrich same-named numeric fields
-    for (const [aggKey, catKey] of Object.entries(numericFields)) {
-        if (Math.abs(aggregate[aggKey] || 0) < 0.001) {
-            const catVal = parseNumberValue(category[catKey]);
-            if (Math.abs(catVal) >= 0.001) {
-                aggregate[aggKey] = catVal;
-            }
-        }
-    }
-
-    // Enrich mapped fields (different names between category and aggregate)
-    for (const { aggField, catFields } of mappedFields) {
-        if (Math.abs(aggregate[aggField] || 0) < 0.001) {
-            for (const catField of catFields) {
-                const catVal = parseNumberValue(category[catField]);
-                if (Math.abs(catVal) >= 0.001) {
-                    aggregate[aggField] = catVal;
-                    break;
-                }
-            }
-        }
-    }
-
-    // Enrich label/date fields
-    if (!aggregate.primarySupplementLabel) {
-        aggregate.primarySupplementLabel = safeString(category.primarySupplementLabel) || '';
-    }
-    if (!aggregate.fund) {
-        aggregate.fund = safeString(category.fund) || '';
-    }
-    if (!aggregate.fundClassification) {
-        aggregate.fundClassification = safeString(category.fundClassification) || '';
-    }
-    if (!aggregate.fundingStartDate && category.fundingStartDate) {
-        aggregate.fundingStartDate = category.fundingStartDate;
-    }
-    if (!aggregate.fundingEndDate && category.fundingEndDate) {
-        aggregate.fundingEndDate = category.fundingEndDate;
-    }
+    enrichNumericAggregateFields(aggregate, category, numericFields, mappedFields, parseNumberValue);
+    enrichLabelAggregateFields(aggregate, category, safeString);
 }
 
 function getQuarterMetadata(monthNumber, year, fallbackQuarterLabel, timezone) {
@@ -1509,6 +1317,129 @@ async function handlePDFSuccess(workspaceId, boardId, itemId, fileUrl, docType, 
     return res.json({ pdfUrl: fileUrl });
 }
 
+function appendInvoiceLine(description, label, amount, gst) {
+    const gstLabel = gst === '10%' ? '10%' : 'GST Free';
+    return {
+        description: `${description},["${label}", "1", "${formatValue(amount)}", "${gstLabel}", "${formatValue(amount)}"]`,
+        subTotalDelta: parseFloat(amount),
+    };
+}
+
+function buildStandardInvoiceDescription(invoiceValues, jobPlanningValues, serviceFeeTypeValues) {
+    const gst = invoiceValues.GST === '10%' ? '10%' : '0%';
+    const serviceFee = invoiceValues['Payable Service Fee($) - GST Excl.'];
+    let invoiceDescription = `[["${jobPlanningValues.jobTitle}-${serviceFeeTypeValues.feeType}-${formatValue(invoiceValues['Job Duration (Hrs.)'])}Hrs.", "1", "${formatValue(serviceFee)}", "${gst === '10%' ? '10%' : 'GST Free'}", "${formatValue(serviceFee)}"]`;
+    let subTotal = parseFloat(serviceFee);
+
+    if (invoiceValues['Payable Material Fee($) - GST Excl.'] > 0) {
+        const line = appendInvoiceLine(invoiceDescription, 'Used Material/Part', invoiceValues['Payable Material Fee($) - GST Excl.'], gst);
+        invoiceDescription = line.description;
+        subTotal += line.subTotalDelta;
+    }
+
+    if (invoiceValues['Other Payable Fee($) - GST Excl.'] > 0) {
+        const line = appendInvoiceLine(invoiceDescription, 'Other Payable Fee', invoiceValues['Other Payable Fee($) - GST Excl.'], gst);
+        invoiceDescription = line.description;
+        subTotal += line.subTotalDelta;
+    }
+
+    return { invoiceDescription: `${invoiceDescription}]`, subTotal, gst };
+}
+
+async function processWebhookInvoiceItem(req, res, workspaceId, boardId, business, item) {
+    await validateItemBelongsToTenant(workspaceId, boardId, item.id);
+    await setIntegrationMessage(workspaceId, boardId, item.id, 'Running...');
+
+    const [jobPlanningValues, serviceFeeTypeValues] = await getJobReportingReferencedItems(workspaceId, boardId, item.id);
+    if (!jobPlanningValues) {
+        throw new Error('Job planning information is required. Job reporting is missing a job planning reference.');
+    }
+    if (!serviceFeeTypeValues) {
+        throw new Error('Service fee type information is required. Job reporting is missing a service fee type reference.');
+    }
+
+    const [contactValues] = await getJobPlanningReferencedItems(workspaceId, boardId, jobPlanningValues.id);
+    if (!contactValues) {
+        throw new Error('Client information is required. Job planning is missing a client reference.');
+    }
+
+    const templatePath = path.join(__dirname, '..', 'assets', 'invoice.json');
+    const templateData = await fs.readFile(templatePath, 'utf8');
+    const template = JSON.parse(templateData);
+    enableRepeatHeadOnTables(template);
+
+    const logoBase64 = await getLogoData(business);
+    const invoiceNumber = business.documentNumbering.invoice.prefix + business.documentNumbering.invoice.nextNumber;
+    const invoiceValues = item.values;
+    const invoiceDate = invoiceValues['Issue Date'] ? invoiceValues['Issue Date'].replace('Z', '') : '';
+    const dueDate = invoiceValues['Due Date'] ? invoiceValues['Due Date'].replace('Z', '') : '';
+    const { invoiceDescription, subTotal: subTotalRaw, gst } = buildStandardInvoiceDescription(
+        invoiceValues, jobPlanningValues, serviceFeeTypeValues
+    );
+
+    const subTotal = formatValue(subTotalRaw);
+    const gstTotal = formatValue((subTotal * parseFloat(gst) / 100));
+    const total = formatValue(parseFloat(subTotal) + parseFloat(gstTotal));
+
+    const clientDetails = {
+        Address: contactValues.address,
+        Suburb: contactValues.suburb,
+        State: contactValues.state,
+        Postcode: contactValues.postcode,
+        Client: contactValues.client,
+    };
+
+    const pdfBytes = await generate({
+        template,
+        inputs: [
+            {
+                logo: logoBase64,
+                subtotal: subTotal,
+                totalGST: gstTotal,
+                total,
+                clientDetails: JSON.stringify(clientDetails),
+                invoiceDetails: JSON.stringify({
+                    Date: formatDateNumericAU(invoiceDate || null, business?.headOfficeTimezone),
+                    'Invoice Number': invoiceNumber,
+                }),
+                companyName: JSON.stringify({ 'Company Name': business.name }),
+                companyDetails: JSON.stringify({
+                    ABN: business.abn,
+                    'Street Address': business.address.street,
+                    Suburb: business.address.suburb,
+                    State: business.address.state,
+                    Postcode: business.address.postcode,
+                    Country: business.address.country,
+                }),
+                orders: invoiceDescription,
+                dueDate: formatDateNumericAU(dueDate || null, business?.headOfficeTimezone),
+                'Bank Details': JSON.stringify({
+                    'Account Name': business.bankDetails.accountName,
+                    'Bank Name': business.bankDetails.bankName,
+                    BSB: business.bankDetails.bsb,
+                    'Account Number': business.bankDetails.accountNumber,
+                    'invoice Number': invoiceNumber,
+                }),
+            },
+        ],
+        plugins: { text, image, line, table, multiVariableText },
+    });
+
+    const filename = `output/${workspaceId}/${boardId}/invoices/${invoiceNumber + '-ISO+™-' + item.id}.pdf`;
+    const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
+
+    if (uploadResult['$metadata'].httpStatusCode !== 200) {
+        throw new Error('Upload of PDF failed, please provide correct information.');
+    }
+
+    const fileUrl = await getS3FileUrl(filename, 3600, true);
+    await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'Invoice', req, res);
+    await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
+    await saveInvoiceNumber(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`, 'PDF', fileUrl);
+    business.documentNumbering.invoice.nextNumber += 1;
+    await business.save();
+}
+
 router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     try {
         const { workspaceId, boardId } = validateRequestParams(req);
@@ -1516,112 +1447,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
 
         await Promise.all(req.body.items.map(async (item) => {
             try {
-                await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-                await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
-
-                const [jobPlanningValues, serviceFeeTypeValues] = await getJobReportingReferencedItems(workspaceId, boardId, item.id);
-                if (!jobPlanningValues) {
-                    throw new Error("Job planning information is required. Job reporting is missing a job planning reference.");
-                }
-                if (!serviceFeeTypeValues) {
-                    throw new Error("Service fee type information is required. Job reporting is missing a service fee type reference.");
-                }
-
-                const [contactValues] = await getJobPlanningReferencedItems(workspaceId, boardId, jobPlanningValues.id);
-                if (!contactValues) {
-                    throw new Error("Client information is required. Job planning is missing a client reference.");
-                }
-
-                const templatePath = path.join(__dirname, '..', 'assets', 'invoice.json');
-                const templateData = await fs.readFile(templatePath, 'utf8');
-                const template = JSON.parse(templateData);
-                enableRepeatHeadOnTables(template);
-
-                const logoBase64 = await getLogoData(business);
-
-                const invoiceNumber = business.documentNumbering.invoice.prefix + business.documentNumbering.invoice.nextNumber;
-
-                const invoiceValues = item.values;
-                const invoiceDate = invoiceValues["Issue Date"] ? invoiceValues["Issue Date"].replace('Z', '') : "";
-                const dueDate = invoiceValues["Due Date"] ? invoiceValues["Due Date"].replace('Z', '') : "";
-                let subTotal = 0;
-                let gst = invoiceValues["GST"] == "10%" ? "10%" : "0%";
-                let invoiceDescription = `[["${jobPlanningValues.jobTitle}-${serviceFeeTypeValues.feeType}-${formatValue(invoiceValues["Job Duration (Hrs.)"])}Hrs.", "1", "${formatValue(invoiceValues["Payable Service Fee($) - GST Excl."])}", "${gst == "10%" ? "10%" : "GST Free"}", "${formatValue(invoiceValues["Payable Service Fee($) - GST Excl."])}"]`;
-                subTotal += parseFloat(invoiceValues["Payable Service Fee($) - GST Excl."]);
-
-                if (invoiceValues["Payable Material Fee($) - GST Excl."] > 0) {
-                    invoiceDescription += `,["Used Material/Part", "1", "${formatValue(invoiceValues["Payable Material Fee($) - GST Excl."])}", "${gst == "10%" ? "10%" : "GST Free"}", "${formatValue(invoiceValues["Payable Material Fee($) - GST Excl."])}"]`;
-                    subTotal += parseFloat(invoiceValues["Payable Material Fee($) - GST Excl."]);
-                }
-
-                if (invoiceValues["Other Payable Fee($) - GST Excl."] > 0) {
-                    invoiceDescription += `,["Other Payable Fee", "1", "${formatValue(invoiceValues["Other Payable Fee($) - GST Excl."])}", "${gst == "10%" ? "10%" : "GST Free"}", "${formatValue(invoiceValues["Other Payable Fee($) - GST Excl."])}"]`;
-                    subTotal += parseFloat(invoiceValues["Other Payable Fee($) - GST Excl."]);
-                }
-
-                invoiceDescription += "]";
-
-                subTotal = formatValue(subTotal);
-                const gstTotal = formatValue((subTotal * parseFloat(gst) / 100));
-                const total = formatValue(parseFloat(subTotal) + parseFloat(gstTotal));
-
-                const clientDetails = {
-                    Address: contactValues.address,
-                    Suburb: contactValues.suburb,
-                    State: contactValues.state,
-                    Postcode: contactValues.postcode,
-                    Client: contactValues.client
-                };
-
-                const pdfBytes = await generate({
-                    template: template,
-                    inputs: [
-                        {
-                            logo: logoBase64,
-                            subtotal: subTotal,
-                            totalGST: gstTotal,
-                            total: total,
-                            clientDetails: JSON.stringify(clientDetails),
-                            invoiceDetails: JSON.stringify({
-                                Date: formatDateNumericAU(invoiceDate || null, business?.headOfficeTimezone),
-                                "Invoice Number": invoiceNumber
-                            }),
-                            companyName: JSON.stringify({ "Company Name": business.name }),
-                            companyDetails: JSON.stringify({
-                                ABN: business.abn,
-                                "Street Address": business.address.street,
-                                Suburb: business.address.suburb,
-                                State: business.address.state,
-                                Postcode: business.address.postcode,
-                                Country: business.address.country
-                            }),
-                            orders: invoiceDescription,
-                            "dueDate": formatDateNumericAU(dueDate || null, business?.headOfficeTimezone),
-                            "Bank Details": JSON.stringify({
-                                "Account Name": business.bankDetails.accountName,
-                                "Bank Name": business.bankDetails.bankName,
-                                BSB: business.bankDetails.bsb,
-                                "Account Number": business.bankDetails.accountNumber,
-                                "invoice Number": invoiceNumber
-                            })
-                        }
-                    ],
-                    plugins: { text, image, line, table, multiVariableText }
-                });
-
-                const filename = `output/${workspaceId}/${boardId}/invoices/${invoiceNumber + '-ISO+™-' + item.id}.pdf`;
-                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
-
-                if (uploadResult['$metadata'].httpStatusCode === 200) {
-                    const fileUrl = await getS3FileUrl(filename, 3600, true);
-                    await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'Invoice', req, res);
-                    await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
-                    await saveInvoiceNumber(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`, 'PDF', fileUrl);
-                    business.documentNumbering.invoice.nextNumber += 1;
-                    await business.save();
-                } else {
-                    throw new Error('Upload of PDF failed, please provide correct information.');
-                }
+                await processWebhookInvoiceItem(req, res, workspaceId, boardId, business, item);
             } catch (err) {
                 await handlePDFError(err, workspaceId, boardId, item.id, 'Generate PDF Invoice', req, res);
             }
@@ -1838,213 +1664,23 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
     try {
         const { workspaceId, boardId } = validateRequestParams(req);
         const business = await getValidatedBusiness(workspaceId);
-        await Promise.all(req.body.items.map(async (item) => {
-            try {
-                await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-                await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
-
-                const [serviceAreaValues, directSupportValues, providerTravelValues, activityBasedTransportValues, centreCapitalCostsValues, providerTravelLabourTravelTime] = await getQuoteNDISReferencedItems(workspaceId, boardId, item.id);
-                if (!serviceAreaValues) throw new Error("Service Area value is required.");
-
-                const templatePath = path.join(__dirname, '..', 'assets', `NDISquote.json`);
-                const templateData = await fs.readFile(templatePath, 'utf8');
-                const template = JSON.parse(templateData);
-                enableRepeatHeadOnTables(template);
-
-                const logoBase64 = await getLogoData(business);
-
-                const quoteNumber = business.documentNumbering.quote.prefix + business.documentNumbering.quote.nextNumber;
-
-                const NDISQuoteValues = item.values;
-
-                let gst = "0%";
-                const gstLabel = "GST Free";
-                const issueDate = NDISQuoteValues['Issue Date'] ? NDISQuoteValues['Issue Date'].replace('Z', '') : "";
-                const expiryDate = NDISQuoteValues['Expiry Date'] ? NDISQuoteValues['Expiry Date'].replace('Z', '') : "";
-                const fromDate = NDISQuoteValues['From Date'] ? NDISQuoteValues['From Date'].replace('Z', '') : "";
-                const toDate = NDISQuoteValues['To Date'] ? NDISQuoteValues['To Date'].replace('Z', '') : "";
-                const daysOfWeek = Array.isArray(NDISQuoteValues["Days of the Week"]) && NDISQuoteValues["Days of the Week"].length > 0 ? NDISQuoteValues["Days of the Week"].join(', ') : " ";
-                let ordersArr = [];
-                let subTotal = 0;
-
-                const clientDetails = {
-                    Address: NDISQuoteValues['Recipient Address'] || ' ',
-                    Suburb: NDISQuoteValues['Suburb'] || ' ',
-                    State: NDISQuoteValues['State'] || ' ',
-                    Postcode: NDISQuoteValues['Postcode'] || ' ',
-                    Client: NDISQuoteValues['Recipient of the Quote'] || ' '
-                };
-
-                // 1. Direct Support
-                if (NDISQuoteValues['Quantity (Direct Support)'] && NDISQuoteValues['Unit Price for Direct Support($)']) {
-                    const desc = `${NDISQuoteValues['Direct Support Item Number'] || ''}${directSupportValues && directSupportValues.itemName ? '-' + directSupportValues.itemName : ''}`;
-                    const qty = Number(NDISQuoteValues['Quantity (Direct Support)']) || 0;
-                    const unitPrice = Number(NDISQuoteValues['Unit Price for Direct Support($)']) || 0;
-                    const amount = qty * unitPrice;
-                    ordersArr.push([
-                        desc || 'Direct Support',
-                        NDISQuoteValues['Unit (Direct Support)'] || '',
-                        formatValue(qty),
-                        formatValue(unitPrice),
-                        gstLabel,
-                        formatValue(amount)
-                    ]);
-                    subTotal += amount;
-                }
-                // 2. Provider Travel - Non-Labour Cost
-                if (NDISQuoteValues['Quantity (Provider Travel)'] && NDISQuoteValues['Unit Price for Provider Travel($)']) {
-                    const desc = `${NDISQuoteValues['Provider Travel - Non-Labour Cost Item Number'] || ''}${providerTravelValues && providerTravelValues.itemName ? '-' + providerTravelValues.itemName : ''}`;
-                    const qty = Number(NDISQuoteValues['Quantity (Provider Travel)']) || 0;
-                    const unitPrice = Number(NDISQuoteValues['Unit Price for Provider Travel($)']) || 0;
-                    const amount = qty * unitPrice;
-                    ordersArr.push([
-                        desc || 'Provider Travel - Non-Labour Cost',
-                        NDISQuoteValues['Unit (Provider Travel - Non-Labour Cost)'] || '',
-                        formatValue(qty),
-                        formatValue(unitPrice),
-                        gstLabel,
-                        formatValue(amount)
-                    ]);
-                    subTotal += amount;
-                }
-                // 3. Activity Based Transport
-                if (NDISQuoteValues['Quantity (Activity Based Transport)'] && NDISQuoteValues['Unit Price for Activity Based Transport($)']) {
-                    const desc = `${NDISQuoteValues['Activity Based Transport Item Number'] || ''}${activityBasedTransportValues && activityBasedTransportValues.itemName ? '-' + activityBasedTransportValues.itemName : ''}`;
-                    const qty = Number(NDISQuoteValues['Quantity (Activity Based Transport)']) || 0;
-                    const unitPrice = Number(NDISQuoteValues['Unit Price for Activity Based Transport($)']) || 0;
-                    const amount = qty * unitPrice;
-                    ordersArr.push([
-                        desc || 'Activity Based Transport',
-                        NDISQuoteValues['Unit (Activity Based Transport)'] || '',
-                        formatValue(qty),
-                        formatValue(unitPrice),
-                        gstLabel,
-                        formatValue(amount)
-                    ]);
-                    subTotal += amount;
-                }
-                // 4. Centre Capital Costs
-                if (NDISQuoteValues['Quantity (Centre Capital Costs)'] && NDISQuoteValues['Unit Price for Centre Capital Costs($)']) {
-                    const desc = `${NDISQuoteValues['Centre Capital Costs Item'] || ''}${centreCapitalCostsValues && centreCapitalCostsValues.itemName ? '-' + centreCapitalCostsValues.itemName : ''}`;
-                    const qty = Number(NDISQuoteValues['Quantity (Centre Capital Costs)']) || 0;
-                    const unitPrice = Number(NDISQuoteValues['Unit Price for Centre Capital Costs($)']) || 0;
-                    const amount = qty * unitPrice;
-                    ordersArr.push([
-                        desc || 'Centre Capital Costs',
-                        NDISQuoteValues['Unit (Centre Capital Costs)'] || '',
-                        formatValue(qty),
-                        formatValue(unitPrice),
-                        gstLabel,
-                        formatValue(amount)
-                    ]);
-                    subTotal += amount;
-                }
-                // 5. Provider Travel - Labour Travel Time Costs
-                if (NDISQuoteValues['Quantity (Labour Travel Time)']) {
-                    const desc = 'Provider Travel - Labour Travel Time Costs' + (providerTravelLabourTravelTime && providerTravelLabourTravelTime.itemName ? '-' + providerTravelLabourTravelTime.itemName : '');
-                    const qty = Number(NDISQuoteValues['Quantity (Labour Travel Time)']) || 0;
-                    const unitPrice = Number(NDISQuoteValues['Unit Price for Labour Travel Time ($)']) || 1;
-                    const amount = qty * unitPrice;
-                    ordersArr.push([
-                        desc || 'Provider Travel - Labour Travel Time Costs',
-                        NDISQuoteValues['Unit (Labour Travel Time)'] || '',
-                        formatValue(qty),
-                        formatValue(unitPrice),
-                        gstLabel,
-                        formatValue(amount)
-                    ]);
-                    subTotal += amount;
-                }
-                // 6. Allowances
-                if (NDISQuoteValues['Allowances'] && NDISQuoteValues['Allowances Amount($)']) {
-                    const desc = isEmpty(NDISQuoteValues['Allowances']) ? 'Allowances' : `Allowances - ${NDISQuoteValues['Allowances']}`;
-                    const qty = 1;
-                    const unitPrice = Number(NDISQuoteValues['Allowances Amount($)']) || 0;
-                    const amount = unitPrice;
-                    ordersArr.push([
-                        desc,
-                        NDISQuoteValues['Unit (Allowances)'] || ' ',
-                        formatValue(qty),
-                        formatValue(unitPrice),
-                        gstLabel,
-                        formatValue(amount)
-                    ]);
-                    subTotal += amount;
-                }
-                // 7. Non-Face-to-Face Support
-                if (NDISQuoteValues['Non-Face-to-Face Supports'] && NDISQuoteValues['Quantity (Non-Face-to-Face Support)']) {
-                    const desc = isEmpty(NDISQuoteValues['Non-Face-to-Face Supports']) ? 'Non-Face-to-Face Support' : `Non-Face-to-Face Support - ${NDISQuoteValues['Non-Face-to-Face Supports']}`;
-                    const qty = Number(NDISQuoteValues['Quantity (Non-Face-to-Face Support)']) || 0;
-                    const unitPrice = Number(NDISQuoteValues['Unit Price for Non-Face-to-Face Support ($)']) || 1;
-                    const amount = qty * unitPrice;
-                    ordersArr.push([
-                        desc,
-                        NDISQuoteValues['Unit (Non-Face-to-Face Support)'] || ' ',
-                        formatValue(qty),
-                        formatValue(unitPrice),
-                        gstLabel,
-                        formatValue(amount)
-                    ]);
-                    subTotal += amount;
-                }
-
-                const orders = JSON.stringify(ordersArr);
-                subTotal = formatValue(subTotal);
-                const gstTotal = formatValue((parseFloat(subTotal) * parseFloat(gst) / 100));
-                const total = formatValue(parseFloat(subTotal) + parseFloat(gstTotal));
-
-                const pdfBytes = await generate({
-                    template: template,
-                    inputs: [
-                        {
-                            logo: logoBase64,
-                            subtotal: subTotal,
-                            totalGST: gstTotal,
-                            total: total,
-                            clientDetails: JSON.stringify(clientDetails),
-                            quoteDetails: JSON.stringify({
-                                "Issue Date": formatDateNumericAU(issueDate || null, business?.headOfficeTimezone),
-                                "expiry Date": formatDateNumericAU(expiryDate || null, business?.headOfficeTimezone),
-                                "Quote Number": quoteNumber
-                            }),
-                            companyName: JSON.stringify({ "Company Name": business.name }),
-                            companyDetails: JSON.stringify({
-                                ABN: business.abn,
-                                "Street Address": business.address.street,
-                                Suburb: business.address.suburb,
-                                State: business.address.state,
-                                Postcode: business.address.postcode,
-                                Country: business.address.country
-                            }),
-                            orders: orders,
-                            termsInputs: JSON.stringify({
-                                "Accounts Receivable Payment Terms": `${business.bankDetails.accountsReceivableTerms ? business.bankDetails.accountsReceivableTerms : ' '}`
-                            }),
-                            field17: JSON.stringify({
-                                "From Date": formatDateNumericAU(fromDate || null, business?.headOfficeTimezone),
-                                "To Date": formatDateNumericAU(toDate || null, business?.headOfficeTimezone),
-                                "Days of the week": daysOfWeek
-                            })
-                        }
-                    ],
-                    plugins: { text, image, line, table, multiVariableText }
-                });
-
-                const filename = `output/${workspaceId}/${boardId}/NDIS-quote/${quoteNumber + '-ISO+™-' + item.id}.pdf`;
-                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
-                if (uploadResult['$metadata'].httpStatusCode === 200) {
-                    const fileUrl = await getS3FileUrl(filename, 3600, true);
-                    await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS Quote', req, res);
-                    await setGeneratedField(workspaceId, boardId, item.id, `${quoteNumber} (ISO+™)`);
-                    business.documentNumbering.quote.nextNumber += 1;
-                    await business.save();
-                } else {
-                    throw new Error('Upload of PDF failed, please provide correct information.');
-                }
-            } catch (err) {
-                await handlePDFError(err, workspaceId, boardId, item.id, 'Generate PDF NDIS Quote', req, res);
-            }
-        }));
+        await Promise.all(req.body.items.map(async (item) => processWebhookNdisQuotePdfItem({
+            req,
+            res,
+            workspaceId,
+            boardId,
+            business,
+            item,
+            getLogoData,
+            enableRepeatHeadOnTables,
+            formatValue,
+            formatDateNumericAU,
+            isEmpty,
+            uploadFileToS3,
+            getS3FileUrl,
+            handlePDFSuccess,
+            handlePDFError,
+        })));
     } catch (err) {
         error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
         return res.status(200).json({ message: err.message });
@@ -2055,582 +1691,52 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
     try {
         const { workspaceId, boardId } = validateRequestParams(req);
         const business = await getValidatedBusiness(workspaceId);
-
-        await Promise.all(req.body.items.map(async (item) => {
-            try {
-                await validateItemBelongsToTenant(workspaceId, boardId, item.id);
-                await setIntegrationMessage(workspaceId, boardId, item.id, "Running...");
-
-                const [servicePlanValues, cancellationTypeValues, fundValues, participantProfileValues] = await getNDISMasterPlanReferencedItems(workspaceId, boardId, item.id);
-                if (!participantProfileValues || !servicePlanValues) {
-                    throw new Error("Participant Profile and Service Plan information is required.");
-                }
-
-                const templatePath = path.join(__dirname, '..', 'assets', 'NDISinvoice.json');
-                const templateData = await fs.readFile(templatePath, 'utf8');
-                const template = JSON.parse(templateData);
-                enableRepeatHeadOnTables(template);
-
-                const logoBase64 = await getLogoData(business);
-
-                const invoiceNumber = business.documentNumbering.invoice.prefix + business.documentNumbering.invoice.nextNumber;
-
-                const invoiceValues = item.values;
-                const invoiceDate = invoiceValues["Invoice Date"] ? invoiceValues["Invoice Date"].replace('Z', '') : "";
-                const dueDate = invoiceValues["Due Date"] ? invoiceValues["Due Date"].replace('Z', '') : "";
-
-                const tz = business?.headOfficeTimezone || 'Australia/Sydney';
-                const dateOnly = (d) => d ? new Date(d).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: tz }) : '';
-                const scheduledShiftStart =
-                    invoiceValues["Scheduled Shift Start Date & Time"] ||
-                    invoiceValues["Scheduled Shift Start Date and Time"] ||
-                    '';
-                const actualShiftStart =
-                    invoiceValues["Actual Shift Start Date and Time"] ||
-                    invoiceValues["Actual Shift Start Date & Time"] ||
-                    '';
-                const serviceDate =
-                    invoiceValues['Job Status'] === 'Cancelled'
-                        ? dateOnly(scheduledShiftStart || actualShiftStart)
-                        : dateOnly(actualShiftStart || scheduledShiftStart);
-
-                let ordersArr = [];
-                let subTotal = 0;
-                const groupSize = Number(invoiceValues['Group Size']) || 1;
-                const gst = "0%";
-                const gstLabel = "GST Free";
-
-                if (invoiceValues['Job Status'] !== 'Cancelled') {
-                    // Line 1: Direct Support - Hour based
-                    if (servicePlanValues?.directSupportUnit === "Hour(H)") {
-                        const unitPrice1 = Number(servicePlanValues?.directSupportUnitPrice) / groupSize || 0;
-                        const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
-                        const itemName1 = servicePlanValues?.directSupportItemName || '';
-                        const startTime1 = invoiceValues["Actual Shift Start Date and Time"] ? new Date(invoiceValues["Actual Shift Start Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: tz }) : '';
-                        const endTime1 = invoiceValues["Actual Shift End Date and Time"] ? new Date(invoiceValues["Actual Shift End Date and Time"]).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: tz }) : '';
-                        let qty1 = 0;
-                        let actualShiftDuration1 = Number(invoiceValues["Actual Shift Duration(Hr.)"]);
-                        if (typeof actualShiftDuration1 === 'number' && !isNaN(actualShiftDuration1)) {
-                            qty1 = Number(actualShiftDuration1.toFixed(1));
-                        }
-                        const amountValue1 = formatValue(Number(invoiceValues["Direct Support Value($) - Time Based Support"])) || 0;
-                        const amount1 = formatValue(qty1 * unitPrice1);
-
-                        if (amountValue1 > 0) {
-                            let desc1 = itemName1;
-                            if (itemNumber1) {
-                                desc1 += ` - ${itemNumber1}`;
-                            }
-                            if (startTime1 && endTime1) {
-                                desc1 += ` - from ${startTime1} to ${endTime1}`;
-                            }
-                            if (desc1 == '') {
-                                desc1 = 'Direct Support - Hour based';
-                            }
-                            if (groupSize !== 1) {
-                                desc1 += ` - Group Size: ${groupSize}`;
-                            }
-
-                            if (parseFloat(formatValue(amountValue1)) != parseFloat(formatValue(amount1))) {
-                                setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                                throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                            }
-
-                            ordersArr.push([
-                                desc1,
-                                servicePlanValues?.directSupportUnit || ' ',
-                                formatValue(qty1),
-                                formatValue(unitPrice1),
-                                gstLabel,
-                                formatValue(amount1)
-                            ]);
-                            subTotal += Number(amount1);
-                        }
-                    }
-
-                    // Line 2: Direct Support - Non Hour based
-                    if (servicePlanValues?.directSupportUnit !== "Hour(H)") {
-                        const unitPrice2 = Number(servicePlanValues?.directSupportUnitPrice) || 0;
-                        const itemNumber2 = servicePlanValues?.directSupportItemNumber || '';
-                        const itemName2 = servicePlanValues?.directSupportItemName || '';
-                        const quantity2 = invoiceValues["Quantity (Direct Support - Non Time Based Support)"] || 0;
-                        const unit2 = servicePlanValues?.directSupportUnit || '';
-                        const qty2 = Number(quantity2) || 0;
-                        const amountValue2 = formatValue(Number(invoiceValues["Direct Support Value($) - Non Time Based Support"])) || 0;
-                        const amount2 = formatValue(qty2 * unitPrice2);
-
-                        if (amountValue2 > 0) {
-                            let desc2 = itemName2;
-                            if (itemNumber2) {
-                                desc2 += ` - ${itemNumber2}`;
-                            }
-                            if (quantity2 && unit2) {
-                                desc2 += ` - ${quantity2} ${unit2}`;
-                            }
-                            if (desc2 == '') {
-                                desc2 = 'Direct Support - NOT Hour based';
-                            }
-
-                            if (parseFloat(formatValue(amountValue2)) != parseFloat(formatValue(amount2))) {
-                                setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                                throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                            }
-
-                            ordersArr.push([
-                                desc2,
-                                unit2 || ' ',
-                                formatValue(qty2),
-                                formatValue(unitPrice2),
-                                gstLabel,
-                                formatValue(amount2)
-                            ]);
-                            subTotal += Number(amount2);
-                        }
-                    }
-
-                    // Line 3: Provider Travel - Non-Labour Cost
-                    const unitPrice3 = 1;
-                    const mileage3 = invoiceValues["Provider Travel - Non-Labour - Mileage (kms) as per the Service Plan, if a Vehicle is Used."] || '';
-                    const others3 = invoiceValues["Provider Travel - Non-Labour - as per the Service Plan, if other costs are applied."] || '';
-                    const itemName3 = servicePlanValues?.providerTravelItemName || '';
-                    const itemNumber3 = servicePlanValues?.providerTravelItemNumber || '';
-                    const qty3 = Number(invoiceValues["Provider Travel - Non-Labour Cost Amount($)"]) || 0;
-                    const amountValue3 = formatValue(Number(invoiceValues["Provider Travel - Non-Labour Cost Amount($)"])) || 0;
-                    const amount3 = formatValue(qty3 * unitPrice3);
-
-                    if (amountValue3 > 0) {
-                        let desc3 = itemName3;
-                        if (itemNumber3) {
-                            desc3 += ` - ${itemNumber3}`;
-                        }
-                        if (mileage3) {
-                            desc3 += ` - ${mileage3}km`;
-                        }
-                        if (others3) {
-                            desc3 += ` - Others: ${others3}`;
-                        }
-                        if (desc3 == '') {
-                            desc3 = 'Provider Travel - Non-Labour Cost Item';
-                        }
-
-                        if (parseFloat(formatValue(amountValue3)) != parseFloat(formatValue(amount3))) {
-                            setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                            throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                        }
-
-                        ordersArr.push([
-                            desc3,
-                            servicePlanValues?.nonLabourTravelUnit || ' ',
-                            formatValue(qty3),
-                            formatValue(unitPrice3),
-                            gstLabel,
-                            formatValue(amount3)
-                        ]);
-                        subTotal += Number(amount3);
-                    }
-
-                    // Line 4: Activity Based Transport
-                    const unitPrice4 = 1;
-                    const mileage4 = invoiceValues["Activity Base Transport Mileage(Kms) as per the Service Plan, if a Vehicle is Used."] || '';
-                    const others4 = invoiceValues["Activity Base Transport Costs as per the Service Plan, if other costs are applied."] || '';
-                    const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
-                    const itemNumber4 = servicePlanValues?.activityBasedTransportItemNumber || '';
-                    const qty4 = Number(invoiceValues["Activity Base Transport Amount($)"]) || 0;
-                    const amountValue4 = formatValue(Number(invoiceValues["Activity Base Transport Amount($)"])) || 0;
-                    const amount4 = formatValue(qty4 * unitPrice4);
-
-                    if (amountValue4 > 0) {
-                        let desc4 = itemName4;
-                        if (itemNumber4) {
-                            desc4 += ` - ${itemNumber4}`;
-                        }
-                        if (mileage4) {
-                            desc4 += ` - ${mileage4}km`;
-                        }
-                        if (others4) {
-                            desc4 += ` - Others: ${others4}`;
-                        }
-                        if (desc4 == '') {
-                            desc4 = 'Activity Based Transport Item';
-                        }
-
-                        if (parseFloat(formatValue(amountValue4)) != parseFloat(formatValue(amount4))) {
-                            setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                            throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                        }
-
-                        ordersArr.push([
-                            desc4,
-                            servicePlanValues?.activityBasedTransportUnit || ' ',
-                            formatValue(qty4),
-                            formatValue(unitPrice4),
-                            gstLabel,
-                            formatValue(amount4)
-                        ]);
-                        subTotal += Number(amount4);
-                    }
-
-                    // Line 5: Centre Capital Costs
-                    const unitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) || 0;
-                    const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
-                    const itemNumber5 = servicePlanValues?.centreCapitalCostsItemNumber || '';
-                    let qty5 = 0;
-                    let actualShiftDuration5 = Number(invoiceValues["Actual Shift Duration(Hr.)"]);
-                    if (typeof actualShiftDuration5 === 'number' && !isNaN(actualShiftDuration5)) {
-                        qty5 = Number(actualShiftDuration5.toFixed(1));
-                    }
-                    const amountValue5 = formatValue(Number(invoiceValues["Centre Capital Costs Amount($)"])) || 0;
-                    const amount5 = formatValue(qty5 * unitPrice5);
-
-                    if (amountValue5 > 0) {
-                        let desc5 = itemName5;
-                        if (itemNumber5) {
-                            desc5 += ` - ${itemNumber5}`;
-                        }
-                        if (desc5 == '') {
-                            desc5 = 'Centre Capital Costs Item';
-                        }
-
-                        if (parseFloat(formatValue(amountValue5)) != parseFloat(formatValue(amount5))) {
-                            setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                            throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                        }
-
-                        ordersArr.push([
-                            desc5,
-                            servicePlanValues?.centreCapitalCostsUnit || ' ',
-                            formatValue(qty5),
-                            formatValue(unitPrice5),
-                            gstLabel,
-                            formatValue(amount5)
-                        ]);
-                        subTotal += Number(amount5);
-                    }
-
-                    // Line 6: Labour Travel Time
-                    const unitPrice6 = Number(servicePlanValues?.labourTravelTimeUnitPrice) || 0;
-                    const qty6 = Number(invoiceValues["Labour Travel Time (Min.) as per the Service Plan, regarding the Time Cap, if applicable."]) || 0;
-                    const amountValue6 = formatValue(Number(invoiceValues["Labour Travel Time Amount($)"])) || 0;
-                    const amount6 = formatValue(qty6 * unitPrice6);
-
-                    if (amountValue6 > 0) {
-                        const desc6 = 'Provider Travel - Labour Travel Time Costs';
-
-                        if (parseFloat(formatValue(amountValue6)) != parseFloat(formatValue(amount6))) {
-                            setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                            throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                        }
-
-                        ordersArr.push([
-                            desc6,
-                            servicePlanValues?.labourTravelTimeUnit || ' ',
-                            formatValue(qty6),
-                            formatValue(unitPrice6),
-                            gstLabel,
-                            formatValue(amount6)
-                        ]);
-                        subTotal += Number(amount6);
-                    }
-
-                    // Line 7: Allowances
-                    const unitPrice7 = Number(invoiceValues['Used Allowance Amount($) as per the Service Plan']) || 0;
-                    const qty7 = 1;
-                    const amountValue7 = formatValue(Number(invoiceValues["Allowances Amount($)"])) || 0;
-                    const amount7 = formatValue(unitPrice7);
-
-                    if (amountValue7 > 0) {
-                        const desc7 = `Allowances - ${invoiceValues["Allowances"]}`;
-
-                        if (parseFloat(formatValue(amountValue7)) != parseFloat(formatValue(amount7))) {
-                            setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                            throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                        }
-
-                        ordersArr.push([
-                            desc7,
-                            servicePlanValues?.usedAllowanceUnit || ' ',
-                            formatValue(qty7),
-                            formatValue(unitPrice7),
-                            gstLabel,
-                            formatValue(amount7)
-                        ]);
-                        subTotal += Number(amount7);
-                    }
-
-                    // Line 8: Non-Face-to-Face Support
-                    const unitPrice8 = Number(servicePlanValues?.nonFaceToFaceSupportUnitPrice) || 0;
-                    const qty8 = Number(invoiceValues["Time spent in the Non-Face-to-Face Amount as per the Service Plan (Hr.)"]) || 0;
-                    const amountValue8 = formatValue(Number(invoiceValues["Non-Face-to-Face Amount($)"])) || 0;
-                    const amount8 = formatValue(qty8 * unitPrice8);
-
-                    if (amountValue8 > 0) {
-                        const desc8 = `Non-Face-to-Face Support - ${invoiceValues["Non-Face-to-Face Supports"]}`;
-
-                        if (parseFloat(formatValue(amountValue8)) != parseFloat(formatValue(amount8))) {
-                            setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                            throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                        }
-
-                        ordersArr.push([
-                            desc8,
-                            servicePlanValues?.nonFaceToFaceSupportUnit || ' ',
-                            formatValue(qty8),
-                            formatValue(unitPrice8),
-                            gstLabel,
-                            formatValue(amount8)
-                        ]);
-                        subTotal += Number(amount8);
-                    }
-                } else {
-                    if (!cancellationTypeValues) {
-                        setIntegrationMessage(workspaceId, boardId, item.id, "Cancellation Type Item not found");
-                        throw new Error("Cancellation Type Item not found");
-                    }
-                    const cancellationPercentage1 = Number(cancellationTypeValues?.billableToClient) || 0;
-                    const scheduledShiftDuration = (invoiceValues['Scheduled Shift Duration(Hr.)'] > 0)
-                        ? Number(invoiceValues['Scheduled Shift Duration(Hr.)']).toFixed(1)
-                        : 0;
-                    let totalCancellationFee = 0;
-                    const amountValue1 = formatValue(Number(invoiceValues["Cancellation Fee($)"])) || 0;
-                    if (servicePlanValues?.directSupportShortNoticeCancellations === 'Y') {
-                        // Line 1: Direct Support - Hour based (Cancelled)
-                        const baseUnitPrice1 = groupSize > 0 ? Number(servicePlanValues?.directSupportUnitPrice) / groupSize : 0;
-                        const itemName1 = servicePlanValues?.directSupportItemName || '';
-                        const itemNumber1 = servicePlanValues?.directSupportItemNumber || '';
-                        let unitPrice1, amount1;
-                        let qty1 = scheduledShiftDuration;
-                        if (servicePlanValues?.directSupportUnit === "Hour(H)") {
-                            unitPrice1 = Number(formatValue(baseUnitPrice1 * (cancellationPercentage1 / 100)));
-                        } else {
-                            const nonTimeBasedValue = Number(servicePlanValues.directSupportUnitPrice) || 0;
-                            unitPrice1 = Number(formatValue(nonTimeBasedValue * (cancellationPercentage1 / 100)));
-                            qty1 = Number(invoiceValues["Quantity (Direct Support - Non Time Based Support)"]) || 0;
-                        }
-
-                        amount1 = formatValue(qty1 * unitPrice1);
-
-                        if (amountValue1 > 0) {
-                            let desc1 = 'Cancellation Fee';
-                            if (itemName1) {
-                                desc1 += ` - ${itemName1}`;
-                            }
-                            if (itemNumber1) {
-                                desc1 += ` - ${itemNumber1}`;
-                            }
-                            desc1 += ` - ${cancellationPercentage1}%`;
-                            if (groupSize !== 1) {
-                                desc1 += ` - Group Size: ${groupSize}`;
-                            }
-
-                            ordersArr.push([
-                                desc1,
-                                servicePlanValues?.directSupportUnit || ' ',
-                                formatValue(qty1),
-                                formatValue(unitPrice1),
-                                gstLabel,
-                                formatValue(amount1)
-                            ]);
-                            subTotal += Number(amount1);
-                            totalCancellationFee += Number(amount1);
-                        }
-                    }
-                    if (servicePlanValues?.providerTravelShortNoticeCancellations === 'Y') {
-                        // Line 3: Provider Travel - Non-Labour Cost
-                        const baseUnitPrice3 = Number(servicePlanValues?.nonLabourTravelUnitPrice) || 0;
-                        const itemName3 = servicePlanValues?.providerTravelItemName || '';
-                        const itemNumber3 = servicePlanValues?.providerTravelItemNumber || '';
-                        const qty3 = scheduledShiftDuration;
-                        const unitPrice3 = Number(formatValue(baseUnitPrice3 * (cancellationPercentage1 / 100)));
-                        const amount3 = formatValue(qty3 * unitPrice3);
-
-                        if (amount3 > 0) {
-                            let desc3 = 'Cancellation Fee';
-                            if (itemName3) {
-                                desc3 += ` - ${itemName3}`;
-                            }
-                            if (itemNumber3) {
-                                desc3 += ` - ${itemNumber3}`;
-                            }
-                            desc3 += ` - ${cancellationPercentage1}%`;
-
-                            ordersArr.push([
-                                desc3,
-                                servicePlanValues?.nonLabourTravelUnit || ' ',
-                                formatValue(qty3),
-                                formatValue(unitPrice3),
-                                gstLabel,
-                                formatValue(amount3)
-                            ]);
-                            subTotal += Number(amount3);
-                            totalCancellationFee += Number(amount3);
-                        }
-                    }
-                    if (servicePlanValues?.activityBasedTransportShortNoticeCancellations === 'Y') {
-                        // Line 4: Activity Based Transport
-                        const baseUnitPrice4 = Number(servicePlanValues?.activityBasedTransportUnitPrice) || 0;
-                        const itemName4 = servicePlanValues?.activityBasedTransportItemName || '';
-                        const itemNumber4 = servicePlanValues?.activityBasedTransportItemNumber || '';
-                        const qty4 = scheduledShiftDuration;
-                        const unitPrice4 = Number(formatValue(baseUnitPrice4 * (cancellationPercentage1 / 100)));
-                        const amount4 = formatValue(qty4 * unitPrice4);
-                        if (amount4 > 0) {
-                            let desc4 = 'Cancellation Fee';
-                            if (itemName4) {
-                                desc4 += ` - ${itemName4}`;
-                            }
-                            if (itemNumber4) {
-                                desc4 += ` - ${itemNumber4}`;
-                            }
-                            desc4 += ` - ${cancellationPercentage1}%`;
-
-                            ordersArr.push([
-                                desc4,
-                                servicePlanValues?.activityBasedTransportUnit || ' ',
-                                formatValue(qty4),
-                                formatValue(unitPrice4),
-                                gstLabel,
-                                formatValue(amount4)
-                            ]);
-                            subTotal += Number(amount4);
-                            totalCancellationFee += Number(amount4);
-                        }
-                    }
-                    if (servicePlanValues?.centreCapitalCostsShortNoticeCancellations === 'Y') {
-                        // Line 5: Centre Capital Costs
-                        const baseUnitPrice5 = Number(servicePlanValues?.centreCapitalCostsUnitPrice) || 0;
-                        const itemName5 = servicePlanValues?.centreCapitalCostsItemName || '';
-                        const itemNumber5 = servicePlanValues?.centreCapitalCostsItemNumber || '';
-                        let qty5 = scheduledShiftDuration;
-                        const unitPrice5 = Number(formatValue(baseUnitPrice5 * (cancellationPercentage1 / 100)));
-                        const amount5 = formatValue(qty5 * unitPrice5);
-                        if (baseUnitPrice5 > 0 && amount5 > 0) {
-                            let desc5 = 'Cancellation Fee';
-                            if (itemName5) {
-                                desc5 += ` - ${itemName5}`;
-                            }
-                            if (itemNumber5) {
-                                desc5 += ` - ${itemNumber5}`;
-                            }
-                            desc5 += ` - ${cancellationPercentage1}%`;
-
-                            ordersArr.push([
-                                desc5,
-                                servicePlanValues?.centreCapitalCostsUnit || ' ',
-                                formatValue(qty5),
-                                formatValue(unitPrice5),
-                                gstLabel,
-                                formatValue(amount5)
-                            ]);
-                            subTotal += Number(amount5);
-                            totalCancellationFee += Number(amount5);
-                        }
-                    }
-                    if (parseFloat(formatValue(amountValue1)) != parseFloat(formatValue(totalCancellationFee))) {
-                        setIntegrationMessage(workspaceId, boardId, item.id, "Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                        throw new Error("Before creating the invoice, please enter the values or click the automatic calculation button and wait for the amounts to be generated.");
-                    }
-                }
-
-                if (ordersArr.length === 0) {
-                    await setIntegrationMessage(workspaceId, boardId, item.id, "There is nothing to invoice!");
-                    return res.status(200).json({ message: "There is nothing to invoice!" });
-                }
-
-                const orders = JSON.stringify(ordersArr.map((r) => [serviceDate || ' ', ...r]));
-                subTotal = formatValue(subTotal);
-                const gstTotal = formatValue((parseFloat(subTotal) * parseFloat(gst) / 100));
-                const total = formatValue(parseFloat(subTotal) + parseFloat(gstTotal));
-
-                const participantProfileItemForPdf = await fetchParticipantProfileItemForMasterPlan(
-                    workspaceId,
-                    boardId,
-                    item.id,
-                );
-
-                const clientDetails = buildNdisInvoicePdfClientDetails({
-                    participantProfileItem: participantProfileItemForPdf,
-                    apiProfileValues: participantProfileValues,
-                    fallbackParticipantName: participantProfileValues?.fullName || '',
-                });
-
-                const pdfBytes = await generate({
-                    template: template,
-                    inputs: [
-                        {
-                            logo: logoBase64,
-                            subtotal: subTotal,
-                            totalGST: gstTotal,
-                            total: total,
-                            clientDetails: JSON.stringify(clientDetails),
-                            invoiceDetails: JSON.stringify({
-                                Date: formatDateNumericAU(invoiceDate || null, business?.headOfficeTimezone),
-                                "Invoice Number": invoiceNumber
-                            }),
-                            companyName: JSON.stringify({ "Company Name": business.name }),
-                            companyDetails: JSON.stringify({
-                                ABN: business.abn,
-                                "Street Address": business.address.street,
-                                Suburb: business.address.suburb,
-                                State: business.address.state,
-                                Postcode: business.address.postcode,
-                                Country: business.address.country
-                            }),
-                            orders: orders,
-                            "dueDate": formatDateNumericAU(dueDate || null, business?.headOfficeTimezone),
-                            "Bank Details": JSON.stringify({
-                                "Account Name": business.bankDetails.accountName,
-                                "Bank Name": business.bankDetails.bankName,
-                                BSB: business.bankDetails.bsb,
-                                "Account Number": business.bankDetails.accountNumber,
-                                "invoice Number": invoiceNumber
-                            })
-                        }
-                    ],
-                    plugins: { text, image, line, table, multiVariableText }
-                });
-
-                const filename = `output/${workspaceId}/${boardId}/NDIS-invoices/${invoiceNumber + '-ISO+™-' + item.id}.pdf`;
-                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
-
-                if (uploadResult['$metadata'].httpStatusCode === 200) {
-                    const fileUrl = await getS3FileUrl(filename, 3600, true);
-                    await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS Invoice', req, res);
-                    await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
-                    await saveInvoiceNumber(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`, 'PDF', fileUrl);
-                    business.documentNumbering.invoice.nextNumber += 1;
-                    await business.save();
-                } else {
-                    throw new Error('Upload of PDF failed, please provide correct information.');
-                }
-            } catch (err) {
-                await handlePDFError(err, workspaceId, boardId, item.id, 'Generate PDF NDIS Invoice', req, res);
-            }
-        }));
+        await Promise.all(req.body.items.map(async (item) => processWebhookNdisInvoicePdfItem({
+            req,
+            res,
+            workspaceId,
+            boardId,
+            business,
+            item,
+            getLogoData,
+            enableRepeatHeadOnTables,
+            formatValue,
+            formatDateNumericAU,
+            uploadFileToS3,
+            getS3FileUrl,
+            handlePDFSuccess,
+            handlePDFError,
+            saveInvoiceNumber,
+        })));
     } catch (err) {
         error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
         return res.status(200).json({ message: err.message });
     }
 });
 
+function parseMasterItemIdsFromBody(body) {
+    const raw = Array.isArray(body?.itemIds)
+        ? body.itemIds
+        : (Array.isArray(body?.items) ? body.items : []);
+
+    return [...new Set(raw.map((r) => {
+        if (!r) return null;
+        if (typeof r === 'string') return r;
+        if (typeof r === 'object') {
+            if (r.sourceItemId) return String(r.sourceItemId);
+            if (r.id && String(r.id).includes(':')) return String(r.id).split(':')[0];
+            if (r.id) return String(r.id);
+        }
+        return null;
+    }).filter(Boolean).map(String))];
+}
+
 router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, res) => {
     try {
         const { workspaceId, boardId } = validateRequestParams(req);
         const business = await getValidatedBusiness(workspaceId);
 
-        const raw = Array.isArray(req.body?.itemIds)
-            ? req.body.itemIds
-            : (Array.isArray(req.body?.items) ? req.body.items : []);
-
-        const masterItemIds = [...new Set(raw.map((r) => {
-            if (!r) return null;
-            if (typeof r === 'string') return r;
-            if (typeof r === 'object') {
-                if (r.sourceItemId) return String(r.sourceItemId);
-                if (r.id && String(r.id).includes(':')) return String(r.id).split(':')[0];
-                if (r.id) return String(r.id);
-            }
-            return null;
-        }).filter(Boolean).map(String))];
+        const masterItemIds = parseMasterItemIdsFromBody(req.body);
 
         const { masterItems, refItemsMap, participantProfileItem } =
             await getNdisInvoiceGeneratorContextFromMasterItems({
@@ -2819,335 +1925,26 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
 
 router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => {
     try {
-        const { workspaceId, boardId } = validateRequestParams(req);
-        const business = await getValidatedBusiness(workspaceId);
-
-        const itemIds = req.body.items?.map(item => item.id || item) || req.body.itemIds || [];
-
-        if (!itemIds || itemIds.length === 0) {
-            return res.status(400).json({ message: "No items provided for invoice generation." });
-        }
-
-        // Check if this is a Low-Cat board
-        const isLowCat = req.body?.isLowCat || false;
-        let boardLabel = '';
-        if (!isLowCat) {
-            // Check board label from database
-            const board = await Board.findOne({ boardId: boardId.toString() }).lean();
-            if (board?.label === 'Care Management - SaH - Low Cat') {
-                boardLabel = board.label;
-            }
-        }
-        const isLowCatBoard = isLowCat || boardLabel === 'Care Management - SaH - Low Cat';
-
-        // Validate all items belong to the workspace/board and fetch from database
-        const dbItems = [];
-        for (const itemId of itemIds) {
-            await validateItemBelongsToTenant(workspaceId, boardId, itemId);
-            const dbItem = await Item.findOne({ workspaceId, boardId, itemId: itemId.toString() }).lean();
-            if (!dbItem) {
-                throw new Error(`Item ${itemId} not found`);
-            }
-            dbItems.push(dbItem);
-        }
-
-        try {
-            const templatePath = isLowCatBoard ? path.join(__dirname, '..', 'assets', 'taxInvoiceAG.json') : path.join(__dirname, '..', 'assets', 'participantTaxInvoiceAG.json');
-            const templateData = await fs.readFile(templatePath, 'utf8');
-            const template = JSON.parse(templateData);
-            enableRepeatHeadOnTables(template);
-
-            const logoBase64 = await getLogoData(business);
-
-            const invoiceNumber = business.documentNumbering.invoice.prefix + business.documentNumbering.invoice.nextNumber;
-
-            let ordersArr = [];
-            let totalParticipantContribution = 0;
-            let totalAmountSum = 0; 
-            const gstLabel = "GST Free";
-
-            // Get dates from request or use defaults
-            let invoiceDate = req.body?.invoiceDate || new Date().toISOString();
-            let dueDate = req.body?.dueDate || '';
-
-            if (!dueDate) {
-                const d = new Date(invoiceDate);
-                d.setDate(d.getDate() + 14);
-                dueDate = d.toISOString();
-            }
-
-            // Helper functions
-            const dateFmt = (d) => d ? new Date(d).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: business?.headOfficeTimezone || 'Australia/Sydney' }) : '';
-            const toNumber = (v) => typeof v === 'number' ? v : Number(v || 0);
-            const fmt = (v) => formatValue(toNumber(v));
-
-            // OPTIMIZED: Collect all reference IDs first, then bulk fetch from database
-            const participantProfileIds = new Set();
-            const servicePlanIds = new Set();
-
-            // Extract all reference IDs from items
-            for (const dbItem of dbItems) {
-                const getValue = (attributeName) => getValueFromFlatData(dbItem, attributeName);
-
-                // Get participant profile ID
-                const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
-                const participantProfileId = extractRefId(participantProfileValue);
-                if (participantProfileId) participantProfileIds.add(participantProfileId);
-
-                // Get service plan ID
-                const servicePlanValue = getValue(ATTRIBUTE_NAMES.SERVICE_PLAN);
-                const servicePlanId = extractRefId(servicePlanValue);
-                if (servicePlanId) servicePlanIds.add(servicePlanId);
-            }
-
-            // Bulk fetch all reference items from MongoDB (NO API calls!)
-            const allRefIds = [...participantProfileIds, ...servicePlanIds];
-            const refItemsMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, allRefIds);
-
-            info('Webhook-Service', 'Bulk fetched reference items from DB', {
-                participantProfiles: participantProfileIds.size,
-                servicePlans: servicePlanIds.size,
-                foundItems: refItemsMap.size
-            }, req ?? null);
-
-            // Fetch participant profile details from first item using database lookup
-            let participantName = ' ';
-            let receiverName = ' ';
-            let receiverAddress = ' ';
-
-            if (dbItems.length > 0) {
-                const firstItem = dbItems[0];
-                const getValue = (attributeName) => getValueFromFlatData(firstItem, attributeName);
-
-                // Get Participant Profile reference from DB lookup map
-                const participantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
-                const participantProfileId = extractRefId(participantProfileValue);
-
-                if (participantProfileId) {
-                    const participantProfileItem = refItemsMap.get(participantProfileId);
-                    if (participantProfileItem) {
-                        // Use helper functions to get participant profile data
-                        const profileName = getParticipantNameFromProfile(participantProfileItem);
-                        participantName = profileName || ' ';
-
-                        // Always try to get billing contact and billing address from participant profile
-                        // These are the preferred fields for the PDF template
-                        receiverName = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || ' ';
-                        const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || ' ';
-                        receiverAddress = billingAddressBase.trim() || ' ';
-                    }
-                }
-            }
-
-            // Process all items and add them to the orders array using database lookups
-            for (const dbItem of dbItems) {
-                const getValue = (attributeName) => getValueFromFlatData(dbItem, attributeName);
-
-                // Get Transaction Status and format it
-                const transactionStatusValue = getValue(ATTRIBUTE_NAMES.TRANSACTION_STATUS);
-                const transactionStatus = formatLabelValue(transactionStatusValue);
-
-                // Date: If Transaction Status is "Delivered - To be claimed and invoiced.", use Actual Shift End Date & Time, otherwise Scheduled Shift Start Date & Time
-                let rowDate = ' ';
-                const isDelivered = transactionStatus && transactionStatus === 'Delivered - To be claimed and invoiced.';
-
-                if (isDelivered) {
-                    const actualEnd = getValue(ATTRIBUTE_NAMES.ACTUAL_END);
-                    if (actualEnd) {
-                        rowDate = dateFmt(actualEnd);
-                    }
-                } else {
-                    const scheduledStart = getValue(ATTRIBUTE_NAMES.SCHEDULED_START);
-                    if (scheduledStart) {
-                        rowDate = dateFmt(scheduledStart);
-                    }
-                }
-
-                // Description: Service name from Service Plan using helper function
-                let description = '';
-                const servicePlanValue = getValue(ATTRIBUTE_NAMES.SERVICE_PLAN);
-                const servicePlanId = extractRefId(servicePlanValue);
-
-                if (servicePlanId) {
-                    const servicePlanItem = refItemsMap.get(servicePlanId);
-                    description = getServiceFromServicePlan(servicePlanItem) || '';
-                }
-
-                if (!description) {
-                    description = 'Service';
-                }
-
-                // For Adjustment transactions (Adjustment (Charge) or Adjustment (Refund)), append Additional Notes
-                const isAdjustment = transactionStatus && (
-                    transactionStatus === 'Adjustment (Charge) - To be claimed and invoiced.' ||
-                    transactionStatus === 'Adjustment (Refund) - To be claimed and invoiced.'
-                );
-                if (isAdjustment) {
-                    const notes = getValue(ATTRIBUTE_NAMES.ADDITIONAL_NOTES);
-                    if (notes) {
-                        const cleanNotes = (typeof notes === 'string') ? notes.replace(/<[^>]*>/g, '').trim() : '';
-                        if (cleanNotes) {
-                            description = `${description} - ${cleanNotes}`;
-                        }
-                    }
-                }
-
-                // Get other fields
-                const unit = getValue(ATTRIBUTE_NAMES.UNIT) || ' ';
-                const quantity = Number(getValue(ATTRIBUTE_NAMES.QUANTITY)) || 0;
-                const unitPrice = Number(getValue(ATTRIBUTE_NAMES.UNIT_PRICE)) || 0;
-                const totalAmount = Number(getValue(ATTRIBUTE_NAMES.TOTAL_AMOUNT)) || 0;
-                const participantContribution = Number(getValue(ATTRIBUTE_NAMES.PARTICIPANT_CONTRIBUTION)) || 0;
-
-                let rowParticipantName = participantName;
-                if (isLowCatBoard) {
-                    const itemParticipantProfileValue = getValue(ATTRIBUTE_NAMES.PARTICIPANT_PROFILE);
-                    const itemParticipantProfileId = extractRefId(itemParticipantProfileValue);
-                    if (itemParticipantProfileId) {
-                        const itemParticipantProfileItem = refItemsMap.get(itemParticipantProfileId);
-                        if (itemParticipantProfileItem) {
-                            const itemProfileName = getParticipantNameFromProfile(itemParticipantProfileItem);
-                            rowParticipantName = itemProfileName || participantName;
-                        }
-                    }
-                }
-
-                if (isLowCatBoard) {
-                    ordersArr.push([
-                        rowParticipantName,
-                        rowDate,
-                        description,
-                        unit,
-                        fmt(quantity),
-                        formatCurrencyValue(unitPrice),
-                        gstLabel,
-                        formatCurrencyValue(totalAmount)
-                    ]);
-                    totalAmountSum += totalAmount;
-                } else {
-                    ordersArr.push([
-                        rowDate,
-                        description,
-                        unit,
-                        fmt(quantity),
-                        formatCurrencyValue(unitPrice),
-                        gstLabel,
-                        formatCurrencyValue(totalAmount),
-                        formatCurrencyValue(participantContribution)
-                    ]);
-                    totalParticipantContribution += participantContribution;
-                }
-            }
-
-            if (ordersArr.length === 0) {
-                await Promise.all(dbItems.map(item =>
-                    setIntegrationMessage(workspaceId, boardId, item.itemId, "There is nothing to invoice!")
-                ));
-                return res.status(400).json({ message: "There is nothing to invoice!" });
-            }
-
-            let subtotalValue, totalAUDValue;
-            if (isLowCatBoard) {
-                subtotalValue = formatCurrencyValue(totalAmountSum);
-                totalAUDValue = formatCurrencyValue(totalAmountSum);
-            } else {
-                subtotalValue = formatCurrencyValue(totalParticipantContribution);
-                totalAUDValue = formatCurrencyValue(totalParticipantContribution);
-            }
-            const gstTotal = formatValue(0); // Total GST: $ 0.00
-
-            // Map client details to match template - both templates expect "Billing Contact" and "Billing Address"
-            // Use billing contact/address from profile if available, otherwise fall back to participant name and address
-            let billingContact = (receiverName && receiverName.trim() !== '' && receiverName.trim() !== ' ') 
-                ? receiverName.trim() 
-                : (participantName && participantName.trim() !== '' && participantName.trim() !== ' ' 
-                    ? participantName.trim() 
-                    : ' ');
-            
-            let billingAddress = (receiverAddress && receiverAddress.trim() !== '' && receiverAddress.trim() !== ' ') 
-                ? receiverAddress.trim() 
-                : ' ';
-
-            // Generate the PDF with all items
-            const pdfBytes = await generate({
-                template,
-                inputs: [
-                    {
-                        logo: logoBase64,
-                        subtotal: subtotalValue,
-                        totalGST: formatCurrencyValue(0),
-                        total: totalAUDValue,
-                        clientDetails: JSON.stringify({
-                            "Billing Contact": billingContact,
-                            "Billing Address": billingAddress
-                        }),
-                        invoiceDetails: JSON.stringify({
-                            Date: new Date(invoiceDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: business?.headOfficeTimezone || 'Australia/Sydney' }),
-                            "Invoice Number": invoiceNumber
-                        }),
-                        companyName: JSON.stringify({ "Company Name": business.name }),
-                        companyDetails: JSON.stringify({
-                            ABN: business.abn,
-                            "Street Address": business.address.street,
-                            Suburb: business.address.suburb,
-                            State: business.address.state,
-                            Postcode: business.address.postcode,
-                            Country: business.address.country
-                        }),
-                        orders: ordersArr,
-                        "dueDate": new Date(dueDate).toLocaleString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: business?.headOfficeTimezone || 'Australia/Sydney' }),
-                        "Bank Details": JSON.stringify({
-                            "Account Name": business.bankDetails.accountName,
-                            "Bank Name": business.bankDetails.bankName,
-                            BSB: business.bankDetails.bsb,
-                            "Account Number": business.bankDetails.accountNumber,
-                            "invoice Number": invoiceNumber
-                        })
-                    }
-                ],
-                plugins: { text, image, line, table, multiVariableText }
-            });
-
-            // Upload the single PDF for all items
-            const filename = `output/${workspaceId}/${boardId}/Participant-invoices/${invoiceNumber + '-ISO+™-' + participantName.replace(/\s+/g, '-')}.pdf`;
-            const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
-
-            if (uploadResult['$metadata'].httpStatusCode === 200) {
-                const fileUrl = await getS3FileUrl(filename, 3600, true);
-
-                // Update integration messages and generated fields for all items
-                await Promise.all(dbItems.map(async (item) => {
-                    await setIntegrationMessage(workspaceId, boardId, item.itemId, "Invoice generated successfully");
-                    await setGeneratedField(workspaceId, boardId, item.itemId, `${invoiceNumber} (ISO+™)`);
-                    await saveInvoiceNumber(workspaceId, boardId, item.itemId, `${invoiceNumber} (ISO+™)`, 'PDF', fileUrl);
-                }));
-
-                // Increment invoice number only once
-                business.documentNumbering.invoice.nextNumber += 1;
-                await business.save();
-
-                logAuditTrail({
-                    workspaceId,
-                    action: "Generate PDF Participant Tax Invoice",
-                    detail: `Invoice generated successfully, invoice number: ${invoiceNumber} (ISO+™), participant: ${participantName}, items: ${dbItems.length}, fileUrl: ${fileUrl}`,
-                    req
-                });
-
-                return res.status(200).json({
-                    message: "Participant Tax Invoice generated successfully",
-                    invoiceNumber: `${invoiceNumber} (ISO+™)`,
-                    fileUrl: fileUrl,
-                    itemCount: dbItems.length
-                });
-            } else {
-                throw new Error('Upload of PDF failed, please provide correct information.');
-            }
-        } catch (err) {
-            // Do not call per-item error responder; log and send a single error response
-            const errorMessage = (err && err.message) ? err.message : 'Server error: An unknown error occurred. Please contact support via ISO+™ Portal.';
-            error('Webhook-Service', 'Participant tax invoice PDF generation failed', { err, errorMessage }, req);
-            return res.status(500).json({ message: errorMessage });
-        }
+        return await handleParticipantTaxInvoiceRoute(req, res, {
+            validateRequestParams,
+            getValidatedBusiness,
+            getLogoData,
+            enableRepeatHeadOnTables,
+            bulkFetchReferenceItemsFromDB,
+            getValueFromFlatData,
+            attributeNames: ATTRIBUTE_NAMES,
+            refAttributeNames: REF_ATTRIBUTE_NAMES,
+            getParticipantNameFromProfile,
+            getServiceFromServicePlan,
+            formatLabelValue,
+            formatValue,
+            formatCurrencyValue,
+            uploadFileToS3,
+            getS3FileUrl,
+            saveInvoiceNumber,
+            info,
+            error,
+        });
     } catch (err) {
         error('Webhook-Service', 'Server error', { err }, req);
         return res.status(500).json({ message: err.message });
@@ -3156,565 +1953,47 @@ router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => 
 
 router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
     try {
-        const { workspaceId, boardId } = req.params;
-        const {
-            statementData,
-            businessDetails,
-            chartImage,
-            timezone: clientTimezone,
-            startDate: requestStartDate,
-            endDate: requestEndDate
-        } = req.body;
-
-        if (!statementData) {
-            return res.status(400).json({ message: "No statement data provided." });
-        }
-
-        const business = await getValidatedBusiness(workspaceId);
-        const timezone = business?.headOfficeTimezone || clientTimezone || 'Australia/Sydney';
-
-        try {
-            // Use the monthlyStatement.json template
-            const templatePath = path.join(__dirname, '..', 'assets', 'monthlyStatement.json');
-            const templateData = await fs.readFile(templatePath, 'utf8');
-            const template = JSON.parse(templateData);
-            enableRepeatHeadOnTables(template);
-            ensureMonthlyStatementHeaderFromPage2(template);
-
-            const logoBase64 = await getLogoData(business);
-
-            const safeBusinessDetails = {
-                companyName: businessDetails?.companyName || business.name || 'Service Provider',
-                companyRegistrationId: businessDetails?.companyRegistrationId || business.companyRegistrationId || '',
-                phoneNumber: businessDetails?.phoneNumber || business.phone || '',
-                businessEmail: businessDetails?.businessEmail || business.email || '',
-                address: businessDetails?.address || business.address?.street || '',
-                suburb: businessDetails?.suburb || business.address?.suburb || '',
-                state: businessDetails?.state || business.address?.state || '',
-                postcode: businessDetails?.postcode || business.address?.postcode || ''
-            };
-
-            const participantProfileId = statementData.participantProfile || '';
-            const queryParticipant = participantProfileId || statementData.participant || '';
-            const monthNum = statementData.monthNumber || '';
-            const yearVal = statementData.year || '';
-
-            const normalizeIsoOrNull = (value) => {
-                if (!value) return null;
-                const d = value instanceof Date ? value : new Date(value);
-                if (Number.isNaN(d.getTime())) return null;
-                return d.toISOString();
-            };
-
-            let startDate = normalizeIsoOrNull(requestStartDate);
-            let endDate = normalizeIsoOrNull(requestEndDate);
-
-            // Guard against inverted ranges; fallback to computed month range.
-            if (startDate && endDate) {
-                const s = new Date(startDate);
-                const e = new Date(endDate);
-                if (s.getTime() > e.getTime()) {
-                    startDate = null;
-                    endDate = null;
-                }
-            }
-
-            // Fallback: compute a timezone-aware month range when request didn't provide valid dates.
-            if ((!startDate || !endDate) && monthNum && yearVal) {
-                const mi = Number(monthNum) - 1, yi = Number(yearVal);
-                if (!isNaN(mi) && !isNaN(yi)) {
-                    const getUtcOffsetMs = (at, timeZone) => {
-                        const toMs = (tz) => {
-                            const parts = new Intl.DateTimeFormat('en-CA', {
-                                timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
-                                hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
-                            }).formatToParts(at);
-                            const get = (t) => Number(parts.find((p) => p.type === t)?.value ?? '0');
-                            return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
-                        };
-                        return toMs(timeZone) - toMs('UTC');
-                    };
-                    const lastDay = new Date(Date.UTC(yi, mi + 1, 0));
-                    const firstNoon = new Date(Date.UTC(yi, mi, 1, 12, 0, 0));
-                    const lastNoon = new Date(Date.UTC(yi, mi + 1, 0, 12, 0, 0));
-                    const startOffset = getUtcOffsetMs(firstNoon, timezone);
-                    const endOffset = getUtcOffsetMs(lastNoon, timezone);
-                    startDate = startDate || new Date(Date.UTC(yi, mi, 1) - startOffset).toISOString();
-                    endDate = endDate || new Date(Date.UTC(lastDay.getUTCFullYear(), lastDay.getUTCMonth(), lastDay.getUTCDate(), 23, 59, 59, 999) - endOffset).toISOString();
-                }
-            }
-
-            const [budgetItems, services] = await Promise.all([
-                fetchBudgetItems(workspaceId, boardId, { participant: queryParticipant, month: monthNum, year: yearVal }),
-                fetchServiceItems(workspaceId, boardId, { participant: queryParticipant, startDate, endDate })
-            ]);
-
-            info('Webhook-Service', 'Monthly statement PDF: fetched ISO+ data', {
-                budgetCount: budgetItems.length, serviceCount: services.length, queryParticipant
-            }, req ?? null);
-
-            const budgetAggregates = calculateBudgetAggregates(budgetItems);
-
-            const budgetCategories = Array.isArray(statementData.budgetCategories) ? statementData.budgetCategories : [];
-            for (const category of budgetCategories) {
-                const code = category?.code;
-                if (!code) continue;
-                if (!budgetAggregates[code]) {
-                    budgetAggregates[code] = initializeBudgetAggregate();
-                }
-                enrichAggregateFromCategory(budgetAggregates[code], category);
-            }
-
-            const monthNumber = statementData.monthNumber || '1';
-            const yearValue = statementData.year || new Date().getFullYear().toString();
-            const firstAggregate = Object.values(budgetAggregates)[0] || {};
-            const quarterLabel = statementData.summary?.quarter || firstAggregate.quarterLabel || '';
-            const quarterMeta = getQuarterMetadata(monthNumber, yearValue, quarterLabel, timezone);
-
-            const subtitlePayload = {
-                'Month No.': quarterMeta.monthNo.toString(),
-                'Quarter No': quarterMeta.quarterLabel,
-                'First Day': quarterMeta.firstDay,
-                'Last Day': quarterMeta.lastDay
-            };
-
-            const templateInputs = {};
-            await resolveTemplateImageUrls(template, templateInputs);
-            const templateDefaultLogo = getTemplateImageContentByName(template, 'logo');
-            templateInputs.logo = logoBase64 || templateInputs.logo || templateDefaultLogo || '';
-
-            const pageCount = Array.isArray(template?.schemas) ? template.schemas.length : 0;
-            for (let p = 2; p <= pageCount; p++) {
-                templateInputs[`headerMonthlyStatement_p${p}`] = 'Monthly Statement';
-                templateInputs[`logoHeader_p${p}`] = templateInputs.logo;
-            }
-
-            // Summary Table: use chart image from frontend when provided; hide if all values $0.00; else mini-chart
-            const hasChartFromFrontend = chartImage && typeof chartImage === 'string' && chartImage.length > 50;
-            const chartBudgetCats = statementData.budgetCategories || [];
-            const allCategoriesZero = chartBudgetCats.length === 0 || chartBudgetCats.every((c) => {
-                const avail = Number(c.availableFunds ?? 0);
-                const rem = Number(c.remainingBudget ?? 0);
-                const del = Number(c.serviceDeliveredAmount ?? 0);
-                return avail === 0 && rem === 0 && del === 0;
-            });
-            if (hasChartFromFrontend) {
-                templateInputs['Summary Table'] = chartImage.startsWith('data:') ? chartImage : `data:image/png;base64,${chartImage}`;
-                info('Webhook-Service', 'Monthly statement PDF: using chart image from frontend', { sizeChars: chartImage.length }, req ?? null);
-            } else if (!hasChartFromFrontend && allCategoriesZero) {
-                // Hide bar chart section when not applicable (all values $0.00)
-                templateInputs['Summary Table'] = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
-            } else {
-                const miniChartPath = path.join(__dirname, '..', 'assets', 'mini-chart.png');
-                try {
-                    const miniChartBuffer = await fs.readFile(miniChartPath);
-                    templateInputs['Summary Table'] = `data:image/png;base64,${miniChartBuffer.toString('base64')}`;
-                } catch (miniChartErr) {
-                    warn('Webhook-Service', 'Monthly statement mini-chart not found, using template default for Summary Table', { path: miniChartPath }, req ?? null);
-                }
-            }
-
-            const footerImagePath = path.join(__dirname, '..', 'assets', 'monthly-statement-footer.png');
-            try {
-                const footerBuffer = await fs.readFile(footerImagePath);
-                templateInputs['Image 13-1'] = `data:image/png;base64,${footerBuffer.toString('base64')}`;
-            } catch (footerErr) {
-                warn('Webhook-Service', 'Monthly statement footer image not found, using template default', { path: footerImagePath }, req ?? null);
-            }
-
-            setMultiValueField(templateInputs, 'companyName', { 'Company Name': safeBusinessDetails.companyName });
-
-            const participantName = statementData.participant || statementData.participantProfile || 'Participant';
-            const participantAddress = statementData.participantAddress || '';
-            const participantSuburb = statementData.participantSuburb || '';
-            const participantState = statementData.participantState || '';
-            const participantPostcode = statementData.participantPostcode || '';
-
-            // Organisation block: Provider ID = Company Registration ID, Location = Street Address (Business Details)
-            setMultiValueField(templateInputs, 'Organisation', {
-                'Participant': participantName,
-                'My Aged Care ID Number': statementData.myAgedCareIdNumber || '',
-                'Provider ID': statementData.providerId || safeBusinessDetails.companyRegistrationId || '',
-                'Address': safeBusinessDetails.address || '',
-                'Suburb': safeBusinessDetails.suburb || '',
-                'Post Code': safeBusinessDetails.postcode || '',
-                'State': safeBusinessDetails.state || ''
-            });
-
-            setMultiValueField(templateInputs, 'Recipient', {
-                'Participant': participantName,
-                'Address': participantAddress,
-                'Suburb': participantSuburb,
-                'State': participantState,
-                'Post Code': participantPostcode
-            });
-
-            setMultiValueField(templateInputs, 'Text title', {
-                month: statementData.month || '',
-                year: yearValue
-            });
-
-            // Populate all subtitle fields in the template with quarter metadata
-            const allSubtitleFields = [
-                'P2 Subtitle',
-                'P3 Subtitle', 'P3 Subtitle copy',
-                'P4 Subtitle copy',
-                'P5 Subtitle copy',
-                'P7 Subtitle 1 copy', 'P7 Subtitle  2 copy', 'P7 Subtitle  2 copy 2', 'P7 Subtitle  2 copy copy',
-                'P8 Subtitle  copy',
-                'P9 Subtitle', 'P9 Subtitle copy', 'P9 Subtitle-2',
-                'P10 Subtitle copy', 'P10 Subtitle-2 copy',
-                'P11 Subtitle copy', 'P11 Subtitle-2 copy',
-                'P12 Subtitle  copy', 'P12 Subtitle-2  copy', 'P12 Subtitle-2  copy copy'
-            ];
-            allSubtitleFields.forEach((field) => {
-                setMultiValueField(templateInputs, field, subtitlePayload);
-            });
-
-            // Page 1 and Page 14 contact: Phone Number and Business Email from Business Details (ISO+ Portal)
-            const businessContactPayload = {
-                'Phone Number': safeBusinessDetails.phoneNumber || '',
-                'Business Email': safeBusinessDetails.businessEmail || ''
-            };
-            setMultiValueField(templateInputs, 'Disclaimer 2a', businessContactPayload);
-            setMultiValueField(templateInputs, 'Text 13-', businessContactPayload);
-
-            const firstDayPayload = { 'first day': quarterMeta.firstDay };
-            const lastDayPayload = { 'last day': quarterMeta.lastDay };
-            [
-                'P2-10', 'P2-11',
-                'P2-11 copy',
-                'P4-8 copy',
-                'P4-20 copy',
-                'P5-7 copy',
-                'P5-8', 'P5-20',
-                'P3-7',
-                'P3-17 copy'
-            ].forEach((f) => setMultiValueField(templateInputs, f, firstDayPayload));
-            [
-                'P2-14', 'P2-14 copy',
-                'P4-11 copy',
-                'P4-23 copy',
-                'P5-10 copy',
-                'P5-11', 'P5-23',
-                'P3-10',
-                'P3-20 copy'
-            ].forEach((f) => setMultiValueField(templateInputs, f, lastDayPayload));
-
-            const homeSupportAggregate = budgetAggregates.HSQ ? { ...budgetAggregates.HSQ } : initializeBudgetAggregate();
-            homeSupportAggregate.primarySupplementLabel = safeString(homeSupportAggregate.primarySupplementLabel) || safeString(homeSupportAggregate.fund) || safeString(homeSupportAggregate.fundClassification) || '';
-
-            applyBudgetMapping(templateInputs, homeSupportAggregate, [
-                { type: 'multi', field: 'P2-3', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
-                { type: 'currency', field: '$P2-1', value: (agg) => agg.availableFundStart },
-                { type: 'currency', field: '$P2-2', value: (agg) => agg.quarterlyAdjustment },
-                { type: 'currency', field: '$P2-3', value: (agg) => (agg.primarySupplementAmount ?? 0) },
-                { type: 'currency', field: '$P2-4', value: (agg) => agg.carryoverFunding + agg.unspentReturned },
-                { type: 'currency', field: '$P2-6', value: (agg) => agg.commonwealthUnspent + agg.providerUnspent + agg.participantUnspent },
-                { type: 'currency', field: ['$P2-6 copy copy', '$P4-8'], value: (agg) => agg.commonwealthUnspent },
-                { type: 'currency', field: ['$P2-7 copy copy', '$P4-9'], value: (agg) => agg.providerUnspent },
-                { type: 'currency', field: ['$P2-8 copy copy', '$P4-10'], value: (agg) => agg.participantUnspent },
-                { type: 'currency', field: '$P2-9', value: (agg) => agg.previousMonthSpending },
-                { type: 'currency', field: '$P2-10', value: (agg) => agg.totalAvailableBudget },
-                { type: 'currency', field: '$P2-11', value: (agg) => agg.totalAvailableBudget },
-                { type: 'currency', field: '$P2-12', value: (agg) => agg.deliveredAmount },
-                { type: 'currency', field: '$P2-13', value: (agg) => agg.adjustmentAmount },
-                { type: 'currency', field: '$P2-14', value: (agg) => agg.remainingBalance },
-                { type: 'currency', field: ['$P2-14 copy', '$P4-11'], value: (agg) => agg.commonwealthUnspent + agg.providerUnspent + agg.participantUnspent },
-                { type: 'currency', field: ['$P7-4 copy', '$P4-5'], value: (agg) => agg.carryoverFunding },
-                { type: 'currency', field: ['$P7-5 copy', '$P4-6'], value: (agg) => agg.unspentReturned },
-                { type: 'currency', field: ['$P7-6 copy', '$P4-7'], value: (agg) => agg.carryoverFunding + agg.unspentReturned }
-            ]);
-
-            const restorativeAggregate = budgetAggregates.RCP ? { ...budgetAggregates.RCP } : initializeBudgetAggregate();
-            restorativeAggregate.primarySupplementLabel = safeString(restorativeAggregate.primarySupplementLabel) || safeString(restorativeAggregate.fund) || safeString(restorativeAggregate.fundClassification) || '';
-
-            applyBudgetMapping(templateInputs, restorativeAggregate, [
-                { type: 'multi', field: 'P3-2', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
-                { type: 'currency', field: '$P3-1', value: (agg) => agg.availableFundStart },
-                { type: 'currency', field: '$P3-2', value: (agg) => (agg.primarySupplementAmount ?? 0) },
-                { type: 'currency', field: '$P3-6', value: (agg) => agg.previousMonthSpending },
-                { type: 'currency', field: '$P3-7', value: (agg) => agg.totalAvailableBudget },
-                { type: 'currency', field: '$P3-8', value: (agg) => agg.deliveredAmount },
-                { type: 'currency', field: '$P3-9', value: (agg) => agg.adjustmentAmount },
-                { type: 'currency', field: '$P3-10', value: (agg) => agg.remainingBalance }
-            ]);
-
-            setMultiValueField(templateInputs, 'P3 Subtitle', {
-                ' Funding Start Date': formatDateToAU(restorativeAggregate.fundingStartDate, timezone) || 'N/A',
-                ' Funding end date': formatDateToAU(restorativeAggregate.fundingEndDate, timezone) || 'N/A'
-            });
-
-            const endOfLifeAggregate = budgetAggregates.EOL ? { ...budgetAggregates.EOL } : initializeBudgetAggregate();
-            endOfLifeAggregate.primarySupplementLabel = safeString(endOfLifeAggregate.primarySupplementLabel) || safeString(endOfLifeAggregate.fund) || safeString(endOfLifeAggregate.fundClassification) || '';
-
-            applyBudgetMapping(templateInputs, endOfLifeAggregate, [
-                { type: 'multi', field: 'P3-12 copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
-                { type: 'currency', field: '$P3-11 copy', value: (agg) => agg.availableFundStart },
-                { type: 'currency', field: '$P3-12 copy', value: (agg) => (agg.primarySupplementAmount ?? 0) },
-                { type: 'currency', field: '$P3-16 copy', value: (agg) => agg.previousMonthSpending },
-                { type: 'currency', field: '$P3-17 copy', value: (agg) => agg.totalAvailableBudget },
-                { type: 'currency', field: '$P3-18 copy', value: (agg) => agg.deliveredAmount },
-                { type: 'currency', field: '$P3-19 copy', value: (agg) => agg.adjustmentAmount },
-                { type: 'currency', field: '$P3-20 copy', value: (agg) => agg.remainingBalance }
-            ]);
-
-            // Explicitly set EOL subtitle variables (template uses different var names than generic subtitle)
-            setMultiValueField(templateInputs, 'P3 Subtitle copy', {
-                ' Funding Start Date': formatDateToAU(endOfLifeAggregate.fundingStartDate, timezone) || 'N/A',
-                ' Funding end date': formatDateToAU(endOfLifeAggregate.fundingEndDate, timezone) || 'N/A'
-            });
-
-            const assistiveShortAggregate = budgetAggregates.ATS ? { ...budgetAggregates.ATS } : initializeBudgetAggregate();
-            assistiveShortAggregate.primarySupplementLabel = safeString(assistiveShortAggregate.primarySupplementLabel) || safeString(assistiveShortAggregate.fund) || safeString(assistiveShortAggregate.fundClassification) || '';
-
-            applyBudgetMapping(templateInputs, assistiveShortAggregate, [
-                { type: 'multi', field: 'P4-2 copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
-                { type: 'currency', field: ['$P4-1  copy', '$P5-1'], value: (agg) => agg.availableFundStart },
-                { type: 'currency', field: ['$P4-2 copy', '$P5-2'], value: (agg) => (agg.primarySupplementAmount ?? 0) },
-                { type: 'currency', field: ['$P4-3 copy', '$P5-3'], value: (agg) => (agg.additionalAmountApproved ?? agg.fundAmount ?? 0) },
-                { type: 'currency', field: ['$P4-7 copy', '$P5-7'], value: (agg) => agg.previousMonthSpending },
-                { type: 'currency', field: ['$P4-8 copy', '$P5-8'], value: (agg) => agg.totalAvailableBudget },
-                { type: 'currency', field: ['$P4-9 copy', '$P5-9'], value: (agg) => agg.deliveredAmount },
-                { type: 'currency', field: ['$P4-10 copy', '$P5-10'], value: (agg) => agg.adjustmentAmount },
-                { type: 'currency', field: ['$P4-11 copy', '$P5-11'], value: (agg) => agg.remainingBalanceEndOfMonth ?? 0},
-                { type: 'currency', field: ['$P4-12 copy', '$P5-12'], value: (agg) => agg.committedFunds },
-                { type: 'currency', field: ['$P4-13 copy', '$P5-13'], value: (agg) => (agg.remainingBalanceAllocationPeriod ?? 0) },
-                { type: 'multi', field: 'P4 Footer 1 copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
-            ]);
-
-            const assistiveOngoingAggregate = budgetAggregates.ATO ? { ...budgetAggregates.ATO } : initializeBudgetAggregate();
-            assistiveOngoingAggregate.primarySupplementLabel = safeString(assistiveOngoingAggregate.primarySupplementLabel) || safeString(assistiveOngoingAggregate.fund) || safeString(assistiveOngoingAggregate.fundClassification) || '';
-
-            applyBudgetMapping(templateInputs, assistiveOngoingAggregate, [
-                { type: 'multi', field: 'P4-15 copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
-                { type: 'currency', field: ['$P4-14 copy', '$P5-14'], value: (agg) => agg.availableFundStart },
-                { type: 'currency', field: ['$P4-15 copy', '$P5-15'], value: (agg) => (agg.primarySupplementAmount ?? 0) },
-                { type: 'currency', field: ['$P4-19 copy', '$P5-19'], value: (agg) => agg.previousMonthSpending },
-                { type: 'currency', field: ['$P4-20 copy', '$P5-20'], value: (agg) => agg.totalAvailableBudget },
-                { type: 'currency', field: ['$P4-21 copy', '$P5-21'], value: (agg) => agg.deliveredAmount },
-                { type: 'currency', field: ['$P4-22 copy', '$P5-22'], value: (agg) => agg.adjustmentAmount },
-                { type: 'currency', field: ['$P4-23 copy', '$P5-23'], value: (agg) => agg.remainingBalanceEndOfMonth ?? 0},
-                { type: 'currency', field: ['$P4-24 copy', '$P5-24'], value: (agg) => agg.committedFunds },
-                { type: 'currency', field: ['$P4-25 copy', '$P5-25'], value: (agg) => (agg.remainingBalanceAllocationPeriod ?? 0) },
-                { type: 'multi', field: 'P4 Footer 2 copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
-            ]);
-
-            const homeModificationAggregate = budgetAggregates.HMB ? { ...budgetAggregates.HMB } : initializeBudgetAggregate();
-            homeModificationAggregate.primarySupplementLabel = safeString(homeModificationAggregate.primarySupplementLabel) || safeString(homeModificationAggregate.fund) || safeString(homeModificationAggregate.fundClassification) || '';
-
-            applyBudgetMapping(templateInputs, homeModificationAggregate, [
-                { type: 'multi', field: 'P5- copy', value: (agg) => ({ 'Primary Supplement': agg.primarySupplementLabel || 'N/A' }) },
-                { type: 'currency', field: '$P5-1 copy', value: (agg) => agg.availableFundStart },
-                { type: 'currency', field: '$P5-2 copy', value: (agg) => (agg.primarySupplementAmount ?? 0) },
-                { type: 'currency', field: '$P5-6 copy', value: (agg) => agg.previousMonthSpending },
-                { type: 'currency', field: '$P5-7 copy', value: (agg) => agg.totalAvailableBudget },
-                { type: 'currency', field: '$P5-8 copy', value: (agg) => agg.deliveredAmount },
-                { type: 'currency', field: '$P5-9 copy', value: (agg) => agg.adjustmentAmount },
-                { type: 'currency', field: '$P5-10 copy', value: (agg) => agg.remainingBalanceEndOfMonth ?? agg.remainingBalance },
-                { type: 'currency', field: '$P5-11 copy', value: (agg) => agg.committedFunds },
-                { type: 'currency', field: '$P5-12 copy', value: (agg) => (agg.remainingBalanceAllocationPeriod ?? 0) },
-                { type: 'multi', field: 'P4 Footer 2 copy copy', value: (agg) => ({ 'Funding End Date': formatDateToAU(agg.fundingEndDate, timezone) || 'N/A' }) }
-            ]);
-
-            // Pre-initialize ALL template tables with empty rows to prevent pdfme errors
-            // These are all table field names from monthlyStatement.json
-            const allTemplateTables = [
-                { name: 'Table P6-1 copy', columns: 8 },
-                { name: 'Table P6-1 copy copy copy', columns: 3 },
-                { name: 'Table P7-1 copy', columns: 8 },
-                { name: 'Table P9-1', columns: 8 },
-                { name: 'Table P9-2', columns: 8 },
-                { name: 'Table P10-1  copy', columns: 8 },
-                { name: 'Table P10-2 copy', columns: 8 },
-                { name: 'Table P10-3 copy', columns: 8 },
-                { name: 'Table P11-1  copy', columns: 8 },
-                { name: 'Table P11-2 copy', columns: 8 },
-                { name: 'Table P11-3  copy', columns: 8 },
-                { name: 'Table P12-1  copy', columns: 8 },
-                { name: 'Table P12-3  copy', columns: 8 },
-                { name: 'Table P11-2 copy copy', columns: 8 },
-                { name: 'Table P12-1  copy copy', columns: 8 },
-                { name: 'Table P12-3  copy copy', columns: 8 }
-            ];
-
-            allTemplateTables.forEach(({ name, columns }) => {
-                const emptyRow = Array(columns).fill('');
-                if (columns === 3) {
-                    emptyRow[0] = '';
-                    emptyRow[1] = 'No services recorded for this period';
-                    emptyRow[2] = '';
-                } else {
-                    emptyRow[1] = 'No services recorded for this period';
-                }
-                templateInputs[name] = JSON.stringify([emptyRow]);
-            });
-
-            // Fill Table P6-1 copy copy copy (Care Management table - Table 3-1) with HSCM budget data
-            // Aggregate all HSCM items into a single row with total hours for the month
-            const hscmBudgetItems = budgetItems.filter(item => item.categoryCode === 'HSCM');
-            if (hscmBudgetItems.length > 0) {
-                // Table has 3 columns: Care Management (service name), Unit, Quantity
-                const totalAllocatedTime = hscmBudgetItems.reduce((sum, item) =>
-                    sum + parseNumberValue(item.hscmAllocatedTime || 0), 0);
-                const hscmRows = [['Care Management', 'Hours', totalAllocatedTime !== 0 ? totalAllocatedTime.toFixed(1) : '0.0']];
-                templateInputs['Table P6-1 copy copy copy'] = JSON.stringify(hscmRows);
-            } else {
-                // No HSCM items - show empty message
-                templateInputs['Table P6-1 copy copy copy'] = JSON.stringify([['', 'No services recorded for this period', '']]);
-            }
-
-            const serviceBuckets = createServiceBuckets();
-            services.forEach((service) => {
-                const code = determineFundingCode(service);
-                const bucket = serviceBuckets[code];
-                if (!bucket) {
-                    return;
-                }
-
-                const status = normalizeStatus(service.transactionStatus);
-                const isCommitted = !!service.committedAtHmForDelivery;
-                const hasCommittedBucket = isCommitted && Array.isArray(bucket.committed);
-                const isAdjustment = (status.includes('adjust') || status.includes('refund') || status.includes('charge')) && Array.isArray(bucket.adjustment);
-                const isDelivered = (status.includes('delivered') || status.includes('cancelled')) && Array.isArray(bucket.delivered);
-                const canRecordDelivery = Array.isArray(bucket.delivered);
-
-                if (hasCommittedBucket) {
-                    bucket.committed.push(service);
-                    return;
-                }
-
-                if (isAdjustment) {
-                    bucket.adjustment.push(service);
-                    return;
-                }
-
-                if (isDelivered) {
-                    bucket.delivered.push(service);
-                    return;
-                }
-
-                if (!status && canRecordDelivery) {
-                    bucket.delivered.push(service);
-                }
-            });
-
-            const tableColumnCounts = {};
-
-            Object.entries(SERVICE_TABLE_CONFIG).forEach(([code, tableConfig]) => {
-                const bucket = serviceBuckets[code];
-                if (!bucket) return;
-
-                Object.values(tableConfig).forEach((config) => {
-                    const sourceServices = bucket[config.rowType] || [];
-                    const tableData = buildServiceTableRows(sourceServices, config, business, timezone);
-                    templateInputs[config.tableName] = JSON.stringify(tableData.rows);
-                    tableColumnCounts[config.tableName] = config.columns.length;
-
-                    const totalValues = [tableData.totals.amount, tableData.totals.gov, tableData.totals.participant];
-                    config.totals.forEach((fieldName, index) => {
-                        const value = totalValues[Math.min(index, totalValues.length - 1)] || 0;
-                        if (Array.isArray(fieldName)) {
-                            fieldName.forEach((f) => setCurrencyField(templateInputs, f, value));
-                        } else {
-                            setCurrencyField(templateInputs, fieldName, value);
-                        }
-                    });
-                });
-            });
-
-            // Sanitize all table inputs to ensure pdfme compatibility
-            Object.entries(templateInputs).forEach(([key, value]) => {
-                if (typeof key === 'string' && key.startsWith('Table ')) {
-                    try {
-                        let parsed;
-                        if (typeof value === 'string') {
-                            parsed = JSON.parse(value);
-                        } else if (Array.isArray(value)) {
-                            parsed = value;
-                        } else {
-                            parsed = [];
-                        }
-
-                        const columnCount = tableColumnCounts[key]
-                            ?? (Array.isArray(parsed) && Array.isArray(parsed[0]) ? parsed[0].length : 8);
-
-                        // Ensure we have at least one row with empty cells
-                        if (!Array.isArray(parsed) || parsed.length === 0) {
-                            const emptyRow = Array(columnCount).fill('');
-                            emptyRow[1] = 'No services recorded for this period'; // Service column
-                            parsed = [emptyRow];
-                        }
-
-                        const sanitized = parsed.map((row) => {
-                            const baseRow = Array.isArray(row) ? row : [];
-                            const padded = [...baseRow];
-                            while (padded.length < columnCount) {
-                                padded.push('');
-                            }
-                            if (columnCount > 0) {
-                                padded.length = columnCount;
-                            }
-                            // Ensure every cell is a valid string
-                            return padded.map((cell) => {
-                                const normalized = normalizeTableCell(cell);
-                                // Double-check: pdfme requires strings that can be split
-                                return typeof normalized === 'string' ? normalized : '';
-                            });
-                        });
-                        templateInputs[key] = JSON.stringify(sanitized);
-                    } catch (e) {
-                        // Fallback: create an empty row with default column count
-                        const defaultColumnCount = tableColumnCounts[key] || 8;
-                        const emptyRow = Array(defaultColumnCount).fill('');
-                        emptyRow[1] = 'No data available';
-                        templateInputs[key] = JSON.stringify([emptyRow]);
-                    }
-                }
-            });
-
-            applyTemplateTextDefaults(template, templateInputs);
-
-            const pdfBytes = await generate({
-                template,
-                inputs: [templateInputs],
-                plugins: { text, image, line, table, multiVariableText }
-            });
-
-            // Upload the PDF
-            const participantSlug = participantName.replace(/[^a-zA-Z0-9]/g, '-');
-            const monthYear = `${statementData.month || 'Month'}_${yearValue || 'Year'}`.replace(/\s+/g, '_');
-            const filename = `output/${workspaceId}/${boardId}/monthly-statements/${participantSlug}_${monthYear}_Statement.pdf`;
-            const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
-
-            if (uploadResult['$metadata'].httpStatusCode === 200) {
-                const fileUrl = await getS3FileUrl(filename, 3600, true);
-
-                info('Webhook-Service', 'Monthly statement PDF generated successfully', {
-                    participant: participantName,
-                    month: statementData.month,
-                    year: statementData.year,
-                    servicesCount: services.length,
-                    budgetItemsCount: budgetItems.length,
-                    fileUrl
-                }, req ?? null);
-
-                return res.status(200).json({
-                    message: 'Monthly statement PDF generated successfully',
-                    fileUrl,
-                    filename: `${participantSlug}_${monthYear}_Statement.pdf`
-                });
-            } else {
-                throw new Error('Upload of PDF failed, please provide correct information.');
-            }
-        } catch (err) {
-            const errorMessage = (err && err.message) ? err.message : 'Server error: An unknown error occurred. Please contact support via ISO+™ Portal.';
-            error('Webhook-Service', 'Error generating monthly statement PDF', {
-                message: errorMessage,
-                stack: err.stack
-            }, req ?? null);
-            return res.status(500).json({ message: errorMessage, error: err.message });
-        }
+        return await handleMonthlyStatementRoute(req, res, buildMonthlyStatementDeps({
+            getValidatedBusiness,
+            enableRepeatHeadOnTables,
+            ensureMonthlyStatementHeaderFromPage2,
+            getLogoData,
+            resolveTemplateImageUrls,
+            getTemplateImageContentByName,
+            applyTemplateTextDefaults,
+            calculateBudgetAggregates,
+            enrichAggregateFromCategory,
+            initializeBudgetAggregate,
+            getQuarterMetadata,
+            setMultiValueField,
+            setCurrencyField,
+            applyBudgetMapping,
+            safeString,
+            formatDateToAU,
+            createServiceBuckets,
+            determineFundingCode,
+            normalizeStatus,
+            buildServiceTableRows,
+            normalizeTableCell,
+            parseNumberValue,
+            uploadFileToS3,
+            getS3FileUrl,
+            info,
+            warn,
+            error,
+            fetchBudgetItems,
+            fetchServiceItems,
+            generate,
+            text,
+            image,
+            line,
+            table,
+            multiVariableText,
+            path,
+            fs,
+            fileURLToPath,
+            SERVICE_TABLE_CONFIG,
+        }));
     } catch (err) {
         error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
         return res.status(500).json({ message: err.message });

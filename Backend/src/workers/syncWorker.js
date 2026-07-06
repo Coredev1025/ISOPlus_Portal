@@ -12,6 +12,14 @@ import { syncQueue } from '../services/sync/queue.js';
 import { invalidateCacheForBoard } from '../utils/transformCache.js';
 import { transformItemData } from '../utils/itemTransform.js';
 import { syncTimeTrackingFromItem } from '../utils/timeTrackSync.js';
+import {
+  prepareBacklogBoardMetadata,
+  processBacklogItemPages,
+  deleteStaleBacklogItems,
+  importBacklogTimeTracking,
+  finalizeBacklogSyncSuccess,
+  handleBacklogSyncFailure,
+} from '../utils/syncWorkerBacklogHelpers.js';
 
 const SYNC_TIMEOUT_MS = 20 * 60 * 1000;
 const BULK_BATCH_SIZE = 100;
@@ -120,6 +128,29 @@ async function waitWithBackoff(retryCount) {
   await new Promise(resolve => setTimeout(resolve, delay));
 }
 
+async function deleteHooksFromApiList(authorization, workspaceId, boardId, hooks, logLabel) {
+  for (const hook of hooks) {
+    if (!hook.id) continue;
+    try {
+      await unregisterBoardWebhooks(authorization, workspaceId, boardId, hook.id);
+      info('Sync-Worker', logLabel, { boardId, hookId: hook.id });
+    } catch (hookErr) {
+      warn('Sync-Worker', 'Failed to delete hook', {
+        boardId,
+        hookId: hook.id,
+        error: hookErr.message,
+      });
+    }
+  }
+}
+
+function resolveRetryJobName(jobType, fallbackName) {
+  if (jobType === 'board_validation') return 'board_validation';
+  if (jobType === 'data_backlog_sync') return 'backlog_sync';
+  if (jobType === 'manual_triggered_sync') return 'manual_sync';
+  return fallbackName || 'retry';
+}
+
 async function disableWebhooksForBoard(authorization, workspaceId, boardId) {
   try {
     if (!authorization) {
@@ -137,23 +168,9 @@ async function disableWebhooksForBoard(authorization, workspaceId, boardId) {
       });
 
       // Delete all hooks from API
-      for (const hook of hooksResult.hooks) {
-        if (hook.id) {
-          try {
-            await unregisterBoardWebhooks(authorization, workspaceId, boardId, hook.id);
-            info('Sync-Worker', 'Deleted hook before sync', { 
-              boardId, 
-              hookId: hook.id 
-            });
-          } catch (hookErr) {
-            warn('Sync-Worker', 'Failed to delete hook', { 
-              boardId, 
-              hookId: hook.id,
-              error: hookErr.message 
-            });
-          }
-        }
-      }
+      await deleteHooksFromApiList(
+        authorization, workspaceId, boardId, hooksResult.hooks, 'Deleted hook before sync'
+      );
     }
 
     // Also check database for hookId and delete it
@@ -207,19 +224,9 @@ async function reEnableWebhooksForBoard(authorization, workspaceId, boardId) {
           hookCount: hooksResult.hooks.length 
         });
         
-        for (const hook of hooksResult.hooks) {
-          if (hook.id) {
-            try {
-              await unregisterBoardWebhooks(authorization, workspaceId, boardId, hook.id);
-            } catch (hookErr) {
-              warn('Sync-Worker', 'Failed to delete existing hook during re-enable', { 
-                boardId, 
-                hookId: hook.id,
-                error: hookErr.message 
-              });
-            }
-          }
-        }
+        await deleteHooksFromApiList(
+          authorization, workspaceId, boardId, hooksResult.hooks, 'Deleted existing hook during re-enable'
+        );
       }
     } catch (cleanupErr) {
       warn('Sync-Worker', 'Error during hook cleanup before re-enable', { 
@@ -359,464 +366,136 @@ async function processDataBacklogSync(job) {
   const { authorization, workspaceId, boardId } = job.data;
   const startTime = Date.now();
   const syncGUID = generateSyncGUID();
-  
-  info('Sync-Worker', 'Starting data backlog sync', { 
-    jobId: job.id, 
-    workspaceId, 
+
+  info('Sync-Worker', 'Starting data backlog sync', {
+    jobId: job.id,
+    workspaceId,
     boardId,
-    syncGUID 
+    syncGUID,
   });
-  
-  let syncExecution;
+
+  let syncExecutionRecord;
   try {
-    syncExecution = await SyncExecution.createSyncExecution({
+    syncExecutionRecord = await SyncExecution.createSyncExecution({
       syncGUID,
       boardId,
       workspaceId,
       syncType: job.data.jobType || 'data_backlog_sync',
       triggeredBy: job.data.triggeredBy || 'system',
-      jobId: job.id
+      jobId: job.id,
     });
-    
-    info('Sync-Worker', 'Sync execution record created', { 
-      jobId: job.id, 
+    info('Sync-Worker', 'Sync execution record created', {
+      jobId: job.id,
       syncGUID,
-      syncExecutionId: syncExecution._id 
+      syncExecutionId: syncExecutionRecord._id,
     });
   } catch (err) {
-    warn('Sync-Worker', 'Failed to create sync execution record', { 
-      jobId: job.id, 
-      error: err.message 
-    });
+    warn('Sync-Worker', 'Failed to create sync execution record', { jobId: job.id, error: err.message });
   }
-  
+
+  const backlogDeps = {
+    disableWebhooksForBoard,
+    reEnableWebhooksForBoard,
+    getBoard,
+    Board,
+    Item,
+    invalidateCacheForBoard,
+    authorization,
+    info,
+    warn,
+    error,
+  };
+
+  const pageDeps = {
+    checkSyncTimeout,
+    transformItemData,
+    Item,
+    info,
+    error,
+    warn,
+    waitWithBackoff,
+    BULK_BATCH_SIZE,
+    MAX_RETRIES,
+  };
+
+  const syncExecutionApi = syncExecutionRecord ? SyncExecution : null;
+
   try {
-    // Step 1: Check timeout
-    if (checkSyncTimeout(startTime)) {
-      throw new Error('SYNC_TIMEOUT');
-    }
-    
-    // Step 2: Disable webhooks for the board
-    await disableWebhooksForBoard(authorization, workspaceId, boardId);
-    
-    // Step 3: Update status based on job type (preserve manual_triggered_sync)
+    if (checkSyncTimeout(startTime)) throw new Error('SYNC_TIMEOUT');
+
     const syncStatus = job.data.jobType || 'data_backlog_sync';
-    await Board.findOneAndUpdate(
-      { boardId },
-      { 
-        $set: { 
-          syncStatus: syncStatus,
-          syncJobId: job.id,
-          currentSyncGUID: syncGUID
-        } 
-      }
-    );
-    
-    // Update sync execution status to in-progress
-    if (syncExecution) {
-      await SyncExecution.updateProgress(syncGUID, {}, {});
-    }
-    
-    // Step 4: Get board data from ISO+
-    const boardResponse = await getBoard(authorization, workspaceId);
-    if (boardResponse.status !== 200) {
-      throw new Error('Failed to fetch board data from ISO+');
-    }
-
-    const board = boardResponse.board.find(b => b.id.toString() === boardId);
-    if (!board) {
-      throw new Error('Board not found in ISO+');
-    }
-
-    // Update board metadata
-    await Board.findOneAndUpdate(
-      { boardId },
-      {
-        $set: {
-          name: board.name,
-          color: board.color || '',
-          description: board.description || '',
-          og_image: board.og_image || ''
-        }
-      }
-    );
-
-    // Step 5: Fetch board items directly without folder filtering
-    info('Sync-Worker', 'Fetching board items without folder filter', {
-      jobId: job.id,
+    await prepareBacklogBoardMetadata({
+      authorization,
       workspaceId,
-      boardId
+      boardId,
+      job,
+      syncGUID,
+      syncStatus,
+      SyncExecution: syncExecutionApi,
+      deps: backlogDeps,
     });
 
-    // Initialize counters
-    let totalItemsProcessed = 0;
-    let totalItemsInserted = 0;
-    let totalItemsUpdated = 0;
-    let pageNumber = 0;
-    let bulkOps = [];
-    const uniqueFolderIds = new Set();
-    let retryCount = 0;
     const itemIterator = iterateBoardItems(workspaceId, boardId);
+    const pageStats = await processBacklogItemPages({
+      job,
+      workspaceId,
+      boardId,
+      syncGUID,
+      startTime,
+      SyncExecution: syncExecutionApi,
+      itemIterator,
+      deps: pageDeps,
+    });
 
-    // Step 6: Process all board items page by page
-    while (true) {
-      try {
-        // Check timeout before each page
-        if (checkSyncTimeout(startTime)) {
-          throw new Error('SYNC_TIMEOUT');
-        }
-
-        const { value: itemsPage, done } = await itemIterator.next();
-
-        if (done) {
-          break;
-        }
-
-        pageNumber++;
-        retryCount = 0;
-
-        info('Sync-Worker', 'Processing board items page', {
-          jobId: job.id,
-          workspaceId,
-          boardId,
-          pageNumber,
-          pageSize: itemsPage.length
-        });
-
-        // Step 7: Build bulk operations for this page with transformed data
-        for (const item of itemsPage) {
-          const itemIdStr = item.id.toString();
-          const itemFolderId = item.folder_id ? item.folder_id.toString() : '';
-
-          if (itemFolderId) {
-            uniqueFolderIds.add(itemFolderId);
-          }
-
-          // Transform the item data to flat format
-          const transformedData = transformItemData(item);
-
-          bulkOps.push({
-            updateOne: {
-              filter: { itemId: itemIdStr },
-              update: {
-                $set: {
-                  workspaceId: workspaceId,
-                  boardId: boardId,
-                  folderId: itemFolderId,
-                  itemId: itemIdStr,
-                  isoPlusItemId: itemIdStr,
-                  syncGUID: syncGUID,
-                  data: transformedData,
-                  updatedAt: new Date()
-                },
-                $setOnInsert: {
-                  createdAt: new Date()
-                }
-              },
-              upsert: true
-            }
-          });
-        }
-
-        totalItemsProcessed += itemsPage.length;
-
-        // Step 8: Execute bulk write when batch size is reached (100)
-        if (bulkOps.length >= BULK_BATCH_SIZE) {
-          try {
-            const bulkResult = await Item.bulkWrite(bulkOps, {
-              ordered: false,
-              wtimeout: 10000
-            });
-
-            totalItemsInserted += bulkResult.upsertedCount || 0;
-            totalItemsUpdated += bulkResult.modifiedCount || 0;
-
-            info('Sync-Worker', 'Bulk write completed', {
-              jobId: job.id,
-              syncGUID,
-              batchSize: bulkOps.length,
-              upserted: bulkResult.upsertedCount,
-              modified: bulkResult.modifiedCount
-            });
-
-            await job.updateProgress({
-              stage: 'syncing_items',
-              currentPage: pageNumber,
-              itemsProcessed: totalItemsProcessed,
-              syncGUID
-            });
-
-            // Update sync execution progress
-            if (syncExecution) {
-              await SyncExecution.updateProgress(syncGUID, {
-                currentPage: pageNumber
-              }, {
-                itemsProcessed: totalItemsProcessed,
-                itemsInserted: totalItemsInserted,
-                itemsUpdated: totalItemsUpdated
-              });
-            }
-
-            // Clear the bulk operations array
-            bulkOps = [];
-
-            // Small delay to prevent memory buildup
-            await new Promise(resolve => setTimeout(resolve, 50));
-          } catch (bulkErr) {
-            error('Sync-Worker', 'Bulk write failed', {
-              jobId: job.id,
-              syncGUID,
-              batchSize: bulkOps.length,
-              error: bulkErr.message
-            });
-
-            // Clear failed batch to continue with next batch
-            bulkOps = [];
-          }
-        }
-      } catch (pageErr) {
-        if (pageErr.message === 'SYNC_TIMEOUT') {
-          throw pageErr;
-        }
-
-        retryCount++;
-        if (retryCount < MAX_RETRIES) {
-          warn('Sync-Worker', 'Page fetch failed, retrying', {
-            jobId: job.id,
-            retryCount,
-            error: pageErr.message
-          });
-          await waitWithBackoff(retryCount);
-          continue;
-        }
-
-        error('Sync-Worker', 'Page fetch failed after max retries', {
-          jobId: job.id,
-          error: pageErr.message
-        });
-        throw pageErr;
-      }
-    }
-
-    // Execute any remaining bulk operations
-    if (bulkOps.length > 0) {
-      try {
-        const bulkResult = await Item.bulkWrite(bulkOps, {
-          ordered: false,
-          wtimeout: 10000
-        });
-
-        totalItemsInserted += bulkResult.upsertedCount || 0;
-        totalItemsUpdated += bulkResult.modifiedCount || 0;
-
-        info('Sync-Worker', 'Final bulk write completed', {
-          jobId: job.id,
-          syncGUID,
-          batchSize: bulkOps.length,
-          upserted: bulkResult.upsertedCount,
-          modified: bulkResult.modifiedCount
-        });
-
-        await job.updateProgress({
-          stage: 'syncing_items',
-          currentPage: pageNumber,
-          itemsProcessed: totalItemsProcessed,
-          syncGUID
-        });
-
-        bulkOps = [];
-      } catch (bulkErr) {
-        error('Sync-Worker', 'Final bulk write failed', {
-          jobId: job.id,
-          syncGUID,
-          error: bulkErr.message
-        });
-        bulkOps = [];
-      }
-    }
-    
     info('Sync-Worker', 'Board item processing completed', {
       jobId: job.id,
       boardId,
-      pageCount: pageNumber,
-      itemsProcessed: totalItemsProcessed
+      pageCount: pageStats.pageNumber,
+      itemsProcessed: pageStats.totalItemsProcessed,
     });
-    
-    // Step 9: Delete old records (items not in current sync)
-    info('Sync-Worker', 'Deleting old records not in current sync', {
-      jobId: job.id,
+
+    info('Sync-Worker', 'Deleting old records not in current sync', { jobId: job.id, syncGUID, boardId });
+    const deletedCount = await deleteStaleBacklogItems({
+      boardId,
       syncGUID,
-      boardId
+      Item,
+      info,
+      warn,
+      job,
     });
-    
-    let deletedCount = 0;
-    try {
-      const deleteResult = await Item.deleteMany({
-        boardId: boardId,
-        syncGUID: { $ne: syncGUID }
-      });
-      deletedCount = deleteResult.deletedCount || 0;
-      
-      info('Sync-Worker', 'Old records deleted', {
-        jobId: job.id,
-        syncGUID,
-        deletedCount
-      });
-    } catch (deleteErr) {
-      warn('Sync-Worker', 'Failed to delete old records', {
-        jobId: job.id,
-        syncGUID,
-        error: deleteErr.message
-      });
-    }
 
-    try {
-      const ttItems = await Item.find(
-        { boardId, workspaceId, 'data._hasTimeTracking': true },
-        { itemId: 1, data: 1 }
-      ).lean();
-
-      let totalTTImported = 0;
-      for (const ttItem of ttItems) {
-        const count = await syncTimeTrackingFromItem(workspaceId, boardId, ttItem.itemId, ttItem.data);
-        totalTTImported += count;
-      }
-
-      info('Sync-Worker', 'Time-tracking entries imported from ISO+', {
-        jobId: job.id,
-        boardId,
-        itemsChecked: ttItems.length,
-        entriesImported: totalTTImported
-      });
-    } catch (ttErr) {
-      warn('Sync-Worker', 'Time-tracking sync step failed (non-critical)', {
-        jobId: job.id,
-        boardId,
-        error: ttErr.message
-      });
-    }
-    
-    // Step 10: Update board with success status and stats
-    const endTime = Date.now();
-    const duration = endTime - startTime;
-    
-    await Board.findOneAndUpdate(
-      { boardId },
-      {
-        $set: {
-          syncStatus: 'realtime_sync',
-          lastSyncedAt: new Date(),
-          lastSyncError: null,
-          validationErrors: [],
-          currentSyncGUID: syncGUID,
-          'syncStats.foldersProcessed': uniqueFolderIds.size,
-          'syncStats.itemsSynced': totalItemsProcessed,
-          'syncStats.itemsCreated': totalItemsInserted,
-          'syncStats.itemsUpdated': totalItemsUpdated,
-          'syncStats.itemsDeleted': deletedCount,
-          'syncStats.lastBacklogSyncAt': new Date(),
-          'syncStats.syncDuration': duration,
-          'syncStats.retryCount': 0
-        }
-      }
-    );
-
-    // Update sync execution as completed
-    if (syncExecution) {
-      await SyncExecution.markCompleted(syncGUID, {
-        itemsProcessed: totalItemsProcessed,
-        itemsInserted: totalItemsInserted,
-        itemsUpdated: totalItemsUpdated,
-        itemsDeleted: deletedCount
-      });
-    }
-
-    // Invalidate transformation cache for the board
-    invalidateCacheForBoard(workspaceId, boardId);
-    info('Sync-Worker', 'Invalidated transformation cache for board', {
-      jobId: job.id,
+    await importBacklogTimeTracking({
       workspaceId,
-      boardId
+      boardId,
+      job,
+      Item,
+      syncTimeTrackingFromItem,
+      info,
+      warn,
     });
 
-    info('Sync-Worker', 'Data backlog sync completed successfully', { 
-      jobId: job.id,
-      workspaceId, 
+    return finalizeBacklogSyncSuccess({
+      job,
+      workspaceId,
       boardId,
       syncGUID,
-      duration,
-      stats: {
-        folders: uniqueFolderIds.size,
-        itemsProcessed: totalItemsProcessed,
-        itemsInserted: totalItemsInserted,
-        itemsUpdated: totalItemsUpdated,
-        itemsDeleted: deletedCount
-      }
+      startTime,
+      SyncExecution: syncExecutionApi,
+      stats: { ...pageStats, deletedCount },
+      deps: backlogDeps,
     });
-
-    // Step 11: Re-enable webhooks
-    await reEnableWebhooksForBoard(authorization, workspaceId, boardId);
-
-    return {
-      success: true,
-      nextStep: 'realtime_sync',
-      syncGUID,
-      stats: {
-        foldersProcessed: uniqueFolderIds.size,
-        itemsProcessed: totalItemsProcessed,
-        itemsInserted: totalItemsInserted,
-        itemsUpdated: totalItemsUpdated,
-        itemsDeleted: deletedCount,
-        duration
-      }
-    };
-
   } catch (err) {
-    const isTimeout = err.message === 'SYNC_TIMEOUT';
-    
-    error('Sync-Worker', isTimeout ? 'Data backlog sync timed out' : 'Data backlog sync failed', { 
-      jobId: job.id,
-      workspaceId, 
+    return handleBacklogSyncFailure({
+      err,
+      job,
+      workspaceId,
       boardId,
       syncGUID,
-      error: err.message,
-      stack: err.stack
+      SyncExecution: syncExecutionApi,
+      deps: backlogDeps,
     });
-    
-    // Update sync execution as failed/timeout
-    if (syncExecution) {
-      if (isTimeout) {
-        await SyncExecution.markTimeout(syncGUID);
-      } else {
-        await SyncExecution.markFailed(syncGUID, {
-          message: err.message,
-          stack: err.stack
-        });
-      }
-    }
-    
-    // Update board with failed status
-    await Board.findOneAndUpdate(
-      { boardId },
-      {
-        $set: {
-          syncStatus: 'failed',
-          lastSyncError: isTimeout ? 'Sync timed out after 20 minutes' : err.message,
-          lastSyncedAt: isTimeout ? null : new Date()
-        },
-        $inc: {
-          'syncStats.retryCount': 1
-        }
-      }
-    );
-    
-    // Re-enable webhooks even on failure
-    await reEnableWebhooksForBoard(authorization, workspaceId, boardId);
-    
-    throw err;
   }
 }
-
 /**
  * Process manual triggered sync
  * Similar to backlog sync but sets status back to realtime_sync after completion
@@ -903,18 +582,8 @@ async function checkAndRetryFailedJobs() {
             continue;
           }
 
-          // Determine job name based on jobType
           const jobType = failedJob.data?.jobType;
-          let jobName = 'retry';
-          if (jobType === 'board_validation') {
-            jobName = 'board_validation';
-          } else if (jobType === 'data_backlog_sync') {
-            jobName = 'backlog_sync';
-          } else if (jobType === 'manual_triggered_sync') {
-            jobName = 'manual_sync';
-          } else if (failedJob.name) {
-            jobName = failedJob.name;
-          }
+          const jobName = resolveRetryJobName(jobType, failedJob.name);
 
           // Retry the job with updated retry count
           const jobData = {

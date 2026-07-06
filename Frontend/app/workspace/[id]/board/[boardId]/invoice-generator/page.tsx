@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { ArrowLeft, FileText, Search, Calendar, Filter, CheckCircle, DollarSign, BarChart3, FileSpreadsheet, Receipt, X, Percent, ArrowLeftCircle, ArrowRightCircle, Download, Clock, ArrowUpDown, ArrowUp, ArrowDown, HelpCircle } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
-import { useState, useEffect, useCallback, useRef, ReactNode } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useAppContext } from "@/app/context";
 import {
   Table,
@@ -40,7 +40,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { format, formatDistanceToNow } from "date-fns";
 import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast, getApiErrorMessage } from "@/lib/toast-utils";
-import { canAccessWorkspace, isCareManagementLabel } from "@/lib/access";
+import {
+  getBoardNameFromSession,
+  getSyncRefreshMode,
+  isValidRouteIdParam,
+} from "@/lib/sync-manual-helpers";
+import { canAccessWorkspace } from "@/lib/access";
 import { dateToStartOfDayISO, dateToEndOfDayISO, formatDateOnlyYYYYMMDD, formatDateDDMMYYYY } from "@/lib/timezone";
 import {
   Dialog,
@@ -53,14 +58,28 @@ import {
 import { Label } from "@/components/ui/label";
 import { DateRange } from "react-day-picker";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-
-const TRANSACTION_STATUS_FILTERS = [
-  { value: "all", label: "All Transaction Status", isoValue: "" },
-  { value: "delivered", label: "Delivered - To be claimed and invoiced.", description: "To be claimed and invoiced.", isoValue: "Delivered - To be claimed and invoiced." },
-  { value: "cancelled", label: "Cancelled - To be claimed and invoiced if applicable.", description: "To be claimed and invoiced if applicable.", isoValue: "Cancelled - To be claimed and invoiced if applicable." },
-  { value: "adjustment-refund", label: "Adjustment (Refund) - To be claimed and invoiced.", description: "To be claimed and invoiced.", isoValue: "Adjustment (Refund) - To be claimed and invoiced." },
-  { value: "adjustment-charge", label: "Adjustment (Charge) - To be claimed and invoiced.", description: "To be claimed and invoiced.", isoValue: "Adjustment (Charge) - To be claimed and invoiced." }
-];
+import {
+  TRANSACTION_STATUS_FILTERS,
+  getTransactionStatusSearchValue,
+  validateInvoiceGenerationInputs,
+  buildInvoiceItemIds,
+  getInvoiceGeneratorBoardFlags,
+} from "@/lib/invoice-generator-helpers";
+import { exportInvoiceGeneratorCsv } from "@/lib/invoice-generator-export-helpers";
+import { buildInvoiceGeneratorTableColumns } from "@/lib/invoice-generator-table-columns";
+import { useInvoiceGeneratorEligibleRecords } from "@/lib/use-invoice-generator-eligible-records";
+import { InvoiceGeneratorPageView } from "@/lib/invoice-generator-page-view";
+import {
+  finalizePdfInvoiceGeneration,
+} from "@/lib/invoice-generator-pdf-helpers";
+import { generateXeroInvoiceFromModal } from "@/lib/invoice-generator-xero-helpers";
+import { useInvoiceGeneratorSetup } from "@/lib/use-invoice-generator-setup";
+import { pollInvoiceGeneratorSyncStatus } from "@/lib/invoice-generator-sync-helpers";
+import {
+  useInvoiceGeneratorParticipants,
+  useInvoiceGeneratorServiceRecords,
+  useInvoiceGeneratorPaymentOptions,
+} from "@/lib/use-invoice-generator-data";
 
 const PAYMENT_STATUS_FILTERS = [
   { value: "all", label: "All Payment Status" },
@@ -79,19 +98,6 @@ const NDIS_PAYMENT_STATUS_OPTIONS = [
   "Disputed",
   "Refunded"
 ];
-
-const FUNDING_SOURCE_CODE_MAP: Record<string, string> = {
-  "Home Support(HS) Quarterly": "ON",
-  "Home Support Care Management": "CM",
-  "Restorative Care Pathway": "RC",
-  "Assistive Technology - Short-term": "AT",
-  "End-of-Life Pathway": "EL",
-  "Assistive Technology": "AT",
-  "Assistive Technology - Ongoing": "AS",
-  "Home Modification": "HM",
-  "Primary Supplements": "PS",
-  "Unspent Home Care Package (HCP) Funds": "HCP"
-};
 
 const SYDNEY_TIME_ZONE = "Australia/Sydney";
 
@@ -138,62 +144,10 @@ function getDefaultInvoiceDates(timeZone: string = SYDNEY_TIME_ZONE) {
   return { invoiceDate, dueDate };
 }
 
-interface ServiceRecord {
-  id: string;
-  sourceItemId?: string;
-  status: "invoiced" | "pending";
-  participant: string;
-  scheduledServiceDate: string | null;
-  serviceDeliveryDate?: string | null;
-  jobStatus?: string;
-  unit: string;
-  quantity: number;
-  unitPrice: number;
-  totalAmount: number;
-  govSubsidy: number;
-  participantContribution: number;
-  notes: string;
-  service: string;
-  gst?: string;
-  invoiceNumber?: string;
-  transactionStatus?: string;
-  paymentStatus?: string;
-  fundingSource?: string;
-  fileUrl?: string;
-  itemFirstPayment?: string;
-  // CSV export fields (already formatted by backend)
-  careRecipientIdentifier?: string;
-  serviceIdentifier?: string;
-  deliveredByThirdParty?: string;
-  itemOrWraparound?: string;
-  itemDescriptionCode?: string;
-  itemDescription?: string;
-  wraparoundDescription?: string;
-  wraparoundDescriptionCode?: string;
-  prescribedItem?: string;
-  itemPurchasedMethod?: string;
-  loanedByOrganisationName?: string;
-  loanedByInvoiceNumber?: string;
-  healthProfessionalTypeCode?: string;
-  healthProfessionalTypeOther?: string;
-  values?: Array<{ attribute: { name: string }; data?: unknown }>;
-}
-
-interface InvoiceSummary {
-  totalRecords: number;
-  invoiced: number;
-  pending: number;
-  totalValue: number;
-  totalGovSubsidy: number;
-  totalParticipantContribution: number;
-}
-
-type TableColumn = {
-  key: string;
-  label: string;
-  className?: string;
-  render: (record: ServiceRecord) => ReactNode;
-};
+import type {
+  InvoiceGeneratorServiceRecord,
+  InvoiceGeneratorSummary,
+} from '@/lib/invoice-generator-types';
 
 export default function InvoiceGenerator() {
   const router = useRouter();
@@ -205,8 +159,8 @@ export default function InvoiceGenerator() {
   
   const [boardLabel, setBoardLabel] = useState<string>('');
 
-  const [serviceRecords, setServiceRecords] = useState<ServiceRecord[]>([]);
-  const [summary, setSummary] = useState<InvoiceSummary>({
+  const [serviceRecords, setServiceRecords] = useState<InvoiceGeneratorServiceRecord[]>([]);
+  const [summary, setSummary] = useState<InvoiceGeneratorSummary>({
     totalRecords: 0,
     invoiced: 0,
     pending: 0,
@@ -245,7 +199,7 @@ export default function InvoiceGenerator() {
 
   // Modal state for invoice generation
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
-  const [eligibleRecords, setEligibleRecords] = useState<ServiceRecord[]>([]);
+  const [eligibleRecords, setEligibleRecords] = useState<InvoiceGeneratorServiceRecord[]>([]);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [loadingEligible, setLoadingEligible] = useState(false);
   const defaultInvoiceDatesRef = useRef<{ invoiceDate: string; dueDate: string } | null>(null);
@@ -270,80 +224,67 @@ export default function InvoiceGenerator() {
     setStatusFilter("all");
   }, []);
 
-  useEffect(() => {
-    if (id) {
-      setCurrentWorkspaceId(id);
-    }
-    return () => {
-      setCurrentWorkspaceId(null);
-    };
-  }, [id, setCurrentWorkspaceId]);
+  const handleBusinessTimezoneLoaded = useCallback((tz: string) => {
+    setBusinessTimezone(tz);
+    const dates = getDefaultInvoiceDates(tz);
+    setInvoiceDate(dates.invoiceDate);
+    setDueDate(dates.dueDate);
+  }, []);
 
-  useEffect(() => {
-    if (!id) return;
-    const abort = new AbortController();
-    axios
-      .get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/profile`, { params: { workspaceId: id }, signal: abort.signal })
-      .then(res => {
-        if (res.data?.headOfficeTimezone) {
-          const tz = res.data.headOfficeTimezone;
-          setBusinessTimezone(tz);
-          const dates = getDefaultInvoiceDates(tz);
-          setInvoiceDate(dates.invoiceDate);
-          setDueDate(dates.dueDate);
-        }
-      })
-      .catch(err => { if (err.name !== "CanceledError" && err.name !== "AbortError") console.error(err); });
-    return () => abort.abort();
-  }, [id]);
-
-  useEffect(() => {
-    const fetchBoardLabel = async () => {
-      try {
-        const response = await axios.get(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/boards?id=${boardId}`,
-          {
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json'
-            }
-          }
-        );
-        if (response.data?.board?.label) {
-          setBoardLabel(response.data.board.label);
-        }
-      } catch (err) {
-        console.error('Error fetching board label:', err);
-      }
-    };
-
-    if (boardId) {
-      fetchBoardLabel();
-    }
-  }, [boardId]);
-
-  const isLowCatBoard = boardLabel === 'Care Management - SaH - Low Cat';
-  const isCareManagementBoard = isCareManagementLabel(boardLabel);
-  const isNdisBoard = typeof boardLabel === 'string' && boardLabel.toLowerCase().includes('ndis');
-  const isNdisCertificationOrVerificationBoard =
-    boardLabel === 'Care Management - NDIS - Certification' ||
-    boardLabel === 'Care Management - NDIS - Verification';
-  const canAccessInvoiceGenerator = isCareManagementBoard && canAccessWorkspace(user, workspace);
-
-  useEffect(() => {
-    if (!boardLabel) return;
-    // Avoid false-deny while workspace context is still loading for ISO+ users
-    if (user.role === 'isoplus_user' && !workspace) return;
-    if (!canAccessInvoiceGenerator) {
-      router.replace("/workspace/access-denied");
-    }
-  }, [
+  useInvoiceGeneratorSetup({
+    id,
+    boardId,
     boardLabel,
-    canAccessInvoiceGenerator,
+    user,
     workspace,
-    router,
-    user.role,
-  ]);
+    setCurrentWorkspaceId,
+    onBusinessTimezoneLoaded: handleBusinessTimezoneLoaded,
+    setBoardLabel,
+  });
+
+  const {
+    isLowCatBoard,
+    isCareManagementBoard,
+    isNdisBoard,
+    isNdisCertificationOrVerificationBoard,
+  } = getInvoiceGeneratorBoardFlags(boardLabel);
+
+  useInvoiceGeneratorParticipants({ id, boardId, isNdisBoard, setUniqueParticipants });
+  useInvoiceGeneratorPaymentOptions({
+    id,
+    boardId,
+    isNdisBoard,
+    defaultOptions: NDIS_PAYMENT_STATUS_OPTIONS,
+    setNdisPaymentStatusOptions,
+  });
+  useInvoiceGeneratorServiceRecords({
+    id,
+    boardId,
+    isNdisBoard,
+    statusFilter,
+    participantFilter,
+    transactionStatusFilter,
+    paymentStatusFilter,
+    jobStatusFilter,
+    scheduledServiceDateRange,
+    serviceDeliveryDateRange,
+    sortBy,
+    sortOrder,
+    currentPage,
+    itemsPerPage: ITEMS_PER_PAGE,
+    businessTimezone,
+    refreshKey,
+    getTransactionStatusSearchValue,
+    dateToStartOfDayISO,
+    dateToEndOfDayISO,
+    abortControllerRef,
+    setLoading,
+    setError,
+    setServiceRecords,
+    setSummary,
+    setLastSyncedAt,
+    setNdisStatusFieldLabel,
+  });
 
   const handleManualRefresh = useCallback(async (silent = false, clearFilters = false) => {
     if (!id || !boardId) {
@@ -360,46 +301,31 @@ export default function InvoiceGenerator() {
 
     // Check sync status from context (no API call needed)
     const currentSync = syncStatuses.find(sync => sync.boardId === boardId);
-    const isSyncActive = currentSync &&
-      (currentSync.status === 'started' || currentSync.status === 'in-progress');
-    const isSyncCompleted = currentSync?.status === 'completed';
-    const isSyncFailed = currentSync?.status === 'failed' || currentSync?.status === 'timeout';
+    const bumpRefresh = () => setRefreshKey(prev => prev + 1);
+    const refreshByMode = {
+      completed: () => setTimeout(bumpRefresh, 500),
+      active: bumpRefresh,
+      failed: bumpRefresh,
+      default: bumpRefresh,
+    };
+    const notifyByMode = {
+      completed: () => showSuccessToast('Manual sync completed', {
+        description: 'The sync job has finished successfully. Reloading service records with latest data...',
+      }),
+      active: () => showInfoToast('Refreshing data', {
+        description: 'Loading the latest cached service records. Sync is in progress - latest changes may appear after sync completes.',
+      }),
+      failed: () => showErrorToast('Sync job failed', {
+        description: 'The last sync job encountered an error. Data refreshed, but you may want to trigger a new sync.',
+      }),
+      default: () => showInfoToast('Refreshing data', {
+        description: 'Loading the latest cached service records...',
+      }),
+    };
 
-    if (isSyncCompleted) {
-      if (!silent) {
-        showSuccessToast('Manual sync completed', {
-          description: 'The sync job has finished successfully. Reloading service records with latest data...'
-        });
-      }
-      // Reload data after a short delay to ensure backend has updated
-      setTimeout(() => {
-        setRefreshKey(prev => prev + 1);
-      }, 500);
-    } else if (isSyncActive) {
-      if (!silent) {
-        showInfoToast('Refreshing data', {
-          description: 'Loading the latest cached service records. Sync is in progress - latest changes may appear after sync completes.'
-        });
-      }
-      // Still refresh data, but let user know sync is in progress
-      setRefreshKey(prev => prev + 1);
-    } else if (isSyncFailed) {
-      if (!silent) {
-        showErrorToast('Sync job failed', {
-          description: 'The last sync job encountered an error. Data refreshed, but you may want to trigger a new sync.'
-        });
-      }
-      // Still refresh data
-      setRefreshKey(prev => prev + 1);
-    } else {
-      // No active sync job or sync is in normal state
-      if (!silent) {
-        showInfoToast('Refreshing data', {
-          description: 'Loading the latest cached service records...'
-        });
-      }
-      setRefreshKey(prev => prev + 1);
-    }
+    const mode = getSyncRefreshMode(currentSync);
+    if (!silent) notifyByMode[mode]();
+    refreshByMode[mode]();
   }, [id, boardId, clearAllFilters, syncStatuses]);
 
   const stopSyncChecking = useCallback(() => {
@@ -411,146 +337,21 @@ export default function InvoiceGenerator() {
   }, []);
 
   const checkSyncStatus = useCallback(async () => {
-    if (!id || !boardId) {
-      return;
-    }
-
+    if (!id || !boardId) return;
     try {
-      const previousSync = previousSyncStatusRef.current;
-      const wasActive = previousSync &&
-        previousSync.boardId === boardId &&
-        (previousSync.status === 'started' || previousSync.status === 'in-progress');
-
-      if (!wasActive) {
-        return;
-      }
-
-      // Poll the API directly like sync-status-indicator.tsx does
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/sync/workspace/status/${id}`
-      );
-
-      if (response.data && response.data.boards) {
-        const board = response.data.boards.find((b: any) => b.boardId === boardId);
-
-        if (board) {
-          // Determine if this is a manual sync (has jobStatus) or regular sync (has syncExecution)
-          const isManualSync = board.jobStatus &&
-            (board.jobStatus.state === 'active' || board.jobStatus.state === 'waiting' || board.jobStatus.state === 'failed');
-
-          // Check if sync is failed
-          const isFailed = (board.syncExecution && (board.syncExecution.status === 'failed' || board.syncExecution.status === 'timeout')) ||
-            (board.jobStatus && board.jobStatus.state === 'failed');
-
-          // Check if sync is active
-          const isActive = (board.syncExecution && (board.syncExecution.status === 'started' || board.syncExecution.status === 'in-progress')) ||
-            (board.jobStatus && (board.jobStatus.state === 'active' || board.jobStatus.state === 'waiting'));
-
-          // Check if sync is completed (no active job or syncExecution, and was previously active)
-          const isCompleted = !isActive && !isFailed && wasActive;
-
-          if (isManualSync) {
-            // For manual syncs, use jobStatus.progress for both folders and items
-            const jobProgress = board.jobStatus?.progress || {};
-            const syncStats = board.syncStats || {};
-
-            // Extract folder progress
-            const foldersProcessed = jobProgress.foldersProcessed ?? syncStats.foldersProcessed ?? 0;
-            const totalFolders = jobProgress.totalFolders ?? 0;
-            const currentFolder = jobProgress.currentFolder || null;
-
-            // Extract item counters from jobStatus.progress (real-time), fallback to syncStats
-            const itemsProcessed = jobProgress.itemsProcessed ?? syncStats.itemsSynced ?? 0;
-
-            // Update sync status in context
-            const updatedSyncStatus = {
-              boardId: board.boardId,
-              boardName: board.boardName || board.boardId,
-              status: board.jobStatus.state === 'active' ? 'in-progress' as const :
-                board.jobStatus.state === 'failed' ? 'failed' as const : 'started' as const,
-              syncType: board.syncStatus || 'manual_triggered_sync',
-              startTime: board.jobStatus.processedOn
-                ? new Date(board.jobStatus.processedOn).toISOString()
-                : previousSync?.startTime ? new Date(previousSync.startTime).toISOString() : new Date().toISOString(),
-              progress: {
-                foldersProcessed,
-                totalFolders,
-                currentFolder,
-                itemsProcessed
-              },
-              isManualSync: true,
-              error: isFailed ? {
-                message: board.jobStatus?.failedReason || board.lastSyncError || 'Sync failed with unknown error',
-                stack: null,
-                details: null
-              } : null
-            };
-
-            // Update context with latest sync status
-            setSyncStatuses(prev => {
-              const existingIndex = prev.findIndex(s => s.boardId === boardId);
-              if (existingIndex >= 0) {
-                const updated = [...prev];
-                updated[existingIndex] = updatedSyncStatus;
-                return updated;
-              } else {
-                return [...prev, updatedSyncStatus];
-              }
-            });
-
-            previousSyncStatusRef.current = {
-              boardId: board.boardId,
-              status: updatedSyncStatus.status,
-              startTime: previousSync?.startTime || Date.now()
-            };
-          }
-
-          if (isFailed && wasActive) {
-            const errorMessage = board.jobStatus?.failedReason ||
-              board.lastSyncError ||
-              board.syncExecution?.error?.message ||
-              'The sync job encountered an error. Please try again.';
-
-            showErrorToast('Sync job failed', {
-              description: errorMessage
-            });
-
-            stopSyncChecking();
-          } else if (isCompleted) {
-            showSuccessToast('Sync completed', {
-              description: 'The sync job has finished successfully. Refreshing data with latest records and clearing filters...'
-            });
-
-            // Remove sync from context since it's completed
-            setSyncStatuses(prev => prev.filter(s => s.boardId !== boardId));
-
-            stopSyncChecking();
-
-            setTimeout(() => {
-              handleManualRefresh(true, true);
-            }, 500);
-          }
-        } else {
-          // Board not found in response - check if sync completed
-          const timeSinceStart = previousSync?.startTime ? Date.now() - previousSync.startTime : 0;
-
-          if (timeSinceStart > 15000 && wasActive) {
-            showSuccessToast('Sync completed', {
-              description: 'The sync job has finished successfully. Refreshing data with latest records and clearing filters...'
-            });
-
-            // Remove sync from context since it's completed
-            setSyncStatuses(prev => prev.filter(s => s.boardId !== boardId));
-
-            stopSyncChecking();
-
-            setTimeout(() => {
-              handleManualRefresh(true, true);
-            }, 500);
-          }
-        }
-      }
-    } catch (err: any) {
+      await pollInvoiceGeneratorSyncStatus({
+        workspaceId: id,
+        boardId,
+        previousSync: previousSyncStatusRef.current,
+        axios,
+        setSyncStatuses,
+        previousSyncStatusRef,
+        stopSyncChecking,
+        handleManualRefresh,
+        showErrorToast,
+        showSuccessToast,
+      });
+    } catch (err) {
       console.error('Error checking sync status:', err);
     }
   }, [id, boardId, handleManualRefresh, stopSyncChecking, setSyncStatuses]);
@@ -575,353 +376,11 @@ export default function InvoiceGenerator() {
     };
   }, []);
 
-  // Fetch unique participants for the modal dropdown using dedicated endpoint
-  useEffect(() => {
-    const fetchParticipants = async () => {
-      try {
-        const apiUrl = isNdisBoard
-          ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator-ndis/participants`
-          : `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator/participants`;
-
-        const response = await axios.get(apiUrl, {
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          }
-        });
-
-        if (response.data?.participants) {
-          const participants = response.data.participants.filter((p: string) => p && p.trim() !== '');
-          setUniqueParticipants(participants as string[]);
-        }
-      } catch (err) {
-        console.error('Error fetching participants:', err);
-      }
-    };
-
-    if (id && boardId) {
-      fetchParticipants();
-    }
-  }, [id, boardId, isNdisBoard]);
-
-  // Fetch NDIS Payment Status options (dynamic, falls back to defaults)
-  useEffect(() => {
-    const fetchPaymentStatusOptions = async () => {
-      try {
-        if (!isNdisBoard) return;
-        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator-ndis/payment-status-options`;
-        const response = await axios.get(apiUrl, {
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          }
-        });
-        const options = Array.isArray(response.data?.options) ? response.data.options : [];
-        const cleaned = options.map((o: any) => String(o || '').trim()).filter((s: string) => s);
-        if (cleaned.length > 0) {
-          setNdisPaymentStatusOptions(cleaned);
-        } else {
-          setNdisPaymentStatusOptions(NDIS_PAYMENT_STATUS_OPTIONS);
-        }
-      } catch (err) {
-        setNdisPaymentStatusOptions(NDIS_PAYMENT_STATUS_OPTIONS);
-      }
-    };
-
-    if (id && boardId && isNdisBoard) {
-      fetchPaymentStatusOptions();
-    }
-  }, [id, boardId, isNdisBoard]);
-
-  // Fetch eligible records when modal opens - use current filters
-  useEffect(() => {
-    const fetchEligibleRecords = async () => {
-      if (!showInvoiceModal) {
-        setEligibleRecords([]);
-        return;
-      }
-
-      // Cancel previous request if it exists
-      if (eligibleRecordsAbortControllerRef.current) {
-        eligibleRecordsAbortControllerRef.current.abort();
-      }
-
-      // Create new AbortController for this request
-      const abortController = new AbortController();
-      eligibleRecordsAbortControllerRef.current = abortController;
-
-      setLoadingEligible(true);
-      try {
-        const apiUrl = isNdisBoard
-          ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator-ndis`
-          : `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator`;
-        const params = new URLSearchParams();
-
-        // Use current filters from main page - fetch ALL records (including invoiced)
-        params.append('status', 'all'); // Get all records, not just pending
-
-        if (participantFilter && participantFilter !== 'all') {
-          params.append('participant', participantFilter);
-        }
-
-        if (scheduledServiceDateRange?.from) {
-          params.append('startDate', dateToStartOfDayISO(new Date(scheduledServiceDateRange.from), businessTimezone));
-        }
-        if (scheduledServiceDateRange?.to || scheduledServiceDateRange?.from) {
-          const toSource = scheduledServiceDateRange?.to || scheduledServiceDateRange?.from;
-          params.append('endDate', dateToEndOfDayISO(new Date(toSource as Date), businessTimezone));
-        }
-
-        if (serviceDeliveryDateRange?.from) {
-          params.append('serviceDeliveryStart', dateToStartOfDayISO(new Date(serviceDeliveryDateRange.from), businessTimezone));
-        }
-        if (serviceDeliveryDateRange?.to || serviceDeliveryDateRange?.from) {
-          const toSource = serviceDeliveryDateRange?.to || serviceDeliveryDateRange?.from;
-          params.append('serviceDeliveryEnd', dateToEndOfDayISO(new Date(toSource as Date), businessTimezone));
-        }
-
-        const transactionStatusParam = getTransactionStatusSearchValue(transactionStatusFilter);
-        if (transactionStatusParam) {
-          params.append('transactionStatus', transactionStatusParam);
-        }
-
-        if (paymentStatusFilter !== 'all') {
-          params.append('paymentStatus', paymentStatusFilter);
-        }
-
-        if (isNdisBoard && jobStatusFilter !== 'all') {
-          params.append('jobStatus', jobStatusFilter);
-        }
-
-        params.append('sortBy', sortBy);
-        params.append('sortOrder', sortOrder);
-
-        // Use reasonable limit for eligible records (max 1000 to prevent memory issues)
-        // If more records exist, user can use filters to narrow down
-        params.append('page', '1');
-        params.append('limit', '1000');
-
-        const response = await axios.get(apiUrl, {
-          params: Object.fromEntries(params),
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          signal: abortController.signal
-        });
-
-        if (response.data?.items) {
-          const items = response.data.items;
-          const total = response.data.total || 0;
-          const statusFieldLabel = response.data?.statusFieldLabel;
-          if (isNdisBoard && statusFieldLabel) {
-            setNdisStatusFieldLabel(statusFieldLabel);
-          }
-
-          setEligibleRecords(items);
-          // Auto-select all eligible records by default (including invoiced ones)
-          setSelectedItems(new Set(items.map((r: ServiceRecord) => r.id)));
-
-          // Only show toasts if not generating invoice (to avoid duplicate/empty toasts)
-          if (!isGeneratingInvoiceRef.current) {
-            if (items.length > 0) {
-              if (total > items.length) {
-                showInfoToast(`Loaded ${items.length} of ${total} eligible records`, {
-                  description: 'Showing first 1000 records. Use filters to narrow down if needed.'
-                });
-              } else {
-                showInfoToast(`Loaded ${items.length} eligible record${items.length === 1 ? '' : 's'}`, {
-                  description: 'All records (including invoiced) are shown. You can select which ones to include in the invoice.'
-                });
-              }
-            }
-          }
-        } else {
-          // Only show toast if not generating invoice
-          if (!isGeneratingInvoiceRef.current) {
-            showInfoToast('No eligible records found', {
-              description: 'No records match your current filters.'
-            });
-          }
-        }
-      } catch (err: any) {
-        // Don't handle errors for cancelled requests
-        if (err.name === 'AbortError' || err.code === 'ERR_CANCELED') {
-          return;
-        }
-        console.error('Error fetching eligible records:', err);
-        // Only show error toast if not generating invoice
-        if (!isGeneratingInvoiceRef.current) {
-          showErrorToast('Failed to fetch eligible records', { description: err instanceof Error ? err.message : 'Unknown error' });
-        }
-        setEligibleRecords([]);
-      } finally {
-        // Only update loading state if this request wasn't cancelled
-        if (!abortController.signal.aborted) {
-          setLoadingEligible(false);
-        }
-      }
-    };
-
-    fetchEligibleRecords();
-
-    // Cleanup: abort request when component unmounts or dependencies change
-    return () => {
-      if (eligibleRecordsAbortControllerRef.current) {
-        eligibleRecordsAbortControllerRef.current.abort();
-      }
-    };
-  }, [showInvoiceModal, id, boardId, participantFilter, scheduledServiceDateRange, serviceDeliveryDateRange, transactionStatusFilter, paymentStatusFilter, jobStatusFilter, sortBy, sortOrder, refreshKey, isNdisBoard]);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      // Cancel previous request if it exists
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-
-      // Create new AbortController for this request
-      const abortController = new AbortController();
-      abortControllerRef.current = abortController;
-
-      setLoading(true);
-      setError(null);
-      try {
-        const apiUrl = isNdisBoard
-          ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator-ndis`
-          : `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/invoice-generator`;
-
-        // Build query parameters
-        const params = new URLSearchParams();
-
-        // Status filter
-        if (statusFilter !== 'all') {
-          params.append('status', statusFilter);
-        }
-
-        // Participant name filter
-        if (participantFilter && participantFilter !== 'all') {
-          params.append('participant', participantFilter);
-        }
-
-        const transactionStatusParam = getTransactionStatusSearchValue(transactionStatusFilter);
-        if (transactionStatusParam) {
-          params.append('transactionStatus', transactionStatusParam);
-        }
-
-        if (paymentStatusFilter !== 'all') {
-          params.append('paymentStatus', paymentStatusFilter);
-        }
-
-        if (isNdisBoard && jobStatusFilter !== 'all') {
-          params.append('jobStatus', jobStatusFilter);
-        }
-
-        // Date range filter for scheduled service dates (use head office timezone boundaries)
-        if (scheduledServiceDateRange?.from) {
-          params.append('startDate', dateToStartOfDayISO(new Date(scheduledServiceDateRange.from), businessTimezone));
-        }
-        if (scheduledServiceDateRange?.to || scheduledServiceDateRange?.from) {
-          const toSource = scheduledServiceDateRange?.to || scheduledServiceDateRange?.from;
-          params.append('endDate', dateToEndOfDayISO(new Date(toSource as Date), businessTimezone));
-        }
-
-        if (serviceDeliveryDateRange?.from) {
-          params.append('serviceDeliveryStart', dateToStartOfDayISO(new Date(serviceDeliveryDateRange.from), businessTimezone));
-        }
-        if (serviceDeliveryDateRange?.to || serviceDeliveryDateRange?.from) {
-          const toSource = serviceDeliveryDateRange?.to || serviceDeliveryDateRange?.from;
-          params.append('serviceDeliveryEnd', dateToEndOfDayISO(new Date(toSource as Date), businessTimezone));
-        }
-
-        params.append('sortBy', sortBy);
-        params.append('sortOrder', sortOrder);
-
-        // Pagination
-        params.append('page', currentPage.toString());
-        params.append('limit', ITEMS_PER_PAGE.toString());
-
-        // Fetch items from the backend
-        const response = await axios.get(apiUrl, {
-          params: Object.fromEntries(params),
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          signal: abortController.signal
-        });
-
-        // Validate response format
-        if (!response.data || typeof response.data !== 'object') {
-          throw new Error('Invalid data format received from server');
-        }
-
-        // Extract data and metadata from response
-        const {
-          items = [],
-          total = 0,
-          invoiced = 0,
-          pending = 0,
-          totalAmount = 0,
-          totalGovSubsidy = 0,
-          totalParticipantContribution = 0,
-          statusFieldLabel,
-        } = response.data;
-
-        if (!Array.isArray(items)) {
-          throw new Error('Invalid items format received from server');
-        }
-
-        if (isNdisBoard && statusFieldLabel) {
-          setNdisStatusFieldLabel(statusFieldLabel);
-        }
-
-        // No need to transform since backend now sends formatted data
-        const transformedRecords: ServiceRecord[] = items;
-
-        setServiceRecords(transformedRecords);
-
-        // Use summary data from API response
-        setSummary({
-          totalRecords: total,
-          invoiced: invoiced,
-          pending: pending,
-          totalValue: totalAmount,
-          totalGovSubsidy: totalGovSubsidy,
-          totalParticipantContribution: totalParticipantContribution
-        });
-        setLastSyncedAt(new Date());
-      } catch (err: any) {
-        // Don't handle errors for cancelled requests
-        if (err.name === 'AbortError' || err.code === 'ERR_CANCELED') {
-          return;
-        }
-        const errorMessage = err.response?.data?.message || err.message || 'An error occurred while fetching data';
-        setError(errorMessage);
-        console.error("Error fetching invoice data:", err);
-      } finally {
-        // Only update loading state if this request wasn't cancelled
-        if (!abortController.signal.aborted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    if (id && boardId) {
-      fetchData();
-    }
-
-    // Cleanup: abort request when component unmounts or dependencies change
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, [
+  useInvoiceGeneratorEligibleRecords({
+    showInvoiceModal,
     id,
     boardId,
     isNdisBoard,
-    statusFilter,
     participantFilter,
     scheduledServiceDateRange,
     serviceDeliveryDateRange,
@@ -930,10 +389,15 @@ export default function InvoiceGenerator() {
     jobStatusFilter,
     sortBy,
     sortOrder,
-    currentPage,
-    ITEMS_PER_PAGE,
-    refreshKey
-  ]);
+    refreshKey,
+    businessTimezone,
+    eligibleRecordsAbortControllerRef,
+    isGeneratingInvoiceRef,
+    setLoadingEligible,
+    setEligibleRecords,
+    setSelectedItems,
+    setNdisStatusFieldLabel,
+  });
 
   // Whenever filters change, reset to first page for consistent results
   useEffect(() => {
@@ -996,7 +460,7 @@ export default function InvoiceGenerator() {
     }).format(amount || 0);
   };
 
-  const getInvoiceAmount = (record: ServiceRecord) => {
+  const getInvoiceAmount = (record: InvoiceGeneratorServiceRecord) => {
     if (isNdisBoard) return record.totalAmount || 0;
     return isLowCatBoard ? (record.totalAmount || 0) : (record.participantContribution || 0);
   };
@@ -1012,38 +476,6 @@ export default function InvoiceGenerator() {
   const stripHtml = (value?: string) => {
     if (!value) return '';
     return value.replace(/<[^>]*>/g, '').trim();
-  };
-
-  const getFundingSourceCode = (fundingSource?: string) => {
-    if (!fundingSource) {
-      return '';
-    }
-
-    const fundingSourceLower = fundingSource.toLowerCase();
-
-    // Check for exact matches first (case-insensitive)
-    for (const [key, code] of Object.entries(FUNDING_SOURCE_CODE_MAP)) {
-      if (fundingSourceLower.includes(key.toLowerCase())) {
-        return code;
-      }
-    }
-
-    // Special handling for Primary Supplements and HCP
-    if (fundingSourceLower.includes('primary supplement')) {
-      return 'PS';
-    }
-    if (fundingSourceLower.includes('unspent home care package') ||
-      fundingSourceLower.includes('hcp fund') ||
-      fundingSourceLower.includes('home care package')) {
-      return 'HCP';
-    }
-
-    // Fallback: return first 4 characters uppercase if no match found
-    return fundingSource.substring(0, 4).toUpperCase();
-  };
-
-  const getTransactionStatusSearchValue = (filterValue: string) => {
-    return TRANSACTION_STATUS_FILTERS.find(option => option.value === filterValue)?.isoValue || '';
   };
 
   const handleDownloadPDF = async (fileUrl: string, invoiceNumber?: string) => {
@@ -1134,25 +566,6 @@ export default function InvoiceGenerator() {
     }
   };
 
-  const formatDateForCsv = (dateString: string | null | undefined) => {
-    if (!dateString) {
-      return '';
-    }
-    return formatDateOnlyYYYYMMDD(dateString, businessTimezone);
-  };
-
-  const formatNumberForCsv = (value: number | string | undefined | null) => {
-    if (value === null || value === undefined || value === '') {
-      return '';
-    }
-    const numeric = typeof value === 'number' ? value : Number(value);
-    if (Number.isNaN(numeric)) {
-      return '';
-    }
-    return numeric.toFixed(2);
-  };
-
-
   // Use summary data from backend response (already filtered and aggregated)
   const filteredSummary = {
     totalRecords: summary.totalRecords,
@@ -1165,667 +578,62 @@ export default function InvoiceGenerator() {
   const totalPages = Math.ceil(summary.totalRecords / ITEMS_PER_PAGE);
   const currentItems = serviceRecords; // Use the paginated data directly from the backend
 
-  const tableColumns: TableColumn[] = isNdisBoard ? [
-    {
-      key: 'participant',
-      label: 'Participant Name',
-      className: 'min-w-[200px]',
-      render: (record) => record.participant || '-'
-    },
-    {
-      key: 'service',
-      label: 'Service',
-      className: 'min-w-[260px]',
-      render: (record) => record.service || '-'
-    },
-    {
-      key: 'scheduledServiceDate',
-      label: 'Scheduled Service Date',
-      className: 'min-w-[220px]',
-      render: (record) => formatDisplayDate(record.scheduledServiceDate)
-    },
-    {
-      key: 'serviceDeliveryDate',
-      label: 'Service Delivery Date',
-      className: 'min-w-[220px]',
-      render: (record) => formatDisplayDate(record.serviceDeliveryDate)
-    },
-    {
-      key: 'jobStatus',
-      label: ndisStatusFieldLabel,
-      className: 'min-w-[160px]',
-      render: (record) => record.jobStatus || '-'
-    },
-    {
-      key: 'unit',
-      label: 'Unit',
-      className: 'min-w-[140px]',
-      render: (record) => record.unit || '-'
-    },
-    {
-      key: 'quantity',
-      label: 'Quantity',
-      className: 'min-w-[120px]',
-      render: (record) => (typeof record.quantity === 'number' ? record.quantity : record.quantity ?? '-')
-    },
-    {
-      key: 'unitPrice',
-      label: 'Unit Price',
-      className: 'min-w-[150px]',
-      render: (record) => formatCurrency(record.unitPrice)
-    },
-    {
-      key: 'gst',
-      label: 'GST',
-      className: 'min-w-[120px]',
-      render: (record) => record.gst || 'GST Free'
-    },
-    {
-      key: 'totalAmount',
-      label: 'Total Amount',
-      className: 'min-w-[150px]',
-      render: (record) => formatCurrency(record.totalAmount)
-    },
-    {
-      key: 'fileUrl',
-      label: 'PDF Download',
-      className: 'min-w-[140px]',
-      render: (record) => {
-        if (record.fileUrl) {
-          return (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 gap-2"
-              onClick={() => handleDownloadPDF(record.fileUrl!, record.invoiceNumber)}
-              title="Download PDF Invoice"
-            >
-              <Download className="h-4 w-4" />
-              {record.invoiceNumber ? `Invoice #${record.invoiceNumber}` : 'Download'}
-            </Button>
-          );
-        }
-        return '-';
-      }
-    },
-    {
-      key: 'paymentStatus',
-      label: 'Payment Status',
-      className: 'min-w-[180px]',
-      render: (record) => record.paymentStatus || '-'
-    }
-  ] : isLowCatBoard ? [
-    {
-      key: 'participant',
-      label: 'Participant Name',
-      className: 'min-w-[200px]',
-      render: (record) => record.participant || '-'
-    },
-    {
-      key: 'service',
-      label: 'Service',
-      className: 'min-w-[220px]',
-      render: (record) => record.service || '-'
-    },
-    {
-      key: 'scheduledServiceDate',
-      label: 'Scheduled Service Date',
-      className: 'min-w-[220px]',
-      render: (record) => formatDisplayDate(record.scheduledServiceDate)
-    },
-    {
-      key: 'serviceDeliveryDate',
-      label: 'Service Delivery Date',
-      className: 'min-w-[220px]',
-      render: (record) => formatDisplayDate(record.serviceDeliveryDate)
-    },
-    {
-      key: 'transactionStatus',
-      label: 'Transaction Status',
-      className: 'min-w-[220px]',
-      render: (record) => record.transactionStatus || '-'
-    },
-    {
-      key: 'unit',
-      label: 'Unit',
-      className: 'min-w-[140px]',
-      render: (record) => record.unit || '-'
-    },
-    {
-      key: 'quantity',
-      label: 'Quantity',
-      className: 'min-w-[120px]',
-      render: (record) => (typeof record.quantity === 'number' ? record.quantity : record.quantity ?? '-')
-    },
-    {
-      key: 'unitPrice',
-      label: 'Unit Price',
-      className: 'min-w-[150px]',
-      render: (record) => formatCurrency(record.unitPrice)
-    },
-    {
-      key: 'totalAmount',
-      label: 'Total Amount',
-      className: 'min-w-[150px]',
-      render: (record) => formatCurrency(record.totalAmount)
-    },
-    {
-      key: 'fundingSource',
-      label: 'Funding Source',
-      className: 'min-w-[200px]',
-      render: (record) => record.fundingSource || '-'
-    },
-    {
-      key: 'notes',
-      label: 'Notes',
-      className: 'min-w-[220px]',
-      render: (record) => {
-        const cleanNotes = stripHtml(record.notes);
-        return cleanNotes ? (
-          <span title={cleanNotes} className="block max-h-12 overflow-hidden text-sm text-muted-foreground">
-            {cleanNotes}
-          </span>
-        ) : '-';
-      }
-    },
-    {
-      key: 'fileUrl',
-      label: 'PDF Download',
-      className: 'min-w-[100px]',
-      render: (record) => {
-        if (record.fileUrl) {
-          return (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 gap-2"
-              onClick={() => handleDownloadPDF(record.fileUrl!, record.invoiceNumber)}
-              title="Download PDF Invoice"
-            >
-              <Download className="h-4 w-4" />
-              {record.invoiceNumber ? `Invoice #${record.invoiceNumber}` : 'Download'}
-            </Button>
-          );
-        }
-        return '-';
-      }
-    },
-    {
-      key: 'paymentStatus',
-      label: 'Payment Status',
-      className: 'min-w-[180px]',
-      render: (record) => record.paymentStatus || '-'
-    }
-  ] : [
-    {
-      key: 'participant',
-      label: 'Participant',
-      className: 'min-w-[200px]',
-      render: (record) => record.participant || '-'
-    },
-    {
-      key: 'service',
-      label: 'Service',
-      className: 'min-w-[220px]',
-      render: (record) => record.service || '-'
-    },
-    {
-      key: 'scheduledServiceDate',
-      label: 'Scheduled Service Date',
-      className: 'min-w-[220px]',
-      render: (record) => formatDisplayDate(record.scheduledServiceDate)
-    },
-    {
-      key: 'serviceDeliveryDate',
-      label: 'Service Delivery Date',
-      className: 'min-w-[220px]',
-      render: (record) => formatDisplayDate(record.serviceDeliveryDate)
-    },
-    {
-      key: 'transactionStatus',
-      label: 'Transaction Status',
-      className: 'min-w-[220px]',
-      render: (record) => record.transactionStatus || '-'
-    },
-    {
-      key: 'unit',
-      label: 'Unit',
-      className: 'min-w-[140px]',
-      render: (record) => record.unit || '-'
-    },
-    {
-      key: 'quantity',
-      label: 'Quantity',
-      className: 'min-w-[120px]',
-      render: (record) => (typeof record.quantity === 'number' ? record.quantity : record.quantity ?? '-')
-    },
-    {
-      key: 'unitPrice',
-      label: 'Unit Price',
-      className: 'min-w-[150px]',
-      render: (record) => formatCurrency(record.unitPrice)
-    },
-    {
-      key: 'totalAmount',
-      label: 'Total Amount',
-      className: 'min-w-[150px]',
-      render: (record) => formatCurrency(record.totalAmount)
-    },
-    {
-      key: 'govSubsidy',
-      label: 'Government Subsidy',
-      className: 'min-w-[150px]',
-      render: (record) => formatCurrency(record.govSubsidy)
-    },
-    {
-      key: 'participantContribution',
-      label: 'Participant Contribution',
-      className: 'min-w-[190px]',
-      render: (record) => formatCurrency(record.participantContribution)
-    },
-    {
-      key: 'fundingSource',
-      label: 'Funding Source',
-      className: 'min-w-[200px]',
-      render: (record) => record.fundingSource || '-'
-    },
-    {
-      key: 'notes',
-      label: 'Notes',
-      className: 'min-w-[220px]',
-      render: (record) => {
-        const cleanNotes = stripHtml(record.notes);
-        return cleanNotes ? (
-          <span title={cleanNotes} className="block max-h-12 overflow-hidden text-sm text-muted-foreground">
-            {cleanNotes}
-          </span>
-        ) : '-';
-      }
-    },
-    {
-      key: 'fileUrl',
-      label: 'PDF Download',
-      className: 'min-w-[100px]',
-      render: (record) => {
-        if (record.fileUrl) {
-          return (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 gap-2"
-              onClick={() => handleDownloadPDF(record.fileUrl!, record.invoiceNumber)}
-              title="Download PDF Invoice"
-            >
-              <Download className="h-4 w-4" />
-              {record.invoiceNumber ? `Invoice #${record.invoiceNumber}` : 'Download'}
-            </Button>
-          );
-        }
-        return '-';
-      }
-    },
-    {
-      key: 'paymentStatus',
-      label: 'Payment Status',
-      className: 'min-w-[180px]',
-      render: (record) => record.paymentStatus || '-'
-    }
-  ];
+  const tableColumns = useMemo(
+    () => buildInvoiceGeneratorTableColumns({
+      isNdisBoard,
+      isLowCatBoard,
+      ndisStatusFieldLabel,
+      formatDisplayDate,
+      formatCurrency,
+      stripHtml,
+      onDownloadPdf: handleDownloadPDF,
+    }),
+    [isNdisBoard, isLowCatBoard, ndisStatusFieldLabel, businessTimezone, handleDownloadPDF],
+  );
 
   // Export handlers
   const handleExportCSV = async () => {
     try {
       setExportingCSV(true);
-
-      if (isNdisBoard) {
-        const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/export/${id}/${boardId}/invoice-csv-ndis`;
-        const params = new URLSearchParams();
-
-        if (participantFilter && participantFilter !== 'all') {
-          params.append('participant', participantFilter);
-        }
-        if (scheduledServiceDateRange?.from) {
-          params.append('startDate', dateToStartOfDayISO(new Date(scheduledServiceDateRange.from), businessTimezone));
-        }
-        if (scheduledServiceDateRange?.to) {
-          params.append('endDate', dateToEndOfDayISO(new Date(scheduledServiceDateRange.to), businessTimezone));
-        }
-
-        if (serviceDeliveryDateRange?.from) {
-          params.append('serviceDeliveryStart', dateToStartOfDayISO(new Date(serviceDeliveryDateRange.from), businessTimezone));
-        }
-        if (serviceDeliveryDateRange?.to) {
-          params.append('serviceDeliveryEnd', dateToEndOfDayISO(new Date(serviceDeliveryDateRange.to), businessTimezone));
-        }
-
-        if (paymentStatusFilter !== 'all') {
-          params.append('paymentStatus', paymentStatusFilter);
-        }
-
-        if (jobStatusFilter !== 'all') {
-          params.append('jobStatus', jobStatusFilter);
-        }
-
-        params.append('sortBy', sortBy);
-        params.append('sortOrder', sortOrder);
-        params.append('limit', 'all');
-
-        const response = await axios.get(apiUrl, {
-          params: Object.fromEntries(params),
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          }
-        });
-
-        const allItems: Array<Record<string, unknown>> = response.data?.items || [];
-        const skippedCount: number = response.data?.skippedCount || 0;
-        const exportDuration = response.data?.exportDurationMs;
-
-        if (skippedCount > 0) {
-          showWarningToast(`${skippedCount} record${skippedCount === 1 ? '' : 's'} were skipped because required data was missing.`);
-        }
-
-        if (allItems.length === 0) {
-          showErrorToast('No records to export.');
-          setExportingCSV(false);
-          return;
-        }
-
-        const escapeForCsv = (value: unknown) => {
-          if (value === null || value === undefined || value === '') {
-            return '';
-          }
-          const stringValue = String(value).replace(/"/g, '""');
-          return `"${stringValue}"`;
-        };
-
-        const csvHeaders = [
-          'RegistrationNumber',
-          'NDISNumber',
-          'SupportDeliveredFrom',
-          'SupportDeliveredTo',
-          'SupportNumber',
-          'ClaimReference',
-          'Quantity',
-          'Hours',
-          'UnitPrice',
-          'GSTCode',
-          'ClaimType',
-          'CancellationReason',
-          'ABN of Support Provider'
-        ];
-
-        const csvRows: string[] = [csvHeaders.join(',')];
-        allItems.forEach((row) => {
-          csvRows.push(
-            csvHeaders
-              .map((h) => escapeForCsv((row as any)[h]))
-              .join(',')
-          );
-        });
-
-        const csvContent = csvRows.join('\n');
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-
-        const generateFileName = () => {
-          const uniqueCode = Math.random().toString(36).substring(2, 7).toUpperCase();
-          const currentDate = new Date();
-          const timestamp = `${currentDate.getFullYear().toString().slice(2)}${(currentDate.getMonth() + 1).toString().padStart(2, '0')}${currentDate.getDate().toString().padStart(2, '0')}${currentDate.getHours().toString().padStart(2, '0')}${currentDate.getMinutes().toString().padStart(2, '0')}${currentDate.getSeconds().toString().padStart(2, '0')}`;
-          const participantName = participantFilter && participantFilter !== 'all' ? participantFilter : '(Multiple)';
-          return `NDIS_CLAIM~${timestamp}~${participantName}~${uniqueCode}.csv`;
-        };
-
-        link.href = url;
-        link.download = generateFileName();
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-
-        setTimeout(() => {
-          document.body.removeChild(link);
-          URL.revokeObjectURL(url);
-        }, 100);
-
-        setExportingCSV(false);
-        const durationText = exportDuration ? ` (${(exportDuration / 1000).toFixed(1)}s)` : '';
-        showSuccessToast(`Successfully exported ${allItems.length} records to CSV${durationText}.`);
-        return;
-      }
-
-      // Use optimized export endpoint for faster CSV generation
-      const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/export/${id}/${boardId}/invoice-csv`;
-      const params = new URLSearchParams();
-
-      if (participantFilter && participantFilter !== 'all') {
-        params.append('participant', participantFilter);
-      }
-      if (scheduledServiceDateRange?.from) {
-        params.append('startDate', dateToStartOfDayISO(new Date(scheduledServiceDateRange.from), businessTimezone));
-      }
-      if (scheduledServiceDateRange?.to) {
-        params.append('endDate', dateToEndOfDayISO(new Date(scheduledServiceDateRange.to), businessTimezone));
-      }
-
-      if (serviceDeliveryDateRange?.from) {
-        params.append('serviceDeliveryStart', dateToStartOfDayISO(new Date(serviceDeliveryDateRange.from), businessTimezone));
-      }
-      if (serviceDeliveryDateRange?.to) {
-        params.append('serviceDeliveryEnd', dateToEndOfDayISO(new Date(serviceDeliveryDateRange.to), businessTimezone));
-      }
-
-      const transactionStatusParam = getTransactionStatusSearchValue(transactionStatusFilter);
-      if (transactionStatusParam) {
-        params.append('transactionStatus', transactionStatusParam);
-      }
-
-      if (paymentStatusFilter !== 'all') {
-        params.append('paymentStatus', paymentStatusFilter);
-      }
-
-      params.append('sortBy', sortBy);
-      params.append('sortOrder', sortOrder);
-      params.append('limit', 'all'); // Fetch all records for export
-
-      const response = await axios.get(apiUrl, {
-        params: Object.fromEntries(params),
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
+      await exportInvoiceGeneratorCsv({
+        axios,
+        isNdisBoard,
+        id,
+        boardId,
+        participantFilter,
+        scheduledServiceDateRange,
+        serviceDeliveryDateRange,
+        transactionStatusFilter,
+        paymentStatusFilter,
+        jobStatusFilter,
+        sortBy,
+        sortOrder,
+        businessTimezone,
+        toasts: { showSuccessToast, showErrorToast, showWarningToast },
       });
-
-      const allItems: ServiceRecord[] = response.data?.items || [];
-      const exportDuration = response.data?.exportDurationMs;
-
-      if (allItems.length === 0) {
-        showErrorToast('No records to export.');
-        setExportingCSV(false);
-        return;
-      }
-
-      const escapeForCsv = (value: unknown) => {
-        if (value === null || value === undefined || value === '') {
-          return '';
-        }
-        const stringValue = String(value).replace(/"/g, '""');
-        return `"${stringValue}"`;
-      };
-
-      const csvHeaders = [
-        'Item External Reference Identifier',
-        'Care Recipient Identifier',
-        'Service Identifier',
-        'Delivery Date',
-        'Unit Type',
-        'Quantity',
-        'Price Per Unit',
-        'Funding Source',
-        'Delivered By Third Party',
-        'Item or Wraparound',
-        'Item Description Code',
-        'Item Description',
-        'Wraparound Description Code',
-        'Wraparound Description',
-        'Prescribed Item',
-        'Purchased Method Type',
-        'Loaned by Organisation Name',
-        'Loaned By Invoice Number',
-        'Health Professional Type Code',
-        'Health Professional Type Other',
-        'Item First Payment'
-      ];
-
-      // Add CSV headers
-      const csvRows: string[] = [csvHeaders.join(',')];
-
-      allItems.forEach((item, index) => {
-        // Generate GUID for Item External Reference Identifier
-        const invoiceNumber = item.id;
-        const careRecipientIdentifier = item.careRecipientIdentifier || '';
-        let serviceIdentifier = item.serviceIdentifier || '';
-        if (serviceIdentifier.includes('/')) {
-          serviceIdentifier = serviceIdentifier.split('/')[0].trim();
-        }
-
-        // Backend already provides formatted values - use them directly
-        const deliveredByThirdParty = item.deliveredByThirdParty || '';
-        const itemOrWraparound = item.itemOrWraparound || '';
-
-        let itemDescriptionCode = '';
-        let itemDescription = '';
-        if (itemOrWraparound === 'Item') {
-          itemDescriptionCode = item.itemDescriptionCode || '';
-          itemDescription = item.itemDescription || '';
-        } else if (itemOrWraparound === 'Wraparound') {
-          itemDescriptionCode = '';
-          itemDescription = '';
-        }
-
-        // Wraparound Description Code and Wraparound Description rules:
-        let wraparoundDescriptionCode = '';
-        let wraparoundDescription = '';
-        if (itemOrWraparound === 'Wraparound') {
-          wraparoundDescriptionCode = item.wraparoundDescriptionCode || '';
-          wraparoundDescription = item.wraparoundDescription || '';
-        } else if (itemOrWraparound === 'Item') {
-          wraparoundDescriptionCode = '';
-          wraparoundDescription = '';
-        }
-
-        const prescribedItem = item.prescribedItem || 'N';
-
-        // Purchased Method Type should be empty if itemPurchasedMethod is undefined/null/empty
-        const purchasedMethodType = item.itemPurchasedMethod || '';
-        // Use loanedByOrganisationName and loanedByInvoiceNumber from backend (already set based on LOANED status)
-        const loanedByOrganisationName = purchasedMethodType === 'LOANED' ? (item.loanedByOrganisationName || '') : '';
-        const loanedByInvoiceNumber = purchasedMethodType === 'LOANED' ? (item.loanedByInvoiceNumber || '') : '';
-
-        // Health Professional Type Code and Other - include for all items (backend sets these when available)
-        const healthProfessionalTypeCode = item.healthProfessionalTypeCode || '';
-        const healthProfessionalTypeOther = item.healthProfessionalTypeOther || '';
-
-        const serviceDeliveryDateCsv = formatDateForCsv(item.serviceDeliveryDate);
-        // Get funding source code - convert from name to code
-        const fundingSourceCode = getFundingSourceCode(item.fundingSource);
-        const itemFirstPayment = item.itemFirstPayment || 'False';
-
-        csvRows.push(
-          [
-            escapeForCsv(invoiceNumber),
-            escapeForCsv(careRecipientIdentifier),
-            escapeForCsv(serviceIdentifier),
-            escapeForCsv(serviceDeliveryDateCsv),
-            escapeForCsv(item.unit || ''),
-            escapeForCsv(item.quantity ?? ''),
-            escapeForCsv(formatNumberForCsv(item.unitPrice)),
-            escapeForCsv(fundingSourceCode || ''),
-            escapeForCsv(deliveredByThirdParty),
-            escapeForCsv(itemOrWraparound),
-            escapeForCsv(itemDescriptionCode),
-            escapeForCsv(itemDescription),
-            escapeForCsv(wraparoundDescriptionCode),
-            escapeForCsv(wraparoundDescription),
-            escapeForCsv(prescribedItem),
-            escapeForCsv(purchasedMethodType),
-            escapeForCsv(loanedByOrganisationName),
-            escapeForCsv(loanedByInvoiceNumber),
-            escapeForCsv(healthProfessionalTypeCode),
-            escapeForCsv(healthProfessionalTypeOther),
-            escapeForCsv(itemFirstPayment)
-          ].join(',')
-        );
-      });
-
-      const csvContent = csvRows.join('\n');
-
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-
-      const GenerateClaimExportFileName = () => {
-        // Generate a 5-character unique uppercase code using random values
-        const uniqueCode = Math.random().toString(36).substring(2, 7).toUpperCase();
-        let currentDate = new Date();
-        let timestamp = `${currentDate.getFullYear().toString().slice(2)}${(currentDate.getMonth() + 1).toString().padStart(2, '0')}${currentDate.getDate().toString().padStart(2, '0')}${currentDate.getHours().toString().padStart(2, '0')}${currentDate.getMinutes().toString().padStart(2, '0')}${currentDate.getSeconds().toString().padStart(2, '0')}`;
-        let participantName = participantFilter && participantFilter !== 'all' ? participantFilter : '(Multiple)';
-        return `CLAIM~${timestamp}~${participantName}~${uniqueCode}.csv`;
-      }
-
-      const fileName = GenerateClaimExportFileName();
-
-      link.href = url;
-      link.download = fileName;
-      link.style.display = 'none';
-      document.body.appendChild(link);
-      link.click();
-
-      // Clean up
-      setTimeout(() => {
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      }, 100);
-
-      setExportingCSV(false);
-      const durationText = exportDuration ? ` (${(exportDuration / 1000).toFixed(1)}s)` : '';
-      showSuccessToast(`Successfully exported ${allItems.length} records to CSV${durationText}.`);
     } catch (err: any) {
       console.error('Error exporting CSV:', err);
       showErrorToast('CSV export failed', {
         description: getApiErrorMessage(
           err,
-          'Unable to export invoice CSV right now. Please try again.'
+          'Unable to export invoice CSV right now. Please try again.',
         ),
       });
+    } finally {
       setExportingCSV(false);
     }
   };
 
   const handleManualSync = async () => {
-    // Enhanced validation to handle edge cases
-    const isValidWorkspaceId = id && 
-      typeof id === 'string' && 
-      id.trim() !== '' && 
-      id !== 'undefined' && 
-      id !== 'null';
-    
-    const isValidBoardId = boardId && 
-      typeof boardId === 'string' && 
-      boardId.trim() !== '' && 
-      boardId !== 'undefined' && 
-      boardId !== 'null';
-    
-    if (!isValidWorkspaceId || !isValidBoardId) {
-      console.error('Invalid parameters for manual sync:', { 
-        workspaceId: id, 
+    if (!isValidRouteIdParam(id) || !isValidRouteIdParam(boardId)) {
+      console.error('Invalid parameters for manual sync:', {
+        workspaceId: id,
         boardId,
         workspaceIdType: typeof id,
         boardIdType: typeof boardId
       });
-      showErrorToast('Workspace or board missing', { 
-        description: 'Please navigate back and select a workspace and board again. The current URL may be invalid.' 
+      showErrorToast('Workspace or board missing', {
+        description: 'Please navigate back and select a workspace and board again. The current URL may be invalid.'
       });
       return;
     }
@@ -1833,9 +641,9 @@ export default function InvoiceGenerator() {
     try {
       setIsManualSyncing(true);
       const apiUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/sync/board/manual`;
-      const response = await axios.post(apiUrl, { 
-        workspaceId: id.trim(), 
-        boardId: boardId.trim() 
+      const response = await axios.post(apiUrl, {
+        workspaceId: id.trim(),
+        boardId: boardId.trim()
       }, {
         headers: {
           'Content-Type': 'application/json',
@@ -1848,23 +656,12 @@ export default function InvoiceGenerator() {
           description: 'Your job is in the queue and will be processed shortly. Data will refresh automatically when complete. You can track progress in the sync indicator.'
         });
 
-        // Clear any existing interval
         if (syncCheckIntervalRef.current) {
           clearInterval(syncCheckIntervalRef.current);
           syncCheckIntervalRef.current = null;
         }
 
-        // Get board name from sessionStorage or use boardId as fallback
-        let boardName = boardId;
-        try {
-          const currentBoardData = sessionStorage.getItem('currentBoard');
-          if (currentBoardData) {
-            const boardData = JSON.parse(currentBoardData);
-            boardName = boardData.boardName || boardId;
-          }
-        } catch (e) {
-          // Use boardId as fallback
-        }
+        const boardName = getBoardNameFromSession(boardId);
 
         // Initialize sync status in context immediately
         // This will be updated by sync-status-indicator as it polls the API every 10 seconds
@@ -1997,44 +794,28 @@ export default function InvoiceGenerator() {
   // Generate PDF invoice from modal
   const handleGeneratePDFInvoice = async () => {
     try {
-      if (!selectedItems.size) {
-        showErrorToast('Please select at least one item to include in the invoice.');
+      const validationError = validateInvoiceGenerationInputs(selectedItems.size, invoiceDate, dueDate);
+      if (validationError) {
+        showErrorToast(validationError);
         return;
       }
 
-      if (!invoiceDate) {
-        showErrorToast('Please enter an invoice date.');
-        return;
-      }
-
-      if (!dueDate) {
-        showErrorToast('Please enter a due date.');
-        return;
-      }
-
-      // Filter to only selected items
       const selectedRecords = eligibleRecords.filter(record => selectedItems.has(record.id));
-
       if (!selectedRecords.length) {
         showErrorToast('No items selected for invoice generation.');
         return;
       }
 
-      // Get participant name from first record
       const participantName = selectedRecords[0]?.participant || '';
 
       setGeneratingPDF(true);
       isGeneratingInvoiceRef.current = true;
 
-      // Endpoint generates ONE PDF for all selected items
       const apiUrl = isNdisBoard
         ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/${id}/${boardId}/invoicendis-invoice-generator`
         : `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/${id}/${boardId}/invoiceparticipanttax`;
 
-      // Extract item IDs from selected records - backend expects itemIds array
-      const itemIds = isNdisBoard
-        ? Array.from(new Set(selectedRecords.map((r: any) => (r?.sourceItemId || String(r?.id || '')).toString().split(':')[0]).filter(Boolean)))
-        : selectedRecords.map(record => record.id);
+      const itemIds = buildInvoiceItemIds(selectedRecords, isNdisBoard);
 
       const payload = {
         itemIds: itemIds,
@@ -2050,74 +831,24 @@ export default function InvoiceGenerator() {
       });
 
       if (resp.status === 200 && resp.data) {
-        const { invoiceNumber, fileUrl, itemCount } = resp.data;
-
-        if (!invoiceNumber) {
-          isGeneratingInvoiceRef.current = false;
-          const reason = resp.data.message || 'Invoice could not be generated.';
-          showErrorToast(`Failed to generate ${invoiceLabel}`, { description: reason });
-          return;
-        }
-
-        if (!isNdisBoard) {
-          try {
-            const updateUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/update-status`;
-            await axios.post(updateUrl, {
-              itemIds: Array.from(selectedItems),
-              invoiceNumber: invoiceNumber,
-              status: 'invoiced',
-              fileUrl
-            }, {
-              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
-            });
-          } catch (updateErr: any) {
-            console.error('Error updating item statuses:', updateErr);
-            showInfoToast('Invoice generated but status update failed', {
-              description: 'The invoice was created but item statuses could not be updated. Please refresh the page.'
-            });
-          }
-        }
-
-        if (fileUrl) {
-          // Download the PDF file instead of opening in new tab
-          try {
-            const pdfResponse = await fetch(fileUrl);
-            const pdfBlob = await pdfResponse.blob();
-            const pdfUrl = URL.createObjectURL(pdfBlob);
-            const link = document.createElement('a');
-            link.href = pdfUrl;
-            link.download = `Invoice_${invoiceNumber}_${participantName.replace(/\s+/g, '_')}.pdf`;
-            link.style.display = 'none';
-            document.body.appendChild(link);
-            link.click();
-
-            // Clean up
-            setTimeout(() => {
-              document.body.removeChild(link);
-              URL.revokeObjectURL(pdfUrl);
-            }, 100);
-          } catch (downloadErr: any) {
-            console.error('Error downloading PDF:', downloadErr);
-            // Fallback to opening in new tab if download fails
-            window.open(fileUrl, '_blank');
-            showInfoToast('PDF opened in new tab', {
-              description: 'Download failed, opened PDF in new tab instead.'
-            });
-          }
-        }
-
-        setShowInvoiceModal(false);
-        showSuccessToast(`${invoiceLabel} generated`, {
-          description: `Invoice ${invoiceNumber} for ${participantName} (${itemCount} item${itemCount === 1 ? '' : 's'}) created. You can download it from the PDF Download column in the Service Records table.`
+        await finalizePdfInvoiceGeneration({
+          respData: resp.data,
+          isNdisBoard,
+          id,
+          boardId,
+          selectedItems,
+          participantName,
+          invoiceLabel,
+          fileUrl: resp.data.fileUrl,
+          itemCount: resp.data.itemCount,
+          axios,
+          showErrorToast,
+          showInfoToast,
+          showSuccessToast,
+          setShowInvoiceModal,
+          handleManualRefresh,
+          isGeneratingInvoiceRef,
         });
-        // Refresh data to show updated invoice numbers (silent mode to avoid showing another toast)
-        setTimeout(() => {
-          handleManualRefresh(true);
-          // Reset the flag after a delay to allow refresh to complete
-          setTimeout(() => {
-            isGeneratingInvoiceRef.current = false;
-          }, 2000);
-        }, 1000);
       } else {
         isGeneratingInvoiceRef.current = false;
         showErrorToast('Unexpected response while generating invoice');
@@ -2134,808 +865,50 @@ export default function InvoiceGenerator() {
 
   // Generate Xero invoice from modal
   const handleGenerateXeroInvoice = async () => {
-    try {
-      if (!selectedItems.size) {
-        showErrorToast('Please select at least one item to include in the invoice.');
-        return;
-      }
-
-      if (!invoiceDate) {
-        showErrorToast('Please enter an invoice date.');
-        return;
-      }
-
-      if (!dueDate) {
-        showErrorToast('Please enter a due date.');
-        return;
-      }
-
-      // Filter to only selected items
-      const selectedRecords = eligibleRecords.filter(record => selectedItems.has(record.id));
-
-      if (!selectedRecords.length) {
-        showErrorToast('No items selected for invoice generation.');
-        return;
-      }
-
-      // Get participant name from first record
-      const participantName = selectedRecords[0]?.participant || '';
-
-      setGeneratingXero(true);
-      isGeneratingInvoiceRef.current = true;
-
-      // Endpoint generates ONE Xero invoice for all selected items
-      const apiUrl = isNdisBoard
-        ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/${id}/${boardId}/invoicendis-invoice-generator`
-        : `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/xero/${id}/${boardId}/invoiceparticipanttax`;
-
-      const itemIds = isNdisBoard
-        ? Array.from(new Set(selectedRecords.map((r: any) => (r?.sourceItemId || String(r?.id || '')).toString().split(':')[0]).filter(Boolean)))
-        : selectedRecords.map(record => record.id);
-
-      const payload = {
-        itemIds: itemIds,
-        items: selectedRecords,
-        participantName: participantName,
-        invoiceDate: invoiceDate,
-        dueDate: dueDate,
-        isLowCat: isLowCatBoard
-      };
-
-      const resp = await axios.post(apiUrl, payload, {
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
-      });
-
-      if (resp.status === 200 && resp.data) {
-        const { invoiceNumber, invoiceUrl, itemCount } = resp.data;
-
-        if (!invoiceNumber) {
-          isGeneratingInvoiceRef.current = false;
-          const reason = resp.data.message || 'Invoice could not be created in Xero.';
-          showErrorToast(`Failed to generate Xero ${invoiceLabel}`, { description: reason });
-          return;
-        }
-
-        if (!isNdisBoard) {
-          try {
-            const updateUrl = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/update-status`;
-            await axios.post(updateUrl, {
-              itemIds: Array.from(selectedItems),
-              invoiceNumber: invoiceNumber,
-              status: 'invoiced'
-            }, {
-              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
-            });
-          } catch (updateErr: any) {
-            console.error('Error updating item statuses:', updateErr);
-            showInfoToast('Xero invoice created but status update failed', {
-              description: 'The invoice was created in Xero but item statuses could not be updated. Please refresh the page.'
-            });
-          }
-        }
-
-        if (invoiceUrl) {
-          window.open(invoiceUrl, '_blank');
-        }
-
-        setShowInvoiceModal(false);
-        showSuccessToast(`Xero ${invoiceLabel} generated`, {
-          description: `Invoice ${invoiceNumber} for ${participantName} (${itemCount} item${itemCount === 1 ? '' : 's'}) created in Xero.`
-        });
-        // Refresh data to show updated invoice numbers (silent mode to avoid showing another toast)
-        setTimeout(() => {
-          handleManualRefresh(true);
-          // Reset the flag after a delay to allow refresh to complete
-          setTimeout(() => {
-            isGeneratingInvoiceRef.current = false;
-          }, 2000);
-        }, 1000);
-      } else {
-        isGeneratingInvoiceRef.current = false;
-        showErrorToast('Unexpected response while generating Xero invoice');
-      }
-    } catch (err: any) {
-      console.error('Error generating Xero invoice', err);
-      isGeneratingInvoiceRef.current = false;
-      const errorMessage = err.response?.data?.message || err.message || 'Unknown error occurred';
-      showErrorToast('Failed to generate Xero invoice', { description: errorMessage });
-    } finally {
-      setGeneratingXero(false);
-    }
+    await generateXeroInvoiceFromModal({
+      selectedItems,
+      invoiceDate,
+      dueDate,
+      eligibleRecords,
+      isNdisBoard,
+      isLowCatBoard,
+      id,
+      boardId,
+      invoiceLabel,
+      axios,
+      showErrorToast,
+      showInfoToast,
+      showSuccessToast,
+      setShowInvoiceModal,
+      handleManualRefresh,
+      isGeneratingInvoiceRef,
+      setGeneratingXero,
+      validateInvoiceGenerationInputs,
+      buildInvoiceItemIds,
+    });
   };
 
-  return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      <div className="container mx-auto py-8">
-        <Button
-          variant="ghost"
-          className="mb-6"
-          onClick={() => router.push(`/workspace/${id}/board/${boardId}`)}
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Board
-        </Button>
+  const viewProps = {
+    router, id, boardId,
+    isNdisBoard, isLowCatBoard, isNdisCertificationOrVerificationBoard,
+    handleManualSync, isManualSyncing, syncStatuses, showHelpDialog, setShowHelpDialog,
+    handleExportCSV, exportingCSV, handleOpenInvoiceModal, invoiceLabel,
+    lastSyncedAt, participantFilter, setParticipantFilter, uniqueParticipants,
+    scheduledServiceDateRange, setScheduledServiceDateRange,
+    serviceDeliveryDateRange, setServiceDeliveryDateRange,
+    transactionStatusFilter, setTransactionStatusFilter,
+    paymentStatusFilter, setPaymentStatusFilter,
+    ndisPaymentStatusOptions, jobStatusFilter, setJobStatusFilter,
+    ndisStatusFieldLabel, statusFilter, setStatusFilter,
+    sortBy, setSortBy, sortOrder, setSortOrder, clearAllFilters,
+    loading, error, filteredSummary, formatCurrency, getInvoiceAmount, formatDate,
+    tableContainerRef, canScrollLeft, canScrollRight, handleHorizontalScroll,
+    tableColumns, currentItems, totalPages, currentPage, setCurrentPage,
+    showInvoiceModal, setShowInvoiceModal, eligibleRecords, setEligibleRecords, selectedItems, setSelectedItems,
+    loadingEligible, handleSelectAll, handleToggleItem, invoiceDate, setInvoiceDate,
+    dueDate, setDueDate, generatingPDF, generatingXero, handleGeneratePDFInvoice,
+    handleGenerateXeroInvoice, isCareManagementBoard, PAYMENT_STATUS_FILTERS,
+  };
 
-        <div className="space-y-6">
-          <Card className="p-6">
-            {/* Header with Export Buttons */}
-            <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-              <div className="space-y-2">
-                <h1 className="text-2xl font-bold">
-                  Invoice Generator
-                </h1>
-                <p className="text-muted-foreground">
-                  {isNdisBoard
-                    ? 'Manage NDIS service records and export NDIA claim CSV.'
-                    : isLowCatBoard
-                      ? 'Manage service records and generate tax invoices.'
-                      : 'Manage service records, submit claims and generate participant tax invoices.'}
-                </p>
-              </div>
-              <div className="flex flex-col items-end gap-3">
-                <div className="flex flex-wrap justify-end gap-2 pl-2">
-                  <div className="flex flex-col items-start gap-2">
-                    <div className="flex gap-2">
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="secondary"
-                              className="gap-2"
-                              onClick={handleManualSync}
-                              disabled={isManualSyncing || syncStatuses.some(sync => sync.boardId === boardId && (sync.status === 'started' || sync.status === 'in-progress'))}
-                            >
-                              {isManualSyncing ? (
-                                <>
-                                  <Spinner className="h-4 w-4" />
-                                  Syncing...
-                                </>
-                              ) : (
-                                <>
-                                  Resync Data
-                                </>
-                              )}
-                              <HelpCircle className="h-4 w-4" aria-label="Learn more about Resync Data" onClick={(e) => { e.stopPropagation(); setShowHelpDialog(true); }} />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            It downloads brand-new data from the server, including any edits and new records.
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                      <Button
-                        variant="outline"
-                        onClick={handleExportCSV}
-                        className="gap-2"
-                        disabled={exportingCSV}
-                      >
-                        <FileSpreadsheet className="h-4 w-4" />
-                        Export to CSV
-                      </Button>
-                      <Button
-                        className="gap-2"
-                        onClick={handleOpenInvoiceModal}
-                      >
-                        <Receipt className="h-4 w-4" />
-                        {invoiceLabel}
-                      </Button>
-                    </div>
-                    <div className="flex items-start gap-2 text-sm text-muted-foreground">
-                      <Clock className="h-4 w-4" />
-                      {lastSyncedAt ? (
-                        <span>Last refreshed {formatDistanceToNow(lastSyncedAt, { addSuffix: true })}</span>
-                      ) : (
-                        <span>Not refreshed yet</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Search and Filters */}
-            <div className="flex flex-nowrap gap-4 mb-6 overflow-x-auto p-2">
-              <div className="w-fit flex-shrink-0">
-                <Select value={participantFilter} onValueChange={setParticipantFilter}>
-                  <SelectTrigger className="w-full">
-                    <div className="flex items-center gap-2 min-w-0 w-full">
-                      <Search className="h-4 w-4 flex-shrink-0" />
-                      <SelectValue placeholder="Participant" className="truncate" />
-                    </div>
-                  </SelectTrigger>
-                  <SelectContent className="max-h-[300px] overflow-y-auto">
-                    <SelectItem value="all">All Participants</SelectItem>
-                    {uniqueParticipants.map((participant) => (
-                      <SelectItem key={participant} value={participant}>
-                        {participant}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-fit justify-start text-left font-normal flex-shrink-0">
-                    <div className="flex items-center gap-2 min-w-0 w-full">
-                      <Calendar className="h-4 w-4 flex-shrink-0" />
-                      <span className="truncate">
-                        {scheduledServiceDateRange?.from ? (
-                          scheduledServiceDateRange.to ? (
-                            <>
-                              {format(scheduledServiceDateRange.from, "dd/MM/yyyy")} - {format(scheduledServiceDateRange.to, "dd/MM/yyyy")}
-                            </>
-                          ) : (
-                            format(scheduledServiceDateRange.from, "dd/MM/yyyy")
-                          )
-                        ) : (
-                          "Scheduled Service Date"
-                        )}
-                      </span>
-                    </div>
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <CalendarComponent
-                    mode="range"
-                    selected={scheduledServiceDateRange}
-                    onSelect={setScheduledServiceDateRange}
-                    numberOfMonths={2}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-              {scheduledServiceDateRange?.from && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setScheduledServiceDateRange(undefined)}
-                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              )}
-
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-fit justify-start text-left font-normal flex-shrink-0">
-                    <div className="flex items-center gap-2 min-w-0 w-full">
-                      <Calendar className="h-4 w-4 flex-shrink-0" />
-                      <span className="truncate">
-                        {serviceDeliveryDateRange?.from ? (
-                          serviceDeliveryDateRange.to ? (
-                            <>
-                              {format(serviceDeliveryDateRange.from, "dd/MM/yyyy")} - {format(serviceDeliveryDateRange.to, "dd/MM/yyyy")}
-                            </>
-                          ) : (
-                            format(serviceDeliveryDateRange.from, "dd/MM/yyyy")
-                          )
-                        ) : (
-                          "Service Delivery Date"
-                        )}
-                      </span>
-                    </div>
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <CalendarComponent
-                    mode="range"
-                    selected={serviceDeliveryDateRange}
-                    onSelect={setServiceDeliveryDateRange}
-                    numberOfMonths={2}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-              {serviceDeliveryDateRange?.from && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setServiceDeliveryDateRange(undefined)}
-                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              )}
-
-              {!isNdisBoard && (
-                <Select value={transactionStatusFilter} onValueChange={setTransactionStatusFilter}>
-                  <SelectTrigger className="w-fit flex-shrink-0 min-w-[220px]">
-                    <div className="flex items-center gap-2 min-w-0 w-full">
-                      <Filter className="h-4 w-4 flex-shrink-0" />
-                      <SelectValue placeholder="Transaction Status" className="truncate" />
-                    </div>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TRANSACTION_STATUS_FILTERS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-
-              {isNdisBoard && (
-                <Select value={jobStatusFilter} onValueChange={setJobStatusFilter}>
-                  <SelectTrigger className="w-fit flex-shrink-0 min-w-[180px]">
-                    <div className="flex items-center gap-2 min-w-0 w-full">
-                      <Filter className="h-4 w-4 flex-shrink-0" />
-                      <SelectValue placeholder={ndisStatusFieldLabel} className="truncate" />
-                    </div>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All {ndisStatusFieldLabel}</SelectItem>
-                    <SelectItem value="Scheduled">Scheduled</SelectItem>
-                    <SelectItem value="Completed">Completed</SelectItem>
-                    <SelectItem value="Cancelled">Cancelled</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-
-
-              <Select value={paymentStatusFilter} onValueChange={setPaymentStatusFilter}>
-                <SelectTrigger className="w-fit flex-shrink-0">
-                  <div className="flex items-center gap-2 min-w-0 w-full">
-                    <Filter className="h-4 w-4 flex-shrink-0" />
-                    <SelectValue placeholder="Payment Status" className="truncate" />
-                  </div>
-                </SelectTrigger>
-                <SelectContent>
-                  {isNdisBoard ? (
-                    <>
-                      <SelectItem value="all">All Payment Status</SelectItem>
-                      {ndisPaymentStatusOptions.map((status) => (
-                        <SelectItem key={status} value={status}>
-                          {status}
-                        </SelectItem>
-                      ))}
-                    </>
-                  ) : (
-                    PAYMENT_STATUS_FILTERS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-
-            </div>
-
-            {/* Summary Cards - Under Filter Section */}
-            <div className={`grid grid-cols-1 md:grid-cols-4 gap-6 mb-6`}>
-              <Card className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Records</p>
-                    <p className="text-2xl font-bold">{filteredSummary.totalRecords}</p>
-                  </div>
-                  <BarChart3 className="h-8 w-8 text-blue-600" />
-                </div>
-              </Card>
-
-              <Card className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Amount</p>
-                    <p className="text-2xl font-bold">{formatCurrency(filteredSummary.totalAmount)}</p>
-                  </div>
-                  <DollarSign className="h-8 w-8 text-blue-600" />
-                </div>
-              </Card>
-
-              {!isLowCatBoard && !isNdisBoard && (
-                <>
-                  <Card className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-muted-foreground">Total Government Subsidy</p>
-                        <p className="text-2xl font-bold text-green-600">{formatCurrency(filteredSummary.totalGovSubsidy)}</p>
-                      </div>
-                      <CheckCircle className="h-8 w-8 text-green-600" />
-                    </div>
-                  </Card>
-
-                  <Card className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-muted-foreground">Total Participant Contribution</p>
-                        <p className="text-2xl font-bold text-purple-600">
-                          {formatCurrency(filteredSummary.totalParticipantContribution)}
-                        </p>
-                      </div>
-                      <Percent className="h-8 w-8 text-purple-600" />
-                    </div>
-                  </Card>
-                </>
-              )}
-            </div>
-
-            {/* Service Records Title */}
-            <div className="mb-4">
-              <h2 className="text-xl font-semibold dark:text-white">Service Records</h2>
-            </div>
-
-            {/* Service Records Table */}
-            <div className="relative">
-              {canScrollLeft && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="absolute left-2 top-1/2 z-10 flex -translate-y-1/2 shadow-md bg-background/95 dark:bg-black/90 dark:text-white dark:border-white/10"
-                  onClick={() => handleHorizontalScroll('left')}
-                  aria-label="Scroll table left"
-                >
-                  <ArrowLeftCircle className="h-5 w-5" />
-                </Button>
-              )}
-              {canScrollRight && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="absolute right-2 top-1/2 z-10 flex -translate-y-1/2 shadow-md bg-background/95 dark:bg-black/90 dark:text-white dark:border-white/10"
-                  onClick={() => handleHorizontalScroll('right')}
-                  aria-label="Scroll table right"
-                >
-                  <ArrowRightCircle className="h-5 w-5" />
-                </Button>
-              )}
-              <div
-                ref={tableContainerRef}
-                className="overflow-x-auto rounded-lg border bg-white text-foreground dark:bg-black dark:text-white dark:border-white/10"
-              >
-                <Table className="min-w-[2400px] dark:text-white">
-                  <TableHeader>
-                    <TableRow>
-                      {tableColumns.map((column) => {
-                        const isSortable = column.key === 'scheduledServiceDate' || column.key === 'serviceDeliveryDate';
-                        const isActiveSort = sortBy === column.key;
-
-                        return (
-                          <TableHead
-                            key={column.key}
-                            className={`${column.className ?? ''} whitespace-nowrap dark:text-white ${isSortable ? 'cursor-pointer hover:bg-muted/50 dark:hover:bg-white/10' : ''} ${isActiveSort ? 'text-primary font-semibold dark:text-white' : ''}`}
-                            onClick={isSortable ? () => {
-                              if (isActiveSort) {
-                                // Toggle sort order if clicking the same column
-                                setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
-                              } else {
-                                // Set new sort column and default to ascending
-                                setSortBy(column.key as "scheduledServiceDate" | "serviceDeliveryDate");
-                                setSortOrder('asc');
-                              }
-                            } : undefined}
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className={isActiveSort ? 'text-primary dark:text-white' : ''}>{column.label}</span>
-                              {isSortable && (
-                                <span className="inline-flex items-center justify-center w-4 h-4 flex-shrink-0">
-                                  {isActiveSort ? (
-                                    sortOrder === 'asc' ? (
-                                      <ArrowUp className="h-4 w-4 text-primary dark:text-white" />
-                                    ) : (
-                                      <ArrowDown className="h-4 w-4 text-primary dark:text-white" />
-                                    )
-                                  ) : (
-                                    <ArrowUpDown className="h-4 w-4 text-muted-foreground dark:text-white" />
-                                  )}
-                                </span>
-                              )}
-                            </div>
-                          </TableHead>
-                        );
-                      })}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {loading ? (
-                      <TableRow>
-                        <TableCell colSpan={tableColumns.length} className="h-64 text-center">
-                          <div className="flex flex-col items-center justify-center">
-                            <Spinner />
-                            <p className="mt-4 text-muted-foreground dark:text-white">Loading service records...</p>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ) : error ? (
-                      <TableRow>
-                        <TableCell colSpan={tableColumns.length} className="h-64 text-center">
-                          <div className="flex flex-col items-center justify-center">
-                            <X className="h-8 w-8 text-destructive mb-2" />
-                            <p className="text-destructive">Error: {error}</p>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ) : currentItems.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={tableColumns.length} className="h-64 text-center">
-                          <div className="flex flex-col items-center justify-center">
-                            <FileText className="h-8 w-8 text-muted-foreground mb-2" />
-                            <p className="text-muted-foreground dark:text-white">No service records found matching your criteria.</p>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      currentItems.map((record) => (
-                        <TableRow
-                          key={record.id}
-                          className={record?.invoiceNumber && record?.invoiceNumber !== '' && record?.invoiceNumber !== undefined ? 'bg-green-50 text-gray-600 dark:bg-black dark:text-white' : 'hover:bg-blue-50 transition-colors dark:hover:bg-white/10 dark:text-white'}
-                        >
-                          {tableColumns.map((column) => (
-                            <TableCell key={`${record.id}-${column.key}`} className={column.className}>
-                              {column.render(record)}
-                            </TableCell>
-                          ))}
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-
-            {/* Pagination */}
-            <div className="mt-4 flex justify-center dark:text-white">
-              <Pagination>
-                <PaginationContent>
-                  <PaginationItem>
-                    <PaginationPrevious
-                      onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                      className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                    />
-                  </PaginationItem>
-
-                  {Array.from({ length: totalPages }, (_, i) => i + 1)
-                    .filter(page =>
-                      page === 1 ||
-                      page === totalPages ||
-                      (page >= currentPage - 1 && page <= currentPage + 1)
-                    )
-                    .map((page, i, arr) => (
-                      <div key={`pagination-${page}`} style={{ display: "flex" }}>
-                        {i > 0 && arr[i - 1] !== page - 1 && (
-                          <PaginationItem>
-                            <PaginationEllipsis />
-                          </PaginationItem>
-                        )}
-                        <PaginationItem>
-                          <PaginationLink
-                            onClick={() => setCurrentPage(page)}
-                            isActive={currentPage === page}
-                          >
-                            {page}
-                          </PaginationLink>
-                        </PaginationItem>
-                      </div>
-                    ))}
-
-                  <PaginationItem>
-                    <PaginationNext
-                      onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                      className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                    />
-                  </PaginationItem>
-                </PaginationContent>
-              </Pagination>
-            </div>
-          </Card>
-        </div>
-
-        {/* Help Dialog - Resync Data */}
-        <Dialog open={showHelpDialog} onOpenChange={setShowHelpDialog}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <HelpCircle className="h-5 w-5" />
-                Resync Data
-              </DialogTitle>
-              <DialogDescription>
-                Understanding how resync works
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <div className="flex items-start gap-3">
-                  <Download className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
-                  <div>
-                    <h3 className="font-semibold text-sm">Resync Data</h3>
-                    <p className="text-sm text-muted-foreground">
-                      It downloads brand-new data from the server, including any edits and new records. The button will be disabled while a sync is in progress.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button onClick={() => setShowHelpDialog(false)}>Got it</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Invoice Generation Modal */}
-        <Dialog open={showInvoiceModal} onOpenChange={(open) => {
-          setShowInvoiceModal(open);
-          if (!open) {
-            // Reset selections when modal closes
-            setSelectedItems(new Set());
-            setEligibleRecords([]);
-          }
-        }}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Receipt className="h-5 w-5" />
-                Generate Invoice
-              </DialogTitle>
-              <DialogDescription>
-                {isLowCatBoard 
-                  ? 'Select items and enter invoice details to generate a tax invoice'
-                  : 'Select items and enter invoice details to generate a participant tax invoice'}
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="flex flex-row gap-6 py-4 items-end">
-              {/* Invoice Date */}
-              <div className="flex-1 min-w-[200px]">
-                <Label htmlFor="invoiceDate" className="flex items-center gap-2 mb-1">
-                  <Calendar className="h-4 w-4" /> Invoice Date
-                </Label>
-                <Input
-                  id="invoiceDate"
-                  type="date"
-                  value={invoiceDate}
-                  onChange={(e) => setInvoiceDate(e.target.value)}
-                  className="w-full"
-                />
-              </div>
-              {/* Due Date */}
-              <div className="flex-1 min-w-[200px]">
-                <Label htmlFor="dueDate" className="flex items-center gap-2 mb-1">
-                  <Calendar className="h-4 w-4" /> Due Date
-                </Label>
-                <Input
-                  id="dueDate"
-                  type="date"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                  className="w-full"
-                />
-              </div>
-            </div>
-
-            {/* Eligible Records Section */}
-            {showInvoiceModal && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <h3 className="text-lg font-semibold">Eligible Records</h3>
-                    {eligibleRecords.length > 0 && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleSelectAll}
-                        className="h-8 text-xs"
-                      >
-                        {selectedItems.size === eligibleRecords.length ? 'Deselect All' : 'Select All'}
-                      </Button>
-                    )}
-                  </div>
-                  <Badge variant="secondary" className="text-lg px-3 py-1">
-                    <DollarSign className="h-4 w-4 mr-1" />
-                    Total: {formatCurrency(eligibleRecords
-                      .filter(r => selectedItems.has(r.id))
-                      .reduce((sum, record) => sum + getInvoiceAmount(record), 0))}
-                    {' '}
-                    ({selectedItems.size} selected)
-                  </Badge>
-                </div>
-
-                {loadingEligible ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Spinner />
-                    <span className="ml-2">Loading eligible records...</span>
-                  </div>
-                ) : eligibleRecords.length > 0 ? (
-                  <div className="border rounded-lg p-4 max-h-60 overflow-y-auto bg-muted/30">
-                    <div className="space-y-2">
-                      {eligibleRecords.map((record) => (
-                        <div
-                          key={record.id}
-                          className={`flex items-start gap-3 py-2 border-b last:border-0 hover:bg-muted/50 rounded px-2 cursor-pointer ${record?.invoiceNumber && record?.invoiceNumber !== '' && record?.invoiceNumber !== undefined ? 'bg-green-50/50 border-l-4 border-l-green-500' : ''
-                            }`}
-                          onClick={() => handleToggleItem(record.id)}
-                        >
-                          <Checkbox
-                            checked={selectedItems.has(record.id)}
-                            onCheckedChange={() => handleToggleItem(record.id)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="mt-1"
-                          />
-                          <div className="flex-1 flex justify-between items-center">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <p className="font-medium">{record?.service || record?.notes || 'Service'}</p>
-                                {record?.invoiceNumber && record?.invoiceNumber !== '' && record?.invoiceNumber !== undefined && (
-                                  <Badge variant="outline" className="bg-green-100 text-green-800 border-green-300 text-xs">
-                                    <CheckCircle className="h-3 w-3 mr-1" />
-                                    Invoiced
-                                  </Badge>
-                                )}
-                              </div>
-                              <p className="text-xs text-muted-foreground">
-                                {record.scheduledServiceDate ? formatDate(record.scheduledServiceDate) : 'N/A'} • {record.quantity} {record.unit}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <p className="font-semibold">{formatCurrency(getInvoiceAmount(record))}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {(isLowCatBoard || isNdisBoard) ? 'Total' : 'Contribution'}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <FileText className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    <p>No eligible records found matching your filters.</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setShowInvoiceModal(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleGeneratePDFInvoice}
-                disabled={!selectedItems.size || generatingPDF || generatingXero}
-                className="gap-2"
-              >
-                {generatingPDF ? (
-                  <>
-                    <Spinner />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <Receipt className="h-4 w-4" />
-                    Generate PDF Invoice
-                  </>
-                )}
-              </Button>
-              <Button
-                onClick={handleGenerateXeroInvoice}
-                disabled={!selectedItems.size || generatingPDF || generatingXero}
-                variant="secondary"
-                className="gap-2"
-              >
-                {generatingXero ? (
-                  <>
-                    <Spinner />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <FileText className="h-4 w-4" />
-                    Generate Xero Invoice
-                  </>
-                )}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
-    </div>
-  );
+  return <InvoiceGeneratorPageView {...viewProps} />;
 }
