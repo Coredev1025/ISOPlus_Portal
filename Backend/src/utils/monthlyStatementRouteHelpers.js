@@ -189,6 +189,80 @@ function createBudgetDateHelpers(stmtTimezone) {
   return { getMonthLabelFromDate, getYearFromDate };
 }
 
+export async function transformMonthlyStatementBudgetItemsBatch({
+  rawItems,
+  workspaceId,
+  boardId,
+  folderIdToName,
+  folderIdToCode,
+  ATTRIBUTE_NAMES,
+  REF_ATTRIBUTE_NAMES,
+  BUDGET_CATEGORY_CONFIG,
+  headOfficeTimezone = 'Australia/Sydney',
+  bulkFetchReferenceItemsFromDB,
+  extractRefId,
+  extractAllRefIds,
+  isUuidLike,
+  getParticipantNameFromProfile,
+  getReferenceDisplayName,
+  getValueFromFlatData,
+  getCachedMSBudget = () => null,
+  setCachedMSBudget = () => {},
+}) {
+  const itemDataHelpers = createItemDataHelpers();
+  const { getValueFromItemMulti, accessors } = itemDataHelpers;
+  const { getMonthLabelFromDate, getYearFromDate } = createBudgetDateHelpers(headOfficeTimezone);
+
+  const { budgetProfilesMap, primarySupplementMap } = await loadBudgetReferenceMaps(
+    rawItems,
+    workspaceId,
+    boardId,
+    {
+      ATTRIBUTE_NAMES,
+      bulkFetchReferenceItemsFromDB,
+      extractRefId,
+      extractAllRefIds,
+      isUuidLike,
+      getValueFromItemMulti,
+    },
+    accessors,
+  );
+
+  const resolveParticipantName = (participantProfileIdValue) => {
+    if (!participantProfileIdValue) return '';
+    const profileIdStr = extractRefId(participantProfileIdValue);
+    if (!profileIdStr) return '';
+    return getParticipantNameFromProfile(budgetProfilesMap.get(profileIdStr)) || '';
+  };
+
+  const budgetTransformContext = {
+    workspaceId,
+    boardId,
+    folderIdToName,
+    folderIdToCode,
+    BUDGET_CATEGORY_CONFIG,
+    ATTRIBUTE_NAMES,
+    REF_ATTRIBUTE_NAMES,
+    accessors,
+    getValueFromItemMulti,
+    parseNumberValue: parseMonthlyStatementNumberValue,
+    resolveParticipantName,
+    resolveReferenceValue: (value, refMap) =>
+      resolveReferenceValue(value, refMap, isUuidLike, getReferenceDisplayName),
+    primarySupplementMap,
+    getCachedMSBudget,
+    setCachedMSBudget,
+    getFirstReferenceId: accessors.getFirstReferenceId,
+    getNumberFromItem: accessors.getNumberFromItem,
+    getMonthLabelFromDate,
+    getYearFromDate,
+    determineCategoryCodeForBudget: (item) =>
+      determineCategoryCodeForBudgetItem(item, folderIdToCode, getValueFromFlatData, ATTRIBUTE_NAMES),
+  };
+
+  return rawItems.map((item) => transformMonthlyStatementBudgetItem(item, budgetTransformContext));
+}
+
 function filterBudgetItems(transformedAllBudgetItems, { participant, month, year }) {
   const normalizeString = (value) => (value || '').toString().trim().toLowerCase().replace(/\.+$/, '');
   const isIdLike = (value) => typeof value === 'string' && value.includes('-');

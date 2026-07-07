@@ -11,8 +11,13 @@ import {
     mapRawServiceItem,
     filterProcessedServiceItems,
 } from '../utils/monthlyStatementServiceHelpers.js';
-import { transformBudgetItemData } from '../utils/monthlyStatementDataBudgetHelpers.js';
 import { transformProcessedServiceItem } from '../utils/monthlyStatementDataServiceHelpers.js';
+import { transformBudgetItemData } from '../utils/monthlyStatementDataBudgetHelpers.js';
+import {
+    ATTRIBUTE_NAMES,
+    BUDGET_CATEGORY_CONFIG,
+    BUDGET_CATEGORY_ORDER,
+} from '../constants/monthlyStatementAttributes.js';
 
 export const parseMonthlyStatementNumber = parseFlexibleNumber;
 const parseNumber = parseFlexibleNumber;
@@ -119,40 +124,9 @@ const resolveReferenceValue = (value, refMap) => {
     return str;
 };
 
-const ATTR = {
-    SCHEDULED_START: 'Scheduled Shift Start Date & Time',
-    ACTUAL_END: 'Actual Shift End Date & Time',
-    PARTICIPANT_FULL_NAME: 'Participant Full Name',
-    PARTICIPANT_PROFILE: 'Participant Profile',
-    SERVICE_PLAN: 'Service Plan',
-    SERVICE_PLAN_ID: 'Service Plan ID',
-    SERVICE_CATEGORY: 'Service Category',
-    UNIT: 'Unit',
-    QUANTITY: 'Quantity',
-    UNIT_PRICE: 'Unit Price ($)',
-    TOTAL_AMOUNT: 'Total Amount ($)',
-    GOV_SUBSIDY: 'Government Subsidy ($)',
-    PARTICIPANT_CONTRIBUTION: 'Participant Contribution ($)',
-    ADDITIONAL_NOTES: 'Additional Notes',
-    TRANSACTION_STATUS: 'Transaction Status',
-    FUNDING_SOURCE: 'Funding Source',
-    DELIVERED_BY: 'Delivered by',
-    ASSOCIATED_PROVIDER: 'Associated Provider (If Applicable)',
-    COMMITTED_AT_HM: 'Committed AT-HM for Delivery',
-    FULL_NAME: 'Full Name/Preferred Name'
-};
+const ATTR = ATTRIBUTE_NAMES;
 
-const BUDGET_FOLDER_CONFIG = [
-    { code: 'HSQ', folderName: 'Home Support Quarterly Budget' },
-    { code: 'HSCM', folderName: 'Home Support Care Management Budget' },
-    { code: 'ATS', folderName: 'Assistive Technology - Short-term Budget' },
-    { code: 'ATO', folderName: 'Assistive Technology - Ongoing Budget' },
-    { code: 'HMB', folderName: 'Home Modification Budget' },
-    { code: 'RCP', folderName: 'Restorative Care Pathway Budget' },
-    { code: 'EOL', folderName: 'End-of-Life Pathway Budget' }
-];
-
-const BUDGET_FOLDER_NAMES = BUDGET_FOLDER_CONFIG.map(c => c.folderName).join(',');
+const BUDGET_FOLDER_NAMES = BUDGET_CATEGORY_CONFIG.map((c) => c.folderName).join(',');
 
 const BUDGET_FIELDS = {
     totalAvailable: [
@@ -162,7 +136,7 @@ const BUDGET_FIELDS = {
         'Total Available Fund for AT Ongoing ($)',
         'Total Available Fund for HM ($)',
         'Total Available Budget for Restorative Care ($)',
-        'Total Available Budget for End-of-Life Care ($)'
+        'Total Available Budget for End-of-Life Care ($)',
     ],
     delivered: [
         'Home Support Delivered During the Month ($-)',
@@ -175,7 +149,7 @@ const BUDGET_FIELDS = {
         'Home Modification Delivered During the Month ($-)',
         'Home Modification Delivered During the Month',
         'Restorative Care Delivered During the Month ($-)',
-        'End-of-Life Care Delivered During the Month ($-)'
+        'End-of-Life Care Delivered During the Month ($-)',
     ],
     remaining: [
         'Remaining Home Support Balance as at the End of the Month ($)',
@@ -183,29 +157,29 @@ const BUDGET_FIELDS = {
         'Remaining AT - Ongoing Balance as at the End of the Month ($)',
         'Remaining HM Balance as at the End of the Month ($)',
         'Remaining Restorative Care Balance as at the End of the Month ($)',
-        'Remaining End-of-Life Care Balance as at the End of the Month ($)'
+        'Remaining End-of-Life Care Balance as at the End of the Month ($)',
     ],
     previousMonthSpending: [
         'Spending from Previous Month(s) within same Quarter ($)',
-        'Spending from Previous Month(s) within Allocated Period ($)'
+        'Spending from Previous Month(s) within Allocated Period ($)',
     ],
     commonwealthUnspent: [
         'Unspent HCP Funds - Commonwealth Portion (Provider-held) ($)',
-        'Commonwealth-held HCP Unspent Funds ($)'
+        'Commonwealth-held HCP Unspent Funds ($)',
     ],
     providerUnspent: [
         'Commonwealth-held HCP Unspent Funds (Notional Home Care Account) ($)',
-        'Provider-held HCP Unspent Funds ($)'
+        'Provider-held HCP Unspent Funds ($)',
     ],
     participantUnspent: [
         'Unspent HCP Funds - Participant Portion (Provider-held) ($)',
-        'Participant Portion HCP Unspent Funds ($)'
+        'Participant Portion HCP Unspent Funds ($)',
     ],
     remainingAllocationPeriod: [
         'Remaining AT - Short-term Balance for Allocation Period ($)',
         'Remaining AT - Ongoing Balance for Allocation Period ($)',
-        'Remaining HM Balance for Allocation Period ($)'
-    ]
+        'Remaining HM Balance for Allocation Period ($)',
+    ],
 };
 
 const MONTH_LABELS = {
@@ -364,7 +338,7 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
         if (!f?.id) continue;
         const name = f.name || '';
         folderIdToName.set(f.id, name);
-        const match = BUDGET_FOLDER_CONFIG.find(cfg => name.toLowerCase().includes(cfg.folderName.toLowerCase()));
+        const match = BUDGET_CATEGORY_CONFIG.find(cfg => name.toLowerCase().includes(cfg.folderName.toLowerCase()));
         if (match) folderIdToCode[f.id] = match.code;
     }
 
@@ -379,7 +353,6 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
     rawItems.forEach(item => {
         const ppId = extractRefId(getValue(item, ATTR.PARTICIPANT_PROFILE));
         if (ppId) profileIds.add(ppId);
-        // Also collect Associated Participant IDs for HSCM items
         const apId = extractRefId(getValue(item, 'Associated Participant'));
         if (apId) profileIds.add(apId);
         extractAllRefIds(getValue(item, 'Primary Supplement')).filter(isUuidLike).forEach(id => psRefIds.add(id));
@@ -387,7 +360,7 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
 
     const [profileMap, psMap] = await Promise.all([
         profileIds.size > 0 ? bulkFetchItems(workspaceId, boardId, [...profileIds]) : Promise.resolve(new Map()),
-        psRefIds.size > 0 ? bulkFetchItems(workspaceId, boardId, [...psRefIds]) : Promise.resolve(new Map())
+        psRefIds.size > 0 ? bulkFetchItems(workspaceId, boardId, [...psRefIds]) : Promise.resolve(new Map()),
     ]);
 
     const resolveParticipant = (item) => {
@@ -406,13 +379,6 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
             if (name) return name;
         }
         return getValue(item, ATTR.PARTICIPANT_FULL_NAME) || '';
-    };
-
-    const budgetCategoryOrder = BUDGET_FOLDER_CONFIG.map(c => c.code);
-    const getCategoryOrderIndex = (code) => {
-        const normalizedCode = (code || 'HSQ').toString();
-        const idx = budgetCategoryOrder.indexOf(normalizedCode);
-        return idx === -1 ? budgetCategoryOrder.length : idx;
     };
 
     const budgetTransformCtx = {
@@ -434,6 +400,12 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
     };
 
     const transformed = rawItems.map((item) => transformBudgetItemData(item, budgetTransformCtx));
+
+    const getCategoryOrderIndex = (code) => {
+        const normalizedCode = (code || 'HSQ').toString();
+        const idx = BUDGET_CATEGORY_ORDER.indexOf(normalizedCode);
+        return idx === -1 ? BUDGET_CATEGORY_ORDER.length : idx;
+    };
 
     const isIdLike = (value) => typeof value === 'string' && value.includes('-');
     const normalizedParticipant = normalizeString(participantParam);

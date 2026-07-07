@@ -346,7 +346,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
   }
 
   try {
-    await initializeXeroOperation(workspaceId, boardId, item);
+    const business = await initializeXeroOperation(workspaceId, boardId, item);
 
     const [jobPlanningValues, serviceFeeTypeValues] = await getJobReportingReferencedItems(workspaceId, boardId, item.id);
     if (!jobPlanningValues) {
@@ -646,45 +646,34 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
-    // let rawChecklist = quoteValues['Quote Checklist'];
-    // let quoteChecklist = [];
-    // if (Array.isArray(rawChecklist)) {
-    //   quoteChecklist = rawChecklist.map(String);
-    // } else if (typeof rawChecklist === 'string' && rawChecklist.trim() !== '') {
-    //   quoteChecklist = [rawChecklist];
-    // }
+    const jobDescription = quoteValues['Job Description']
+      ? quoteValues['Job Description'].toString().replace(/<[^>]*>/g, '')
+      : '';
+    const lineItems = [
+      {
+        itemCode: jobType.code,
+        description: `${quoteValues['Job Title']} - ${jobDescription}`,
+        quantity: quoteValues.Quantity,
+        unitAmount: quoteValues['Unit Price($) - GST Excl.'],
+        taxType: quoteValues['GST'] == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
+      },
+    ];
     const mappedQuote = {
       issueDate: quoteValues['Issue Date'],
       expiryDate: quoteValues['Expiry Date'],
       jobTitle: quoteValues['Job Title'],
       unitPrice: quoteValues['Unit Price($) - GST Excl.'],
       quantity: quoteValues.Quantity,
-      jobDescription: quoteValues['Job Description'] ? quoteValues['Job Description'].toString().replace(/<[^>]*>/g, '') : '',
-      quoteChecklist: [
-        {
-          itemCode: jobType.code,
-          description: `${quoteValues['Job Title']} - ${quoteValues['Job Description'].toString().replace(/<[^>]*>/g, '')}`,
-          quantity: quoteValues.Quantity,
-          unitAmount: quoteValues['Unit Price($) - GST Excl.'],
-          taxType: quoteValues['GST'] == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
-        }
-      ],
+      jobDescription,
+      quoteChecklist: lineItems.map((li) => li.description || ''),
     };
     const xeroQuote = {
       contact: { contactID: contact.contactID },
       date: quoteValues['Issue Date'],
       expiryDate: quoteValues['Expiry Date'],
       title: quoteValues['Job Title'],
-      summary: quoteValues['Job Description'].toString().replace(/<[^>]*>/g, ''),
-      lineItems: [
-        {
-          itemCode: jobType.code,
-          description: `${quoteValues['Job Title']} - ${quoteValues['Job Description'].toString().replace(/<[^>]*>/g, '')}`,
-          quantity: quoteValues.Quantity,
-          unitAmount: quoteValues['Unit Price($) - GST Excl.'],
-          taxType: quoteValues['GST'] == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
-        }
-      ]
+      summary: jobDescription,
+      lineItems,
     };
 
     const { error: validationError } = ItemPayloadDTO.validate('Quote', mappedQuote);

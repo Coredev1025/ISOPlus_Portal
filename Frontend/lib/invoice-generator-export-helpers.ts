@@ -77,14 +77,16 @@ function appendDateRangeParams(
   if (scheduledServiceDateRange?.from) {
     params.append('startDate', dateToStartOfDayISO(new Date(scheduledServiceDateRange.from), businessTimezone));
   }
-  if (scheduledServiceDateRange?.to) {
-    params.append('endDate', dateToEndOfDayISO(new Date(scheduledServiceDateRange.to), businessTimezone));
+  if (scheduledServiceDateRange?.to || scheduledServiceDateRange?.from) {
+    const toSource = scheduledServiceDateRange?.to || scheduledServiceDateRange?.from;
+    params.append('endDate', dateToEndOfDayISO(new Date(toSource as Date), businessTimezone));
   }
   if (serviceDeliveryDateRange?.from) {
     params.append('serviceDeliveryStart', dateToStartOfDayISO(new Date(serviceDeliveryDateRange.from), businessTimezone));
   }
-  if (serviceDeliveryDateRange?.to) {
-    params.append('serviceDeliveryEnd', dateToEndOfDayISO(new Date(serviceDeliveryDateRange.to), businessTimezone));
+  if (serviceDeliveryDateRange?.to || serviceDeliveryDateRange?.from) {
+    const toSource = serviceDeliveryDateRange?.to || serviceDeliveryDateRange?.from;
+    params.append('serviceDeliveryEnd', dateToEndOfDayISO(new Date(toSource as Date), businessTimezone));
   }
 }
 

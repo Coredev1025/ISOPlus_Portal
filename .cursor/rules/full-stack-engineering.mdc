@@ -95,3 +95,5 @@ When suggesting changes:
 3. Minimal change
 4. Performance improvements (only if safe)
 5. Code style
+6. All files' cognitive complexity must be less than 15.
+7. Update the code and check Github Vulnerability issues and must fix them.

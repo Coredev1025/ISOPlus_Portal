@@ -48,7 +48,10 @@ export function buildStatementSummary(
 ) {
   const fallbackSummary = {
     totalServices: services.length,
-    totalHours: services.reduce((sum, s) => sum + (s.unit === 'Hour' ? (s.quantity || 0) : 0), 0),
+    totalHours: services.reduce(
+      (sum, s) => sum + ((s.unit || '').toLowerCase().includes('hour') ? (s.quantity || 0) : 0),
+      0,
+    ),
     totalAmount: services.reduce((sum, s) => sum + (s.totalAmount || 0), 0),
     govSubsidy: services.reduce((sum, s) => sum + (s.govSubsidy || 0), 0),
     participantContribution: services.reduce((sum, s) => sum + (s.participantContribution || 0), 0),
