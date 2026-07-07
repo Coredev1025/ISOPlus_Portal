@@ -9,6 +9,18 @@ import { buttonVariants } from '@/components/ui/button';
 
 export type CalendarProps = React.ComponentProps<typeof DayPicker>;
 
+const dropdownClassNames = {
+  caption_dropdowns: 'flex items-center justify-center gap-2',
+  dropdown_month: 'relative inline-flex items-center',
+  dropdown_year: 'relative inline-flex items-center',
+  dropdown: 'absolute inset-0 z-10 cursor-pointer opacity-0',
+  caption_label: cn(
+    'inline-flex h-8 items-center gap-1 rounded-md border border-input bg-background px-2 text-sm font-medium'
+  ),
+  dropdown_icon: 'ml-0.5 h-4 w-4 text-muted-foreground',
+  vhidden: 'sr-only',
+};
+
 function Calendar({
   className,
   classNames,
@@ -23,7 +35,6 @@ function Calendar({
         months: 'flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0',
         month: 'space-y-4',
         caption: 'flex justify-center pt-1 relative items-center',
-        caption_label: 'text-sm font-medium',
         nav: 'space-x-1 flex items-center',
         nav_button: cn(
           buttonVariants({ variant: 'outline' }),
@@ -51,11 +62,12 @@ function Calendar({
         day_range_middle:
           'aria-selected:bg-accent aria-selected:text-accent-foreground',
         day_hidden: 'invisible',
+        ...dropdownClassNames,
         ...classNames,
       }}
       components={{
-        IconLeft: ({ ...props }) => <ChevronLeft className="h-4 w-4" />,
-        IconRight: ({ ...props }) => <ChevronRight className="h-4 w-4" />,
+        IconLeft: () => <ChevronLeft className="h-4 w-4" />,
+        IconRight: () => <ChevronRight className="h-4 w-4" />,
       }}
       {...props}
     />

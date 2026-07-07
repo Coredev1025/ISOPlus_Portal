@@ -1,9 +1,15 @@
 'use client';
 
 import { Button } from "@/components/ui/button";
+import { BackButton } from "@/components/ui/back-button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, FileText, Search, Calendar, Filter, CheckCircle, DollarSign, BarChart3, FileSpreadsheet, Receipt, X, Percent, ArrowLeftCircle, ArrowRightCircle, Download, Clock, ArrowUpDown, ArrowUp, ArrowDown, HelpCircle } from "lucide-react";
+import { FileText, CheckCircle, DollarSign, BarChart3, FileSpreadsheet, Receipt, X, Percent, ArrowLeftCircle, ArrowRightCircle, Download, Clock, ArrowUpDown, ArrowUp, ArrowDown, HelpCircle } from "lucide-react";
+import { PageHeader, StatCard } from "@/components/ui/page-shell";
 import { Header } from "@/components/ui/header";
+import { ResyncDataButton } from "@/components/ui/resync-data-button";
+import Spinner from "@/components/ui/spin";
+import { formatDistanceToNow } from "date-fns";
+import { PaginationControls } from "@/lib/pagination-controls";
 import {
   Table,
   TableBody,
@@ -13,29 +19,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination";
-import { Input } from "@/components/ui/input";
-import Spinner from "@/components/ui/spin";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Calendar as CalendarComponent } from "@/components/ui/calendar";
-import { format, formatDistanceToNow } from "date-fns";
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -44,11 +27,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { TRANSACTION_STATUS_FILTERS } from "@/lib/invoice-generator-helpers";
 import type { InvoiceGeneratorTableColumn } from "@/lib/invoice-generator-table-columns";
 import type { InvoiceGeneratorServiceRecord } from "@/lib/invoice-generator-types";
-import type { DateRange } from "react-day-picker";
 import { InvoiceGeneratorFiltersRow } from "@/lib/invoice-generator-filters-row";
 import { InvoiceGeneratorInvoiceDialog } from "@/lib/invoice-generator-invoice-dialog";
 import type { SyncStatus } from "@/app/context";
@@ -83,92 +63,56 @@ export function InvoiceGeneratorPageView(props: InvoiceGeneratorPageViewProps) {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      <div className="container mx-auto py-8">
-        <Button
-          variant="ghost"
-          className="mb-6"
-          onClick={() => router.push(`/workspace/${id}/board/${boardId}`)}
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
+      <div className="container mx-auto animate-fade-in-up py-8">
+        <BackButton onClick={() => router.push(`/workspace/${id}/board/${boardId}`)}>
           Back to Board
-        </Button>
+        </BackButton>
 
-        <div className="space-y-6">
-          <Card className="p-6">
-            {/* Header with Export Buttons */}
-            <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-              <div className="space-y-2">
-                <h1 className="text-2xl font-bold">
-                  Invoice Generator
-                </h1>
-                <p className="text-muted-foreground">
-                  {isNdisBoard
-                    ? 'Manage NDIS service records and export NDIA claim CSV.'
-                    : isLowCatBoard
-                      ? 'Manage service records and generate tax invoices.'
-                      : 'Manage service records, submit claims and generate participant tax invoices.'}
-                </p>
-              </div>
-              <div className="flex flex-col items-end gap-3">
-                <div className="flex flex-wrap justify-end gap-2 pl-2">
-                  <div className="flex flex-col items-start gap-2">
-                    <div className="flex gap-2">
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="secondary"
-                              className="gap-2"
-                              onClick={handleManualSync}
-                              disabled={isManualSyncing || syncStatuses.some((sync: SyncStatus) => sync.boardId === boardId && (sync.status === 'started' || sync.status === 'in-progress'))}
-                            >
-                              {isManualSyncing ? (
-                                <>
-                                  <Spinner className="h-4 w-4" />
-                                  Syncing...
-                                </>
-                              ) : (
-                                <>
-                                  Resync Data
-                                </>
-                              )}
-                              <HelpCircle className="h-4 w-4" aria-label="Learn more about Resync Data" onClick={(e) => { e.stopPropagation(); setShowHelpDialog(true); }} />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            It downloads brand-new data from the server, including any edits and new records.
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                      <Button
-                        variant="outline"
-                        onClick={handleExportCSV}
-                        className="gap-2"
-                        disabled={exportingCSV}
-                      >
-                        <FileSpreadsheet className="h-4 w-4" />
-                        Export to CSV
-                      </Button>
-                      <Button
-                        className="gap-2"
-                        onClick={handleOpenInvoiceModal}
-                      >
-                        <Receipt className="h-4 w-4" />
-                        {invoiceLabel}
-                      </Button>
-                    </div>
-                    <div className="flex items-start gap-2 text-sm text-muted-foreground">
-                      <Clock className="h-4 w-4" />
-                      {lastSyncedAt ? (
-                        <span>Last refreshed {formatDistanceToNow(lastSyncedAt, { addSuffix: true })}</span>
-                      ) : (
-                        <span>Not refreshed yet</span>
-                      )}
-                    </div>
+        <div className="page-enter-stagger space-y-6">
+          <Card className="card-hover p-6 shadow-lg">
+            <PageHeader
+              title="Invoice Generator"
+              description={
+                isNdisBoard
+                  ? 'Manage NDIS service records and export NDIA claim CSV.'
+                  : isLowCatBoard
+                    ? 'Manage service records and generate tax invoices.'
+                    : 'Manage service records, submit claims and generate participant tax invoices.'
+              }
+              actions={
+                <div className="flex flex-col items-end gap-3">
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <ResyncDataButton
+                      onSync={handleManualSync}
+                      onHelp={() => setShowHelpDialog(true)}
+                      isSyncing={isManualSyncing}
+                      disabled={syncStatuses.some((sync: SyncStatus) => sync.boardId === boardId && (sync.status === 'started' || sync.status === 'in-progress'))}
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={handleExportCSV}
+                      className="gap-2"
+                      disabled={exportingCSV}
+                    >
+                      <FileSpreadsheet className="h-4 w-4" />
+                      <span>Export to CSV</span>
+                    </Button>
+                    <Button className="gap-2" onClick={handleOpenInvoiceModal}>
+                      <Receipt className="h-4 w-4" />
+                      <span>{invoiceLabel}</span>
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Clock className="h-4 w-4 shrink-0" />
+                    {lastSyncedAt ? (
+                      <span>Last refreshed {formatDistanceToNow(lastSyncedAt, { addSuffix: true })}</span>
+                    ) : (
+                      <span>Not refreshed yet</span>
+                    )}
                   </div>
                 </div>
-              </div>
-            </div>
+              }
+            />
 
             {/* Search and Filters */}
             <InvoiceGeneratorFiltersRow
@@ -191,58 +135,39 @@ export function InvoiceGeneratorPageView(props: InvoiceGeneratorPageViewProps) {
               paymentStatusFilters={PAYMENT_STATUS_FILTERS}
             />
 
-            {/* Summary Cards - Under Filter Section */}
-            <div className={`grid grid-cols-1 md:grid-cols-4 gap-6 mb-6`}>
-              <Card className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Records</p>
-                    <p className="text-2xl font-bold">{filteredSummary.totalRecords}</p>
-                  </div>
-                  <BarChart3 className="h-8 w-8 text-blue-600" />
-                </div>
-              </Card>
-
-              <Card className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Amount</p>
-                    <p className="text-2xl font-bold">{formatCurrency(filteredSummary.totalAmount)}</p>
-                  </div>
-                  <DollarSign className="h-8 w-8 text-blue-600" />
-                </div>
-              </Card>
-
+            {/* Summary Cards */}
+            <div className="mb-6 mt-6 grid grid-cols-1 gap-4 md:grid-cols-4 md:gap-6">
+              <StatCard
+                label="Total Records"
+                value={filteredSummary.totalRecords}
+                icon={<BarChart3 className="h-5 w-5 text-primary" />}
+              />
+              <StatCard
+                label="Total Amount"
+                value={formatCurrency(filteredSummary.totalAmount)}
+                icon={<DollarSign className="h-5 w-5 text-primary" />}
+              />
               {!isLowCatBoard && !isNdisBoard && (
                 <>
-                  <Card className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-muted-foreground">Total Government Subsidy</p>
-                        <p className="text-2xl font-bold text-green-600">{formatCurrency(filteredSummary.totalGovSubsidy)}</p>
-                      </div>
-                      <CheckCircle className="h-8 w-8 text-green-600" />
-                    </div>
-                  </Card>
-
-                  <Card className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-muted-foreground">Total Participant Contribution</p>
-                        <p className="text-2xl font-bold text-purple-600">
-                          {formatCurrency(filteredSummary.totalParticipantContribution)}
-                        </p>
-                      </div>
-                      <Percent className="h-8 w-8 text-purple-600" />
-                    </div>
-                  </Card>
+                  <StatCard
+                    label="Total Government Subsidy"
+                    value={formatCurrency(filteredSummary.totalGovSubsidy)}
+                    valueClassName="text-green-600"
+                    icon={<CheckCircle className="h-5 w-5 text-green-600" />}
+                  />
+                  <StatCard
+                    label="Total Participant Contribution"
+                    value={formatCurrency(filteredSummary.totalParticipantContribution)}
+                    valueClassName="text-purple-600"
+                    icon={<Percent className="h-5 w-5 text-purple-600" />}
+                  />
                 </>
               )}
             </div>
 
             {/* Service Records Title */}
             <div className="mb-4">
-              <h2 className="text-xl font-semibold dark:text-white">Service Records</h2>
+              <h2 className="text-xl font-semibold text-foreground">Service Records</h2>
             </div>
 
             {/* Service Records Table */}
@@ -252,7 +177,7 @@ export function InvoiceGeneratorPageView(props: InvoiceGeneratorPageViewProps) {
                   type="button"
                   variant="outline"
                   size="icon"
-                  className="absolute left-2 top-1/2 z-10 flex -translate-y-1/2 shadow-md bg-background/95 dark:bg-black/90 dark:text-white dark:border-white/10"
+                  className="absolute left-2 top-1/2 z-10 flex -translate-y-1/2 bg-background/95 shadow-md transition-colors hover:-translate-y-1/2 active:scale-100 dark:border-white/10 dark:bg-black/90 dark:text-white"
                   onClick={() => handleHorizontalScroll('left')}
                   aria-label="Scroll table left"
                 >
@@ -264,7 +189,7 @@ export function InvoiceGeneratorPageView(props: InvoiceGeneratorPageViewProps) {
                   type="button"
                   variant="outline"
                   size="icon"
-                  className="absolute right-2 top-1/2 z-10 flex -translate-y-1/2 shadow-md bg-background/95 dark:bg-black/90 dark:text-white dark:border-white/10"
+                  className="absolute right-2 top-1/2 z-10 flex -translate-y-1/2 bg-background/95 shadow-md transition-colors hover:-translate-y-1/2 active:scale-100 dark:border-white/10 dark:bg-black/90 dark:text-white"
                   onClick={() => handleHorizontalScroll('right')}
                   aria-label="Scroll table right"
                 >
@@ -273,9 +198,9 @@ export function InvoiceGeneratorPageView(props: InvoiceGeneratorPageViewProps) {
               )}
               <div
                 ref={tableContainerRef}
-                className="overflow-x-auto rounded-lg border bg-white text-foreground dark:bg-black dark:text-white dark:border-white/10"
+                className="overflow-x-auto rounded-lg border border-border/60 bg-card shadow-sm"
               >
-                <Table className="min-w-[2400px] dark:text-white">
+                <Table bare className="min-w-[2400px]">
                   <TableHeader>
                     <TableRow>
                       {tableColumns.map((column: InvoiceGeneratorTableColumn) => {
@@ -285,7 +210,7 @@ export function InvoiceGeneratorPageView(props: InvoiceGeneratorPageViewProps) {
                         return (
                           <TableHead
                             key={column.key}
-                            className={`${column.className ?? ''} whitespace-nowrap dark:text-white ${isSortable ? 'cursor-pointer hover:bg-muted/50 dark:hover:bg-white/10' : ''} ${isActiveSort ? 'text-primary font-semibold dark:text-white' : ''}`}
+                            className={`${column.className ?? ''} whitespace-nowrap ${isSortable ? 'cursor-pointer select-none hover:bg-muted/50' : ''} ${isActiveSort ? 'text-primary font-semibold' : ''}`}
                             onClick={isSortable ? () => {
                               if (isActiveSort) {
                                 // Toggle sort order if clicking the same column
@@ -298,17 +223,17 @@ export function InvoiceGeneratorPageView(props: InvoiceGeneratorPageViewProps) {
                             } : undefined}
                           >
                             <div className="flex items-center gap-2">
-                              <span className={isActiveSort ? 'text-primary dark:text-white' : ''}>{column.label}</span>
+                              <span className={isActiveSort ? 'text-primary' : ''}>{column.label}</span>
                               {isSortable && (
-                                <span className="inline-flex items-center justify-center w-4 h-4 flex-shrink-0">
+                                <span className="inline-flex h-4 w-4 flex-shrink-0 items-center justify-center">
                                   {isActiveSort ? (
                                     sortOrder === 'asc' ? (
-                                      <ArrowUp className="h-4 w-4 text-primary dark:text-white" />
+                                      <ArrowUp className="h-4 w-4 text-primary" />
                                     ) : (
-                                      <ArrowDown className="h-4 w-4 text-primary dark:text-white" />
+                                      <ArrowDown className="h-4 w-4 text-primary" />
                                     )
                                   ) : (
-                                    <ArrowUpDown className="h-4 w-4 text-muted-foreground dark:text-white" />
+                                    <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
                                   )}
                                 </span>
                               )}
@@ -324,7 +249,7 @@ export function InvoiceGeneratorPageView(props: InvoiceGeneratorPageViewProps) {
                         <TableCell colSpan={tableColumns.length} className="h-64 text-center">
                           <div className="flex flex-col items-center justify-center">
                             <Spinner />
-                            <p className="mt-4 text-muted-foreground dark:text-white">Loading service records...</p>
+                            <p className="mt-4 text-muted-foreground">Loading service records...</p>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -342,7 +267,7 @@ export function InvoiceGeneratorPageView(props: InvoiceGeneratorPageViewProps) {
                         <TableCell colSpan={tableColumns.length} className="h-64 text-center">
                           <div className="flex flex-col items-center justify-center">
                             <FileText className="h-8 w-8 text-muted-foreground mb-2" />
-                            <p className="text-muted-foreground dark:text-white">No service records found matching your criteria.</p>
+                            <p className="text-muted-foreground">No service records found matching your criteria.</p>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -350,7 +275,11 @@ export function InvoiceGeneratorPageView(props: InvoiceGeneratorPageViewProps) {
                       currentItems.map((record: InvoiceGeneratorServiceRecord) => (
                         <TableRow
                           key={record.id}
-                          className={record?.invoiceNumber && record?.invoiceNumber !== '' && record?.invoiceNumber !== undefined ? 'bg-green-50 text-gray-600 dark:bg-black dark:text-white' : 'hover:bg-blue-50 transition-colors dark:hover:bg-white/10 dark:text-white'}
+                          className={
+                            record?.invoiceNumber && record?.invoiceNumber !== '' && record?.invoiceNumber !== undefined
+                              ? 'bg-green-50/80 text-foreground dark:bg-green-950/30'
+                              : ''
+                          }
                         >
                           {tableColumns.map((column: InvoiceGeneratorTableColumn) => (
                             <TableCell key={`${record.id}-${column.key}`} className={column.className}>
@@ -365,50 +294,12 @@ export function InvoiceGeneratorPageView(props: InvoiceGeneratorPageViewProps) {
               </div>
             </div>
 
-            {/* Pagination */}
-            <div className="mt-4 flex justify-center dark:text-white">
-              <Pagination>
-                <PaginationContent>
-                  <PaginationItem>
-                    <PaginationPrevious
-                      onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                      className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                    />
-                  </PaginationItem>
-
-                  {Array.from({ length: totalPages }, (_, i) => i + 1)
-                    .filter(page =>
-                      page === 1 ||
-                      page === totalPages ||
-                      (page >= currentPage - 1 && page <= currentPage + 1)
-                    )
-                    .map((page, i, arr) => (
-                      <div key={`pagination-${page}`} style={{ display: "flex" }}>
-                        {i > 0 && arr[i - 1] !== page - 1 && (
-                          <PaginationItem>
-                            <PaginationEllipsis />
-                          </PaginationItem>
-                        )}
-                        <PaginationItem>
-                          <PaginationLink
-                            onClick={() => setCurrentPage(page)}
-                            isActive={currentPage === page}
-                          >
-                            {page}
-                          </PaginationLink>
-                        </PaginationItem>
-                      </div>
-                    ))}
-
-                  <PaginationItem>
-                    <PaginationNext
-                      onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                      className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                    />
-                  </PaginationItem>
-                </PaginationContent>
-              </Pagination>
-            </div>
+            <PaginationControls
+              className="mt-4 flex justify-center"
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+            />
           </Card>
         </div>
 

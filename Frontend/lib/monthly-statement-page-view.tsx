@@ -1,9 +1,11 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { BackButton } from "@/components/ui/back-button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Calendar, HelpCircle, Download } from "lucide-react";
+import { Calendar, Download } from "lucide-react";
 import { Header } from "@/components/ui/header";
+import { ResyncDataButton } from "@/components/ui/resync-data-button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Spinner from "@/components/ui/spin";
 import {
@@ -16,7 +18,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { MonthlyStatementStatementPanel } from "@/lib/monthly-statement-page-components";
 
 type ViewProps = Record<string, any>;
@@ -50,26 +51,21 @@ function MonthlyStatementToolbar({
 
   return (
     <>
-      <Button
-        variant="ghost"
-        className="mb-6 print:hidden"
-        onClick={() => router.push(`/workspace/${id}/board/${boardId}`)}
-      >
-        <ArrowLeft className="h-4 w-4 mr-2" />
+      <BackButton onClick={() => router.push(`/workspace/${id}/board/${boardId}`)}>
         Back to Board
-      </Button>
+      </BackButton>
 
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2 text-foreground">Monthly Statement Generator</h1>
+      <div className="mb-8 animate-fade-in-up">
+        <h1 className="mb-2 text-3xl font-bold tracking-tight text-foreground">Monthly Statement Generator</h1>
         <p className="text-muted-foreground">
           Manage participants&apos; budget and service records, and generate the Support at Home monthly statement.
         </p>
       </div>
 
-      <Card className="p-6 mb-6 shadow-lg print:hidden">
+      <Card className="card-hover mb-6 p-6 shadow-lg print:hidden">
         <div className="flex flex-nowrap items-end gap-4 overflow-x-auto pb-2">
-          <div className="space-y-2 flex-shrink-0 min-w-[200px]">
-            <label className="text-sm font-medium">Participant</label>
+          <div className="min-w-[200px] flex-shrink-0 space-y-2">
+            <Label className="text-sm font-medium">Participant</Label>
             <Select value={selectedParticipant} onValueChange={setSelectedParticipant} disabled={loadingParticipants}>
               <SelectTrigger>
                 <SelectValue placeholder={loadingParticipants ? "Loading participants..." : "Select participant"} />
@@ -90,8 +86,8 @@ function MonthlyStatementToolbar({
             </Select>
           </div>
 
-          <div className="space-y-2 flex-shrink-0 min-w-[160px]">
-            <label className="text-sm font-medium">Month</label>
+          <div className="min-w-[160px] flex-shrink-0 space-y-2">
+            <Label className="text-sm font-medium">Month</Label>
             <Select value={selectedMonth} onValueChange={setSelectedMonth}>
               <SelectTrigger>
                 <SelectValue placeholder="Select month" />
@@ -106,8 +102,8 @@ function MonthlyStatementToolbar({
             </Select>
           </div>
 
-          <div className="space-y-2 flex-shrink-0 min-w-[120px]">
-            <label className="text-sm font-medium">Year</label>
+          <div className="min-w-[120px] flex-shrink-0 space-y-2">
+            <Label className="text-sm font-medium">Year</Label>
             <Select value={selectedYear} onValueChange={setSelectedYear}>
               <SelectTrigger>
                 <SelectValue placeholder="Select year" />
@@ -123,43 +119,26 @@ function MonthlyStatementToolbar({
           </div>
 
           <div className="flex-shrink-0">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="secondary"
-                    className="gap-2"
-                    onClick={handleManualSync}
-                    disabled={isManualSyncing || syncStatuses.some((sync: { boardId: string; status: string }) => sync.boardId === boardId && (sync.status === 'started' || sync.status === 'in-progress'))}
-                  >
-                    {isManualSyncing ? (
-                      <>
-                        <Spinner className="h-4 w-4" />
-                        Syncing...
-                      </>
-                    ) : (
-                      <>Resync Data</>
-                    )}
-                    <HelpCircle
-                      className="h-4 w-4"
-                      aria-label="Learn more about Resync Data"
-                      onClick={(e) => { e.stopPropagation(); setShowHelpDialog(true); }}
-                    />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  It downloads brand-new data from the server, including any edits and new records.
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <ResyncDataButton
+              onSync={handleManualSync}
+              onHelp={() => setShowHelpDialog(true)}
+              isSyncing={isManualSyncing}
+              disabled={syncStatuses.some((sync: { boardId: string; status: string }) => sync.boardId === boardId && (sync.status === 'started' || sync.status === 'in-progress'))}
+            />
           </div>
 
           <div className="flex-shrink-0">
             <Button
+              className="h-10 min-w-[148px]"
               onClick={fetchStatementData}
               disabled={loading || exportingSection === 'statement-pdf' || !selectedParticipant || !selectedMonth || !selectedYear}
             >
-              {loading && exportingSection !== 'statement-pdf' ? <Spinner /> : 'Load Statement'}
+              <span className="inline-flex items-center justify-center gap-2">
+                {loading && exportingSection !== 'statement-pdf' ? (
+                  <Spinner className="h-4 w-4" />
+                ) : null}
+                <span>Load Statement</span>
+              </span>
             </Button>
           </div>
         </div>
@@ -174,13 +153,13 @@ function MonthlyStatementEmptyState({ statementData, loading }: ViewProps) {
   }
 
   return (
-    <Card className="p-12 text-center shadow-lg">
+    <Card className="card-hover p-12 text-center shadow-lg">
       <div className="flex flex-col items-center gap-4">
-        <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
           <Calendar className="h-8 w-8 text-primary" />
         </div>
         <div>
-          <h3 className="text-xl font-semibold mb-2">No Statement Loaded</h3>
+          <h3 className="mb-2 text-xl font-semibold">No Statement Loaded</h3>
           <p className="text-muted-foreground">
             Select a participant, month, and year above to generate the monthly statement
           </p>
@@ -207,8 +186,7 @@ function MonthlyStatementDialogs({
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <HelpCircle className="h-5 w-5" />
-              Resync Data
+              <span>Resync Data</span>
             </DialogTitle>
             <DialogDescription>Understanding how resync works</DialogDescription>
           </DialogHeader>
@@ -407,10 +385,12 @@ export function MonthlyStatementPageView(props: ViewProps) {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      <div className="container mx-auto py-8">
-        <MonthlyStatementToolbar {...props} />
-        <MonthlyStatementStatementPanel {...props} />
-        <MonthlyStatementEmptyState {...props} />
+      <div className="container mx-auto animate-fade-in-up py-8">
+        <div className="page-enter-stagger">
+          <MonthlyStatementToolbar {...props} />
+          <MonthlyStatementStatementPanel {...props} />
+          <MonthlyStatementEmptyState {...props} />
+        </div>
       </div>
       <MonthlyStatementDialogs {...props} />
       <MonthlyStatementPrintStyles />

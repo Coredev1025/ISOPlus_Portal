@@ -1,7 +1,6 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
+import { BackButton } from "@/components/ui/back-button";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useState, useEffect, useRef } from "react";
@@ -87,15 +86,10 @@ export default function QRGeneratorPage() {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      <div className="container mx-auto py-8">
-        <Button
-          variant="ghost"
-          className="mb-6"
-          onClick={() => router.push(`/workspace/${id}/board/${boardId}`)}
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
+      <div className="container mx-auto animate-fade-in-up py-8">
+        <BackButton onClick={() => router.push(`/workspace/${id}/board/${boardId}`)}>
           Back to Board
-        </Button>
+        </BackButton>
 
         <QrGeneratorPageView
           loading={loading}

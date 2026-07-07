@@ -48,28 +48,28 @@
   .dark {
     --background: 0 0% 0%;
     --foreground: 0 0% 100%;
-    --card: 0 0% 0%;
+    --card: 0 0% 7%;
     --card-foreground: 0 0% 100%;
-    --popover: 0 0% 0%;
+    --popover: 0 0% 7%;
     --popover-foreground: 0 0% 100%;
-    --primary: 358 76% 49%;
+    --primary: 358 72% 58%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 199 79% 46%;
+    --secondary: 199 75% 52%;
     --secondary-foreground: 0 0% 100%;
     --muted: 0 0% 14%;
     --muted-foreground: 0 0% 64.9%;
-    --accent: 199 79% 46%;
+    --accent: 199 75% 52%;
     --accent-foreground: 0 0% 100%;
-    --destructive: 358 76% 49%;
+    --destructive: 358 72% 58%;
     --destructive-foreground: 0 0% 100%;
-    --border: 0 0% 14%;
-    --input: 0 0% 14%;
-    --ring: 358 76% 49%;
-    --chart-1: 358 76% 49%;
-    --chart-2: 199 79% 46%;
+    --border: 0 0% 18%;
+    --input: 0 0% 18%;
+    --ring: 358 72% 58%;
+    --chart-1: 358 72% 58%;
+    --chart-2: 199 75% 52%;
     --chart-3: 0 0% 100%;
-    --chart-4: 358 76% 60%;
-    --chart-5: 199 79% 60%;
+    --chart-4: 358 72% 65%;
+    --chart-5: 199 75% 60%;
   }
 }
 
@@ -85,6 +85,33 @@
   }
 }
 
+/* Page entrance animations */
+.page-enter {
+  animation: fade-in-up 0.45s ease-out forwards;
+}
+
+.page-enter-stagger > * {
+  opacity: 0;
+  animation: fade-in-up 0.45s ease-out forwards;
+}
+
+.page-enter-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.page-enter-stagger > *:nth-child(2) { animation-delay: 60ms; }
+.page-enter-stagger > *:nth-child(3) { animation-delay: 120ms; }
+.page-enter-stagger > *:nth-child(4) { animation-delay: 180ms; }
+.page-enter-stagger > *:nth-child(5) { animation-delay: 240ms; }
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Enhanced Card Hover Effects */
 .card-hover {
   transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
@@ -95,6 +122,24 @@
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
 }
 
+/* Stat card with subtle pulse on value */
+.stat-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+.stat-card .stat-value {
+  transition: transform 0.2s ease;
+}
+
+.stat-card:hover .stat-value {
+  transform: scale(1.02);
+}
+
 /* Gradient Background for Header */
 .gradient-header {
   background: linear-gradient(to right, hsl(var(--primary)), hsl(var(--primary)/0.8));
@@ -102,11 +147,19 @@
 
 /* Enhanced Table Styles */
 .enhanced-table tbody tr {
-  transition: background-color 0.2s ease;
+  transition: background-color 0.15s ease;
 }
 
 .enhanced-table tbody tr:hover {
-  background-color: hsl(var(--muted));
+  background-color: hsl(var(--muted) / 0.6);
+}
+
+.enhanced-table tbody tr:nth-child(even) {
+  background-color: hsl(var(--muted) / 0.2);
+}
+
+.enhanced-table tbody tr:nth-child(even):hover {
+  background-color: hsl(var(--muted) / 0.6);
 }
 
 /* Button Hover Animation */

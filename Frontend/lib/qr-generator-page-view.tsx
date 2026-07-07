@@ -63,8 +63,8 @@ export function QrGeneratorPageView({
   downloadQRCode: () => void;
 }) {
   return (
-    <div className="space-y-6">
-      <Card className="p-6 shadow-lg card-hover">
+    <div className="page-enter-stagger space-y-6">
+      <Card className="card-hover p-6 shadow-lg">
         <div className="flex items-center gap-4">
           <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
             <QrCode className="h-6 w-6 text-primary" />
@@ -100,7 +100,7 @@ export function QrGeneratorPageView({
             generateQRCode={generateQRCode}
           />
 
-          <Card className="p-6 space-y-6">
+          <Card className="card-hover p-6 shadow-lg transition-all duration-200">
             <div>
               <h2 className="text-xl font-semibold mb-4">Generated QR Code</h2>
               <div className="space-y-6 w-full" style={{ display: qrCodeGenerated ? 'block' : 'none' }}>
@@ -121,19 +121,19 @@ export function QrGeneratorPageView({
                     <Button
                       onClick={copyQRCodeToClipboard}
                       variant="outline"
-                      className="bg-card border-2 border-primary/30 text-foreground hover:bg-primary/10 hover:border-primary/50 hover:text-foreground px-6 py-2 rounded-lg transition-colors"
+                      className="h-10 px-6"
                     >
-                      <Copy className="h-4 w-4 mr-2" />
-                      Copy
+                      <Copy className="mr-2 h-4 w-4" />
+                      <span>Copy</span>
                     </Button>
                   </div>
                   <Button
                     onClick={downloadQRCode}
                     variant="outline"
-                    className="bg-card border-2 border-primary/30 text-foreground hover:bg-primary/10 hover:border-primary/50 hover:text-foreground px-6 py-2 rounded-lg transition-colors"
+                    className="h-10 px-6"
                   >
-                    <Download className="h-4 w-4 mr-2" />
-                    Download
+                    <Download className="mr-2 h-4 w-4" />
+                    <span>Download</span>
                   </Button>
                 </div>
                 <div className="text-center text-sm text-muted-foreground">

@@ -95,7 +95,7 @@ export function QrGeneratorSourcePanel({
                   role="combobox"
                   aria-expanded={comboOpen}
                   aria-labelledby="qr-generator-source-heading"
-                  className="w-full justify-between font-normal h-11 rounded-lg border-border/80 bg-background shadow-sm hover:bg-accent/50"
+                  className="h-10 w-full justify-between rounded-lg border-border/80 bg-background font-normal shadow-sm hover:bg-accent/50"
                 >
                   {selectionLabel.kind === 'custom' ? (
                     <span className="flex items-center gap-2 truncate">
@@ -238,21 +238,20 @@ export function QrGeneratorSourcePanel({
 
           <Button
             type="button"
-            variant="destructive"
             onClick={generateQRCode}
             disabled={generating || !resolveQrTargetUrl(selectedId, customUrl, customUrlSelectionId, items)}
-            className="w-full"
+            className="h-10 w-full"
           >
             {generating ? (
-              <>
-                <Spinner className="mr-2" />
-                Generating QR Code...
-              </>
+              <span className="inline-flex items-center justify-center gap-2">
+                <Spinner className="h-4 w-4" />
+                <span>Generating QR Code...</span>
+              </span>
             ) : (
-              <>
-                <QrCode className="mr-2 h-4 w-4" />
-                Generate QR Code
-              </>
+              <span className="inline-flex items-center justify-center gap-2">
+                <QrCode className="h-4 w-4" />
+                <span>Generate QR Code</span>
+              </span>
             )}
           </Button>
         </div>
