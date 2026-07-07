@@ -16,7 +16,7 @@ import { applyTemplateTextDefaultsToPages } from '../utils/webhookTemplateHelper
 import { paginatePdfmeTemplateTableByRows } from '../utils/webhookPdfPaginationHelpers.js';
 import { processWebhookNdisQuotePdfItem, processWebhookNdisInvoicePdfItem } from '../utils/webhookNdisPdfHandlers.js';
 import { handleParticipantTaxInvoiceRoute } from '../utils/webhookParticipantTaxPdfHelpers.js';
-import { handleMonthlyStatementRoute } from '../utils/webhookMonthlyStatementPdfHelpers.js';
+import { handleMonthlyStatementRoute, buildMonthlyStatementDeps } from '../utils/webhookMonthlyStatementPdfHelpers.js';
 
 import {
     enrichNumericAggregateFields,

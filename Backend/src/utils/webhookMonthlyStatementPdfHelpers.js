@@ -405,6 +405,7 @@ async function generateMonthlyStatementPdf(req, res, ctx) {
 
   const participantProfileId = statementData.participantProfile || '';
   const queryParticipant = participantProfileId || statementData.participant || '';
+  const participantName = statementData.participant || statementData.participantProfile || 'Participant';
   const monthNum = statementData.monthNumber || '';
   const yearVal = statementData.year || '';
 

@@ -76,7 +76,14 @@ export function createMonthlyStatementItemAccessors(itemDataHelpers) {
     return null;
   };
 
-  return { getNumberFromItem, getLabelFromItem, getDateFromItem, getTextFromItem, getFirstReferenceId };
+  return {
+    getValueFromItemMulti,
+    getNumberFromItem,
+    getLabelFromItem,
+    getDateFromItem,
+    getTextFromItem,
+    getFirstReferenceId,
+  };
 }
 
 function transformHscmBudgetItem(item, context) {
