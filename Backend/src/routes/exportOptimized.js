@@ -517,6 +517,62 @@ const getFundingSourceNameFromItem = (fsItem) => {
     return stripEmojiFromFundingSource(raw) || null;
 };
 
+const exportInvoiceCsvDeps = {
+    info,
+    error,
+    getFolderIds,
+    Item,
+    InvoiceNumber,
+    bulkFetchItemsFromDB,
+    getFundingSourceNameFromItem,
+    getValue,
+    ATTRIBUTE_NAMES,
+    parseDate,
+    parseNumber,
+    formatStatus,
+    extractRefId,
+    extractAllRefIds,
+    getParticipantNameFromProfile,
+    getServiceFromServicePlan,
+    getServiceIdentifierFromServicePlan,
+    getItemDescriptionFromServicePlan,
+    getWraparoundDescriptionFromServicePlan,
+    getHealthProfessionalFromServicePlan,
+    getMyAgedCareIdFromProfile,
+};
+
+const exportNdisCsvDeps = {
+    Business,
+    Item,
+    InvoiceNumber,
+    bulkFetchItemsFromDB,
+    getFolderIds,
+    info,
+    warn,
+    error,
+    NDIS_MASTERPLAN_ATTR,
+    extractNdisRefId,
+    extractNdisAllRefIds,
+    formatNdisLabelValue,
+    getNdisValueMulti,
+    formatDdMmYyyy,
+    mapNdisClaimCsvQuantityAndHours,
+    sanitizeDigits,
+    getNdisParticipantDisplayName,
+    getParticipantNdisNumber,
+    mapCancellationReasonCode,
+    resolveNdisClaimType,
+    resolveCancellationReasonLabel,
+    resolveNdisSupportDeliveredDates,
+    resolveRefItemDisplayName,
+    isCancellationClaimRow,
+    isUuidLikeNdis,
+    buildNdisMasterPlanServiceRows,
+    buildNdisSupportCatalogueForServicePlan,
+    collectNdisSupportCatalogueRefIds,
+    resolveNdisPricingRuleForServicePlan,
+};
+
 router.get('/:workspaceId/:boardId/invoice-csv', authenticateToken, async (req, res) => handleInvoiceCsvExport(req, res, exportInvoiceCsvDeps));
 router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (req, res) => handleNdisInvoiceCsvExport(req, res, exportNdisCsvDeps));
 router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, async (req, res) => {
