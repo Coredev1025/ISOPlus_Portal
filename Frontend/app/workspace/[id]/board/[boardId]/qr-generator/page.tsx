@@ -12,6 +12,12 @@ import axios from "@/app/utils/axiosConfig";
 import Spinner from "@/components/ui/spin";
 import { showFetchSuccessToast, showFetchErrorToast, showSuccessToast } from "@/lib/toast-utils";
 import {
+  fetchBusinessLogoBlobUrl,
+  hasBusinessLogo,
+  resolveQrLogoField,
+  revokeBlobUrl,
+} from "@/lib/business-logo";
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -200,8 +206,18 @@ export default function QRGeneratorPage() {
         width: 400
       });
 
-      if(drawLogo && (business?.squareLogo || business?.defaultLogo)) {
-        await overlayLogoOnQR(canvas, `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/qr-logo?workspaceId=${id}`);
+      if (drawLogo && hasBusinessLogo(business)) {
+        const logoField = resolveQrLogoField(business);
+        const logoBlobUrl = logoField
+          ? await fetchBusinessLogoBlobUrl(id, logoField)
+          : await fetchBusinessLogoBlobUrl(id);
+        if (logoBlobUrl) {
+          try {
+            await overlayLogoOnQR(canvas, logoBlobUrl);
+          } finally {
+            revokeBlobUrl(logoBlobUrl);
+          }
+        }
       }
 
       setLastGeneratedUrl(targetUrl);
@@ -223,7 +239,6 @@ export default function QRGeneratorPage() {
       }
 
       let logoImage = new window.Image();
-      logoImage.crossOrigin = "anonymous";
       logoImage.onload = () => {
         try {
           const logoSize = Math.min(canvas.width, canvas.height) * 0.15;
@@ -625,13 +640,13 @@ export default function QRGeneratorPage() {
                           onCheckedChange={(checked: boolean | "indeterminate") => 
                             setDrawLogo(checked === true)
                           }
-                          disabled={!business?.squareLogo && !business?.defaultLogo}
+                          disabled={!hasBusinessLogo(business)}
                         />
                         <Label htmlFor="drawLogo" className="text-sm font-medium">
                           Include your business logo in the QR code
                         </Label>
                       </div>
-                      {!business?.squareLogo && !business?.defaultLogo && (
+                      {!hasBusinessLogo(business) && (
                         <p className="text-xs text-muted-foreground ml-6">
                           No business logo available. Upload a logo in business settings to enable this option.
                         </p>

@@ -18,12 +18,16 @@ import {
     getValueMulti as getNdisValueMulti,
     parseNumberValue as parseNdisNumber,
     formatDdMmYyyy,
-    formatDurationHhhMm,
+    mapNdisClaimCsvQuantityAndHours,
     sanitizeDigits,
     getParticipantDisplayName as getNdisParticipantDisplayName,
     getParticipantNdisNumber,
     mapCancellationReasonCode,
     resolveNdisClaimType,
+    resolveCancellationReasonLabel,
+    resolveNdisSupportDeliveredDates,
+    resolveRefItemDisplayName,
+    isCancellationClaimRow,
     isUuidLike as isUuidLikeNdis,
 } from '../utils/ndisServiceRecords.js';
 import { resolveNdisPricingRuleForServicePlan } from '../utils/ndisPricingRules.js';
@@ -1161,22 +1165,7 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
 
         const resolveRefName = (refId) => {
             const refItem = refItemsMap.get(refId);
-            if (!refItem?.data) return '';
-            // Cancellation reason reference items can store their label under the attribute name itself.
-            const candidates = [
-                'Cancellation Reason',
-                'Service Delivery Mode',
-                'Name',
-                'Definition',
-                'Full Name/Preferred Name',
-                'Preferred Name'
-            ];
-            for (const key of candidates) {
-                const v = refItem.data[key];
-                const label = formatNdisLabelValue(v).trim();
-                if (label && !isUuidLikeNdis(label)) return label;
-            }
-            return '';
+            return resolveRefItemDisplayName(refItem);
         };
 
         // Expand and map to claim CSV rows
@@ -1309,45 +1298,32 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
             });
 
             // Resolve cancellation reason label/code once per source item
-            const cancellationReasonValue = item?.data?.[NDIS_MASTERPLAN_ATTR.CANCELLATION_REASON];
-            const crIds = extractNdisAllRefIds(cancellationReasonValue).filter(isUuidLikeNdis);
-            let cancellationReasonLabel = '';
-            if (crIds.length > 0) {
-                cancellationReasonLabel = crIds.map(resolveRefName).filter(Boolean).join(', ');
-            }
-            if (!cancellationReasonLabel) {
-                cancellationReasonLabel = formatNdisLabelValue(cancellationReasonValue).trim();
-            }
+            const cancellationReasonLabel = resolveCancellationReasonLabel(
+                item?.data?.[NDIS_MASTERPLAN_ATTR.CANCELLATION_REASON],
+                (refId) => resolveRefName(refId)
+            );
             const cancellationReasonCode = mapCancellationReasonCode(cancellationReasonLabel);
 
-            // Source item date values (for SupportDeliveredFrom/To)
+            const jobStatus = formatNdisLabelValue(
+                getNdisValueMulti(item, [NDIS_MASTERPLAN_ATTR.JOB_STATUS, 'Job Status', 'Shift Status'])
+            ).trim();
+
             const actualStartRaw = item?.data?.[NDIS_MASTERPLAN_ATTR.ACTUAL_START] ?? item?.data?.['Actual Shift Start Date & Time'];
             const actualEndRaw = item?.data?.[NDIS_MASTERPLAN_ATTR.ACTUAL_END] ?? item?.data?.['Actual Shift End Date & Time'];
             const scheduledStartRaw = item?.data?.[NDIS_MASTERPLAN_ATTR.SCHEDULED_START];
             const scheduledEndRaw = item?.data?.[NDIS_MASTERPLAN_ATTR.SCHEDULED_END];
 
-            const supportDeliveredFrom = formatDdMmYyyy(actualStartRaw || scheduledStartRaw);
-            const supportDeliveredTo = formatDdMmYyyy(actualEndRaw || scheduledEndRaw);
+            const { supportDeliveredFrom, supportDeliveredTo } = resolveNdisSupportDeliveredDates({
+                jobStatus,
+                scheduledStart: scheduledStartRaw,
+                scheduledEnd: scheduledEndRaw,
+                actualStart: actualStartRaw,
+                actualEnd: actualEndRaw,
+                formatDate: (value) => formatDdMmYyyy(value, business?.headOfficeTimezone || 'Australia/Sydney'),
+            });
 
             const ndisNumber = getParticipantNdisNumber(participantProfileItem);
             const claimReferenceCsv = sanitizeClaimReference(claimReference);
-
-            const normalizeHoursForCsv = (raw) => {
-                const s = String(raw || '').trim().replace(/^"+|"+$/g, '');
-                if (!s) return '';
-
-                // Force output to HHH:MM even if upstream value includes seconds.
-                const strictTimeMatch = s.match(/^(\d+):(\d{1,2})(?::\d{1,2}(?:\.\d+)?)?$/);
-                if (strictTimeMatch) {
-                    const h = Number(strictTimeMatch[1]);
-                    const m = Number(strictTimeMatch[2]);
-                    if (Number.isFinite(h) && Number.isFinite(m) && m >= 0 && m < 60) {
-                        return `${h}:${String(m).padStart(2, '0')}`;
-                    }
-                }
-
-                return formatDurationHhhMm(s, 'hours');
-            };
 
             for (const r of rows) {
                 const claimType = resolveNdisClaimType(
@@ -1357,34 +1333,8 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
                     r.supportNumber || ''
                 );
 
-                let quantity = '';
-                let hours = '';
-
-                const unitStr = (r.unit || '').toString();
-                const isHourUnit = unitStr.toLowerCase().includes('hour');
                 const code = String(r.code || '');
-
-                if (code === 'direct_support_time' || code === 'support') {
-                    // Direct support quantity is hour-based and may be derived even when actual duration is missing.
-                    hours = formatDurationHhhMm(r.quantity, 'hours');
-                } else if (code === 'centre_capital_costs') {
-                    // Centre Capital quantity is hour-based and may be derived even when actual duration is missing.
-                    hours = formatDurationHhhMm(r.quantity, 'hours');
-                } else if (code === 'labour_travel_time') {
-                    hours = formatDurationHhhMm(r.quantity, 'minutes');
-                } else if (code === 'non_face_to_face') {
-                    hours = formatDurationHhhMm(r.quantity, 'hours');
-                } else if (code.startsWith('canc_') && isHourUnit) {
-                    // Cancellation quantity is already computed on the expanded row.
-                    hours = formatDurationHhhMm(r.quantity, 'hours');
-                } else {
-                    quantity = formatCsvNumber(r.quantity);
-                }
-
-                // Final guard: normalize any accidental HH:MM:SS into HH:MM.
-                if (hours) {
-                    hours = normalizeHoursForCsv(hours);
-                }
+                const { quantity, hours } = mapNdisClaimCsvQuantityAndHours(code, r.unit, r.quantity);
 
                 if (debugLogsEnabled) {
                     info('Export-Service', 'NDIS export computed row values', {
@@ -1400,7 +1350,7 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
                         quantityCsv: quantity,
                         hoursCsv: hours,
                         unitPriceCsv: formatCsvNumber(r.unitPrice, 2),
-                        cancellationReasonCode: claimType === 'CANC' ? cancellationReasonCode : '',
+                        cancellationReasonCode: isCancellationClaimRow(claimType, code) ? cancellationReasonCode : '',
                     }, req ?? null);
                 }
 
@@ -1419,7 +1369,7 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
                     UnitPrice: unitPrice,
                     GSTCode: gstCode,
                     ClaimType: claimType,
-                    CancellationReason: claimType === 'CANC' ? cancellationReasonCode : '',
+                    CancellationReason: isCancellationClaimRow(claimType, code) ? cancellationReasonCode : '',
                     'ABN of Support Provider': abn,
                 });
             }

@@ -1,8 +1,8 @@
 import './globals.css';
+import 'toastify-js/src/toastify.css';
 import type { Metadata } from 'next';
 import { ContextProvider } from './context';
 import { ThemeProvider } from "@/components/theme-provider";
-import { Toaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
   title: 'ISO+ Portal',
@@ -25,7 +25,6 @@ export default function RootLayout({
         >
           <ContextProvider>
             {children}
-            <Toaster />
           </ContextProvider>
         </ThemeProvider>
       </body>

@@ -439,9 +439,97 @@ export function mapCancellationReasonCode(cancellationReasonLabel) {
   const s = String(cancellationReasonLabel || '').toLowerCase();
   if (!s) return '';
   if (s.includes('health')) return 'NSDH';
-  if (s.includes('family') || s.includes('emergency')) return 'NSDF';
+  if (s.includes('family')) return 'NSDF';
   if (s.includes('transport')) return 'NSDT';
   return 'NSDO';
+}
+
+/** Hours column in HHH:MM (applies invoice round1 before conversion). */
+export function formatHoursHhhMmForCsv(value) {
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  return hoursToHhhMm(round1(n));
+}
+
+export function isHourBasedNdisClaimRow(rowCode, unit) {
+  const unitStr = (unit || '').toString();
+  const isHourUnit = unitStr.toLowerCase().includes('hour');
+  const code = String(rowCode || '');
+  if (code === 'direct_support_time' || code === 'support') return true;
+  if (code === 'centre_capital_costs') return true;
+  if (code === 'labour_travel_time') return true;
+  if (code === 'non_face_to_face') return true;
+  if (code.startsWith('canc_') && isHourUnit) return true;
+  return false;
+}
+
+/** Hour-based rows → Hours column; other rows → Quantity column (NDIS: mutually exclusive). */
+export function mapNdisClaimCsvQuantityAndHours(rowCode, unit, quantity) {
+  if (isHourBasedNdisClaimRow(rowCode, unit)) {
+    return { quantity: '', hours: formatHoursHhhMmForCsv(quantity) };
+  }
+  const n = typeof quantity === 'number' ? quantity : Number(quantity);
+  if (!Number.isFinite(n)) return { quantity: '', hours: '' };
+  return { quantity: n.toFixed(2), hours: '' };
+}
+
+export function resolveRefItemDisplayName(refItem) {
+  if (!refItem?.data) return '';
+  const priorityKeys = ['Cancellation Reason', 'Name', 'Definition'];
+  for (const key of priorityKeys) {
+    const label = formatLabelValue(refItem.data[key]).trim();
+    if (label && !isUuidLike(label)) return label;
+  }
+  for (const v of Object.values(refItem.data)) {
+    const label = formatLabelValue(v).trim();
+    if (label && !isUuidLike(label) && label.length > 1) return label;
+  }
+  return '';
+}
+
+export function resolveCancellationReasonLabel(cancellationReasonValue, resolveRefById) {
+  const crIds = extractAllRefIds(cancellationReasonValue).filter(isUuidLike);
+  let label = '';
+  if (crIds.length > 0) {
+    label = crIds.map((id) => resolveRefById(id)).filter(Boolean).join(', ');
+  }
+  if (!label && Array.isArray(cancellationReasonValue)) {
+    label = cancellationReasonValue
+      .map((v) => formatLabelValue(v).trim())
+      .filter((part) => part && !isUuidLike(part))
+      .join(', ');
+  }
+  if (!label) {
+    label = formatLabelValue(cancellationReasonValue).trim();
+  }
+  if (isUuidLike(label)) return '';
+  return label;
+}
+
+export function resolveNdisSupportDeliveredDates({
+  jobStatus,
+  scheduledStart,
+  scheduledEnd,
+  actualStart,
+  actualEnd,
+  formatDate = formatDdMmYyyy,
+}) {
+  const isCancelled = isCancelledShiftStatus(jobStatus);
+  const startRaw = isCancelled
+    ? (scheduledStart || actualStart)
+    : (actualStart || scheduledStart);
+  const endRaw = isCancelled
+    ? (scheduledEnd || actualEnd)
+    : (actualEnd || scheduledEnd);
+  return {
+    supportDeliveredFrom: formatDate(startRaw),
+    supportDeliveredTo: formatDate(endRaw),
+  };
+}
+
+export function isCancellationClaimRow(claimType, rowCode = '') {
+  if (String(claimType || '').trim().toUpperCase() === 'CANC') return true;
+  return String(rowCode || '').startsWith('canc_');
 }
 
 export function isTelehealthServiceMode(serviceDeliveryModeValue) {
@@ -456,11 +544,10 @@ export function resolveNdisClaimType(baseClaimType, serviceDeliveryModeValue, ro
 
   if (itemNumber) {
     const upper = String(itemNumber).toUpperCase().trim();
-    if (upper.endsWith('_TH')) return 'TH';
-    if (upper.endsWith('_NF')) return 'NF';
+    if (upper.endsWith('_TH')) return 'THLT';
+    if (upper.endsWith('_NF')) return 'NF2F';
     if (upper.endsWith('_RR')) return 'RR';
     if (upper.endsWith('_PT')) return 'PT';
-    if (upper.endsWith('_CA')) return 'CA';
   }
 
   if (!isTelehealthServiceMode(serviceDeliveryModeValue)) return '';
@@ -754,7 +841,12 @@ export function buildLegacyNdisMasterPlanServiceRows({
   ]);
 
   const addRow = (row) => {
-    const claimType = resolveNdisClaimType(row.claimType, serviceDeliveryModeValue, row.code);
+    const claimType = resolveNdisClaimType(
+      row.claimType,
+      serviceDeliveryModeValue,
+      row.code,
+      row.supportNumber || ''
+    );
     rows.push({
       id: `${itemId}:${row.code}`,
       sourceItemId: itemId,
@@ -984,10 +1076,11 @@ export function buildLegacyNdisMasterPlanServiceRows({
       }
     }
 
-    // 6) Labour Travel Time (quantity=minutes)
+    // 6) Labour Travel Time (quantity in hours, derived from minutes)
     const labourAmount = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.LABOUR_TRAVEL_TIME_AMOUNT]);
     if (labourAmount > 0) {
-      const qty = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.LABOUR_TRAVEL_TIME_MIN]);
+      const labourMinRaw = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.LABOUR_TRAVEL_TIME_MIN]);
+      const qty = round1(labourMinRaw / 60);
       if (qty > 0 && spLabourUnitPrice > 0) {
         addRow({
           code: 'labour_travel_time',

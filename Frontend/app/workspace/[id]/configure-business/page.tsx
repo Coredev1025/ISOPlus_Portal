@@ -13,9 +13,15 @@ import {
 } from "@/components/ui/select";
 import { ArrowLeft, Upload, AlertCircle, Loader2, X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Header } from "@/components/ui/header";
 import axios from "@/app/utils/axiosConfig";
+import {
+  loadBusinessLogoPreviews,
+  LOGO_FIELDS,
+  revokeBlobUrl,
+  type LogoField,
+} from "@/lib/business-logo";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { showSaveSuccessToast, showSaveErrorToast, showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
 import {
@@ -56,6 +62,51 @@ export default function ConfigureBusinessPage() {
   const [defaultLogoRemoved, setDefaultLogoRemoved] = useState(false);
   const [squareLogoRemoved, setSquareLogoRemoved] = useState(false);
   const [wideLogoRemoved, setWideLogoRemoved] = useState(false);
+  const logoPreviewBlobUrls = useRef<Partial<Record<LogoField, string>>>({});
+
+  const setLogoPreview = (
+    field: LogoField,
+    preview: string | null,
+    options?: { revokePrevious?: boolean }
+  ) => {
+    if (options?.revokePrevious !== false) {
+      revokeBlobUrl(logoPreviewBlobUrls.current[field]);
+    }
+
+    if (preview?.startsWith("blob:")) {
+      logoPreviewBlobUrls.current[field] = preview;
+    } else {
+      delete logoPreviewBlobUrls.current[field];
+    }
+
+    switch (field) {
+      case "defaultLogo":
+        setDefaultLogoPreview(preview);
+        break;
+      case "squareLogo":
+        setSquareLogoPreview(preview);
+        break;
+      case "wideLogo":
+        setWideLogoPreview(preview);
+        break;
+    }
+  };
+
+  const applyLogoPreviews = async (
+    business: Partial<Record<LogoField, string | null | undefined>>
+  ) => {
+    LOGO_FIELDS.forEach((field) => setLogoPreview(field, null));
+    const previews = await loadBusinessLogoPreviews(id, business);
+    (Object.entries(previews) as [LogoField, string][]).forEach(([field, preview]) => {
+      setLogoPreview(field, preview, { revokePrevious: false });
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      Object.values(logoPreviewBlobUrls.current).forEach((url) => revokeBlobUrl(url));
+    };
+  }, []);
 
   // Alert dialog state
   const [alertDialog, setAlertDialog] = useState<{
@@ -345,22 +396,12 @@ export default function ConfigureBusinessPage() {
             }
           }
 
-          // Set logo previews
-          if (data.defaultLogo) {
-            setDefaultLogoPreview(data.defaultLogo);
-          } else {
-            setDefaultLogoPreview(null);
-          }
-          if (data.squareLogo) {
-            setSquareLogoPreview(data.squareLogo);
-          } else {
-            setSquareLogoPreview(null);
-          }
-          if (data.wideLogo) {
-            setWideLogoPreview(data.wideLogo);
-          } else {
-            setWideLogoPreview(null);
-          }
+          // Load logo previews via authenticated API (no expiring presigned URLs in UI)
+          await applyLogoPreviews({
+            defaultLogo: data.defaultLogo,
+            squareLogo: data.squareLogo,
+            wideLogo: data.wideLogo,
+          });
           showFetchSuccessToast("Business profile");
         }
       } catch (error: any) {
@@ -380,7 +421,7 @@ export default function ConfigureBusinessPage() {
 
   const handleLogoChange = (
     e: React.ChangeEvent<HTMLInputElement>,
-    setPreview: React.Dispatch<React.SetStateAction<string | null>>,
+    field: LogoField,
     setFile: React.Dispatch<React.SetStateAction<File | null>>
   ) => {
     const file = e.target.files?.[0];
@@ -388,7 +429,7 @@ export default function ConfigureBusinessPage() {
       setFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
-        setPreview(reader.result as string);
+        setLogoPreview(field, reader.result as string);
       };
       reader.readAsDataURL(file);
     }
@@ -453,6 +494,11 @@ export default function ConfigureBusinessPage() {
         setDefaultLogoRemoved(false);
         setSquareLogoRemoved(false);
         setWideLogoRemoved(false);
+        await applyLogoPreviews({
+          defaultLogo: response.data.defaultLogo,
+          squareLogo: response.data.squareLogo,
+          wideLogo: response.data.wideLogo,
+        });
         showSaveSuccessToast("Business profile");
         setTimeout(() => setShowSuccess(false), 2000);
       }
@@ -516,17 +562,17 @@ export default function ConfigureBusinessPage() {
   const handleRemoveLogo = (type: 'default' | 'square' | 'wide') => {
     switch (type) {
       case 'default':
-        setDefaultLogoPreview(null);
+        setLogoPreview('defaultLogo', null);
         setDefaultLogoRemoved(true);
         setLogoFile(null);
         break;
       case 'square':
-        setSquareLogoPreview(null);
+        setLogoPreview('squareLogo', null);
         setSquareLogoRemoved(true);
         setSquareLogoFile(null);
         break;
       case 'wide':
-        setWideLogoPreview(null);
+        setLogoPreview('wideLogo', null);
         setWideLogoRemoved(true);
         setWideLogoFile(null);
         break;
@@ -597,7 +643,7 @@ export default function ConfigureBusinessPage() {
                             <Input
                               type="file"
                               accept="image/*"
-                              onChange={(e) => handleLogoChange(e, setDefaultLogoPreview, setLogoFile)}
+                              onChange={(e) => handleLogoChange(e, 'defaultLogo', setLogoFile)}
                               className="max-w-xs"
                             />
                             <p className="text-sm text-muted-foreground mt-2">
@@ -640,7 +686,7 @@ export default function ConfigureBusinessPage() {
                             <Input
                               type="file"
                               accept="image/*"
-                              onChange={(e) => handleLogoChange(e, setSquareLogoPreview, setSquareLogoFile)}
+                              onChange={(e) => handleLogoChange(e, 'squareLogo', setSquareLogoFile)}
                               className="max-w-xs"
                             />
                             <p className="text-sm text-muted-foreground mt-2">
@@ -683,7 +729,7 @@ export default function ConfigureBusinessPage() {
                             <Input
                               type="file"
                               accept="image/*"
-                              onChange={(e) => handleLogoChange(e, setWideLogoPreview, setWideLogoFile)}
+                              onChange={(e) => handleLogoChange(e, 'wideLogo', setWideLogoFile)}
                               className="max-w-xs"
                             />
                             <p className="text-sm text-muted-foreground mt-2">

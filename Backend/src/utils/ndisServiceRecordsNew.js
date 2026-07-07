@@ -476,7 +476,7 @@ export function buildNewNdisMasterPlanServiceRows({
           unitPrice,
           totalAmount: parseFloat((qty * unitPrice).toFixed(2)),
           supportNumber: cancellationItemNumber,
-          claimType: '',
+          claimType: 'CANC',
         });
       }
     }
