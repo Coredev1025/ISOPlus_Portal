@@ -15,14 +15,24 @@ export function hasSelectionValue(itemsValues, key) {
     return raw !== undefined && raw !== null && raw !== '';
 }
 
-export function boardAttributesUseLegacyNdisPricing(attributes) {
+function activeBoardAttributes(attributes) {
     const list = Array.isArray(attributes)
         ? attributes
         : (attributes?.attribute || []);
-    return list.some((attr) =>
-        attr?.name === LEGACY_DIRECT_SUPPORT_ATTR &&
-        String(attr?.type || '').toLowerCase() === 'reference'
-    );
+    return list.filter((attr) => attr?.deleted !== true);
+}
+
+function isReferenceAttribute(attr, name) {
+    return attr?.name === name && String(attr?.type || '').toLowerCase() === 'reference';
+}
+
+export function boardAttributesUseLegacyNdisPricing(attributes) {
+    const list = activeBoardAttributes(attributes);
+    const hasLegacy = list.some((attr) => isReferenceAttribute(attr, LEGACY_DIRECT_SUPPORT_ATTR));
+    const hasNew = list.some((attr) => isReferenceAttribute(attr, NEW_SUPPORT_ITEM_ATTR));
+    // Migrated boards may retain a deleted or unused legacy column alongside new pricing fields.
+    if (hasLegacy && hasNew) return false;
+    return hasLegacy;
 }
 
 export function boardAttributesUseNewNdisPricing(attributes) {
@@ -87,6 +97,29 @@ export async function resolveNdisPricingRuleForServicePlan(workspaceId, serviceP
     const boardId = servicePlanItem?.boardId || fallbackBoardId;
     if (!boardId) return 'legacy';
     return resolveNdisPricingRuleForBoard(workspaceId, boardId);
+}
+
+/** @returns {'legacy' | 'new'} */
+export async function resolveNdisPricingRuleForAutomation(workspaceId, boardId, itemId, itemsValues) {
+    const fromWebhook = inferPricingRuleFromServicePlanData(itemsValues);
+    if (fromWebhook) return fromWebhook;
+
+    if (itemId && workspaceId) {
+        const doc = await Item.findOne({
+            workspaceId: workspaceId.toString(),
+            itemId: String(itemId),
+        }).select('data').lean();
+        const fromStoredItem = inferPricingRuleFromServicePlanData(doc?.data);
+        if (fromStoredItem) return fromStoredItem;
+    }
+
+    if (!boardId) return 'legacy';
+    return resolveNdisPricingRuleForBoard(workspaceId, boardId);
+}
+
+export async function automationUsesNewNdisPricing(workspaceId, boardId, itemId, itemsValues) {
+    const rule = await resolveNdisPricingRuleForAutomation(workspaceId, boardId, itemId, itemsValues);
+    return rule === 'new';
 }
 
 export async function getServicePlanBoardIdFromMasterPlan(workspaceId, masterPlanBoardId, masterPlanItemId) {

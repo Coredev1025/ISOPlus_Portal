@@ -11,8 +11,7 @@ import {
 } from '../services/ndisNewPricingIsoplus.js';
 import {
     hasSelectionValue,
-    boardUsesNewNdisPricing,
-    boardUsesLegacyNdisPricing,
+    automationUsesNewNdisPricing,
     masterPlanBoardUsesNewNdisPricing,
     isShiftCancelled,
 } from '../utils/ndisPricingRules.js';
@@ -947,7 +946,7 @@ router.post('/:workspaceId/:boardId/set-unit-and-unitprice', async (req, res) =>
 
     info('Xero-Service', `Incoming request to set-unit-and-unitprice`, { workspaceId, boardId, type, body: itemsValues }, req ?? null);
 
-    if (await boardUsesNewNdisPricing(workspaceId, boardId)) {
+    if (await automationUsesNewNdisPricing(workspaceId, boardId, items.id, itemsValues)) {
         return handleSetUnitAndUnitPriceNew(req, res);
     }
 
@@ -1088,7 +1087,7 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
             return res.status(200).json({ error: 'Invalid payload', message: 'Missing item id' });
         }
 
-        if (await boardUsesNewNdisPricing(workspaceId, boardId)) {
+        if (await automationUsesNewNdisPricing(workspaceId, boardId, items.id, itemsValues)) {
             return handleParticipantsServicePlanNew(req, res);
         }
 
@@ -1481,7 +1480,7 @@ async function runParticipantsServicePlanItemAutomation(req, res, mappingKey, we
         const items = Array.isArray(req.body?.items) ? req.body.items[0] : null;
         const itemsValues = items?.values || {};
         if (!items?.id) return res.status(200).json({ error: 'Invalid payload', message: 'Missing item id' });
-        if (await boardUsesLegacyNdisPricing(workspaceId, boardId)) {
+        if (!(await automationUsesNewNdisPricing(workspaceId, boardId, items.id, itemsValues))) {
             return res.status(200).json({ error: 'Legacy pricing rule applies for this service plan board.' });
         }
         const result = await runServicePlanPricingUpdate(workspaceId, boardId, items.id, itemsValues, mappingKey, webhookType);
@@ -1501,7 +1500,7 @@ router.post('/:workspaceId/:boardId/participants-provider-travel-item', async (r
         const items = Array.isArray(req.body?.items) ? req.body.items[0] : null;
         const itemsValues = items?.values || {};
         if (!items?.id) return res.status(200).json({ error: 'Invalid payload', message: 'Missing item id' });
-        if (await boardUsesLegacyNdisPricing(workspaceId, boardId)) {
+        if (!(await automationUsesNewNdisPricing(workspaceId, boardId, items.id, itemsValues))) {
             return res.status(200).json({ error: 'Legacy pricing rule applies for this service plan board.' });
         }
         const result = await runServicePlanPricingUpdate(workspaceId, boardId, items.id, itemsValues, 'provider_travel_non_labour_cost', 'Participants-Provider-Travel-Item');
@@ -1517,7 +1516,7 @@ router.post('/:workspaceId/:boardId/participants-labour-travel-item', async (req
         const items = Array.isArray(req.body?.items) ? req.body.items[0] : null;
         const itemsValues = items?.values || {};
         if (!items?.id) return res.status(200).json({ error: 'Invalid payload', message: 'Missing item id' });
-        if (await boardUsesLegacyNdisPricing(workspaceId, boardId)) {
+        if (!(await automationUsesNewNdisPricing(workspaceId, boardId, items.id, itemsValues))) {
             return res.status(200).json({ error: 'Legacy pricing rule applies for this service plan board.' });
         }
         const result = await runServicePlanPricingUpdate(workspaceId, boardId, items.id, itemsValues, 'labour_travel_time_cost', 'Participants-Labour-Travel-Item');
@@ -1533,7 +1532,7 @@ router.post('/:workspaceId/:boardId/participants-cancellation-item', async (req,
         const items = Array.isArray(req.body?.items) ? req.body.items[0] : null;
         const itemsValues = items?.values || {};
         if (!items?.id) return res.status(200).json({ error: 'Invalid payload', message: 'Missing item id' });
-        if (await boardUsesLegacyNdisPricing(workspaceId, boardId)) {
+        if (!(await automationUsesNewNdisPricing(workspaceId, boardId, items.id, itemsValues))) {
             return res.status(200).json({ error: 'Legacy pricing rule applies for this service plan board.' });
         }
         const result = await runServicePlanPricingUpdate(workspaceId, boardId, items.id, itemsValues, 'cancellation_cost', 'Participants-Cancellation-Item');
