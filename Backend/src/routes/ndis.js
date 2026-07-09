@@ -118,7 +118,7 @@ const CONFIG_ITEM_NUMBER_SUFFIXES = ['TH', 'NF', 'RR', 'PT', 'CA'];
 
 function itemNumberContainsSuffix(itemNumber, suffix) {
     if (!itemNumber || !suffix) return false;
-    return String(itemNumber).toUpperCase().trim().includes(`_${String(suffix).toUpperCase().trim()}`);
+    return String(itemNumber).toUpperCase().includes(`_${String(suffix)}`);
 }
 
 function getItemNumberSuffix(itemNumber) {
