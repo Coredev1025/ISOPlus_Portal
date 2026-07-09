@@ -41,7 +41,7 @@ const router = express.Router();
 const storage = multer.memoryStorage(); // Use memory storage for multer
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB limit
+  limits: { fileSize: 8 * 1024 * 1024 }, // 8 MB limit (SonarQube recommended max for uploads)
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith('image/')) {
       return cb(new Error('Only image files are allowed!'), false);
@@ -394,8 +394,8 @@ router.post('/xero/update-organization', authenticateToken, async (req, res) => 
 router.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      warn('Business-Service', 'File upload failed', { message: 'File size too large. Maximum size is 10MB' }, req ?? null);
-      return res.status(400).json({ status: 'error', message: 'File size too large. Maximum size is 10MB' });
+      warn('Business-Service', 'File upload failed', { message: 'File size too large. Maximum size is 8MB' }, req ?? null);
+      return res.status(400).json({ status: 'error', message: 'File size too large. Maximum size is 8MB' });
     }
   }
   error('Business-Service', 'File upload failed', { message: err.message || 'An unknown error occurred', stack: err.stack }, req ?? null);
