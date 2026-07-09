@@ -114,15 +114,16 @@ function getSdmExpectedSuffix(sdm) {
     return null;
 }
 
+const CONFIG_ITEM_NUMBER_SUFFIXES = ['TH', 'NF', 'RR', 'PT', 'CA'];
+
+function itemNumberContainsSuffix(itemNumber, suffix) {
+    if (!itemNumber || !suffix) return false;
+    return String(itemNumber).toUpperCase().trim().includes(`_${String(suffix).toUpperCase().trim()}`);
+}
+
 function getItemNumberSuffix(itemNumber) {
     if (!itemNumber) return '';
-    const upper = itemNumber.toUpperCase().trim();
-    if (upper.endsWith('_TH')) return 'TH';
-    if (upper.endsWith('_NF')) return 'NF';
-    if (upper.endsWith('_RR')) return 'RR';
-    if (upper.endsWith('_PT')) return 'PT';
-    if (upper.endsWith('_CA')) return 'CA';
-    return '';
+    return CONFIG_ITEM_NUMBER_SUFFIXES.find((suffix) => itemNumberContainsSuffix(itemNumber, suffix)) || '';
 }
 
 function normalizeStringValue(value) {
@@ -584,10 +585,10 @@ async function updateVariablesParticipantsServicePlanNew(workspaceId, boardId, i
         } else if (hasSelectionValue(itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR) && resolvedProviderTravelValues?.itemName && !resolvedProviderTravelValues.itemName.toLowerCase().includes('non-labour cost')) {
             integrationMessage = 'Error: The selected Item Number for Provider Travel - Non-Labour Cost is invalid.';
             fallbackColor = '#D99C05';
-        } else if (hasSelectionValue(itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_LABOUR_TRAVEL_TIME) && resolvedLabourTravelValues?.itemNumber && getItemNumberSuffix(resolvedLabourTravelValues.itemNumber) !== 'PT') {
+        } else if (hasSelectionValue(itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_LABOUR_TRAVEL_TIME) && resolvedLabourTravelValues?.itemNumber && !itemNumberContainsSuffix(resolvedLabourTravelValues.itemNumber, 'PT')) {
             integrationMessage = 'Error: The selected Item Number for Provider Travel - Labour Travel Time Costs is invalid.';
             fallbackColor = '#CA56A8';
-        } else if (hasSelectionValue(itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_CANCELLATION) && resolvedCancellationValues?.itemName && !resolvedCancellationValues.itemName.toLowerCase().includes('cancellation')) {
+        } else if (hasSelectionValue(itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_CANCELLATION) && resolvedCancellationValues?.itemNumber && !itemNumberContainsSuffix(resolvedCancellationValues.itemNumber, 'CA')) {
             integrationMessage = 'Error: The selected Item Number for Cancellation Costs is invalid.';
             fallbackColor = '#FFA2A2';
         } else if (hasSelectionValue(itemsValues, NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT) && resolvedActivityBasedTransportValues?.itemName && !resolvedActivityBasedTransportValues.itemName.toLowerCase().includes('activity based transport')) {
