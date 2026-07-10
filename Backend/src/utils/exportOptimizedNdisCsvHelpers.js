@@ -1,4 +1,5 @@
 import { collectInvoiceRefIdsFromMasterItems } from './ndisInvoiceContextHelpers.js';
+import { toRequiredQueryString } from './securityHelpers.js';
 
 export function validateNdisExportBusiness({ registrationNumber, abn }) {
   if (!registrationNumber) {
@@ -248,7 +249,8 @@ async function loadNdisSupportCatalogueIntoMap(workspaceId, boardId, servicePlan
 export async function handleNdisInvoiceCsvExport(req, res, deps) {
   const startTime = Date.now();
   try {
-    const { workspaceId, boardId } = req.params;
+    const workspaceId = toRequiredQueryString(req.params.workspaceId);
+    const boardId = toRequiredQueryString(req.params.boardId);
     const {
       participant = '', startDate, endDate, serviceDeliveryStart, serviceDeliveryEnd,
       paymentStatus: paymentStatusFilter = '', jobStatus: jobStatusFilter = '',

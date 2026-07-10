@@ -12,6 +12,7 @@ import {
 import Board from '../models/Board.js';
 import { info, error } from '../utils/logger.js';
 import { syncQueue } from '../services/sync/queue.js';
+import { toRequiredQueryString } from '../utils/securityHelpers.js';
 
 const router = express.Router();
 
@@ -283,7 +284,7 @@ router.post('/workspace/enable', authenticateToken, async (req, res) => {
 
 router.get('/board/status/:boardId', authenticateToken, async (req, res) => {
   try {
-    const { boardId } = req.params;
+    const boardId = toRequiredQueryString(req.params.boardId);
     
     if (!boardId) {
       return res.status(400).json({ 
@@ -311,7 +312,7 @@ router.get('/board/status/:boardId', authenticateToken, async (req, res) => {
 
 router.get('/workspace/status/:workspaceId', authenticateToken, async (req, res) => {
   try {
-    const { workspaceId } = req.params;
+    const workspaceId = toRequiredQueryString(req.params.workspaceId);
     
     if (!workspaceId) {
       return res.status(400).json({ 

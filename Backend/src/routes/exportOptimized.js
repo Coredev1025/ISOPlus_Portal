@@ -8,6 +8,7 @@ import {
 import { handleInvoiceCsvExport } from '../utils/exportOptimizedInvoiceCsvHelpers.js';
 import { handleNdisInvoiceCsvExport } from '../utils/exportOptimizedNdisCsvHelpers.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { toRequiredQueryString } from '../utils/securityHelpers.js';
 import Item from '../models/Item.js';
 import InvoiceNumber from '../models/InvoiceNumber.js';
 import Business from '../models/Business.js';
@@ -578,7 +579,8 @@ router.get('/:workspaceId/:boardId/invoice-csv-ndis', authenticateToken, async (
 router.get('/:workspaceId/:boardId/monthly-statement-csv', authenticateToken, async (req, res) => {
     const startTime = Date.now();
     try {
-        const { workspaceId, boardId } = req.params;
+        const workspaceId = toRequiredQueryString(req.params.workspaceId);
+        const boardId = toRequiredQueryString(req.params.boardId);
         const {
             participant = '',
             startDate,

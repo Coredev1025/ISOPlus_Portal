@@ -5,8 +5,24 @@ import { transformItemData } from '../utils/itemTransform.js';
 import { info, error, warn } from '../utils/logger.js';
 import TimeTrack from '../models/TimeTrack.js';
 import Item from '../models/Item.js';
+import { toRequiredQueryString } from '../utils/securityHelpers.js';
 
 const router = express.Router();
+
+function parseWorkspaceBoardQuery(query) {
+  return {
+    workspaceId: toRequiredQueryString(query?.workspaceId),
+    boardId: toRequiredQueryString(query?.boardId),
+  };
+}
+
+function parseWorkspaceBoardItemBody(body) {
+  return {
+    workspaceId: toRequiredQueryString(body?.workspaceId),
+    boardId: toRequiredQueryString(body?.boardId),
+    itemId: toRequiredQueryString(body?.itemId),
+  };
+}
 
 function computeDuration(start, end) {
     return Math.floor((end - start) / 1000);
@@ -55,7 +71,7 @@ function resolveItemName(itemData, fallbackId) {
 }
 
 router.get('/tasks', authenticateToken, requirePortalOwnerOrSupport, async (req, res) => {
-    const { workspaceId, boardId } = req.query;
+    const { workspaceId, boardId } = parseWorkspaceBoardQuery(req.query);
     if (!workspaceId || !boardId) {
         return res.status(400).json({ message: 'workspaceId and boardId are required' });
     }
@@ -97,7 +113,7 @@ router.get('/tasks', authenticateToken, requirePortalOwnerOrSupport, async (req,
 });
 
 router.get('/status', authenticateToken, requirePortalOwnerOrSupport, async (req, res) => {
-    const { workspaceId, boardId } = req.query;
+    const { workspaceId, boardId } = parseWorkspaceBoardQuery(req.query);
     if (!workspaceId || !boardId) {
         return res.status(400).json({ message: 'workspaceId and boardId are required' });
     }
@@ -143,7 +159,7 @@ router.get('/status', authenticateToken, requirePortalOwnerOrSupport, async (req
 });
 
 router.get('/', authenticateToken, requirePortalOwnerOrSupport, async (req, res) => {
-    const { workspaceId, boardId } = req.query;
+    const { workspaceId, boardId } = parseWorkspaceBoardQuery(req.query);
     if (!workspaceId || !boardId) {
         return res.status(400).json({ message: 'workspaceId and boardId are required' });
     }
@@ -195,7 +211,8 @@ router.get('/', authenticateToken, requirePortalOwnerOrSupport, async (req, res)
 });
 
 router.post('/start', authenticateToken, requirePortalOwnerOrSupport, async (req, res) => {
-    const { workspaceId, boardId, itemId, location, notes } = req.body || {};
+    const { workspaceId, boardId, itemId } = parseWorkspaceBoardItemBody(req.body);
+    const { location, notes } = req.body || {};
     if (!workspaceId || !boardId || !itemId) {
         return res.status(400).json({ message: 'workspaceId, boardId, and itemId are required' });
     }
@@ -258,7 +275,8 @@ router.post('/start', authenticateToken, requirePortalOwnerOrSupport, async (req
 });
 
 router.post('/stop', authenticateToken, requirePortalOwnerOrSupport, async (req, res) => {
-    const { workspaceId, boardId, itemId, location, notes } = req.body || {};
+    const { workspaceId, boardId, itemId } = parseWorkspaceBoardItemBody(req.body);
+    const { location, notes } = req.body || {};
     if (!workspaceId || !boardId || !itemId) {
         return res.status(400).json({ message: 'workspaceId, boardId, and itemId are required' });
     }

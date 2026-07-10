@@ -1,5 +1,6 @@
 import { parseListPagination, matchesStatusFilter } from './itemsRouteHelpers.js';
 import { getCachedTransform, setCachedTransform } from './transformCache.js';
+import { toRequiredQueryString } from './securityHelpers.js';
 
 function getValueFromItem(item, attributeName) {
   if (!item.data) return null;
@@ -481,8 +482,10 @@ export async function getInvoiceGeneratorData({ workspaceId, boardId, query, req
   const { ATTRIBUTE_NAMES, REF_ATTRIBUTE_NAMES } = deps;
   const { limitNumber, applyPagination, skip } = parseListPagination(page, limitParam);
 
-  const baseQuery = { workspaceId, boardId };
-  const folderIds = await deps.getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
+  const safeWorkspaceId = toRequiredQueryString(workspaceId);
+  const safeBoardId = toRequiredQueryString(boardId);
+  const baseQuery = { workspaceId: safeWorkspaceId, boardId: safeBoardId };
+  const folderIds = await deps.getFolderIds('Master Plan,Shift Planning and Reporting', safeWorkspaceId, safeBoardId);
   if (folderIds?.length > 0) {
     baseQuery.folderId = { $in: folderIds };
   }
@@ -528,8 +531,8 @@ export async function getInvoiceGeneratorData({ workspaceId, boardId, query, req
 
   const refIds = collectInvoiceGeneratorRefIds(items, ATTRIBUTE_NAMES, deps.extractRefId, deps.extractAllRefIds);
   const { refItemsMap, nestedRefIds } = await loadInvoiceGeneratorRefMap({
-    workspaceId,
-    boardId,
+    workspaceId: safeWorkspaceId,
+    boardId: safeBoardId,
     ...refIds,
     bulkFetchReferenceItemsFromDB: deps.bulkFetchReferenceItemsFromDB,
     getValueFromFlatData: deps.getValueFromFlatData,
@@ -546,8 +549,8 @@ export async function getInvoiceGeneratorData({ workspaceId, boardId, query, req
 
   const itemIdsForInvoice = items.map((p) => p.item.itemId);
   const invoiceNumbers = await deps.InvoiceNumber.find({
-    workspaceId,
-    boardId,
+    workspaceId: safeWorkspaceId,
+    boardId: safeBoardId,
     itemId: { $in: itemIdsForInvoice },
     type: 'PDF',
   }).lean();
@@ -555,8 +558,8 @@ export async function getInvoiceGeneratorData({ workspaceId, boardId, query, req
   const invoiceFileUrlMap = new Map(invoiceNumbers.map((inv) => [inv.itemId, inv.pdfLink || null]));
 
   const transformContext = {
-    workspaceId,
-    boardId,
+    workspaceId: safeWorkspaceId,
+    boardId: safeBoardId,
     refItemsMap,
     invoiceNumberMap,
     invoiceFileUrlMap,

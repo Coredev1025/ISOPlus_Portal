@@ -10,6 +10,7 @@ import {
   getValueMulti as getNdisValueMulti,
   getParticipantDisplayName as getNdisParticipantDisplayName,
 } from './ndisServiceRecords.js';
+import { toRequiredQueryString } from './securityHelpers.js';
 import { resolveNdisPricingRuleForServicePlan } from './ndisPricingRules.js';
 import {
   buildMasterItemsMap,
@@ -360,14 +361,16 @@ export async function getNdisInvoiceGeneratorData(
     sortOrder = 'asc',
   } = query;
 
+  const safeWorkspaceId = toRequiredQueryString(workspaceId);
+  const safeBoardId = toRequiredQueryString(boardId);
   const { limitNumber, applyPagination, skip } = parseListPagination(page, limitParam);
 
-  const businessForTz = await deps.Business.findOne({ workspaceId: workspaceId.toString() })
+  const businessForTz = await deps.Business.findOne({ workspaceId: safeWorkspaceId })
     .select('headOfficeTimezone').lean().catch(() => null);
   const headOfficeTimezone = businessForTz?.headOfficeTimezone || 'Australia/Sydney';
 
-  const baseQuery = { workspaceId, boardId };
-  const folderIds = await deps.getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
+  const baseQuery = { workspaceId: safeWorkspaceId, boardId: safeBoardId };
+  const folderIds = await deps.getFolderIds('Master Plan,Shift Planning and Reporting', safeWorkspaceId, safeBoardId);
   if (folderIds && folderIds.length > 0) {
     baseQuery.folderId = { $in: folderIds };
   }
@@ -376,10 +379,10 @@ export async function getNdisInvoiceGeneratorData(
   let masterItems = allItems.filter(isApprovedTimesheet);
 
   const refIdSets = collectNdisRefIdSets(masterItems, deps.isUuidLike);
-  const { refItemsMap } = await loadNdisRefItemsMap(workspaceId, boardId, refIdSets, deps);
+  const { refItemsMap } = await loadNdisRefItemsMap(safeWorkspaceId, safeBoardId, refIdSets, deps);
   const { invoiceNumberMap, invoiceFileUrlMap } = await loadNdisInvoiceMaps(
-    workspaceId,
-    boardId,
+    safeWorkspaceId,
+    safeBoardId,
     masterItems,
     deps.InvoiceNumber,
   );
@@ -400,8 +403,8 @@ export async function getNdisInvoiceGeneratorData(
     refItemsMap,
     resolveValueToNames,
     isUuidLike: deps.isUuidLike,
-    workspaceId,
-    boardId,
+    workspaceId: safeWorkspaceId,
+    boardId: safeBoardId,
     invoiceNumberMap,
     invoiceFileUrlMap,
     headOfficeTimezone,

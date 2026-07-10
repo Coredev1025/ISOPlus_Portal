@@ -9,6 +9,7 @@ import { error, info, warn, logLoginFailure, logLoginSuccess } from '../utils/lo
 import { getWorkspace, getMember, listWorkspacesForAuthorization } from '../services/isoplus.js';
 import { getFrontendBaseUrl, signOAuthState, verifyOAuthState } from '../utils/helpers.js';
 import OAuthTicket from '../models/OAuthTicket.js';
+import { toRequiredQueryString } from '../utils/securityHelpers.js';
 
 const router = express.Router();
 
@@ -663,7 +664,10 @@ router.get('/users', validateApiKey, async (req, res) => {
 
 router.patch('/users/:userId/disable', validateApiKey, async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = toRequiredQueryString(req.params.userId);
+    if (!userId) {
+      return res.status(400).json({ message: 'Invalid user id' });
+    }
     
     const user = await User.findById(userId);
     if (!user) {
@@ -693,7 +697,10 @@ router.patch('/users/:userId/disable', validateApiKey, async (req, res) => {
 
 router.patch('/users/:userId/enable', validateApiKey, async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = toRequiredQueryString(req.params.userId);
+    if (!userId) {
+      return res.status(400).json({ message: 'Invalid user id' });
+    }
     
     const user = await User.findById(userId);
     if (!user) {

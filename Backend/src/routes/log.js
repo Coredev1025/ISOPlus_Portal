@@ -2,6 +2,7 @@ import express from 'express';
 import mongoose from 'mongoose';
 import { authenticateToken } from '../middleware/auth.js';
 import { warn, info, error } from '../utils/logger.js';
+import { pickAllowedSortField, toQueryString } from '../utils/securityHelpers.js';
 
 const router = express.Router();
 
@@ -52,17 +53,20 @@ router.get('/', authenticateToken, async (req, res) => {
         const skip = (pageNumber - 1) * limitNumber;
 
         const query = {};
+        const levelStr = toQueryString(level);
+        const sourceStr = toQueryString(source);
+        const searchStr = toQueryString(search);
 
-        if (level && level !== 'all') {
-            query.level = { $regex: new RegExp(`^${escapeRegex(level)}$`, 'i') };
+        if (levelStr && levelStr !== 'all') {
+            query.level = { $regex: new RegExp(`^${escapeRegex(levelStr)}$`, 'i') };
         }
 
-        if (source && source !== 'all') {
-            query['metadata.source'] = { $regex: new RegExp(escapeRegex(source), 'i') };
+        if (sourceStr && sourceStr !== 'all') {
+            query['metadata.source'] = { $regex: new RegExp(escapeRegex(sourceStr), 'i') };
         }
 
-        if (search) {
-            const safe = escapeRegex(search);
+        if (searchStr) {
+            const safe = escapeRegex(searchStr);
             const regex = new RegExp(safe, 'i');
             query.$or = [
                 { message: regex },
@@ -70,10 +74,7 @@ router.get('/', authenticateToken, async (req, res) => {
             ];
         }
 
-        // Build sort object for query (outside of aggregate)
-        const sortField = sortBy === 'timestamp' ? 'timestamp' : 
-                         sortBy === 'level' ? 'level' : 
-                         sortBy === 'message' ? 'message' : 'timestamp'; // Default to timestamp
+        const sortField = pickAllowedSortField(sortBy, ['timestamp', 'level', 'message'], 'timestamp');
         
         const sortDirection = sortOrder === 'asc' ? 1 : -1; // Default to desc (newest first)
         const sortObject = { [sortField]: sortDirection };
