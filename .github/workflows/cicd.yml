@@ -7,16 +7,70 @@ on:
       - develop
     paths:
       - 'Backend/**'
+      - 'Frontend/**'
   pull_request:
     branches:
       - main
       - develop
     paths:
       - 'Backend/**'
+      - 'Frontend/**'
   workflow_dispatch:
-      
+
 jobs:
+  detect-changes:
+    name: Detect Changed Folder
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Filter paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'Backend/**'
+            frontend:
+              - 'Frontend/**'
+
+  sonarqube-backend:
+    name: SonarQube - Backend
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
+        with:
+          projectBaseDir: Backend
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_BACKEND }}
+
+  sonarqube-frontend:
+    name: SonarQube - Frontend
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
+        with:
+          projectBaseDir: Frontend
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_FRONTEND }}
+
   build-and-deploy:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true'
     runs-on: [ ubuntu-latest ]
     steps:
       - name: Checkout Source
@@ -36,11 +90,11 @@ jobs:
           VERSION_LABEL="$TIMESTAMP-${{ github.sha }}"
           echo "PACKAGE_FILE_NAME=$FILE_NAME" >> $GITHUB_ENV
           echo "VERSION_LABEL=$VERSION_LABEL" >> $GITHUB_ENV
-          
+
       - name: Generate Deployment Package
-        working-directory: Backend 
+        working-directory: Backend
         run: zip -r $PACKAGE_FILE_NAME .
-        
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4.1.0
         with:
@@ -49,26 +103,25 @@ jobs:
           aws-region: ap-southeast-2
 
       - name: Upload to S3
-        working-directory: Backend 
+        working-directory: Backend
         run: aws s3 cp $PACKAGE_FILE_NAME s3://isoplus-backend-deploy-bucket-isoplus-v1/$PACKAGE_FILE_NAME
-        
+
       - name: Create a new version on EBS from package on S3 - PROD
         if: github.ref == 'refs/heads/main'
-        run: | 
+        run: |
           aws elasticbeanstalk create-application-version --application-name "isoplus-be-prod" --version-label $VERSION_LABEL --source-bundle S3Bucket="isoplus-backend-deploy-bucket-isoplus-v1",S3Key="$PACKAGE_FILE_NAME"
-      
+
       - name: Update environment with the new vesion - PROD
         if: github.ref == 'refs/heads/main'
         run: |
           aws elasticbeanstalk update-environment --environment-name isoplus-be-prod-blue --version-label $VERSION_LABEL
-      
+
       - name: Create a new version on EBS from package on S3 - DEV
         if: github.ref == 'refs/heads/develop'
-        run: | 
+        run: |
           aws elasticbeanstalk create-application-version --application-name "isoplus-be-dev" --version-label $VERSION_LABEL --source-bundle S3Bucket="isoplus-backend-deploy-bucket-isoplus-v1",S3Key="$PACKAGE_FILE_NAME"
-      
+
       - name: Update environment with the new vesion - DEV
         if: github.ref == 'refs/heads/develop'
         run: |
           aws elasticbeanstalk update-environment --environment-name isoplus-be-dev-blue --version-label $VERSION_LABEL
-      
