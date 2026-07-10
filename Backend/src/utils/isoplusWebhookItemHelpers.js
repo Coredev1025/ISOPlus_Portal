@@ -3,41 +3,57 @@ import Item from '../models/Item.js';
 import { info, warn } from '../utils/logger.js';
 import { getItemValues, ITEM_DELETED } from '../services/isoplus.js';
 import { transformItemData } from '../utils/itemTransform.js';
+import { mongoEq } from './securityHelpers.js';
 
 async function getBoardSyncGUID(boardId) {
-  const board = await Board.findOne({ boardId }).select('currentSyncGUID').lean();
+  const safeBoardId = mongoEq(boardId);
+  if (!safeBoardId) return null;
+  const board = await Board.findOne({ boardId: safeBoardId }).select('currentSyncGUID').lean();
   return board?.currentSyncGUID || null;
 }
 
 export async function deleteWebhookItemFromDatabase(itemId) {
-  const item = await Item.findOne({ itemId }).select('boardId workspaceId').lean();
+  const safeItemId = mongoEq(itemId);
+  if (!safeItemId) return null;
+
+  const item = await Item.findOne({ itemId: safeItemId }).select('boardId workspaceId').lean();
   if (!item) {
-    info('Webhook-Handler', 'Item not in database, nothing to delete', { itemId });
+    info('Webhook-Handler', 'Item not in database, nothing to delete', { itemId: safeItemId });
     return null;
   }
 
-  await Item.findOneAndDelete({ itemId });
-  await Board.findOneAndUpdate({ boardId: item.boardId }, { $inc: { 'syncStats.itemsSynced': -1 } });
+  await Item.findOneAndDelete({ itemId: safeItemId });
+  await Board.findOneAndUpdate({ boardId: mongoEq(item.boardId) }, { $inc: { 'syncStats.itemsSynced': -1 } });
   info('Webhook-Handler', 'Item deleted from database (confirmed deleted in ISO+)', {
-    itemId,
+    itemId: safeItemId,
     boardId: item.boardId,
   });
-  return { deleted: true, itemId, boardId: item.boardId, workspaceId: item.workspaceId };
+  return { deleted: true, itemId: safeItemId, boardId: item.boardId, workspaceId: item.workspaceId };
 }
 
 async function findExistingWebhookItem(itemId) {
-  const item = await Item.findOne({ itemId }).select('boardId workspaceId syncGUID').lean();
+  const safeItemId = mongoEq(itemId);
+  if (!safeItemId) return null;
+
+  const item = await Item.findOne({ itemId: safeItemId }).select('boardId workspaceId syncGUID').lean();
   if (!item) return null;
   const currentSyncGUID = await getBoardSyncGUID(item.boardId);
   return { item, boardId: item.boardId, workspaceId: item.workspaceId, currentSyncGUID };
 }
 
 async function searchSyncedBoardsForItem(itemId) {
+  const safeItemId = mongoEq(itemId);
+  if (!safeItemId) return null;
+
   const boards = await Board.find({ syncData: true }).select('workspaceId boardId currentSyncGUID').lean();
   for (const board of boards) {
     if (!board.workspaceId || !board.boardId) continue;
     try {
-      const itemData = await getItemValues(board.workspaceId, board.boardId, itemId);
+      const itemData = await getItemValues(
+        mongoEq(board.workspaceId),
+        mongoEq(board.boardId),
+        safeItemId,
+      );
       if (itemData === ITEM_DELETED) {
         return { itemDeletedInIsoPlus: true, foundBoardId: board.boardId, foundWorkspaceId: board.workspaceId };
       }
@@ -57,16 +73,21 @@ async function searchSyncedBoardsForItem(itemId) {
 }
 
 async function fetchItemFromKnownBoard(itemId, workspaceId, boardId) {
+  const safeItemId = mongoEq(itemId);
+  const safeWorkspaceId = mongoEq(workspaceId);
+  const safeBoardId = mongoEq(boardId);
+  if (!safeItemId || !safeWorkspaceId || !safeBoardId) return null;
+
   try {
-    const itemData = await getItemValues(workspaceId, boardId, itemId);
+    const itemData = await getItemValues(safeWorkspaceId, safeBoardId, safeItemId);
     if (itemData === ITEM_DELETED) return { itemDeletedInIsoPlus: true };
-    const currentSyncGUID = await getBoardSyncGUID(boardId);
+    const currentSyncGUID = await getBoardSyncGUID(safeBoardId);
     return { itemData, currentSyncGUID };
   } catch (err) {
     warn('Webhook-Handler', 'Failed to fetch item from API', {
-      itemId,
-      boardId,
-      workspaceId,
+      itemId: safeItemId,
+      boardId: safeBoardId,
+      workspaceId: safeWorkspaceId,
       error: err.message,
     });
     return null;
@@ -74,12 +95,17 @@ async function fetchItemFromKnownBoard(itemId, workspaceId, boardId) {
 }
 
 async function upsertWebhookItemFromApi({ itemId, itemData, foundWorkspaceId, foundBoardId, currentSyncGUID }) {
+  const safeItemId = mongoEq(itemId);
+  const safeWorkspaceId = mongoEq(foundWorkspaceId);
+  const safeBoardId = mongoEq(foundBoardId);
+  if (!safeItemId || !safeWorkspaceId || !safeBoardId) return null;
+
   const rawFolderId = itemData.folder_id || itemData.folder?.id;
   const folderId = rawFolderId != null && rawFolderId !== '' ? String(rawFolderId) : '';
   if (!folderId) {
     info('Webhook-Handler', 'Item has no folder_id; storing empty folderId (aligned with sync worker)', {
-      itemId,
-      boardId: foundBoardId,
+      itemId: safeItemId,
+      boardId: safeBoardId,
     });
   }
 
@@ -88,14 +114,14 @@ async function upsertWebhookItemFromApi({ itemId, itemData, foundWorkspaceId, fo
   let item;
   try {
     item = await Item.findOneAndUpdate(
-      { itemId },
+      { itemId: safeItemId },
       {
         $set: {
-          workspaceId: foundWorkspaceId,
-          boardId: foundBoardId,
+          workspaceId: safeWorkspaceId,
+          boardId: safeBoardId,
           folderId,
-          itemId,
-          isoPlusItemId: itemId,
+          itemId: safeItemId,
+          isoPlusItemId: safeItemId,
           syncGUID: currentSyncGUID,
           data: transformedData,
           updatedAt: now,
@@ -106,10 +132,10 @@ async function upsertWebhookItemFromApi({ itemId, itemData, foundWorkspaceId, fo
     );
   } catch (err) {
     if (err?.code === 11000) {
-      item = await Item.findOne({ itemId }).lean();
+      item = await Item.findOne({ itemId: safeItemId }).lean();
       if (!item) throw err;
       info('Webhook-Handler', 'Item already existed, reused existing record after duplicate key', {
-        itemId,
+        itemId: safeItemId,
         boardId: item.boardId,
         workspaceId: item.workspaceId,
       });
@@ -119,27 +145,33 @@ async function upsertWebhookItemFromApi({ itemId, itemData, foundWorkspaceId, fo
   }
 
   info('Webhook-Handler', 'Created or updated item from API', {
-    itemId,
-    boardId: foundBoardId,
-    workspaceId: foundWorkspaceId,
+    itemId: safeItemId,
+    boardId: safeBoardId,
+    workspaceId: safeWorkspaceId,
     folderId,
     syncGUID: currentSyncGUID,
   });
-  return { item, boardId: foundBoardId, workspaceId: foundWorkspaceId, currentSyncGUID };
+  return { item, boardId: safeBoardId, workspaceId: safeWorkspaceId, currentSyncGUID };
 }
 
 export async function fetchOrCreateWebhookItem(itemId, boardId = null, workspaceId = null) {
-  const existing = await findExistingWebhookItem(itemId);
+  const safeItemId = mongoEq(itemId);
+  if (!safeItemId) return null;
+
+  const safeBoardId = boardId ? mongoEq(boardId) : null;
+  const safeWorkspaceId = workspaceId ? mongoEq(workspaceId) : null;
+
+  const existing = await findExistingWebhookItem(safeItemId);
   if (existing) return existing;
 
   let itemData = null;
-  let foundBoardId = boardId;
-  let foundWorkspaceId = workspaceId;
+  let foundBoardId = safeBoardId;
+  let foundWorkspaceId = safeWorkspaceId;
   let currentSyncGUID = null;
   let itemDeletedInIsoPlus = false;
 
   if (!foundBoardId || !foundWorkspaceId) {
-    const searchResult = await searchSyncedBoardsForItem(itemId);
+    const searchResult = await searchSyncedBoardsForItem(safeItemId);
     if (searchResult?.itemDeletedInIsoPlus) {
       itemDeletedInIsoPlus = true;
       foundBoardId = searchResult.foundBoardId;
@@ -151,7 +183,7 @@ export async function fetchOrCreateWebhookItem(itemId, boardId = null, workspace
       currentSyncGUID = searchResult.currentSyncGUID;
     }
   } else {
-    const fetchResult = await fetchItemFromKnownBoard(itemId, foundWorkspaceId, foundBoardId);
+    const fetchResult = await fetchItemFromKnownBoard(safeItemId, foundWorkspaceId, foundBoardId);
     if (fetchResult?.itemDeletedInIsoPlus) {
       itemDeletedInIsoPlus = true;
     } else if (fetchResult?.itemData) {
@@ -161,15 +193,21 @@ export async function fetchOrCreateWebhookItem(itemId, boardId = null, workspace
   }
 
   if (itemDeletedInIsoPlus) {
-    info('Webhook-Handler', 'Item deleted in ISO+ (404), deleting local copy', { itemId, boardId: foundBoardId });
-    const deleteResult = await deleteWebhookItemFromDatabase(itemId);
-    return deleteResult ? { deleted: true, ...deleteResult } : { deleted: true, itemId };
+    info('Webhook-Handler', 'Item deleted in ISO+ (404), deleting local copy', { itemId: safeItemId, boardId: foundBoardId });
+    const deleteResult = await deleteWebhookItemFromDatabase(safeItemId);
+    return deleteResult ? { deleted: true, ...deleteResult } : { deleted: true, itemId: safeItemId };
   }
 
   if (!itemData) {
-    warn('Webhook-Handler', 'Item not found in database or API', { itemId, boardId: foundBoardId });
+    warn('Webhook-Handler', 'Item not found in database or API', { itemId: safeItemId, boardId: foundBoardId });
     return null;
   }
 
-  return upsertWebhookItemFromApi({ itemId, itemData, foundWorkspaceId, foundBoardId, currentSyncGUID });
+  return upsertWebhookItemFromApi({
+    itemId: safeItemId,
+    itemData,
+    foundWorkspaceId,
+    foundBoardId,
+    currentSyncGUID,
+  });
 }

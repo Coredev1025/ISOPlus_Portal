@@ -7,42 +7,51 @@ import { syncTimeTrackingFromItem } from '../utils/timeTrackSync.js';
 import { resolveWebhookTransformedValue } from '../utils/isoplusWebhookHelpers.js';
 import { deleteWebhookItemFromDatabase, fetchOrCreateWebhookItem } from '../utils/isoplusWebhookItemHelpers.js';
 import { updateReferencingWebhookItems } from '../utils/isoplusWebhookReferenceHelpers.js';
+import { mongoEq } from '../utils/securityHelpers.js';
 
 async function refreshItemDataFromApi(workspaceId, boardId, itemId, valueId) {
-  const fullItemData = await getItemValues(workspaceId, boardId, itemId);
+  const safeWorkspaceId = mongoEq(workspaceId);
+  const safeBoardId = mongoEq(boardId);
+  const safeItemId = mongoEq(itemId);
+  if (!safeWorkspaceId || !safeBoardId || !safeItemId) return { refreshed: false };
+
+  const fullItemData = await getItemValues(safeWorkspaceId, safeBoardId, safeItemId);
   if (fullItemData === ITEM_DELETED) {
-    info('Webhook-Handler', 'Item was deleted in ISO+ during refresh, deleting local copy', { itemId, valueId });
-    await deleteWebhookItemFromDatabase(itemId);
+    info('Webhook-Handler', 'Item was deleted in ISO+ during refresh, deleting local copy', { itemId: safeItemId, valueId });
+    await deleteWebhookItemFromDatabase(safeItemId);
     return { deleted: true };
   }
   if (!fullItemData) return { refreshed: false };
 
   const transformedData = transformItemData(fullItemData);
   await Item.findOneAndUpdate(
-    { itemId },
+    { itemId: safeItemId },
     { $set: { data: transformedData, syncGUID: null, updatedAt: new Date() } },
   );
-  syncTimeTrackingFromItem(workspaceId, boardId, itemId, transformedData)
-    .catch((ttErr) => warn('Webhook-Handler', 'TT sync failed after value.updated', { itemId, error: ttErr.message }));
+  syncTimeTrackingFromItem(safeWorkspaceId, safeBoardId, safeItemId, transformedData)
+    .catch((ttErr) => warn('Webhook-Handler', 'TT sync failed after value.updated', { itemId: safeItemId, error: ttErr.message }));
   return { refreshed: true, transformedData };
 }
 
 async function updateItemByAttributeName(itemId, payload, isDeleted, attributeName) {
+  const safeItemId = mongoEq(itemId);
+  if (!safeItemId) return false;
+
   const transformedValue = resolveWebhookTransformedValue(payload, isDeleted, transformValue, warn);
   const updateObj = {
     [`data.${attributeName}`]: transformedValue,
     syncGUID: null,
     updatedAt: new Date(),
   };
-  await Item.findOneAndUpdate({ itemId }, { $set: updateObj });
+  await Item.findOneAndUpdate({ itemId: safeItemId }, { $set: updateObj });
   return true;
 }
 
 export async function handleWebhookValueUpdated(payload) {
   try {
-    const valueId = payload.id;
-    const itemId = payload.item_id;
-    const attributeId = payload.attribute_id;
+    const valueId = mongoEq(payload.id);
+    const itemId = mongoEq(payload.item_id);
+    const attributeId = mongoEq(payload.attribute_id);
     const attributeName = payload.attribute?.name;
     const isDeleted = payload.deleted === true;
 
@@ -75,7 +84,7 @@ export async function handleWebhookValueUpdated(payload) {
       return;
     }
 
-    const board = await Board.findOne({ boardId, syncData: true }).select('currentSyncGUID').lean();
+    const board = await Board.findOne({ boardId: mongoEq(boardId), syncData: true }).select('currentSyncGUID').lean();
     if (!board) {
       info('Webhook-Handler', 'Board not found or sync not enabled', { boardId });
       return;

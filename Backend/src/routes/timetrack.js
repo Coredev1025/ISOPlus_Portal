@@ -5,7 +5,7 @@ import { transformItemData } from '../utils/itemTransform.js';
 import { info, error, warn } from '../utils/logger.js';
 import TimeTrack from '../models/TimeTrack.js';
 import Item from '../models/Item.js';
-import { toRequiredQueryString } from '../utils/securityHelpers.js';
+import { toRequiredQueryString, mongoEq } from '../utils/securityHelpers.js';
 
 const router = express.Router();
 
@@ -78,8 +78,8 @@ router.get('/tasks', authenticateToken, requirePortalOwnerOrSupport, async (req,
     try {
         const items = await Item.find(
             {
-                workspaceId,
-                boardId,
+                workspaceId: mongoEq(workspaceId),
+                boardId: mongoEq(boardId),
                 $or: [
                     { 'data._hasTimeTracking': true },
                     { 'data._timeTrackingAttributeId': { $exists: true } },
@@ -119,8 +119,8 @@ router.get('/status', authenticateToken, requirePortalOwnerOrSupport, async (req
     }
     try {
         const active = await TimeTrack.findOne({
-            workspaceId,
-            boardId,
+            workspaceId: mongoEq(workspaceId),
+            boardId: mongoEq(boardId),
             User: req.user.email,
             ended_at: null
         }).lean();
@@ -131,7 +131,7 @@ router.get('/status', authenticateToken, requirePortalOwnerOrSupport, async (req
 
         let taskName = active.Task;
         if (active.itemId) {
-            const item = await Item.findOne({ itemId: active.itemId }, { data: 1 }).lean();
+            const item = await Item.findOne({ itemId: mongoEq(active.itemId) }, { data: 1 }).lean();
             if (item) {
                 taskName = resolveItemName(item.data, taskName);
             }
@@ -165,7 +165,7 @@ router.get('/', authenticateToken, requirePortalOwnerOrSupport, async (req, res)
     }
     try {
         const entries = await TimeTrack.find(
-            { workspaceId, boardId },
+            { workspaceId: mongoEq(workspaceId), boardId: mongoEq(boardId) },
             null,
             { sort: { started_at: -1 } }
         ).lean();
@@ -217,15 +217,19 @@ router.post('/start', authenticateToken, requirePortalOwnerOrSupport, async (req
         return res.status(400).json({ message: 'workspaceId, boardId, and itemId are required' });
     }
     try {
-        const item = await Item.findOne({ itemId, boardId, workspaceId }, { data: 1 }).lean();
+        const item = await Item.findOne({
+            itemId: mongoEq(itemId),
+            boardId: mongoEq(boardId),
+            workspaceId: mongoEq(workspaceId),
+        }, { data: 1 }).lean();
         if (!item) {
             return res.status(404).json({ message: 'Task item not found for this board' });
         }
         const taskName = resolveItemName(item.data, itemId);
 
         const existing = await TimeTrack.findOne({
-            workspaceId,
-            boardId,
+            workspaceId: mongoEq(workspaceId),
+            boardId: mongoEq(boardId),
             User: req.user.email,
             ended_at: null
         });
@@ -282,7 +286,9 @@ router.post('/stop', authenticateToken, requirePortalOwnerOrSupport, async (req,
     }
     try {
         const entry = await TimeTrack.findOne({
-            workspaceId, boardId, itemId,
+            workspaceId: mongoEq(workspaceId),
+            boardId: mongoEq(boardId),
+            itemId: mongoEq(itemId),
             User: req.user.email,
             ended_at: null
         }).lean();

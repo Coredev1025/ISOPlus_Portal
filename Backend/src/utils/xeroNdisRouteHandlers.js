@@ -5,6 +5,7 @@ import { createInvoice, createQuote, createOrUpdateContact, getContactByEmail, g
 import { Item as ItemPayloadDTO } from '../dto/itemsPayload.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
 import { getDateOnlyIso } from '../utils/ndisServiceRecords.js';
+import { mongoEq } from '../utils/securityHelpers.js';
 import {
   getNdisInvoiceGeneratorContextFromMasterItems,
   prepareParticipantForInvoiceGenerator,
@@ -399,13 +400,18 @@ export async function handleXeroInvoiceParticipantTax({
   }
 
   try {
-    const business = await Business.findOne({ workspaceId: workspaceId.toString() });
+    const business = await Business.findOne({ workspaceId: mongoEq(workspaceId) });
     if (!business) throw new Error('Business not found');
 
+    const participantQueryName = mongoEq(participantName || items[0]?.participant);
+    if (!participantQueryName) {
+      return res.status(400).json({ message: 'Participant name is required.' });
+    }
+
     const participantProfileItem = await Item.findOne({
-      workspaceId: workspaceId.toString(),
-      boardId: boardId.toString(),
-      'data.Full Name/Preferred Name': participantName || items[0]?.participant,
+      workspaceId: mongoEq(workspaceId),
+      boardId: mongoEq(boardId),
+      'data.Full Name/Preferred Name': participantQueryName,
     });
     if (!participantProfileItem) throw new Error('Participant profile item not found');
 
