@@ -26,6 +26,29 @@ function bucketMonthlyStatementServices(services, deps) {
   return serviceBuckets;
 }
 
+function applyServiceTableCurrencyTotals(templateInputs, config, totalValues, setCurrencyField) {
+  for (let index = 0; index < config.totals.length; index++) {
+    const fieldName = config.totals[index];
+    const value = totalValues[Math.min(index, totalValues.length - 1)] || 0;
+    const targets = Array.isArray(fieldName) ? fieldName : [fieldName];
+    for (let targetIndex = 0; targetIndex < targets.length; targetIndex++) {
+      setCurrencyField(templateInputs, targets[targetIndex], value);
+    }
+  }
+}
+
+function normalizeSanitizedTableRow(row, columnCount, normalizeTableCell) {
+  const padded = [...(Array.isArray(row) ? row : [])];
+  while (padded.length < columnCount) padded.push('');
+  padded.length = columnCount;
+  const normalizedRow = [];
+  for (let i = 0; i < padded.length; i++) {
+    const normalized = normalizeTableCell(padded[i]);
+    normalizedRow.push(typeof normalized === 'string' ? normalized : '');
+  }
+  return normalizedRow;
+}
+
 function fillMonthlyStatementServiceTables(templateInputs, serviceBuckets, business, timezone, deps) {
   const { SERVICE_TABLE_CONFIG, buildServiceTableRows, setCurrencyField } = deps;
   const tableColumnCounts = {};
@@ -37,11 +60,7 @@ function fillMonthlyStatementServiceTables(templateInputs, serviceBuckets, busin
       templateInputs[config.tableName] = JSON.stringify(tableData.rows);
       tableColumnCounts[config.tableName] = config.columns.length;
       const totalValues = [tableData.totals.amount, tableData.totals.gov, tableData.totals.participant];
-      config.totals.forEach((fieldName, index) => {
-        const value = totalValues[Math.min(index, totalValues.length - 1)] || 0;
-        const targets = Array.isArray(fieldName) ? fieldName : [fieldName];
-        targets.forEach((f) => setCurrencyField(templateInputs, f, value));
-      });
+      applyServiceTableCurrencyTotals(templateInputs, config, totalValues, setCurrencyField);
     }
   }
   return tableColumnCounts;
@@ -58,15 +77,11 @@ function sanitizeMonthlyStatementTableInputs(templateInputs, tableColumnCounts, 
       const rows = (!Array.isArray(parsed) || parsed.length === 0)
         ? [Array.from({ length: columnCount }, (_, i) => (i === 1 ? 'No services recorded for this period' : ''))]
         : parsed;
-      templateInputs[key] = JSON.stringify(rows.map((row) => {
-        const padded = [...(Array.isArray(row) ? row : [])];
-        while (padded.length < columnCount) padded.push('');
-        padded.length = columnCount;
-        return padded.map((cell) => {
-          const normalized = normalizeTableCell(cell);
-          return typeof normalized === 'string' ? normalized : '';
-        });
-      }));
+      const normalizedRows = [];
+      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+        normalizedRows.push(normalizeSanitizedTableRow(rows[rowIndex], columnCount, normalizeTableCell));
+      }
+      templateInputs[key] = JSON.stringify(normalizedRows);
     } catch {
       const emptyRow = Array(tableColumnCounts[key] || 8).fill('');
       emptyRow[1] = 'No data available';
@@ -353,16 +368,16 @@ function getUtcOffsetMs(at, timeZone) {
   return timezonePartsToUtcMs(at, timeZone) - timezonePartsToUtcMs(at, 'UTC');
 }
 
-function resolveMonthlyStatementDates(requestStartDate, requestEndDate, monthNum, yearVal, timezone) {
-  const normalizeIsoOrNull = (value) => {
-    if (!value) return null;
-    const d = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(d.getTime())) return null;
-    return d.toISOString();
-  };
+function resolveMonthlyStatementIsoDate(value) {
+  if (!value) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
 
-  let startDate = normalizeIsoOrNull(requestStartDate);
-  let endDate = normalizeIsoOrNull(requestEndDate);
+function resolveMonthlyStatementDates(requestStartDate, requestEndDate, monthNum, yearVal, timezone) {
+  let startDate = resolveMonthlyStatementIsoDate(requestStartDate);
+  let endDate = resolveMonthlyStatementIsoDate(requestEndDate);
 
   // Guard against inverted ranges; fallback to computed month range.
   if (startDate && endDate) {

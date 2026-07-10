@@ -53,6 +53,7 @@ if (missingEnvVars.length > 0) {
 }
 
 const app = express();
+app.disable('x-powered-by');
 
 app.set('etag', false);
 
