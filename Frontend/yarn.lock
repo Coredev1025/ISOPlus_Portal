@@ -414,10 +414,10 @@
     "@jridgewell/resolve-uri" "^3.1.0"
     "@jridgewell/sourcemap-codec" "^1.4.14"
 
-"@next/env@15.5.18":
-  version "15.5.18"
-  resolved "https://registry.npmjs.org/@next/env/-/env-15.5.18.tgz"
-  integrity sha512-hAV85Ckd9QR6RvH04MEKwsfLTksvFpO47j9xwtoIuvuPnlwecpSi+uZTtm8HirVbtlI2Fnz//xpcSTjFdyJk+g==
+"@next/env@15.5.20":
+  version "15.5.20"
+  resolved "https://registry.npmjs.org/@next/env/-/env-15.5.20.tgz"
+  integrity sha512-dXh51Wvddf8daEyBXryZZEe1FdVxEWx9lgaTseLZUtC1XP/W8Wri+Z+VPOElHlByk23CyqHdc2oVByX7wsTWsw==
 
 "@next/eslint-plugin-next@15.5.18":
   version "15.5.18"
@@ -426,15 +426,10 @@
   dependencies:
     fast-glob "3.3.1"
 
-"@next/swc-linux-x64-gnu@15.5.18":
-  version "15.5.18"
-  resolved "https://registry.npmjs.org/@next/swc-linux-x64-gnu/-/swc-linux-x64-gnu-15.5.18.tgz"
-  integrity sha512-oUfg2EgJmU3R0OCOWiokGFUTvZiPfXtriXiuF3YNxRoROCdgvTedHIzYoeKH34gsZxS/V7mHbfq2hpAHwhH1/A==
-
-"@next/swc-linux-x64-musl@15.5.18":
-  version "15.5.18"
-  resolved "https://registry.npmjs.org/@next/swc-linux-x64-musl/-/swc-linux-x64-musl-15.5.18.tgz"
-  integrity sha512-JLxSP3KTd9iu/bvUMQxH7RJo9xKSHf55/6RPE4a6FTSZygGn7uvZbCej0AHXydwkggQGSD9UddSjwv6Xz5ESfA==
+"@next/swc-linux-x64-gnu@15.5.20":
+  version "15.5.20"
+  resolved "https://registry.npmjs.org/@next/swc-linux-x64-gnu/-/swc-linux-x64-gnu-15.5.20.tgz"
+  integrity sha512-DkWLEdKajJwdGt27M3i1VEO2kelTvZrK6Pcb7JvW2BY+nofWm7FBsBNDj7g7Pr1NuQ5PLJvqEqYa20GTsBDnKQ==
 
 "@next/swc-wasm-nodejs@13.5.1":
   version "13.5.1"
@@ -479,10 +474,10 @@
   resolved "https://registry.npmjs.org/@opentelemetry/api/-/api-1.9.1.tgz"
   integrity sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q==
 
-"@opentelemetry/core@^1.30.1 || ^2.1.0", "@opentelemetry/core@^2.6.1", "@opentelemetry/core@2.7.1":
-  version "2.7.1"
-  resolved "https://registry.npmjs.org/@opentelemetry/core/-/core-2.7.1.tgz"
-  integrity sha512-QAqIj32AtK6+pEVNG7EOVxHdE06RP+FM5qpiEJ4RtDcFIqKUZHYhl7/7UY5efhwmwNAg7j8QbJVBLxMerc0+gw==
+"@opentelemetry/core@^2.8.0":
+  version "2.9.0"
+  resolved "https://registry.npmjs.org/@opentelemetry/core/-/core-2.9.0.tgz"
+  integrity sha512-m2nckMT80NnmjTYSPjJQObBJ+8dgkoajEOUbznL8AHZ3T3yHRk2P7gI1PhEBc1+lOnrYE9UWrWHqJDsmqjmNbw==
   dependencies:
     "@opentelemetry/semantic-conventions" "^1.29.0"
 
@@ -495,21 +490,31 @@
     import-in-the-middle "^3.0.0"
     require-in-the-middle "^8.0.0"
 
-"@opentelemetry/resources@^2.6.1", "@opentelemetry/resources@2.7.1":
-  version "2.7.1"
-  resolved "https://registry.npmjs.org/@opentelemetry/resources/-/resources-2.7.1.tgz"
-  integrity sha512-DeT6KKolmC4e/dRQvMQ/RwlnzhaqeiFOXY5ngoOPJ07GgVVKxZOg9EcrNZb5aTzUn+iCrJldAgOfQm1O/QfPAQ==
+"@opentelemetry/resources@^2.6.1", "@opentelemetry/resources@2.9.0":
+  version "2.9.0"
+  resolved "https://registry.npmjs.org/@opentelemetry/resources/-/resources-2.9.0.tgz"
+  integrity sha512-jyA5MBLQ+Dkl3+JsZkUoUvL7yHvU64kLsvpXKarWm6347Sl1t1bXFTFykUePNpT5WH5pm9a2Qtt03iIYQhZ1Fg==
   dependencies:
-    "@opentelemetry/core" "2.7.1"
+    "@opentelemetry/core" "2.9.0"
     "@opentelemetry/semantic-conventions" "^1.29.0"
 
 "@opentelemetry/sdk-trace-base@^1.30.1 || ^2.1.0", "@opentelemetry/sdk-trace-base@^2.6.1":
-  version "2.7.1"
-  resolved "https://registry.npmjs.org/@opentelemetry/sdk-trace-base/-/sdk-trace-base-2.7.1.tgz"
-  integrity sha512-NAYIlsF8MPUsKqJMiDQJTMPOmlbawC1Iz/omMLygZ1C9am8fTKYjTaI+OZM+WTY3t3Glo0wnOg/6/pac6RGPPw==
+  version "2.9.0"
+  resolved "https://registry.npmjs.org/@opentelemetry/sdk-trace-base/-/sdk-trace-base-2.9.0.tgz"
+  integrity sha512-cp9zmTl62R8PJrpvFcmc8N2JQU/xfa0S+61q511Nji+QxCfZ8Ifvg7H27G8cANe4crg4RTrWsVvanHiXjSp6ag==
   dependencies:
-    "@opentelemetry/core" "2.7.1"
-    "@opentelemetry/resources" "2.7.1"
+    "@opentelemetry/core" "2.9.0"
+    "@opentelemetry/resources" "2.9.0"
+    "@opentelemetry/sdk-trace" "2.9.0"
+    "@opentelemetry/semantic-conventions" "^1.29.0"
+
+"@opentelemetry/sdk-trace@2.9.0":
+  version "2.9.0"
+  resolved "https://registry.npmjs.org/@opentelemetry/sdk-trace/-/sdk-trace-2.9.0.tgz"
+  integrity sha512-sGA19HvtrrSKYsseHphluH6j3p6Xa3fqc7c7y8f/7mYWejc1lyDFcpSdD1kYa50HCLUeEo4zA5bW0pniaPszuw==
+  dependencies:
+    "@opentelemetry/core" "2.9.0"
+    "@opentelemetry/resources" "2.9.0"
     "@opentelemetry/semantic-conventions" "^1.29.0"
 
 "@opentelemetry/semantic-conventions@^1.29.0", "@opentelemetry/semantic-conventions@^1.39.0", "@opentelemetry/semantic-conventions@^1.40.0":
@@ -2210,13 +2215,14 @@ axe-core@^4.10.0:
   resolved "https://registry.npmjs.org/axe-core/-/axe-core-4.10.3.tgz"
   integrity sha512-Xm7bpRXnDSX2YE2YFfBk2FnF0ep6tmG7xPh8iHee8MIcrgq762Nkce856dYtJYLkuIoYZvGfTs/PbZhideTcEg==
 
-axios@^1.8.2:
-  version "1.15.2"
-  resolved "https://registry.npmjs.org/axios/-/axios-1.15.2.tgz"
-  integrity sha512-wLrXxPtcrPTsNlJmKjkPnNPK2Ihe0hn0wGSaTEiHRPxwjvJwT3hKmXF4dpqxmPO9SoNb2FsYXj/xEo0gHN+D5A==
+axios@^1.16.0:
+  version "1.18.1"
+  resolved "https://registry.npmjs.org/axios/-/axios-1.18.1.tgz"
+  integrity sha512-3nTvFlvpn9Zu/RkHUqtc7/+al4UpRW5az71ap5zccp6e8RAYEzhMTecX8Dz1wWDYrPpUoB1HAQEGEAEvUr7S9g==
   dependencies:
-    follow-redirects "^1.15.11"
+    follow-redirects "^1.16.0"
     form-data "^4.0.5"
+    https-proxy-agent "^5.0.1"
     proxy-from-env "^2.1.0"
 
 axobject-query@^4.1.0:
@@ -2818,10 +2824,10 @@ dom-helpers@^5.0.1:
     "@babel/runtime" "^7.8.7"
     csstype "^3.0.2"
 
-dompurify@^3.3.3:
-  version "3.4.1"
-  resolved "https://registry.npmjs.org/dompurify/-/dompurify-3.4.1.tgz"
-  integrity sha512-JahakDAIg1gyOm7dlgWSDjV4n7Ip2PKR55NIT6jrMfIgLFgWo81vdr1/QGqWtFNRqXP9UV71oVePtjqS2ebnPw==
+dompurify@^3.4.11:
+  version "3.4.11"
+  resolved "https://registry.npmjs.org/dompurify/-/dompurify-3.4.11.tgz"
+  integrity sha512-zhlUV12GsaRzMsf9q5M254YhA4+VuF0fG+QFqu6aYpoGlKtz+w8//jBcGVYBgQkR5GHjUomejY84AV+/uPbWdw==
   optionalDependencies:
     "@types/trusted-types" "^2.0.7"
 
@@ -3370,7 +3376,7 @@ flatted@^3.2.9:
   resolved "https://registry.npmjs.org/flatted/-/flatted-3.4.2.tgz"
   integrity sha512-PjDse7RzhcPkIJwy5t7KPWQSZ9cAbzQXcafsetQoD7sOJRQlGikNbx7yZp2OotDnJyrDcbyRq3Ttb18iYOqkxA==
 
-follow-redirects@^1.15.11:
+follow-redirects@^1.16.0:
   version "1.16.0"
   resolved "https://registry.npmjs.org/follow-redirects/-/follow-redirects-1.16.0.tgz"
   integrity sha512-y5rN/uOsadFT/JfYwhxRS5R7Qce+g3zG97+JrtFZlC9klX/W5hD7iiLzScI4nZqUS7DNUdhPgw4xI8W2LuXlUw==
@@ -3405,16 +3411,16 @@ foreground-child@^3.1.0:
     cross-spawn "^7.0.6"
     signal-exit "^4.0.1"
 
-form-data@^4.0.5:
-  version "4.0.5"
-  resolved "https://registry.npmjs.org/form-data/-/form-data-4.0.5.tgz"
-  integrity sha512-8RipRLol37bNs2bhoV67fiTEvdTrbMUYcFTiy3+wuuOnUog2QBHCZWXDRijWQfAkhBj2Uf5UnVaiWwA5vdd82w==
+form-data@^4.0.6:
+  version "4.0.6"
+  resolved "https://registry.npmjs.org/form-data/-/form-data-4.0.6.tgz"
+  integrity sha512-vKatAh4SlVfgbv+YtmhiRjhEMJsYpsG1Y2rMQtR+SVSbytsSD1YGzDIcrAJmdFec88u/+VoGmxnl+80gL1tRCQ==
   dependencies:
     asynckit "^0.4.0"
     combined-stream "^1.0.8"
     es-set-tostringtag "^2.1.0"
-    hasown "^2.0.2"
-    mime-types "^2.1.12"
+    hasown "^2.0.4"
+    mime-types "^2.1.35"
 
 form-render@^2.2.20:
   version "2.5.6"
@@ -3649,10 +3655,10 @@ has-tostringtag@^1.0.2:
   dependencies:
     has-symbols "^1.0.3"
 
-hasown@^2.0.2:
-  version "2.0.2"
-  resolved "https://registry.npmjs.org/hasown/-/hasown-2.0.2.tgz"
-  integrity sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==
+hasown@^2.0.2, hasown@^2.0.4:
+  version "2.0.4"
+  resolved "https://registry.npmjs.org/hasown/-/hasown-2.0.4.tgz"
+  integrity sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==
   dependencies:
     function-bind "^1.1.2"
 
@@ -3666,7 +3672,7 @@ html-to-image@^1.11.13:
   resolved "https://registry.npmjs.org/html-to-image/-/html-to-image-1.11.13.tgz"
   integrity sha512-cuOPoI7WApyhBElTTb9oqsawRvZ0rHhaHwghRLlTuffoD1B2aDemlCruLeZrUIIdvG7gs9xeELEPm6PhuASqrg==
 
-https-proxy-agent@^5.0.0:
+https-proxy-agent@^5.0.0, https-proxy-agent@^5.0.1:
   version "5.0.1"
   resolved "https://registry.npmjs.org/https-proxy-agent/-/https-proxy-agent-5.0.1.tgz"
   integrity sha512-dFcAjpTQFgoLMzC2VwU+C/CbS7uRL0lWmxDITmqm7C+7F0Odmj6s9l6alZc6AELXhrnggM2CeWSXHGOdX2YtwA==
@@ -4022,10 +4028,10 @@ js-cookie@^3.0.5:
   resolved "https://registry.npmjs.org/js-tokens/-/js-tokens-4.0.0.tgz"
   integrity sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==
 
-js-yaml@^4.1.0:
-  version "4.1.1"
-  resolved "https://registry.npmjs.org/js-yaml/-/js-yaml-4.1.1.tgz"
-  integrity sha512-qQKT4zQxXl8lLwBtHMWwaTcGfFOZviOJet3Oy/xmGk2gZH677CJM9EvtfdSkgWcATZhj/55JZ0rmy3myCT5lsA==
+js-yaml@^4.1.2:
+  version "4.3.0"
+  resolved "https://registry.npmjs.org/js-yaml/-/js-yaml-4.3.0.tgz"
+  integrity sha512-1td788aAnnZ5qs7V2QIRl1owjtYpbKt749Y3xauqQgwIIGF/xXWz1wMTEBx5O3LK3lXLVuqXPdPxj2BoFHaW9Q==
   dependencies:
     argparse "^2.0.1"
 
@@ -4238,7 +4244,7 @@ mime-db@1.52.0:
   resolved "https://registry.npmjs.org/mime-db/-/mime-db-1.52.0.tgz"
   integrity sha512-sPU4uV7dYlvtWJxwwxHD0PuihVNiE7TyAbQ5SWxDCB9mUYvOgroQOwYQQOKPJ8CIbE+1ETVlOoK1UC2nU3gYvg==
 
-mime-types@^2.1.12:
+mime-types@^2.1.35:
   version "2.1.35"
   resolved "https://registry.npmjs.org/mime-types/-/mime-types-2.1.35.tgz"
   integrity sha512-ZDY+bPm5zTTF+YpCrAU9nK0UgICYPT0QtT1NZWFv4s++TNkcgVaT0g6+4R2uI4MjQjzysHB1zxuWL50hzaeXiw==
@@ -4309,7 +4315,7 @@ mz@^2.7.0:
     object-assign "^4.0.1"
     thenify-all "^1.0.0"
 
-nanoid@^3.3.6:
+nanoid@^3.3.12:
   version "3.3.15"
   resolved "https://registry.npmjs.org/nanoid/-/nanoid-3.3.15.tgz"
   integrity sha512-y7Wygv/7mEOvxTuEQDB8StXdMRBWf1kR/tlhAzBRUFkB2jfcLOAxO/SHmOO2zgz1pVgK29/kyupn059/bCHdjA==
@@ -4335,24 +4341,24 @@ next-themes@^0.3.0:
   integrity sha512-/QHIrsYpd6Kfk7xakK4svpDI5mmXP0gfvCoJdGpZQ2TOrQZmsW0QxjaiLn8wbIKjtm4BTSqLoix4lxYYOnLJ/w==
 
 "next@^13.2.0 || ^14.0 || ^15.0.0-rc.0 || ^16.0.0-0", next@^15.5.15:
-  version "15.5.18"
-  resolved "https://registry.npmjs.org/next/-/next-15.5.18.tgz"
-  integrity sha512-eKL8zUJkX9Y5lE+RX/2YJoItVdGlIscyVyboeD9wSpp0PaGqjoA4tTpT2qPqz9ax+5IzGESyLSeZ/RCwbSZ2uQ==
+  version "15.5.20"
+  resolved "https://registry.npmjs.org/next/-/next-15.5.20.tgz"
+  integrity sha512-cvyS3/geydan1xLtE3FA8VCgdoQ/Gg/dlOldFkFCbB5VcVYJV7090hQLBnvTW2PwT76Z/dHdzDZCsVhZpoOlUA==
   dependencies:
-    "@next/env" "15.5.18"
+    "@next/env" "15.5.20"
     "@swc/helpers" "0.5.15"
     caniuse-lite "^1.0.30001579"
     postcss "8.4.31"
     styled-jsx "5.1.6"
   optionalDependencies:
-    "@next/swc-darwin-arm64" "15.5.18"
-    "@next/swc-darwin-x64" "15.5.18"
-    "@next/swc-linux-arm64-gnu" "15.5.18"
-    "@next/swc-linux-arm64-musl" "15.5.18"
-    "@next/swc-linux-x64-gnu" "15.5.18"
-    "@next/swc-linux-x64-musl" "15.5.18"
-    "@next/swc-win32-arm64-msvc" "15.5.18"
-    "@next/swc-win32-x64-msvc" "15.5.18"
+    "@next/swc-darwin-arm64" "15.5.20"
+    "@next/swc-darwin-x64" "15.5.20"
+    "@next/swc-linux-arm64-gnu" "15.5.20"
+    "@next/swc-linux-arm64-musl" "15.5.20"
+    "@next/swc-linux-x64-gnu" "15.5.20"
+    "@next/swc-linux-x64-musl" "15.5.20"
+    "@next/swc-win32-arm64-msvc" "15.5.20"
+    "@next/swc-win32-x64-msvc" "15.5.20"
     sharp "^0.34.3"
 
 node-fetch@^2.6.7:
@@ -4673,14 +4679,14 @@ postcss-value-parser@^4.0.0, postcss-value-parser@^4.2.0:
   resolved "https://registry.npmjs.org/postcss-value-parser/-/postcss-value-parser-4.2.0.tgz"
   integrity sha512-1NNCs6uurfkVbeXG4S8JFT9t19m45ICnif8zWLd5oPSZ50QnwMfK+H3jv408d4jw/7Bttv5axS5IiHoLaVNHeQ==
 
-postcss@^8.0.0, postcss@^8.1.0, postcss@^8.2.14, postcss@^8.4.21, postcss@^8.4.23, postcss@>=8.0.9, postcss@8.4.31:
-  version "8.4.31"
-  resolved "https://registry.npmjs.org/postcss/-/postcss-8.4.31.tgz"
-  integrity sha512-PS08Iboia9mts/2ygV3eLpY5ghnUcfLV/EXTOW1E2qYxJKGGBUtNjN76FYHnMs36RmARn41bC0AZmn+rR0OVpQ==
+postcss@^8.5.10:
+  version "8.5.16"
+  resolved "https://registry.npmjs.org/postcss/-/postcss-8.5.16.tgz"
+  integrity sha512-vuwillviilfKZsg0VGj5R/YwwcHx4SLsIOI/7K6mQkWx+l5cUHTjj5g0AasTBcyXsbfTgrwsUNmVUb5xVwyPwg==
   dependencies:
-    nanoid "^3.3.6"
-    picocolors "^1.0.0"
-    source-map-js "^1.0.2"
+    nanoid "^3.3.12"
+    picocolors "^1.1.1"
+    source-map-js "^1.2.1"
 
 prelude-ls@^1.2.1:
   version "1.2.1"
@@ -5677,7 +5683,7 @@ simple-swizzle@^0.2.2:
   dependencies:
     is-arrayish "^0.3.1"
 
-source-map-js@^1.0.2:
+source-map-js@^1.2.1:
   version "1.2.1"
   resolved "https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.1.tgz"
   integrity sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==

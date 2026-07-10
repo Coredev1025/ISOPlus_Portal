@@ -5,7 +5,6 @@ import Business from '../models/Business.js';
 import { info, error, warn } from '../utils/logger.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { uploadFileToS3, deleteFileFromS3 } from '../utils/uploadS3.js';
 import {
   formatBusinessProfileResponse,
   isValidLogoField,
@@ -13,59 +12,17 @@ import {
   resolveQrLogoField,
   buildLogoUrls,
 } from '../utils/businessLogo.js';
-import { setLogo } from '../services/isoplus.js';
 import { updateOrganizationInfo } from '../services/xero.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
+import { collectBusinessProfileErrors } from '../validators/businessProfile.js';
+import {
+  applyBusinessLogoUpdates,
+  buildBusinessUpdateData,
+  parseLogoRemovals,
+} from '../utils/businessProfileUpdate.js';
 
 const validateBusinessProfile = (req, res, next) => {
-  const errors = [];
-  if (!req.body.name || req.body.name.length > 100) {
-    errors.push('Business name is required and must be less than 100 characters');
-  }
-  if (req.body.phone && !/^\+?[\d\s-]{8,20}$/.test(req.body.phone)) {
-    errors.push('Invalid phone number format');
-  }
-  if (req.body.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(req.body.email)) {
-    errors.push('Invalid email format');
-  }
-  if (req.body.street && req.body.street.length > 200) {
-    errors.push('Street address must be less than 200 characters');
-  }
-  if (req.body.postcode && !/^\d{4,10}$/.test(req.body.postcode)) {
-    errors.push('Invalid postcode format');
-  }
-  if (req.body.abn && !/^\d{11}$/.test(req.body.abn)) {
-    errors.push('ABN must be exactly 11 digits');
-  }
-  if (req.body.acn && !/^\d{9}$/.test(req.body.acn)) {
-    errors.push('ACN must be exactly 9 digits');
-  }
-  if (req.body.bsb && !/^\d{6}$/.test(req.body.bsb)) {
-    errors.push('BSB must be exactly 6 digits');
-  }
-  if (req.body.accountNumber && !/^\d{6,10}$/.test(req.body.accountNumber)) {
-    errors.push('Account number must be between 6 and 10 digits');
-  }
-  if (req.body.bankAccountName && req.body.bankAccountName.length > 100) {
-    errors.push('Bank account name must be less than 100 characters');
-  }
-  if (req.body.documentNumbering) {
-    try {
-      const numbering = JSON.parse(req.body.documentNumbering);
-      ['invoice', 'purchaseOrder', 'quote'].forEach(type => {
-        if (numbering[type]) {
-          if (typeof numbering[type].prefix !== 'string' || numbering[type].prefix.length > 10) {
-            errors.push(`${type} prefix must be a string less than 10 characters`);
-          }
-          if (!Number.isInteger(numbering[type].nextNumber) || numbering[type].nextNumber < 1) {
-            errors.push(`${type} number must be a positive integer`);
-          }
-        }
-      });
-    } catch (e) {
-      errors.push('Invalid document numbering format');
-    }
-  }
+  const errors = collectBusinessProfileErrors(req.body);
   if (errors.length > 0) {
     warn('Business-Service', 'Validation failed', { errors: errors }, req ?? null);
     return res.status(400).json({
@@ -84,7 +41,7 @@ const router = express.Router();
 const storage = multer.memoryStorage(); // Use memory storage for multer
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB limit
+  limits: { fileSize: 8 * 1024 * 1024 }, // 8 MB limit (SonarQube recommended max for uploads)
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith('image/')) {
       return cb(new Error('Only image files are allowed!'), false);
@@ -187,10 +144,6 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
   try {
     const workspaceId = req.body.workspaceId?.toString();
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
-    const { name, phone, email, abn, acn, companyRegistrationId, state, suburb, country, postcode, street, bankAccountName, bankName, bsb, accountNumber, paymentReference, accountsReceivableTerms, accountsPayableTerms, headOfficeTimezone } = req.body;
-    const files = req.files || {};
-    const parseBoolean = (value) => value === true || value === 'true';
-    const { defaultLogoRemoved, squareLogoRemoved, wideLogoRemoved } = req.body;
 
     let documentNumbering = {};
     if (req.body.documentNumbering) {
@@ -198,83 +151,21 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
     }
 
     let business = await Business.findOne({ workspaceId });
-
-    const updateData = {
-      name,
-      address: {
-        street,
-        country,
-        suburb,
-        state,
-        postcode
-      },
-      phone,
-      email,
-      abn,
-      acn,
-      companyRegistrationId,
+    const updateData = buildBusinessUpdateData({
+      ...req.body,
       workspaceId,
-      bankDetails: {
-        accountName: bankAccountName,
-        bankName,
-        bsb,
-        accountNumber,
-        paymentReference,
-        accountsReceivableTerms,
-        accountsPayableTerms
-      },
       documentNumbering,
-      headOfficeTimezone: headOfficeTimezone || 'Australia/Sydney'
-    };
+    });
 
-    // Handle file uploads to S3
-    if (files['defaultLogo']) {
-      if (business?.defaultLogo) {
-        await deleteFileFromS3(business.defaultLogo, false);
-      }
-      const defaultLogoPath = `logos/${workspaceId}/default-logo${path.extname(files['defaultLogo'][0].originalname)}`;
-      await uploadFileToS3(files['defaultLogo'][0].buffer, defaultLogoPath, false);
-      updateData.defaultLogo = defaultLogoPath;
-    }
-
-    if (files['squareLogo']) {
-      if (business?.squareLogo) {
-        await deleteFileFromS3(business.squareLogo, false);
-      }
-      const squareLogoPath = `logos/${workspaceId}/square-logo${path.extname(files['squareLogo'][0].originalname)}`;
-      await uploadFileToS3(files['squareLogo'][0].buffer, squareLogoPath, false);
-      setLogo(req.session.Authorization, workspaceId, files['squareLogo'][0], "form", req);
-      updateData.squareLogo = squareLogoPath;
-    }
-
-    if (files['wideLogo']) {
-      if (business?.wideLogo) {
-        await deleteFileFromS3(business.wideLogo, false);
-      }
-      const wideLogoPath = `logos/${workspaceId}/wide-logo${path.extname(files['wideLogo'][0].originalname)}`;
-      await uploadFileToS3(files['wideLogo'][0].buffer, wideLogoPath, false);
-      setLogo(req.session.Authorization, workspaceId, files['wideLogo'][0], "document", req);
-      updateData.wideLogo = wideLogoPath;
-    }
-
-    if (parseBoolean(defaultLogoRemoved)) {
-      if (business?.defaultLogo) {
-        await deleteFileFromS3(business.defaultLogo, false);
-      }
-      updateData.defaultLogo = null;
-    }
-    if (parseBoolean(squareLogoRemoved)) {
-      if (business?.squareLogo) {
-        await deleteFileFromS3(business.squareLogo, false);
-      }
-      updateData.squareLogo = null;
-    }
-    if (parseBoolean(wideLogoRemoved)) {
-      if (business?.wideLogo) {
-        await deleteFileFromS3(business.wideLogo, false);
-      }
-      updateData.wideLogo = null;
-    }
+    const logoUpdates = await applyBusinessLogoUpdates({
+      workspaceId,
+      business,
+      files: req.files || {},
+      removals: parseLogoRemovals(req.body),
+      authorization: req.session.Authorization,
+      req,
+    });
+    Object.assign(updateData, logoUpdates);
 
     if (business) {
       const before = business?.toObject ? business.toObject() : business;
@@ -503,8 +394,8 @@ router.post('/xero/update-organization', authenticateToken, async (req, res) => 
 router.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      warn('Business-Service', 'File upload failed', { message: 'File size too large. Maximum size is 10MB' }, req ?? null);
-      return res.status(400).json({ status: 'error', message: 'File size too large. Maximum size is 10MB' });
+      warn('Business-Service', 'File upload failed', { message: 'File size too large. Maximum size is 8MB' }, req ?? null);
+      return res.status(400).json({ status: 'error', message: 'File size too large. Maximum size is 8MB' });
     }
   }
   error('Business-Service', 'File upload failed', { message: err.message || 'An unknown error occurred', stack: err.stack }, req ?? null);

@@ -14,8 +14,13 @@ const getValueFromItem = (item, attrName) => {
     if (typeof d === 'object' && d?.name) return String(d.name);
     return String(d);
 };
-import { enableBoardSync, disableBoardSync } from '../services/sync.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
+import {
+  handleBoardSyncDisable,
+  handleBoardSyncEnable,
+  parseSyncToggle,
+  revertBoardSyncFlag,
+} from '../utils/boardSyncActions.js';
 
 const router = express.Router();
 
@@ -93,56 +98,20 @@ router.put('/', authenticateToken, async (req, res) => {
         
         // Get current board state to check if syncData is changing
         const existingBoard = await Board.findOne({ boardId }).select('syncData').lean();
-        const wasSyncEnabled = existingBoard?.syncData || false;
-        const willSyncBeEnabled = req.body.syncData === true || req.body.syncData === 'true';
+        const { wasSyncEnabled, willSyncBeEnabled } = parseSyncToggle(req.body, existingBoard);
         
-        // Update board configuration
         const result = await Board.updateOne({ boardId }, { $set: { ...req.body } }, { upsert: true });
         
-        // Check if board was found and updated (matchedCount > 0) or created via upsert (upsertedCount > 0)
         if (result.matchedCount === 0 && result.upsertedCount === 0) {
             warn('Board-Service', 'Board not found and not created', { boardId: req.body.boardId }, req ?? null);
             return res.status(404).json({ message: 'Board not found' });
         }
         
-        // Handle sync enable/disable
         let syncResult = null;
         
-        // If sync is being enabled (was false, now true)
         if (!wasSyncEnabled && willSyncBeEnabled) {
-            info('Board-Service', 'Sync enabled in board configuration, triggering sync job', { 
-                boardId, 
-                workspaceId 
-            }, req ?? null);
-            
             try {
-                syncResult = await enableBoardSync(req.session.Authorization, workspaceId, boardId);
-                
-                if (syncResult.success) {
-                    info('Board-Service', 'Sync job queued successfully', { 
-                        boardId, 
-                        workspaceId,
-                        jobId: syncResult.jobId 
-                    }, req ?? null);
-                    
-                    await logAuditTrail({ 
-                        workspaceId, 
-                        boardId,
-                        action: 'Enabled Board Sync', 
-                        detail: `Board sync enabled and validation job queued (Job ID: ${syncResult.jobId})`, 
-                        req,
-                        category: 'Sync',
-                        entityType: 'Board',
-                        entityId: boardId,
-                        success: true
-                    });
-                } else {
-                    warn('Board-Service', 'Sync job queue failed', { 
-                        boardId, 
-                        workspaceId,
-                        reason: syncResult.message 
-                    }, req ?? null);
-                }
+                ({ syncResult } = await handleBoardSyncEnable({ req, workspaceId, boardId }));
             } catch (syncErr) {
                 error('Board-Service', 'Failed to enable sync', { 
                     boardId, 
@@ -151,8 +120,7 @@ router.put('/', authenticateToken, async (req, res) => {
                     stack: syncErr.stack
                 }, req ?? null);
                 
-                // Revert syncData to false if sync enablement failed
-                await Board.updateOne({ boardId }, { $set: { syncData: false } });
+                await revertBoardSyncFlag(boardId);
                 
                 return res.status(500).json({ 
                     message: 'Board updated but sync enablement failed', 
@@ -162,40 +130,8 @@ router.put('/', authenticateToken, async (req, res) => {
             }
         }
         
-        // If sync is being disabled (was true, now false)
         if (wasSyncEnabled && !willSyncBeEnabled) {
-            info('Board-Service', 'Sync disabled in board configuration', { 
-                boardId, 
-                workspaceId 
-            }, req ?? null);
-            
-            try {
-                syncResult = await disableBoardSync(boardId);
-                
-                info('Board-Service', 'Sync disabled successfully', { 
-                    boardId, 
-                    workspaceId 
-                }, req ?? null);
-                
-                await logAuditTrail({ 
-                    workspaceId, 
-                    boardId,
-                    action: 'Disabled Board Sync', 
-                    detail: 'Board sync disabled and pending jobs cancelled', 
-                    req,
-                    category: 'Sync',
-                    entityType: 'Board',
-                    entityId: boardId,
-                    success: true
-                });
-            } catch (syncErr) {
-                error('Board-Service', 'Failed to disable sync', { 
-                    boardId, 
-                    workspaceId,
-                    error: syncErr.message,
-                    stack: syncErr.stack
-                }, req ?? null);
-            }
+            ({ syncResult } = await handleBoardSyncDisable({ req, workspaceId, boardId }));
         }
         
         const updatedBoard = await Board.findOne({ boardId }).lean();

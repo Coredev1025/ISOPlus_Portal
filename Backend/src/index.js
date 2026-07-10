@@ -97,9 +97,9 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-const requestBodyLimit = process.env.REQUEST_BODY_LIMIT || '25mb';
-app.use(express.json({ limit: requestBodyLimit }));
-app.use(express.urlencoded({ extended: true, limit: requestBodyLimit }));
+const requestBodyLimitBytes = 2 * 1024 * 1024; // 2 MB (SonarQube recommended max for non-file requests)
+app.use(express.json({ limit: requestBodyLimitBytes }));
+app.use(express.urlencoded({ extended: true, limit: requestBodyLimitBytes }));
 
 const isProduction = process.env.NODE_ENV === 'production';
 app.use(session({

@@ -4,6 +4,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import { v4 as uuidv4 } from 'uuid';
 import { info, error, warn, debug } from '../utils/logger.js';
 import { getAutomation, updateAutomation } from '../services/isoplus.js';
+import { buildUpdatedAutomation } from '../utils/automationUrlUpdate.js';
 
 const router = express.Router();
 
@@ -60,59 +61,39 @@ router.put('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
     let updatedAutomations = [];
     try {
         for (const automationItem of automation) {
-            let updatedAutomation = { ...automationItem };
-            let needsUpdate = automationItem.name.startsWith("Portal - ");
+            const { needsUpdate, automation: updatedAutomation } = buildUpdatedAutomation(
+                automationItem,
+                workspaceId,
+                boardId
+            );
 
-            if (needsUpdate) {
-                debug('Automation-Service', 'Automation requires URL update', { name: automationItem.name, automationId: updatedAutomation.id }, req ?? null);
-            }
-            
-            if (needsUpdate && updatedAutomation.workflow && Array.isArray(updatedAutomation.workflow)) {
-                updatedAutomation.workflow = updatedAutomation.workflow.map(workflow => {
-                    if (workflow.config && workflow.config.url) {
-                        let updatedUrl = workflow.config.url;
-                        
-                        const urlPattern = /https?:\/\/([^\/]+)\/api\/([^\/]+)\/([^\/]+)\/([^\/\?]+)/;
-                        const match = updatedUrl.match(urlPattern);
-                        
-                        if (match) {
-                            if (process.env.BACKEND_URL) {
-                                const backendUrl = match[1];
-                                const apiPath = match[2];
-                                const currentWorkspaceId = match[3];
-                                const currentBoardId = match[4];
+            if (!needsUpdate) continue;
 
-                                const backendUrlWithoutProtocol = process.env.BACKEND_URL.replace(/^https?:\/\//, '');
+            debug('Automation-Service', 'Automation requires URL update', {
+                name: automationItem.name,
+                automationId: updatedAutomation.id,
+            }, req ?? null);
 
-                                updatedUrl = updatedUrl.replace(
-                                    new RegExp(`${backendUrl}/api/${apiPath}/${currentWorkspaceId}/${currentBoardId}`),
-                                    `${backendUrlWithoutProtocol}/api/${apiPath}/${workspaceId}/${boardId}`
-                                );
-                            } else {
-                                warn('Automation-Service', 'BACKEND_URL not found in your environment variables', { workspaceId, boardId, automationId: updatedAutomation.id }, req ?? null);
-                            }
-                        }
-                        
-                        return {
-                            ...workflow,
-                            config: {
-                                ...workflow.config,
-                                url: updatedUrl
-                            }
-                        };
-                    }
-                    return workflow;
-                });
-            }
-            
-            if (needsUpdate) {
-                const result = await updateAutomation(workspaceId, boardId, automationItem.id, updatedAutomation, req.session.Authorization);
-                if (result) {
-                    info('Automation-Service', 'Automation updated', { workspaceId, boardId, automationId: updatedAutomation.id }, req ?? null);
-                    updatedAutomations.push(result);
-                } else {
-                    error('Automation-Service', 'Failed to update Automation', { workspaceId, boardId, automationId: updatedAutomation.id }, req ?? null);
-                }
+            const result = await updateAutomation(
+                workspaceId,
+                boardId,
+                automationItem.id,
+                updatedAutomation,
+                req.session.Authorization
+            );
+            if (result) {
+                info('Automation-Service', 'Automation updated', {
+                    workspaceId,
+                    boardId,
+                    automationId: updatedAutomation.id,
+                }, req ?? null);
+                updatedAutomations.push(result);
+            } else {
+                error('Automation-Service', 'Failed to update Automation', {
+                    workspaceId,
+                    boardId,
+                    automationId: updatedAutomation.id,
+                }, req ?? null);
             }
         }
         res.status(200).json(updatedAutomations);

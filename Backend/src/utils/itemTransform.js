@@ -1,4 +1,9 @@
 import { info, warn } from './logger.js';
+import {
+  transformLabelValue,
+  resolveDisplayName,
+  applyItemValueTransform,
+} from './itemTransformHelpers.js';
 
 export function transformValue(valueObj) {
   if (!valueObj || valueObj.data === undefined || valueObj.data === null) {
@@ -10,25 +15,7 @@ export function transformValue(valueObj) {
 
   switch (attributeType) {
     case 'label':
-      if (Array.isArray(data)) {
-        const labels = attribute?.settings?.labels || [];
-        if (data.length > 0) {
-          const firstItem = data[0];
-          if (typeof firstItem === 'string') {
-            const resolvedLabels = data.map(labelId => {
-              const label = labels.find(l => l.id === labelId);
-              return label ? { id: label.id, name: label.name, color: label.color } : labelId;
-            });
-            return resolvedLabels.length === 1 ? resolvedLabels[0] : resolvedLabels;
-          } else if (typeof firstItem === 'object' && firstItem.id) {
-            return data.length === 1 ? data[0] : data;
-          }
-        }
-        return data;
-      } else if (typeof data === 'object' && data.id) {
-        return { id: data.id, name: data.name, color: data.color };
-      }
-      return data;
+      return transformLabelValue(data, attribute);
 
     case 'reference':
     case 'members':
@@ -77,64 +64,21 @@ export function transformItemData(isoPlusItem) {
       continue;
     }
 
-    const rawName = valueObj.attribute?.name;
-    const attributeId = valueObj.attribute?.id;
-    const attributeKey =
-      typeof rawName === 'string' && rawName.trim()
-        ? rawName.trim()
-        : attributeId != null && String(attributeId).trim() !== ''
-          ? `__attr_${attributeId}`
-          : null;
-    if (!attributeKey) {
-      continue;
-    }
-
     try {
-      if (!transformedData._hasTimeTracking) {
-        const attrType = valueObj.attribute?.type;
-        if (typeof attrType === 'string' && /time.?track/i.test(attrType)) {
-          transformedData._hasTimeTracking = true;
-          transformedData._timeTrackingKey = attributeKey;
-          transformedData._timeTrackingAttributeId = valueObj.attribute?.id ?? null;
-        }
-      }
-
-      const transformedValue = transformValue(valueObj);
-      
-      if (transformedValue !== null && transformedValue !== undefined) {
-        transformedData[attributeKey] = transformedValue;
-
-        if (valueObj.attribute?.primary === true && typeof transformedValue === 'string' && transformedValue.trim()) {
-          primaryAttributeValue = transformedValue.trim();
-        }
-
-        if (!transformedData._hasTimeTracking) {
-          if (
-            Array.isArray(transformedValue) &&
-            transformedValue.length > 0 &&
-            typeof transformedValue[0] === 'object' &&
-            transformedValue[0] !== null &&
-            'started_at' in transformedValue[0]
-          ) {
-            transformedData._hasTimeTracking = true;
-            transformedData._timeTrackingKey = attributeKey;
-            transformedData._timeTrackingAttributeId = valueObj.attribute?.id ?? null;
-          }
-        }
+      const primary = applyItemValueTransform(transformedData, valueObj, transformValue);
+      if (primary) {
+        primaryAttributeValue = primary;
       }
     } catch (err) {
       warn('ItemTransform', 'Failed to transform value', {
-        attributeKey,
+        attributeKey: resolveAttributeKey(valueObj),
         attributeType: valueObj.attribute?.type,
         error: err.message
       });
     }
   }
 
-  const topLevelName = typeof isoPlusItem.name === 'string' && isoPlusItem.name.trim()
-    ? isoPlusItem.name.trim()
-    : null;
-  const displayName = topLevelName || primaryAttributeValue || null;
+  const displayName = resolveDisplayName(isoPlusItem, primaryAttributeValue);
   if (displayName) {
     transformedData._primaryValue = displayName;
   }

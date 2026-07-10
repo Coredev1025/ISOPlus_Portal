@@ -3,6 +3,21 @@ import Business from '../models/Business.js';
 import { getFolder } from './isoplus.js';
 import { info } from '../utils/logger.js';
 import { parseFlexibleNumber } from '../utils/parseFlexibleNumber.js';
+import {
+    getDeliveredAmountForCategoryCode,
+    buildServiceItemDateQuery,
+} from '../utils/monthlyStatementDeliveredHelpers.js';
+import {
+    mapRawServiceItem,
+    filterProcessedServiceItems,
+} from '../utils/monthlyStatementServiceHelpers.js';
+import { transformProcessedServiceItem } from '../utils/monthlyStatementDataServiceHelpers.js';
+import { transformBudgetItemData } from '../utils/monthlyStatementDataBudgetHelpers.js';
+import {
+    ATTRIBUTE_NAMES,
+    BUDGET_CATEGORY_CONFIG,
+    BUDGET_CATEGORY_ORDER,
+} from '../constants/monthlyStatementAttributes.js';
 
 export const parseMonthlyStatementNumber = parseFlexibleNumber;
 const parseNumber = parseFlexibleNumber;
@@ -109,40 +124,9 @@ const resolveReferenceValue = (value, refMap) => {
     return str;
 };
 
-const ATTR = {
-    SCHEDULED_START: 'Scheduled Shift Start Date & Time',
-    ACTUAL_END: 'Actual Shift End Date & Time',
-    PARTICIPANT_FULL_NAME: 'Participant Full Name',
-    PARTICIPANT_PROFILE: 'Participant Profile',
-    SERVICE_PLAN: 'Service Plan',
-    SERVICE_PLAN_ID: 'Service Plan ID',
-    SERVICE_CATEGORY: 'Service Category',
-    UNIT: 'Unit',
-    QUANTITY: 'Quantity',
-    UNIT_PRICE: 'Unit Price ($)',
-    TOTAL_AMOUNT: 'Total Amount ($)',
-    GOV_SUBSIDY: 'Government Subsidy ($)',
-    PARTICIPANT_CONTRIBUTION: 'Participant Contribution ($)',
-    ADDITIONAL_NOTES: 'Additional Notes',
-    TRANSACTION_STATUS: 'Transaction Status',
-    FUNDING_SOURCE: 'Funding Source',
-    DELIVERED_BY: 'Delivered by',
-    ASSOCIATED_PROVIDER: 'Associated Provider (If Applicable)',
-    COMMITTED_AT_HM: 'Committed AT-HM for Delivery',
-    FULL_NAME: 'Full Name/Preferred Name'
-};
+const ATTR = ATTRIBUTE_NAMES;
 
-const BUDGET_FOLDER_CONFIG = [
-    { code: 'HSQ', folderName: 'Home Support Quarterly Budget' },
-    { code: 'HSCM', folderName: 'Home Support Care Management Budget' },
-    { code: 'ATS', folderName: 'Assistive Technology - Short-term Budget' },
-    { code: 'ATO', folderName: 'Assistive Technology - Ongoing Budget' },
-    { code: 'HMB', folderName: 'Home Modification Budget' },
-    { code: 'RCP', folderName: 'Restorative Care Pathway Budget' },
-    { code: 'EOL', folderName: 'End-of-Life Pathway Budget' }
-];
-
-const BUDGET_FOLDER_NAMES = BUDGET_FOLDER_CONFIG.map(c => c.folderName).join(',');
+const BUDGET_FOLDER_NAMES = BUDGET_CATEGORY_CONFIG.map((c) => c.folderName).join(',');
 
 const BUDGET_FIELDS = {
     totalAvailable: [
@@ -152,7 +136,7 @@ const BUDGET_FIELDS = {
         'Total Available Fund for AT Ongoing ($)',
         'Total Available Fund for HM ($)',
         'Total Available Budget for Restorative Care ($)',
-        'Total Available Budget for End-of-Life Care ($)'
+        'Total Available Budget for End-of-Life Care ($)',
     ],
     delivered: [
         'Home Support Delivered During the Month ($-)',
@@ -165,7 +149,7 @@ const BUDGET_FIELDS = {
         'Home Modification Delivered During the Month ($-)',
         'Home Modification Delivered During the Month',
         'Restorative Care Delivered During the Month ($-)',
-        'End-of-Life Care Delivered During the Month ($-)'
+        'End-of-Life Care Delivered During the Month ($-)',
     ],
     remaining: [
         'Remaining Home Support Balance as at the End of the Month ($)',
@@ -173,29 +157,29 @@ const BUDGET_FIELDS = {
         'Remaining AT - Ongoing Balance as at the End of the Month ($)',
         'Remaining HM Balance as at the End of the Month ($)',
         'Remaining Restorative Care Balance as at the End of the Month ($)',
-        'Remaining End-of-Life Care Balance as at the End of the Month ($)'
+        'Remaining End-of-Life Care Balance as at the End of the Month ($)',
     ],
     previousMonthSpending: [
         'Spending from Previous Month(s) within same Quarter ($)',
-        'Spending from Previous Month(s) within Allocated Period ($)'
+        'Spending from Previous Month(s) within Allocated Period ($)',
     ],
     commonwealthUnspent: [
         'Unspent HCP Funds - Commonwealth Portion (Provider-held) ($)',
-        'Commonwealth-held HCP Unspent Funds ($)'
+        'Commonwealth-held HCP Unspent Funds ($)',
     ],
     providerUnspent: [
         'Commonwealth-held HCP Unspent Funds (Notional Home Care Account) ($)',
-        'Provider-held HCP Unspent Funds ($)'
+        'Provider-held HCP Unspent Funds ($)',
     ],
     participantUnspent: [
         'Unspent HCP Funds - Participant Portion (Provider-held) ($)',
-        'Participant Portion HCP Unspent Funds ($)'
+        'Participant Portion HCP Unspent Funds ($)',
     ],
     remainingAllocationPeriod: [
         'Remaining AT - Short-term Balance for Allocation Period ($)',
         'Remaining AT - Ongoing Balance for Allocation Period ($)',
-        'Remaining HM Balance for Allocation Period ($)'
-    ]
+        'Remaining HM Balance for Allocation Period ($)',
+    ],
 };
 
 const MONTH_LABELS = {
@@ -354,7 +338,7 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
         if (!f?.id) continue;
         const name = f.name || '';
         folderIdToName.set(f.id, name);
-        const match = BUDGET_FOLDER_CONFIG.find(cfg => name.toLowerCase().includes(cfg.folderName.toLowerCase()));
+        const match = BUDGET_CATEGORY_CONFIG.find(cfg => name.toLowerCase().includes(cfg.folderName.toLowerCase()));
         if (match) folderIdToCode[f.id] = match.code;
     }
 
@@ -369,7 +353,6 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
     rawItems.forEach(item => {
         const ppId = extractRefId(getValue(item, ATTR.PARTICIPANT_PROFILE));
         if (ppId) profileIds.add(ppId);
-        // Also collect Associated Participant IDs for HSCM items
         const apId = extractRefId(getValue(item, 'Associated Participant'));
         if (apId) profileIds.add(apId);
         extractAllRefIds(getValue(item, 'Primary Supplement')).filter(isUuidLike).forEach(id => psRefIds.add(id));
@@ -377,7 +360,7 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
 
     const [profileMap, psMap] = await Promise.all([
         profileIds.size > 0 ? bulkFetchItems(workspaceId, boardId, [...profileIds]) : Promise.resolve(new Map()),
-        psRefIds.size > 0 ? bulkFetchItems(workspaceId, boardId, [...psRefIds]) : Promise.resolve(new Map())
+        psRefIds.size > 0 ? bulkFetchItems(workspaceId, boardId, [...psRefIds]) : Promise.resolve(new Map()),
     ]);
 
     const resolveParticipant = (item) => {
@@ -398,318 +381,31 @@ export async function fetchBudgetItems(workspaceId, boardId, options = {}) {
         return getValue(item, ATTR.PARTICIPANT_FULL_NAME) || '';
     };
 
-    const getMonthLabelFromDate = (dateValue) => {
-        if (!dateValue) return '';
-        const date = new Date(dateValue);
-        if (isNaN(date.getTime())) return '';
-        const monthLabels = [
-            'January', 'February', 'March', 'April', 'May', 'June',
-            'July', 'August', 'September', 'October', 'November', 'December'
-        ];
-        return monthLabels[date.getMonth()] || '';
+    const budgetTransformCtx = {
+        folderIdToCode,
+        folderIdToName,
+        resolveParticipant,
+        resolveParticipantForHSCM,
+        getValue,
+        getValueMulti,
+        parseNumber,
+        toOutflow,
+        extractRefId,
+        formatStatus,
+        resolveReferenceValue,
+        psMap,
+        BUDGET_FIELDS,
+        getDeliveredAmountForCategoryCode,
+        ATTR,
     };
 
-    const getYearFromDate = (dateValue) => {
-        if (!dateValue) return '';
-        const date = new Date(dateValue);
-        if (isNaN(date.getTime())) return '';
-        return date.getFullYear().toString();
-    };
+    const transformed = rawItems.map((item) => transformBudgetItemData(item, budgetTransformCtx));
 
-    const budgetCategoryOrder = BUDGET_FOLDER_CONFIG.map(c => c.code);
     const getCategoryOrderIndex = (code) => {
         const normalizedCode = (code || 'HSQ').toString();
-        const idx = budgetCategoryOrder.indexOf(normalizedCode);
-        return idx === -1 ? budgetCategoryOrder.length : idx;
+        const idx = BUDGET_CATEGORY_ORDER.indexOf(normalizedCode);
+        return idx === -1 ? BUDGET_CATEGORY_ORDER.length : idx;
     };
-
-    const transformed = rawItems.map(item => {
-        const code = folderIdToCode[item.folderId] || 'HSQ';
-        const folderName = folderIdToName.get(item.folderId) || '';
-        const isCareManagement = folderName.toLowerCase().includes('home support care management budget');
-
-        if (isCareManagement) {
-            const participantProfileIdValue = getValue(item, 'Associated Participant');
-            const participantProfileId = extractRefId(participantProfileIdValue);
-            const participantName = resolveParticipantForHSCM(item);
-            const dateValue = getValueMulti(item, ['Date']);
-            const transactionTypeValue = getValueMulti(item, ['Transaction Type']);
-            const receivedAmount = parseNumber(getValue(item, 'Received Amount ($)'));
-            const allocatedTime = parseNumber(getValueMulti(item, ['Allocated time (Hr.)', 'Allocated Time (Hr.)']));
-            const allocatedAmount = toOutflow(parseNumber(getValue(item, 'Allocated Amount ($-)')));
-            const currentBalance = parseNumber(getValue(item, 'Net Movement ($)'));
-            const transactionType = (() => {
-                if (!transactionTypeValue) return '';
-                if (typeof transactionTypeValue === 'object' && transactionTypeValue.name) return transactionTypeValue.name;
-                if (typeof transactionTypeValue === 'string') return transactionTypeValue;
-                return transactionTypeValue.toString ? transactionTypeValue.toString() : '';
-            })();
-
-            return {
-                id: item.itemId,
-                categoryCode: 'HSCM',
-                folderName: folderName || 'Home Support Care Management Budget',
-                participantName,
-                participantProfileId: participantProfileId ? participantProfileId.toString() : null,
-                month: getMonthLabelFromDate(dateValue),
-                year: getYearFromDate(dateValue),
-                quarter: '',
-                totalAvailableBudget: receivedAmount || 0,
-                availableFundStart: receivedAmount || 0,
-                quarterlyAdjustment: 0,
-                primarySupplementAmount: 0,
-                carryoverFunding: 0,
-                unspentReturned: 0,
-                commonwealthUnspent: 0,
-                providerUnspent: 0,
-                participantUnspent: 0,
-                previousMonthSpending: 0,
-                deliveredAmount: allocatedAmount || 0,
-                deliveredAmountRaw: allocatedAmount,
-                adjustmentAmount: 0,
-                remainingBalance: currentBalance,
-                fundClassification: 'Care Management',
-                fundAmount: 0,
-                fund: '',
-                committedFunds: 0,
-                fundingStartDate: null,
-                fundingEndDate: null,
-                primarySupplementLabel: '',
-                remainingBalanceEndOfMonth: currentBalance,
-                remainingBalanceAllocationPeriod: 0,
-                hscmDate: dateValue || null,
-                hscmTransactionType: transactionType,
-                hscmReceivedAmount: receivedAmount || 0,
-                hscmAllocatedTime: allocatedTime || 0,
-                hscmAllocatedAmount: allocatedAmount || 0,
-                hscmCurrentBalance: currentBalance || 0,
-                updatedAt: item.updatedAt,
-                createdAt: item.createdAt,
-                rawData: item.data || {}
-            };
-        }
-
-        const participantProfileIdValue = getValue(item, ATTR.PARTICIPANT_PROFILE);
-        const participantProfileId = extractRefId(participantProfileIdValue);
-        const participantName = resolveParticipant(item);
-
-        const monthLabel = formatStatus(getValue(item, 'Month'));
-        const yearLabel = formatStatus(getValue(item, 'Year'));
-        const quarterLabel = formatStatus(getValue(item, 'FY Quarter')) || '';
-
-        const fundingStartDate = getValue(item, 'Funding Start Date');
-        const fundingEndDate = getValue(item, 'Funding End Date');
-
-        const availableFundStart = parseNumber(getValue(item, 'Available Fund at the Start of the Month ($)'));
-        const quarterlyAdjustment = parseNumber(getValue(item, 'Classification Quarterly Budget Adjustment ($)'));
-        const primarySupplementAmount = parseNumber(getValue(item, 'Primary Supplement ($)'));
-        const additionalAmountApproved = parseNumber(getValue(item, 'Additional amount approved (AT high tier) ($)'));
-        const carryoverFunding = parseNumber(getValue(item, 'Carryover Funding from the Previous Quarter ($)'));
-        const unspentReturned = parseNumber(getValueMulti(item, [
-            'Unspent Budget at the End of the Quarter – Returned ($-)',
-            'Unspent Budget at the End of the Quarter - Returned ($-)'
-        ]));
-        const commonwealthUnspent = parseNumber(getValueMulti(item, BUDGET_FIELDS.commonwealthUnspent));
-        const providerUnspent = parseNumber(getValueMulti(item, BUDGET_FIELDS.providerUnspent));
-        const participantUnspent = parseNumber(getValueMulti(item, BUDGET_FIELDS.participantUnspent));
-        const previousMonthSpendingSameQuarter = parseNumber(getValue(item, 'Spending from Previous Month(s) within same Quarter ($)'));
-        const previousMonthSpendingAllocatedPeriod = parseNumber(getValue(item, 'Spending from Previous Month(s) within Allocated Period ($)'));
-        const previousMonthSpending = (code === 'ATS' || code === 'ATO' || code === 'HMB' || code === 'RCP' || code === 'EOL')
-            ? previousMonthSpendingAllocatedPeriod
-            : previousMonthSpendingSameQuarter;
-
-        let totalAvailableBudget = (() => {
-            if (code === 'HSQ') {
-                return parseNumber(getValue(item, 'Total Available Budget for Home Support ($)'));
-            }
-            const totalAttrs = (() => {
-                if (code === 'RCP') return ['Total Available Budget for Restorative Care ($)', 'Total Available Fund for Restorative Care ($)'];
-                if (code === 'EOL') return ['Total Available Budget for End-of-Life Care ($)', 'Total Available Fund for End-of-Life Care ($)'];
-                if (code === 'ATS') return ['Total Available Budget for Assistive Technology - Short-term ($)', 'Total Available Fund for AT - Short-term ($)'];
-                if (code === 'ATO') return ['Total Available Budget for Assistive Technology - Ongoing ($)', 'Total Available Fund for AT Ongoing ($)'];
-                if (code === 'HMB') return ['Total Available Budget for Home Modification ($)', 'Total Available Fund for HM ($)'];
-                return null;
-            })();
-            if (totalAttrs && totalAttrs.length) {
-                return parseNumber(getValueMulti(item, totalAttrs));
-            }
-            return 0;
-        })();
-
-        // Match items.js: apply formula fallbacks when board columns are blank/missing.
-        if (!totalAvailableBudget && code === 'HSQ') {
-            totalAvailableBudget =
-                availableFundStart +
-                quarterlyAdjustment +
-                primarySupplementAmount +
-                carryoverFunding +
-                commonwealthUnspent +
-                providerUnspent +
-                participantUnspent +
-                previousMonthSpending +
-                unspentReturned;
-        }
-
-        // RCP/EOL: Total Available = Available Fund at Start + Primary Supplement + Spending from Previous Month(s) within Allocated Period
-        if (!totalAvailableBudget && (code === 'RCP' || code === 'EOL')) {
-            totalAvailableBudget =
-              availableFundStart +
-              primarySupplementAmount +
-              previousMonthSpendingAllocatedPeriod;
-        }
-
-        // ATS: Total Available Fund = Available Fund at Start + Primary Supplement + Additional amount approved (AT high tier) + Spending from Previous Month(s) within Allocated Period
-        if (!totalAvailableBudget && code === 'ATS') {
-            totalAvailableBudget =
-              availableFundStart +
-              primarySupplementAmount +
-              additionalAmountApproved +
-              previousMonthSpendingAllocatedPeriod;
-        }
-
-        // ATO/HMB: Total Available Fund = Available Fund at Start + Primary Supplement + Spending from Previous Month(s) within Allocated Period
-        if (!totalAvailableBudget && (code === 'ATO' || code === 'HMB')) {
-            totalAvailableBudget =
-              availableFundStart +
-              primarySupplementAmount +
-              previousMonthSpendingAllocatedPeriod;
-        }
-
-        // Other categories fallback: use available fund start if present
-        if (!totalAvailableBudget && availableFundStart) {
-            totalAvailableBudget = availableFundStart;
-        }
-
-        const deliveredAmountRaw = (() => {
-            if (code === 'ATS') {
-                const minusVal =
-                    getValue(item, 'AT - Short-term Delivered During the Month ($-)') ??
-                    getValue(item, 'Assistive Technology - Short-term Delivered During the Month ($-)');
-                if (minusVal !== null && minusVal !== undefined) return toOutflow(parseNumber(minusVal));
-                return toOutflow(parseNumber(getValue(item, 'Assistive Technology - Short-term Delivered During the Month')));
-            }
-            if (code === 'ATO') {
-                const minusVal =
-                    getValue(item, 'AT - Ongoing Delivered During the Month ($-)') ??
-                    getValue(item, 'Assistive Technology - Ongoing Delivered During the Month ($-)');
-                if (minusVal !== null && minusVal !== undefined) return toOutflow(parseNumber(minusVal));
-                return toOutflow(parseNumber(getValue(item, 'Assistive Technology - Ongoing Delivered During the Month')));
-            }
-            if (code === 'HMB') {
-                const minusVal = getValue(item, 'Home Modification Delivered During the Month ($-)');
-                if (minusVal !== null && minusVal !== undefined) return toOutflow(parseNumber(minusVal));
-                return toOutflow(parseNumber(getValue(item, 'Home Modification Delivered During the Month')));
-            }
-            if (code === 'RCP') {
-                const minusVal = getValue(item, 'Restorative Care Delivered During the Month ($-)');
-                if (minusVal !== null && minusVal !== undefined) return toOutflow(parseNumber(minusVal));
-                // Some boards omit ($-) in the attribute name; still treat delivered as outflow.
-                return toOutflow(parseNumber(getValue(item, 'Restorative Care Delivered During the Month')));
-            }
-            if (code === 'EOL') {
-                const minusVal = getValue(item, 'End-of-Life Care Delivered During the Month ($-)');
-                if (minusVal !== null && minusVal !== undefined) return toOutflow(parseNumber(minusVal));
-                return toOutflow(parseNumber(getValue(item, 'End-of-Life Care Delivered During the Month')));
-            }
-            // HSQ
-            {
-                const minusVal = getValue(item, 'Home Support Delivered During the Month ($-)');
-                if (minusVal !== null && minusVal !== undefined) return toOutflow(parseNumber(minusVal));
-                return toOutflow(parseNumber(getValue(item, 'Home Support Delivered During the Month')));
-            }
-        })();
-
-        const adjustmentAmount = parseNumber(getValue(item, 'Adjustments from Previous Months [Charges($-)/Refund($)]'));
-        const primarySupplementLabel = resolveReferenceValue(getValue(item, 'Primary Supplement'), psMap);
-        const fundClassification = formatStatus(getValue(item, 'Fund Classification')) || '';
-        const fundAmount = parseNumber(getValueMulti(item, ['Fund Amount ($)', 'Fund Amount($)']));
-        const fund = formatStatus(getValue(item, 'Fund')) || '';
-
-        const committedATShort = toOutflow(parseNumber(getValue(item, 'Committed AT Short-term Funds - to be delivered ($-)')));
-        const committedATOngoing = toOutflow(parseNumber(getValue(item, 'Committed AT Ongoing Funds - to be delivered ($-)')));
-        const committedHM = toOutflow(parseNumber(getValue(item, 'Committed HM Funds - to be delivered ($-)')));
-        let committedFunds = 0;
-        if (code === 'ATS') committedFunds = committedATShort;
-        else if (code === 'ATO') committedFunds = committedATOngoing;
-        else if (code === 'HMB') committedFunds = committedHM;
-
-        const remainingEndOfMonthAttr = (() => {
-            if (code === 'HSQ') return 'Remaining Home Support Balance as at the End of the Month ($)';
-            if (code === 'ATS') return 'Remaining AT - Short-term Balance as at the End of the Month ($)';
-            if (code === 'ATO') return 'Remaining AT - Ongoing Balance as at the End of the Month ($)';
-            if (code === 'HMB') return 'Remaining HM Balance as at the End of the Month ($)';
-            if (code === 'RCP' || code === 'EOL') return null;
-            return 'Remaining Home Support Balance as at the End of the Month ($)';
-        })();
-
-        const remainingBalanceEndOfMonthRaw = remainingEndOfMonthAttr
-            ? getValueMulti(item, [remainingEndOfMonthAttr])
-            : (code === 'RCP'
-                ? getValueMulti(item, ['Remaining Restorative Care Balance as at the End of the Month ($)'])
-                : code === 'EOL'
-                    ? getValueMulti(item, ['Remaining End-of-Life Care Balance as at the End of the Month ($)'])
-                    : null);
-
-        const remainingBalanceEndOfMonth = (remainingBalanceEndOfMonthRaw !== null && remainingBalanceEndOfMonthRaw !== undefined)
-            ? Math.max(0, parseNumber(remainingBalanceEndOfMonthRaw))
-            : Math.max(0, totalAvailableBudget + deliveredAmountRaw + adjustmentAmount);
-
-        let remainingBalanceAllocationPeriod = null;
-        if (code === 'ATS' || code === 'ATO' || code === 'HMB') {
-            const allocationAttr = code === 'ATS'
-                ? 'Remaining AT - Short-term Balance for Allocation Period ($)'
-                : code === 'ATO'
-                    ? 'Remaining AT - Ongoing Balance for Allocation Period ($)'
-                    : 'Remaining HM Balance for Allocation Period ($)';
-            const allocationRaw = getValueMulti(item, [allocationAttr]);
-            remainingBalanceAllocationPeriod = (allocationRaw !== null && allocationRaw !== undefined)
-                ? Math.max(0, parseNumber(allocationRaw))
-                : Math.max(0, remainingBalanceEndOfMonth + committedFunds);
-        }
-
-        const effectiveRemainingBalance = (code === 'ATS' || code === 'ATO' || code === 'HMB')
-            ? remainingBalanceAllocationPeriod
-            : remainingBalanceEndOfMonth;
-
-        return {
-            id: item.itemId,
-            folderName,
-            categoryCode: code,
-            participantName,
-            participantProfileId: participantProfileId ? participantProfileId.toString() : null,
-            month: monthLabel,
-            year: yearLabel,
-            quarter: quarterLabel,
-            fundingStartDate,
-            fundingEndDate,
-            totalAvailableBudget,
-            availableFundStart,
-            quarterlyAdjustment,
-            primarySupplementAmount,
-            carryoverFunding,
-            unspentReturned,
-            commonwealthUnspent,
-            providerUnspent,
-            participantUnspent,
-            previousMonthSpending,
-            deliveredAmount: deliveredAmountRaw || 0,
-            deliveredAmountRaw,
-            adjustmentAmount,
-            remainingBalance: effectiveRemainingBalance,
-            remainingBalanceEndOfMonth,
-            ...(remainingBalanceAllocationPeriod !== null && { remainingBalanceAllocationPeriod }),
-            primarySupplementLabel,
-            fundClassification,
-            fundAmount,
-            additionalAmountApproved,
-            fund,
-            committedFunds,
-            fundingStreamId: getValue(item, 'Funding Stream'),
-            updatedAt: item.updatedAt,
-            createdAt: item.createdAt,
-            rawData: item.data || {}
-        };
-    });
 
     const isIdLike = (value) => typeof value === 'string' && value.includes('-');
     const normalizedParticipant = normalizeString(participantParam);
@@ -760,29 +456,12 @@ export async function fetchServiceItems(workspaceId, boardId, options = {}) {
     };
     const startD = toValidDate(startDate);
     const endD = toValidDate(endDate);
+    const scheduledKey = `data.${ATTR.SCHEDULED_START}`;
+    const actualEndKey = `data.${ATTR.ACTUAL_END}`;
 
     if (startD || endD) {
-        const rangeIso = {};
-        const startIso = startD ? startD.toISOString() : null;
-        const endIso = endD ? endD.toISOString() : null;
-        if (startIso) rangeIso.$gte = startIso;
-        if (endIso) rangeIso.$lte = endIso;
-
-        const rangeDate = {};
-        if (startD) rangeDate.$gte = startD;
-        if (endD) rangeDate.$lte = endD;
-
-        const scheduledKey = `data.${ATTR.SCHEDULED_START}`;
-        const actualEndKey = `data.${ATTR.ACTUAL_END}`;
-
-        query.$or = [
-            { [scheduledKey]: rangeIso },
-            { [scheduledKey]: rangeDate },
-            { [actualEndKey]: rangeIso },
-            { [actualEndKey]: rangeDate },
-            { updatedAt: rangeDate },
-            { createdAt: rangeDate },
-        ];
+        const dateQuery = buildServiceItemDateQuery(startD, endD, scheduledKey, actualEndKey);
+        if (dateQuery) Object.assign(query, dateQuery);
     }
 
     const rawItems = await Item.find(query).lean();
@@ -804,81 +483,26 @@ export async function fetchServiceItems(workspaceId, boardId, options = {}) {
         ? await bulkFetchItems(workspaceId, boardId, [...fundingSourceIdsAll])
         : new Map();
 
-    let processed = rawItems.map(item => {
-        const scheduledStart = getValue(item, ATTR.SCHEDULED_START);
-        const actualEnd = getValue(item, ATTR.ACTUAL_END);
-        const statusFormatted = formatStatus(getValue(item, ATTR.TRANSACTION_STATUS));
-        const useActualEnd = normalizeString(statusFormatted) === normalizeString(DELIVERED_STATUS);
-        const scheduledStartDate = parseDate(scheduledStart);
-        const actualEndDate = parseDate(actualEnd);
-        const statusNorm = normalizeString(statusFormatted);
+    let processed = rawItems.map((item) => mapRawServiceItem(item, profileMap, fundingSourceMap, {
+        getValue,
+        ATTR,
+        formatStatus,
+        normalizeString,
+        DELIVERED_STATUS,
+        parseDate,
+        extractRefId,
+        extractAllRefIds,
+        getParticipantName,
+        getFundingSourceName,
+    }));
 
-        const profileValue = getValue(item, ATTR.PARTICIPANT_PROFILE);
-        const profileId = extractRefId(profileValue);
-        let participantName = profileId ? (getParticipantName(profileMap.get(profileId)) || '') : '';
-        if (!participantName) participantName = getValue(item, ATTR.PARTICIPANT_FULL_NAME) || '';
-
-        const fundingSourceIds = extractAllRefIds(getValue(item, ATTR.FUNDING_SOURCE));
-        const fundingSourceResolvedBase = fundingSourceIds.length
-            ? fundingSourceIds.map(id => getFundingSourceName(fundingSourceMap.get(id))).filter(Boolean).join(', ')
-            : '';
-
-        return {
-            item, scheduledStartDate, actualEndDate,
-            scheduledStart,
-            actualEnd,
-            filterDate: (() => {
-                if (useActualEnd) return actualEndDate;
-                const isAdjustmentLike = statusNorm.includes('adjust') || statusNorm.includes('refund') || statusNorm.includes('charge');
-                if (isAdjustmentLike) {
-                    return scheduledStartDate || actualEndDate || (item.updatedAt ? new Date(item.updatedAt) : null) || (item.createdAt ? new Date(item.createdAt) : null);
-                }
-                return scheduledStartDate;
-            })(),
-            participantName: String(participantName),
-            profileValue,
-            statusFormatted: statusFormatted || '',
-            servicePlanId: extractRefId(getValue(item, ATTR.SERVICE_PLAN)),
-            fundingSourceIds,
-            fundingSourceResolvedBase
-        };
+    processed = filterProcessedServiceItems(processed, {
+        participantParam,
+        startDate,
+        endDate,
+        transactionStatusFilter,
+        fundingSourceFilter,
     });
-
-    if (participantParam && participantParam !== 'all') {
-        try {
-            const escapedParticipantParam = participantParam.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const re = new RegExp(escapedParticipantParam, 'i');
-            processed = processed.filter(p =>
-                re.test(p.participantName) ||
-                (p.profileValue && (
-                    (typeof p.profileValue === 'string' && re.test(p.profileValue)) ||
-                    (Array.isArray(p.profileValue) && p.profileValue.some(v => re.test(String(v)))) ||
-                    (typeof p.profileValue === 'object' && p.profileValue.id && re.test(String(p.profileValue.id)))
-                ))
-            );
-        } catch { /* invalid regex */ }
-    }
-
-    if (startDate) {
-        const d = new Date(startDate);
-        processed = processed.filter(p => p.filterDate && p.filterDate >= d);
-    }
-    if (endDate) {
-        const d = new Date(endDate);
-        processed = processed.filter(p => p.filterDate && p.filterDate <= d);
-    }
-
-    if (transactionStatusFilter && transactionStatusFilter.toLowerCase() !== 'all') {
-        const v = transactionStatusFilter.trim();
-        processed = processed.filter(p => p.statusFormatted === v);
-    }
-
-    if (fundingSourceFilter && fundingSourceFilter !== 'all') {
-        const fv = fundingSourceFilter.trim();
-        processed = processed.filter(p => {
-            return p.fundingSourceResolvedBase && p.fundingSourceResolvedBase === fv;
-        });
-    }
 
     // Sort like monthly-statement endpoint default (by updatedAt desc when no explicit sort is provided)
     processed.sort((a, b) => {
@@ -902,93 +526,31 @@ export async function fetchServiceItems(workspaceId, boardId, options = {}) {
     }
     const refMap = await bulkFetchItems(workspaceId, boardId, [...spIds, ...fsIds, ...associatedProviderIds]);
 
-    const result = processed.map(p => {
-        const item = p.item;
-        const committedAtHm = getValue(item, ATTR.COMMITTED_AT_HM);
+    const serviceTransformHelpers = {
+        getValue,
+        getValueMulti,
+        ATTR,
+        formatStatus,
+        parseNumber,
+        getServiceFromServicePlan,
+        getValueFromFlatData,
+        extractRefId,
+        getFundingSourceName,
+        stripEmoji,
+    };
 
-        const servicePlanItem = p.servicePlanId ? refMap.get(p.servicePlanId) : null;
-        const service = getServiceFromServicePlan(servicePlanItem) || '';
-
-        // Delivered By + Service Provider (single computation for both)
-        const deliveredByRaw = getValue(item, ATTR.DELIVERED_BY);
-        const deliveredByName = deliveredByRaw == null
-            ? null
-            : (typeof deliveredByRaw === 'object' ? (deliveredByRaw.name || deliveredByRaw.toString()) : String(deliveredByRaw));
-        let serviceProvider = undefined;
-        if (deliveredByName && typeof deliveredByName === 'string') {
-            const deliveredByLower = deliveredByName.toLowerCase();
-            if (deliveredByLower.includes('company workforce')) {
-                serviceProvider = businessProfile?.name || undefined;
-            } else if (deliveredByLower.includes('associated')) {
-                const apRefId = extractRefId(getValue(item, ATTR.ASSOCIATED_PROVIDER));
-                const providerRefItem = apRefId ? refMap.get(apRefId) : null;
-                const businessIndividual = providerRefItem ? getValueFromFlatData(providerRefItem, 'Business/Individual') : null;
-                serviceProvider = (businessIndividual != null && businessIndividual !== '')
-                    ? (typeof businessIndividual === 'object' && businessIndividual.name ? businessIndividual.name : String(businessIndividual))
-                    : (apRefId || undefined);
-            }
-        }
-
-        // Funding source names (with special case for Primary Supplement / Unspent HCP)
-        const serviceCategoryRaw = servicePlanItem ? getValueFromFlatData(servicePlanItem, ['Service Category', ATTR.SERVICE_CATEGORY]) : null;
-        const serviceCategory = serviceCategoryRaw
-            ? (typeof serviceCategoryRaw === 'object' && serviceCategoryRaw.name ? serviceCategoryRaw.name : String(serviceCategoryRaw).trim())
-            : '';
-
-        let fundingSource;
-        if (p.fundingSourceIds.length) {
-            const names = [];
-            for (const fsId of p.fundingSourceIds) {
-                let fsName = getFundingSourceName(refMap.get(fsId));
-                if (fsName) {
-                    if (serviceCategory && isPrimarySupplementOrUnspentHcp(fsName)) {
-                        fsName = `${fsName} - ${stripEmoji(serviceCategory)}`;
-                    }
-                    names.push(fsName);
-                }
-            }
-            fundingSource = names.length ? names.join(', ') : undefined;
-        }
-
-        const scheduledStart = p.scheduledStart || null;
-        const actualEnd = p.actualEnd || null;
-        const notes = getValue(item, ATTR.ADDITIONAL_NOTES) || '';
-        const allocatedTimeValue = getValueMulti(item, ['Allocated time (Hr.)', 'Allocated Time (Hr.)']);
-        const allocatedTime = allocatedTimeValue !== null && allocatedTimeValue !== undefined
-            ? (typeof allocatedTimeValue === 'number' ? allocatedTimeValue : Number(allocatedTimeValue) || 0)
-            : undefined;
-
-        return {
-            id: item.itemId,
-            participant: p.participantName,
-            service,
-            serviceProvider,
-            deliveredBy: deliveredByName,
-            updatedAt: item.updatedAt,
-            createdAt: item.createdAt,
-            scheduledStart,
-            scheduledServiceDate: scheduledStart,
-            scheduledShiftStart: scheduledStart,
-            scheduledShiftStartDateTime: scheduledStart,
-            actualEnd,
-            actualShiftEndDateTime: actualEnd,
-            serviceDeliveryDate: actualEnd,
-            serviceCategory,
-            transactionStatus: formatStatus(getValue(item, ATTR.TRANSACTION_STATUS)),
-            committedAtHmForDelivery: committedAtHm !== null && committedAtHm !== undefined
-                ? (typeof committedAtHm === 'number' ? committedAtHm : Number(committedAtHm) || 0)
-                : undefined,
-            unit: getValue(item, ATTR.UNIT) || 'Hour',
-            quantity: parseNumber(getValue(item, ATTR.QUANTITY)) || 0,
-            unitPrice: parseNumber(getValue(item, ATTR.UNIT_PRICE)) || 0,
-            totalAmount: parseNumber(getValue(item, ATTR.TOTAL_AMOUNT)) || 0,
-            govSubsidy: parseNumber(getValue(item, ATTR.GOV_SUBSIDY)) || 0,
-            participantContribution: parseNumber(getValue(item, ATTR.PARTICIPANT_CONTRIBUTION)) || 0,
-            fundingSource,
-            notes,
-            allocatedTime
-        };
-    });
+    const result = processed.map((p) => transformProcessedServiceItem(
+        p,
+        refMap,
+        businessProfile,
+        {
+            ...serviceTransformHelpers,
+            item: p.item,
+            scheduledStart: p.scheduledStart,
+            actualEnd: p.actualEnd,
+            participantName: p.participantName,
+        },
+    ));
 
     info('MonthlyStatementData', 'Fetched service items', {
         workspaceId, boardId, raw: rawItems.length, filtered: result.length

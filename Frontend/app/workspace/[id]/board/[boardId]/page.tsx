@@ -1,8 +1,9 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { BackButton } from "@/components/ui/back-button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Terminal, QrCode, FileText, FileBarChart } from "lucide-react";
+import { Terminal, QrCode, FileText, FileBarChart } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useEffect, useState } from "react";
@@ -121,17 +122,12 @@ export default function BoardDetail() {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      <div className="container mx-auto py-8">
-        <Button
-          variant="ghost"
-          className="mb-6"
-          onClick={() => router.push(`/workspace/${id}`)}
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
+      <div className="container mx-auto animate-fade-in-up py-8">
+        <BackButton onClick={() => router.push(`/workspace/${id}`)}>
           Back to Workspace
-        </Button>
+        </BackButton>
 
-        <div className="space-y-6">
+        <div className="page-enter-stagger space-y-6">
           {/* Board Info */}
           <Card className="p-6 shadow-lg card-hover">
             <div className="flex justify-between items-center">
@@ -153,88 +149,76 @@ export default function BoardDetail() {
 
           {/* Board Actions */}
           {(user.role == "support_admin" || user.role == "owner" || user.role == "isoplus_user") && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {/* Configuration Card - Only for Owner and Support Admin */}
+            <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-2 lg:grid-cols-3">
               {(user.role == "support_admin" || user.role == "owner") && (
-                <Card className="p-6 space-y-4 card-hover">
-                  <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                <Card className="card-hover flex h-full flex-col p-6">
+                  <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
                     <Terminal className="h-6 w-6 text-primary" />
                   </div>
-                  <div>
-                    <h2 className="text-xl font-semibold">Configuration</h2>
-                    <p className="text-muted-foreground mb-4 text-sm">
-                      Configure board settings and options
-                    </p>
-                    <Button
-                      onClick={() => router.push(`/workspace/${id}/board/${boardId}/configuration`)}
-                      className="w-full"
-                    >
-                      Configure Board
-                    </Button>
-                  </div>
+                  <h2 className="text-xl font-semibold">Configuration</h2>
+                  <p className="mb-4 flex-1 text-sm text-muted-foreground">
+                    Configure board settings and options
+                  </p>
+                  <Button
+                    onClick={() => router.push(`/workspace/${id}/board/${boardId}/configuration`)}
+                    className="mt-auto w-full"
+                  >
+                    <span>Configure Board</span>
+                  </Button>
                 </Card>
               )}
 
-              {/* QR Generator Card */}
-              <Card className="p-6 space-y-4 card-hover">
-                <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+              <Card className="card-hover flex h-full flex-col p-6">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
                   <QrCode className="h-6 w-6 text-primary" />
                 </div>
-                <div>
-                  <h2 className="text-xl font-semibold">QR Generator</h2>
-                  <p className="text-muted-foreground mb-4 text-sm">
-                    Create QR codes for your forms, documents, or any other links.
-                  </p>
-                  <Button
-                    onClick={() => router.push(`/workspace/${id}/board/${boardId}/qr-generator`)}
-                    className="w-full"
-                  >
-                    Generate QR Code
-                  </Button>
-                </div>
+                <h2 className="text-xl font-semibold">QR Generator</h2>
+                <p className="mb-4 flex-1 text-sm text-muted-foreground">
+                  Create QR codes for your forms, documents, or any other links.
+                </p>
+                <Button
+                  onClick={() => router.push(`/workspace/${id}/board/${boardId}/qr-generator`)}
+                  className="mt-auto w-full"
+                >
+                  <span>Generate QR Code</span>
+                </Button>
               </Card>
 
               {canAccessInvoiceGenerator && (
-                <Card className="p-6 space-y-4 card-hover">
-                  <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                <Card className="card-hover flex h-full flex-col p-6">
+                  <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
                     <FileText className="h-6 w-6 text-primary" />
                   </div>
-                  <div>
-                    <h2 className="text-xl font-semibold">Invoice Generator</h2>
-                    <p className="text-muted-foreground mb-4 text-sm">
-                      Generate professional service invoices
-                    </p>
-                    <Button
-                      onClick={() => router.push(`/workspace/${id}/board/${boardId}/invoice-generator`)}
-                      className="w-full"
-                    >
-                      Generate Invoice
-                    </Button>
-                  </div>
+                  <h2 className="text-xl font-semibold">Invoice Generator</h2>
+                  <p className="mb-4 flex-1 text-sm text-muted-foreground">
+                    Generate professional service invoices
+                  </p>
+                  <Button
+                    onClick={() => router.push(`/workspace/${id}/board/${boardId}/invoice-generator`)}
+                    className="mt-auto w-full"
+                  >
+                    <span>Generate Invoice</span>
+                  </Button>
                 </Card>
               )}
 
-              {/* Monthly Statement Card (SaH care management boards only; hidden for Low Cat and NDIS) */}
               {isCareManagementBoard && !isLowCatBoard && !board?.label?.includes('NDIS') && (
-                <Card className="p-6 space-y-4 card-hover">
-                  <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                <Card className="card-hover flex h-full flex-col p-6">
+                  <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
                     <FileBarChart className="h-6 w-6 text-primary" />
                   </div>
-                  <div>
-                    <h2 className="text-xl font-semibold">Monthly Statement</h2>
-                    <p className="text-muted-foreground mb-4 text-sm">
-                      View detailed monthly service statements
-                    </p>
-                    <Button
-                      onClick={() => router.push(`/workspace/${id}/board/${boardId}/monthly-statement`)}
-                      className="w-full"
-                    >
-                      View Statement
-                    </Button>
-                  </div>
+                  <h2 className="text-xl font-semibold">Monthly Statement</h2>
+                  <p className="mb-4 flex-1 text-sm text-muted-foreground">
+                    View detailed monthly service statements
+                  </p>
+                  <Button
+                    onClick={() => router.push(`/workspace/${id}/board/${boardId}/monthly-statement`)}
+                    className="mt-auto w-full"
+                  >
+                    <span>View Statement</span>
+                  </Button>
                 </Card>
               )}
-
             </div>)}
         </div>
       </div>
