@@ -17,7 +17,7 @@ import { collectInvoiceRefIdsFromMasterItems } from './ndisInvoiceContextHelpers
 export async function bulkFetchReferenceItemsFromDB(workspaceId, boardId, itemIds) {
   if (!itemIds || itemIds.length === 0) return new Map();
 
-  const uniqueIds = [...new Set(itemIds.filter(Boolean).map((id) => String(id)))];
+  const uniqueIds = [...new Set(itemIds.filter((id) => Boolean(id)).map((id) => String(id)))];
   if (uniqueIds.length === 0) return new Map();
 
   const sameBoard = await Item.find({
@@ -63,9 +63,9 @@ function resolveRefDisplayName(refId, refItemsMap) {
 
 function resolveValueToNames(value, refItemsMap) {
   if (!value) return '';
-  const ids = extractAllRefIds(value).filter(isUuidLike);
+  const ids = extractAllRefIds(value).filter((id) => isUuidLike(id));
   if (ids.length > 0) {
-    const names = ids.map((id) => resolveRefDisplayName(id, refItemsMap)).filter(Boolean);
+    const names = ids.map((id) => resolveRefDisplayName(id, refItemsMap)).filter((name) => Boolean(name));
     if (names.length > 0) return names.join(', ');
   }
   return formatLabelValue(value).trim();
@@ -218,7 +218,7 @@ export async function getNdisInvoiceGeneratorContextFromMasterItems({
   boardId,
   masterItemIds,
 }) {
-  const ids = [...new Set((masterItemIds || []).filter(Boolean).map((id) => String(id)))];
+  const ids = [...new Set((masterItemIds || []).filter((id) => Boolean(id)).map((id) => String(id)))];
   if (ids.length === 0) {
     throw new Error('No items provided for invoice generation.');
   }

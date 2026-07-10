@@ -4,12 +4,13 @@ import { info, warn } from '../utils/logger.js';
 import { getItemValues, ITEM_DELETED } from '../services/isoplus.js';
 import { transformItemData } from '../utils/itemTransform.js';
 import { itemDataReferencesId } from '../utils/isoplusWebhookHelpers.js';
+import { mongoEq } from './securityHelpers.js';
 
 async function updateSingleReferencingItem(item, referencedIdStr) {
   const referencesItem = itemDataReferencesId(item.data, referencedIdStr);
   if (!referencesItem) return false;
 
-  const itemBoard = await Board.findOne({ boardId: item.boardId, syncData: true }).lean();
+  const itemBoard = await Board.findOne({ boardId: mongoEq(item.boardId), syncData: true }).lean();
   if (!itemBoard) return false;
 
   const fullItemData = await getItemValues(item.workspaceId, item.boardId, item.itemId);
@@ -17,7 +18,7 @@ async function updateSingleReferencingItem(item, referencedIdStr) {
 
   const transformedData = transformItemData(fullItemData);
   await Item.findOneAndUpdate(
-    { itemId: item.itemId },
+    { itemId: mongoEq(item.itemId) },
     { $set: { data: transformedData, syncGUID: null, updatedAt: new Date() } },
   );
 
@@ -48,8 +49,11 @@ async function processReferencingItemsPage(items, referencedIdStr) {
 
 export async function updateReferencingWebhookItems(referencedItemId, workspaceId) {
   try {
-    const referencedIdStr = referencedItemId.toString();
-    const boards = await Board.find({ workspaceId, syncData: true }).select('boardId').lean();
+    const referencedIdStr = mongoEq(referencedItemId);
+    const safeWorkspaceId = mongoEq(workspaceId);
+    if (!referencedIdStr || !safeWorkspaceId) return;
+
+    const boards = await Board.find({ workspaceId: safeWorkspaceId, syncData: true }).select('boardId').lean();
     if (!boards.length) return;
 
     const boardIds = boards.map((b) => b.boardId);
@@ -60,7 +64,7 @@ export async function updateReferencingWebhookItems(referencedItemId, workspaceI
     for (const boardIdToCheck of boardIds) {
       let skip = 0;
       while (true) {
-        const items = await Item.find({ boardId: boardIdToCheck })
+        const items = await Item.find({ boardId: mongoEq(boardIdToCheck) })
           .select('itemId boardId workspaceId data')
           .skip(skip)
           .limit(batchSize)

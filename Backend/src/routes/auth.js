@@ -505,7 +505,7 @@ router.post('/oauth-exchange', async (req, res) => {
       return res.status(400).json({ message: 'Ticket is required' });
     }
 
-    const record = await OAuthTicket.findOneAndDelete({ ticket });
+    const record = await OAuthTicket.findOneAndDelete({ ticket: toRequiredQueryString(ticket) });
     if (!record) {
       logLoginFailure('Auth-Service', 'OAuth exchange failed: ticket invalid, expired, or already used', {
         method: 'oauth-exchange',

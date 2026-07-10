@@ -327,6 +327,32 @@ async function populateMonthlyStatementVisualAndHeaderFields({
 
 }
 
+function timezonePartsToUtcMs(at, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(at);
+  const getPart = (type) => Number(parts.find((p) => p.type === type)?.value ?? '0');
+  return Date.UTC(
+    getPart('year'),
+    getPart('month') - 1,
+    getPart('day'),
+    getPart('hour'),
+    getPart('minute'),
+    getPart('second'),
+  );
+}
+
+function getUtcOffsetMs(at, timeZone) {
+  return timezonePartsToUtcMs(at, timeZone) - timezonePartsToUtcMs(at, 'UTC');
+}
+
 function resolveMonthlyStatementDates(requestStartDate, requestEndDate, monthNum, yearVal, timezone) {
   const normalizeIsoOrNull = (value) => {
     if (!value) return null;
@@ -352,17 +378,6 @@ function resolveMonthlyStatementDates(requestStartDate, requestEndDate, monthNum
   if ((!startDate || !endDate) && monthNum && yearVal) {
       const mi = Number(monthNum) - 1, yi = Number(yearVal);
       if (!isNaN(mi) && !isNaN(yi)) {
-          const getUtcOffsetMs = (at, timeZone) => {
-              const toMs = (tz) => {
-                  const parts = new Intl.DateTimeFormat('en-CA', {
-                      timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
-                      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
-                  }).formatToParts(at);
-                  const get = (t) => Number(parts.find((p) => p.type === t)?.value ?? '0');
-                  return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
-              };
-              return toMs(timeZone) - toMs('UTC');
-          };
           const lastDay = new Date(Date.UTC(yi, mi + 1, 0));
           const firstNoon = new Date(Date.UTC(yi, mi, 1, 12, 0, 0));
           const lastNoon = new Date(Date.UTC(yi, mi + 1, 0, 12, 0, 0));

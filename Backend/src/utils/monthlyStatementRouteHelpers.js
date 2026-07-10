@@ -151,7 +151,7 @@ async function loadBudgetReferenceMaps(allBudgetItems, workspaceId, boardId, dep
   for (const item of allBudgetItems) {
     const primarySupplementValue = deps.getValueFromItemMulti?.(item, 'Primary Supplement')
       ?? getValueFromItem(item, 'Primary Supplement');
-    deps.extractAllRefIds(primarySupplementValue).filter(deps.isUuidLike)
+    deps.extractAllRefIds(primarySupplementValue).filter((id) => deps.isUuidLike(id))
       .forEach((id) => primarySupplementRefIds.add(id));
   }
 
@@ -1123,11 +1123,11 @@ export async function getMonthlyStatementData({ workspaceId, boardId, query, req
   }, deps.warn, req);
 
   const distinctTransactionStatuses = [...new Set(
-    filteredServiceItems.map((p) => p.transactionStatusFormatted).filter(Boolean),
-  )].sort();
+    filteredServiceItems.map((p) => p.transactionStatusFormatted).filter((status) => Boolean(status)),
+  )].sort((a, b) => a.localeCompare(b));
   const distinctFundingSources = [...new Set(
-    filteredServiceItems.map((p) => p.fundingSourceResolved).filter(Boolean),
-  )].sort();
+    filteredServiceItems.map((p) => p.fundingSourceResolved).filter((source) => Boolean(source)),
+  )].sort((a, b) => a.localeCompare(b));
 
   const {
     paginatedServiceItems,

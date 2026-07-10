@@ -26,7 +26,6 @@ export function verifySession(): Promise<any> {
 /**
  * @param _signal Ignored — verification is deduped app-wide; use {@link verifySession} instead.
  */
-export const isTokenValid = async (_signal: AbortSignal): Promise<any> => {
-  void _signal;
+export const isTokenValid = async (_signal?: AbortSignal): Promise<any> => {
   return verifySession();
 };

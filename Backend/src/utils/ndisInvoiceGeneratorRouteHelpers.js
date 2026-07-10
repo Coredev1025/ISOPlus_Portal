@@ -41,11 +41,11 @@ function collectNdisRefIdSets(masterItems, isUuidLike) {
     if (ctId && isUuidLike(ctId)) cancellationTypeIds.add(ctId);
 
     extractNdisAllRefIds(item?.data?.[NDIS_MASTERPLAN_ATTR.ALLOWANCES_TYPE])
-      .filter(isUuidLike)
+      .filter((id) => isUuidLike(id))
       .forEach((id) => allowancesRefIds.add(id));
 
     extractNdisAllRefIds(item?.data?.[NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_SUPPORTS])
-      .filter(isUuidLike)
+      .filter((id) => isUuidLike(id))
       .forEach((id) => nonFaceToFaceRefIds.add(id));
   }
 
@@ -121,9 +121,9 @@ function createRefResolvers(refItemsMap) {
 
   const resolveValueToNames = (value, isUuidLike) => {
     if (!value) return '';
-    const ids = extractNdisAllRefIds(value).filter(isUuidLike);
+    const ids = extractNdisAllRefIds(value).filter((id) => isUuidLike(id));
     if (ids.length > 0) {
-      const names = ids.map(resolveRefDisplayName).filter(Boolean);
+      const names = ids.map((id) => resolveRefDisplayName(id)).filter((name) => Boolean(name));
       if (names.length > 0) return names.join(', ');
     }
     return formatNdisLabelValue(value).trim();
@@ -376,7 +376,7 @@ export async function getNdisInvoiceGeneratorData(
   }
 
   const allItems = await deps.Item.find(baseQuery).lean();
-  let masterItems = allItems.filter(isApprovedTimesheet);
+  let masterItems = allItems.filter((item) => isApprovedTimesheet(item));
 
   const refIdSets = collectNdisRefIdSets(masterItems, deps.isUuidLike);
   const { refItemsMap } = await loadNdisRefItemsMap(safeWorkspaceId, safeBoardId, refIdSets, deps);

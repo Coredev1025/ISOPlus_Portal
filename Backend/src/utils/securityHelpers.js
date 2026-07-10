@@ -48,3 +48,7 @@ export function pickAllowedValue(value, allowedValues, defaultValue = null) {
   const normalized = toQueryString(value);
   return normalized && allowedValues.includes(normalized) ? normalized : defaultValue;
 }
+
+export function mongoEq(value) {
+  return toRequiredQueryString(value);
+}

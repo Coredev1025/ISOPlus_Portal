@@ -404,11 +404,11 @@ async function bulkFetchReferenceItemsFromDB(workspaceId, boardId, itemIds) {
     if (!itemIds || itemIds.length === 0) return new Map();
 
     // Remove duplicates and nulls
-    const uniqueIds = [...new Set(itemIds.filter(Boolean).map(id => {
+    const uniqueIds = [...new Set(itemIds.filter((id) => Boolean(id)).map(id => {
         if (typeof id === 'object' && id.id) return id.id.toString();
         if (typeof id === 'object' && id) return id.toString();
         return id?.toString();
-    }).filter(Boolean))];
+    }).filter((id) => Boolean(id)))];
 
     if (uniqueIds.length === 0) return new Map();
 
@@ -568,7 +568,7 @@ function formatLabelValue(value, labels = []) {
             if (typeof id === 'object' && id.name) return id.name;
             const label = labels.find(l => l.id === id || (typeof id === 'object' && l.id === id.id));
             return label ? label.name : (typeof id === 'object' ? id.name : String(id));
-        }).filter(Boolean).join(', ');
+        }).filter((name) => Boolean(name)).join(', ');
     }
     if (typeof value === 'object' && value.name) return value.name;
     if (typeof value === 'object' && value.id) {
@@ -974,7 +974,7 @@ function normalizeTableCell(value) {
         return value ? 'Yes' : 'No';
     }
     if (Array.isArray(value)) {
-        return value.map((entry) => normalizeTableCell(entry)).filter(Boolean).join(', ');
+        return value.map((entry) => normalizeTableCell(entry)).filter((entry) => Boolean(entry)).join(', ');
     }
     if (typeof value === 'object' && value !== null) {
         const normalized = Object.values(value)
@@ -1728,7 +1728,7 @@ function parseMasterItemIdsFromBody(body) {
             if (r.id) return String(r.id);
         }
         return null;
-    }).filter(Boolean).map(String))];
+    }).filter((r) => Boolean(r)).map((r) => String(r)))];
 }
 
 router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, res) => {

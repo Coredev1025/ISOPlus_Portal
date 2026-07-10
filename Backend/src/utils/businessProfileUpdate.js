@@ -24,9 +24,9 @@ async function uploadLogoFile({ workspaceId, business, field, file, pathPrefix, 
 }
 
 async function removeLogoField(business, field) {
-  if (!business?.[field]) return null;
+  if (!business?.[field]) return false;
   await deleteFileFromS3(business[field], false);
-  return null;
+  return true;
 }
 
 export async function applyBusinessLogoUpdates({
@@ -56,7 +56,8 @@ export async function applyBusinessLogoUpdates({
     }
 
     if (removals[field]) {
-      updateData[field] = await removeLogoField(business, field);
+      const removed = await removeLogoField(business, field);
+      if (removed) updateData[field] = null;
     }
   }
 
