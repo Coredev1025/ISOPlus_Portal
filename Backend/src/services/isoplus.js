@@ -6,6 +6,7 @@ import https from 'https';
 import { info, warn, error, logAttributeError, logApiError, logOperationStart, logOperationEnd } from '../utils/logger.js';
 import { buildJobPlanningValues, buildServiceFeeTypeValues } from '../utils/isoplusJobReferenceHelpers.js';
 import { getErrorMessageFromUnknown } from '../utils/isoplusErrorHelpers.js';
+import { secureRandomFloat } from '../utils/securityHelpers.js';
 import { executeSetLogo } from '../utils/isoplusLogoHelpers.js';
 import { fetchPartyJobTypeReferencedItems } from '../utils/isoplusClientReferenceHelpers.js';
 import {
@@ -707,7 +708,7 @@ export async function getItemValues(workspaceId, boardId, itemId) {
             if (isRateLimitError && attempt < maxRetries - 1) {
                 // Exponential backoff with jitter: delay increases with each retry
                 // Add random jitter (0-30%) to prevent thundering herd
-                const jitter = 1 + (Math.random() * 0.3);
+                const jitter = 1 + (secureRandomFloat() * 0.3);
                 const backoffDelay = Math.min(
                     retryDelay * Math.pow(2, attempt) * jitter,
                     30000 // Cap at 30 seconds

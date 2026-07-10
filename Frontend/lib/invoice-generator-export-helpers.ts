@@ -7,6 +7,7 @@ import {
   formatNumberForCsvExport,
 } from '@/lib/invoice-generator-helpers';
 import { dateToStartOfDayISO, dateToEndOfDayISO } from '@/lib/timezone';
+import { randomAlphanumeric } from '@/lib/secure-random';
 
 type ServiceRecord = {
   id: string;
@@ -61,7 +62,7 @@ function downloadCsvBlob(blob: Blob, fileName: string) {
 }
 
 function buildTimestampedFileName(prefix: string, participantFilter: string) {
-  const uniqueCode = Math.random().toString(36).substring(2, 7).toUpperCase();
+  const uniqueCode = randomAlphanumeric(5).toUpperCase();
   const currentDate = new Date();
   const timestamp = `${currentDate.getFullYear().toString().slice(2)}${(currentDate.getMonth() + 1).toString().padStart(2, '0')}${currentDate.getDate().toString().padStart(2, '0')}${currentDate.getHours().toString().padStart(2, '0')}${currentDate.getMinutes().toString().padStart(2, '0')}${currentDate.getSeconds().toString().padStart(2, '0')}`;
   const participantName = participantFilter && participantFilter !== 'all' ? participantFilter : '(Multiple)';

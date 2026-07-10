@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { randomAlphanumeric, secureRandomFloat } from './securityHelpers.js';
 
 export const stripHtmlTags = (str) => {
     const regex = /(<([^>]+)>)/gi;
@@ -88,7 +89,7 @@ export class RateLimiter {
                 if (isRateLimitError && attempt < this.maxRetries - 1) {
                     // Exponential backoff with jitter: delay increases with each retry
                     // Add random jitter (0-30%) to prevent thundering herd
-                    const jitter = 1 + (Math.random() * 0.3);
+                    const jitter = 1 + (secureRandomFloat() * 0.3);
                     const backoffDelay = Math.min(
                         delay * Math.pow(2, attempt) * jitter,
                         30000 // Cap at 30 seconds
@@ -199,7 +200,7 @@ export function getFrontendBaseUrl() {
 }
 
 export function signOAuthState(payload = {}, expiresIn = '10m') {
-    return jwt.sign({ ...payload, nonce: Math.random().toString(36).slice(2) }, process.env.JWT_SECRET, { expiresIn });
+    return jwt.sign({ ...payload, nonce: randomAlphanumeric(16) }, process.env.JWT_SECRET, { expiresIn });
 }
 
 export function verifyOAuthState(state) {

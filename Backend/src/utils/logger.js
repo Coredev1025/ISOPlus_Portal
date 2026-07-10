@@ -14,6 +14,7 @@ import {
   filterMetaForLog,
   buildRequestContext,
 } from './loggerSanitizeHelpers.js';
+import { randomAlphanumeric } from './securityHelpers.js';
 
 dotenv.config();
 
@@ -556,7 +557,7 @@ export const logOperationStart = (source, operation, metadata, context = {}) => 
     operation,
     ...metadata,
     timestamp: new Date().toISOString(),
-    requestId: ctx.requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    requestId: ctx.requestId || `req_${Date.now()}_${randomAlphanumeric(9)}`
   };
   info(source, `Starting operation: ${operation}`, operationContext, context);
 };
@@ -569,7 +570,7 @@ export const logOperationEnd = (source, operation, metadata, context = {}, succe
     ...metadata,
     success,
     timestamp: new Date().toISOString(),
-    requestId: ctx.requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    requestId: ctx.requestId || `req_${Date.now()}_${randomAlphanumeric(9)}`
   };
   const level = success ? 'info' : 'warn';
   log(level, source, `Completed operation: ${operation}`, operationContext, context);

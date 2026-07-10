@@ -2,6 +2,7 @@ import { XeroClient } from 'xero-node';
 import Business from '../models/Business.js';
 import { error } from '../utils/logger.js';
 import { buildXeroContactErrorMessage } from '../utils/xeroContactErrorHelpers.js';
+import { randomAlphanumeric } from '../utils/securityHelpers.js';
 import {
     IsoPlusInvoiceValues
 } from '../dto/itemsPayload.js';
@@ -37,7 +38,7 @@ export async function getAuthUrl() {
     }
 
     const scopes = 'openid profile email accounting.settings accounting.contacts accounting.transactions accounting.reports.read accounting.attachments offline_access'.split(" ");
-    const state = Math.random().toString(36).substring(7);
+    const state = randomAlphanumeric(16);
     const url = await xeroClient.buildConsentUrl(scopes, state);
     return url;
 }
