@@ -55,9 +55,9 @@ jobs:
       - name: Install Dependencies
         working-directory: Backend
         run: npm ci
-      - name: Run tests with coverage
+      - name: Run tests with coverage (skips if no test script yet)
         working-directory: Backend
-        run: npm test -- --coverage --coverageReporters=lcov
+        run: npm test --if-present -- --coverage --coverageReporters=lcov
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
         with:
@@ -81,9 +81,9 @@ jobs:
       - name: Install Dependencies
         working-directory: Frontend
         run: npm ci
-      - name: Run tests with coverage
+      - name: Run tests with coverage (skips if no test script yet)
         working-directory: Frontend
-        run: npm test -- --coverage --coverageReporters=lcov
+        run: npm test --if-present -- --coverage --coverageReporters=lcov
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
         with:
