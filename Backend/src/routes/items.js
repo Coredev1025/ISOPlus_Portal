@@ -32,6 +32,7 @@ import {
 import { getNdisInvoiceGeneratorData } from '../utils/ndisInvoiceGeneratorRouteHelpers.js';
 import { getInvoiceGeneratorData } from '../utils/invoiceGeneratorRouteHelpers.js';
 import { getMonthlyStatementData } from '../utils/monthlyStatementRouteHelpers.js';
+import { toQueryStringArray, toRequiredQueryString } from '../utils/securityHelpers.js';
 import {
     lookupServiceIdFromRefs,
     normalizeServiceIdString,
@@ -521,7 +522,8 @@ const getFolderIds = async (folderName, workspaceId, boardId, providedFolders = 
 
 router.get('/:workspaceId/:boardId/invoice-generator/participants', authenticateToken, async (req, res) => {
     try {
-        const { workspaceId, boardId } = req.params;
+        const workspaceId = toRequiredQueryString(req.params.workspaceId);
+        const boardId = toRequiredQueryString(req.params.boardId);
 
         if (!workspaceId || !boardId) {
             return res.status(400).json({
@@ -598,7 +600,8 @@ router.get('/:workspaceId/:boardId/invoice-generator/participants', authenticate
 
 router.get('/:workspaceId/:boardId/invoice-generator-ndis/participants', authenticateToken, async (req, res) => {
     try {
-        const { workspaceId, boardId } = req.params;
+        const workspaceId = toRequiredQueryString(req.params.workspaceId);
+        const boardId = toRequiredQueryString(req.params.boardId);
 
         if (!workspaceId || !boardId) {
             return res.status(400).json({ message: 'WorkspaceId and boardId are required' });
@@ -646,7 +649,8 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis/participants', authent
 
 router.get('/:workspaceId/:boardId/invoice-generator-ndis/payment-status-options', authenticateToken, async (req, res) => {
     try {
-        const { workspaceId, boardId } = req.params;
+        const workspaceId = toRequiredQueryString(req.params.workspaceId);
+        const boardId = toRequiredQueryString(req.params.boardId);
 
         if (!workspaceId || !boardId) {
             return res.status(400).json({ message: 'WorkspaceId and boardId are required' });
@@ -680,7 +684,8 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis/payment-status-options
 
 router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, async (req, res) => {
     try {
-        const { workspaceId, boardId } = req.params;
+        const workspaceId = toRequiredQueryString(req.params.workspaceId);
+        const boardId = toRequiredQueryString(req.params.boardId);
         if (!workspaceId || !boardId) {
             return res.status(400).json({ message: 'WorkspaceId and boardId are required' });
         }
@@ -706,7 +711,8 @@ router.get('/:workspaceId/:boardId/invoice-generator-ndis', authenticateToken, a
 
 router.get('/:workspaceId/:boardId/monthly-statement/participants', authenticateToken, async (req, res) => {
     try {
-        const { workspaceId, boardId } = req.params;
+        const workspaceId = toRequiredQueryString(req.params.workspaceId);
+        const boardId = toRequiredQueryString(req.params.boardId);
 
         if (!workspaceId || !boardId) {
             return res.status(400).json({
@@ -782,7 +788,8 @@ router.get('/:workspaceId/:boardId/monthly-statement/participants', authenticate
 
 router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async (req, res) => {
     try {
-        const { workspaceId, boardId } = req.params;
+        const workspaceId = toRequiredQueryString(req.params.workspaceId);
+        const boardId = toRequiredQueryString(req.params.boardId);
         if (!workspaceId || !boardId) {
             return res.status(400).json({
                 message: 'WorkspaceId and boardId are required'
@@ -829,7 +836,8 @@ router.get('/:workspaceId/:boardId/invoice-generator', authenticateToken, async 
 
 router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async (req, res) => {
     try {
-        const { workspaceId, boardId } = req.params;
+        const workspaceId = toRequiredQueryString(req.params.workspaceId);
+        const boardId = toRequiredQueryString(req.params.boardId);
         if (!workspaceId || !boardId) {
             return res.status(400).json({
                 message: 'WorkspaceId and boardId are required'
@@ -880,8 +888,10 @@ router.get('/:workspaceId/:boardId/monthly-statement', authenticateToken, async 
 
 router.post('/:workspaceId/:boardId/update-status', authenticateToken, async (req, res) => {
     try {
-        const { workspaceId, boardId } = req.params;
-        const { itemIds, invoiceNumber, status, fileUrl } = req.body;
+        const workspaceId = toRequiredQueryString(req.params.workspaceId);
+        const boardId = toRequiredQueryString(req.params.boardId);
+        const { invoiceNumber, status, fileUrl } = req.body;
+        const itemIds = toQueryStringArray(req.body.itemIds);
 
         if (!workspaceId || !boardId) {
             return res.status(400).json({ message: 'WorkspaceId and BoardId are required' });
@@ -981,7 +991,9 @@ router.post('/:workspaceId/:boardId/update-status', authenticateToken, async (re
 
 router.get('/:workspaceId/:boardId/:itemId', authenticateToken, async (req, res) => {
     try {
-        const { workspaceId, boardId, itemId } = req.params;
+        const workspaceId = toRequiredQueryString(req.params.workspaceId);
+        const boardId = toRequiredQueryString(req.params.boardId);
+        const itemId = toRequiredQueryString(req.params.itemId);
 
         if (!itemId || !workspaceId || !boardId) {
             return res.status(400).json({
@@ -1035,7 +1047,9 @@ router.get('/cache/stats', authenticateToken, async (req, res) => {
 // Get PDF link by invoice number
 router.get('/:workspaceId/:boardId/invoice/:invoiceNumber/pdf-link', authenticateToken, async (req, res) => {
     try {
-        const { workspaceId, boardId, invoiceNumber } = req.params;
+        const workspaceId = toRequiredQueryString(req.params.workspaceId);
+        const boardId = toRequiredQueryString(req.params.boardId);
+        const invoiceNumber = toRequiredQueryString(req.params.invoiceNumber);
 
         if (!workspaceId || !boardId || !invoiceNumber) {
             return res.status(400).json({ message: 'WorkspaceId, boardId, and invoiceNumber are required' });

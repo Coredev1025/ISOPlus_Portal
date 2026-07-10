@@ -1,3 +1,5 @@
+import { toQueryString, toRequiredQueryString } from './securityHelpers.js';
+
 export function mapRawItemToProcessedInvoiceRow(item, helpers) {
   const { getValue, ATTRIBUTE_NAMES, parseDate, parseNumber, formatStatus, extractRefId, extractAllRefIds } = helpers;
   const scheduledStart = getValue(item, ATTRIBUTE_NAMES.SCHEDULED_START);
@@ -344,7 +346,8 @@ export function transformInvoiceCsvItem(p, refItemsMap, invoiceNumberMap, helper
 export async function handleInvoiceCsvExport(req, res, deps) {
   const startTime = Date.now();
   try {
-    const { workspaceId, boardId } = req.params;
+    const workspaceId = toRequiredQueryString(req.params.workspaceId);
+    const boardId = toRequiredQueryString(req.params.boardId);
     const {
       participant = '',
       startDate,
@@ -356,7 +359,7 @@ export async function handleInvoiceCsvExport(req, res, deps) {
       sortBy = 'scheduledServiceDate',
       sortOrder = 'asc',
     } = req.query;
-    const fundingSourceFilter = req.query.fundingSource || '';
+    const fundingSourceFilter = toQueryString(req.query.fundingSource) || '';
 
     if (!workspaceId || !boardId) {
       return res.status(400).json({

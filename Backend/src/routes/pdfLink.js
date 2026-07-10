@@ -1,6 +1,7 @@
 import express from 'express';
 import PDFLink from '../models/PDFLink.js';
 import { info, error } from '../utils/logger.js';
+import { toRequiredQueryString } from '../utils/securityHelpers.js';
 
 const router = express.Router();
 
@@ -36,12 +37,12 @@ router.get('/:id', async (req, res) => {
 // POST a new PDF link
 router.post('/', async (req, res) => {
     const pdfLink = new PDFLink({
-        itemId: req.body.itemId,
-        workspaceId: req.body.workspaceId,
-        pdfLink: req.body.pdfLink,
-        SignatureStatus: req.body.SignatureStatus,
-        type: req.body.type,
-        createdBy: req.body.createdBy || "xxx"
+        itemId: toRequiredQueryString(req.body.itemId),
+        workspaceId: toRequiredQueryString(req.body.workspaceId),
+        pdfLink: toRequiredQueryString(req.body.pdfLink),
+        SignatureStatus: toRequiredQueryString(req.body.SignatureStatus),
+        type: toRequiredQueryString(req.body.type),
+        createdBy: toRequiredQueryString(req.body.createdBy) || "xxx"
     });
 
     try {
