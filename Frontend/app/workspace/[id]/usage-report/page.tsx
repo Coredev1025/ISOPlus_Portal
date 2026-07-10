@@ -34,6 +34,7 @@ import {
   TooltipProps,
 } from "recharts";
 import { NameType, ValueType } from "recharts/types/component/DefaultTooltipContent";
+import { secureRandomInt } from "@/lib/secure-random";
 
 // Mock data for the usage report
 const generateDailyData = (days: number) => {
@@ -43,12 +44,12 @@ const generateDailyData = (days: number) => {
     
     return {
       date: date.toISOString().split('T')[0],
-      "Purchase Order": Math.floor(Math.random() * 10),
-      "Invoice": Math.floor(Math.random() * 15),
-      "Quote": Math.floor(Math.random() * 8),
-      "Employee Agreement": Math.floor(Math.random() * 5),
-      "Contractor Agreement": Math.floor(Math.random() * 3),
-      "Xero API Calls": Math.floor(Math.random() * 50),
+      "Purchase Order": secureRandomInt(10),
+      "Invoice": secureRandomInt(15),
+      "Quote": secureRandomInt(8),
+      "Employee Agreement": secureRandomInt(5),
+      "Contractor Agreement": secureRandomInt(3),
+      "Xero API Calls": secureRandomInt(50),
     };
   });
 };

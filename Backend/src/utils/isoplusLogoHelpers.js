@@ -1,9 +1,10 @@
 import axios from 'axios';
 import FormData from 'form-data';
+import { randomAlphanumeric } from './securityHelpers.js';
 
 function buildSetLogoContext(deps) {
   const { workspaceId, logo, type, req } = deps;
-  const requestId = req?.headers?.['x-request-id'] || `logo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const requestId = req?.headers?.['x-request-id'] || `logo_${Date.now()}_${randomAlphanumeric(9)}`;
   return {
     requestId,
     operationContext: {
