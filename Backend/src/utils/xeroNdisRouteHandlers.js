@@ -79,7 +79,7 @@ export function parseInvoiceGeneratorMasterItemIds(body) {
       if (r.id) return String(r.id);
     }
     return null;
-  }).filter(Boolean).map(String))];
+  }).filter((r) => Boolean(r)).map((r) => String(r)))];
 }
 
 export async function handleXeroInvoicendis({

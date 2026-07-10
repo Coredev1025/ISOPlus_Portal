@@ -1388,9 +1388,8 @@ export default function MonthlyStatement() {
 
   const waitForFontsAndNextPaint = async () => {
     try {
-      const fonts = (document as any).fonts;
-      if (fonts?.ready) {
-        await fonts.ready;
+      if (typeof document !== 'undefined' && document.fonts) {
+        await document.fonts.ready;
       }
     } catch {
     }
@@ -1484,7 +1483,7 @@ export default function MonthlyStatement() {
         img.onerror = reject;
         img.src = src;
       });
-    const images = await Promise.all(dataUrls.map(loadImage));
+    const images = await Promise.all(dataUrls.map((src) => loadImage(src)));
     const maxW = cellSize?.width ?? Math.max(...images.map((img) => img.width));
     const maxH = cellSize?.height ?? Math.max(...images.map((img) => img.height));
     const rows = Math.ceil(images.length / cols);
@@ -2035,7 +2034,7 @@ export default function MonthlyStatement() {
   const normalizeBudgetValue = (value: unknown): string => {
     if (value === null || value === undefined) return '';
     if (Array.isArray(value)) {
-      return value.map(normalizeBudgetValue).filter(Boolean).join(', ');
+      return value.map((entry) => normalizeBudgetValue(entry)).filter((entry) => Boolean(entry)).join(', ');
     }
     if (typeof value === 'object') {
       const maybeName = (value as { name?: string }).name;

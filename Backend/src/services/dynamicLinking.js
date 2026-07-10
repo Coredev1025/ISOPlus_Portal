@@ -8,6 +8,29 @@ import { getAllViews, getAutomation, getBoard, updateAutomation } from './isoplu
 
 const TEMPLATE_REGEX = /{{\s*([^}]+)\s*}}/g;
 
+function applyAutomationLinkToWorkflow(source, link, destination) {
+  const replacement = `<a href="${destination.selfLink}">${link.label}</a>`;
+  if (source?.templateItemValues) {
+    source.item.workflow.forEach((value, index) => {
+      if (!value?.config?.templateItemValues) return;
+      value.config.templateItemValues.forEach((templateItemValue, templateItemValueIndex) => {
+        if (templateItemValue.data.includes(link.originalMatch)) {
+          templateItemValue.data = templateItemValue.data.replace(link.originalMatch, replacement);
+          source.item.workflow[index].config.templateItemValues[templateItemValueIndex] = templateItemValue;
+        }
+      });
+    });
+    return;
+  }
+
+  source.item.workflow.forEach((value, index) => {
+    if (value?.config?.text?.includes(link.originalMatch)) {
+      value.config.text = value.config.text.replace(link.originalMatch, replacement);
+      source.item.workflow[index] = value;
+    }
+  });
+}
+
 class DynamicLinkingService {
     constructor(authorization, host) {
         if (!authorization || typeof authorization !== 'string') {
@@ -239,25 +262,7 @@ class DynamicLinkingService {
                             return;
                         }
                         if (source && source?.automation) {
-                            if (source?.templateItemValues) {
-                                source.item.workflow.forEach((value, index) => {
-                                    if (value && value.config && value.config.templateItemValues) {
-                                        value.config.templateItemValues.forEach((templateItemValue, templateItemValueIndex) => {
-                                            if (templateItemValue.data.includes(link.originalMatch)) {
-                                                templateItemValue.data = templateItemValue.data.replace(link.originalMatch, `<a href="${destination.selfLink}">${link.label}</a>`);
-                                                source.item.workflow[index].config.templateItemValues[templateItemValueIndex] = templateItemValue;
-                                            }
-                                        });
-                                    }
-                                });
-                            } else {                                
-                                source.item.workflow.forEach((value, index) => {
-                                    if (value && value.config && value.config.text && value.config.text.includes(link.originalMatch)) {
-                                        value.config.text = value.config.text.replace(link.originalMatch, `<a href="${destination.selfLink}">${link.label}</a>`);
-                                        source.item.workflow[index] = value;
-                                    }
-                                });
-                            }
+                            applyAutomationLinkToWorkflow(source, link, destination);
                         } else {
                             source.value.data = source.value.data.replace(link.originalMatch, `<a href="${destination.selfLink}">${link.label}</a>`);
                         }

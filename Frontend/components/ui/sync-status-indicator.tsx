@@ -7,6 +7,102 @@ import { RefreshCw, Clock, Database, Loader2, AlertCircle, XCircle } from "lucid
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 
+function mapSyncBoardFromPoll(board: any) {
+  const isManualSync = board.jobStatus &&
+    (board.jobStatus.state === 'active' || board.jobStatus.state === 'waiting' || board.jobStatus.state === 'failed');
+
+  const isFailed = (board.syncExecution && (board.syncExecution.status === 'failed' || board.syncExecution.status === 'timeout')) ||
+    (board.jobStatus && board.jobStatus.state === 'failed');
+
+  if (isManualSync) {
+    const jobProgress = board.jobStatus?.progress || {};
+    const syncStats = board.syncStats || {};
+    const foldersProcessed = jobProgress.foldersProcessed ?? syncStats.foldersProcessed ?? 0;
+    const totalFolders = jobProgress.totalFolders ?? 0;
+    const currentFolder = jobProgress.currentFolder || null;
+    const itemsProcessed = jobProgress.itemsProcessed ?? syncStats.itemsSynced ?? 0;
+    const errorMessage = board.jobStatus?.failedReason ||
+      board.lastSyncError ||
+      board.syncExecution?.error?.message ||
+      'Sync failed with unknown error';
+
+    return {
+      boardId: board.boardId,
+      boardName: board.boardName || board.boardId,
+      status: board.jobStatus.state === 'active' ? 'in-progress' :
+        board.jobStatus.state === 'failed' ? 'failed' : 'started',
+      syncType: board.syncStatus || 'manual_triggered_sync',
+      startTime: board.jobStatus.processedOn
+        ? new Date(board.jobStatus.processedOn).toISOString()
+        : new Date().toISOString(),
+      duration: board.jobStatus.finishedOn && board.jobStatus.processedOn
+        ? board.jobStatus.finishedOn - board.jobStatus.processedOn
+        : undefined,
+      progress: { foldersProcessed, totalFolders, currentFolder, itemsProcessed },
+      isManualSync: true,
+      error: isFailed ? {
+        message: errorMessage,
+        stack: board.syncExecution?.error?.stack || null,
+        details: board.syncExecution?.error?.details || null,
+      } : null,
+    };
+  }
+
+  const errorMessage = board.syncExecution?.error?.message ||
+    board.lastSyncError ||
+    'Sync failed with unknown error';
+  const syncProgress = board.syncExecution.progress || {};
+  const syncCounters = board.syncExecution.counters || {};
+  const syncStats = board.syncStats || {};
+
+  return {
+    boardId: board.boardId,
+    boardName: board.boardName || board.boardId,
+    status: board.syncExecution.status,
+    syncType: board.syncExecution.syncType,
+    startTime: board.syncExecution.startTime,
+    duration: board.syncExecution.duration,
+    progress: {
+      foldersProcessed: syncProgress.foldersProcessed ?? syncStats.foldersProcessed ?? 0,
+      totalFolders: syncProgress.totalFolders ?? 0,
+      currentFolder: syncProgress.currentFolder || null,
+      currentPage: syncProgress.currentPage,
+      totalPages: syncProgress.totalPages,
+      itemsProcessed: syncCounters.itemsProcessed ?? syncStats.itemsSynced ?? 0,
+    },
+    isManualSync: false,
+    error: isFailed ? {
+      message: errorMessage,
+      stack: board.syncExecution.error?.stack || null,
+      details: board.syncExecution.error?.details || null,
+    } : null,
+  };
+}
+
+function isActiveSyncBoard(board: any) {
+  const hasActiveSyncExecution = board.syncExecution &&
+    (board.syncExecution.status === 'started' || board.syncExecution.status === 'in-progress') &&
+    board.syncExecution.syncType !== 'realtime_sync';
+
+  const hasFailedSyncExecution = board.syncExecution &&
+    (board.syncExecution.status === 'failed' || board.syncExecution.status === 'timeout') &&
+    board.syncExecution.syncType !== 'realtime_sync' &&
+    board.syncExecution.endTime &&
+    (Date.now() - new Date(board.syncExecution.endTime).getTime()) < 60 * 1000;
+
+  const hasActiveJobStatus = board.jobStatus &&
+    (board.jobStatus.state === 'active' || board.jobStatus.state === 'waiting') &&
+    board.syncStatus !== 'realtime_sync';
+
+  const hasFailedJobStatus = board.jobStatus &&
+    board.jobStatus.state === 'failed' &&
+    board.syncStatus !== 'realtime_sync' &&
+    board.jobStatus.finishedOn &&
+    (Date.now() - new Date(board.jobStatus.finishedOn).getTime()) < 5 * 60 * 1000;
+
+  return hasActiveSyncExecution || hasFailedSyncExecution || hasActiveJobStatus || hasFailedJobStatus;
+}
+
 export function SyncStatusIndicator() {
   const { syncStatuses, setSyncStatuses, currentWorkspaceId } = useAppContext();
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -43,123 +139,8 @@ export function SyncStatusIndicator() {
         // Filter boards that have active syncs OR recently failed syncs
         // Check for both syncExecution and jobStatus to catch manual syncs
         const activeSyncs = response.data.boards
-          .filter((board: any) => {
-            // Check if there's an active syncExecution
-            const hasActiveSyncExecution = board.syncExecution && 
-              (board.syncExecution.status === 'started' || board.syncExecution.status === 'in-progress') &&
-              board.syncExecution.syncType !== 'realtime_sync';
-            
-            // Check if there's a failed syncExecution (show for 5 minutes after failure)
-            const hasFailedSyncExecution = board.syncExecution && 
-              (board.syncExecution.status === 'failed' || board.syncExecution.status === 'timeout') &&
-              board.syncExecution.syncType !== 'realtime_sync' &&
-              board.syncExecution.endTime &&
-              (Date.now() - new Date(board.syncExecution.endTime).getTime()) < 60 * 1000; 
-            
-            // Check if there's an active jobStatus (for manual syncs)
-            const hasActiveJobStatus = board.jobStatus && 
-              (board.jobStatus.state === 'active' || board.jobStatus.state === 'waiting') &&
-              board.syncStatus !== 'realtime_sync';
-            
-            // Check if there's a failed jobStatus (show for 5 minutes after failure)
-            const hasFailedJobStatus = board.jobStatus && 
-              board.jobStatus.state === 'failed' &&
-              board.syncStatus !== 'realtime_sync' &&
-              board.jobStatus.finishedOn &&
-              (Date.now() - new Date(board.jobStatus.finishedOn).getTime()) < 5 * 60 * 1000; // 5 minutes
-            
-            return hasActiveSyncExecution || hasFailedSyncExecution || hasActiveJobStatus || hasFailedJobStatus;
-          })
-          .map((board: any) => {
-            // Determine if this is a manual sync (has jobStatus) or regular sync (has syncExecution)
-            const isManualSync = board.jobStatus && 
-              (board.jobStatus.state === 'active' || board.jobStatus.state === 'waiting' || board.jobStatus.state === 'failed');
-            
-            // Check if sync is failed
-            const isFailed = (board.syncExecution && (board.syncExecution.status === 'failed' || board.syncExecution.status === 'timeout')) ||
-                            (board.jobStatus && board.jobStatus.state === 'failed');
-            
-            if (isManualSync) {
-              // For manual syncs, use jobStatus.progress for both folders and items
-              const jobProgress = board.jobStatus?.progress || {};
-              const syncStats = board.syncStats || {};
-              
-              // Get error information
-              const errorMessage = board.jobStatus?.failedReason || 
-                                  board.lastSyncError || 
-                                  (board.syncExecution?.error?.message) ||
-                                  'Sync failed with unknown error';
-              
-              // Extract folder progress from jobStatus.progress
-              const foldersProcessed = jobProgress.foldersProcessed ?? syncStats.foldersProcessed ?? 0;
-              const totalFolders = jobProgress.totalFolders ?? 0;
-              const currentFolder = jobProgress.currentFolder || null;
-              
-              // Extract item counters from jobStatus.progress (real-time), fallback to syncStats
-              const itemsProcessed = jobProgress.itemsProcessed ?? syncStats.itemsSynced ?? 0;
-              
-              return {
-                boardId: board.boardId,
-                boardName: board.boardName || board.boardId,
-                status: board.jobStatus.state === 'active' ? 'in-progress' : 
-                        board.jobStatus.state === 'failed' ? 'failed' : 'started',
-                syncType: board.syncStatus || 'manual_triggered_sync',
-                startTime: board.jobStatus.processedOn 
-                  ? new Date(board.jobStatus.processedOn).toISOString()
-                  : new Date().toISOString(),
-                duration: board.jobStatus.finishedOn && board.jobStatus.processedOn
-                  ? board.jobStatus.finishedOn - board.jobStatus.processedOn
-                  : undefined,
-                // Use jobStatus.progress for folder and item counters
-                progress: {
-                  foldersProcessed: foldersProcessed,
-                  totalFolders: totalFolders,
-                  currentFolder: currentFolder,
-                  itemsProcessed: itemsProcessed
-                },
-                isManualSync: true,
-                error: isFailed ? {
-                  message: errorMessage,
-                  stack: board.syncExecution?.error?.stack || null,
-                  details: board.syncExecution?.error?.details || null
-                } : null
-              };
-            } else {
-              // For regular syncs, use syncExecution data
-              const errorMessage = board.syncExecution?.error?.message || 
-                                  board.lastSyncError || 
-                                  'Sync failed with unknown error';
-              
-              // Extract progress and counters from syncExecution, with fallbacks
-              const syncProgress = board.syncExecution.progress || {};
-              const syncCounters = board.syncExecution.counters || {};
-              const syncStats = board.syncStats || {};
-              
-              return {
-                boardId: board.boardId,
-                boardName: board.boardName || board.boardId,
-                status: board.syncExecution.status,
-                syncType: board.syncExecution.syncType,
-                startTime: board.syncExecution.startTime,
-                duration: board.syncExecution.duration,
-                // Use syncExecution.progress, fallback to syncStats for folders
-                progress: {
-                  foldersProcessed: syncProgress.foldersProcessed ?? syncStats.foldersProcessed ?? 0,
-                  totalFolders: syncProgress.totalFolders ?? 0,
-                  currentFolder: syncProgress.currentFolder || null,
-                  currentPage: syncProgress.currentPage,
-                  totalPages: syncProgress.totalPages,
-                  itemsProcessed: syncCounters.itemsProcessed ?? syncStats.itemsSynced ?? 0
-                },
-                isManualSync: false,
-                error: isFailed ? {
-                  message: errorMessage,
-                  stack: board.syncExecution.error?.stack || null,
-                  details: board.syncExecution.error?.details || null
-                } : null
-              };
-            }
-          });
+          .filter((board: any) => isActiveSyncBoard(board))
+          .map((board: any) => mapSyncBoardFromPoll(board));
 
         setSyncStatuses(activeSyncs);
       }
