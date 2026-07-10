@@ -52,3 +52,14 @@ export function pickAllowedValue(value, allowedValues, defaultValue = null) {
 export function mongoEq(value) {
   return toRequiredQueryString(value);
 }
+
+export function sanitizeApiPathSegment(value, label = 'id') {
+  const normalized = toRequiredQueryString(value);
+  if (!normalized) {
+    throw new Error(`Invalid ${label}: expected a non-empty string.`);
+  }
+  if (normalized.includes('..') || /[./\\]/.test(normalized)) {
+    throw new Error(`Invalid ${label}: path traversal sequences are not allowed.`);
+  }
+  return normalized;
+}

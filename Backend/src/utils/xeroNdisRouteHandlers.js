@@ -193,7 +193,7 @@ export async function handleXeroQuotendis({
   }
 
   try {
-    const business = await Business.findOne({ workspaceId });
+    const business = await Business.findOne({ workspaceId: mongoEq(workspaceId) });
     await initializeXeroOperation(workspaceId, boardId, item);
     const NDISQuoteValues = item.values;
     const refs = await getQuoteNDISReferencedItems(workspaceId, boardId, item.id);
@@ -245,6 +245,57 @@ export async function handleXeroQuotendis({
   }
 }
 
+async function buildNdisXeroServiceRows(masterItems, refItemsMap, workspaceId, boardId, profileItem, participantName, xeroNdisTimezone) {
+  const allRows = [];
+  for (const masterPlanItem of masterItems) {
+    const spId = extractNdisRefId(masterPlanItem?.data?.[NDIS_MASTERPLAN_ATTR_DB.SERVICE_PLAN]);
+    const servicePlanItem = spId ? refItemsMap.get(spId) : null;
+    if (!servicePlanItem) {
+      throw new Error('Master plan information is required. Master plan is missing a service plan reference.');
+    }
+    const ctId = extractNdisRefId(masterPlanItem?.data?.['Cancellation Type']);
+    const cancellationTypeItem = ctId ? refItemsMap.get(ctId) : null;
+    const pricingRule = await resolveNdisPricingRuleForServicePlan(workspaceId, servicePlanItem, boardId);
+    const supportCatalogue = buildNdisSupportCatalogueForServicePlan(servicePlanItem, refItemsMap, pricingRule);
+    allRows.push(...buildNdisMasterPlanServiceRows({
+      masterPlanItem,
+      participantName,
+      participantProfileItem: profileItem,
+      servicePlanItem,
+      supportCatalogue,
+      cancellationTypeItem,
+      invoiceNumber: '',
+      invoicePdfLink: null,
+      timeZone: xeroNdisTimezone,
+      pricingRule,
+    }));
+  }
+  return allRows;
+}
+
+function appendEnrichedRowsToXeroInvoice(invoice, enrichedRows, xeroNdisTimezone, appendDateSuffix, gstType, salesAccountCode) {
+  for (const row of enrichedRows) {
+    const jobStatus = (row.jobStatus || '').toString().trim().toLowerCase();
+    const dateIso = jobStatus === 'cancelled'
+      ? row.scheduledServiceDate || row.serviceDeliveryDate || ''
+      : row.serviceDeliveryDate || row.scheduledServiceDate || '';
+    const rowDate = formatDdMmYyyy(dateIso, xeroNdisTimezone);
+    invoice.lineItems.push({
+      description: appendDateSuffix(row.service, rowDate),
+      quantity: Number(row.quantity) || 0,
+      unitAmount: Number(row.unitPrice) || 0,
+      taxType: gstType,
+      accountCode: salesAccountCode,
+    });
+  }
+}
+
+async function persistXeroInvoiceNumbers(masterItems, workspaceId, boardId, savedInvoiceNumber, saveInvoiceNumber) {
+  for (const item of masterItems) {
+    await saveInvoiceNumber(workspaceId, boardId, item.itemId, savedInvoiceNumber, 'Xero');
+  }
+}
+
 export async function handleXeroInvoicendisInvoiceGenerator({
   req,
   res,
@@ -285,7 +336,7 @@ export async function handleXeroInvoicendisInvoiceGenerator({
       createOrUpdateContact,
     });
 
-    const businessForTz = await Business.findOne({ workspaceId: workspaceId.toString() })
+    const businessForTz = await Business.findOne({ workspaceId: mongoEq(workspaceId.toString()) })
       .select('headOfficeTimezone').lean().catch(() => null);
     const xeroNdisTimezone = businessForTz?.headOfficeTimezone || 'Australia/Sydney';
 
@@ -309,56 +360,33 @@ export async function handleXeroInvoicendisInvoiceGenerator({
       status: 'DRAFT',
     };
 
-    const allRows = [];
-    for (const masterPlanItem of masterItems) {
-      const spId = extractNdisRefId(masterPlanItem?.data?.[NDIS_MASTERPLAN_ATTR_DB.SERVICE_PLAN]);
-      const servicePlanItem = spId ? refItemsMap.get(spId) : null;
-      if (!servicePlanItem) {
-        throw new Error('Master plan information is required. Master plan is missing a service plan reference.');
-      }
-      const ctId = extractNdisRefId(masterPlanItem?.data?.['Cancellation Type']);
-      const cancellationTypeItem = ctId ? refItemsMap.get(ctId) : null;
-      const pricingRule = await resolveNdisPricingRuleForServicePlan(workspaceId, servicePlanItem, boardId);
-      const supportCatalogue = buildNdisSupportCatalogueForServicePlan(servicePlanItem, refItemsMap, pricingRule);
-      allRows.push(...buildNdisMasterPlanServiceRows({
-        masterPlanItem,
-        participantName,
-        participantProfileItem: profileItem,
-        servicePlanItem,
-        supportCatalogue,
-        cancellationTypeItem,
-        invoiceNumber: '',
-        invoicePdfLink: null,
-        timeZone: xeroNdisTimezone,
-        pricingRule,
-      }));
-    }
+    const allRows = await buildNdisXeroServiceRows(
+      masterItems,
+      refItemsMap,
+      workspaceId,
+      boardId,
+      profileItem,
+      participantName,
+      xeroNdisTimezone,
+    );
 
     if (allRows.length === 0) {
       return res.status(200).json({ message: 'There is nothing to invoice!' });
     }
 
     const enrichedRows = enrichNdisInvoiceGeneratorRows(allRows, buildMasterItemsMap(masterItems), xeroNdisTimezone);
-    for (const r of enrichedRows) {
-      const jobStatus = (r.jobStatus || '').toString().trim().toLowerCase();
-      const dateIso = jobStatus === 'cancelled'
-        ? r.scheduledServiceDate || r.serviceDeliveryDate || ''
-        : r.serviceDeliveryDate || r.scheduledServiceDate || '';
-      const rowDate = formatDdMmYyyy(dateIso, xeroNdisTimezone);
-      invoice.lineItems.push({
-        description: appendDateSuffix(r.service, rowDate),
-        quantity: Number(r.quantity) || 0,
-        unitAmount: Number(r.unitPrice) || 0,
-        taxType: gstType,
-        accountCode: salesAccountCode,
-      });
-    }
+    appendEnrichedRowsToXeroInvoice(
+      invoice,
+      enrichedRows,
+      xeroNdisTimezone,
+      appendDateSuffix,
+      gstType,
+      salesAccountCode,
+    );
 
     const createdInvoice = await createInvoice(invoice);
     const savedInvoiceNumber = `${createdInvoice.invoiceNumber} (Xero)`;
-    await Promise.all(masterItems.map(async (it) => {
-      await saveInvoiceNumber(workspaceId, boardId, it.itemId, savedInvoiceNumber, 'Xero');
-    }));
+    await persistXeroInvoiceNumbers(masterItems, workspaceId, boardId, savedInvoiceNumber, saveInvoiceNumber);
 
     return res.json({
       invoiceNumber: createdInvoice.invoiceNumber,

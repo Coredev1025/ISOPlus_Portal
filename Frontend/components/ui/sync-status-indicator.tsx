@@ -103,28 +103,147 @@ function isActiveSyncBoard(board: any) {
   return hasActiveSyncExecution || hasFailedSyncExecution || hasActiveJobStatus || hasFailedJobStatus;
 }
 
+function getElapsedTime(startTime: string, currentTime: number): number {
+  const start = new Date(startTime).getTime();
+  return Math.floor((currentTime - start) / 1000);
+}
+
+function formatElapsedTime(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+
+  if (hours > 0) {
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+  return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+type SyncStatusCardProps = {
+  sync: any;
+  currentTime: number;
+};
+
+function SyncStatusCard({ sync, currentTime }: SyncStatusCardProps) {
+  const elapsedSeconds = getElapsedTime(sync.startTime, currentTime);
+  const progressPercent = sync.progress?.totalFolders
+    ? Math.round((sync.progress.foldersProcessed || 0) / sync.progress.totalFolders * 100)
+    : 0;
+  const itemsProcessed = sync.progress?.itemsProcessed ?? 0;
+  const foldersProcessed = sync.progress?.foldersProcessed ?? 0;
+  const totalFolders = sync.progress?.totalFolders ?? 0;
+  const isFailed = sync.status === 'failed' || sync.status === 'timeout';
+  const error = sync.error;
+
+  return (
+    <Card
+      className={`p-4 bg-background/95 backdrop-blur shadow-lg ${
+        isFailed
+          ? 'border-destructive/50 border-2'
+          : 'border-primary/50'
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex-shrink-0 mt-1">
+          {isFailed ? (
+            <div className="relative">
+              <XCircle className="h-5 w-5 text-destructive" />
+              <div className="absolute inset-0 bg-destructive/20 rounded-full blur-sm animate-pulse" />
+            </div>
+          ) : (
+            <div className="relative">
+              <RefreshCw className="h-5 w-5 text-primary animate-spin" />
+              <div className="absolute inset-0 bg-primary/20 rounded-full blur-sm animate-pulse" />
+            </div>
+          )}
+        </div>
+
+        <div className="flex-1 space-y-2">
+          <div className="flex items-center justify-between">
+            <h3 className={`font-semibold text-sm ${isFailed ? 'text-destructive' : ''}`}>
+              {isFailed ? 'Sync Failed' : 'Syncing Data'}
+            </h3>
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Clock className="h-3 w-3" />
+              <span className="font-mono">{formatElapsedTime(elapsedSeconds)}</span>
+            </div>
+          </div>
+
+          <div className="text-sm text-muted-foreground">
+            <span className="font-medium">{sync.boardName}</span>
+          </div>
+
+          {isFailed && error && (
+            <div className="rounded-md bg-destructive/10 border border-destructive/20 p-3 space-y-1">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
+                <div className="flex-1 space-y-1">
+                  <p className="text-xs font-medium text-destructive">Error</p>
+                  <p className="text-xs text-destructive/90 break-words">{error.message}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!isFailed && (
+            <div className="space-y-1">
+              {totalFolders > 0 && (
+                <>
+                  <Progress value={progressPercent} className="h-1.5" />
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Folder {foldersProcessed} of {totalFolders}</span>
+                    <span>{progressPercent}%</span>
+                  </div>
+                </>
+              )}
+              {totalFolders === 0 && foldersProcessed === 0 && (
+                <div className="text-xs text-muted-foreground">Initializing sync...</div>
+              )}
+            </div>
+          )}
+
+          {!isFailed && (
+            <div className="flex flex-col gap-2 text-xs text-muted-foreground">
+              <div className="flex items-center gap-1">
+                <Database className="h-3 w-3" />
+                <span>
+                  {itemsProcessed > 0 ? `${itemsProcessed} items processed` : 'No items processed yet'}
+                </span>
+              </div>
+              {sync.syncType && (
+                <div className="flex items-center gap-1">
+                  <Loader2 className="h-3 w-3" />
+                  <span className="capitalize">{sync.syncType.replace(/_/g, ' ')}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {isFailed && (itemsProcessed > 0 || foldersProcessed > 0) && (
+            <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+              {itemsProcessed > 0 && (
+                <div className="flex items-center gap-1">
+                  <Database className="h-3 w-3" />
+                  <span>{itemsProcessed} items processed before failure</span>
+                </div>
+              )}
+              {foldersProcessed > 0 && totalFolders > 0 && (
+                <div className="text-xs text-muted-foreground">
+                  Completed {foldersProcessed} of {totalFolders} folders
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export function SyncStatusIndicator() {
   const { syncStatuses, setSyncStatuses, currentWorkspaceId } = useAppContext();
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
-
-  // Calculate elapsed time in seconds
-  const getElapsedTime = (startTime: string, currentTime: number): number => {
-    const start = new Date(startTime).getTime();
-    return Math.floor((currentTime - start) / 1000);
-  };
-
-  // Format time as HH:MM:SS
-  const formatElapsedTime = (seconds: number): string => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    
-    if (hours > 0) {
-      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
 
   // Poll for sync status
   const pollSyncStatus = async () => {
@@ -191,148 +310,9 @@ export function SyncStatusIndicator() {
 
   return (
     <div className="fixed top-20 right-4 z-50 space-y-2 max-w-sm animate-in slide-in-from-right-5">
-      {syncStatuses.map((sync) => {
-        // Use currentTime state to ensure elapsed time updates every second
-        // while sync data (counters, progress) comes directly from context
-        const elapsedSeconds = getElapsedTime(sync.startTime, currentTime);
-        const progressPercent = sync.progress?.totalFolders 
-          ? Math.round((sync.progress.foldersProcessed || 0) / sync.progress.totalFolders * 100)
-          : 0;
-        
-        // Get latest counters and progress from context (updated every 10 seconds via polling)
-        // These values will automatically update when context changes
-        // For manual syncs: progress (including itemsProcessed) comes from jobStatus.progress
-        // For regular syncs: progress comes from syncExecution
-        const itemsProcessed = sync.progress?.itemsProcessed ?? 0;
-        const foldersProcessed = sync.progress?.foldersProcessed ?? 0;
-        const totalFolders = sync.progress?.totalFolders ?? 0;
-        const isManualSync = (sync as any).isManualSync || false;
-        const isFailed = sync.status === 'failed' || sync.status === 'timeout';
-        const error = (sync as any).error;
-
-        return (
-          <Card 
-            key={sync.boardId} 
-            className={`p-4 bg-background/95 backdrop-blur shadow-lg ${
-              isFailed 
-                ? 'border-destructive/50 border-2' 
-                : 'border-primary/50'
-            }`}
-          >
-            <div className="flex items-start gap-3">
-              {/* Animated sync icon or error icon */}
-              <div className="flex-shrink-0 mt-1">
-                {isFailed ? (
-                  <div className="relative">
-                    <XCircle className="h-5 w-5 text-destructive" />
-                    <div className="absolute inset-0 bg-destructive/20 rounded-full blur-sm animate-pulse" />
-                  </div>
-                ) : (
-                  <div className="relative">
-                    <RefreshCw className="h-5 w-5 text-primary animate-spin" />
-                    <div className="absolute inset-0 bg-primary/20 rounded-full blur-sm animate-pulse" />
-                  </div>
-                )}
-              </div>
-
-              {/* Content */}
-              <div className="flex-1 space-y-2">
-                {/* Header */}
-                <div className="flex items-center justify-between">
-                  <h3 className={`font-semibold text-sm ${isFailed ? 'text-destructive' : ''}`}>
-                    {isFailed ? 'Sync Failed' : 'Syncing Data'}
-                  </h3>
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <Clock className="h-3 w-3" />
-                    <span className="font-mono">{formatElapsedTime(elapsedSeconds)}</span>
-                  </div>
-                </div>
-
-                {/* Board name */}
-                <div className="text-sm text-muted-foreground">
-                  <span className="font-medium">{sync.boardName}</span>
-                </div>
-
-                {/* Error message - show prominently for failed syncs */}
-                {isFailed && error && (
-                  <div className="rounded-md bg-destructive/10 border border-destructive/20 p-3 space-y-1">
-                    <div className="flex items-start gap-2">
-                      <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0 mt-0.5" />
-                      <div className="flex-1 space-y-1">
-                        <p className="text-xs font-medium text-destructive">
-                          Error
-                        </p>
-                        <p className="text-xs text-destructive/90 break-words">
-                          {error.message}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Progress bar - uses latest data from context */}
-                {!isFailed && (
-                  <div className="space-y-1">
-                    {totalFolders > 0 && (
-                      <>
-                        <Progress value={progressPercent} className="h-1.5" />
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>
-                            Folder {foldersProcessed} of {totalFolders}
-                          </span>
-                          <span>{progressPercent}%</span>
-                        </div>
-                      </>
-                    )}
-                    {totalFolders === 0 && foldersProcessed === 0 && (
-                      <div className="text-xs text-muted-foreground">
-                        Initializing sync...
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Stats - uses latest counters from context */}
-                {!isFailed && (
-                  <div className="flex flex-col gap-2 text-xs text-muted-foreground">
-                    {/* Item processed count - always show, even if 0 initially */}
-                    <div className="flex items-center gap-1">
-                      <Database className="h-3 w-3" />
-                      <span>
-                        {itemsProcessed > 0 ? `${itemsProcessed} items processed` : 'No items processed yet'}
-                      </span>
-                    </div>
-                    {/* Sync type */}
-                    {sync.syncType && (
-                      <div className="flex items-center gap-1">
-                        <Loader2 className="h-3 w-3" />
-                        <span className="capitalize">{sync.syncType.replace(/_/g, ' ')}</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-                
-                {/* Show partial progress for failed syncs */}
-                {isFailed && (itemsProcessed > 0 || foldersProcessed > 0) && (
-                  <div className="flex flex-col gap-1 text-xs text-muted-foreground">
-                    {itemsProcessed > 0 && (
-                      <div className="flex items-center gap-1">
-                        <Database className="h-3 w-3" />
-                        <span>{itemsProcessed} items processed before failure</span>
-                      </div>
-                    )}
-                    {foldersProcessed > 0 && totalFolders > 0 && (
-                      <div className="text-xs text-muted-foreground">
-                        Completed {foldersProcessed} of {totalFolders} folders
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </Card>
-        );
-      })}
+      {syncStatuses.map((sync) => (
+        <SyncStatusCard key={sync.boardId} sync={sync} currentTime={currentTime} />
+      ))}
     </div>
   );
 }

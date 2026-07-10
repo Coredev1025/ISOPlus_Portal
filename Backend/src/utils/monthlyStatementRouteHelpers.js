@@ -9,6 +9,7 @@ import {
   determineCategoryCodeForService,
 } from './monthlyStatementBudgetTransformHelpers.js';
 import { transformMonthlyStatementServiceItem } from './monthlyStatementServiceTransformHelpers.js';
+import { mongoEq } from './securityHelpers.js';
 
 function getValueFromItem(item, attributeName) {
   if (!item?.data) return null;
@@ -114,7 +115,10 @@ async function fetchBudgetItems(workspaceId, boardId, getFolderIdsForQuery, Item
   ].join(',');
 
   const budgetFolderIds = await getFolderIdsForQuery(budgetFolderNames);
-  const budgetBaseQuery = { workspaceId, boardId };
+  const budgetBaseQuery = {
+    workspaceId: mongoEq(workspaceId),
+    boardId: mongoEq(boardId),
+  };
   if (budgetFolderIds?.length > 0) budgetBaseQuery.folderId = { $in: budgetFolderIds };
 
   try {
@@ -344,7 +348,10 @@ function paginateBudgetItems(filteredBudgetItems, budgetPage, budgetLimitParam, 
 
 async function fetchServiceItems(workspaceId, boardId, getFolderIdsForQuery, Item, error, req) {
   const serviceFolderIds = await getFolderIdsForQuery('Master Plan,Shift Planning and Reporting');
-  const serviceBaseQuery = { workspaceId, boardId };
+  const serviceBaseQuery = {
+    workspaceId: mongoEq(workspaceId),
+    boardId: mongoEq(boardId),
+  };
   if (serviceFolderIds?.length > 0) serviceBaseQuery.folderId = { $in: serviceFolderIds };
 
   try {
@@ -735,7 +742,11 @@ function applyFundingStreamProfileEntry(budgetDataFromProfile, fsNameLower, getV
 async function fetchBudgetDataFromProfile(participantProfileId, workspaceId, boardId, deps, warn, req) {
   if (!participantProfileId) return null;
   try {
-    const participantProfileItem = await deps.Item.findOne({ workspaceId, boardId, itemId: participantProfileId }).lean();
+    const participantProfileItem = await deps.Item.findOne({
+      workspaceId: mongoEq(workspaceId),
+      boardId: mongoEq(boardId),
+      itemId: mongoEq(participantProfileId),
+    }).lean();
     if (!participantProfileItem?.data) return null;
 
     const fundingSourceIds = deps.extractAllRefIds(
@@ -944,6 +955,21 @@ function buildSingleBudgetCategory(config, context) {
   };
 }
 
+function getQuarterMonthsForMonth(monthNum) {
+  const numericMonth = parseInt(monthNum, 10) || 1;
+  if (numericMonth >= 1 && numericMonth <= 3) return { start: 'January', end: 'March' };
+  if (numericMonth >= 4 && numericMonth <= 6) return { start: 'April', end: 'June' };
+  if (numericMonth >= 7 && numericMonth <= 9) return { start: 'July', end: 'September' };
+  return { start: 'October', end: 'December' };
+}
+
+function resolveBudgetParticipantName(participantProfileIdValue, deps, budgetProfilesMap) {
+  if (!participantProfileIdValue) return '';
+  const profileIdStr = deps.extractRefId(participantProfileIdValue);
+  if (!profileIdStr) return '';
+  return deps.getParticipantNameFromProfile(budgetProfilesMap.get(profileIdStr)) || '';
+}
+
 function buildBudgetCategories({
   BUDGET_CATEGORY_CONFIG,
   budgetDataFromProfile,
@@ -951,17 +977,9 @@ function buildBudgetCategories({
   month,
   year,
 }) {
-  const getQuarterMonths = (monthNum) => {
-    const numericMonth = parseInt(monthNum, 10) || 1;
-    if (numericMonth >= 1 && numericMonth <= 3) return { start: 'January', end: 'March' };
-    if (numericMonth >= 4 && numericMonth <= 6) return { start: 'April', end: 'June' };
-    if (numericMonth >= 7 && numericMonth <= 9) return { start: 'July', end: 'September' };
-    return { start: 'October', end: 'December' };
-  };
-
   const monthNum = parseInt(month, 10) || 1;
   const yearStr = (year || new Date().getFullYear().toString()).toString();
-  const quarterMonths = getQuarterMonths(monthNum);
+  const quarterMonths = getQuarterMonthsForMonth(monthNum);
   const defaultFundingEndDate = new Date(parseInt(yearStr, 10), 11, 31).toISOString();
 
   return BUDGET_CATEGORY_CONFIG.map((config) => buildSingleBudgetCategory(config, {
@@ -1000,7 +1018,7 @@ export async function getMonthlyStatementData({ workspaceId, boardId, query, req
 
   let businessProfile = null;
   try {
-    businessProfile = await deps.Business.findOne({ workspaceId: workspaceId.toString() })
+    businessProfile = await deps.Business.findOne({ workspaceId: mongoEq(workspaceId.toString()) })
       .select('name phone email companyRegistrationId address headOfficeTimezone')
       .lean();
   } catch (err) {
@@ -1039,12 +1057,8 @@ export async function getMonthlyStatementData({ workspaceId, boardId, query, req
     foundProfiles: budgetProfilesMap.size,
   }, req ?? null);
 
-  const resolveParticipantName = (participantProfileIdValue) => {
-    if (!participantProfileIdValue) return '';
-    const profileIdStr = deps.extractRefId(participantProfileIdValue);
-    if (!profileIdStr) return '';
-    return deps.getParticipantNameFromProfile(budgetProfilesMap.get(profileIdStr)) || '';
-  };
+  const resolveParticipantName = (participantProfileIdValue) =>
+    resolveBudgetParticipantName(participantProfileIdValue, deps, budgetProfilesMap);
 
   const budgetTransformContext = {
     workspaceId,

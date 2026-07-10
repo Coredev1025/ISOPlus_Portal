@@ -151,7 +151,10 @@ export async function masterPlanBoardUsesNewNdisPricing(workspaceId, masterPlanB
 export function isShiftCancelled(itemsValues) {
     const status = itemsValues?.['Job Status'] ?? itemsValues?.['Shift Status'];
     if (Array.isArray(status)) {
-        return status.some((s) => String(s).toLowerCase() === 'cancelled');
+        for (let i = 0; i < status.length; i++) {
+            if (String(status[i]).toLowerCase() === 'cancelled') return true;
+        }
+        return false;
     }
     return String(status || '').toLowerCase() === 'cancelled';
 }

@@ -6,7 +6,6 @@ import { ArrowLeft, Calendar, User, FileText, AlertCircle, FileCheck, FileSpread
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { toJpeg } from "html-to-image";
 import {
   Table,
   TableBody,
@@ -38,6 +37,11 @@ import {
   validateStatementDateInputs,
 } from "@/lib/monthly-statement-helpers";
 import { executeMonthlyStatementPdfAction } from "@/lib/monthly-statement-pdf-helpers";
+import {
+  captureChartAsLightPng,
+  compositeChartImages,
+  waitForFontsAndNextPaint,
+} from "@/lib/monthly-statement-chart-capture";
 import { MonthlyStatementPageView } from "@/lib/monthly-statement-page-view";
 import { pollBoardManualSyncStatus } from "@/lib/invoice-generator-sync-helpers";
 import { getBoardNameFromSession, isValidRouteIdParam } from "@/lib/sync-manual-helpers";
@@ -1384,197 +1388,6 @@ export default function MonthlyStatement() {
   const getPdfChartCellSize = (cols: number) => {
     if (cols === 3) return { width: 500, height: 600 };
     return { width: 800, height: 600 };
-  };
-
-  const waitForFontsAndNextPaint = async () => {
-    try {
-      if (typeof document !== 'undefined' && document.fonts) {
-        await document.fonts.ready;
-      }
-    } catch {
-    }
-    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-  };
-
-  const captureChartAsLightPng = async (captureEl: HTMLElement) => {
-    const rect = captureEl.getBoundingClientRect();
-    const clone = captureEl.cloneNode(true) as HTMLElement;
-
-    const stripDarkVariantClasses = (el: Element) => {
-      const classList = (el as HTMLElement).classList;
-      if (!classList) return;
-      const toRemove: string[] = [];
-      classList.forEach((cls) => {
-        if (cls.startsWith('dark:')) toRemove.push(cls);
-      });
-      toRemove.forEach((cls) => classList.remove(cls));
-    };
-    stripDarkVariantClasses(clone);
-    clone.querySelectorAll('*').forEach(stripDarkVariantClasses);
-
-    const width = Math.max(1, Math.ceil(rect.width));
-    const height = Math.max(1, Math.ceil(rect.height));
-    clone.style.width = `${width}px`;
-    clone.style.height = `${height}px`;
-
-    clone.style.backgroundColor = '#ffffff';
-    clone.style.color = '#000000';
-    clone.style.setProperty('--background', '0 0% 100%');
-    clone.style.setProperty('--foreground', '0 0% 0%');
-    clone.style.setProperty('--card', '0 0% 100%');
-    clone.style.setProperty('--card-foreground', '0 0% 0%');
-    clone.style.setProperty('--popover', '0 0% 100%');
-    clone.style.setProperty('--popover-foreground', '0 0% 0%');
-    clone.style.setProperty('--muted', '0 0% 96%');
-    clone.style.setProperty('--muted-foreground', '0 0% 45%');
-    clone.style.setProperty('--border', '0 0% 90%');
-
-    const styleEl = document.createElement('style');
-    styleEl.textContent = `
-      svg text, svg tspan { fill: hsl(var(--foreground)) !important; }
-    `;
-    clone.prepend(styleEl);
-
-    const wrapper = document.createElement('div');
-    wrapper.style.position = 'fixed';
-    wrapper.style.left = '-100000px';
-    wrapper.style.top = '0';
-    wrapper.style.width = `${width}px`;
-    wrapper.style.height = `${height}px`;
-    wrapper.style.pointerEvents = 'none';
-    wrapper.style.zIndex = '-1';
-    wrapper.appendChild(clone);
-    document.body.appendChild(wrapper);
-
-    try {
-      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-      // Use JPEG + lower pixel ratio to keep request payload small (prevents 413 at proxies).
-      return await toJpeg(clone, {
-        pixelRatio: 2,
-        cacheBust: true,
-        backgroundColor: 'white',
-        quality: 0.85,
-      });
-    } finally {
-      document.body.removeChild(wrapper);
-    }
-  };
-
-  // Composite separate chart images into one image (cols per row) for PDF export.
-  const compositeChartImages = async (
-    dataUrls: string[],
-    cols: number,
-    cellSize?: { width: number; height: number },
-    options?: {
-      targetAspect?: number;
-      gap?: number;
-      background?: string;
-      fit?: 'contain' | 'cover';
-    }
-  ): Promise<string> => {
-    if (dataUrls.length === 0) return '';
-    const gap = options?.gap ?? 0;
-    const background = options?.background ?? 'white';
-    const fit = options?.fit ?? 'contain';
-    const loadImage = (src: string): Promise<HTMLImageElement> =>
-      new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = reject;
-        img.src = src;
-      });
-    const images = await Promise.all(dataUrls.map((src) => loadImage(src)));
-    const maxW = cellSize?.width ?? Math.max(...images.map((img) => img.width));
-    const maxH = cellSize?.height ?? Math.max(...images.map((img) => img.height));
-    const rows = Math.ceil(images.length / cols);
-
-    // IMPORTANT:
-    // - pdfme scales images into a fixed (w,h) box without preserving aspect ratio.
-    // - Cropping loses information (your current issue).
-    // So we render a composite PNG that ALREADY matches the PDF box aspect ratio,
-    // and we *scale charts down to fit* (contain) instead of cropping.
-    const targetAspect = options?.targetAspect;
-    const validTargetAspect = !!targetAspect && Number.isFinite(targetAspect) && targetAspect > 0;
-    if (!validTargetAspect) {
-      // Fallback to a simple grid canvas (no enforced aspect).
-      const gridW = cols * maxW + (cols - 1) * gap;
-      const gridH = rows * maxH + (rows - 1) * gap;
-      const canvas = document.createElement("canvas");
-      canvas.width = gridW;
-      canvas.height = gridH;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return dataUrls[0];
-      ctx.imageSmoothingEnabled = true;
-      (ctx as unknown as { imageSmoothingQuality?: string }).imageSmoothingQuality = 'high';
-      ctx.fillStyle = background;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      images.forEach((img, i) => {
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        const x = col * (maxW + gap);
-        const y = row * (maxH + gap);
-        ctx.fillStyle = background;
-        ctx.fillRect(x, y, maxW, maxH);
-        const scale = Math.min(maxW / img.width, maxH / img.height);
-        const dw = img.width * scale;
-        const dh = img.height * scale;
-        ctx.drawImage(img, x + (maxW - dw) / 2, y + (maxH - dh) / 2, dw, dh);
-      });
-      return canvas.toDataURL("image/jpeg", 0.82);
-    }
-
-    // Choose a canvas size that preserves the target aspect while minimizing downscaling.
-    // Candidate A: base on width; Candidate B: base on height; pick larger effective scale.
-    const target = targetAspect as number;
-    const candA_W = Math.max(1, Math.round(cols * maxW + (cols - 1) * gap));
-    const candA_H = Math.max(1, Math.round(candA_W / target));
-    const candA_cellW = (candA_W - (cols - 1) * gap) / cols;
-    const candA_cellH = (candA_H - (rows - 1) * gap) / rows;
-    const candA_scale = Math.min(candA_cellW / maxW, candA_cellH / maxH);
-
-    const candB_H = Math.max(1, Math.round(rows * maxH + (rows - 1) * gap));
-    const candB_W = Math.max(1, Math.round(candB_H * target));
-    const candB_cellW = (candB_W - (cols - 1) * gap) / cols;
-    const candB_cellH = (candB_H - (rows - 1) * gap) / rows;
-    const candB_scale = Math.min(candB_cellW / maxW, candB_cellH / maxH);
-
-    const canvasW = candB_scale > candA_scale ? candB_W : candA_W;
-    const canvasH = candB_scale > candA_scale ? candB_H : candA_H;
-    const cellW = (canvasW - (cols - 1) * gap) / cols;
-    const cellH = (canvasH - (rows - 1) * gap) / rows;
-
-    const canvas = document.createElement("canvas");
-    canvas.width = canvasW;
-    canvas.height = canvasH;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return dataUrls[0];
-    ctx.imageSmoothingEnabled = true;
-    (ctx as unknown as { imageSmoothingQuality?: string }).imageSmoothingQuality = 'high';
-    ctx.fillStyle = background;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    images.forEach((img, i) => {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const x = col * (cellW + gap);
-      const y = row * (cellH + gap);
-      ctx.fillStyle = background;
-      ctx.fillRect(x, y, cellW, cellH);
-
-      // Per-cell fitting:
-      // - contain keeps everything visible
-      // - cover fills cell but may crop (avoid unless explicitly requested)
-      const scale = fit === 'cover'
-        ? Math.max(cellW / img.width, cellH / img.height)
-        : Math.min(cellW / img.width, cellH / img.height);
-      const dw = img.width * scale;
-      const dh = img.height * scale;
-      const dx = x + (cellW - dw) / 2;
-      const dy = y + (cellH - dh) / 2;
-      ctx.drawImage(img, dx, dy, dw, dh);
-    });
-
-    return canvas.toDataURL("image/jpeg", 0.82);
   };
 
   // Handle PDF generation/export (consolidated function)

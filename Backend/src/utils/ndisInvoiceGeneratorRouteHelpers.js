@@ -107,29 +107,32 @@ async function loadNdisInvoiceMaps(workspaceId, boardId, masterItems, InvoiceNum
   };
 }
 
+function resolveRefDisplayName(refId, refItemsMap) {
+  const refItem = refItemsMap.get(refId);
+  if (!refItem?.data) return '';
+  const candidates = ['Service Delivery Mode', 'Name', 'Definition', 'Full Name/Preferred Name', 'Preferred Name'];
+  for (const key of candidates) {
+    const v = refItem.data[key];
+    if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+  }
+  return '';
+}
+
+function resolveValueToNames(value, refItemsMap, isUuidLike) {
+  if (!value) return '';
+  const ids = extractNdisAllRefIds(value).filter((id) => isUuidLike(id));
+  if (ids.length > 0) {
+    const names = ids.map((id) => resolveRefDisplayName(id, refItemsMap)).filter((name) => Boolean(name));
+    if (names.length > 0) return names.join(', ');
+  }
+  return formatNdisLabelValue(value).trim();
+}
+
 function createRefResolvers(refItemsMap) {
-  const resolveRefDisplayName = (refId) => {
-    const refItem = refItemsMap.get(refId);
-    if (!refItem?.data) return '';
-    const candidates = ['Service Delivery Mode', 'Name', 'Definition', 'Full Name/Preferred Name', 'Preferred Name'];
-    for (const key of candidates) {
-      const v = refItem.data[key];
-      if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
-    }
-    return '';
+  return {
+    resolveRefDisplayName: (refId) => resolveRefDisplayName(refId, refItemsMap),
+    resolveValueToNames: (value, isUuidLike) => resolveValueToNames(value, refItemsMap, isUuidLike),
   };
-
-  const resolveValueToNames = (value, isUuidLike) => {
-    if (!value) return '';
-    const ids = extractNdisAllRefIds(value).filter((id) => isUuidLike(id));
-    if (ids.length > 0) {
-      const names = ids.map((id) => resolveRefDisplayName(id)).filter((name) => Boolean(name));
-      if (names.length > 0) return names.join(', ');
-    }
-    return formatNdisLabelValue(value).trim();
-  };
-
-  return { resolveRefDisplayName, resolveValueToNames };
 }
 
 function detectNdisStatusFieldLabel(masterItems) {

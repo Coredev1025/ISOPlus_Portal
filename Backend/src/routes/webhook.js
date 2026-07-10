@@ -17,6 +17,7 @@ import { paginatePdfmeTemplateTableByRows } from '../utils/webhookPdfPaginationH
 import { processWebhookNdisQuotePdfItem, processWebhookNdisInvoicePdfItem } from '../utils/webhookNdisPdfHandlers.js';
 import { handleParticipantTaxInvoiceRoute } from '../utils/webhookParticipantTaxPdfHelpers.js';
 import { handleMonthlyStatementRoute, buildMonthlyStatementDeps } from '../utils/webhookMonthlyStatementPdfHelpers.js';
+import { mongoEq } from '../utils/securityHelpers.js';
 
 import {
     enrichNumericAggregateFields,
@@ -111,7 +112,7 @@ const ATTRIBUTE_NAMES = {
 };
 
 async function getValidatedBusiness(workspaceId) {
-    const business = await Business.findOne({ workspaceId: workspaceId.toString() });
+    const business = await Business.findOne({ workspaceId: mongoEq(workspaceId.toString()) });
     if (!business) {
         throw new Error('Business not found');
     }
@@ -1274,16 +1275,26 @@ function buildServiceTableRows(services = [], config = {}, business, timezone) {
     return { rows, totals };
 }
 
+function applyBudgetMappingEntry(templateInputs, entry, aggregate, setCurrencyField, setMultiValueField) {
+  const value = typeof entry.value === 'function' ? entry.value(aggregate) : entry.value;
+  const fields = Array.isArray(entry.field) ? entry.field : [entry.field];
+  if (entry.type === 'currency') {
+    for (let i = 0; i < fields.length; i++) {
+      setCurrencyField(templateInputs, fields[i], value);
+    }
+    return;
+  }
+  if (entry.type === 'multi') {
+    for (let i = 0; i < fields.length; i++) {
+      setMultiValueField(templateInputs, fields[i], value);
+    }
+  }
+}
+
 function applyBudgetMapping(templateInputs, aggregate, mappings = []) {
-    mappings.forEach((entry) => {
-        const value = typeof entry.value === 'function' ? entry.value(aggregate) : entry.value;
-        const fields = Array.isArray(entry.field) ? entry.field : [entry.field];
-        if (entry.type === 'currency') {
-            fields.forEach((f) => setCurrencyField(templateInputs, f, value));
-        } else if (entry.type === 'multi') {
-            fields.forEach((f) => setMultiValueField(templateInputs, f, value));
-        }
-    });
+    for (let i = 0; i < mappings.length; i++) {
+        applyBudgetMappingEntry(templateInputs, mappings[i], aggregate, setCurrencyField, setMultiValueField);
+    }
 }
 
 function validateRequestParams(req) {
