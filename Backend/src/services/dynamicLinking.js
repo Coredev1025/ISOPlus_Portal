@@ -275,17 +275,16 @@ class DynamicLinkingService {
             });
 
             await Promise.all(fetchingItems);
-            const totalLinksCreated = [];
             const sources = this.sources.chain().data();
-            for (let i = 0; i < sources.length; i++) {
+            const linkResults = await Promise.all(sources.map(async (source) => {
                 try {
-                    const created = await persistSourceLinks(this, sources[i], safeWorkspaceId, update);
-                    totalLinksCreated.push(...created);
+                    return await persistSourceLinks(this, source, safeWorkspaceId, update);
                 } catch (sourceError) {
                     console.error('Error processing source:', sourceError);
+                    return [];
                 }
-            }
-            return totalLinksCreated;
+            }));
+            return linkResults.flat();
         } catch (mainError) {
             console.error('Error in main method:', mainError);
             throw mainError;

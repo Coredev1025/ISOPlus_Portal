@@ -12,6 +12,7 @@ import {
 } from '../services/isoplus.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
 import { extractRefId as extractNdisRefId } from '../utils/ndisServiceRecords.js';
+import { mongoEq } from '../utils/securityHelpers.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,7 +20,7 @@ const __dirname = path.dirname(__filename);
 export async function resolveLowCatBoardFlag(req, boardId) {
   const isLowCat = req.body?.isLowCat || false;
   if (isLowCat) return true;
-  const board = await Board.findOne({ boardId: boardId.toString() }).lean();
+  const board = await Board.findOne({ boardId: mongoEq(boardId) }).lean();
   return board?.label === 'Care Management - SaH - Low Cat';
 }
 
@@ -27,7 +28,11 @@ export async function fetchValidatedDbItems(workspaceId, boardId, itemIds) {
   const dbItems = [];
   for (const itemId of itemIds) {
     await validateItemBelongsToTenant(workspaceId, boardId, itemId);
-    const dbItem = await Item.findOne({ workspaceId, boardId, itemId: itemId.toString() }).lean();
+    const dbItem = await Item.findOne({
+      workspaceId: mongoEq(workspaceId),
+      boardId: mongoEq(boardId),
+      itemId: mongoEq(itemId),
+    }).lean();
     if (!dbItem) throw new Error(`Item ${itemId} not found`);
     dbItems.push(dbItem);
   }

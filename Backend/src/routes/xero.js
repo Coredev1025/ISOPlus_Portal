@@ -6,6 +6,7 @@ import Board from '../models/Board.js';
 import Item from '../models/Item.js';
 import { warn, error } from '../utils/logger.js';
 import { isEmpty } from '../utils/helpers.js';
+import { mongoEq } from '../utils/securityHelpers.js';
 import {
   validateItemBelongsToTenant,
   getJobReportingReferencedItems,
@@ -127,7 +128,7 @@ function appendDateSuffix(description, rowDate) {
 }
 
 async function initializeXeroOperation(workspaceId, boardId, item) {
-  const business = await Business.findOne({ workspaceId: workspaceId.toString() });
+  const business = await Business.findOne({ workspaceId: mongoEq(workspaceId) });
   if (!business) {
     throw new Error('Business not found');
   }

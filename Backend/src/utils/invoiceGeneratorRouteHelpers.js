@@ -1,6 +1,6 @@
 import { parseListPagination, matchesStatusFilter } from './itemsRouteHelpers.js';
 import { getCachedTransform, setCachedTransform } from './transformCache.js';
-import { toRequiredQueryString } from './securityHelpers.js';
+import { toRequiredQueryString, mongoEq } from './securityHelpers.js';
 
 function getValueFromItem(item, attributeName) {
   if (!item.data) return null;
@@ -56,7 +56,7 @@ async function processInvoiceGeneratorItems(allItems, ATTRIBUTE_NAMES, REF_ATTRI
     const participantId = participantIds.length > 0 ? participantIds[0] : '';
     let participantName = '';
     if (participantId) {
-      const participantProfileItem = await Item.findOne({ itemId: participantId }).lean();
+      const participantProfileItem = await Item.findOne({ itemId: mongoEq(participantId) }).lean();
       participantName = getValueFromItem(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_FULL_NAME);
     }
 

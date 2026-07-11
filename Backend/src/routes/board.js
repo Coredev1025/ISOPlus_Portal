@@ -15,6 +15,7 @@ const getValueFromItem = (item, attrName) => {
     return String(d);
 };
 import { logAuditTrail } from '../utils/auditLogger.js';
+import { toRequiredQueryString } from '../utils/securityHelpers.js';
 import {
   handleBoardSyncDisable,
   handleBoardSyncEnable,
@@ -31,7 +32,7 @@ router.post('/', authenticateToken, async (req, res) => {
             warn('Board-Service', 'Access denied creating board', { userId: req.user.userId, role: req.user.role }, req ?? null);
             return res.status(403).json({ message: 'Access denied. Owner or Support Admin permission required.' });
         }
-        const boardId = req.body.id?.toString();
+        const boardId = toRequiredQueryString(req.body.id);
         if (!boardId) return res.status(400).json({ message: 'Invalid boardId' });
         const existingBoard = await Board.findOne({ boardId }).lean();
         if (existingBoard) {
@@ -68,7 +69,7 @@ router.post('/', authenticateToken, async (req, res) => {
 
 router.get('/', authenticateToken, async (req, res) => {
     try {
-        const boardId = req.query.id?.toString();
+        const boardId = toRequiredQueryString(req.query.id);
         if (!boardId) return res.status(400).json({ message: 'Invalid boardId' });
         const existingBoard = await Board.findOne({ boardId }).lean();
 
@@ -92,8 +93,8 @@ router.put('/', authenticateToken, async (req, res) => {
             warn('Board-Service', 'Access denied updating board', { userId: req.user.userId, role: req.user.role, boardId: req.body.boardId }, req ?? null);
             return res.status(403).json({ message: 'Access denied. Owner or Support Admin permission required.' });
         }
-        const boardId = req.body.boardId?.toString();
-        const workspaceId = req.body.workspaceId?.toString();
+        const boardId = toRequiredQueryString(req.body.boardId);
+        const workspaceId = toRequiredQueryString(req.body.workspaceId);
         if (!boardId || !workspaceId) return res.status(400).json({ message: 'Invalid boardId or workspaceId' });
         
         // Get current board state to check if syncData is changing

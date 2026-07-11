@@ -9,7 +9,7 @@ import { error, info, warn, logLoginFailure, logLoginSuccess } from '../utils/lo
 import { getWorkspace, getMember, listWorkspacesForAuthorization } from '../services/isoplus.js';
 import { getFrontendBaseUrl, signOAuthState, verifyOAuthState } from '../utils/helpers.js';
 import OAuthTicket from '../models/OAuthTicket.js';
-import { toRequiredQueryString } from '../utils/securityHelpers.js';
+import { getSafeString, toRequiredQueryString } from '../utils/securityHelpers.js';
 
 const router = express.Router();
 
@@ -97,9 +97,12 @@ router.post('/register',
     }
 
     try {
-      const email = req.body.email?.toString();
-      const password = req.body.password?.toString();
-      const name = req.body.name?.toString();
+      const email = getSafeString(req.body.email);
+      const password = getSafeString(req.body.password);
+      const name = getSafeString(req.body.name);
+      if (!email || !password || !name) {
+        return res.status(400).json({ message: 'Invalid registration input' });
+      }
 
       const existingUser = await User.findOne({ email });
       if (existingUser) {
@@ -141,8 +144,11 @@ router.post('/login',
     }
 
     try {
-      const email = req.body.email?.toString();
-      const password = req.body.password?.toString();
+      const email = getSafeString(req.body.email);
+      const password = getSafeString(req.body.password);
+      if (!email || !password) {
+        return res.status(400).json({ message: 'Invalid login input' });
+      }
       const user = await User.findOne({ email });
 
       if (!user || !(await user.comparePassword(password))) {
@@ -505,7 +511,7 @@ router.post('/oauth-exchange', async (req, res) => {
       return res.status(400).json({ message: 'Ticket is required' });
     }
 
-    const record = await OAuthTicket.findOneAndDelete({ ticket: toRequiredQueryString(ticket) });
+    const record = await OAuthTicket.findOneAndDelete({ ticket });
     if (!record) {
       logLoginFailure('Auth-Service', 'OAuth exchange failed: ticket invalid, expired, or already used', {
         method: 'oauth-exchange',

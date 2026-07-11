@@ -3,13 +3,9 @@ import { toJpeg } from "html-to-image";
 function stripDarkVariantClasses(el: Element) {
   const classList = (el as HTMLElement).classList;
   if (!classList) return;
-  const toRemove: string[] = [];
-  for (let i = 0; i < classList.length; i++) {
+  for (let i = classList.length - 1; i >= 0; i--) {
     const cls = classList[i];
-    if (cls.startsWith("dark:")) toRemove.push(cls);
-  }
-  for (const cls of toRemove) {
-    classList.remove(cls);
+    if (cls.startsWith("dark:")) classList.remove(cls);
   }
 }
 

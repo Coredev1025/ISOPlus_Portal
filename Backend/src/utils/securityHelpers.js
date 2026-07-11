@@ -18,43 +18,72 @@ export function secureRandomFloat() {
   return crypto.randomBytes(4).readUInt32BE(0) / 0x100000000;
 }
 
-export function toQueryString(value) {
-  if (value === undefined || value === null) return null;
+function isPlainMongoValue(value) {
+  if (value === undefined || value === null) return false;
+  const valueType = typeof value;
+  return (
+    valueType === 'string'
+    || valueType === 'number'
+    || valueType === 'boolean'
+    || valueType === 'bigint'
+  );
+}
+
+/**
+ * Coerce user-controlled input to a plain MongoDB query scalar.
+ * Rejects objects and arrays to prevent NoSQL injection (e.g. { $ne: "" }).
+ */
+export function toMongoQueryValue(value) {
+  if (!isPlainMongoValue(value)) return null;
   if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
-    return String(value);
-  }
-  return null;
+  return String(value);
+}
+
+/**
+ * Accept only a non-empty plain string from user-controlled input.
+ */
+export function getSafeString(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+export function toQueryString(value) {
+  return toMongoQueryValue(value);
 }
 
 export function toRequiredQueryString(value) {
-  return toQueryString(value) ?? '';
+  return toMongoQueryValue(value) ?? '';
 }
 
 export function toQueryStringArray(values) {
   if (!Array.isArray(values)) {
-    const single = toQueryString(values);
+    const single = toMongoQueryValue(values);
     return single ? [single] : [];
   }
-  return values.map(toQueryString).filter(Boolean);
+  return values.map(toMongoQueryValue).filter(Boolean);
 }
 
 export function pickAllowedSortField(sortBy, allowedFields, defaultField) {
-  const normalized = toQueryString(sortBy) ?? defaultField;
+  const normalized = toMongoQueryValue(sortBy) ?? defaultField;
   return allowedFields.includes(normalized) ? normalized : defaultField;
 }
 
 export function pickAllowedValue(value, allowedValues, defaultValue = null) {
-  const normalized = toQueryString(value);
+  const normalized = toMongoQueryValue(value);
   return normalized && allowedValues.includes(normalized) ? normalized : defaultValue;
 }
 
 export function mongoEq(value) {
-  return toRequiredQueryString(value);
+  const normalized = toMongoQueryValue(value);
+  if (normalized === null) {
+    throw new Error('Invalid query value: expected a plain string, number, boolean, or bigint.');
+  }
+  return normalized;
 }
 
 export function sanitizeApiPathSegment(value, label = 'id') {
-  const normalized = toRequiredQueryString(value);
+  const normalized = getSafeString(value);
   if (!normalized) {
     throw new Error(`Invalid ${label}: expected a non-empty string.`);
   }
