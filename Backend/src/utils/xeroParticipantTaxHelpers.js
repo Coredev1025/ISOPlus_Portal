@@ -15,8 +15,9 @@ function parseBillingAddressParts(billingAddress) {
 }
 
 export function buildContactPayloadFromBilling({ billingContact, email, billingAddress }) {
-  const firstName = billingContact.split(' ')[0] || '';
-  const lastName = billingContact.split(' ').slice(1).join(' ') || '';
+  const nameParts = billingContact.split(' ');
+  const firstName = nameParts[0] || '';
+  const lastName = nameParts.slice(1).join(' ') || '';
   const addressParts = parseBillingAddressParts(billingAddress);
   const contactPayload = {
     Name: billingContact,

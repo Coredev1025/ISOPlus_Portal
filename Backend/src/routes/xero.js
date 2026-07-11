@@ -451,7 +451,6 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
     workspaceId,
     boardId,
     item,
-    validatePayload,
     initializeXeroOperation,
     handleError,
     saveInvoiceNumber,

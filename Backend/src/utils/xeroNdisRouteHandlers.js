@@ -47,39 +47,155 @@ const REF_ATTRIBUTE_NAMES = {
   PROFILE_BILLING_ADDRESS: 'Billing Address',
 };
 
-function getValueFromFlatData(item, attributeName) {
-  if (!item?.data) return null;
-  const names = Array.isArray(attributeName) ? attributeName : [attributeName];
+const DEFAULT_SALES_ACCOUNT_CODE = '200';
+const DEFAULT_XERO_TIMEZONE = 'Australia/Sydney';
+const GST_TYPE_EXEMPT_OUTPUT = 'EXEMPTOUTPUT';
+
+function getSalesAccountCode(accounts) {
+  return accounts.find((acc) => acc.Type === 'REVENUE')?.Code || DEFAULT_SALES_ACCOUNT_CODE;
+}
+
+function parseMasterItemIdEntry(entry) {
+  if (!entry) return null;
+  if (typeof entry === 'string') return entry;
+  if (typeof entry !== 'object') return null;
+  if (entry.sourceItemId) return String(entry.sourceItemId);
+  if (entry.id && String(entry.id).includes(':')) return String(entry.id).split(':')[0];
+  if (entry.id) return String(entry.id);
+  return null;
+}
+
+function lookupFlatDataValue(data, names) {
   for (const attrName of names) {
-    if (item.data[attrName] !== undefined && item.data[attrName] !== null) {
-      return item.data[attrName];
-    }
-  }
-  if (Array.isArray(item.data.values)) {
-    for (const attrName of names) {
-      const entry = item.data.values.find((v) => v.attribute?.name === attrName);
-      if (entry?.data !== undefined && entry?.data !== null) {
-        return entry.data;
-      }
+    if (data[attrName] !== undefined && data[attrName] !== null) {
+      return data[attrName];
     }
   }
   return null;
+}
+
+function lookupValuesArrayData(data, names) {
+  if (!Array.isArray(data.values)) return null;
+  for (const attrName of names) {
+    const entry = data.values.find((v) => v.attribute?.name === attrName);
+    if (entry?.data !== undefined && entry?.data !== null) {
+      return entry.data;
+    }
+  }
+  return null;
+}
+
+function getValueFromFlatData(item, attributeName) {
+  if (!item?.data) return null;
+  const names = Array.isArray(attributeName) ? attributeName : [attributeName];
+  return lookupFlatDataValue(item.data, names) ?? lookupValuesArrayData(item.data, names);
 }
 
 export function parseInvoiceGeneratorMasterItemIds(body) {
   const raw = Array.isArray(body?.itemIds)
     ? body.itemIds
     : (Array.isArray(body?.items) ? body.items : []);
-  return [...new Set(raw.map((r) => {
-    if (!r) return null;
-    if (typeof r === 'string') return r;
-    if (typeof r === 'object') {
-      if (r.sourceItemId) return String(r.sourceItemId);
-      if (r.id && String(r.id).includes(':')) return String(r.id).split(':')[0];
-      if (r.id) return String(r.id);
-    }
-    return null;
-  }).filter((r) => Boolean(r)).map((r) => String(r)))];
+  return [...new Set(raw.map(parseMasterItemIdEntry).filter(Boolean).map((id) => String(id)))];
+}
+
+async function assertMasterPlanReferences(workspaceId, boardId, itemId, servicePlanValues, participantProfileValues) {
+  if (!servicePlanValues) {
+    await setIntegrationMessage(workspaceId, boardId, itemId, 'Master plan information is required. Master plan is missing a master plan reference.');
+    throw new Error('Master plan information is required. Master plan is missing a master plan reference.');
+  }
+  if (!participantProfileValues || typeof participantProfileValues !== 'object') {
+    await setIntegrationMessage(workspaceId, boardId, itemId, 'Participant profile information is required. Master plan is missing a participant profile reference.');
+    throw new Error('Participant profile information is required. Master plan is missing a participant profile reference.');
+  }
+}
+
+function validateParticipantTaxRequest(items, participantName, res) {
+  if (!items || items.length === 0) {
+    return res.status(400).json({ message: 'No items provided for invoice generation.' });
+  }
+  if (!participantName && !items[0]?.participant) {
+    return res.status(400).json({ message: 'Participant name is required.' });
+  }
+  return null;
+}
+
+async function loadParticipantTaxProfile(workspaceId, boardId, participantName, items) {
+  const business = await Business.findOne({ workspaceId: mongoEq(workspaceId) }).lean();
+  if (!business) throw new Error('Business not found');
+
+  const participantQueryName = mongoEq(participantName || items[0]?.participant);
+  if (!participantQueryName) {
+    return { errorResponse: { status: 400, body: { message: 'Participant name is required.' } } };
+  }
+
+  const participantProfileItem = await Item.findOne({
+    workspaceId: mongoEq(workspaceId),
+    boardId: mongoEq(boardId),
+    'data.Full Name/Preferred Name': participantQueryName,
+  }).select('data updatedAt').lean();
+  if (!participantProfileItem) throw new Error('Participant profile item not found');
+
+  return { business, participantProfileItem, participantQueryName };
+}
+
+async function setupParticipantTaxXeroAuth(workspaceId, boardId, items) {
+  await configure();
+  await Promise.all([
+    ensureAuthenticated(workspaceId),
+    ...items.map((item) => validateItemBelongsToTenant(workspaceId, boardId, item.id)),
+  ]);
+}
+
+function getParticipantTaxBillingDetails(participantProfileItem) {
+  const receiverName = (getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || '').trim() || '';
+  const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || '';
+  const participantEmail = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_EMAIL_ADDRESS) || '';
+  return {
+    receiverName,
+    billingAddressBase,
+    participantEmail,
+    effectiveParticipantName: receiverName || 'Unknown Participant',
+  };
+}
+
+function getParticipantTaxLabels(isLowCatBoard) {
+  return {
+    invoiceReferencePrefix: isLowCatBoard ? 'Tax Invoice' : 'Participant Tax Invoice',
+    successMessage: isLowCatBoard
+      ? 'Your tax invoice has been created successfully in Xero.'
+      : 'Your participant tax invoice has been created successfully in Xero.',
+    auditAction: isLowCatBoard ? 'Create Xero Tax Invoice' : 'Create Xero Participant Tax Invoice',
+    responseMessage: isLowCatBoard
+      ? 'Tax Invoice generated successfully in Xero'
+      : 'Participant Tax Invoice generated successfully in Xero',
+    auditRoleLabel: isLowCatBoard ? 'receiver' : 'participant',
+  };
+}
+
+async function persistParticipantTaxSuccess(items, workspaceId, boardId, savedInvoiceNumber, successMessage, saveInvoiceNumber) {
+  await Promise.all(items.map(async (item) => {
+    await setIntegrationMessage(workspaceId, boardId, item.id, successMessage);
+    await setGeneratedField(workspaceId, boardId, item.id, savedInvoiceNumber);
+    await saveInvoiceNumber(workspaceId, boardId, item.id, savedInvoiceNumber, 'Xero');
+  }));
+}
+
+async function fetchBusinessTimezone(workspaceId) {
+  return Business.findOne({ workspaceId: mongoEq(workspaceId) })
+    .select('headOfficeTimezone')
+    .lean()
+    .then(
+      (businessDoc) => businessDoc?.headOfficeTimezone || DEFAULT_XERO_TIMEZONE,
+      () => DEFAULT_XERO_TIMEZONE,
+    );
+}
+
+function getMasterPlanItemRefs(masterPlanItem, refItemsMap) {
+  const spId = extractNdisRefId(masterPlanItem?.data?.[NDIS_MASTERPLAN_ATTR_DB.SERVICE_PLAN]);
+  const servicePlanItem = spId ? refItemsMap.get(spId) : null;
+  const ctId = extractNdisRefId(masterPlanItem?.data?.['Cancellation Type']);
+  const cancellationTypeItem = ctId ? refItemsMap.get(ctId) : null;
+  return { servicePlanItem, cancellationTypeItem };
 }
 
 export async function handleXeroInvoicendis({
@@ -88,20 +204,18 @@ export async function handleXeroInvoicendis({
   workspaceId,
   boardId,
   item,
-  validatePayload,
   initializeXeroOperation,
   handleError,
   saveInvoiceNumber,
   formatValue,
 }) {
-  const payload = req.body;
   const invoiceValues = item.values;
   const invoiceDate = invoiceValues['Invoice Date'];
   const dueDate = invoiceValues['Due Date'];
 
   try {
     const business = await initializeXeroOperation(workspaceId, boardId, item);
-    const timezone = business?.headOfficeTimezone || 'Australia/Sydney';
+    const timezone = business?.headOfficeTimezone || DEFAULT_XERO_TIMEZONE;
     const serviceDate = computeNdisServiceDate(invoiceValues, timezone);
 
     const [[servicePlanValues, cancellationTypeValues, , participantProfileValues], accounts] =
@@ -109,14 +223,7 @@ export async function handleXeroInvoicendis({
         getNDISMasterPlanReferencedItems(workspaceId, boardId, item.id),
         getAccounts(workspaceId),
       ]);
-    if (!servicePlanValues) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, 'Master plan information is required. Master plan is missing a master plan reference.');
-      throw new Error('Master plan information is required. Master plan is missing a master plan reference.');
-    }
-    if (!participantProfileValues || typeof participantProfileValues !== 'object') {
-      await setIntegrationMessage(workspaceId, boardId, item.id, 'Participant profile information is required. Master plan is missing a participant profile reference.');
-      throw new Error('Participant profile information is required. Master plan is missing a participant profile reference.');
-    }
+    await assertMasterPlanReferences(workspaceId, boardId, item.id, servicePlanValues, participantProfileValues);
 
     const contact = await resolveNdisParticipantContact({
       participantProfileValues,
@@ -129,9 +236,9 @@ export async function handleXeroInvoicendis({
     });
 
     const groupSize = Number(invoiceValues['Group Size']) || 1;
-    const gstType = 'EXEMPTOUTPUT';
+    const gstType = GST_TYPE_EXEMPT_OUTPUT;
     const nowISO = getDateOnlyIso(new Date(), timezone);
-    const salesAccountCode = accounts.find((acc) => acc.Type === 'REVENUE')?.Code || '200';
+    const salesAccountCode = getSalesAccountCode(accounts);
 
     const lineCtx = {
       workspaceId,
@@ -197,26 +304,25 @@ export async function handleXeroQuotendis({
   try {
     const business = await initializeXeroOperation(workspaceId, boardId, item);
     const NDISQuoteValues = item.values;
-    const [refs, contact] = await Promise.all([
-      getQuoteNDISReferencedItems(workspaceId, boardId, item.id),
-      resolveNdisQuoteRecipientContact({
-        NDISQuoteValues,
-        getContactByEmail,
-        createOrUpdateContact,
-        setIntegrationMessage,
-        workspaceId,
-        boardId,
-        itemId: item.id,
-      }),
-    ]);
+    const refs = await getQuoteNDISReferencedItems(workspaceId, boardId, item.id);
     const [serviceAreaValues] = refs;
     if (!serviceAreaValues) {
       await setIntegrationMessage(workspaceId, boardId, item.id, 'ERROR: Service Area value is required.');
       throw new Error('Service Area value is required.');
     }
 
+    const contact = await resolveNdisQuoteRecipientContact({
+      NDISQuoteValues,
+      getContactByEmail,
+      createOrUpdateContact,
+      setIntegrationMessage,
+      workspaceId,
+      boardId,
+      itemId: item.id,
+    });
+
     const lineItems = buildNdisQuoteXeroLineItems(NDISQuoteValues, refs.slice(1));
-    const nowISO = getDateOnlyIso(new Date(), business?.headOfficeTimezone || 'Australia/Sydney');
+    const nowISO = getDateOnlyIso(new Date(), business?.headOfficeTimezone || DEFAULT_XERO_TIMEZONE);
     const { mappedQuote, xeroQuote } = buildNdisQuoteMappedAndXeroPayload({
       NDISQuoteValues,
       lineItems,
@@ -249,8 +355,7 @@ export async function handleXeroQuotendis({
 
 async function buildNdisXeroServiceRows(masterItems, refItemsMap, workspaceId, boardId, profileItem, participantName, xeroNdisTimezone) {
   const pricingRules = await Promise.all(masterItems.map((masterPlanItem) => {
-    const spId = extractNdisRefId(masterPlanItem?.data?.[NDIS_MASTERPLAN_ATTR_DB.SERVICE_PLAN]);
-    const servicePlanItem = spId ? refItemsMap.get(spId) : null;
+    const { servicePlanItem } = getMasterPlanItemRefs(masterPlanItem, refItemsMap);
     if (!servicePlanItem) {
       throw new Error('Master plan information is required. Master plan is missing a service plan reference.');
     }
@@ -260,10 +365,7 @@ async function buildNdisXeroServiceRows(masterItems, refItemsMap, workspaceId, b
   const allRows = [];
   for (let i = 0; i < masterItems.length; i++) {
     const masterPlanItem = masterItems[i];
-    const spId = extractNdisRefId(masterPlanItem?.data?.[NDIS_MASTERPLAN_ATTR_DB.SERVICE_PLAN]);
-    const servicePlanItem = spId ? refItemsMap.get(spId) : null;
-    const ctId = extractNdisRefId(masterPlanItem?.data?.['Cancellation Type']);
-    const cancellationTypeItem = ctId ? refItemsMap.get(ctId) : null;
+    const { servicePlanItem, cancellationTypeItem } = getMasterPlanItemRefs(masterPlanItem, refItemsMap);
     const pricingRule = pricingRules[i];
     const supportCatalogue = buildNdisSupportCatalogueForServicePlan(servicePlanItem, refItemsMap, pricingRule);
     allRows.push(...buildNdisMasterPlanServiceRows({
@@ -346,11 +448,7 @@ export async function handleXeroInvoicendisInvoiceGenerator({
         getContactByName,
         createOrUpdateContact,
       }),
-      Business.findOne({ workspaceId: mongoEq(workspaceId) })
-        .select('headOfficeTimezone')
-        .lean()
-        .catch(() => null)
-        .then((business) => business?.headOfficeTimezone || 'Australia/Sydney'),
+      fetchBusinessTimezone(workspaceId),
       getAccounts(workspaceId),
     ]);
 
@@ -359,8 +457,8 @@ export async function handleXeroInvoicendisInvoiceGenerator({
     const invoiceDate = invoiceDateRaw ? String(invoiceDateRaw).split('T')[0] : new Date().toISOString().split('T')[0];
     const dueDate = resolveParticipantTaxDueDate(invoiceDateRaw, dueDateRaw);
 
-    const salesAccountCode = accounts.find((acc) => acc.Type === 'REVENUE')?.Code || '200';
-    const gstType = 'EXEMPTOUTPUT';
+    const salesAccountCode = getSalesAccountCode(accounts);
+    const gstType = GST_TYPE_EXEMPT_OUTPUT;
     const reference = buildNdisXeroInvoiceReference(participantProfile, profileItem);
 
     const invoice = {
@@ -433,39 +531,24 @@ export async function handleXeroInvoiceParticipantTax({
   const dueDate = req.body?.dueDate || '';
   const isLowCatBoard = req.body?.isLowCat || false;
 
-  if (!items || items.length === 0) {
-    return res.status(400).json({ message: 'No items provided for invoice generation.' });
-  }
-  if (!participantName && !items[0]?.participant) {
-    return res.status(400).json({ message: 'Participant name is required.' });
-  }
+  const validationResponse = validateParticipantTaxRequest(items, participantName, res);
+  if (validationResponse) return validationResponse;
 
   try {
-    const business = await Business.findOne({ workspaceId: mongoEq(workspaceId) }).lean();
-    if (!business) throw new Error('Business not found');
-
-    const participantQueryName = mongoEq(participantName || items[0]?.participant);
-    if (!participantQueryName) {
-      return res.status(400).json({ message: 'Participant name is required.' });
+    const profileResult = await loadParticipantTaxProfile(workspaceId, boardId, participantName, items);
+    if (profileResult.errorResponse) {
+      return res.status(profileResult.errorResponse.status).json(profileResult.errorResponse.body);
     }
+    const { business, participantProfileItem } = profileResult;
 
-    const participantProfileItem = await Item.findOne({
-      workspaceId: mongoEq(workspaceId),
-      boardId: mongoEq(boardId),
-      'data.Full Name/Preferred Name': participantQueryName,
-    }).select('data updatedAt').lean();
-    if (!participantProfileItem) throw new Error('Participant profile item not found');
+    await setupParticipantTaxXeroAuth(workspaceId, boardId, items);
 
-    await Promise.all([
-      configure(),
-      ensureAuthenticated(workspaceId),
-      ...items.map((item) => validateItemBelongsToTenant(workspaceId, boardId, item.id)),
-    ]);
-
-    const receiverName = (getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_CONTACT) || '').trim() || '';
-    const billingAddressBase = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_BILLING_ADDRESS) || '';
-    const participantEmail = getValueFromFlatData(participantProfileItem, REF_ATTRIBUTE_NAMES.PROFILE_EMAIL_ADDRESS) || '';
-    const effectiveParticipantName = receiverName || 'Unknown Participant';
+    const {
+      receiverName,
+      billingAddressBase,
+      participantEmail,
+      effectiveParticipantName,
+    } = getParticipantTaxBillingDetails(participantProfileItem);
 
     const [contact, accounts] = await Promise.all([
       buildParticipantTaxContact({
@@ -483,12 +566,12 @@ export async function handleXeroInvoiceParticipantTax({
     ]);
 
     const effectiveDueDate = resolveParticipantTaxDueDate(invoiceDate, dueDate, true);
-    const salesAccountCode = accounts.find((acc) => acc.Type === 'REVENUE')?.Code || '200';
-    const { lineItems, totalAmount } = buildParticipantTaxLineItems({
+    const salesAccountCode = getSalesAccountCode(accounts);
+    const { lineItems } = buildParticipantTaxLineItems({
       items,
       isLowCatBoard,
       salesAccountCode,
-      gstType: 'EXEMPTOUTPUT',
+      gstType: GST_TYPE_EXEMPT_OUTPUT,
       business,
       getXeroServiceRowDate,
       appendDateSuffix,
@@ -504,37 +587,36 @@ export async function handleXeroInvoiceParticipantTax({
       return res.status(400).json({ message: 'There is nothing to invoice!' });
     }
 
-    const invoiceReference = isLowCatBoard
-      ? `Tax Invoice - ${effectiveParticipantName}`
-      : `Participant Tax Invoice - ${effectiveParticipantName}`;
+    const labels = getParticipantTaxLabels(isLowCatBoard);
     const createdInvoice = await createInvoice({
       type: 'ACCREC',
       contact: { contactID: contact.contactID },
-      reference: invoiceReference,
+      reference: `${labels.invoiceReferencePrefix} - ${effectiveParticipantName}`,
       lineItems,
       date: invoiceDate,
       dueDate: effectiveDueDate,
       status: 'DRAFT',
     });
 
-    const successMessage = isLowCatBoard
-      ? 'Your tax invoice has been created successfully in Xero.'
-      : 'Your participant tax invoice has been created successfully in Xero.';
-    await Promise.all(items.map(async (item) => {
-      await setIntegrationMessage(workspaceId, boardId, item.id, successMessage);
-      await setGeneratedField(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`);
-      await saveInvoiceNumber(workspaceId, boardId, item.id, `${createdInvoice.invoiceNumber} (Xero)`, 'Xero');
-    }));
+    const savedInvoiceNumber = `${createdInvoice.invoiceNumber} (Xero)`;
+    await persistParticipantTaxSuccess(
+      items,
+      workspaceId,
+      boardId,
+      savedInvoiceNumber,
+      labels.successMessage,
+      saveInvoiceNumber,
+    );
 
     logAuditTrail({
       workspaceId,
-      action: isLowCatBoard ? 'Create Xero Tax Invoice' : 'Create Xero Participant Tax Invoice',
-      detail: `Invoice created successfully, invoice number: ${createdInvoice.invoiceNumber}, ${isLowCatBoard ? 'receiver' : 'participant'}: ${effectiveParticipantName}, items: ${items.length}`,
+      action: labels.auditAction,
+      detail: `Invoice created successfully, invoice number: ${createdInvoice.invoiceNumber}, ${labels.auditRoleLabel}: ${effectiveParticipantName}, items: ${items.length}`,
       req,
     });
 
     return res.status(200).json({
-      message: isLowCatBoard ? 'Tax Invoice generated successfully in Xero' : 'Participant Tax Invoice generated successfully in Xero',
+      message: labels.responseMessage,
       invoiceNumber: createdInvoice.invoiceNumber,
       invoiceId: createdInvoice.invoiceID,
       invoiceUrl: createdInvoice.url,
@@ -549,9 +631,9 @@ export async function handleXeroInvoiceParticipantTax({
       boardId,
       itemCount: items.length,
     }, req ?? null);
-    await Promise.all(items.map(async (item) => {
-      await setIntegrationMessage(workspaceId, boardId, item.id, `Error: ${errorMessage}`);
-    }));
+    await Promise.all(items.map((item) =>
+      setIntegrationMessage(workspaceId, boardId, item.id, `Error: ${errorMessage}`),
+    ));
     return res.status(500).json({ message: errorMessage });
   }
 }

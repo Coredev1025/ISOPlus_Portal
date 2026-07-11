@@ -84,13 +84,13 @@ export async function boardUsesNewNdisPricing(workspaceId, boardId) {
     return !(await boardUsesLegacyNdisPricing(workspaceId, boardId));
 }
 
-/** @returns {'legacy' | 'new'} */
+/** @returns {Promise<'legacy' | 'new'>} */
 export async function resolveNdisPricingRuleForBoard(workspaceId, boardId) {
     const legacy = await boardUsesLegacyNdisPricing(workspaceId, boardId);
     return legacy ? 'legacy' : 'new';
 }
 
-/** @returns {'legacy' | 'new'} */
+/** @returns {Promise<'legacy' | 'new'>} */
 export async function resolveNdisPricingRuleForServicePlan(workspaceId, servicePlanItem, fallbackBoardId) {
     const inferred = inferPricingRuleFromServicePlanData(servicePlanItem?.data);
     if (inferred) return inferred;
@@ -100,7 +100,7 @@ export async function resolveNdisPricingRuleForServicePlan(workspaceId, serviceP
     return resolveNdisPricingRuleForBoard(workspaceId, boardId);
 }
 
-/** @returns {'legacy' | 'new'} */
+/** @returns {Promise<'legacy' | 'new'>} */
 export async function resolveNdisPricingRuleForAutomation(workspaceId, boardId, itemId, itemsValues) {
     const fromWebhook = inferPricingRuleFromServicePlanData(itemsValues);
     if (fromWebhook) return fromWebhook;
