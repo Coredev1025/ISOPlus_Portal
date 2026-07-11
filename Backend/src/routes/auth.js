@@ -501,7 +501,8 @@ async function establishOAuthSession(req, { authorization, oauthData, method = '
 router.post('/oauth-exchange', async (req, res) => {
   try {
     const { ticket } = req.body;
-    if (!ticket || typeof ticket !== 'string') {
+    const safeTicket = getSafeString(ticket);
+    if (!safeTicket) {
       logLoginFailure('Auth-Service', 'OAuth exchange failed: ticket missing or malformed', {
         method: 'oauth-exchange',
         stage: 'ticket_missing',
@@ -511,7 +512,7 @@ router.post('/oauth-exchange', async (req, res) => {
       return res.status(400).json({ message: 'Ticket is required' });
     }
 
-    const record = await OAuthTicket.findOneAndDelete({ ticket });
+    const record = await OAuthTicket.findOneAndDelete({ ticket: safeTicket });
     if (!record) {
       logLoginFailure('Auth-Service', 'OAuth exchange failed: ticket invalid, expired, or already used', {
         method: 'oauth-exchange',

@@ -92,3 +92,19 @@ export function sanitizeApiPathSegment(value, label = 'id') {
   }
   return normalized;
 }
+
+const ISO_PLUS_API_V2_BASE = 'https://app.isoplus.online/api/v2';
+const ISO_PLUS_API_BASE = 'https://app.isoplus.online/api';
+
+export function buildIsoPlusV2ItemUrl(workspaceId, boardId, itemId) {
+  const safeWorkspaceId = sanitizeApiPathSegment(workspaceId, 'workspaceId');
+  const safeBoardId = sanitizeApiPathSegment(boardId, 'boardId');
+  const safeItemId = sanitizeApiPathSegment(itemId, 'itemId');
+  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/items/${safeItemId}`;
+}
+
+export function buildIsoPlusAutomationUrl(workspaceId, automationId) {
+  const safeWorkspaceId = sanitizeApiPathSegment(workspaceId, 'workspaceId');
+  const safeAutomationId = sanitizeApiPathSegment(automationId, 'automationId');
+  return `${ISO_PLUS_API_BASE}/${safeWorkspaceId}/automations/${safeAutomationId}`;
+}

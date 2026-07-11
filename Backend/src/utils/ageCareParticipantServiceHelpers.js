@@ -1,3 +1,5 @@
+import { buildIsoPlusV2ItemUrl } from './securityHelpers.js';
+
 export function buildParticipantNamePrefix(participantsProfileValues) {
   let fullName = '';
   if (!participantsProfileValues) {
@@ -432,7 +434,7 @@ export function getIsoPlusItemUpdateHeaders() {
 }
 
 export async function resetAgreedUnitPriceFields(axios, workspaceId, boardId, itemId, itemValuesWithAttributeId) {
-  await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`, {
+  await axios.put(buildIsoPlusV2ItemUrl(workspaceId, boardId, itemId), {
     values: [
       {
         data: 0,

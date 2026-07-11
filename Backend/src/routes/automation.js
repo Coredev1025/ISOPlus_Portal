@@ -4,12 +4,14 @@ import { authenticateToken } from '../middleware/auth.js';
 import { v4 as uuidv4 } from 'uuid';
 import { info, error, warn, debug } from '../utils/logger.js';
 import { getAutomation, updateAutomation } from '../services/isoplus.js';
-import { buildUpdatedAutomation } from '../utils/automationUrlUpdate.js';
+import { buildIsoPlusAutomationUrl, sanitizeApiPathSegment } from '../utils/securityHelpers.js';
 
 const router = express.Router();
 
 router.get('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
-    const automation = await getAutomation(req.params.workspaceId, req.params.boardId, req.session.Authorization);
+    const workspaceId = sanitizeApiPathSegment(req.params.workspaceId, 'workspaceId');
+    const boardId = sanitizeApiPathSegment(req.params.boardId, 'boardId');
+    const automation = await getAutomation(workspaceId, boardId, req.session.Authorization);
     res.json(automation);
 });
 
@@ -19,10 +21,11 @@ router.post('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
         if (req.user.role !== 'owner' && req.user.role !== 'support_admin') {
             return res.status(403).json({ message: 'Access denied. Owner or Support Admin permission required.' });
         }
-        const { workspaceId, boardId } = req.params;
+        const workspaceId = sanitizeApiPathSegment(req.params.workspaceId, 'workspaceId');
+        const boardId = sanitizeApiPathSegment(req.params.boardId, 'boardId');
         const automation = req.body;
         let automationId = uuidv4();
-        const existingAutomation = await getAutomation(req.params.workspaceId, req.params.boardId, req.session.Authorization);
+        const existingAutomation = await getAutomation(workspaceId, boardId, req.session.Authorization);
         if (existingAutomation) {
             let existingAutomationIndex = existingAutomation.findIndex(automation => automation.id === automationId);
             while (existingAutomationIndex >= 0) {
@@ -30,7 +33,7 @@ router.post('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
                 existingAutomationIndex = existingAutomation.findIndex(automation => automation.id === automationId);
             }
         }
-        const response = await axios.put(`https://app.isoplus.online/api/${workspaceId}/automations/${automationId}`, {
+        const response = await axios.put(buildIsoPlusAutomationUrl(workspaceId, automationId), {
             ...automation,
             id: automationId
         }, {
@@ -51,7 +54,8 @@ router.put('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
     if (req.user.role !== 'owner' && req.user.role !== 'support_admin') {
         return res.status(403).json({ message: 'Access denied. Owner or Support Admin permission required.' });
     }
-    const { workspaceId, boardId } = req.params;
+    const workspaceId = sanitizeApiPathSegment(req.params.workspaceId, 'workspaceId');
+    const boardId = sanitizeApiPathSegment(req.params.boardId, 'boardId');
     const automation = await getAutomation(workspaceId, boardId, req.session.Authorization);
     if (!automation) {
         res.status(404).json({ error: 'Automation not found' });
