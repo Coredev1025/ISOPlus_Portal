@@ -80,7 +80,7 @@ async function loadNdisRefItemsMap(workspaceId, boardId, refIdSets, deps) {
   const pricingRules = await Promise.all(
     servicePlanIdList.map((spId) => {
       const spItem = refItemsMap.get(spId);
-      if (!spItem?.data) return null;
+      if (!spItem?.data) return Promise.resolve(null);
       return resolveNdisPricingRuleForServicePlan(workspaceId, spItem, boardId);
     }),
   );
