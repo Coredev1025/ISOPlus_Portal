@@ -112,7 +112,7 @@ const ATTRIBUTE_NAMES = {
 };
 
 async function getValidatedBusiness(workspaceId) {
-    const business = await Business.findOne({ workspaceId: mongoEq(workspaceId.toString()) });
+    const business = await Business.findOne({ workspaceId: mongoEq(workspaceId) });
     if (!business) {
         throw new Error('Business not found');
     }

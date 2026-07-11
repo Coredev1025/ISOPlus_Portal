@@ -15,6 +15,7 @@ import {
 import { updateOrganizationInfo } from '../services/xero.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
 import { collectBusinessProfileErrors } from '../validators/businessProfile.js';
+import { toRequiredQueryString } from '../utils/securityHelpers.js';
 import {
   applyBusinessLogoUpdates,
   buildBusinessUpdateData,
@@ -74,7 +75,7 @@ const streamLogoResponse = async (req, res, business, logoKey) => {
 
 router.get('/profile', authenticateToken, async (req, res) => {
   try {
-    const workspaceId = req.query.workspaceId?.toString();
+    const workspaceId = toRequiredQueryString(req.query.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
     const business = await Business.findOne({ workspaceId }).lean();
     if (!business) {
@@ -95,35 +96,37 @@ router.get('/profile', authenticateToken, async (req, res) => {
 // Get a short-lived presigned URL when a direct S3 link is required.
 router.get('/logo', authenticateToken, async (req, res) => {
   try {
-    const { workspaceId, logoKey } = req.query;
-    
-    if (!workspaceId || !logoKey) {
+    const { workspaceId: rawWorkspaceId, logoKey } = req.query;
+    const workspaceId = toRequiredQueryString(rawWorkspaceId);
+    const safeLogoKey = toRequiredQueryString(logoKey);
+
+    if (!workspaceId || !safeLogoKey) {
       return res.status(400).json({ message: 'workspaceId and logoKey are required' });
     }
 
-    if (!isValidLogoField(logoKey)) {
+    if (!isValidLogoField(safeLogoKey)) {
       return res.status(400).json({ message: 'Invalid logoKey' });
     }
 
-    const business = await Business.findOne({ workspaceId: workspaceId.toString() }).lean();
+    const business = await Business.findOne({ workspaceId }).lean();
     if (!business) {
       return res.status(404).json({ message: 'Business not found' });
     }
 
-    const logoPath = business[logoKey];
+    const logoPath = business[safeLogoKey];
     if (!logoPath) {
       return res.status(404).json({ message: 'Logo not found' });
     }
 
-    const logoUrls = await buildLogoUrls({ [logoKey]: logoPath });
-    const logoUrlInfo = logoUrls[logoKey];
+    const logoUrls = await buildLogoUrls({ [safeLogoKey]: logoPath });
+    const logoUrlInfo = logoUrls[safeLogoKey];
     if (!logoUrlInfo?.url) {
       return res.status(404).json({ message: 'Logo file not found' });
     }
 
     info('Business-Service', 'Logo URL retrieved successfully', { 
       workspaceId, 
-      logoKey, 
+      logoKey: safeLogoKey,
       logoPath 
     }, req ?? null);
 
@@ -142,7 +145,7 @@ router.get('/logo', authenticateToken, async (req, res) => {
 
 router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, async (req, res) => {
   try {
-    const workspaceId = req.body.workspaceId?.toString();
+    const workspaceId = toRequiredQueryString(req.body.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
 
     let documentNumbering = {};
@@ -213,8 +216,8 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
 
 router.get('/logo-image', authenticateToken, async (req, res) => {
   try {
-    const workspaceId = req.query.workspaceId?.toString();
-    const logoKey = req.query.logoKey?.toString();
+    const workspaceId = toRequiredQueryString(req.query.workspaceId);
+    const logoKey = toRequiredQueryString(req.query.logoKey);
 
     if (!workspaceId) {
       return res.status(400).json({ message: 'workspaceId is required' });
@@ -248,7 +251,7 @@ router.get('/logo-image', authenticateToken, async (req, res) => {
 
 router.get('/qr-logo', authenticateToken, async (req, res) => {
   try {
-    const workspaceId = req.query.workspaceId?.toString();
+    const workspaceId = toRequiredQueryString(req.query.workspaceId);
 
     if (!workspaceId) {
       return res.status(400).json({ message: 'workspaceId is required' });
@@ -277,7 +280,7 @@ router.get('/qr-logo', authenticateToken, async (req, res) => {
 
 router.post('/xero/connect', authenticateToken, async (req, res) => {
   try {
-    const workspaceId = req.body.workspaceId?.toString();
+    const workspaceId = toRequiredQueryString(req.body.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
     const { tokens, organization } = req.body;
 
@@ -321,7 +324,7 @@ router.post('/xero/connect', authenticateToken, async (req, res) => {
 
 router.post('/xero/disconnect', authenticateToken, async (req, res) => {
   try {
-    const workspaceId = req.body.workspaceId?.toString();
+    const workspaceId = toRequiredQueryString(req.body.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
 
     const business = await Business.findOne({ workspaceId });
@@ -349,7 +352,7 @@ router.post('/xero/disconnect', authenticateToken, async (req, res) => {
 
 router.post('/xero/update-organization', authenticateToken, async (req, res) => {
   try {
-    const workspaceId = req.body.workspaceId?.toString();
+    const workspaceId = toRequiredQueryString(req.body.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
 
     const business = await Business.findOne({ workspaceId });

@@ -260,10 +260,19 @@ export async function getNdisInvoiceGeneratorContextFromMasterItems({
   ]);
 
   const supportItemIds = new Set();
-  for (const spId of servicePlanIds) {
+  const servicePlanIdList = [...servicePlanIds];
+  const pricingRules = await Promise.all(
+    servicePlanIdList.map((spId) => {
+      const spItem = refItemsMap.get(spId);
+      if (!spItem?.data) return null;
+      return resolveNdisPricingRuleForServicePlan(workspaceId, spItem, boardId);
+    }),
+  );
+  for (let i = 0; i < servicePlanIdList.length; i++) {
+    const spId = servicePlanIdList[i];
     const spItem = refItemsMap.get(spId);
-    if (!spItem?.data) continue;
-    const pricingRule = await resolveNdisPricingRuleForServicePlan(workspaceId, spItem, boardId);
+    const pricingRule = pricingRules[i];
+    if (!spItem?.data || !pricingRule) continue;
     collectNdisSupportCatalogueRefIds(spItem.data, pricingRule).forEach((id) => supportItemIds.add(id));
   }
   if (supportItemIds.size > 0) {

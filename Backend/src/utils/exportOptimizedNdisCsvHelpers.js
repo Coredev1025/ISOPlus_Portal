@@ -263,7 +263,7 @@ export async function handleNdisInvoiceCsvExport(req, res, deps) {
       });
     }
 
-    const businessDoc = await deps.Business.findOne({ workspaceId: workspaceId.toString() })
+    const businessDoc = await deps.Business.findOne({ workspaceId })
       .select('abn companyRegistrationId headOfficeTimezone').lean();
     const businessCheck = validateNdisExportBusiness({
       registrationNumber: deps.sanitizeDigits(businessDoc?.companyRegistrationId || '', 30),

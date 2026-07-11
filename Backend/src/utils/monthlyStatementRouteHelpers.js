@@ -1018,7 +1018,7 @@ export async function getMonthlyStatementData({ workspaceId, boardId, query, req
 
   let businessProfile = null;
   try {
-    businessProfile = await deps.Business.findOne({ workspaceId: mongoEq(workspaceId.toString()) })
+    businessProfile = await deps.Business.findOne({ workspaceId: mongoEq(workspaceId) })
       .select('name phone email companyRegistrationId address headOfficeTimezone')
       .lean();
   } catch (err) {

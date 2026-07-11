@@ -13,6 +13,7 @@ import {
 } from '../utils/monthlyStatementServiceHelpers.js';
 import { transformProcessedServiceItem } from '../utils/monthlyStatementDataServiceHelpers.js';
 import { transformBudgetItemData } from '../utils/monthlyStatementDataBudgetHelpers.js';
+import { mongoEq } from '../utils/securityHelpers.js';
 import {
     ATTRIBUTE_NAMES,
     BUDGET_CATEGORY_CONFIG,
@@ -443,7 +444,7 @@ export async function fetchServiceItems(workspaceId, boardId, options = {}) {
     const { participant, startDate, endDate, transactionStatusFilter, fundingSourceFilter } = options;
     const participantParam = normalizeParticipantParam(participant);
 
-    const businessProfile = await Business.findOne({ workspaceId: workspaceId.toString() }).select('name').lean();
+    const businessProfile = await Business.findOne({ workspaceId: mongoEq(workspaceId) }).select('name').lean();
 
     const folderIds = await getFolderIds('Master Plan,Shift Planning and Reporting', workspaceId, boardId);
     const query = { workspaceId, boardId };

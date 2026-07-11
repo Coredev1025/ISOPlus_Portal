@@ -6,7 +6,7 @@ import https from 'https';
 import { info, warn, error, logAttributeError, logApiError, logOperationStart, logOperationEnd } from '../utils/logger.js';
 import { buildJobPlanningValues, buildServiceFeeTypeValues } from '../utils/isoplusJobReferenceHelpers.js';
 import { getErrorMessageFromUnknown } from '../utils/isoplusErrorHelpers.js';
-import { secureRandomFloat } from '../utils/securityHelpers.js';
+import { secureRandomFloat, mongoEq } from '../utils/securityHelpers.js';
 import { executeSetLogo } from '../utils/isoplusLogoHelpers.js';
 import { fetchPartyJobTypeReferencedItems } from '../utils/isoplusClientReferenceHelpers.js';
 import {
@@ -589,7 +589,7 @@ export async function getViewsById(authorization, workspaceId, boardId, viewId) 
 
 export async function setIntegrationMessage(workspaceId, boardId, itemId, message) {
     try {
-        const board = await Board.findOne({ boardId: boardId.toString() })
+        const board = await Board.findOne({ boardId: mongoEq(boardId) })
             .select('attribute')
             .lean();
         if (!board || !board.attribute || !board.attribute.id) {
@@ -1084,7 +1084,7 @@ export async function setGeneratedField(workspaceId, boardId, itemId, message) {
 export async function setPDFLinkAttribute(workspaceId, boardId, itemId, pdfUrl, docType) {
     try {
         // Get the board to find the PDF attribute ID
-        const board = await Board.findOne({ boardId: boardId.toString() })
+        const board = await Board.findOne({ boardId: mongoEq(boardId) })
             .select('pdfAttribute')
             .lean();
         if (!board || !board.pdfAttribute || !board.pdfAttribute.id) {

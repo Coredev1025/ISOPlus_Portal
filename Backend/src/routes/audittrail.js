@@ -9,7 +9,7 @@ const router = express.Router();
 // GET all audit trails
 router.get('/', authenticateToken, async (req, res) => {
     try {
-        const workspaceId = req.query.workspaceId?.toString();
+        const workspaceId = toRequiredQueryString(req.query.workspaceId);
         if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
         
         // Add pagination to reduce memory usage
@@ -74,8 +74,8 @@ router.post('/', authenticateToken, async (req, res) => {
 // PUT to update an audit trail by ID
 router.put('/:id', authenticateToken, async (req, res) => {
     try {
-        const id = req.params.id?.toString();
-        const workspaceId = req.body.workspaceId?.toString();
+        const id = toRequiredQueryString(req.params.id);
+        const workspaceId = toRequiredQueryString(req.body.workspaceId);
         if (!id || !workspaceId) return res.status(400).json({ message: 'Invalid id or workspaceId' });
         const auditTrail = await AuditTrail.findOne({ _id: id, workspaceId });
         if (!auditTrail) {

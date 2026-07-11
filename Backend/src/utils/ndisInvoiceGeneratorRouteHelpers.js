@@ -76,10 +76,19 @@ async function loadNdisRefItemsMap(workspaceId, boardId, refIdSets, deps) {
   ]);
 
   const supportItemIds = new Set();
-  for (const spId of servicePlanIds) {
+  const servicePlanIdList = [...servicePlanIds];
+  const pricingRules = await Promise.all(
+    servicePlanIdList.map((spId) => {
+      const spItem = refItemsMap.get(spId);
+      if (!spItem?.data) return null;
+      return resolveNdisPricingRuleForServicePlan(workspaceId, spItem, boardId);
+    }),
+  );
+  for (let i = 0; i < servicePlanIdList.length; i++) {
+    const spId = servicePlanIdList[i];
     const spItem = refItemsMap.get(spId);
-    if (!spItem?.data) continue;
-    const pricingRule = await resolveNdisPricingRuleForServicePlan(workspaceId, spItem, boardId);
+    const pricingRule = pricingRules[i];
+    if (!spItem?.data || !pricingRule) continue;
     collectNdisSupportCatalogueRefIds(spItem.data, pricingRule).forEach((id) => supportItemIds.add(id));
   }
 
@@ -294,8 +303,15 @@ async function expandNdisMasterItemsToRows({
   invoiceFileUrlMap,
   headOfficeTimezone,
 }) {
+  const pricingRules = await Promise.all(masterItems.map((item) => {
+    const spId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_PLAN]);
+    const servicePlanItem = spId ? refItemsMap.get(spId) : null;
+    return resolveNdisPricingRuleForServicePlan(workspaceId, servicePlanItem, boardId);
+  }));
+
   const expandedRows = [];
-  for (const item of masterItems) {
+  for (let i = 0; i < masterItems.length; i++) {
+    const item = masterItems[i];
     const itemForRows = prepareItemForRowExpansion(item, resolveValueToNames, isUuidLike);
 
     const ppId = extractNdisRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_PROFILE]);
@@ -312,7 +328,7 @@ async function expandNdisMasterItemsToRows({
         ? String(item.data[NDIS_MASTERPLAN_ATTR.PARTICIPANT_FULL_NAME]).trim()
         : '');
 
-    const pricingRule = await resolveNdisPricingRuleForServicePlan(workspaceId, servicePlanItem, boardId);
+    const pricingRule = pricingRules[i];
     const supportCatalogue = buildNdisSupportCatalogueForServicePlan(servicePlanItem, refItemsMap, pricingRule);
 
     const rows = buildNdisMasterPlanServiceRows({
