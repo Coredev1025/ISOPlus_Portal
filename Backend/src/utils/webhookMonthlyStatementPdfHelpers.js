@@ -79,25 +79,50 @@ function fillMonthlyStatementServiceTables(templateInputs, serviceBuckets, busin
 }
 
 
+function parseTemplateTableRows(value) {
+  if (typeof value === 'string') return JSON.parse(value);
+  return Array.isArray(value) ? value : [];
+}
+
+function resolveSanitizedTableColumnCount(key, parsed, tableColumnCounts) {
+  if (tableColumnCounts[key] != null) return tableColumnCounts[key];
+  return Array.isArray(parsed[0]) ? parsed[0].length : 8;
+}
+
+function buildDefaultSanitizedTableRows(columnCount) {
+  return [Array.from({ length: columnCount }, (_, i) => (i === 1 ? 'No services recorded for this period' : ''))];
+}
+
+function normalizeSanitizedTableRows(rows, columnCount, normalizeTableCell) {
+  const sourceRows = rows.length > 0 ? rows : buildDefaultSanitizedTableRows(columnCount);
+  return sourceRows.map((row) => normalizeSanitizedTableRow(row, columnCount, normalizeTableCell));
+}
+
+function buildSanitizedTableFallback(key, tableColumnCounts) {
+  const emptyRow = Array(tableColumnCounts[key] || 8).fill('');
+  emptyRow[1] = 'No data available';
+  return JSON.stringify([emptyRow]);
+}
+
+function sanitizeMonthlyStatementTableInput(key, value, tableColumnCounts, normalizeTableCell) {
+  const parsed = parseTemplateTableRows(value);
+  const columnCount = resolveSanitizedTableColumnCount(key, parsed, tableColumnCounts);
+  const normalizedRows = normalizeSanitizedTableRows(
+    Array.isArray(parsed) ? parsed : [],
+    columnCount,
+    normalizeTableCell,
+  );
+  return JSON.stringify(normalizedRows);
+}
+
 function sanitizeMonthlyStatementTableInputs(templateInputs, tableColumnCounts, deps) {
   const { normalizeTableCell } = deps;
   for (const [key, value] of Object.entries(templateInputs)) {
     if (!key.startsWith('Table ')) continue;
     try {
-      const parsed = typeof value === 'string' ? JSON.parse(value) : (Array.isArray(value) ? value : []);
-      const columnCount = tableColumnCounts[key] ?? (Array.isArray(parsed[0]) ? parsed[0].length : 8);
-      const rows = (!Array.isArray(parsed) || parsed.length === 0)
-        ? [Array.from({ length: columnCount }, (_, i) => (i === 1 ? 'No services recorded for this period' : ''))]
-        : parsed;
-      const normalizedRows = [];
-      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-        normalizedRows.push(normalizeSanitizedTableRow(rows[rowIndex], columnCount, normalizeTableCell));
-      }
-      templateInputs[key] = JSON.stringify(normalizedRows);
+      templateInputs[key] = sanitizeMonthlyStatementTableInput(key, value, tableColumnCounts, normalizeTableCell);
     } catch {
-      const emptyRow = Array(tableColumnCounts[key] || 8).fill('');
-      emptyRow[1] = 'No data available';
-      templateInputs[key] = JSON.stringify([emptyRow]);
+      templateInputs[key] = buildSanitizedTableFallback(key, tableColumnCounts);
     }
   }
 }
@@ -408,32 +433,46 @@ function resolveMonthlyStatementIsoDate(value) {
   return d.toISOString();
 }
 
-function resolveMonthlyStatementDates(requestStartDate, requestEndDate, monthNum, yearVal, timezone) {
-  let startDate = resolveMonthlyStatementIsoDate(requestStartDate);
-  let endDate = resolveMonthlyStatementIsoDate(requestEndDate);
+function clearInvertedMonthlyStatementDateRange(startDate, endDate) {
+  if (!startDate || !endDate) return { startDate, endDate };
+  const startMs = new Date(startDate).getTime();
+  const endMs = new Date(endDate).getTime();
+  if (startMs <= endMs) return { startDate, endDate };
+  return { startDate: null, endDate: null };
+}
 
-  // Guard against inverted ranges; fallback to computed month range.
-  if (startDate && endDate) {
-      const s = new Date(startDate);
-      const e = new Date(endDate);
-      if (s.getTime() > e.getTime()) {
-          startDate = null;
-          endDate = null;
-      }
+function computeTimezoneAwareMonthRange(monthNum, yearVal, timezone) {
+  const monthIndex = Number(monthNum) - 1;
+  const yearIndex = Number(yearVal);
+  if (Number.isNaN(monthIndex) || Number.isNaN(yearIndex)) {
+    return { startDate: null, endDate: null };
   }
 
-  // Fallback: compute a timezone-aware month range when request didn't provide valid dates.
+  const lastDay = new Date(Date.UTC(yearIndex, monthIndex + 1, 0));
+  const firstNoon = new Date(Date.UTC(yearIndex, monthIndex, 1, 12, 0, 0));
+  const lastNoon = new Date(Date.UTC(yearIndex, monthIndex + 1, 0, 12, 0, 0));
+  const startOffset = getUtcOffsetMs(firstNoon, timezone);
+  const endOffset = getUtcOffsetMs(lastNoon, timezone);
+
+  return {
+    startDate: new Date(Date.UTC(yearIndex, monthIndex, 1) - startOffset).toISOString(),
+    endDate: new Date(
+      Date.UTC(lastDay.getUTCFullYear(), lastDay.getUTCMonth(), lastDay.getUTCDate(), 23, 59, 59, 999) - endOffset,
+    ).toISOString(),
+  };
+}
+
+function resolveMonthlyStatementDates(requestStartDate, requestEndDate, monthNum, yearVal, timezone) {
+  const clearedRange = clearInvertedMonthlyStatementDateRange(
+    resolveMonthlyStatementIsoDate(requestStartDate),
+    resolveMonthlyStatementIsoDate(requestEndDate),
+  );
+  let { startDate, endDate } = clearedRange;
+
   if ((!startDate || !endDate) && monthNum && yearVal) {
-      const mi = Number(monthNum) - 1, yi = Number(yearVal);
-      if (!isNaN(mi) && !isNaN(yi)) {
-          const lastDay = new Date(Date.UTC(yi, mi + 1, 0));
-          const firstNoon = new Date(Date.UTC(yi, mi, 1, 12, 0, 0));
-          const lastNoon = new Date(Date.UTC(yi, mi + 1, 0, 12, 0, 0));
-          const startOffset = getUtcOffsetMs(firstNoon, timezone);
-          const endOffset = getUtcOffsetMs(lastNoon, timezone);
-          startDate = startDate || new Date(Date.UTC(yi, mi, 1) - startOffset).toISOString();
-          endDate = endDate || new Date(Date.UTC(lastDay.getUTCFullYear(), lastDay.getUTCMonth(), lastDay.getUTCDate(), 23, 59, 59, 999) - endOffset).toISOString();
-      }
+    const fallbackRange = computeTimezoneAwareMonthRange(monthNum, yearVal, timezone);
+    startDate = startDate || fallbackRange.startDate;
+    endDate = endDate || fallbackRange.endDate;
   }
 
   return { startDate, endDate };

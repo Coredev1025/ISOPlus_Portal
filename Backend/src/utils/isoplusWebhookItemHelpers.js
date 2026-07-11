@@ -154,60 +154,88 @@ async function upsertWebhookItemFromApi({ itemId, itemData, foundWorkspaceId, fo
   return { item, boardId: safeBoardId, workspaceId: safeWorkspaceId, currentSyncGUID };
 }
 
+function mapApiLookupResult(result, defaults = {}) {
+  if (!result) {
+    return {
+      itemDeletedInIsoPlus: false,
+      itemData: null,
+      foundBoardId: defaults.foundBoardId ?? null,
+      foundWorkspaceId: defaults.foundWorkspaceId ?? null,
+      currentSyncGUID: null,
+    };
+  }
+  if (result.itemDeletedInIsoPlus) {
+    return {
+      itemDeletedInIsoPlus: true,
+      itemData: null,
+      foundBoardId: result.foundBoardId ?? defaults.foundBoardId ?? null,
+      foundWorkspaceId: result.foundWorkspaceId ?? defaults.foundWorkspaceId ?? null,
+      currentSyncGUID: null,
+    };
+  }
+  if (result.itemData) {
+    return {
+      itemDeletedInIsoPlus: false,
+      itemData: result.itemData,
+      foundBoardId: result.foundBoardId ?? defaults.foundBoardId ?? null,
+      foundWorkspaceId: result.foundWorkspaceId ?? defaults.foundWorkspaceId ?? null,
+      currentSyncGUID: result.currentSyncGUID ?? null,
+    };
+  }
+  return {
+    itemDeletedInIsoPlus: false,
+    itemData: null,
+    foundBoardId: defaults.foundBoardId ?? null,
+    foundWorkspaceId: defaults.foundWorkspaceId ?? null,
+    currentSyncGUID: null,
+  };
+}
+
+async function resolveWebhookItemApiData(safeItemId, safeBoardId, safeWorkspaceId) {
+  if (!safeBoardId || !safeWorkspaceId) {
+    return mapApiLookupResult(await searchSyncedBoardsForItem(safeItemId));
+  }
+  const fetchResult = await fetchItemFromKnownBoard(safeItemId, safeWorkspaceId, safeBoardId);
+  return mapApiLookupResult(fetchResult, {
+    foundBoardId: safeBoardId,
+    foundWorkspaceId: safeWorkspaceId,
+  });
+}
+
+async function handleWebhookItemDeletedInIsoPlus(safeItemId, foundBoardId) {
+  info('Webhook-Handler', 'Item deleted in ISO+ (404), deleting local copy', { itemId: safeItemId, boardId: foundBoardId });
+  const deleteResult = await deleteWebhookItemFromDatabase(safeItemId);
+  return deleteResult ? { deleted: true, ...deleteResult } : { deleted: true, itemId: safeItemId };
+}
+
 export async function fetchOrCreateWebhookItem(itemId, boardId = null, workspaceId = null) {
   const safeItemId = mongoEq(itemId);
   if (!safeItemId) return null;
 
-  const safeBoardId = boardId ? mongoEq(boardId) : null;
-  const safeWorkspaceId = workspaceId ? mongoEq(workspaceId) : null;
-
   const existing = await findExistingWebhookItem(safeItemId);
   if (existing) return existing;
 
-  let itemData = null;
-  let foundBoardId = safeBoardId;
-  let foundWorkspaceId = safeWorkspaceId;
-  let currentSyncGUID = null;
-  let itemDeletedInIsoPlus = false;
+  const safeBoardId = boardId ? mongoEq(boardId) : null;
+  const safeWorkspaceId = workspaceId ? mongoEq(workspaceId) : null;
+  const lookup = await resolveWebhookItemApiData(safeItemId, safeBoardId, safeWorkspaceId);
 
-  if (!foundBoardId || !foundWorkspaceId) {
-    const searchResult = await searchSyncedBoardsForItem(safeItemId);
-    if (searchResult?.itemDeletedInIsoPlus) {
-      itemDeletedInIsoPlus = true;
-      foundBoardId = searchResult.foundBoardId;
-      foundWorkspaceId = searchResult.foundWorkspaceId;
-    } else if (searchResult?.itemData) {
-      itemData = searchResult.itemData;
-      foundBoardId = searchResult.foundBoardId;
-      foundWorkspaceId = searchResult.foundWorkspaceId;
-      currentSyncGUID = searchResult.currentSyncGUID;
-    }
-  } else {
-    const fetchResult = await fetchItemFromKnownBoard(safeItemId, foundWorkspaceId, foundBoardId);
-    if (fetchResult?.itemDeletedInIsoPlus) {
-      itemDeletedInIsoPlus = true;
-    } else if (fetchResult?.itemData) {
-      itemData = fetchResult.itemData;
-      currentSyncGUID = fetchResult.currentSyncGUID;
-    }
+  if (lookup.itemDeletedInIsoPlus) {
+    return handleWebhookItemDeletedInIsoPlus(safeItemId, lookup.foundBoardId);
   }
 
-  if (itemDeletedInIsoPlus) {
-    info('Webhook-Handler', 'Item deleted in ISO+ (404), deleting local copy', { itemId: safeItemId, boardId: foundBoardId });
-    const deleteResult = await deleteWebhookItemFromDatabase(safeItemId);
-    return deleteResult ? { deleted: true, ...deleteResult } : { deleted: true, itemId: safeItemId };
-  }
-
-  if (!itemData) {
-    warn('Webhook-Handler', 'Item not found in database or API', { itemId: safeItemId, boardId: foundBoardId });
+  if (!lookup.itemData) {
+    warn('Webhook-Handler', 'Item not found in database or API', {
+      itemId: safeItemId,
+      boardId: lookup.foundBoardId ?? safeBoardId,
+    });
     return null;
   }
 
   return upsertWebhookItemFromApi({
     itemId: safeItemId,
-    itemData,
-    foundWorkspaceId,
-    foundBoardId,
-    currentSyncGUID,
+    itemData: lookup.itemData,
+    foundWorkspaceId: lookup.foundWorkspaceId,
+    foundBoardId: lookup.foundBoardId,
+    currentSyncGUID: lookup.currentSyncGUID,
   });
 }
