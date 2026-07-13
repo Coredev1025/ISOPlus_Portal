@@ -102,7 +102,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
   try {
     const workspaceId = toRequiredQueryString(req.query.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
-    const business = await Business.findOne({ workspaceId }).lean();
+    const business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } }).lean();
     if (!business) {
       warn('Business-Service', 'Business profile not found', {}, req ?? null);
       return res.status(404).json({ message: 'Business profile not found' });
@@ -133,7 +133,7 @@ router.get('/logo', authenticateToken, async (req, res) => {
       return res.status(400).json({ message: 'Invalid logoKey' });
     }
 
-    const business = await Business.findOne({ workspaceId }).lean();
+    const business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } }).lean();
     if (!business) {
       return res.status(404).json({ message: 'Business not found' });
     }
@@ -178,7 +178,7 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
       documentNumbering = JSON.parse(req.body.documentNumbering);
     }
 
-    let business = await Business.findOne({ workspaceId });
+    let business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
     const updateData = buildBusinessUpdateData({
       ...req.body,
       workspaceId,
@@ -248,7 +248,7 @@ router.get('/logo-image', authenticateToken, async (req, res) => {
       return res.status(400).json({ message: 'workspaceId is required' });
     }
 
-    const business = await Business.findOne({ workspaceId });
+    const business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
     if (!business) {
       return res.status(404).json({ message: 'Business not found' });
     }
@@ -282,7 +282,7 @@ router.get('/qr-logo', authenticateToken, async (req, res) => {
       return res.status(400).json({ message: 'workspaceId is required' });
     }
 
-    const business = await Business.findOne({ workspaceId });
+    const business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
     if (!business) {
       return res.status(404).json({ message: 'Business not found' });
     }
@@ -309,7 +309,7 @@ router.post('/xero/connect', authenticateToken, async (req, res) => {
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
     const { tokens, organization } = req.body;
 
-    let business = await Business.findOne({ workspaceId });
+    let business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
     if (!business) {
       const now = new Date();
       business = new Business({
@@ -352,7 +352,7 @@ router.post('/xero/disconnect', authenticateToken, async (req, res) => {
     const workspaceId = toRequiredQueryString(req.body.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
 
-    const business = await Business.findOne({ workspaceId });
+    const business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
     if (!business) {
       warn('Business-Service', 'Business not found', { workspaceId }, req ?? null);
       return res.status(404).json({ message: 'Business not found' });
@@ -380,7 +380,7 @@ router.post('/xero/update-organization', authenticateToken, async (req, res) => 
     const workspaceId = toRequiredQueryString(req.body.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
 
-    const business = await Business.findOne({ workspaceId });
+    const business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
     if (!business) {
       warn('Business-Service', 'Business not found', { workspaceId }, req ?? null);
       return res.status(404).json({ message: 'Business not found' });

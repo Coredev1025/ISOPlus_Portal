@@ -76,7 +76,7 @@ router.post('/', authenticateToken, async (req, res) => {
         }
         const boardId = toRequiredQueryString(req.body.id);
         if (!boardId) return res.status(400).json({ message: 'Invalid boardId' });
-        const existingBoard = await Board.findOne({ boardId }).lean();
+        const existingBoard = await Board.findOne({ boardId: { $eq: String(boardId) } }).lean();
         if (existingBoard) {
             warn('Board-Service', 'Board already exists', { boardId: req.body.boardId }, req ?? null);
             res.status(200).json({ board: existingBoard });
@@ -113,7 +113,7 @@ router.get('/', authenticateToken, async (req, res) => {
     try {
         const boardId = toRequiredQueryString(req.query.id);
         if (!boardId) return res.status(400).json({ message: 'Invalid boardId' });
-        const existingBoard = await Board.findOne({ boardId }).lean();
+        const existingBoard = await Board.findOne({ boardId: { $eq: String(boardId) } }).lean();
 
         if (existingBoard) {
             info('Board-Service', 'Successfully fetching board detail data', { boardId: req.query.id }, req ?? null);
@@ -140,11 +140,11 @@ router.put('/', authenticateToken, async (req, res) => {
         if (!boardId || !workspaceId) return res.status(400).json({ message: 'Invalid boardId or workspaceId' });
         
         // Get current board state to check if syncData is changing
-        const existingBoard = await Board.findOne({ boardId }).select('syncData').lean();
+        const existingBoard = await Board.findOne({ boardId: { $eq: String(boardId) } }).select('syncData').lean();
         const { wasSyncEnabled, willSyncBeEnabled } = parseSyncToggle(req.body, existingBoard);
         
         const boardUpdate = buildBoardUpdatePayload(req.body);
-        const result = await Board.updateOne({ boardId }, { $set: boardUpdate }, { upsert: true });
+        const result = await Board.updateOne({ boardId: { $eq: String(boardId) } }, { $set: boardUpdate }, { upsert: true });
         
         if (result.matchedCount === 0 && result.upsertedCount === 0) {
             warn('Board-Service', 'Board not found and not created', { boardId: req.body.boardId }, req ?? null);
@@ -169,7 +169,7 @@ router.put('/', authenticateToken, async (req, res) => {
                 return res.status(500).json({ 
                     message: 'Board updated but sync enablement failed', 
                     error: syncErr.message,
-                    board: await Board.findOne({ boardId }).lean()
+                    board: await Board.findOne({ boardId: { $eq: String(boardId) } }).lean()
                 });
             }
         }
@@ -178,7 +178,7 @@ router.put('/', authenticateToken, async (req, res) => {
             ({ syncResult } = await handleBoardSyncDisable({ req, workspaceId, boardId }));
         }
         
-        const updatedBoard = await Board.findOne({ boardId }).lean();
+        const updatedBoard = await Board.findOne({ boardId: { $eq: String(boardId) } }).lean();
         
         info('Board-Service', 'Board updated', { 
             boardId: req.body.boardId, 
