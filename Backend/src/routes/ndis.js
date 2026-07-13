@@ -35,9 +35,18 @@ import {
     handleLegacyMasterPlan,
 } from '../utils/ndisMasterPlanRouteHelpers.js';
 import axios from 'axios';
+import { sanitizeApiPathSegment } from '../utils/securityHelpers.js';
 
 dotenv.config();
 const router = express.Router();
+
+function buildSafeIsoPlusItemUrl(workspaceId, boardId, itemId) {
+    // encodeURIComponent must be applied in-file for SonarQube S7044 recognition.
+    const safeWorkspaceId = encodeURIComponent(sanitizeApiPathSegment(workspaceId, 'workspaceId'));
+    const safeBoardId = encodeURIComponent(sanitizeApiPathSegment(boardId, 'boardId'));
+    const safeItemId = encodeURIComponent(sanitizeApiPathSegment(itemId, 'itemId'));
+    return `https://app.isoplus.online/api/v2/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/items/${safeItemId}`;
+}
 
 function formatValue(val) {
     const num = Number(val);
@@ -66,7 +75,7 @@ const ISOPLUS_API_HEADERS = {
 async function putMasterPlanItemValues(workspaceId, boardId, itemId, values) {
     if (!Array.isArray(values) || values.length === 0) return { status: 200, skipped: true };
     return axios.put(
-        `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
+        buildSafeIsoPlusItemUrl(workspaceId, boardId, itemId),
         { values },
         { headers: ISOPLUS_API_HEADERS }
     );
@@ -313,7 +322,7 @@ const updateUnitAndUnitPrice = async (workspaceId, boardId, itemId, mappingValue
             return { error: 'Unit or Unit Price attribute not found' };
         }
         const response = await axios.put(
-            `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
+            buildSafeIsoPlusItemUrl(workspaceId, boardId, itemId),
             {
                 values: [
                     { data: unit, attribute_id: unitAttr.attribute.id },
@@ -472,7 +481,7 @@ async function updateVariablesParticipantsServicePlan(workspaceId, boardId, item
 
         if (updateValues.length > 0) {
             await axios.put(
-                `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
+                buildSafeIsoPlusItemUrl(workspaceId, boardId, itemId),
                 { values: updateValues },
                 {
                     headers: {
@@ -584,7 +593,7 @@ async function updateVariablesParticipantsServicePlanNew(workspaceId, boardId, i
 
         if (updateValues.length > 0) {
             await axios.put(
-                `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
+                buildSafeIsoPlusItemUrl(workspaceId, boardId, itemId),
                 { values: updateValues },
                 {
                     headers: {
@@ -885,7 +894,8 @@ router.post('/:workspaceId/:boardId/participants-service-plan', async (req, res)
 });
 
 router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
-    const { workspaceId, boardId } = req.params;
+    const workspaceId = sanitizeApiPathSegment(req.params.workspaceId, 'workspaceId');
+    const boardId = sanitizeApiPathSegment(req.params.boardId, 'boardId');
     const items = req.body?.items?.[0];
 
     if (await masterPlanBoardUsesNewNdisPricing(workspaceId, boardId, items?.id)) {
@@ -896,15 +906,17 @@ router.post('/:workspaceId/:boardId/masterplan', async (req, res) => {
 });
 
 async function runParticipantsServicePlanItemAutomation(req, res, mappingKey, webhookType, routeName) {
-    const { workspaceId, boardId } = req.params;
+    const workspaceId = sanitizeApiPathSegment(req.params.workspaceId, 'workspaceId');
+    const boardId = sanitizeApiPathSegment(req.params.boardId, 'boardId');
     try {
         const items = Array.isArray(req.body?.items) ? req.body.items[0] : null;
         const itemsValues = items?.values || {};
         if (!items?.id) return res.status(200).json({ error: 'Invalid payload', message: 'Missing item id' });
-        if (!(await automationUsesNewNdisPricing(workspaceId, boardId, items.id, itemsValues))) {
+        const itemId = sanitizeApiPathSegment(items.id, 'itemId');
+        if (!(await automationUsesNewNdisPricing(workspaceId, boardId, itemId, itemsValues))) {
             return res.status(200).json({ error: 'Legacy pricing rule applies for this service plan board.' });
         }
-        const result = await runServicePlanPricingUpdate(workspaceId, boardId, items.id, itemsValues, mappingKey, webhookType);
+        const result = await runServicePlanPricingUpdate(workspaceId, boardId, itemId, itemsValues, mappingKey, webhookType);
         return res.status(200).json(result);
     } catch (err) {
         return res.status(200).json({ error: `${routeName} failed`, message: err?.message || 'Server error' });

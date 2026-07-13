@@ -1,3 +1,5 @@
+import { sanitizeApiPathSegment } from './securityHelpers.js';
+
 const LEGACY_RESET_ATTR_NAMES = [
   'Direct Support Value($) - Time Based Support',
   'Direct Support Value($) - Non Time Based Support',
@@ -504,27 +506,29 @@ export function buildLegacyCancellationFeeUpdate({
 }
 
 export async function handleLegacyMasterPlan(req, res, deps) {
-  const { workspaceId, boardId } = req.params;
+  const workspaceId = sanitizeApiPathSegment(req.params.workspaceId, 'workspaceId');
+  const boardId = sanitizeApiPathSegment(req.params.boardId, 'boardId');
   const items = req.body?.items?.[0];
+  const itemId = sanitizeApiPathSegment(items?.id, 'itemId');
   const itemsValues = items?.values || {};
 
   deps.info('Xero-Service', 'Incoming request to Master plan', { workspaceId, boardId, body: itemsValues }, req ?? null);
 
-  const [servicePlanValues, cancellationTypeValues, fundValues] = await deps.getNDISMasterPlanReferencedItems(workspaceId, boardId, items.id);
+  const [servicePlanValues, cancellationTypeValues, fundValues] = await deps.getNDISMasterPlanReferencedItems(workspaceId, boardId, itemId);
   if (!servicePlanValues) {
-    deps.setIntegrationMessage(workspaceId, boardId, items.id, 'Service Plan Item not found');
+    deps.setIntegrationMessage(workspaceId, boardId, itemId, 'Service Plan Item not found');
     return res.status(200).json({ error: 'Service Plan Item not found' });
   }
 
-  const responseItemValues = await deps.getItemValues(workspaceId, boardId, items.id);
+  const responseItemValues = await deps.getItemValues(workspaceId, boardId, itemId);
   const itemValuesWithAttributeId = responseItemValues.values;
   const cancelled = deps.isShiftCancelled(itemsValues);
 
-  await deps.setIntegrationMessage(workspaceId, boardId, items.id, 'Calculating values...');
+  await deps.setIntegrationMessage(workspaceId, boardId, itemId, 'Calculating values...');
   await deps.putMasterPlanItemValues(
     workspaceId,
     boardId,
-    items.id,
+    itemId,
     buildLegacyMasterPlanResetPayload(itemValuesWithAttributeId),
   );
 
@@ -542,7 +546,7 @@ export async function handleLegacyMasterPlan(req, res, deps) {
 
   if (cancelled) {
     if (!cancellationTypeValues) {
-      deps.setIntegrationMessage(workspaceId, boardId, items.id, 'A cancellation type is required.');
+      deps.setIntegrationMessage(workspaceId, boardId, itemId, 'A cancellation type is required.');
       return res.status(200).json({ error: 'A cancellation type is required.' });
     }
     const cancellationUpdate = buildLegacyCancellationFeeUpdate({
@@ -562,14 +566,14 @@ export async function handleLegacyMasterPlan(req, res, deps) {
     }
   }
 
-  const response = await deps.putMasterPlanItemValues(workspaceId, boardId, items.id, updateValues);
+  const response = await deps.putMasterPlanItemValues(workspaceId, boardId, itemId, updateValues);
   if (response.status === 200) {
-    deps.setIntegrationMessage(workspaceId, boardId, items.id, 'Master plan processed successfully');
+    deps.setIntegrationMessage(workspaceId, boardId, itemId, 'Master plan processed successfully');
     deps.info('Xero-Service', 'Master plan processed successfully', { updateValues }, req ?? null);
     return res.status(200).json({ message: 'Master plan processed' });
   }
 
-  deps.setIntegrationMessage(workspaceId, boardId, items.id, 'Failed to update master plan');
+  deps.setIntegrationMessage(workspaceId, boardId, itemId, 'Failed to update master plan');
   deps.warn('Xero-Service', 'Failed to update master plan', { updateValues }, req ?? null);
   return res.status(200).json({ error: 'Failed to update master plan' });
 }

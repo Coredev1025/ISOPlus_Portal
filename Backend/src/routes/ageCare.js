@@ -18,9 +18,17 @@ import {
     getIsoPlusItemUpdateHeaders,
     resetAgreedUnitPriceFields,
 } from '../utils/ageCareParticipantServiceHelpers.js';
+import { sanitizeApiPathSegment } from '../utils/securityHelpers.js';
 
 dotenv.config();
 const router = express.Router();
+
+function buildSafeIsoPlusItemUrl(workspaceId, boardId, itemId) {
+    const safeWorkspaceId = encodeURIComponent(sanitizeApiPathSegment(workspaceId, 'workspaceId'));
+    const safeBoardId = encodeURIComponent(sanitizeApiPathSegment(boardId, 'boardId'));
+    const safeItemId = encodeURIComponent(sanitizeApiPathSegment(itemId, 'itemId'));
+    return `https://app.isoplus.online/api/v2/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/items/${safeItemId}`;
+}
 
 function formatValue(val) {
     const num = Number(val);
@@ -110,7 +118,7 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
 
         if (updatevariables.length > 0) {
             const response = await axios.put(
-                `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
+                buildSafeIsoPlusItemUrl(workspaceId, boardId, itemId),
                 { values: updatevariables },
                 { headers: getIsoPlusItemUpdateHeaders() },
             );
@@ -212,7 +220,8 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
         });
 
         if (updatevariables.length > 0) {
-            const response = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
+            const response = await axios.put(
+                buildSafeIsoPlusItemUrl(workspaceId, boardId, itemId),
                 { values: updatevariables },
                 {
                     headers: {
@@ -274,7 +283,10 @@ const updateParticipantsServiceplan = async (workspaceId, boardId, itemId, items
             });
         }
         if (updatevariables.length > 0) {
-            const response = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${masterplanValuesWithAttributeId.find(v => v.attribute.name === "Service Plan").data.toString()}`,
+            const servicePlanRef = masterplanValuesWithAttributeId.find((v) => v.attribute.name === 'Service Plan');
+            const servicePlanItemId = sanitizeApiPathSegment(servicePlanRef.data.toString(), 'itemId');
+            const response = await axios.put(
+                buildSafeIsoPlusItemUrl(workspaceId, boardId, servicePlanItemId),
                 { values: updatevariables },
                 {
                     headers: {
@@ -308,9 +320,10 @@ const updateParticipantsServiceplan = async (workspaceId, boardId, itemId, items
 }
 
 router.post('/:workspaceId/:boardId/update-variables-participants-service', async (req, res) => {
-    const { workspaceId, boardId } = req.params;
+    const workspaceId = sanitizeApiPathSegment(req.params.workspaceId, 'workspaceId');
+    const boardId = sanitizeApiPathSegment(req.params.boardId, 'boardId');
     const items = req.body.items[0];
-    const itemId = items.id;
+    const itemId = sanitizeApiPathSegment(items.id, 'itemId');
     const itemsValues = items.values;
 
     info('AgeCare-Service', `Incoming request to update variables participants service`, { workspaceId, boardId, itemId, itemsValues }, req ?? null);
@@ -322,9 +335,10 @@ router.post('/:workspaceId/:boardId/update-variables-participants-service', asyn
 });
 
 router.post('/:workspaceId/:boardId/update-variables-masterplan', async (req, res) => {
-    const { workspaceId, boardId } = req.params;
+    const workspaceId = sanitizeApiPathSegment(req.params.workspaceId, 'workspaceId');
+    const boardId = sanitizeApiPathSegment(req.params.boardId, 'boardId');
     const items = req.body.items[0];
-    const itemId = items.id;
+    const itemId = sanitizeApiPathSegment(items.id, 'itemId');
     const itemsValues = items.values;
 
     info('AgeCare-Service', `Incoming request to update variables MasterPlan`, { workspaceId, boardId, itemId, itemsValues }, req ?? null);

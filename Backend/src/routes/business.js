@@ -39,10 +39,23 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = express.Router();
-const storage = multer.memoryStorage(); // Use memory storage for multer
+const storage = multer.memoryStorage();
+
+const LOGO_UPLOAD_MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
+const LOGO_UPLOAD_MAX_FILES = 3;
+const LOGO_UPLOAD_MAX_FIELDS = 50;
+const LOGO_UPLOAD_MAX_FIELD_NAME_SIZE = 100;
+const LOGO_UPLOAD_MAX_FIELD_SIZE_BYTES = 1024 * 1024;
+
 const upload = multer({
   storage,
-  limits: { fileSize: 8 * 1024 * 1024 }, // 8 MB limit (SonarQube recommended max for uploads)
+  limits: {
+    fileSize: LOGO_UPLOAD_MAX_FILE_SIZE_BYTES,
+    files: LOGO_UPLOAD_MAX_FILES,
+    fields: LOGO_UPLOAD_MAX_FIELDS,
+    fieldNameSize: LOGO_UPLOAD_MAX_FIELD_NAME_SIZE,
+    fieldSize: LOGO_UPLOAD_MAX_FIELD_SIZE_BYTES,
+  },
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith('image/')) {
       return cb(new Error('Only image files are allowed!'), false);

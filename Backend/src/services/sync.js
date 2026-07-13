@@ -8,27 +8,30 @@ import {
   unregisterBoardHook,
   checkActiveQueueJob,
 } from './syncBoardHelpers.js';
+import { sanitizeApiPathSegment } from '../utils/securityHelpers.js';
 
 export async function enableBoardSync(authorization, workspaceId, boardId) {
   try {
-    info('Sync-Service', 'Enabling sync for board', { workspaceId, boardId });
+    const safeWorkspaceId = sanitizeApiPathSegment(workspaceId, 'workspaceId');
+    const safeBoardId = sanitizeApiPathSegment(boardId, 'boardId');
+    info('Sync-Service', 'Enabling sync for board', { workspaceId: safeWorkspaceId, boardId: safeBoardId });
     
-    const board = await Board.findOne({ boardId }).select('syncStatus').lean();
+    const board = await Board.findOne({ boardId: safeBoardId }).select('syncStatus').lean();
     
     if (board && ['sync_enabled', 'board_validation', 'board_valid', 'data_backlog_sync', 'realtime_sync', 'manual_triggered_sync'].includes(board.syncStatus)) {
       return {
         success: false,
         message: `Sync already enabled for this board (current status: ${board.syncStatus})`,
-        boardId,
+        boardId: safeBoardId,
         syncStatus: board.syncStatus
       };
     }
 
     const updatedBoard = await Board.findOneAndUpdate(
-      { boardId },
+      { boardId: safeBoardId },
       {
         $set: {
-          workspaceId: workspaceId,
+          workspaceId: safeWorkspaceId,
           syncData: true,
           syncStatus: 'sync_enabled',
           lastSyncError: null,
@@ -38,21 +41,21 @@ export async function enableBoardSync(authorization, workspaceId, boardId) {
       { upsert: true, new: true }
     );
 
-    const hookResult = await registerBoardWebhooks(authorization, workspaceId, boardId);
+    const hookResult = await registerBoardWebhooks(authorization, safeWorkspaceId, safeBoardId);
     if (hookResult.success) {
       await Board.findOneAndUpdate(
-        { boardId },
+        { boardId: safeBoardId },
         { $set: { hookId: hookResult.hookId, hookSecret: hookResult.secret } }
       );
       info('Sync-Service', 'Hook created on sync enable', {
-        workspaceId,
-        boardId,
+        workspaceId: safeWorkspaceId,
+        boardId: safeBoardId,
         hookId: hookResult.hookId,
       });
     } else {
       warn('Sync-Service', 'Hook creation failed on sync enable (non-fatal, will retry after backlog sync)', {
-        workspaceId,
-        boardId,
+        workspaceId: safeWorkspaceId,
+        boardId: safeBoardId,
         error: hookResult.error,
       });
     }
@@ -60,29 +63,29 @@ export async function enableBoardSync(authorization, workspaceId, boardId) {
     const job = await syncQueue.add('board_validation', {
       jobType: 'board_validation',
       authorization,
-      workspaceId,
-      boardId,
+      workspaceId: safeWorkspaceId,
+      boardId: safeBoardId,
       label: updatedBoard.label || 'Default'
     }, {
-      jobId: `validation-${boardId}-${Date.now()}`,
+      jobId: `validation-${safeBoardId}-${Date.now()}`,
       priority: 1
     });
   
     await Board.findOneAndUpdate(
-      { boardId },
+      { boardId: safeBoardId },
       { $set: { syncJobId: job.id } }
     );
 
     info('Sync-Service', 'Sync enabled and validation job queued', { 
-      workspaceId, 
-      boardId,
+      workspaceId: safeWorkspaceId, 
+      boardId: safeBoardId,
       jobId: job.id 
     });
 
     return {
       success: true,
       message: 'Sync enabled. Board validation in progress.',
-      boardId,
+      boardId: safeBoardId,
       syncStatus: 'sync_enabled',
       jobId: job.id
     };

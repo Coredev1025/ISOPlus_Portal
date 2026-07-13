@@ -1,3 +1,5 @@
+import { sanitizeApiPathSegment } from './securityHelpers.js';
+
 export function buildParticipantNamePrefix(participantsProfileValues) {
   let fullName = '';
   if (!participantsProfileValues) {
@@ -432,7 +434,12 @@ export function getIsoPlusItemUpdateHeaders() {
 }
 
 export async function resetAgreedUnitPriceFields(axios, workspaceId, boardId, itemId, itemValuesWithAttributeId) {
-  await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`, {
+  // encodeURIComponent at the call site is required for SonarQube S7044 recognition.
+  const safeWorkspaceId = encodeURIComponent(sanitizeApiPathSegment(workspaceId, 'workspaceId'));
+  const safeBoardId = encodeURIComponent(sanitizeApiPathSegment(boardId, 'boardId'));
+  const safeItemId = encodeURIComponent(sanitizeApiPathSegment(itemId, 'itemId'));
+  const url = `https://app.isoplus.online/api/v2/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/items/${safeItemId}`;
+  await axios.put(url, {
     values: [
       {
         data: 0,
