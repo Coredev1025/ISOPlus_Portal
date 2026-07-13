@@ -18,6 +18,18 @@ import {
 
 const router = express.Router();
 
+function sanitizeLogValue(value) {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'string') return value.replace(/[\r\n]+/g, ' ').trim();
+  if (Array.isArray(value)) return value.map(sanitizeLogValue);
+  if (typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, val]) => [key, sanitizeLogValue(val)])
+    );
+  }
+  return value;
+}
+
 function normalizeQuery(value) {
   if (value === null || value === undefined) return '';
   return String(value).trim().toLowerCase();
@@ -243,7 +255,12 @@ router.post('/', authenticateToken, async (req, res) => {
 // Dynamic Linking routes
 router.post('/:workspaceId/check-links', authenticateToken, async (req, res) => {
   try {
-    const { workspaceId } = req.params;
+    let workspaceId;
+    try {
+      workspaceId = sanitizeApiPathSegment(req.params.workspaceId, 'workspaceId');
+    } catch {
+      return res.status(400).json({ message: 'Invalid workspaceId' });
+    }
     const host = 'https://app.isoplus.online';
     
     // Check if user has permission (owner or support_admin)
@@ -252,20 +269,25 @@ router.post('/:workspaceId/check-links', authenticateToken, async (req, res) => 
     }
 
     const dynamicLinkingService = new DynamicLinkingService(req.session.Authorization, host);
-    info('Workspace-Service', 'Checking links', { workspaceId }, req ?? null);
+    info('Workspace-Service', 'Checking links', sanitizeLogValue({ workspaceId }), req ?? null);
     const results = await dynamicLinkingService.main(workspaceId, false);
 
-    info('Workspace-Service', 'Links checked', { workspaceId, results }, req ?? null);
+    info('Workspace-Service', 'Links checked', sanitizeLogValue({ workspaceId, results }), req ?? null);
     res.status(200).json(results);
   } catch (err) {
-    error('Workspace-Service', 'Failed to check links', { workspaceId: req.params.workspaceId, error: err.message, stack: err.stack }, req ?? null);
+    error('Workspace-Service', 'Failed to check links', sanitizeLogValue({ workspaceId: req.params.workspaceId, error: err.message, stack: err.stack }), req ?? null);
     res.status(500).json({ message: 'Failed to check links', error: err.message });
   }
 });
 
 router.post('/:workspaceId/create-links', authenticateToken, async (req, res) => {
   try {
-    const { workspaceId } = req.params;
+    let workspaceId;
+    try {
+      workspaceId = sanitizeApiPathSegment(req.params.workspaceId, 'workspaceId');
+    } catch {
+      return res.status(400).json({ message: 'Invalid workspaceId' });
+    }
     const host = 'https://app.isoplus.online';
     
     // Check if user has permission (owner or support_admin)
@@ -274,13 +296,13 @@ router.post('/:workspaceId/create-links', authenticateToken, async (req, res) =>
     }
 
     const dynamicLinkingService = new DynamicLinkingService(req.session.Authorization, host);
-    info('Workspace-Service', 'Creating links', { workspaceId }, req ?? null);
+    info('Workspace-Service', 'Creating links', sanitizeLogValue({ workspaceId }), req ?? null);
     const results = await dynamicLinkingService.main(workspaceId, true);
 
-    info('Workspace-Service', 'Links created', { workspaceId, results }, req ?? null);
+    info('Workspace-Service', 'Links created', sanitizeLogValue({ workspaceId, results }), req ?? null);
     res.status(200).json(results);
   } catch (err) {
-    error('Workspace-Service', 'Failed to create links', { workspaceId: req.params.workspaceId, error: err.message, stack: err.stack }, req ?? null);
+    error('Workspace-Service', 'Failed to create links', sanitizeLogValue({ workspaceId: req.params.workspaceId, error: err.message, stack: err.stack }), req ?? null);
     res.status(500).json({ message: 'Failed to create links', error: err.message });
   }
 });

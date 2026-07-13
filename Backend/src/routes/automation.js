@@ -1,85 +1,235 @@
 import express from 'express';
 import axios from 'axios';
-import { authenticateToken } from '../middleware/auth.js';
 import { v4 as uuidv4 } from 'uuid';
+
+import { authenticateToken } from '../middleware/auth.js';
 import { info, error, warn, debug } from '../utils/logger.js';
 import { getAutomation, updateAutomation } from '../services/isoplus.js';
 import { sanitizeApiPathSegment } from '../utils/securityHelpers.js';
+import { buildUpdatedAutomation } from '../utils/automationUrlUpdate.js';
 
 const router = express.Router();
 
+const isoPlusApi = axios.create({
+    baseURL: 'https://app.isoplus.online',
+    timeout: 30000
+});
+
+function sanitizeLogValue(value) {
+    if (value === null || value === undefined) {
+        return value;
+    }
+
+    if (typeof value === 'string') {
+        return value.replace(/[\r\n]+/g, ' ').trim();
+    }
+
+    if (Array.isArray(value)) {
+        return value.map(sanitizeLogValue);
+    }
+
+    if (typeof value === 'object') {
+        return Object.fromEntries(
+            Object.entries(value).map(([key, val]) => [
+                key,
+                sanitizeLogValue(val)
+            ])
+        );
+    }
+
+    return value;
+}
+
 router.get('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
-    const workspaceId = sanitizeApiPathSegment(req.params.workspaceId, 'workspaceId');
-    const boardId = sanitizeApiPathSegment(req.params.boardId, 'boardId');
-    const automation = await getAutomation(workspaceId, boardId, req.session.Authorization);
-    res.json(automation);
+    try {
+        const workspaceId = sanitizeApiPathSegment(
+            req.params.workspaceId,
+            'workspaceId'
+        );
+
+        const boardId = sanitizeApiPathSegment(
+            req.params.boardId,
+            'boardId'
+        );
+
+        const automation = await getAutomation(
+            workspaceId,
+            boardId,
+            req.session.Authorization
+        );
+
+        res.json(automation);
+    } catch (err) {
+        error(
+            'Automation-Service',
+            'Failed to retrieve automation',
+            sanitizeLogValue({
+                message: err.message,
+                stack: err.stack
+            }),
+            req ?? null
+        );
+
+        res.status(500).json({
+            error: 'Failed to retrieve automation'
+        });
+    }
 });
 
 router.post('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
     try {
-        // Only Support Admin / Owner can create automations via the portal
-        if (req.user.role !== 'owner' && req.user.role !== 'support_admin') {
-            return res.status(403).json({ message: 'Access denied. Owner or Support Admin permission required.' });
+        if (
+            req.user.role !== 'owner' &&
+            req.user.role !== 'support_admin'
+        ) {
+            return res.status(403).json({
+                message:
+                    'Access denied. Owner or Support Admin permission required.'
+            });
         }
-        const workspaceId = sanitizeApiPathSegment(req.params.workspaceId, 'workspaceId');
-        const boardId = sanitizeApiPathSegment(req.params.boardId, 'boardId');
+
+        const workspaceId = sanitizeApiPathSegment(
+            req.params.workspaceId,
+            'workspaceId'
+        );
+
+        const boardId = sanitizeApiPathSegment(
+            req.params.boardId,
+            'boardId'
+        );
+
         const automation = req.body;
+
         let automationId = uuidv4();
-        const existingAutomation = await getAutomation(workspaceId, boardId, req.session.Authorization);
+
+        const existingAutomation = await getAutomation(
+            workspaceId,
+            boardId,
+            req.session.Authorization
+        );
+
         if (existingAutomation) {
-            let existingAutomationIndex = existingAutomation.findIndex(automation => automation.id === automationId);
+            let existingAutomationIndex = existingAutomation.findIndex(
+                item => item.id === automationId
+            );
+
             while (existingAutomationIndex >= 0) {
                 automationId = uuidv4();
-                existingAutomationIndex = existingAutomation.findIndex(automation => automation.id === automationId);
+
+                existingAutomationIndex = existingAutomation.findIndex(
+                    item => item.id === automationId
+                );
             }
         }
-        const safeWorkspaceId = encodeURIComponent(workspaceId);
-        const safeAutomationId = encodeURIComponent(automationId);
-        const automationUrl = `https://app.isoplus.online/api/${safeWorkspaceId}/automations/${safeAutomationId}`;
-        const response = await axios.put(automationUrl, {
-            ...automation,
-            id: automationId
-        }, {
-            headers: {
-                'Authorization': `Bearer ${req.session.Authorization}`
+
+        const apiPath =
+            `/api/${encodeURIComponent(workspaceId)}` +
+            `/automations/${encodeURIComponent(automationId)}`;
+
+        const response = await isoPlusApi.put(
+            apiPath,
+            {
+                ...automation,
+                id: automationId
+            },
+            {
+                headers: {
+                    Authorization: `Bearer ${req.session.Authorization}`
+                }
             }
-        });
-        info('Automation-Service', 'Automation created via ISO+ API', { workspaceId, boardId, automationId }, req ?? null);
+        );
+
+        info(
+            'Automation-Service',
+            'Automation created via ISO+ API',
+            sanitizeLogValue({
+                workspaceId,
+                boardId,
+                automationId
+            }),
+            req ?? null
+        );
+
         res.json(response.data);
     } catch (err) {
-        error('Automation-Service', 'Failed to create automation', { err, workspaceId: req.params.workspaceId, boardId: req.params.boardId }, req);
-        res.status(500).json({ error: 'Failed to update data', message: err.message });
+        error(
+            'Automation-Service',
+            'Failed to create automation',
+            sanitizeLogValue({
+                workspaceId: req.params.workspaceId,
+                boardId: req.params.boardId,
+                message: err.message,
+                stack: err.stack
+            }),
+            req ?? null
+        );
+
+        res.status(500).json({
+            error: 'Failed to update data',
+            message: err.message
+        });
     }
 });
 
 router.put('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
-    // Only Support Admin / Owner can update portal automations
-    if (req.user.role !== 'owner' && req.user.role !== 'support_admin') {
-        return res.status(403).json({ message: 'Access denied. Owner or Support Admin permission required.' });
-    }
-    const workspaceId = sanitizeApiPathSegment(req.params.workspaceId, 'workspaceId');
-    const boardId = sanitizeApiPathSegment(req.params.boardId, 'boardId');
-    const automation = await getAutomation(workspaceId, boardId, req.session.Authorization);
-    if (!automation) {
-        res.status(404).json({ error: 'Automation not found' });
-        return;
-    }
-    
-    let updatedAutomations = [];
     try {
+        if (
+            req.user.role !== 'owner' &&
+            req.user.role !== 'support_admin'
+        ) {
+            return res.status(403).json({
+                message:
+                    'Access denied. Owner or Support Admin permission required.'
+            });
+        }
+
+        const workspaceId = sanitizeApiPathSegment(
+            req.params.workspaceId,
+            'workspaceId'
+        );
+
+        const boardId = sanitizeApiPathSegment(
+            req.params.boardId,
+            'boardId'
+        );
+
+        const automation = await getAutomation(
+            workspaceId,
+            boardId,
+            req.session.Authorization
+        );
+
+        if (!automation) {
+            return res.status(404).json({
+                error: 'Automation not found'
+            });
+        }
+
+        const updatedAutomations = [];
+
         for (const automationItem of automation) {
-            const { needsUpdate, automation: updatedAutomation } = buildUpdatedAutomation(
+            const {
+                needsUpdate,
+                automation: updatedAutomation
+            } = buildUpdatedAutomation(
                 automationItem,
                 workspaceId,
                 boardId
             );
 
-            if (!needsUpdate) continue;
+            if (!needsUpdate) {
+                continue;
+            }
 
-            debug('Automation-Service', 'Automation requires URL update', {
-                name: automationItem.name,
-                automationId: updatedAutomation.id,
-            }, req ?? null);
+            debug(
+                'Automation-Service',
+                'Automation requires URL update',
+                sanitizeLogValue({
+                    name: automationItem.name,
+                    automationId: updatedAutomation.id
+                }),
+                req ?? null
+            );
 
             const result = await updateAutomation(
                 workspaceId,
@@ -88,25 +238,51 @@ router.put('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
                 updatedAutomation,
                 req.session.Authorization
             );
+
             if (result) {
-                info('Automation-Service', 'Automation updated', {
-                    workspaceId,
-                    boardId,
-                    automationId: updatedAutomation.id,
-                }, req ?? null);
+                info(
+                    'Automation-Service',
+                    'Automation updated',
+                    sanitizeLogValue({
+                        workspaceId,
+                        boardId,
+                        automationId: updatedAutomation.id
+                    }),
+                    req ?? null
+                );
+
                 updatedAutomations.push(result);
             } else {
-                error('Automation-Service', 'Failed to update Automation', {
-                    workspaceId,
-                    boardId,
-                    automationId: updatedAutomation.id,
-                }, req ?? null);
+                warn(
+                    'Automation-Service',
+                    'Failed to update automation',
+                    sanitizeLogValue({
+                        workspaceId,
+                        boardId,
+                        automationId: updatedAutomation.id
+                    }),
+                    req ?? null
+                );
             }
         }
+
         res.status(200).json(updatedAutomations);
     } catch (err) {
-        error('Automation-Service', 'Failed to update Automations', { err, workspaceId, boardId }, req);
-        res.status(500).json({ error: 'Failed to update Automations' });
+        error(
+            'Automation-Service',
+            'Failed to update automations',
+            sanitizeLogValue({
+                workspaceId: req.params.workspaceId,
+                boardId: req.params.boardId,
+                message: err.message,
+                stack: err.stack
+            }),
+            req ?? null
+        );
+
+        res.status(500).json({
+            error: 'Failed to update automations'
+        });
     }
 });
 
