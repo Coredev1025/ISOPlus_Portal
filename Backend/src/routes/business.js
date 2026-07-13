@@ -21,18 +21,7 @@ import {
   buildBusinessUpdateData,
   parseLogoRemovals,
 } from '../utils/businessProfileUpdate.js';
-
-function sanitizeLogValue(value) {
-  if (value === null || value === undefined) return value;
-  if (typeof value === 'string') return value.replace(/[\r\n]+/g, ' ').trim();
-  if (Array.isArray(value)) return value.map(sanitizeLogValue);
-  if (typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, val]) => [key, sanitizeLogValue(val)])
-    );
-  }
-  return value;
-}
+import { sanitizeLogValue } from '../utils/sanitizeLog.js';
 
 const validateBusinessProfile = (req, res, next) => {
   const errors = collectBusinessProfileErrors(req.body);
@@ -53,21 +42,18 @@ const __dirname = path.dirname(__filename);
 const router = express.Router();
 const storage = multer.memoryStorage();
 
-const LOGO_UPLOAD_MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
-const LOGO_UPLOAD_MAX_FILES = 3;
-const LOGO_UPLOAD_MAX_FIELDS = 50;
-const LOGO_UPLOAD_MAX_FIELD_NAME_SIZE = 100;
-const LOGO_UPLOAD_MAX_FIELD_SIZE_BYTES = 1024 * 1024;
+// SonarQube S5693: 8 MB max per file upload, 1 MB max per non-file field.
+const MULTER_UPLOAD_LIMITS = Object.freeze({
+  fileSize: 8 * 1024 * 1024,
+  files: 3,
+  fields: 50,
+  fieldNameSize: 100,
+  fieldSize: 1024 * 1024,
+});
 
 const upload = multer({
   storage,
-  limits: {
-    fileSize: LOGO_UPLOAD_MAX_FILE_SIZE_BYTES,
-    files: LOGO_UPLOAD_MAX_FILES,
-    fields: LOGO_UPLOAD_MAX_FIELDS,
-    fieldNameSize: LOGO_UPLOAD_MAX_FIELD_NAME_SIZE,
-    fieldSize: LOGO_UPLOAD_MAX_FIELD_SIZE_BYTES,
-  },
+  limits: MULTER_UPLOAD_LIMITS,
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith('image/')) {
       return cb(new Error('Only image files are allowed!'), false);
@@ -422,7 +408,7 @@ router.post('/xero/update-organization', authenticateToken, async (req, res) => 
 router.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      warn('Business-Service', 'File upload failed', { message: 'File size too large. Maximum size is 8MB' }, req ?? null);
+      warn('Business-Service', 'File upload failed', { message: `File size too large. Maximum size is ${MULTER_UPLOAD_LIMITS.fileSize / (1024 * 1024)}MB` }, req ?? null);
       return res.status(400).json({ status: 'error', message: 'File size too large. Maximum size is 8MB' });
     }
   }

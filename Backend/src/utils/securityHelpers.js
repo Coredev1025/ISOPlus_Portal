@@ -139,6 +139,21 @@ export function buildIsoPlusV2BoardItemsUrl(workspaceId, boardId) {
   return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/items/`;
 }
 
+/** Relative path (no host) for got clients with an /api/v2/ prefixUrl. */
+export function buildIsoPlusV2BoardItemsRelativePath(workspaceId, boardId) {
+  const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
+  const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
+  return `workspaces/${safeWorkspaceId}/boards/${safeBoardId}/items`;
+}
+
+/** Relative path (no host) for got clients with an /api/v2/ prefixUrl. */
+export function buildIsoPlusV2ItemRelativePath(workspaceId, boardId, itemId) {
+  const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
+  const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
+  const safeItemId = encodeURIComponent(validatedPathSegment(itemId, 'itemId'));
+  return `workspaces/${safeWorkspaceId}/boards/${safeBoardId}/items/${safeItemId}`;
+}
+
 export function buildIsoPlusV2ItemUrl(workspaceId, boardId, itemId) {
   const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
   const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));

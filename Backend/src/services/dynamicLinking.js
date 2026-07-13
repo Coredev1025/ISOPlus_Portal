@@ -1,9 +1,17 @@
 import Loki from 'lokijs';
 import he from 'he';
 import { collectLinksFromTemplateText } from '../utils/dynamicLinkingTemplateHelpers.js';
-import { sanitizeApiPathSegment } from '../utils/securityHelpers.js';
+import {
+  sanitizeApiPathSegment,
+  buildIsoPlusV2BoardItemsRelativePath,
+  buildIsoPlusV2ItemRelativePath,
+} from '../utils/securityHelpers.js';
+import { sanitizeLogValue } from '../utils/sanitizeLog.js';
+import { info, warn, error as logError } from '../utils/logger.js';
 import got from 'got';
 import { getAllViews, getAutomation, getBoard, updateAutomation } from './isoplus.js';
+
+const LOG_SOURCE = 'DynamicLinking-Service';
 
 function replaceLinkInTemplateItemValues(workflow, originalMatch, replacement) {
   if (!Array.isArray(workflow)) return;
@@ -94,7 +102,7 @@ function processAutomationWorkflowValue(ctx, automation, value) {
 }
 
 async function fetchBoardItems(apiClient, workspaceId, boardId, boardName) {
-  const itemsPath = `workspaces/${workspaceId}/boards/${boardId}/items`;
+  const itemsPath = buildIsoPlusV2BoardItemsRelativePath(workspaceId, boardId);
   return apiClient.paginate.all(itemsPath, {
     searchParams: {
       limit: 50,
@@ -106,7 +114,14 @@ async function fetchBoardItems(apiClient, workspaceId, boardId, boardName) {
       transform: (res) => JSON.parse(res.body).data,
     },
   }).catch((fetchError) => {
-    console.error(`Failed to fetch items for board ${boardName}:`, fetchError.message);
+    logError(
+      LOG_SOURCE,
+      'Failed to fetch board items',
+      sanitizeLogValue({
+        boardName,
+        message: fetchError.message,
+      })
+    );
     throw new Error(`Failed to fetch items: ${fetchError.message}`);
   });
 }
@@ -134,11 +149,19 @@ async function processBoardForLinking(service, workspaceId, board) {
   const resultViews = await getAllViews(service.authorization, workspaceId, boardId);
   const paginateViews = resultViews.views;
 
-  console.log(`Checking ${paginateViews.length} views in ${boardName}...`);
+  info(
+    LOG_SOURCE,
+    'Checking board views',
+    sanitizeLogValue({ boardName, viewCount: paginateViews.length })
+  );
   await processBoardViews(service, workspaceId, boardId, boardName, paginateViews);
 
   const paginateItems = await fetchBoardItems(service.api(), workspaceId, boardId, boardName);
-  console.log(`Checking ${paginateItems.length} items in ${boardName}...`);
+  info(
+    LOG_SOURCE,
+    'Checking board items',
+    sanitizeLogValue({ boardName, itemCount: paginateItems.length })
+  );
 
   const linkingCtx = {
     host: service.host,
@@ -166,7 +189,14 @@ function applySourceLink(source, link, destinations, update, originItem) {
   const destination = destinations.findOne({ name: link.targetName, boardName: link.targetBoardName });
   if (!destination) {
     if (!update) {
-      console.warn(`Failed to create link from ${originItem}\n\t Trying to parse template "${he.decode(link.originalMatch)}"\n`);
+      warn(
+        LOG_SOURCE,
+        'Failed to create link from source item',
+        sanitizeLogValue({
+          originItem,
+          template: he.decode(link.originalMatch),
+        })
+      );
     }
     return null;
   }
@@ -207,10 +237,8 @@ async function persistSourceLinks(service, source, workspaceId, update) {
     return totalLinksCreated;
   }
 
-  const safeWorkspaceId = sanitizeApiPathSegment(workspaceId, 'workspaceId');
-  const safeBoardId = sanitizeApiPathSegment(source.boardId, 'boardId');
-  const safeItemId = sanitizeApiPathSegment(source.item.id, 'itemId');
-  await service.api().put(`workspaces/${safeWorkspaceId}/boards/${safeBoardId}/items/${safeItemId}`, {
+  const itemPath = buildIsoPlusV2ItemRelativePath(workspaceId, source.boardId, source.item.id);
+  await service.api().put(itemPath, {
     json: {
       values: [{
         attribute_id: source.value.attribute_id,
@@ -234,7 +262,7 @@ class DynamicLinkingService {
         this.host = host.endsWith('/') ? host.slice(0, -1) : host;
         this.authorization = authorization.startsWith('Bearer ') ? authorization : `Bearer ${authorization}`;
 
-        console.log(`DynamicLinkingService initialized with host: ${this.host}`);
+        info(LOG_SOURCE, 'DynamicLinkingService initialized', sanitizeLogValue({ host: this.host }));
 
         this.db = new Loki('entries');
         this.sources = this.db.addCollection('links');
@@ -257,20 +285,29 @@ class DynamicLinkingService {
                 throw new Error(`Invalid workspaceId: "${safeWorkspaceId}". Expected a workspace ID, not a full URL.`);
             }
 
-            console.log("Starting dynamic linking");
-            console.log(`Host: ${this.host}`);
-            console.log(`Workspace ID: ${safeWorkspaceId}`);
+            info(LOG_SOURCE, 'Starting dynamic linking', sanitizeLogValue({
+              host: this.host,
+              workspaceId: safeWorkspaceId,
+            }));
 
             const resultBoards = await getBoard(this.authorization, safeWorkspaceId);
             const boards = resultBoards.board;
 
-            console.log(`Checking ${boards.length} boards...`);
+            info(LOG_SOURCE, 'Checking boards', sanitizeLogValue({ boardCount: boards.length }));
 
             const fetchingItems = boards.map(async (board) => {
                 try {
                     await processBoardForLinking(this, safeWorkspaceId, board);
                 } catch (boardError) {
-                    console.error(`Error processing board ${board?.name || 'unknown'}:`, boardError);
+                    logError(
+                      LOG_SOURCE,
+                      'Error processing board',
+                      sanitizeLogValue({
+                        boardName: board?.name || 'unknown',
+                        message: boardError?.message,
+                        stack: boardError?.stack,
+                      })
+                    );
                 }
             });
 
@@ -280,13 +317,27 @@ class DynamicLinkingService {
                 try {
                     return await persistSourceLinks(this, source, safeWorkspaceId, update);
                 } catch (sourceError) {
-                    console.error('Error processing source:', sourceError);
+                    logError(
+                      LOG_SOURCE,
+                      'Error processing source',
+                      sanitizeLogValue({
+                        message: sourceError?.message,
+                        stack: sourceError?.stack,
+                      })
+                    );
                     return [];
                 }
             }));
             return linkResults.flat();
         } catch (mainError) {
-            console.error('Error in main method:', mainError);
+            logError(
+              LOG_SOURCE,
+              'Error in main method',
+              sanitizeLogValue({
+                message: mainError?.message,
+                stack: mainError?.stack,
+              })
+            );
             throw mainError;
         }
     }

@@ -5,40 +5,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { authenticateToken } from '../middleware/auth.js';
 import { info, error, warn, debug } from '../utils/logger.js';
 import { getAutomation, updateAutomation } from '../services/isoplus.js';
-import { sanitizeApiPathSegment } from '../utils/securityHelpers.js';
+import { sanitizeApiPathSegment, buildIsoPlusAutomationUrl } from '../utils/securityHelpers.js';
+import { sanitizeLogValue } from '../utils/sanitizeLog.js';
 import { buildUpdatedAutomation } from '../utils/automationUrlUpdate.js';
 
 const router = express.Router();
-
-const isoPlusApi = axios.create({
-    baseURL: 'https://app.isoplus.online',
-    timeout: 30000
-});
-
-function sanitizeLogValue(value) {
-    if (value === null || value === undefined) {
-        return value;
-    }
-
-    if (typeof value === 'string') {
-        return value.replace(/[\r\n]+/g, ' ').trim();
-    }
-
-    if (Array.isArray(value)) {
-        return value.map(sanitizeLogValue);
-    }
-
-    if (typeof value === 'object') {
-        return Object.fromEntries(
-            Object.entries(value).map(([key, val]) => [
-                key,
-                sanitizeLogValue(val)
-            ])
-        );
-    }
-
-    return value;
-}
 
 router.get('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
     try {
@@ -122,12 +93,8 @@ router.post('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
             }
         }
 
-        const apiPath =
-            `/api/${encodeURIComponent(workspaceId)}` +
-            `/automations/${encodeURIComponent(automationId)}`;
-
-        const response = await isoPlusApi.put(
-            apiPath,
+        const response = await axios.put(
+            buildIsoPlusAutomationUrl(workspaceId, automationId),
             {
                 ...automation,
                 id: automationId
@@ -135,7 +102,8 @@ router.post('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
             {
                 headers: {
                     Authorization: `Bearer ${req.session.Authorization}`
-                }
+                },
+                timeout: 30000
             }
         );
 
