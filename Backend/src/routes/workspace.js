@@ -7,6 +7,7 @@ import { getWorkspace, getBoard, getWorkspacePage, getBoardPage, getMemberRole }
 import DynamicLinkingService from '../services/dynamicLinking.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
 import { collectBoardPages } from '../utils/workspaceBoardHelpers.js';
+import { sanitizeApiPathSegment } from '../utils/securityHelpers.js';
 import {
   handleWorkspacesListRequest,
   buildWorkspaceMetaById,
@@ -162,8 +163,10 @@ router.get('/', authenticateToken, async (req, res) => {
 
 router.get('/boards', authenticateToken, async (req, res) => {
   try {
-    const workspaceId = req.query.workspaceId?.toString();
-    if (!workspaceId) {
+    let workspaceId;
+    try {
+      workspaceId = sanitizeApiPathSegment(req.query.workspaceId, 'workspaceId');
+    } catch {
       return res.status(400).json({ message: 'workspaceId query param is required' });
     }
 

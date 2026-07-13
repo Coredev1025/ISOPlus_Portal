@@ -18,10 +18,17 @@ import {
     getIsoPlusItemUpdateHeaders,
     resetAgreedUnitPriceFields,
 } from '../utils/ageCareParticipantServiceHelpers.js';
-import { buildIsoPlusV2ItemUrl, sanitizeApiPathSegment } from '../utils/securityHelpers.js';
+import { sanitizeApiPathSegment } from '../utils/securityHelpers.js';
 
 dotenv.config();
 const router = express.Router();
+
+function buildSafeIsoPlusItemUrl(workspaceId, boardId, itemId) {
+    const safeWorkspaceId = encodeURIComponent(sanitizeApiPathSegment(workspaceId, 'workspaceId'));
+    const safeBoardId = encodeURIComponent(sanitizeApiPathSegment(boardId, 'boardId'));
+    const safeItemId = encodeURIComponent(sanitizeApiPathSegment(itemId, 'itemId'));
+    return `https://app.isoplus.online/api/v2/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/items/${safeItemId}`;
+}
 
 function formatValue(val) {
     const num = Number(val);
@@ -111,7 +118,7 @@ const updateVariablesParticipantsService = async (workspaceId, boardId, itemId, 
 
         if (updatevariables.length > 0) {
             const response = await axios.put(
-                buildIsoPlusV2ItemUrl(workspaceId, boardId, itemId),
+                buildSafeIsoPlusItemUrl(workspaceId, boardId, itemId),
                 { values: updatevariables },
                 { headers: getIsoPlusItemUpdateHeaders() },
             );
@@ -214,7 +221,7 @@ const updateVariablesMasterplan = async (workspaceId, boardId, itemId, itemsValu
 
         if (updatevariables.length > 0) {
             const response = await axios.put(
-                buildIsoPlusV2ItemUrl(workspaceId, boardId, itemId),
+                buildSafeIsoPlusItemUrl(workspaceId, boardId, itemId),
                 { values: updatevariables },
                 {
                     headers: {
@@ -279,7 +286,7 @@ const updateParticipantsServiceplan = async (workspaceId, boardId, itemId, items
             const servicePlanRef = masterplanValuesWithAttributeId.find((v) => v.attribute.name === 'Service Plan');
             const servicePlanItemId = sanitizeApiPathSegment(servicePlanRef.data.toString(), 'itemId');
             const response = await axios.put(
-                buildIsoPlusV2ItemUrl(workspaceId, boardId, servicePlanItemId),
+                buildSafeIsoPlusItemUrl(workspaceId, boardId, servicePlanItemId),
                 { values: updatevariables },
                 {
                     headers: {

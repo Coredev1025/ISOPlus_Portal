@@ -6,7 +6,22 @@ import https from 'https';
 import { info, warn, error, logAttributeError, logApiError, logOperationStart, logOperationEnd } from '../utils/logger.js';
 import { buildJobPlanningValues, buildServiceFeeTypeValues } from '../utils/isoplusJobReferenceHelpers.js';
 import { getErrorMessageFromUnknown } from '../utils/isoplusErrorHelpers.js';
-import { secureRandomFloat, mongoEq } from '../utils/securityHelpers.js';
+import {
+    secureRandomFloat,
+    mongoEq,
+    sanitizeApiPathSegment,
+    buildIsoPlusV2WorkspaceBoardsUrl,
+    buildIsoPlusV2WorkspaceMembersUrl,
+    buildIsoPlusV2BoardFoldersUrl,
+    buildIsoPlusV2BoardViewsUrl,
+    buildIsoPlusV2BoardViewUrl,
+    buildIsoPlusV2BoardItemsUrl,
+    buildIsoPlusV2ItemUrl,
+    buildIsoPlusV2BoardReferencesUrl,
+    buildIsoPlusV2BoardAttributesUrl,
+    buildIsoPlusV2BoardAttributeUrl,
+    buildIsoPlusAutomationUrl,
+} from '../utils/securityHelpers.js';
 import { executeSetLogo } from '../utils/isoplusLogoHelpers.js';
 import { fetchPartyJobTypeReferencedItems } from '../utils/isoplusClientReferenceHelpers.js';
 import {
@@ -238,7 +253,7 @@ export async function getWorkspacePage(authorization, options = {}) {
 }
 
 function iterateBoards(authorization, workspaceId, options = {}) {
-    const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards`;
+    const url = buildIsoPlusV2WorkspaceBoardsUrl(workspaceId);
     const headers = {
         "Authorization": authorization,
         "Content-Type": "application/json",
@@ -262,7 +277,8 @@ export async function getBoardPage(authorization, workspaceId, options = {}) {
         const limit = Math.min(Math.max(parseInt(options.limit ?? DEFAULT_COLLECTION_PAGE_SIZE, 10), 1), 100);
         const after = options.after ?? null;
 
-        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards`;
+        const safeWorkspaceId = encodeURIComponent(sanitizeApiPathSegment(workspaceId, 'workspaceId'));
+        const url = `https://app.isoplus.online/api/v2/workspaces/${safeWorkspaceId}/boards`;
         const headers = {
             "Authorization": authorization,
             "Content-Type": "application/json",
@@ -297,7 +313,7 @@ export async function getMemberRole(authorization, workspaceId, userEmail, optio
         const email = userEmail ? String(userEmail).toLowerCase() : null;
         if (!email) return { role: null, status: 400, message: 'userEmail is required' };
 
-        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/members`;
+        const url = buildIsoPlusV2WorkspaceMembersUrl(workspaceId);
         const headers = {
             "Authorization": authorization,
             "Content-Type": "application/json",
@@ -340,7 +356,7 @@ export async function getMemberRole(authorization, workspaceId, userEmail, optio
 }
 
 function iterateFolders(workspaceId, boardId, options = {}) {
-    const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/folders/`;
+    const url = buildIsoPlusV2BoardFoldersUrl(workspaceId, boardId);
     const headers = {
         "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
         "Content-Type": "application/json",
@@ -360,7 +376,7 @@ function iterateFolders(workspaceId, boardId, options = {}) {
 }
 
 function iterateMembers(authorization, workspaceId, options = {}) {
-    const membersUrl = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/members`;
+    const membersUrl = buildIsoPlusV2WorkspaceMembersUrl(workspaceId);
     const membersHeaders = {
         "Authorization": authorization,
         "Content-Type": "application/json",
@@ -380,7 +396,7 @@ function iterateMembers(authorization, workspaceId, options = {}) {
 }
 
 function iterateViews(authorization, workspaceId, boardId, options = {}) {
-    const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/views`;
+    const url = buildIsoPlusV2BoardViewsUrl(workspaceId, boardId);
     const headers = {
         "Authorization": authorization,
         "Content-Type": "application/json",
@@ -502,7 +518,7 @@ export async function getFolder(workspaceId, boardId) {
 }
 
 async function buildItemRequest(workspaceId, boardId, folderId, limit, after) {
-    const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/`;
+    const url = buildIsoPlusV2BoardItemsUrl(workspaceId, boardId);
     const headers = {
         "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
         "Content-Type": "application/json",
@@ -571,7 +587,7 @@ export async function getAllViews(authorization, workspaceId, boardId) {
 
 export async function getViewsById(authorization, workspaceId, boardId, viewId) {
     try {
-        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/views/${viewId}`;
+        const url = buildIsoPlusV2BoardViewUrl(workspaceId, boardId, viewId);
         const headers = {
             "Authorization": authorization,
             "Content-Type": "application/json",
@@ -596,7 +612,7 @@ export async function setIntegrationMessage(workspaceId, boardId, itemId, messag
             throw new Error("Internal message attribute not found in board configuration");
         }
         await axios.put(
-            `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
+            buildIsoPlusV2ItemUrl(workspaceId, boardId, itemId),
             {
                 "values": [
                     {
@@ -647,7 +663,7 @@ export async function putTimeTracking(workspaceId, boardId, itemId, startTime, e
 
     try {
         await isoPlusClient.put(
-            `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
+            buildIsoPlusV2ItemUrl(workspaceId, boardId, itemId),
             { values: [{ attribute_id: nativeAttributeId, data: updatedEntries }] },
             {
                 headers: {
@@ -677,7 +693,7 @@ export async function getItemValues(workspaceId, boardId, itemId) {
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
-            const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}?expand[]=values.attribute`;
+            const url = `${buildIsoPlusV2ItemUrl(workspaceId, boardId, itemId)}?expand[]=values.attribute`;
             const headers = {
                 "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
                 "Content-Type": "application/json",
@@ -752,7 +768,7 @@ export async function validateItemBelongsToTenant(workspaceId, boardId, itemId) 
 
 export async function getReferences(workspaceId, boardId, itemId) {
     try {
-        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/references?from_item_id=${itemId}`;
+        const url = buildIsoPlusV2BoardReferencesUrl(workspaceId, boardId, itemId);
         const headers = {
             "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
             "Content-Type": "application/json",
@@ -769,7 +785,7 @@ export async function getReferences(workspaceId, boardId, itemId) {
 
 export async function getAttribute(workspaceId, boardId, attributeId) {
     try {
-        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/attributes/${attributeId}`;
+        const url = buildIsoPlusV2BoardAttributeUrl(workspaceId, boardId, attributeId);
         const headers = {
             "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
             "Content-Type": "application/json",
@@ -864,7 +880,7 @@ export async function getPurchaseOrderReferencedItems(workspaceId, boardId, item
 
 export async function getBoardAttributes(workspaceId, boardId) {
     try {
-        const url = `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/attributes`;
+        const url = buildIsoPlusV2BoardAttributesUrl(workspaceId, boardId);
         const headers = {
             "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
             "Content-Type": "application/json",
@@ -924,7 +940,7 @@ async function validateBoardAttributes(workspaceId, boardId, viewId, coverAttrib
         
         // Get board attributes to validate the cover attribute exists
         const attributesResponse = await axios.get(
-            `https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/attributes`,
+            buildIsoPlusV2BoardAttributesUrl(workspaceId, boardId),
             {
                 headers: {
                     "Authorization": `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`,
@@ -1060,7 +1076,7 @@ export async function setGeneratedField(workspaceId, boardId, itemId, message) {
         const values = itemValues.values;
         const generatedField = values.find(v => v.attribute.name.includes("Generated") && v.attribute.name.includes("Number") && v.attribute.type === "text");
         if (generatedField) {
-            const response = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
+            const response = await axios.put(buildIsoPlusV2ItemUrl(workspaceId, boardId, itemId),
                 { values: [{ data: message, attribute_id: generatedField.attribute.id }] },
                 {
                     headers: {
@@ -1102,7 +1118,7 @@ export async function setPDFLinkAttribute(workspaceId, boardId, itemId, pdfUrl, 
             }
         }
 
-        const response = await axios.put(`https://app.isoplus.online/api/v2/workspaces/${workspaceId}/boards/${boardId}/items/${itemId}`,
+        const response = await axios.put(buildIsoPlusV2ItemUrl(workspaceId, boardId, itemId),
             payload,
             {
                 headers: {
@@ -1351,7 +1367,7 @@ export async function getAgeCareMasterPlanReferencedItems(workspaceId, boardId, 
 
 export const getAutomation = async (workspaceId, boardId, authorization) => {
     try {
-        const response = await axios.get(`https://app.isoplus.online/api/${workspaceId}/automations/${boardId}`, {
+        const response = await axios.get(buildIsoPlusAutomationUrl(workspaceId, boardId), {
             headers: {
                 'Authorization': `${authorization}`
             }
@@ -1374,7 +1390,7 @@ export const updateAutomation = async (workspaceId, boardId, automationId, autom
             return null;
         }
 
-        const response = await axios.put(`https://app.isoplus.online/api/${workspaceId}/automations/${automationId}`, {
+        const response = await axios.put(buildIsoPlusAutomationUrl(workspaceId, automationId), {
             name: automation.name,
             workflow: automation.workflow,
             active: automation.active,

@@ -4,7 +4,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import { v4 as uuidv4 } from 'uuid';
 import { info, error, warn, debug } from '../utils/logger.js';
 import { getAutomation, updateAutomation } from '../services/isoplus.js';
-import { buildIsoPlusAutomationUrl, sanitizeApiPathSegment } from '../utils/securityHelpers.js';
+import { sanitizeApiPathSegment } from '../utils/securityHelpers.js';
 
 const router = express.Router();
 
@@ -33,7 +33,10 @@ router.post('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
                 existingAutomationIndex = existingAutomation.findIndex(automation => automation.id === automationId);
             }
         }
-        const response = await axios.put(buildIsoPlusAutomationUrl(workspaceId, automationId), {
+        const safeWorkspaceId = encodeURIComponent(workspaceId);
+        const safeAutomationId = encodeURIComponent(automationId);
+        const automationUrl = `https://app.isoplus.online/api/${safeWorkspaceId}/automations/${safeAutomationId}`;
+        const response = await axios.put(automationUrl, {
             ...automation,
             id: automationId
         }, {

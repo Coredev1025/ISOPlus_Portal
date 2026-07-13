@@ -87,7 +87,7 @@ export function sanitizeApiPathSegment(value, label = 'id') {
   if (!normalized) {
     throw new Error(`Invalid ${label}: expected a non-empty string.`);
   }
-  if (normalized.includes('..') || /[./\\]/.test(normalized)) {
+  if (normalized.includes('..') || /[./\\%]/.test(normalized)) {
     throw new Error(`Invalid ${label}: path traversal sequences are not allowed.`);
   }
   return normalized;
@@ -96,15 +96,91 @@ export function sanitizeApiPathSegment(value, label = 'id') {
 const ISO_PLUS_API_V2_BASE = 'https://app.isoplus.online/api/v2';
 const ISO_PLUS_API_BASE = 'https://app.isoplus.online/api';
 
+/**
+ * Validate a path segment (reject empty / traversal), then encode for URL path use.
+ * encodeURIComponent must appear at the URL construction site for SonarQube S7044.
+ */
+export function validatedPathSegment(value, label = 'id') {
+  return sanitizeApiPathSegment(value, label);
+}
+
+export function buildIsoPlusV2WorkspaceBoardsUrl(workspaceId) {
+  const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
+  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards`;
+}
+
+export function buildIsoPlusV2WorkspaceMembersUrl(workspaceId) {
+  const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
+  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/members`;
+}
+
+export function buildIsoPlusV2BoardFoldersUrl(workspaceId, boardId) {
+  const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
+  const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
+  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/folders/`;
+}
+
+export function buildIsoPlusV2BoardViewsUrl(workspaceId, boardId) {
+  const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
+  const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
+  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/views`;
+}
+
+export function buildIsoPlusV2BoardViewUrl(workspaceId, boardId, viewId) {
+  const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
+  const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
+  const safeViewId = encodeURIComponent(validatedPathSegment(viewId, 'viewId'));
+  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/views/${safeViewId}`;
+}
+
+export function buildIsoPlusV2BoardItemsUrl(workspaceId, boardId) {
+  const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
+  const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
+  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/items/`;
+}
+
 export function buildIsoPlusV2ItemUrl(workspaceId, boardId, itemId) {
-  const safeWorkspaceId = sanitizeApiPathSegment(workspaceId, 'workspaceId');
-  const safeBoardId = sanitizeApiPathSegment(boardId, 'boardId');
-  const safeItemId = sanitizeApiPathSegment(itemId, 'itemId');
+  const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
+  const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
+  const safeItemId = encodeURIComponent(validatedPathSegment(itemId, 'itemId'));
   return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/items/${safeItemId}`;
 }
 
+export function buildIsoPlusV2BoardReferencesUrl(workspaceId, boardId, itemId) {
+  const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
+  const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
+  const safeItemId = encodeURIComponent(validatedPathSegment(itemId, 'itemId'));
+  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/references?from_item_id=${safeItemId}`;
+}
+
+export function buildIsoPlusV2BoardAttributesUrl(workspaceId, boardId) {
+  const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
+  const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
+  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/attributes`;
+}
+
+export function buildIsoPlusV2BoardAttributeUrl(workspaceId, boardId, attributeId) {
+  const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
+  const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
+  const safeAttributeId = encodeURIComponent(validatedPathSegment(attributeId, 'attributeId'));
+  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/attributes/${safeAttributeId}`;
+}
+
+export function buildIsoPlusV2BoardHooksUrl(workspaceId, boardId) {
+  const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
+  const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
+  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/hooks`;
+}
+
+export function buildIsoPlusV2BoardHookUrl(workspaceId, boardId, hookId) {
+  const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
+  const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
+  const safeHookId = encodeURIComponent(validatedPathSegment(hookId, 'hookId'));
+  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/hooks/${safeHookId}`;
+}
+
 export function buildIsoPlusAutomationUrl(workspaceId, automationId) {
-  const safeWorkspaceId = sanitizeApiPathSegment(workspaceId, 'workspaceId');
-  const safeAutomationId = sanitizeApiPathSegment(automationId, 'automationId');
+  const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
+  const safeAutomationId = encodeURIComponent(validatedPathSegment(automationId, 'automationId'));
   return `${ISO_PLUS_API_BASE}/${safeWorkspaceId}/automations/${safeAutomationId}`;
 }

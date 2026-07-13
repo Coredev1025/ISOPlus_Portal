@@ -12,45 +12,35 @@ import {
 import Board from '../models/Board.js';
 import { info, error } from '../utils/logger.js';
 import { syncQueue } from '../services/sync/queue.js';
-import { toRequiredQueryString } from '../utils/securityHelpers.js';
+import { toRequiredQueryString, sanitizeApiPathSegment } from '../utils/securityHelpers.js';
 
 const router = express.Router();
 
 router.post('/board/enable', authenticateToken, async (req, res) => {
   try {
-    const { workspaceId, boardId } = req.body;
-    
-    // Enhanced validation to handle edge cases
-    const isValidWorkspaceId = workspaceId && 
-      typeof workspaceId === 'string' && 
-      workspaceId.trim() !== '' && 
-      workspaceId !== 'undefined' && 
-      workspaceId !== 'null';
-    
-    const isValidBoardId = boardId && 
-      typeof boardId === 'string' && 
-      boardId.trim() !== '' && 
-      boardId !== 'undefined' && 
-      boardId !== 'null';
-    
-    if (!isValidWorkspaceId || !isValidBoardId) {
+    let workspaceId;
+    let boardId;
+    try {
+      workspaceId = sanitizeApiPathSegment(req.body.workspaceId, 'workspaceId');
+      boardId = sanitizeApiPathSegment(req.body.boardId, 'boardId');
+    } catch {
       error('Sync-Route', 'Invalid request parameters for board sync enable', { 
-        workspaceId: workspaceId || 'missing',
-        boardId: boardId || 'missing',
-        workspaceIdType: typeof workspaceId,
-        boardIdType: typeof boardId
+        workspaceId: req.body.workspaceId || 'missing',
+        boardId: req.body.boardId || 'missing',
+        workspaceIdType: typeof req.body.workspaceId,
+        boardIdType: typeof req.body.boardId
       }, req ?? null);
       
       return res.status(400).json({ 
         message: 'workspaceId and boardId are required and must be valid non-empty strings',
         received: {
-          workspaceId: workspaceId || null,
-          boardId: boardId || null
+          workspaceId: req.body.workspaceId || null,
+          boardId: req.body.boardId || null
         }
       });
     }
 
-    const result = await enableBoardSync(req.session.Authorization, workspaceId.trim(), boardId.trim());
+    const result = await enableBoardSync(req.session.Authorization, workspaceId, boardId);
     
     info('Sync-Route', 'Board sync enable requested', { 
       workspaceId, 
