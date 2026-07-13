@@ -519,14 +519,14 @@ export async function createPurchaseOrder(purchaseOrder) {
 }
 
 function isValidWorkspaceId(workspaceId) {
-    return typeof workspaceId === 'string';
+    return typeof workspaceId === 'string' && workspaceId.length > 0;
 }
 
 async function getLatestTokens(workspaceId) {
     if (!isValidWorkspaceId(workspaceId)) {
         throw new Error('Invalid workspace Id');
     }
-    const business = await Business.findOne({ workspaceId });
+    const business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
     if (!business || !business.xeroTokens) throw new Error('No Xero tokens found');
     return business.xeroTokens;
 }
@@ -554,7 +554,7 @@ async function refreshExpiredXeroToken(workspaceId, currentTokenSet, refreshToke
             updateFields['xeroTokens.refreshTokenExpiresAt'] = now.getTime() + 60 * 24 * 60 * 60 * 1000;
         }
         await Business.updateOne(
-            { workspaceId },
+            { workspaceId: { $eq: String(workspaceId) } },
             { $set: updateFields }
         );
         await xeroClient.setTokenSet(newTokenSet);
@@ -643,7 +643,7 @@ export async function updateOrganizationInfo(workspaceId) {
         
         if (organizationInfo) {
             await Business.updateOne(
-                { workspaceId },
+                { workspaceId: { $eq: String(workspaceId) } },
                 { $set: { xeroOrganization: organizationInfo } }
             );
         }

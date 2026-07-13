@@ -73,7 +73,7 @@ export async function handleBoardSyncDisable({ req, workspaceId, boardId }) {
 }
 
 export async function revertBoardSyncFlag(boardId) {
-  await Board.updateOne({ boardId }, { $set: { syncData: false } });
+  await Board.updateOne({ boardId: { $eq: String(boardId) } }, { $set: { syncData: false } });
 }
 
 export function parseSyncToggle(body, existingBoard) {
