@@ -22,6 +22,18 @@ import {
   parseLogoRemovals,
 } from '../utils/businessProfileUpdate.js';
 
+function sanitizeLogValue(value) {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'string') return value.replace(/[\r\n]+/g, ' ').trim();
+  if (Array.isArray(value)) return value.map(sanitizeLogValue);
+  if (typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, val]) => [key, sanitizeLogValue(val)])
+    );
+  }
+  return value;
+}
+
 const validateBusinessProfile = (req, res, next) => {
   const errors = collectBusinessProfileErrors(req.body);
   if (errors.length > 0) {
@@ -146,12 +158,12 @@ router.get('/logo', authenticateToken, async (req, res) => {
     res.json(logoUrlInfo);
 
   } catch (err) {
-    error('Business-Service', 'Error retrieving logo URL', { 
+    error('Business-Service', 'Error retrieving logo URL', sanitizeLogValue({ 
       error: err.message,
       stack: err.stack,
       workspaceId: req.query.workspaceId,
       logoKey: req.query.logoKey
-    }, req ?? null);
+    }), req ?? null);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -252,12 +264,12 @@ router.get('/logo-image', authenticateToken, async (req, res) => {
 
     return streamLogoResponse(req, res, business, resolvedLogoKey);
   } catch (err) {
-    error('Business-Service', 'Error retrieving logo', {
+    error('Business-Service', 'Error retrieving logo', sanitizeLogValue({
       error: err.message,
       stack: err.stack,
       workspaceId: req.query.workspaceId,
       logoKey: req.query.logoKey,
-    }, req ?? null);
+    }), req ?? null);
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -282,11 +294,11 @@ router.get('/qr-logo', authenticateToken, async (req, res) => {
 
     return streamLogoResponse(req, res, business, logoKey);
   } catch (err) {
-    error('Business-Service', 'Error retrieving logo', { 
+    error('Business-Service', 'Error retrieving logo', sanitizeLogValue({ 
       error: err.message,
       stack: err.stack,
       workspaceId: req.query.workspaceId
-    }, req ?? null);
+    }), req ?? null);
     res.status(500).json({ message: 'Server error' });
   }
 });
