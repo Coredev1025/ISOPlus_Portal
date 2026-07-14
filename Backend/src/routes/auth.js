@@ -411,6 +411,18 @@ async function establishOAuthSession(req, { authorization, oauthData, method = '
   const name = oauthData?.name?.toString();
   const photo_url = oauthData?.photo_url?.toString();
 
+  if (!email || !oauthId) {
+    logLoginFailure('Auth-Service', 'OAuth login failed: incomplete profile data', {
+      method,
+      stage: 'invalid_profile',
+      reason: 'OAuth profile is missing email or id',
+      httpStatus: 400,
+      hasEmail: !!email,
+      hasOauthId: !!oauthId,
+    }, req ?? null);
+    return { status: 400, body: { message: 'Invalid OAuth profile data' } };
+  }
+
   let user = await User.findOne({ email, oauthId });
   const defaultRole = 'isoplus_user';
   if (!user) {
@@ -424,7 +436,9 @@ async function establishOAuthSession(req, { authorization, oauthData, method = '
     });
     await user.save();
   } else {
-    await User.findOneAndUpdate({ email: email, oauthId: oauthId }, { $set: { avatar: photo_url, name: name } });
+    user.avatar = photo_url;
+    user.name = name;
+    await user.save();
   }
 
   if (user.disabled) {
@@ -466,8 +480,8 @@ async function establishOAuthSession(req, { authorization, oauthData, method = '
     user.role = "owner";
   }
 
-  const workspace = workspaceResponse.workspace.map(w => {
-    const board = w.board.map(b => b.id);
+  const workspace = (workspaceResponse.workspace || []).map(w => {
+    const board = Array.isArray(w.board) ? w.board.map(b => b.id) : [];
     return {
       id: w.id,
       board: board,
