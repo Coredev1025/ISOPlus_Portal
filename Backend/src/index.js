@@ -104,7 +104,7 @@ app.use('/api', (req, res, next) => {
 const requestBodyLimitBytes = 2 * 1024 * 1024; // 2 MB (SonarQube recommended max for non-file requests)
 app.use(express.json({ limit: requestBodyLimitBytes }));
 app.use(express.urlencoded({ extended: true, limit: requestBodyLimitBytes }));
-app.use(mongoSanitize({ replaceWith: '_' }));
+app.use(mongoSanitize({ replaceWith: '_', allowDots: true }));
 
 const isProduction = process.env.NODE_ENV === 'production';
 app.use(session({
