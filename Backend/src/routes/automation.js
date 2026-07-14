@@ -11,27 +11,6 @@ import { buildUpdatedAutomation } from '../utils/automationUrlUpdate.js';
 
 const router = express.Router();
 
-const ISO_PLUS_ALLOWED_HOSTS = new Set(['app.isoplus.online']);
-const ISO_PLUS_ALLOWED_SCHEMES = new Set(['https:']);
-
-function buildSafeIsoPlusAutomationUrl(workspaceId, automationId) {
-    const safeWorkspaceId = encodeURIComponent(
-        sanitizeApiPathSegment(workspaceId, 'workspaceId')
-    );
-    const safeAutomationId = encodeURIComponent(
-        sanitizeApiPathSegment(automationId, 'automationId')
-    );
-    const url = new URL(
-        `https://app.isoplus.online/api/${safeWorkspaceId}/automations/${safeAutomationId}`
-    );
-    if (
-        !ISO_PLUS_ALLOWED_SCHEMES.has(url.protocol) ||
-        !ISO_PLUS_ALLOWED_HOSTS.has(url.hostname)
-    ) {
-        throw new Error('Blocked request to non-allow-listed URL.');
-    }
-    return url.toString();
-}
 
 router.get('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
     try {
@@ -115,13 +94,11 @@ router.post('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
             }
         }
 
-        const automationUrl = buildSafeIsoPlusAutomationUrl(
-            workspaceId,
-            automationId
-        );
+        const safeWorkspaceId = sanitizeApiPathSegment(workspaceId, 'workspaceId')
+        const safeAutomationId = sanitizeApiPathSegment(automationId, 'automationId');
 
         const response = await axios.put(
-            automationUrl,
+            `https://app.isoplus.online/api/${safeWorkspaceId}/automations/${safeAutomationId}`,
             {
                 ...automation,
                 id: automationId
