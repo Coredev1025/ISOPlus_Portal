@@ -95,6 +95,27 @@ export function sanitizeApiPathSegment(value, label = 'id') {
 
 const ISO_PLUS_API_V2_BASE = 'https://app.isoplus.online/api/v2';
 const ISO_PLUS_API_BASE = 'https://app.isoplus.online/api';
+const ISO_PLUS_ALLOWED_HOSTS = new Set(['app.isoplus.online']);
+const ISO_PLUS_ALLOWED_SCHEMES = new Set(['https:']);
+
+export function assertIsoPlusUrl(rawUrl) {
+  const url = new URL(rawUrl);
+  if (
+    !ISO_PLUS_ALLOWED_SCHEMES.has(url.protocol) ||
+    !ISO_PLUS_ALLOWED_HOSTS.has(url.hostname)
+  ) {
+    throw new Error('Blocked request to non-allow-listed URL.');
+  }
+  return url.toString();
+}
+
+function isoPlusV2Url(path) {
+  return assertIsoPlusUrl(`${ISO_PLUS_API_V2_BASE}${path}`);
+}
+
+function isoPlusApiUrl(path) {
+  return assertIsoPlusUrl(`${ISO_PLUS_API_BASE}${path}`);
+}
 
 /**
  * Validate a path segment (reject empty / traversal), then encode for URL path use.
@@ -106,37 +127,37 @@ export function validatedPathSegment(value, label = 'id') {
 
 export function buildIsoPlusV2WorkspaceBoardsUrl(workspaceId) {
   const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
-  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards`;
+  return isoPlusV2Url(`/workspaces/${safeWorkspaceId}/boards`);
 }
 
 export function buildIsoPlusV2WorkspaceMembersUrl(workspaceId) {
   const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
-  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/members`;
+  return isoPlusV2Url(`/workspaces/${safeWorkspaceId}/members`);
 }
 
 export function buildIsoPlusV2BoardFoldersUrl(workspaceId, boardId) {
   const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
   const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
-  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/folders/`;
+  return isoPlusV2Url(`/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/folders/`);
 }
 
 export function buildIsoPlusV2BoardViewsUrl(workspaceId, boardId) {
   const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
   const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
-  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/views`;
+  return isoPlusV2Url(`/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/views`);
 }
 
 export function buildIsoPlusV2BoardViewUrl(workspaceId, boardId, viewId) {
   const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
   const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
   const safeViewId = encodeURIComponent(validatedPathSegment(viewId, 'viewId'));
-  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/views/${safeViewId}`;
+  return isoPlusV2Url(`/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/views/${safeViewId}`);
 }
 
 export function buildIsoPlusV2BoardItemsUrl(workspaceId, boardId) {
   const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
   const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
-  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/items/`;
+  return isoPlusV2Url(`/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/items/`);
 }
 
 /** Relative path (no host) for got clients with an /api/v2/ prefixUrl. */
@@ -158,44 +179,44 @@ export function buildIsoPlusV2ItemUrl(workspaceId, boardId, itemId) {
   const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
   const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
   const safeItemId = encodeURIComponent(validatedPathSegment(itemId, 'itemId'));
-  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/items/${safeItemId}`;
+  return isoPlusV2Url(`/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/items/${safeItemId}`);
 }
 
 export function buildIsoPlusV2BoardReferencesUrl(workspaceId, boardId, itemId) {
   const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
   const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
   const safeItemId = encodeURIComponent(validatedPathSegment(itemId, 'itemId'));
-  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/references?from_item_id=${safeItemId}`;
+  return isoPlusV2Url(`/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/references?from_item_id=${safeItemId}`);
 }
 
 export function buildIsoPlusV2BoardAttributesUrl(workspaceId, boardId) {
   const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
   const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
-  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/attributes`;
+  return isoPlusV2Url(`/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/attributes`);
 }
 
 export function buildIsoPlusV2BoardAttributeUrl(workspaceId, boardId, attributeId) {
   const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
   const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
   const safeAttributeId = encodeURIComponent(validatedPathSegment(attributeId, 'attributeId'));
-  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/attributes/${safeAttributeId}`;
+  return isoPlusV2Url(`/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/attributes/${safeAttributeId}`);
 }
 
 export function buildIsoPlusV2BoardHooksUrl(workspaceId, boardId) {
   const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
   const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
-  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/hooks`;
+  return isoPlusV2Url(`/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/hooks`);
 }
 
 export function buildIsoPlusV2BoardHookUrl(workspaceId, boardId, hookId) {
   const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
   const safeBoardId = encodeURIComponent(validatedPathSegment(boardId, 'boardId'));
   const safeHookId = encodeURIComponent(validatedPathSegment(hookId, 'hookId'));
-  return `${ISO_PLUS_API_V2_BASE}/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/hooks/${safeHookId}`;
+  return isoPlusV2Url(`/workspaces/${safeWorkspaceId}/boards/${safeBoardId}/hooks/${safeHookId}`);
 }
 
 export function buildIsoPlusAutomationUrl(workspaceId, automationId) {
   const safeWorkspaceId = encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'));
   const safeAutomationId = encodeURIComponent(validatedPathSegment(automationId, 'automationId'));
-  return `${ISO_PLUS_API_BASE}/${safeWorkspaceId}/automations/${safeAutomationId}`;
+  return isoPlusApiUrl(`/${safeWorkspaceId}/automations/${safeAutomationId}`);
 }
