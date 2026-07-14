@@ -456,7 +456,7 @@ export async function getWorkspace(authorization, userEmail = null, options = {}
                         id: item.id,
                         name: item.name,
                         label: item.label,
-                        board: board.board,
+                        board: Array.isArray(board?.board) ? board.board : [],
                         user_role: userRole,
                     };
                 }
