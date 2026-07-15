@@ -5,7 +5,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { authenticateToken } from '../middleware/auth.js';
 import { info, error, warn, debug } from '../utils/logger.js';
 import { getAutomation, updateAutomation } from '../services/isoplus.js';
-import { sanitizeApiPathSegment } from '../utils/securityHelpers.js';
+import {
+    sanitizeApiPathSegment,
+    buildIsoPlusAutomationUrl
+} from '../utils/securityHelpers.js';
 import { sanitizeLogValue } from '../utils/sanitizeLog.js';
 import { buildUpdatedAutomation } from '../utils/automationUrlUpdate.js';
 
@@ -94,11 +97,8 @@ router.post('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
             }
         }
 
-        const safeWorkspaceId = sanitizeApiPathSegment(workspaceId, 'workspaceId')
-        const safeAutomationId = sanitizeApiPathSegment(automationId, 'automationId');
-
         const response = await axios.put(
-            `https://app.isoplus.online/api/${safeWorkspaceId}/automations/${safeAutomationId}`,
+            buildIsoPlusAutomationUrl(workspaceId, automationId),
             {
                 ...automation,
                 id: automationId
