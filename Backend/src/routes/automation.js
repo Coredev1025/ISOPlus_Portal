@@ -14,6 +14,10 @@ import { buildUpdatedAutomation } from '../utils/automationUrlUpdate.js';
 
 const router = express.Router();
 
+const isoPlusApi = axios.create({
+    baseURL: 'https://app.isoplus.online',
+    timeout: 30000
+});
 
 router.get('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
     try {
@@ -97,8 +101,12 @@ router.post('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
             }
         }
 
-        const response = await axios.put(
-            buildIsoPlusAutomationUrl(workspaceId, automationId),
+        const apiPath =
+            `/api/${encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'))}` +
+            `/automations/${encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'))}`;
+
+        const response = await isoPlusApi.put(
+            apiPath,
             {
                 ...automation,
                 id: automationId
