@@ -5,10 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { authenticateToken } from '../middleware/auth.js';
 import { info, error, warn, debug } from '../utils/logger.js';
 import { getAutomation, updateAutomation } from '../services/isoplus.js';
-import {
-    sanitizeApiPathSegment,
-    buildIsoPlusAutomationUrl
-} from '../utils/securityHelpers.js';
+import { sanitizeApiPathSegment } from '../utils/securityHelpers.js';
 import { sanitizeLogValue } from '../utils/sanitizeLog.js';
 import { buildUpdatedAutomation } from '../utils/automationUrlUpdate.js';
 
@@ -51,102 +48,6 @@ router.get('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
 
         res.status(500).json({
             error: 'Failed to retrieve automation'
-        });
-    }
-});
-
-router.post('/:workspaceId/:boardId', authenticateToken, async (req, res) => {
-    try {
-        if (
-            req.user.role !== 'owner' &&
-            req.user.role !== 'support_admin'
-        ) {
-            return res.status(403).json({
-                message:
-                    'Access denied. Owner or Support Admin permission required.'
-            });
-        }
-
-        const workspaceId = sanitizeApiPathSegment(
-            req.params.workspaceId,
-            'workspaceId'
-        );
-
-        const boardId = sanitizeApiPathSegment(
-            req.params.boardId,
-            'boardId'
-        );
-
-        const automation = req.body;
-
-        let automationId = uuidv4();
-
-        const existingAutomation = await getAutomation(
-            workspaceId,
-            boardId,
-            req.session.Authorization
-        );
-
-        if (existingAutomation) {
-            let existingAutomationIndex = existingAutomation.findIndex(
-                item => item.id === automationId
-            );
-
-            while (existingAutomationIndex >= 0) {
-                automationId = uuidv4();
-
-                existingAutomationIndex = existingAutomation.findIndex(
-                    item => item.id === automationId
-                );
-            }
-        }
-
-        const apiPath =
-            `/api/${encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'))}` +
-            `/automations/${encodeURIComponent(validatedPathSegment(workspaceId, 'workspaceId'))}`;
-
-        const response = await isoPlusApi.put(
-            apiPath,
-            {
-                ...automation,
-                id: automationId
-            },
-            {
-                headers: {
-                    Authorization: `Bearer ${req.session.Authorization}`
-                },
-                timeout: 30000
-            }
-        );
-
-        info(
-            'Automation-Service',
-            'Automation created via ISO+ API',
-            sanitizeLogValue({
-                workspaceId,
-                boardId,
-                automationId
-            }),
-            req ?? null
-        );
-
-        res.json(response.data);
-    } catch (err) {
-        error(
-            'Automation-Service',
-            'Failed to create automation',
-            sanitizeLogValue({
-                workspaceId: req.params.workspaceId,
-                boardId: req.params.boardId,
-                message: err.message,
-                stack: err.stack
-            }),
-            req ?? null
-        );
-
-        res.status(500).json({
-            error: 'Failed to update data',
-            message: err.message
         });
     }
 });
