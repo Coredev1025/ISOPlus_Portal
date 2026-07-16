@@ -70,11 +70,12 @@ router.post('/board/enable', authenticateToken, async (req, res) => {
 
 router.post('/board/disable', authenticateToken, async (req, res) => {
   try {
-    const { boardId } = req.body;
-    
-    if (!boardId) {
+    let boardId;
+    try {
+      boardId = sanitizeApiPathSegment(req.body.boardId, 'boardId');
+    } catch {
       return res.status(400).json({ 
-        message: 'boardId is required' 
+        message: 'boardId is required and must be a valid non-empty string' 
       });
     }
 

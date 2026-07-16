@@ -89,7 +89,7 @@ function generateLogKey(level, source, message, meta, context) {
   const email = context?.email || 'N/A';
   
   // Create a hash of the log content for deduplication
-  const contentHash = crypto.createHash('md5').update(
+  const contentHash = crypto.createHash('sha256').update(
     JSON.stringify({ level, source, message, meta, ip, email })
   ).digest('hex');
   

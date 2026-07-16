@@ -103,16 +103,17 @@ export async function enableBoardSync(authorization, workspaceId, boardId) {
 
 export async function disableBoardSync(boardId, authorization = null) {
   try {
-    info('Sync-Service', 'Disabling sync for board', { boardId });
+    const safeBoardId = sanitizeApiPathSegment(boardId, 'boardId');
+    info('Sync-Service', 'Disabling sync for board', { boardId: safeBoardId });
     
-    const board = await Board.findOne({ boardId }).select('syncJobId hookId workspaceId').lean();
+    const board = await Board.findOne({ boardId: safeBoardId }).select('syncJobId hookId workspaceId').lean();
     
     if (!board) {
       throw new Error('Board not found');
     }
 
     if (board.syncJobId) {
-      await cancelPendingSyncJob(boardId, board.syncJobId);
+      await cancelPendingSyncJob(safeBoardId, board.syncJobId);
     }
 
     if (board.hookId) {
@@ -120,7 +121,7 @@ export async function disableBoardSync(boardId, authorization = null) {
     }
 
     await Board.findOneAndUpdate(
-      { boardId },
+      { boardId: safeBoardId },
       {
         $set: {
           syncData: false,
@@ -132,12 +133,12 @@ export async function disableBoardSync(boardId, authorization = null) {
       }
     );
 
-    info('Sync-Service', 'Sync disabled for board', { boardId });
+    info('Sync-Service', 'Sync disabled for board', { boardId: safeBoardId });
 
     return {
       success: true,
       message: 'Sync disabled successfully',
-      boardId
+      boardId: safeBoardId
     };
 
   } catch (err) {
