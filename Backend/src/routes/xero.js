@@ -151,10 +151,10 @@ async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, ty
 
     await InvoiceNumber.findOneAndUpdate(
       {
-        itemId: safeItemId,
-        workspaceId: safeWorkspaceId,
-        boardId: safeBoardId,
-        type: safeType
+        itemId: { $eq: String(safeItemId) },
+        workspaceId: { $eq: String(safeWorkspaceId) },
+        boardId: { $eq: String(safeBoardId) },
+        type: { $eq: String(safeType) }
       },
       {
         $set: {

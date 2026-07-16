@@ -373,7 +373,7 @@ export async function cancelBoardSync(boardId, authorization = null) {
   try {
     info('Sync-Service', 'Cancelling sync for board', { boardId });
     
-    const board = await Board.findOne({ boardId }).select('syncJobId hookId workspaceId').lean();
+    const board = await Board.findOne({ boardId: { $eq: String(boardId) } }).select('syncJobId hookId workspaceId').lean();
     
     if (!board) {
       throw new Error('Board not found');
@@ -388,7 +388,7 @@ export async function cancelBoardSync(boardId, authorization = null) {
     }
 
     await Board.findOneAndUpdate(
-      { boardId },
+      { boardId: { $eq: String(boardId) } },
       {
         $set: {
           syncStatus: 'sync_cancelled',
