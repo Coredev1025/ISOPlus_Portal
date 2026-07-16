@@ -230,7 +230,7 @@ router.post('/board/cancel', authenticateToken, async (req, res) => {
       });
     }
 
-    const result = await cancelBoardSync(boardId, req.session.Authorization);
+    const result = await cancelBoardSync(String(boardId), req.session.Authorization);
     
     info('Sync-Route', 'Sync cancelled', { 
       boardId
