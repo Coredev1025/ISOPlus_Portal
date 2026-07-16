@@ -143,20 +143,26 @@ async function initializeXeroOperation(workspaceId, boardId, item) {
 
 async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, type) {
   try {
+    const safeItemId = mongoEq(itemId);
+    const safeWorkspaceId = mongoEq(workspaceId);
+    const safeBoardId = mongoEq(boardId);
+    const safeType = mongoEq(type);
+    const safeInvoiceNumber = mongoEq(invoiceNumber);
+
     await InvoiceNumber.findOneAndUpdate(
       {
-        itemId: itemId,
-        workspaceId: workspaceId,
-        boardId: boardId,
-        type: type
+        itemId: safeItemId,
+        workspaceId: safeWorkspaceId,
+        boardId: safeBoardId,
+        type: safeType
       },
       {
         $set: {
-          itemId: itemId,
-          workspaceId: workspaceId,
-          boardId: boardId,
-          invoiceNumber: invoiceNumber,
-          type: type,
+          itemId: safeItemId,
+          workspaceId: safeWorkspaceId,
+          boardId: safeBoardId,
+          invoiceNumber: safeInvoiceNumber,
+          type: safeType,
           updatedAt: new Date()
         },
         $setOnInsert: {
