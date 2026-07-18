@@ -133,7 +133,7 @@ async function messageFromUserExportAxiosError(err: unknown): Promise<string> {
   }
   if (status === 401) return "Authentication required. Please sign in again.";
   if (status === 403) return "You don't have permission to export users.";
-  if (status === 502) return "Could not reach ISO+ while building the export. Try again later.";
+  if (status === 502) return "Could not reach ISO+™ while building the export. Try again later.";
   if (status === 500) return "Server error while exporting. Try again later.";
   return "Failed to export users.";
 }
