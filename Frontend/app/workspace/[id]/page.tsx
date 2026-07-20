@@ -1,8 +1,9 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { BackButton } from "@/components/ui/back-button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Building2, FileSpreadsheet, FileText, BarChart, Info, History, Terminal } from "lucide-react";
+import { Building2, FileSpreadsheet, FileText, BarChart, Info, History, Terminal } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import {
   Table,
@@ -210,17 +211,12 @@ export default function WorkspaceDetail() {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      <div className="container mx-auto py-8">
-        <Button
-          variant="ghost"
-          className="mb-6 hover:bg-secondary"
-          onClick={() => router.push("/dashboard")}
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
+      <div className="container mx-auto animate-fade-in-up py-8">
+        <BackButton onClick={() => router.push("/dashboard")}>
           Back to Dashboard
-        </Button>
+        </BackButton>
 
-        <div className="space-y-6">
+        <div className="page-enter-stagger space-y-6">
           {/* Workspace Info */}
           <Card className="p-6 shadow-lg card-hover">
             <div className="flex justify-between items-center">
@@ -233,7 +229,7 @@ export default function WorkspaceDetail() {
               <Button
                 onClick={() => router.push(`/workspace/${workspace?.id}/usage-report`)}
                 variant="outline"
-                className="gap-2 button-hover"
+                className="gap-2"
               >
                 <BarChart className="h-4 w-4" />
                 View Usage Report
@@ -244,78 +240,70 @@ export default function WorkspaceDetail() {
           {/* Workspace Actions */}
           {
             canAccessThisWorkspace && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <Card className="p-6 space-y-4 card-hover">
-                  <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+              <div className="grid grid-cols-1 items-stretch gap-6 md:grid-cols-2 lg:grid-cols-4">
+                <Card className="card-hover flex h-full flex-col p-6">
+                  <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
                     <Building2 className="h-6 w-6 text-primary" />
                   </div>
-                  <div>
-                    <h2 className="text-xl font-semibold">Business Configuration</h2>
-                    <p className="text-muted-foreground mb-4 text-sm">
-                      Manage your business details, address, and tax information
-                    </p>
-                    <Button
-                      onClick={() => router.push(`/workspace/${workspace?.id}/configure-business`)}
-                      className="w-full button-hover"
-                    >
-                      Configure Business
-                    </Button>
-                  </div>
+                  <h2 className="text-xl font-semibold">Business Configuration</h2>
+                  <p className="mb-4 flex-1 text-sm text-muted-foreground">
+                    Manage your business details, address, and tax information
+                  </p>
+                  <Button
+                    onClick={() => router.push(`/workspace/${workspace?.id}/configure-business`)}
+                    className="mt-auto w-full"
+                  >
+                    <span>Configure Business</span>
+                  </Button>
                 </Card>
 
-                <Card className="p-6 space-y-4 card-hover">
-                  <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                <Card className="card-hover flex h-full flex-col p-6">
+                  <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
                     <FileSpreadsheet className="h-6 w-6 text-primary" />
                   </div>
-                  <div>
-                    <h2 className="text-xl font-semibold">Xero Integration</h2>
-                    <p className="text-muted-foreground mb-4 text-sm">
-                      Connect and manage your Xero accounting integration
-                    </p>
-                    <Button
-                      onClick={() => router.push(`/workspace/${workspace?.id}/xero-integration`)}
-                      className="w-full button-hover"
-                    >
-                      Setup Xero
-                    </Button>
-                  </div>
+                  <h2 className="text-xl font-semibold">Xero Integration</h2>
+                  <p className="mb-4 flex-1 text-sm text-muted-foreground">
+                    Connect and manage your Xero accounting integration
+                  </p>
+                  <Button
+                    onClick={() => router.push(`/workspace/${workspace?.id}/xero-integration`)}
+                    className="mt-auto w-full"
+                  >
+                    <span>Setup Xero</span>
+                  </Button>
                 </Card>
 
-                <Card className="p-6 space-y-4 card-hover">
-                  <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                <Card className="card-hover flex h-full flex-col p-6">
+                  <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
                     <History className="h-6 w-6 text-primary" />
                   </div>
-                  <div>
-                    <h2 className="text-xl font-semibold">Audit Trail</h2>
-                    <p className="text-muted-foreground mb-4 text-sm">
-                      Track all activities and changes in your workspace
-                    </p>
-                    <Button
-                      onClick={() => router.push(`/workspace/${workspace?.id}/audit-trail`)}
-                      className="w-full button-hover"
-                    >
-                      View Audit Trail
-                    </Button>
-                  </div>
+                  <h2 className="text-xl font-semibold">Audit Trail</h2>
+                  <p className="mb-4 flex-1 text-sm text-muted-foreground">
+                    Track all activities and changes in your workspace
+                  </p>
+                  <Button
+                    onClick={() => router.push(`/workspace/${workspace?.id}/audit-trail`)}
+                    className="mt-auto w-full"
+                  >
+                    <span>View Audit Trail</span>
+                  </Button>
                 </Card>
 
                 {isOwnerOrSupportUser && (
-                  <Card className="p-6 space-y-4 card-hover">
-                    <div className="bg-primary/10 w-12 h-12 rounded-full flex items-center justify-center">
+                  <Card className="card-hover flex h-full flex-col p-6">
+                    <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
                       <Terminal className="h-6 w-6 text-primary" />
                     </div>
-                    <div>
-                      <h2 className="text-xl font-semibold">Workspace Configuration</h2>
-                      <p className="text-muted-foreground mb-4 text-sm">
-                        Configure workspace settings and manage board links
-                      </p>
-                      <Button
-                        onClick={() => router.push(`/workspace/${workspace?.id}/configuration`)}
-                        className="w-full button-hover"
-                      >
-                        Configure Workspace
-                      </Button>
-                    </div>
+                    <h2 className="text-xl font-semibold">Workspace Configuration</h2>
+                    <p className="mb-4 flex-1 text-sm text-muted-foreground">
+                      Configure workspace settings and manage board links
+                    </p>
+                    <Button
+                      onClick={() => router.push(`/workspace/${workspace?.id}/configuration`)}
+                      className="mt-auto w-full"
+                    >
+                      <span>Configure Workspace</span>
+                    </Button>
                   </Card>
                 )}
               </div>
@@ -344,7 +332,7 @@ export default function WorkspaceDetail() {
               </div>
             ) : (
               <>
-                <Table className="enhanced-table">
+                <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead className="font-semibold">Board ID</TableHead>

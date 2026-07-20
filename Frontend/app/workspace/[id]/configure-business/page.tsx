@@ -24,6 +24,7 @@ import {
 } from "@/lib/business-logo";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { showSaveSuccessToast, showSaveErrorToast, showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
+import { extractDocumentNumberingSequences, mapBusinessProfileToFormData } from "@/lib/configure-business-helpers";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -360,41 +361,12 @@ export default function ConfigureBusinessPage() {
 
         if (!abortController.signal.aborted) {
           const data = response.data;
-          setFormData({
-            name: data.name || "",
-            phone: data.phone || "",
-            email: data.email || "",
-            companyRegistrationId: data.companyRegistrationId || "",
-            street: data.address?.street || "",
-            country: data.address?.country || "",
-            suburb: data.address?.suburb || "",
-            state: data.address?.state || "",
-            postcode: data.address?.postcode || "",
-            abn: data.abn || "",
-            acn: data.acn || "",
-            workspaceId: id,
-            bankAccountName: data.bankDetails?.accountName || "",
-            bankName: data.bankDetails?.bankName || "",
-            bsb: data.bankDetails?.bsb || "",
-            accountNumber: data.bankDetails?.accountNumber || "",
-            paymentReference: data.bankDetails?.paymentReference || "",
-            accountsReceivableTerms: data.bankDetails?.accountsReceivableTerms || "",
-            accountsPayableTerms: data.bankDetails?.accountsPayableTerms || "",
-            headOfficeTimezone: (data.headOfficeTimezone as string) || "Australia/Sydney",
-          });
+          setFormData(mapBusinessProfileToFormData(data, id));
 
-          // Set document numbering sequences
-          if (data.documentNumbering) {
-            if (data.documentNumbering.invoice) {
-              setInvoiceSequence(data.documentNumbering.invoice);
-            }
-            if (data.documentNumbering.purchaseOrder) {
-              setPurchaseOrderSequence(data.documentNumbering.purchaseOrder);
-            }
-            if (data.documentNumbering.quote) {
-              setQuoteSequence(data.documentNumbering.quote);
-            }
-          }
+          const sequences = extractDocumentNumberingSequences(data);
+          if (sequences.invoice) setInvoiceSequence(sequences.invoice);
+          if (sequences.purchaseOrder) setPurchaseOrderSequence(sequences.purchaseOrder);
+          if (sequences.quote) setQuoteSequence(sequences.quote);
 
           // Load logo previews via authenticated API (no expiring presigned URLs in UI)
           await applyLogoPreviews({

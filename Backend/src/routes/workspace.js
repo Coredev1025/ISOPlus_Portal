@@ -6,8 +6,29 @@ import { info, error, warn } from '../utils/logger.js';
 import { getWorkspace, getBoard, getWorkspacePage, getBoardPage, getMemberRole } from '../services/isoplus.js';
 import DynamicLinkingService from '../services/dynamicLinking.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
+import { collectBoardPages } from '../utils/workspaceBoardHelpers.js';
+import { sanitizeApiPathSegment } from '../utils/securityHelpers.js';
+import {
+  handleWorkspacesListRequest,
+  buildWorkspaceMetaById,
+  mapWorkspaceWithRole,
+  collectWorkspacePages,
+  enrichWorkspaceDetails,
+} from '../utils/workspaceListHelpers.js';
 
 const router = express.Router();
+
+function sanitizeLogValue(value) {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'string') return value.replace(/[\r\n]+/g, ' ').trim();
+  if (Array.isArray(value)) return value.map(sanitizeLogValue);
+  if (typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, val]) => [key, sanitizeLogValue(val)])
+    );
+  }
+  return value;
+}
 
 function normalizeQuery(value) {
   if (value === null || value === undefined) return '';
@@ -123,163 +144,22 @@ async function persistBoardsInBackground(boards, req) {
 
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const authorization = req.session?.Authorization;
-    if (!authorization) {
-      warn(
-        'Workspace-Service',
-        'Missing OAuth authorization in session',
-        { hasSession: Boolean(req.session), hasToken: Boolean(req.session?.token) },
-        req ?? null
-      );
-      return res.status(401).json({
-        message: 'Authentication session is missing OAuth credentials. Please login again.',
-        error_type: 'oauth',
-      });
-    }
-
-    const limit = clampInt(req.query?.limit || '50', 1, 200, 50);
-    const after = req.query?.after ? String(req.query.after) : null;
-    const q = normalizeQuery(req.query?.q);
-    const maxScanPages = clampInt(process.env.ISOPLUS_SEARCH_SCAN_MAX_PAGES || '20', 1, 200, 20);
-    const includeDetails =
-      String(req.query?.includeDetails || '').toLowerCase() === 'true' ||
-      String(req.query?.includeDetails || '') === '1' ||
-      (Boolean(q) && String(req.query?.includeDetails || '').toLowerCase() !== 'false');
-
-    // ISO+ board preview per workspace is expensive; skip by default when searching unless opted in
-    const boardsPreviewExplicit =
-      String(req.query?.boardsPreview || '').toLowerCase() === 'true' ||
-      String(req.query?.boardsPreview || '') === '1';
-    const wantBoardsPreview = includeDetails && (!q || boardsPreviewExplicit);
-
-    const workspaceMetaById = Array.isArray(req.user?.workspace)
-      ? req.user.workspace.reduce((acc, workspace) => {
-          const id = workspace?.id?.toString();
-          if (!id) return acc;
-          acc[id] = {
-            user_role: workspace?.user_role || 'restricted_member',
-            board: Array.isArray(workspace?.board) ? workspace.board : undefined,
-          };
-          return acc;
-        }, {})
-      : null;
-
-    const timeoutMs = process.env.WORKSPACE_FETCH_TIMEOUT_MS || process.env.ISOPLUS_HTTP_TIMEOUT_MS || '30000';
-    let collected = [];
-    let scanAfter = after;
-    let scanHasMore = true;
-    let nextAfter = null;
-    let pagesScanned = 0;
-
-    // ISO+ API enforces limit <= 100
-    const isoLimit = Math.min(ISOPLUS_MAX_LIMIT, q ? ISOPLUS_MAX_LIMIT : limit);
-
-    while (true) {
-      const page = await withTimeout(
-        getWorkspacePage(authorization, { limit: isoLimit, after: scanAfter }),
-        timeoutMs,
-        'Workspace fetch timed out'
-      );
-
-      if (page.status !== 200 || !Array.isArray(page.workspace)) {
-        const rawMessage = page.message || 'Failed to fetch workspaces';
-        const normalized = String(rawMessage).toLowerCase();
-        const mappedStatus =
-          normalized.includes('status code 401') || normalized.includes('unauthorized') ? 401 :
-          normalized.includes('status code 403') || normalized.includes('forbidden') ? 403 :
-          500;
-
-        warn('Workspace-Service', 'Failed to fetch workspaces', { status: page.status, message: rawMessage }, req ?? null);
-        return res.status(mappedStatus).json({
-          message: rawMessage,
-          ...(mappedStatus === 401 ? { error_type: 'oauth' } : {}),
-        });
-      }
-
-      const batch = q ? page.workspace.filter((w) => workspaceMatchesQuery(w, q)) : page.workspace;
-      collected.push(...batch);
-      // de-dupe by id while preserving order
-      const deduped = Array.from(new Map(collected.map((w) => [String(w?.id?.toString?.() ?? w?.id), w])).values());
-      collected = deduped.slice(0, limit);
-
-      nextAfter = page.after ?? null;
-      scanHasMore = Boolean(page.has_more);
-      scanAfter = nextAfter;
-      pagesScanned += 1;
-
-      // When caller asks for >100, scan multiple ISO+ pages to fill the page.
-      if (!q && limit <= ISOPLUS_MAX_LIMIT) break; // fast path
-      if (collected.length >= limit) break;
-      if (!scanHasMore) break;
-      if (pagesScanned >= maxScanPages) break;
-      if (!scanAfter) break;
-    }
-
-    const mapped = collected.map((w) => {
-      const id = w?.id?.toString?.() ?? w?.id;
-      const metaFromToken = workspaceMetaById && id ? workspaceMetaById[id] : null;
-      const roleFromToken = metaFromToken?.user_role || null;
-      const user_role =
-        roleFromToken ||
-        (req.user?.role === 'owner' ? 'owner' : null) ||
-        (req.user?.role === 'support_admin' ? 'admin' : null) ||
-        'restricted_member';
-
-      return {
-        ...w,
-        user_role,
-        ...(metaFromToken?.board ? { board: metaFromToken.board } : {}),
-      };
-    });
-
-    const sortedWorkspace = [...mapped].sort((a, b) => (a?.name || '').localeCompare(b?.name || ''));
-
-    let enriched = sortedWorkspace;
-    if (includeDetails && enriched.length) {
-      const detailConcurrency = clampInt(process.env.WORKSPACE_DETAILS_CONCURRENCY || '4', 1, 10, 4);
-      const detailTimeoutMs = process.env.WORKSPACE_DETAILS_TIMEOUT_MS || timeoutMs;
-
-      enriched = await mapWithConcurrency(enriched, detailConcurrency, async (w) => {
-        const workspaceId = w?.id?.toString?.() ?? w?.id;
-        if (!workspaceId) return w;
-
-        const detail = { ...w };
-
-        // Ensure user_role is up to date via members lookup (only when email is available and token didn't already provide role)
-        if (req.user?.email && (!detail.user_role || detail.user_role === 'restricted_member')) {
-          const roleRes = await withTimeout(
-            getMemberRole(authorization, workspaceId, req.user.email, { limit: 100 }),
-            detailTimeoutMs,
-            'Member role fetch timed out'
-          );
-          if (roleRes?.status === 200 && roleRes?.role) {
-            detail.user_role = roleRes.role;
-          }
-        }
-
-        if (wantBoardsPreview) {
-          const boardsPage = await withTimeout(
-            getBoardPage(authorization, workspaceId, { limit: 10, after: null }),
-            detailTimeoutMs,
-            'Boards preview fetch timed out'
-          );
-          if (boardsPage?.status === 200 && Array.isArray(boardsPage.board)) {
-            detail.boardsPreview = boardsPage.board.map((b) => ({
-              id: b?.id,
-              name: b?.name,
-            }));
-            detail.boardsPreviewHasMore = Boolean(boardsPage.has_more);
-          }
-        }
-
-        return detail;
-      });
-    }
-
-    return res.status(200).json({
-      workspace: enriched,
-      nextAfter,
-      hasMore: Boolean(scanHasMore),
+    return await handleWorkspacesListRequest(req, res, {
+      warn,
+      error,
+      clampInt,
+      normalizeQuery,
+      ISOPLUS_MAX_LIMIT,
+      withTimeout,
+      getWorkspacePage,
+      getBoardPage,
+      getMemberRole,
+      mapWithConcurrency,
+      workspaceMatchesQuery,
+      buildWorkspaceMetaById,
+      mapWorkspaceWithRole,
+      collectWorkspacePages,
+      enrichWorkspaceDetails,
     });
   } catch (err) {
     const status = err?.name === 'TimeoutError' ? 504 : 500;
@@ -295,8 +175,10 @@ router.get('/', authenticateToken, async (req, res) => {
 
 router.get('/boards', authenticateToken, async (req, res) => {
   try {
-    const workspaceId = req.query.workspaceId?.toString();
-    if (!workspaceId) {
+    let workspaceId;
+    try {
+      workspaceId = sanitizeApiPathSegment(req.query.workspaceId, 'workspaceId');
+    } catch {
       return res.status(400).json({ message: 'workspaceId query param is required' });
     }
 
@@ -306,67 +188,28 @@ router.get('/boards', authenticateToken, async (req, res) => {
     const maxScanPages = clampInt(process.env.ISOPLUS_SEARCH_SCAN_MAX_PAGES || '20', 1, 200, 20);
 
     const timeoutMs = process.env.BOARD_FETCH_TIMEOUT_MS || process.env.ISOPLUS_HTTP_TIMEOUT_MS || '30000';
-    let collected = [];
-    let scanAfter = after;
-    let scanHasMore = true;
-    let nextAfter = null;
-    let pagesScanned = 0;
-    // ISO+ API enforces limit <= 100
-    const isoLimit = Math.min(ISOPLUS_MAX_LIMIT, q ? ISOPLUS_MAX_LIMIT : limit);
 
-    while (true) {
-      const page = await withTimeout(
-        getBoardPage(req.session.Authorization, workspaceId, { limit: isoLimit, after: scanAfter }),
-        timeoutMs,
-        'Board fetch timed out'
-      );
+    const collectionResult = await collectBoardPages({
+      authorization: req.session.Authorization,
+      workspaceId,
+      limit,
+      after,
+      q,
+      maxScanPages,
+      timeoutMs,
+      getBoardPage,
+      withTimeout,
+      boardMatchesQuery,
+      persistBoardsInBackground,
+      req,
+      Board,
+    });
 
-      if (page.status !== 200 || !Array.isArray(page.board)) {
-        return res.status(500).json({ message: page.message || 'Failed to fetch boards' });
-      }
-
-      const boardIds = page.board
-        .map((b) => b?.id?.toString?.() ?? b?.id)
-        .filter(Boolean)
-        .map((id) => String(id));
-
-      const dbBoards = boardIds.length
-        ? await Board.find({ boardId: { $in: boardIds }, workspaceId: workspaceId.toString() })
-            .select('boardId label')
-            .lean()
-        : [];
-
-      const labelById = new Map(dbBoards.map((b) => [String(b.boardId), b.label]));
-
-      const enrichedPage = page.board.map((b) => {
-        const id = b?.id?.toString?.() ?? b?.id;
-        const label = id ? labelById.get(String(id)) : undefined;
-        return { ...b, label: label || b?.label || 'No Label' };
-      });
-
-      const batch = q ? enrichedPage.filter((b) => boardMatchesQuery(b, q)) : enrichedPage;
-      collected.push(...batch);
-
-      const deduped = Array.from(new Map(collected.map((b) => [String(b?.id?.toString?.() ?? b?.id), b])).values());
-      collected = deduped.slice(0, limit);
-
-      nextAfter = page.after ?? null;
-      scanHasMore = Boolean(page.has_more);
-      scanAfter = nextAfter;
-      pagesScanned += 1;
-
-      // persist original ISO+ page in background (even if we filtered)
-      setImmediate(() => {
-        persistBoardsInBackground(page.board, req);
-      });
-
-      if (!q && limit <= ISOPLUS_MAX_LIMIT) break; // fast path
-      if (collected.length >= limit) break;
-      if (!scanHasMore) break;
-      if (pagesScanned >= maxScanPages) break;
-      if (!scanAfter) break;
+    if (collectionResult.error) {
+      return res.status(500).json({ message: collectionResult.error });
     }
 
+    const { collected, nextAfter, scanHasMore } = collectionResult;
     const sortedBoard = [...collected].sort((a, b) => (a?.name || '').localeCompare(b?.name || ''));
 
     res.status(200).json({
@@ -412,7 +255,12 @@ router.post('/', authenticateToken, async (req, res) => {
 // Dynamic Linking routes
 router.post('/:workspaceId/check-links', authenticateToken, async (req, res) => {
   try {
-    const { workspaceId } = req.params;
+    let workspaceId;
+    try {
+      workspaceId = sanitizeApiPathSegment(req.params.workspaceId, 'workspaceId');
+    } catch {
+      return res.status(400).json({ message: 'Invalid workspaceId' });
+    }
     const host = 'https://app.isoplus.online';
     
     // Check if user has permission (owner or support_admin)
@@ -421,20 +269,25 @@ router.post('/:workspaceId/check-links', authenticateToken, async (req, res) => 
     }
 
     const dynamicLinkingService = new DynamicLinkingService(req.session.Authorization, host);
-    info('Workspace-Service', 'Checking links', { workspaceId }, req ?? null);
+    info('Workspace-Service', 'Checking links', sanitizeLogValue({ workspaceId }), req ?? null);
     const results = await dynamicLinkingService.main(workspaceId, false);
 
-    info('Workspace-Service', 'Links checked', { workspaceId, results }, req ?? null);
+    info('Workspace-Service', 'Links checked', sanitizeLogValue({ workspaceId, results }), req ?? null);
     res.status(200).json(results);
   } catch (err) {
-    error('Workspace-Service', 'Failed to check links', { workspaceId: req.params.workspaceId, error: err.message, stack: err.stack }, req ?? null);
+    error('Workspace-Service', 'Failed to check links', sanitizeLogValue({ workspaceId: req.params.workspaceId, error: err.message, stack: err.stack }), req ?? null);
     res.status(500).json({ message: 'Failed to check links', error: err.message });
   }
 });
 
 router.post('/:workspaceId/create-links', authenticateToken, async (req, res) => {
   try {
-    const { workspaceId } = req.params;
+    let workspaceId;
+    try {
+      workspaceId = sanitizeApiPathSegment(req.params.workspaceId, 'workspaceId');
+    } catch {
+      return res.status(400).json({ message: 'Invalid workspaceId' });
+    }
     const host = 'https://app.isoplus.online';
     
     // Check if user has permission (owner or support_admin)
@@ -443,13 +296,13 @@ router.post('/:workspaceId/create-links', authenticateToken, async (req, res) =>
     }
 
     const dynamicLinkingService = new DynamicLinkingService(req.session.Authorization, host);
-    info('Workspace-Service', 'Creating links', { workspaceId }, req ?? null);
+    info('Workspace-Service', 'Creating links', sanitizeLogValue({ workspaceId }), req ?? null);
     const results = await dynamicLinkingService.main(workspaceId, true);
 
-    info('Workspace-Service', 'Links created', { workspaceId, results }, req ?? null);
+    info('Workspace-Service', 'Links created', sanitizeLogValue({ workspaceId, results }), req ?? null);
     res.status(200).json(results);
   } catch (err) {
-    error('Workspace-Service', 'Failed to create links', { workspaceId: req.params.workspaceId, error: err.message, stack: err.stack }, req ?? null);
+    error('Workspace-Service', 'Failed to create links', sanitizeLogValue({ workspaceId: req.params.workspaceId, error: err.message, stack: err.stack }), req ?? null);
     res.status(500).json({ message: 'Failed to create links', error: err.message });
   }
 });

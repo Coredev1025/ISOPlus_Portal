@@ -12,44 +12,35 @@ import {
 import Board from '../models/Board.js';
 import { info, error } from '../utils/logger.js';
 import { syncQueue } from '../services/sync/queue.js';
+import { toRequiredQueryString, sanitizeApiPathSegment } from '../utils/securityHelpers.js';
 
 const router = express.Router();
 
 router.post('/board/enable', authenticateToken, async (req, res) => {
   try {
-    const { workspaceId, boardId } = req.body;
-    
-    // Enhanced validation to handle edge cases
-    const isValidWorkspaceId = workspaceId && 
-      typeof workspaceId === 'string' && 
-      workspaceId.trim() !== '' && 
-      workspaceId !== 'undefined' && 
-      workspaceId !== 'null';
-    
-    const isValidBoardId = boardId && 
-      typeof boardId === 'string' && 
-      boardId.trim() !== '' && 
-      boardId !== 'undefined' && 
-      boardId !== 'null';
-    
-    if (!isValidWorkspaceId || !isValidBoardId) {
+    let workspaceId;
+    let boardId;
+    try {
+      workspaceId = sanitizeApiPathSegment(req.body.workspaceId, 'workspaceId');
+      boardId = sanitizeApiPathSegment(req.body.boardId, 'boardId');
+    } catch {
       error('Sync-Route', 'Invalid request parameters for board sync enable', { 
-        workspaceId: workspaceId || 'missing',
-        boardId: boardId || 'missing',
-        workspaceIdType: typeof workspaceId,
-        boardIdType: typeof boardId
+        workspaceId: req.body.workspaceId || 'missing',
+        boardId: req.body.boardId || 'missing',
+        workspaceIdType: typeof req.body.workspaceId,
+        boardIdType: typeof req.body.boardId
       }, req ?? null);
       
       return res.status(400).json({ 
         message: 'workspaceId and boardId are required and must be valid non-empty strings',
         received: {
-          workspaceId: workspaceId || null,
-          boardId: boardId || null
+          workspaceId: req.body.workspaceId || null,
+          boardId: req.body.boardId || null
         }
       });
     }
 
-    const result = await enableBoardSync(req.session.Authorization, workspaceId.trim(), boardId.trim());
+    const result = await enableBoardSync(req.session.Authorization, workspaceId, boardId);
     
     info('Sync-Route', 'Board sync enable requested', { 
       workspaceId, 
@@ -79,11 +70,12 @@ router.post('/board/enable', authenticateToken, async (req, res) => {
 
 router.post('/board/disable', authenticateToken, async (req, res) => {
   try {
-    const { boardId } = req.body;
-    
-    if (!boardId) {
+    let boardId;
+    try {
+      boardId = sanitizeApiPathSegment(req.body.boardId, 'boardId');
+    } catch {
       return res.status(400).json({ 
-        message: 'boardId is required' 
+        message: 'boardId is required and must be a valid non-empty string' 
       });
     }
 
@@ -238,7 +230,7 @@ router.post('/board/cancel', authenticateToken, async (req, res) => {
       });
     }
 
-    const result = await cancelBoardSync(boardId, req.session.Authorization);
+    const result = await cancelBoardSync(String(boardId), req.session.Authorization);
     
     info('Sync-Route', 'Sync cancelled', { 
       boardId
@@ -283,7 +275,7 @@ router.post('/workspace/enable', authenticateToken, async (req, res) => {
 
 router.get('/board/status/:boardId', authenticateToken, async (req, res) => {
   try {
-    const { boardId } = req.params;
+    const boardId = toRequiredQueryString(req.params.boardId);
     
     if (!boardId) {
       return res.status(400).json({ 
@@ -311,7 +303,7 @@ router.get('/board/status/:boardId', authenticateToken, async (req, res) => {
 
 router.get('/workspace/status/:workspaceId', authenticateToken, async (req, res) => {
   try {
-    const { workspaceId } = req.params;
+    const workspaceId = toRequiredQueryString(req.params.workspaceId);
     
     if (!workspaceId) {
       return res.status(400).json({ 

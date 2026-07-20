@@ -6,7 +6,6 @@ import { ArrowLeft, Calendar, User, FileText, AlertCircle, FileCheck, FileSpread
 import { usePathname, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { toJpeg } from "html-to-image";
 import {
   Table,
   TableBody,
@@ -29,6 +28,23 @@ import { fetchMonthlyStatementItems } from "@/app/utils/items";
 import { format } from "date-fns";
 import Spinner from "@/components/ui/spin";
 import { showSuccessToast, showErrorToast, showInfoToast, showWarningToast, getApiErrorMessage } from "@/lib/toast-utils";
+import { wrapChartTickLabel } from "@/lib/chart-tick-helpers";
+import {
+  buildMonthlyStatementQueryParams,
+  buildStatementViewModel,
+  getTransactionStatusBadgeVariant,
+  groupBudgetItemsByFolder,
+  validateStatementDateInputs,
+} from "@/lib/monthly-statement-helpers";
+import { executeMonthlyStatementPdfAction } from "@/lib/monthly-statement-pdf-helpers";
+import {
+  captureChartAsLightPng,
+  compositeChartImages,
+  waitForFontsAndNextPaint,
+} from "@/lib/monthly-statement-chart-capture";
+import { MonthlyStatementPageView } from "@/lib/monthly-statement-page-view";
+import { pollBoardManualSyncStatus } from "@/lib/invoice-generator-sync-helpers";
+import { getBoardNameFromSession, isValidRouteIdParam } from "@/lib/sync-manual-helpers";
 import { isCareManagementLabel, isLowCatCareManagementLabel } from "@/lib/access";
 import { ChartContainer, ChartStyle, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from "recharts";
@@ -654,6 +670,7 @@ export default function MonthlyStatement() {
   const [showHelpDialog, setShowHelpDialog] = useState(false);
   const syncCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const previousSyncStatusRef = useRef<{ boardId: string; status: string; startTime?: number; seenInContext?: boolean } | null>(null);
+  const fetchStatementDataRef = useRef<(() => Promise<void>) | null>(null);
   const [businessTimezone, setBusinessTimezone] = useState<string>("Australia/Sydney");
 
 
@@ -939,19 +956,20 @@ export default function MonthlyStatement() {
 
   // Categorize services into budget categories using data from API
   const categorizeServices = (
-    services: ServiceRecord[],
-    budgetCategoriesFromAPI: BudgetCategory[] | undefined,
+    services: Array<Record<string, any>>,
+    budgetCategoriesFromAPI: unknown,
     monthNumber: string,
     year: string
   ): BudgetCategory[] => {
+    const apiCategories = budgetCategoriesFromAPI as BudgetCategory[] | undefined;
     const quarterMonths = getQuarterMonths(monthNumber);
     const defaultFundingEndDate = new Date(parseInt(year), 11, 31).toISOString(); // End of year
 
     // If budget categories are provided from API, use them directly (services are already categorized in backend)
-    if (budgetCategoriesFromAPI && budgetCategoriesFromAPI.length > 0) {
+    if (apiCategories && apiCategories.length > 0) {
       // Create a map for quick lookup
       const categoryMap = new Map<string, BudgetCategory>();
-      budgetCategoriesFromAPI.forEach(cat => {
+      apiCategories.forEach(cat => {
         // Use the category data from API, ensuring services array exists
         const category: BudgetCategory = {
           ...cat,
@@ -994,7 +1012,7 @@ export default function MonthlyStatement() {
           if (!category.services) {
             category.services = [];
           }
-          category.services.push(service);
+          category.services.push(service as ServiceRecord);
         }
       });
 
@@ -1108,118 +1126,20 @@ export default function MonthlyStatement() {
     }
 
     try {
-      const previousSync = previousSyncStatusRef.current;
-      const wasActive = previousSync &&
-        previousSync.boardId === boardId &&
-        (previousSync.status === 'started' || previousSync.status === 'in-progress');
-
-      if (!wasActive) {
-        return;
-      }
-
-      const response = await axios.get(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/sync/workspace/status/${id}`
-      );
-
-      if (response.data && response.data.boards) {
-        const board = response.data.boards.find((b: any) => b.boardId === boardId);
-
-        if (board) {
-          const isManualSync = board.jobStatus &&
-            (board.jobStatus.state === 'active' || board.jobStatus.state === 'waiting' || board.jobStatus.state === 'failed');
-
-          const isFailed = (board.syncExecution && (board.syncExecution.status === 'failed' || board.syncExecution.status === 'timeout')) ||
-            (board.jobStatus && board.jobStatus.state === 'failed');
-
-          const isActive = (board.syncExecution && (board.syncExecution.status === 'started' || board.syncExecution.status === 'in-progress')) ||
-            (board.jobStatus && (board.jobStatus.state === 'active' || board.jobStatus.state === 'waiting'));
-
-          const isCompleted = !isActive && !isFailed && wasActive;
-
-          if (isManualSync) {
-            const jobProgress = board.jobStatus?.progress || {};
-            const syncStats = board.syncStats || {};
-
-            const foldersProcessed = jobProgress.foldersProcessed ?? syncStats.foldersProcessed ?? 0;
-            const totalFolders = jobProgress.totalFolders ?? 0;
-            const currentFolder = jobProgress.currentFolder || null;
-            const itemsProcessed = jobProgress.itemsProcessed ?? syncStats.itemsSynced ?? 0;
-
-            const updatedSyncStatus = {
-              boardId: board.boardId,
-              boardName: board.boardName || board.boardId,
-              status: board.jobStatus.state === 'active' ? 'in-progress' as const :
-                board.jobStatus.state === 'failed' ? 'failed' as const : 'started' as const,
-              syncType: board.syncStatus || 'manual_triggered_sync',
-              startTime: board.jobStatus.processedOn
-                ? new Date(board.jobStatus.processedOn).toISOString()
-                : previousSync?.startTime ? new Date(previousSync.startTime).toISOString() : new Date().toISOString(),
-              progress: {
-                foldersProcessed,
-                totalFolders,
-                currentFolder,
-                itemsProcessed
-              },
-              isManualSync: true,
-              error: isFailed ? {
-                message: board.jobStatus?.failedReason || board.lastSyncError || 'Sync failed with unknown error',
-                stack: null,
-                details: null
-              } : null
-            };
-
-            setSyncStatuses(prev => {
-              const existingIndex = prev.findIndex(s => s.boardId === boardId);
-              if (existingIndex >= 0) {
-                const updated = [...prev];
-                updated[existingIndex] = updatedSyncStatus;
-                return updated;
-              } else {
-                return [...prev, updatedSyncStatus];
-              }
-            });
-
-            previousSyncStatusRef.current = {
-              boardId: board.boardId,
-              status: updatedSyncStatus.status,
-              startTime: previousSync?.startTime || Date.now()
-            };
-          }
-
-          if (isFailed && wasActive) {
-            const errorMessage = board.jobStatus?.failedReason ||
-              board.lastSyncError ||
-              board.syncExecution?.error?.message ||
-              'The sync job encountered an error. Please try again.';
-
-            showErrorToast('Sync job failed', {
-              description: errorMessage
-            });
-
-            stopSyncChecking();
-          } else if (isCompleted) {
-            showSuccessToast('Sync completed', {
-              description: 'The sync job has finished successfully.'
-            });
-
-            setSyncStatuses(prev => prev.filter(s => s.boardId !== boardId));
-
-            stopSyncChecking();
-          }
-        } else {
-          const timeSinceStart = previousSync?.startTime ? Date.now() - previousSync.startTime : 0;
-
-          if (timeSinceStart > 15000 && wasActive) {
-            showSuccessToast('Sync completed', {
-              description: 'The sync job has finished successfully.'
-            });
-
-            setSyncStatuses(prev => prev.filter(s => s.boardId !== boardId));
-
-            stopSyncChecking();
-          }
-        }
-      }
+      await pollBoardManualSyncStatus({
+        workspaceId: id,
+        boardId,
+        previousSync: previousSyncStatusRef.current,
+        axios,
+        setSyncStatuses,
+        previousSyncStatusRef,
+        stopSyncChecking,
+        showErrorToast,
+        showSuccessToast,
+        onCompleted: () => {
+          void fetchStatementDataRef.current?.();
+        },
+      });
     } catch (err: any) {
       console.error('Error checking sync status:', err);
     }
@@ -1232,19 +1152,7 @@ export default function MonthlyStatement() {
   }, [stopSyncChecking]);
 
   const handleManualSync = async () => {
-    const isValidWorkspaceId = id &&
-      typeof id === 'string' &&
-      id.trim() !== '' &&
-      id !== 'undefined' &&
-      id !== 'null';
-
-    const isValidBoardId = boardId &&
-      typeof boardId === 'string' &&
-      boardId.trim() !== '' &&
-      boardId !== 'undefined' &&
-      boardId !== 'null';
-
-    if (!isValidWorkspaceId || !isValidBoardId) {
+    if (!isValidRouteIdParam(id) || !isValidRouteIdParam(boardId)) {
       console.error('Invalid parameters for manual sync:', {
         workspaceId: id,
         boardId,
@@ -1280,16 +1188,7 @@ export default function MonthlyStatement() {
           syncCheckIntervalRef.current = null;
         }
 
-        let boardName = boardId;
-        try {
-          const currentBoardData = sessionStorage.getItem('currentBoard');
-          if (currentBoardData) {
-            const boardData = JSON.parse(currentBoardData);
-            boardName = boardData.boardName || boardId;
-          }
-        } catch (e) {
-          // Use boardId as fallback
-        }
+        const boardName = getBoardNameFromSession(boardId);
 
         const initialSyncStatus = {
           boardId: boardId,
@@ -1389,19 +1288,9 @@ export default function MonthlyStatement() {
     const currentDate = new Date();
     const currentYear = currentDate.getFullYear();
 
-    // Validate month range
-    if (monthNum < 1 || monthNum > 12) {
-      showErrorToast('Please select a valid month (01-12)');
-      return;
-    }
-
-    // Validate year range (not too far in the future, reasonable past)
-    if (yearNum > currentYear + 1) {
-      showErrorToast('Cannot generate statements for future years beyond next year');
-      return;
-    }
-    if (yearNum < currentYear - 10) {
-      showErrorToast('Cannot generate statements for years more than 10 years ago');
+    const dateValidationError = validateStatementDateInputs(monthNum, yearNum, currentYear);
+    if (dateValidationError) {
+      showErrorToast(dateValidationError);
       return;
     }
 
@@ -1422,7 +1311,7 @@ export default function MonthlyStatement() {
       const response = await axios.get(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/items/${id}/${boardId}/monthly-statement`,
         {
-          params: {
+          params: buildMonthlyStatementQueryParams({
             participant: selectedParticipant,
             startDate: startDateISO2,
             endDate: endDateISO2,
@@ -1432,10 +1321,11 @@ export default function MonthlyStatement() {
             budgetLimit: budgetPagination.limit,
             servicePage: servicePagination.page,
             serviceLimit: servicePagination.limit,
-            ...(serviceSortBy ? { serviceSortBy, serviceSortOrder: serviceSortOrder || 'asc' } : {}),
-            ...(serviceTransactionStatusFilter && serviceTransactionStatusFilter !== 'all' ? { serviceTransactionStatus: serviceTransactionStatusFilter } : {}),
-            ...(serviceFundingSourceFilter && serviceFundingSourceFilter !== 'all' ? { serviceFundingSource: serviceFundingSourceFilter } : {}),
-          },
+            serviceSortBy,
+            serviceSortOrder,
+            serviceTransactionStatusFilter: 'all',
+            serviceFundingSourceFilter: 'all',
+          }),
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
@@ -1445,31 +1335,16 @@ export default function MonthlyStatement() {
 
       const data = response.data;
 
-      // Handle budget items
-      let allBudgetItemsFlat: BudgetRecord[] = [];
-      if (data?.budgetItems?.items) {
-        const groupedItems = Object.entries(data.budgetItems.items).reduce(
-          (acc, [folderName, group]) => {
-            const groupItems = Array.isArray((group as any)?.items) ? (group as any).items : [];
-            if (groupItems.length > 0) {
-              acc[folderName] = groupItems as BudgetRecord[];
-            }
-            return acc;
-          },
-          {} as Record<string, BudgetRecord[]>
-        );
-        setBudgetItems(groupedItems);
-        allBudgetItemsFlat = Object.values(groupedItems).flat();
+      const { grouped: groupedItems, flat: allBudgetItemsFlat } = groupBudgetItemsByFolder(data?.budgetItems);
+      setBudgetItems(groupedItems as Record<string, BudgetRecord[]>);
+      if (data?.budgetItems) {
         setBudgetPagination({
           page: data.budgetItems.page || budgetPagination.page,
           limit: data.budgetItems.limit || budgetPagination.limit,
           total: data.budgetItems.total || 0
         });
-      } else {
-        setBudgetItems({});
       }
 
-      // Handle service items
       const services: ServiceRecord[] = data?.serviceItems?.items || [];
       if (data?.serviceItems) {
         setServiceItems(services);
@@ -1487,63 +1362,17 @@ export default function MonthlyStatement() {
         setDistinctFundingSources([]);
       }
 
-      // Derive summary figures (prefer backend-provided values)
-      const fallbackSummary = {
-        totalServices: services.length,
-        totalHours: services.reduce((sum, s) => sum + (s.unit === 'Hour' ? s.quantity : 0), 0),
-        totalAmount: services.reduce((sum, s) => sum + (s.totalAmount || 0), 0),
-        govSubsidy: services.reduce((sum, s) => sum + (s.govSubsidy || 0), 0),
-        participantContribution: services.reduce((sum, s) => sum + (s.participantContribution || 0), 0),
-      };
-
-      const backendSummary = data?.summary;
-      const totalServices = backendSummary?.totalServices ?? fallbackSummary.totalServices;
-      const totalAmount = backendSummary?.totalAmount ?? fallbackSummary.totalAmount;
-
-      const summary = {
-        totalServices,
-        totalHours: backendSummary?.totalHours ?? fallbackSummary.totalHours,
-        totalAmount,
-        govSubsidy: backendSummary?.govSubsidy ?? fallbackSummary.govSubsidy,
-        participantContribution: backendSummary?.participantContribution ?? fallbackSummary.participantContribution,
-      };
-
-      const effectiveMonthNumber = (data?.monthNumber ?? selectedMonth ?? '01').toString().padStart(2, '0');
-      const effectiveYear = (data?.year ?? selectedYear).toString();
-      const monthLabel =
-        data?.month ??
-        months.find((m) => m.value === effectiveMonthNumber)?.label ??
-        effectiveMonthNumber;
-      const participantName = data?.participant ?? selectedParticipant;
-      const participantProfile = data?.participantProfile ?? participantName;
-      const providerIdValue = data?.providerId || businessDetails.companyRegistrationId || '';
-
-      const budgetCategories = categorizeServices(
+      setStatementData(buildStatementViewModel(
+        data,
         services,
-        data?.budgetCategories,
-        effectiveMonthNumber,
-        effectiveYear
-      );
-
-      setStatementData({
-        participant: participantName,
-        participantProfile,
-        month: monthLabel,
-        year: effectiveYear,
-        monthNumber: effectiveMonthNumber,
-        services,
-        budgetCategories,
-        budgetItems: allBudgetItemsFlat,
-        serviceItems: services,
-        summary,
-        participantAddress: data?.participantAddress ?? '',
-        participantSuburb: data?.participantSuburb ?? '',
-        participantState: data?.participantState ?? '',
-        participantPostcode: data?.participantPostcode ?? '',
-        myAgedCareIdNumber: data?.myAgedCareIdNumber ?? '',
-        providerId: providerIdValue,
-        fundingSources: data.fundingSources, // Set fundingSources dynamically
-      });
+        allBudgetItemsFlat as BudgetRecord[],
+        selectedParticipant,
+        selectedMonth,
+        selectedYear,
+        months,
+        businessDetails.companyRegistrationId || '',
+        categorizeServices,
+      ) as typeof statementData);
 
       showSuccessToast('Statement loaded successfully');
     } catch (err) {
@@ -1554,202 +1383,11 @@ export default function MonthlyStatement() {
       setLoadingServiceItems(false);
     }
   };
+  fetchStatementDataRef.current = fetchStatementData;
 
   const getPdfChartCellSize = (cols: number) => {
     if (cols === 3) return { width: 500, height: 600 };
     return { width: 800, height: 600 };
-  };
-
-  const waitForFontsAndNextPaint = async () => {
-    try {
-      const fonts = (document as any).fonts;
-      if (fonts?.ready) {
-        await fonts.ready;
-      }
-    } catch {
-    }
-    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-  };
-
-  const captureChartAsLightPng = async (captureEl: HTMLElement) => {
-    const rect = captureEl.getBoundingClientRect();
-    const clone = captureEl.cloneNode(true) as HTMLElement;
-
-    const stripDarkVariantClasses = (el: Element) => {
-      const classList = (el as HTMLElement).classList;
-      if (!classList) return;
-      const toRemove: string[] = [];
-      classList.forEach((cls) => {
-        if (cls.startsWith('dark:')) toRemove.push(cls);
-      });
-      toRemove.forEach((cls) => classList.remove(cls));
-    };
-    stripDarkVariantClasses(clone);
-    clone.querySelectorAll('*').forEach(stripDarkVariantClasses);
-
-    const width = Math.max(1, Math.ceil(rect.width));
-    const height = Math.max(1, Math.ceil(rect.height));
-    clone.style.width = `${width}px`;
-    clone.style.height = `${height}px`;
-
-    clone.style.backgroundColor = '#ffffff';
-    clone.style.color = '#000000';
-    clone.style.setProperty('--background', '0 0% 100%');
-    clone.style.setProperty('--foreground', '0 0% 0%');
-    clone.style.setProperty('--card', '0 0% 100%');
-    clone.style.setProperty('--card-foreground', '0 0% 0%');
-    clone.style.setProperty('--popover', '0 0% 100%');
-    clone.style.setProperty('--popover-foreground', '0 0% 0%');
-    clone.style.setProperty('--muted', '0 0% 96%');
-    clone.style.setProperty('--muted-foreground', '0 0% 45%');
-    clone.style.setProperty('--border', '0 0% 90%');
-
-    const styleEl = document.createElement('style');
-    styleEl.textContent = `
-      svg text, svg tspan { fill: hsl(var(--foreground)) !important; }
-    `;
-    clone.prepend(styleEl);
-
-    const wrapper = document.createElement('div');
-    wrapper.style.position = 'fixed';
-    wrapper.style.left = '-100000px';
-    wrapper.style.top = '0';
-    wrapper.style.width = `${width}px`;
-    wrapper.style.height = `${height}px`;
-    wrapper.style.pointerEvents = 'none';
-    wrapper.style.zIndex = '-1';
-    wrapper.appendChild(clone);
-    document.body.appendChild(wrapper);
-
-    try {
-      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-      // Use JPEG + lower pixel ratio to keep request payload small (prevents 413 at proxies).
-      return await toJpeg(clone, {
-        pixelRatio: 2,
-        cacheBust: true,
-        backgroundColor: 'white',
-        quality: 0.85,
-      });
-    } finally {
-      document.body.removeChild(wrapper);
-    }
-  };
-
-  // Composite separate chart images into one image (cols per row) for PDF export.
-  const compositeChartImages = async (
-    dataUrls: string[],
-    cols: number,
-    cellSize?: { width: number; height: number },
-    options?: {
-      targetAspect?: number;
-      gap?: number;
-      background?: string;
-      fit?: 'contain' | 'cover';
-    }
-  ): Promise<string> => {
-    if (dataUrls.length === 0) return '';
-    const gap = options?.gap ?? 0;
-    const background = options?.background ?? 'white';
-    const fit = options?.fit ?? 'contain';
-    const loadImage = (src: string): Promise<HTMLImageElement> =>
-      new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = reject;
-        img.src = src;
-      });
-    const images = await Promise.all(dataUrls.map(loadImage));
-    const maxW = cellSize?.width ?? Math.max(...images.map((img) => img.width));
-    const maxH = cellSize?.height ?? Math.max(...images.map((img) => img.height));
-    const rows = Math.ceil(images.length / cols);
-
-    // IMPORTANT:
-    // - pdfme scales images into a fixed (w,h) box without preserving aspect ratio.
-    // - Cropping loses information (your current issue).
-    // So we render a composite PNG that ALREADY matches the PDF box aspect ratio,
-    // and we *scale charts down to fit* (contain) instead of cropping.
-    const targetAspect = options?.targetAspect;
-    const validTargetAspect = !!targetAspect && Number.isFinite(targetAspect) && targetAspect > 0;
-    if (!validTargetAspect) {
-      // Fallback to a simple grid canvas (no enforced aspect).
-      const gridW = cols * maxW + (cols - 1) * gap;
-      const gridH = rows * maxH + (rows - 1) * gap;
-      const canvas = document.createElement("canvas");
-      canvas.width = gridW;
-      canvas.height = gridH;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return dataUrls[0];
-      ctx.imageSmoothingEnabled = true;
-      (ctx as unknown as { imageSmoothingQuality?: string }).imageSmoothingQuality = 'high';
-      ctx.fillStyle = background;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      images.forEach((img, i) => {
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        const x = col * (maxW + gap);
-        const y = row * (maxH + gap);
-        ctx.fillStyle = background;
-        ctx.fillRect(x, y, maxW, maxH);
-        const scale = Math.min(maxW / img.width, maxH / img.height);
-        const dw = img.width * scale;
-        const dh = img.height * scale;
-        ctx.drawImage(img, x + (maxW - dw) / 2, y + (maxH - dh) / 2, dw, dh);
-      });
-      return canvas.toDataURL("image/jpeg", 0.82);
-    }
-
-    // Choose a canvas size that preserves the target aspect while minimizing downscaling.
-    // Candidate A: base on width; Candidate B: base on height; pick larger effective scale.
-    const target = targetAspect as number;
-    const candA_W = Math.max(1, Math.round(cols * maxW + (cols - 1) * gap));
-    const candA_H = Math.max(1, Math.round(candA_W / target));
-    const candA_cellW = (candA_W - (cols - 1) * gap) / cols;
-    const candA_cellH = (candA_H - (rows - 1) * gap) / rows;
-    const candA_scale = Math.min(candA_cellW / maxW, candA_cellH / maxH);
-
-    const candB_H = Math.max(1, Math.round(rows * maxH + (rows - 1) * gap));
-    const candB_W = Math.max(1, Math.round(candB_H * target));
-    const candB_cellW = (candB_W - (cols - 1) * gap) / cols;
-    const candB_cellH = (candB_H - (rows - 1) * gap) / rows;
-    const candB_scale = Math.min(candB_cellW / maxW, candB_cellH / maxH);
-
-    const canvasW = candB_scale > candA_scale ? candB_W : candA_W;
-    const canvasH = candB_scale > candA_scale ? candB_H : candA_H;
-    const cellW = (canvasW - (cols - 1) * gap) / cols;
-    const cellH = (canvasH - (rows - 1) * gap) / rows;
-
-    const canvas = document.createElement("canvas");
-    canvas.width = canvasW;
-    canvas.height = canvasH;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return dataUrls[0];
-    ctx.imageSmoothingEnabled = true;
-    (ctx as unknown as { imageSmoothingQuality?: string }).imageSmoothingQuality = 'high';
-    ctx.fillStyle = background;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    images.forEach((img, i) => {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const x = col * (cellW + gap);
-      const y = row * (cellH + gap);
-      ctx.fillStyle = background;
-      ctx.fillRect(x, y, cellW, cellH);
-
-      // Per-cell fitting:
-      // - contain keeps everything visible
-      // - cover fills cell but may crop (avoid unless explicitly requested)
-      const scale = fit === 'cover'
-        ? Math.max(cellW / img.width, cellH / img.height)
-        : Math.min(cellW / img.width, cellH / img.height);
-      const dw = img.width * scale;
-      const dh = img.height * scale;
-      const dx = x + (cellW - dw) / 2;
-      const dy = y + (cellH - dh) / 2;
-      ctx.drawImage(img, dx, dy, dw, dh);
-    });
-
-    return canvas.toDataURL("image/jpeg", 0.82);
   };
 
   // Handle PDF generation/export (consolidated function)
@@ -1759,118 +1397,28 @@ export default function MonthlyStatement() {
       return null;
     }
 
-    if (!businessDetails.companyName || !businessDetails.companyRegistrationId || !businessDetails.phoneNumber || !businessDetails.businessEmail) {
-      showErrorToast(`Please configure business details before ${action === 'generate' ? 'generating' : 'exporting'} PDF`);
-      setShowBusinessDialog(true);
-      return null;
-    }
-
-    try {
-      const dateRange = getSelectedMonthDateRange();
-      if (!dateRange) {
-        showErrorToast('Please choose a valid month and year before generating PDF.');
-        return null;
-      }
-
-      let chartImage: string | undefined;
-      const chartsWithData = chartConfigs.filter((c) => c.hasData);
-      if (chartsWithData.length > 0 && chartCardRefs.current.length > 0) {
-        try {
-          const SUMMARY_TABLE_ASPECT = 170 / 125.8;
-          const pdfCols = chartsWithData.length === 3 || chartsWithData.length > 4 ? 3 : 2;
-          const chartIndicesWithData = chartsWithData.map((c) => chartConfigs.indexOf(c));
-          await waitForFontsAndNextPaint();
-          const imageDataUrls: string[] = [];
-          for (const chartIdx of chartIndicesWithData) {
-            const cardEl = chartCardRefs.current[chartIdx];
-            const captureEl = (cardEl?.querySelector?.('[data-pdf-chart-container="true"]') as HTMLElement | null) ?? cardEl;
-            if (!captureEl) continue;
-            const dataUrl = await captureChartAsLightPng(captureEl);
-            imageDataUrls.push(dataUrl);
-          }
-          if (imageDataUrls.length > 0) {
-            chartImage = await compositeChartImages(imageDataUrls, pdfCols, getPdfChartCellSize(pdfCols), {
-              targetAspect: SUMMARY_TABLE_ASPECT,
-              background: 'white',
-              gap: 0,
-              // Never crop: keep all labels visible in PDF.
-              fit: 'contain',
-            });
-          }
-        } catch (e) {
-          console.warn("Chart capture for PDF failed:", e);
-        }
-      }
-
-      const userActionLabel =
-        action === 'generate' ? 'Generate Monthly Statement PDF' : 'Export Monthly Statement PDF';
-
-      // Call backend PDF generation endpoint, sending browser timezone so dates are formatted correctly
-      const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/pdf/${id}/${boardId}/monthly-statement`,
-        {
-          statementData: {
-            ...statementData,
-            monthNumber: statementData.monthNumber || selectedMonth,
-            year: statementData.year || selectedYear,
-          },
-          startDate: dateRange.startDate,
-          endDate: dateRange.endDate,
-          businessDetails,
-          timezone: businessTimezone,
-          ...(chartImage ? { chartImage } : {}),
-        }
-        ,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'X-User-Action': userActionLabel
-          }
-        }
-      );
-
-      const fileUrl = response.data?.fileUrl;
-      if (fileUrl) {
-        try {
-          const pdfResponse = await fetch(fileUrl);
-          const pdfBlob = await pdfResponse.blob();
-          const pdfObjectUrl = URL.createObjectURL(pdfBlob);
-          const link = document.createElement('a');
-          link.href = pdfObjectUrl;
-          link.download = response.data?.filename
-          link.style.display = 'none';
-          document.body.appendChild(link);
-          link.click();
-
-          setTimeout(() => {
-            document.body.removeChild(link);
-            URL.revokeObjectURL(pdfObjectUrl);
-          }, 100);
-
-          showSuccessToast(
-            action === 'generate'
-              ? 'Monthly statement PDF downloaded successfully'
-              : 'PDF exported successfully'
-          );
-        } catch (downloadErr: any) {
-          console.error('Error downloading PDF:', downloadErr);
-
-          window.open(fileUrl, '_blank');
-          showInfoToast('PDF opened in new tab', {
-            description: 'Download failed, opened PDF in new tab instead.'
-          });
-        }
-        return fileUrl;
-      } else {
-        showErrorToast('Failed to retrieve PDF link from server.');
-        return null;
-      }
-    } catch (err) {
-      console.error(`Error ${action === 'generate' ? 'generating' : 'exporting'} PDF:`, err);
-      showErrorToast('Failed to generate PDF. Please try again.');
-      return null;
-    }
+    return executeMonthlyStatementPdfAction({
+      action,
+      statementData: statementData as unknown as Record<string, unknown> & { monthNumber?: string; year?: string },
+      businessDetails,
+      selectedMonth,
+      selectedYear,
+      businessTimezone,
+      chartConfigs,
+      chartCardRefs,
+      id,
+      boardId,
+      getSelectedMonthDateRange,
+      captureChartAsLightPng,
+      compositeChartImages,
+      getPdfChartCellSize,
+      waitForFontsAndNextPaint,
+      axios,
+      showErrorToast,
+      showSuccessToast,
+      showInfoToast,
+      setShowBusinessDialog,
+    });
   };
 
   const handleBudgetExportCSV = async () => {
@@ -2299,7 +1847,7 @@ export default function MonthlyStatement() {
   const normalizeBudgetValue = (value: unknown): string => {
     if (value === null || value === undefined) return '';
     if (Array.isArray(value)) {
-      return value.map(normalizeBudgetValue).filter(Boolean).join(', ');
+      return value.map((entry) => normalizeBudgetValue(entry)).filter((entry) => Boolean(entry)).join(', ');
     }
     if (typeof value === 'object') {
       const maybeName = (value as { name?: string }).name;
@@ -2843,61 +2391,7 @@ export default function MonthlyStatement() {
     const approxCharWidth = tickFontSize * 0.56;
     const maxCharsPerLine = Math.max(8, Math.floor((availableWidth - 6) / approxCharWidth));
     const maxLines = 4;
-
-    const wrapSegment = (segment: string) => {
-      const words = segment.split(/\s+/).filter(Boolean);
-      const out: string[] = [];
-      let current = '';
-
-      const pushCurrent = () => {
-        if (current) out.push(current);
-        current = '';
-      };
-
-      for (const word of words) {
-        if (!current) {
-          if (word.length <= maxCharsPerLine) {
-            current = word;
-            continue;
-          }
-          // Split very long words so they never overflow into neighbouring ticks.
-          for (let i = 0; i < word.length; i += maxCharsPerLine) {
-            out.push(word.slice(i, i + maxCharsPerLine));
-          }
-          continue;
-        }
-
-        const candidate = `${current} ${word}`;
-        if (candidate.length <= maxCharsPerLine) {
-          current = candidate;
-        } else {
-          pushCurrent();
-          if (word.length <= maxCharsPerLine) {
-            current = word;
-          } else {
-            for (let i = 0; i < word.length; i += maxCharsPerLine) {
-              out.push(word.slice(i, i + maxCharsPerLine));
-            }
-          }
-        }
-      }
-
-      pushCurrent();
-      return out;
-    };
-
-    const lines = raw
-      .split('\n')
-      .flatMap((segment) => wrapSegment(segment.trim()))
-      .filter(Boolean);
-
-    const clampedLines =
-      lines.length <= maxLines
-        ? lines
-        : [
-            ...lines.slice(0, maxLines - 1),
-            `${lines[maxLines - 1].slice(0, Math.max(0, maxCharsPerLine - 1))}…`,
-          ];
+    const clampedLines = wrapChartTickLabel(raw, maxCharsPerLine, maxLines);
 
     const startY = (y ?? 0) + 6;
 
@@ -2959,914 +2453,23 @@ export default function MonthlyStatement() {
     );
   };
 
-  return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      <div className="container mx-auto py-8">
-        {!isPrintMode && (
-          <>
-            <Button
-              variant="ghost"
-              className="mb-6 print:hidden"
-              onClick={() => router.push(`/workspace/${id}/board/${boardId}`)}
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Board
-            </Button>
+  const monthlyStatementViewProps = {
+    router, id, boardId, isPrintMode, loadingParticipants, uniqueParticipants, selectedParticipant, setSelectedParticipant,
+    months, selectedMonth, setSelectedMonth, years, selectedYear, setSelectedYear,
+    handleManualSync, isManualSyncing, syncStatuses, setShowHelpDialog,
+    fetchStatementData, loading, exportingSection, statementData, businessDetails,
+    chartConfigs, chartCardRefs, chartContainerRef, formatCurrency, formatDate,
+    getQuarterMonths, visibleBudgetCategories, categorizedBudgetSections, loadingServiceItems,
+    handleBudgetCategoryExportCSV, isCurrencyColumn, isHourColumn, formatBudgetCellDisplay,
+    serviceTransactionStatusFilter, setServiceTransactionStatusFilter, fetchServiceItems,
+    servicePagination, serviceSortBy, serviceSortOrder, serviceFundingSourceFilter,
+    setServiceFundingSourceFilter, distinctTransactionStatuses, distinctFundingSources,
+    handleServiceExportCSV, handleServicePageChange, serviceItems, getTransactionStatusBadgeVariant,
+    getServiceProviderLabel, sanitizeNotesHtml, handlePDFAction, handleBudgetExportCSV,
+    handleSaHMonthlyStatement, showHelpDialog, showBusinessDialog, setShowBusinessDialog,
+    businessDetailsErrors, setBusinessDetails, handleSaveBusinessDetails, countryStates,
+    ChartXAxisTick, ChartBarValueLabel, serviceTotalPages, setServiceSortBy, setServiceSortOrder,
+  };
 
-            {/* Header */}
-            <div className="mb-8">
-              <h1 className="text-3xl font-bold mb-2 text-foreground">
-                Monthly Statement Generator
-              </h1>
-              <p className="text-muted-foreground">
-                Manage participants&apos; budget and service records, and generate the Support at Home monthly statement.
-              </p>
-            </div>
-
-            {/* Filters */}
-            <Card className="p-6 mb-6 shadow-lg print:hidden">
-              <div className="flex flex-nowrap items-end gap-4 overflow-x-auto pb-2">
-                <div className="space-y-2 flex-shrink-0 min-w-[200px]">
-                  <label className="text-sm font-medium">Participant</label>
-                  <Select value={selectedParticipant} onValueChange={setSelectedParticipant} disabled={loadingParticipants}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={loadingParticipants ? "Loading participants..." : "Select participant"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {loadingParticipants ? (
-                        <SelectItem value="loading" disabled>Loading...</SelectItem>
-                      ) : uniqueParticipants.length > 0 ? (
-                        uniqueParticipants.map((participant) => (
-                          <SelectItem key={participant} value={participant}>
-                            {participant}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <SelectItem value="none" disabled>No participants found</SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2 flex-shrink-0 min-w-[160px]">
-                  <label className="text-sm font-medium">Month</label>
-                  <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select month" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {months.map((month) => (
-                        <SelectItem key={month.value} value={month.value}>
-                          {month.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2 flex-shrink-0 min-w-[120px]">
-                  <label className="text-sm font-medium">Year</label>
-                  <Select value={selectedYear} onValueChange={setSelectedYear}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select year" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {years.map((year) => (
-                        <SelectItem key={year} value={year}>
-                          {year}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="flex-shrink-0">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="secondary"
-                          className="gap-2"
-                          onClick={handleManualSync}
-                          disabled={isManualSyncing || syncStatuses.some(sync => sync.boardId === boardId && (sync.status === 'started' || sync.status === 'in-progress'))}
-                        >
-                          {isManualSyncing ? (
-                            <>
-                              <Spinner className="h-4 w-4" />
-                              Syncing...
-                            </>
-                          ) : (
-                            <>
-                              Resync Data
-                            </>
-                          )}
-                          <HelpCircle className="h-4 w-4" aria-label="Learn more about Resync Data" onClick={(e) => { e.stopPropagation(); setShowHelpDialog(true); }} />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        It downloads brand-new data from the server, including any edits and new records.
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-
-                <div className="flex-shrink-0">
-                  <Button
-                    onClick={fetchStatementData}
-                    disabled={loading || exportingSection === 'statement-pdf' || !selectedParticipant || !selectedMonth || !selectedYear}
-                  >
-                    {loading && exportingSection !== 'statement-pdf' ? <Spinner /> : 'Load Statement'}
-                  </Button>
-                </div>
-
-              </div>
-            </Card>
-          </>
-        )}
-
-        {/* Statement Content */}
-        {statementData && (
-          <div className="space-y-6">
-            {/* Statement Header */}
-            <Card className="p-6 shadow-lg print:shadow-none">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <h2 className="text-2xl font-bold mb-2">
-                    Support at Home Monthly Statement
-                  </h2>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Calendar className="h-4 w-4" />
-                      <span className="font-medium">{statementData.month} {statementData.year}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <User className="h-4 w-4" />
-                      <span className="font-medium">{statementData.participant}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="print:hidden">
-                  <Button
-                    className="gap-2"
-                    onClick={handleSaHMonthlyStatement}
-                    disabled={!statementData || exportingSection === 'statement-pdf' || loading}
-                  >
-                    {exportingSection === 'statement-pdf' ? (
-                      <>
-                        <Spinner className="h-4 w-4" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <FileCheck className="h-4 w-4" />
-                        Generate Monthly Statement
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-
-              {/* Business Details Display */}
-              {businessDetails.companyName && (
-                <div className="mt-4 p-4 bg-muted/30 rounded-lg">
-                  <h3 className="font-semibold mb-2">Service Provider Details</h3>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div><span className="font-medium">Company:</span> {businessDetails.companyName}</div>
-                    <div><span className="font-medium">Phone:</span> {businessDetails.phoneNumber}</div>
-                    <div><span className="font-medium">Email:</span> {businessDetails.businessEmail}</div>
-                    <div><span className="font-medium">Address:</span> {businessDetails.address}</div>
-                    <div className="col-span-2"><span className="font-medium">Registration ID:</span> {businessDetails.companyRegistrationId || "N/A"}</div>
-                  </div>
-                </div>
-              )}
-
-
-              {statementData && (
-                <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                  <div className="space-y-1">
-                    <p className="text-muted-foreground text-xs uppercase tracking-wide">Participant Address</p>
-                    <p className="font-medium text-foreground">{statementData.participantAddress || 'Not provided'}</p>
-                    <p className="text-muted-foreground">
-                      {[statementData.participantSuburb, statementData.participantState, statementData.participantPostcode]
-                        .filter(Boolean)
-                        .join(', ') || '—'}
-                    </p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-muted-foreground text-xs uppercase tracking-wide">Identifiers</p>
-                    <p className="font-medium">My Aged Care ID</p>
-                    <p className="text-muted-foreground">{statementData.myAgedCareIdNumber || 'Not provided'}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-muted-foreground text-xs uppercase tracking-wide">Provider ID</p>
-                    <p className="font-medium text-foreground">{statementData.providerId || 'Not provided'}</p>
-                  </div>
-                </div>
-              )}
-            </Card>
-
-            <Card className="p-6 shadow-lg print:shadow-none">
-              <div className="mb-6">
-                <h3 className="text-xl font-semibold">Budget Mini Charts</h3>
-                <p className="text-sm text-muted-foreground">
-                  Visual summaries for each funding stream, including Expenditure, remaining budget, etc.
-                </p>
-              </div>
-              {loadingServiceItems ? (
-                <div className="text-center py-8">
-                  <Spinner />
-                </div>
-              ) : chartConfigs.length > 0 ? (
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3" ref={chartContainerRef}>
-                  {chartConfigs.map((chart, chartIndex) => (
-                    <div
-                      key={chart.code}
-                      ref={(el) => { chartCardRefs.current[chartIndex] = el; }}
-                      className="rounded-lg border border-border/60 bg-background p-3 flex flex-col gap-3 shadow-sm dark:bg-black dark:border-white/10 print:bg-white"
-                    >
-                      <div className="rounded-md bg-background overflow-hidden dark:bg-black print:bg-white" data-pdf-chart-container="true">
-                        <div className="px-2 py-2 text-center text-[22px] font-normal text-foreground dark:text-white print:text-black">
-                          {chart.title}
-                        </div>
-                        <ChartContainer
-                          config={chart.chartConfig}
-                          className="w-full aspect-auto min-h-[18rem] h-72 overflow-visible bg-background dark:bg-black print:bg-white"
-                        >
-                          <BarChart data={chart.data} margin={{ left: 4, right: 4, top: 44, bottom: 14 }} barCategoryGap="22%">
-                            <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="0" vertical={false} />
-                            <XAxis
-                              dataKey="shortLabel"
-                              axisLine={{ stroke: 'hsl(var(--muted-foreground))', strokeWidth: 1 }}
-                              tickLine={false}
-                              interval={0}
-                              height={96}
-                              tick={<ChartXAxisTick />}
-                              allowDataOverflow={false}
-                            />
-                            <YAxis hide />
-                            <ChartTooltip
-                              content={
-                                <ChartTooltipContent
-                                  className="text-sm"
-                                  labelClassName="font-normal text-sm"
-                                  formatter={(value, name, item) => [
-                                    formatCurrency(typeof value === 'number' ? value : Number(value)),
-                                    (item?.payload as ChartBarDatum)?.label || name,
-                                  ]}
-                                />
-                              }
-                            />
-                            <Bar
-                              dataKey="value"
-                              radius={[6, 6, 0, 0]}
-                              maxBarSize={52}
-                              isAnimationActive={false}
-                            >
-                              <LabelList dataKey="value" content={<ChartBarValueLabel />} />
-                              {chart.data.map((entry) => (
-                                <Cell key={`${chart.code}-${entry.name}`} fill={`var(--color-${entry.name})`} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ChartContainer>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <AlertCircle className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                  <p>No services found for the selected period</p>
-                </div>
-              )}
-            </Card>
-
-            {/* Individualised Budgets */}
-            <Card className="shadow-lg print:shadow-none">
-              <div className="p-6 border-b">
-                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <h3 className="text-xl font-semibold">Individualised Budgets</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Budget allocation and spending records for each funding stream
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Budget Streams Subsections */}
-              {loadingServiceItems ? (
-                <div className="p-6 text-center">
-                  <Spinner />
-                </div>
-              ) : (
-                <div className="space-y-6 p-6">
-                  {categorizedBudgetSections.map((section) => (
-                    <div key={section.categoryCode} className="border rounded-lg p-4">
-                      <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                        <div>
-                          <h4 className="text-lg font-semibold">{section.sectionTitle}</h4>
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-2 print:hidden"
-                          onClick={() => handleBudgetCategoryExportCSV(section.categoryCode, section.sectionTitle)}
-                          disabled={exportingSection === `budget-${section.categoryCode}`}
-                        >
-                          <FileSpreadsheet className="h-4 w-4" />
-                          Export CSV
-                        </Button>
-                      </div>
-                      <div className="overflow-x-auto">
-                        {section.items.length === 0 ? (
-                          <div className="py-4 text-center text-sm text-muted-foreground">
-                            No budget items found for this stream.
-                          </div>
-                        ) : (
-                          <Table className="text-sm min-w-max">
-                            <TableHeader>
-                              <TableRow>
-                                {section.columns.map((column) => (
-                                  <TableHead
-                                    key={`${section.categoryCode}-${column}`}
-                                    className={isCurrencyColumn(column) || isHourColumn(column) ? 'text-right whitespace-nowrap' : 'whitespace-normal break-words'}
-                                  >
-                                    {column}
-                                  </TableHead>
-                                ))}
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {section.items.map((item) => (
-                                <TableRow key={item.id} className="text-xs">
-                                  {section.columns.map((column) => (
-                                    <TableCell
-                                      key={`${item.id}-${column}`}
-                                      className={isCurrencyColumn(column) || isHourColumn(column) ? 'text-right whitespace-nowrap' : 'whitespace-normal break-words'}
-                                    >
-                                      {formatBudgetCellDisplay(column, item)}
-                                    </TableCell>
-                                  ))}
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-
-            {/* Service Records */}
-            <Card className="shadow-lg print:shadow-none">
-              <div className="p-6 border-b">
-                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <h3 className="text-xl font-semibold">Service Records</h3>
-                    <p className="text-sm text-muted-foreground">
-                      The services scheduled for the participants and their status
-                    </p>
-                  </div>
-                  <div className="print:hidden flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor="transaction-status-filter" className="text-sm whitespace-nowrap">Transaction Status</Label>
-                      <Select
-                        value={serviceTransactionStatusFilter}
-                        onValueChange={(value) => {
-                          setServiceTransactionStatusFilter(value);
-                          fetchServiceItems(1, servicePagination.limit, serviceSortBy, serviceSortOrder, value, serviceFundingSourceFilter);
-                        }}
-                        disabled={!statementData || loadingServiceItems}
-                      >
-                        <SelectTrigger id="transaction-status-filter" className="w-[220px]">
-                          <SelectValue placeholder="All" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All</SelectItem>
-                          {distinctTransactionStatuses.map((status) => (
-                            <SelectItem key={status} value={status}>
-                              {status}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor="funding-source-filter" className="text-sm whitespace-nowrap">Funding Source</Label>
-                      <Select
-                        value={serviceFundingSourceFilter}
-                        onValueChange={(value) => {
-                          setServiceFundingSourceFilter(value);
-                          fetchServiceItems(1, servicePagination.limit, serviceSortBy, serviceSortOrder, serviceTransactionStatusFilter, value);
-                        }}
-                        disabled={!statementData || loadingServiceItems}
-                      >
-                        <SelectTrigger id="funding-source-filter" className="w-[220px]">
-                          <SelectValue placeholder="All" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All</SelectItem>
-                          {distinctFundingSources.map((source) => (
-                            <SelectItem key={source} value={source}>
-                              {source}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-2"
-                      onClick={handleServiceExportCSV}
-                      disabled={!statementData || exportingSection === 'service-csv'}
-                    >
-                      <FileSpreadsheet className="h-4 w-4" />
-                      Export CSV
-                    </Button>
-                  </div>
-                </div>
-              </div>
-              <div className="overflow-x-auto">
-                {loadingServiceItems ? (
-                  <div className="p-6 text-center">
-                    <Spinner />
-                  </div>
-                ) : serviceItems.length > 0 ? (
-                  <Table className="text-sm">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="whitespace-nowrap">Participant</TableHead>
-                        <TableHead className="whitespace-nowrap">Service</TableHead>
-                        <TableHead className="whitespace-nowrap">Service Provider</TableHead>
-                        <TableHead className="whitespace-nowrap">
-                          <button
-                            type="button"
-                            className={`inline-flex items-center gap-1 hover:text-foreground ${serviceSortBy === 'scheduledServiceDate' ? 'text-red-600' : 'text-muted-foreground'}`}
-                            onClick={() => {
-                              const isActive = serviceSortBy === 'scheduledServiceDate';
-                              const nextOrder = isActive && serviceSortOrder === 'asc' ? 'desc' : 'asc';
-                              setServiceSortBy('scheduledServiceDate');
-                              setServiceSortOrder(nextOrder);
-                              fetchServiceItems(1, servicePagination.limit, 'scheduledServiceDate', nextOrder);
-                            }}
-                          >
-                            Scheduled Service Date
-                            {serviceSortBy === 'scheduledServiceDate' ? (serviceSortOrder === 'asc' ? <ArrowUp className="h-3.5 w-3.5 shrink-0" /> : <ArrowDown className="h-3.5 w-3.5 shrink-0" />) : <ArrowUpDown className="h-3.5 w-3.5 shrink-0" />}
-                          </button>
-                        </TableHead>
-                        <TableHead className="whitespace-nowrap">
-                          <button
-                            type="button"
-                            className={`inline-flex items-center gap-1 hover:text-foreground ${serviceSortBy === 'serviceDeliveryDate' ? 'text-red-600' : 'text-muted-foreground'}`}
-                            onClick={() => {
-                              const nextBy = 'serviceDeliveryDate';
-                              const nextOrder = serviceSortBy === 'serviceDeliveryDate' && serviceSortOrder === 'asc' ? 'desc' : 'asc';
-                              setServiceSortBy(nextBy);
-                              setServiceSortOrder(nextOrder);
-                              fetchServiceItems(1, servicePagination.limit, nextBy, nextOrder);
-                            }}
-                          >
-                            Service Delivery Date
-                            {serviceSortBy === 'serviceDeliveryDate' ? (serviceSortOrder === 'asc' ? <ArrowUp className="h-3.5 w-3.5 shrink-0" /> : <ArrowDown className="h-3.5 w-3.5 shrink-0" />) : <ArrowUpDown className="h-3.5 w-3.5 shrink-0" />}
-                          </button>
-                        </TableHead>
-                        <TableHead className="whitespace-nowrap">Transaction Status</TableHead>
-                        <TableHead className="whitespace-nowrap">Committed AT-HM for Delivery</TableHead>
-                        <TableHead className="whitespace-nowrap">Unit</TableHead>
-                        <TableHead className="text-right whitespace-nowrap">Quantity</TableHead>
-                        <TableHead className="text-right whitespace-nowrap">Unit Price ($)</TableHead>
-                        <TableHead className="text-right whitespace-nowrap">Total Amount ($)</TableHead>
-                        <TableHead className="text-right whitespace-nowrap">Gov Subsidy ($)</TableHead>
-                        <TableHead className="text-right whitespace-nowrap">Participant Contribution ($)</TableHead>
-                        <TableHead>Funding Source</TableHead>
-                        <TableHead>Notes</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {serviceItems.map((service) => (
-                        <TableRow key={service.id} className="text-xs">
-                          <TableCell className="whitespace-nowrap">
-                            {service.participant || service.participantName || '-'}
-                          </TableCell>
-                          <TableCell className="min-w-[250px]">
-                            {service.service || service.taskName || '-'}
-                          </TableCell>
-                          <TableCell className="min-w-[180px]">
-                            {getServiceProviderLabel(service)}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            {service.scheduledServiceDate ? formatDate(service.scheduledServiceDate) : (service.scheduledShiftStart ? formatDate(service.scheduledShiftStart) : 'N/A')}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            {service.serviceDeliveryDate ? formatDate(service.serviceDeliveryDate) : (service.actualShiftEndDateTime ? formatDate(service.actualShiftEndDateTime) : 'N/A')}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            {service.transactionStatus && service.transactionStatus.trim() !== '' ? (
-                              <Badge
-                                variant={service.transactionStatus?.toLowerCase().includes('cancelled') ? 'destructive' : service.transactionStatus?.toLowerCase().includes('delivered') ? 'default' : 'secondary'}
-                                className="text-xs w-max"
-                              >
-                                {service.transactionStatus}
-                              </Badge>
-                            ) : (
-                              'N/A'
-                            )}
-                          </TableCell>
-                          <TableCell className="text-center">
-                            {service.committedAtHmForDelivery && service.committedAtHmForDelivery > 0 ? (
-                              <span className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-blue-500 text-white">Yes</span>
-                            ) : (
-                                <span className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-background text-foreground border border-input dark:bg-white/10 dark:text-white dark:border-white/10">No</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">{service.unit || '-'}</TableCell>
-                          <TableCell className="text-right">{Number(service.quantity ?? 0).toFixed(2)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(service.unitPrice ?? 0)}</TableCell>
-                          <TableCell className="text-right font-medium">{formatCurrency(service.totalAmount ?? 0)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(service.govSubsidy ?? 0)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(service.participantContribution ?? 0)}</TableCell>
-                          <TableCell className="min-w-[150px]">{service.fundingSource || 'N/A'}</TableCell>
-                          <TableCell className="max-w-[250px]">
-                            {service.notes && service.notes.trim() ? (
-                              <div
-                                className="notes-cell text-sm prose prose-p:my-0.5 prose-p:leading-tight max-w-none dark:prose-invert"
-                                dangerouslySetInnerHTML={{ __html: sanitizeNotesHtml(service.notes) }}
-                              />
-                            ) : (
-                              'N/A'
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                ) : (
-                  <div className="p-6 text-center text-muted-foreground">
-                    <AlertCircle className="h-12 w-12 mx-auto mb-2 opacity-50" />
-                    <p>No service records found for the selected period</p>
-                  </div>
-                )}
-              </div>
-
-              {!loadingServiceItems && serviceItems.length > 0 && (
-                <div className="mt-6">
-                  <Pagination>
-                    <PaginationContent>
-                      <PaginationItem>
-                        <PaginationPrevious
-                          onClick={() => handleServicePageChange(servicePagination.page - 1)}
-                          className={servicePagination.page === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                        />
-                      </PaginationItem>
-
-                      {Array.from({ length: serviceTotalPages }, (_, i) => i + 1)
-                        .filter((page) =>
-                          page === 1 ||
-                          page === serviceTotalPages ||
-                          (page >= servicePagination.page - 1 && page <= servicePagination.page + 1)
-                        )
-                        .map((page, index, arr) => (
-                          <div key={`service-pagination-${page}`} className="flex">
-                            {index > 0 && arr[index - 1] !== page - 1 && (
-                              <PaginationItem>
-                                <PaginationEllipsis />
-                              </PaginationItem>
-                            )}
-                            <PaginationItem>
-                              <PaginationLink
-                                onClick={() => handleServicePageChange(page)}
-                                isActive={servicePagination.page === page}
-                              >
-                                {page}
-                              </PaginationLink>
-                            </PaginationItem>
-                          </div>
-                        ))}
-
-                      <PaginationItem>
-                        <PaginationNext
-                          onClick={() => handleServicePageChange(servicePagination.page + 1)}
-                          className={servicePagination.page === serviceTotalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                        />
-                      </PaginationItem>
-                    </PaginationContent>
-                  </Pagination>
-                </div>
-              )}
-            </Card>
-
-            {/* Summary Footer */}
-            <Card className="p-6 shadow-lg print:shadow-none print:break-inside-avoid">
-              <div className="flex items-start justify-between gap-4">
-                <div className="space-y-1">
-                  <h3 className="text-base font-semibold leading-none">Statement summary</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Key figures for {statementData.month} {statementData.year}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                <div className="flex items-start gap-3 rounded-lg border bg-muted/20 p-4 print:bg-transparent">
-                  <div className="mt-0.5 rounded-md bg-primary/10 p-2 text-primary print:bg-transparent">
-                    <Calendar className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-muted-foreground">Statement period</p>
-                    <p className="truncate text-sm font-semibold tabular-nums">
-                      {statementData.month} {statementData.year}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3 rounded-lg border bg-muted/20 p-4 print:bg-transparent">
-                  <div className="mt-0.5 rounded-md bg-primary/10 p-2 text-primary print:bg-transparent">
-                    <FileCheck className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-muted-foreground">Generated</p>
-                    <p className="truncate text-sm font-semibold tabular-nums">
-                      {format(new Date(), 'dd/MM/yyyy')}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3 rounded-lg border bg-muted/20 p-4 print:bg-transparent">
-                  <div className="mt-0.5 rounded-md bg-primary/10 p-2 text-primary print:bg-transparent">
-                    <FileText className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-muted-foreground">Total services</p>
-                    <p className="truncate text-sm font-semibold tabular-nums">
-                      {statementData.summary.totalServices} services
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3 rounded-lg border bg-muted/20 p-4 print:bg-transparent">
-                  <div className="mt-0.5 rounded-md bg-primary/10 p-2 text-primary print:bg-transparent">
-                    <FileSpreadsheet className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-muted-foreground">Government subsidy</p>
-                    <p className="truncate text-sm font-semibold tabular-nums">
-                      {formatCurrency(statementData.summary.govSubsidy)}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3 rounded-lg border bg-muted/20 p-4 print:bg-transparent">
-                  <div className="mt-0.5 rounded-md bg-primary/10 p-2 text-primary print:bg-transparent">
-                    <User className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-muted-foreground">Participant contribution</p>
-                    <p className="truncate text-sm font-semibold tabular-nums">
-                      {formatCurrency(statementData.summary.participantContribution)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </Card>
-          </div>
-        )}
-
-        {/* Empty State */}
-        {!statementData && !loading && (
-          <Card className="p-12 text-center shadow-lg">
-            <div className="flex flex-col items-center gap-4">
-              <div className="bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center">
-                <Calendar className="h-8 w-8 text-primary" />
-              </div>
-              <div>
-                <h3 className="text-xl font-semibold mb-2">No Statement Loaded</h3>
-                <p className="text-muted-foreground">
-                  Select a participant, month, and year above to generate the monthly statement
-                </p>
-              </div>
-            </div>
-          </Card>
-        )}
-      </div>
-
-      <Dialog open={showHelpDialog} onOpenChange={setShowHelpDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <HelpCircle className="h-5 w-5" />
-              Resync Data
-            </DialogTitle>
-            <DialogDescription>
-              Understanding how resync works
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <div className="flex items-start gap-3">
-                <Download className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
-                <div>
-                  <h3 className="font-semibold text-sm">Resync Data</h3>
-                  <p className="text-sm text-muted-foreground">
-                    It downloads brand-new data from the server, including any edits and new records. The button will be disabled while a sync is in progress.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button onClick={() => setShowHelpDialog(false)}>Got it</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Business Details Dialog */}
-      <Dialog open={showBusinessDialog} onOpenChange={setShowBusinessDialog}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Business Details Configuration</DialogTitle>
-            <DialogDescription>
-              Configure your business details for PDF generation. These will appear on the monthly statement.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid grid-cols-2 gap-4 py-4">
-            {businessDetailsErrors.length > 0 && (
-              <div className="col-span-2 mb-2 p-4 bg-destructive/10 border border-destructive rounded-md">
-                <h4 className="text-sm font-medium text-destructive mb-2">Please correct the following errors:</h4>
-                <ul className="list-disc list-inside space-y-1">
-                  {businessDetailsErrors.map((error, index) => (
-                    <li key={index} className="text-sm text-destructive">
-                      {error}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label htmlFor="companyName">Company Name *</Label>
-              <Input
-                id="companyName"
-                value={businessDetails.companyName}
-                onChange={(e) => setBusinessDetails({ ...businessDetails, companyName: e.target.value })}
-                placeholder="Enter company name"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="companyRegistrationId">Company Registration ID *</Label>
-              <Input
-                id="companyRegistrationId"
-                value={businessDetails.companyRegistrationId}
-                onChange={(e) => setBusinessDetails({ ...businessDetails, companyRegistrationId: e.target.value })}
-                placeholder="Enter provider registration ID"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="phoneNumber">Phone Number *</Label>
-              <Input
-                id="phoneNumber"
-                value={businessDetails.phoneNumber}
-                onChange={(e) => setBusinessDetails({ ...businessDetails, phoneNumber: e.target.value })}
-                placeholder="Enter phone number"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="businessEmail">Business Email *</Label>
-              <Input
-                id="businessEmail"
-                type="email"
-                value={businessDetails.businessEmail}
-                onChange={(e) => setBusinessDetails({ ...businessDetails, businessEmail: e.target.value })}
-                placeholder="Enter business email"
-              />
-            </div>
-
-            <div className="space-y-2 col-span-2">
-              <Label htmlFor="address">Street Address</Label>
-              <Input
-                id="address"
-                value={businessDetails.address}
-                onChange={(e) => setBusinessDetails({ ...businessDetails, address: e.target.value })}
-                placeholder="Enter street address"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="suburb">Suburb</Label>
-              <Input
-                id="suburb"
-                value={businessDetails.suburb}
-                onChange={(e) => setBusinessDetails({ ...businessDetails, suburb: e.target.value })}
-                placeholder="Enter suburb"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="country">Country</Label>
-              <Select
-                value={businessDetails.country}
-                onValueChange={(value) =>
-                  setBusinessDetails({
-                    ...businessDetails,
-                    country: value,
-                    state: "", // Reset state when country changes
-                  })
-                }
-              >
-                <SelectTrigger id="country">
-                  <SelectValue placeholder="Select country" />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.keys(countryStates).map((country) => (
-                    <SelectItem key={country} value={country}>
-                      {country}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="state">State</Label>
-              <Select
-                value={businessDetails.state}
-                onValueChange={(value) =>
-                  setBusinessDetails({ ...businessDetails, state: value })
-                }
-                disabled={!businessDetails.country || countryStates[businessDetails.country]?.length === 0}
-              >
-                <SelectTrigger id="state">
-                  <SelectValue placeholder={
-                    !businessDetails.country
-                      ? "Select country first"
-                      : countryStates[businessDetails.country]?.length === 0
-                        ? "No states available"
-                        : "Select state"
-                  } />
-                </SelectTrigger>
-                <SelectContent>
-                  {businessDetails.country && countryStates[businessDetails.country]?.map((state: string) => (
-                    <SelectItem key={state} value={state}>
-                      {state}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="postcode">Postcode</Label>
-              <Input
-                id="postcode"
-                value={businessDetails.postcode}
-                onChange={(e) => setBusinessDetails({ ...businessDetails, postcode: e.target.value })}
-                placeholder="Enter postcode"
-                maxLength={8}
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowBusinessDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSaveBusinessDetails}>
-              Save Details
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Print Styles */}
-      <style jsx global>{`
-        @media print {
-          body {
-            print-color-adjust: exact;
-            -webkit-print-color-adjust: exact;
-          }
-          .print\\:hidden {
-            display: none !important;
-          }
-          .print\\:shadow-none {
-            box-shadow: none !important;
-          }
-          .print\\:break-inside-avoid {
-            break-inside: avoid;
-          }
-          @page {
-            margin: 1cm;
-            size: A4;
-          }
-        }
-      `}</style>
-    </div>
-  );
+  return <MonthlyStatementPageView {...monthlyStatementViewProps} />;
 }

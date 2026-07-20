@@ -12,11 +12,12 @@ import {
 } from './ndisServiceRecords.js';
 import { getItemValues } from '../services/isoplus.js';
 import { resolveNdisPricingRuleForServicePlan } from './ndisPricingRules.js';
+import { collectInvoiceRefIdsFromMasterItems } from './ndisInvoiceContextHelpers.js';
 
 export async function bulkFetchReferenceItemsFromDB(workspaceId, boardId, itemIds) {
   if (!itemIds || itemIds.length === 0) return new Map();
 
-  const uniqueIds = [...new Set(itemIds.filter(Boolean).map((id) => String(id)))];
+  const uniqueIds = [...new Set(itemIds.filter((id) => Boolean(id)).map((id) => String(id)))];
   if (uniqueIds.length === 0) return new Map();
 
   const sameBoard = await Item.find({
@@ -62,12 +63,33 @@ function resolveRefDisplayName(refId, refItemsMap) {
 
 function resolveValueToNames(value, refItemsMap) {
   if (!value) return '';
-  const ids = extractAllRefIds(value).filter(isUuidLike);
+  const ids = extractAllRefIds(value).filter((id) => isUuidLike(id));
   if (ids.length > 0) {
-    const names = ids.map((id) => resolveRefDisplayName(id, refItemsMap)).filter(Boolean);
+    const names = ids.map((id) => resolveRefDisplayName(id, refItemsMap)).filter((name) => Boolean(name));
     if (names.length > 0) return names.join(', ');
   }
   return formatLabelValue(value).trim();
+}
+
+function parseParticipantNameParts(fullName, displayName, firstName, lastName) {
+  if (firstName && lastName) return { firstName, lastName };
+  const nameToParse = (fullName || displayName || '').trim();
+  if (!nameToParse) return { firstName, lastName };
+
+  const parts = nameToParse.split(/\s+/);
+  if (parts.length >= 2) {
+    return {
+      firstName: firstName || parts[0],
+      lastName: lastName || parts.slice(1).join(' '),
+    };
+  }
+  if (parts.length === 1 && parts[0]) {
+    return {
+      firstName: firstName || parts[0],
+      lastName: lastName || parts[0],
+    };
+  }
+  return { firstName, lastName };
 }
 
 function getParticipantProfileFields(participantProfileItem) {
@@ -83,20 +105,13 @@ function getParticipantProfileFields(participantProfileItem) {
 
   const displayName = getParticipantDisplayName(participantProfileItem);
   const fullName = get('Full Name/Preferred Name');
-  let firstName = getMulti('First Name', "Contact Person's First Name", 'ContactPersonsFirstName');
-  let lastName = getMulti('Last Name', "Contact Person's Last Name", 'ContactPersonsLastName');
-
-  if ((!firstName || !lastName) && (fullName || displayName)) {
-    const nameToParse = (fullName || displayName).trim();
-    const parts = nameToParse.split(/\s+/);
-    if (parts.length >= 2) {
-      if (!firstName) firstName = parts[0];
-      if (!lastName) lastName = parts.slice(1).join(' ');
-    } else if (parts.length === 1 && parts[0]) {
-      if (!firstName) firstName = parts[0];
-      if (!lastName) lastName = parts[0];
-    }
-  }
+  const parsed = parseParticipantNameParts(
+    fullName,
+    displayName,
+    getMulti('First Name', "Contact Person's First Name", 'ContactPersonsFirstName'),
+    getMulti('Last Name', "Contact Person's Last Name", 'ContactPersonsLastName'),
+  );
+  const { firstName, lastName } = parsed;
 
   return {
     displayName,
@@ -203,7 +218,7 @@ export async function getNdisInvoiceGeneratorContextFromMasterItems({
   boardId,
   masterItemIds,
 }) {
-  const ids = [...new Set((masterItemIds || []).filter(Boolean).map((id) => String(id)))];
+  const ids = [...new Set((masterItemIds || []).filter((id) => Boolean(id)).map((id) => String(id)))];
   if (ids.length === 0) {
     throw new Error('No items provided for invoice generation.');
   }
@@ -228,30 +243,13 @@ export async function getNdisInvoiceGeneratorContextFromMasterItems({
     throw new Error(`Some items are not Timesheet Approved and cannot be invoiced (${notApproved.length}).`);
   }
 
-  const servicePlanIds = new Set();
-  const participantProfileIds = new Set();
-  const cancellationTypeIds = new Set();
-  const allowancesRefIds = new Set();
-  const nonFaceToFaceRefIds = new Set();
-
-  for (const item of masterItems) {
-    const spId = extractRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.SERVICE_PLAN]);
-    if (spId && isUuidLike(spId)) servicePlanIds.add(spId);
-
-    const ppId = extractRefId(item?.data?.[NDIS_MASTERPLAN_ATTR.PARTICIPANT_PROFILE]);
-    if (ppId && isUuidLike(ppId)) participantProfileIds.add(ppId);
-
-    const ctId = extractRefId(item?.data?.['Cancellation Type']);
-    if (ctId && isUuidLike(ctId)) cancellationTypeIds.add(ctId);
-
-    extractAllRefIds(item?.data?.[NDIS_MASTERPLAN_ATTR.ALLOWANCES_TYPE])
-      .filter(isUuidLike)
-      .forEach((id) => allowancesRefIds.add(id));
-
-    extractAllRefIds(item?.data?.[NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_SUPPORTS])
-      .filter(isUuidLike)
-      .forEach((id) => nonFaceToFaceRefIds.add(id));
-  }
+  const {
+    servicePlanIds,
+    participantProfileIds,
+    cancellationTypeIds,
+    allowancesRefIds,
+    nonFaceToFaceRefIds,
+  } = collectInvoiceRefIdsFromMasterItems(masterItems);
 
   const refItemsMap = await bulkFetchReferenceItemsFromDB(workspaceId, boardId, [
     ...servicePlanIds,
@@ -262,10 +260,19 @@ export async function getNdisInvoiceGeneratorContextFromMasterItems({
   ]);
 
   const supportItemIds = new Set();
-  for (const spId of servicePlanIds) {
+  const servicePlanIdList = [...servicePlanIds];
+  const pricingRules = await Promise.all(
+    servicePlanIdList.map((spId) => {
+      const spItem = refItemsMap.get(spId);
+      if (!spItem?.data) return Promise.resolve(null);
+      return resolveNdisPricingRuleForServicePlan(workspaceId, spItem, boardId);
+    }),
+  );
+  for (let i = 0; i < servicePlanIdList.length; i++) {
+    const spId = servicePlanIdList[i];
     const spItem = refItemsMap.get(spId);
-    if (!spItem?.data) continue;
-    const pricingRule = await resolveNdisPricingRuleForServicePlan(workspaceId, spItem, boardId);
+    const pricingRule = pricingRules[i];
+    if (!spItem?.data || !pricingRule) continue;
     collectNdisSupportCatalogueRefIds(spItem.data, pricingRule).forEach((id) => supportItemIds.add(id));
   }
   if (supportItemIds.size > 0) {

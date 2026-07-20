@@ -5,7 +5,6 @@ import Business from '../models/Business.js';
 import { info, error, warn } from '../utils/logger.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { uploadFileToS3, deleteFileFromS3 } from '../utils/uploadS3.js';
 import {
   formatBusinessProfileResponse,
   isValidLogoField,
@@ -13,59 +12,19 @@ import {
   resolveQrLogoField,
   buildLogoUrls,
 } from '../utils/businessLogo.js';
-import { setLogo } from '../services/isoplus.js';
 import { updateOrganizationInfo } from '../services/xero.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
+import { collectBusinessProfileErrors } from '../validators/businessProfile.js';
+import { toRequiredQueryString } from '../utils/securityHelpers.js';
+import {
+  applyBusinessLogoUpdates,
+  buildBusinessUpdateData,
+  parseLogoRemovals,
+} from '../utils/businessProfileUpdate.js';
+import { sanitizeLogValue } from '../utils/sanitizeLog.js';
 
 const validateBusinessProfile = (req, res, next) => {
-  const errors = [];
-  if (!req.body.name || req.body.name.length > 100) {
-    errors.push('Business name is required and must be less than 100 characters');
-  }
-  if (req.body.phone && !/^\+?[\d\s-]{8,20}$/.test(req.body.phone)) {
-    errors.push('Invalid phone number format');
-  }
-  if (req.body.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(req.body.email)) {
-    errors.push('Invalid email format');
-  }
-  if (req.body.street && req.body.street.length > 200) {
-    errors.push('Street address must be less than 200 characters');
-  }
-  if (req.body.postcode && !/^\d{4,10}$/.test(req.body.postcode)) {
-    errors.push('Invalid postcode format');
-  }
-  if (req.body.abn && !/^\d{11}$/.test(req.body.abn)) {
-    errors.push('ABN must be exactly 11 digits');
-  }
-  if (req.body.acn && !/^\d{9}$/.test(req.body.acn)) {
-    errors.push('ACN must be exactly 9 digits');
-  }
-  if (req.body.bsb && !/^\d{6}$/.test(req.body.bsb)) {
-    errors.push('BSB must be exactly 6 digits');
-  }
-  if (req.body.accountNumber && !/^\d{6,10}$/.test(req.body.accountNumber)) {
-    errors.push('Account number must be between 6 and 10 digits');
-  }
-  if (req.body.bankAccountName && req.body.bankAccountName.length > 100) {
-    errors.push('Bank account name must be less than 100 characters');
-  }
-  if (req.body.documentNumbering) {
-    try {
-      const numbering = JSON.parse(req.body.documentNumbering);
-      ['invoice', 'purchaseOrder', 'quote'].forEach(type => {
-        if (numbering[type]) {
-          if (typeof numbering[type].prefix !== 'string' || numbering[type].prefix.length > 10) {
-            errors.push(`${type} prefix must be a string less than 10 characters`);
-          }
-          if (!Number.isInteger(numbering[type].nextNumber) || numbering[type].nextNumber < 1) {
-            errors.push(`${type} number must be a positive integer`);
-          }
-        }
-      });
-    } catch (e) {
-      errors.push('Invalid document numbering format');
-    }
-  }
+  const errors = collectBusinessProfileErrors(req.body);
   if (errors.length > 0) {
     warn('Business-Service', 'Validation failed', { errors: errors }, req ?? null);
     return res.status(400).json({
@@ -81,10 +40,20 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = express.Router();
-const storage = multer.memoryStorage(); // Use memory storage for multer
+const storage = multer.memoryStorage();
+
+// SonarQube S5693: 8 MB max per file upload, 1 MB max per non-file field.
+const MULTER_UPLOAD_LIMITS = Object.freeze({
+  fileSize: 8 * 1024 * 1024,
+  files: 3,
+  fields: 50,
+  fieldNameSize: 100,
+  fieldSize: 1024 * 1024,
+});
+
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB limit
+  limits: MULTER_UPLOAD_LIMITS,
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith('image/')) {
       return cb(new Error('Only image files are allowed!'), false);
@@ -117,9 +86,9 @@ const streamLogoResponse = async (req, res, business, logoKey) => {
 
 router.get('/profile', authenticateToken, async (req, res) => {
   try {
-    const workspaceId = req.query.workspaceId?.toString();
+    const workspaceId = toRequiredQueryString(req.query.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
-    const business = await Business.findOne({ workspaceId }).lean();
+    const business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } }).lean();
     if (!business) {
       warn('Business-Service', 'Business profile not found', {}, req ?? null);
       return res.status(404).json({ message: 'Business profile not found' });
@@ -138,143 +107,79 @@ router.get('/profile', authenticateToken, async (req, res) => {
 // Get a short-lived presigned URL when a direct S3 link is required.
 router.get('/logo', authenticateToken, async (req, res) => {
   try {
-    const { workspaceId, logoKey } = req.query;
-    
-    if (!workspaceId || !logoKey) {
+    const { workspaceId: rawWorkspaceId, logoKey } = req.query;
+    const workspaceId = toRequiredQueryString(rawWorkspaceId);
+    const safeLogoKey = toRequiredQueryString(logoKey);
+
+    if (!workspaceId || !safeLogoKey) {
       return res.status(400).json({ message: 'workspaceId and logoKey are required' });
     }
 
-    if (!isValidLogoField(logoKey)) {
+    if (!isValidLogoField(safeLogoKey)) {
       return res.status(400).json({ message: 'Invalid logoKey' });
     }
 
-    const business = await Business.findOne({ workspaceId: workspaceId.toString() }).lean();
+    const business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } }).lean();
     if (!business) {
       return res.status(404).json({ message: 'Business not found' });
     }
 
-    const logoPath = business[logoKey];
+    const logoPath = business[safeLogoKey];
     if (!logoPath) {
       return res.status(404).json({ message: 'Logo not found' });
     }
 
-    const logoUrls = await buildLogoUrls({ [logoKey]: logoPath });
-    const logoUrlInfo = logoUrls[logoKey];
+    const logoUrls = await buildLogoUrls({ [safeLogoKey]: logoPath });
+    const logoUrlInfo = logoUrls[safeLogoKey];
     if (!logoUrlInfo?.url) {
       return res.status(404).json({ message: 'Logo file not found' });
     }
 
     info('Business-Service', 'Logo URL retrieved successfully', { 
       workspaceId, 
-      logoKey, 
+      logoKey: safeLogoKey,
       logoPath 
     }, req ?? null);
 
     res.json(logoUrlInfo);
 
   } catch (err) {
-    error('Business-Service', 'Error retrieving logo URL', { 
+    error('Business-Service', 'Error retrieving logo URL', sanitizeLogValue({ 
       error: err.message,
       stack: err.stack,
       workspaceId: req.query.workspaceId,
       logoKey: req.query.logoKey
-    }, req ?? null);
+    }), req ?? null);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
 router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, async (req, res) => {
   try {
-    const workspaceId = req.body.workspaceId?.toString();
+    const workspaceId = toRequiredQueryString(req.body.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
-    const { name, phone, email, abn, acn, companyRegistrationId, state, suburb, country, postcode, street, bankAccountName, bankName, bsb, accountNumber, paymentReference, accountsReceivableTerms, accountsPayableTerms, headOfficeTimezone } = req.body;
-    const files = req.files || {};
-    const parseBoolean = (value) => value === true || value === 'true';
-    const { defaultLogoRemoved, squareLogoRemoved, wideLogoRemoved } = req.body;
 
     let documentNumbering = {};
     if (req.body.documentNumbering) {
       documentNumbering = JSON.parse(req.body.documentNumbering);
     }
 
-    let business = await Business.findOne({ workspaceId });
-
-    const updateData = {
-      name,
-      address: {
-        street,
-        country,
-        suburb,
-        state,
-        postcode
-      },
-      phone,
-      email,
-      abn,
-      acn,
-      companyRegistrationId,
+    let business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
+    const updateData = buildBusinessUpdateData({
+      ...req.body,
       workspaceId,
-      bankDetails: {
-        accountName: bankAccountName,
-        bankName,
-        bsb,
-        accountNumber,
-        paymentReference,
-        accountsReceivableTerms,
-        accountsPayableTerms
-      },
       documentNumbering,
-      headOfficeTimezone: headOfficeTimezone || 'Australia/Sydney'
-    };
+    });
 
-    // Handle file uploads to S3
-    if (files['defaultLogo']) {
-      if (business?.defaultLogo) {
-        await deleteFileFromS3(business.defaultLogo, false);
-      }
-      const defaultLogoPath = `logos/${workspaceId}/default-logo${path.extname(files['defaultLogo'][0].originalname)}`;
-      await uploadFileToS3(files['defaultLogo'][0].buffer, defaultLogoPath, false);
-      updateData.defaultLogo = defaultLogoPath;
-    }
-
-    if (files['squareLogo']) {
-      if (business?.squareLogo) {
-        await deleteFileFromS3(business.squareLogo, false);
-      }
-      const squareLogoPath = `logos/${workspaceId}/square-logo${path.extname(files['squareLogo'][0].originalname)}`;
-      await uploadFileToS3(files['squareLogo'][0].buffer, squareLogoPath, false);
-      setLogo(req.session.Authorization, workspaceId, files['squareLogo'][0], "form", req);
-      updateData.squareLogo = squareLogoPath;
-    }
-
-    if (files['wideLogo']) {
-      if (business?.wideLogo) {
-        await deleteFileFromS3(business.wideLogo, false);
-      }
-      const wideLogoPath = `logos/${workspaceId}/wide-logo${path.extname(files['wideLogo'][0].originalname)}`;
-      await uploadFileToS3(files['wideLogo'][0].buffer, wideLogoPath, false);
-      setLogo(req.session.Authorization, workspaceId, files['wideLogo'][0], "document", req);
-      updateData.wideLogo = wideLogoPath;
-    }
-
-    if (parseBoolean(defaultLogoRemoved)) {
-      if (business?.defaultLogo) {
-        await deleteFileFromS3(business.defaultLogo, false);
-      }
-      updateData.defaultLogo = null;
-    }
-    if (parseBoolean(squareLogoRemoved)) {
-      if (business?.squareLogo) {
-        await deleteFileFromS3(business.squareLogo, false);
-      }
-      updateData.squareLogo = null;
-    }
-    if (parseBoolean(wideLogoRemoved)) {
-      if (business?.wideLogo) {
-        await deleteFileFromS3(business.wideLogo, false);
-      }
-      updateData.wideLogo = null;
-    }
+    const logoUpdates = await applyBusinessLogoUpdates({
+      workspaceId,
+      business,
+      files: req.files || {},
+      removals: parseLogoRemovals(req.body),
+      authorization: req.session.Authorization,
+      req,
+    });
+    Object.assign(updateData, logoUpdates);
 
     if (business) {
       const before = business?.toObject ? business.toObject() : business;
@@ -322,14 +227,14 @@ router.put('/profile', authenticateToken, multiupload, validateBusinessProfile, 
 
 router.get('/logo-image', authenticateToken, async (req, res) => {
   try {
-    const workspaceId = req.query.workspaceId?.toString();
-    const logoKey = req.query.logoKey?.toString();
+    const workspaceId = toRequiredQueryString(req.query.workspaceId);
+    const logoKey = toRequiredQueryString(req.query.logoKey);
 
     if (!workspaceId) {
       return res.status(400).json({ message: 'workspaceId is required' });
     }
 
-    const business = await Business.findOne({ workspaceId });
+    const business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
     if (!business) {
       return res.status(404).json({ message: 'Business not found' });
     }
@@ -345,25 +250,25 @@ router.get('/logo-image', authenticateToken, async (req, res) => {
 
     return streamLogoResponse(req, res, business, resolvedLogoKey);
   } catch (err) {
-    error('Business-Service', 'Error retrieving logo', {
+    error('Business-Service', 'Error retrieving logo', sanitizeLogValue({
       error: err.message,
       stack: err.stack,
       workspaceId: req.query.workspaceId,
       logoKey: req.query.logoKey,
-    }, req ?? null);
+    }), req ?? null);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
 router.get('/qr-logo', authenticateToken, async (req, res) => {
   try {
-    const workspaceId = req.query.workspaceId?.toString();
+    const workspaceId = toRequiredQueryString(req.query.workspaceId);
 
     if (!workspaceId) {
       return res.status(400).json({ message: 'workspaceId is required' });
     }
 
-    const business = await Business.findOne({ workspaceId });
+    const business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
     if (!business) {
       return res.status(404).json({ message: 'Business not found' });
     }
@@ -375,22 +280,22 @@ router.get('/qr-logo', authenticateToken, async (req, res) => {
 
     return streamLogoResponse(req, res, business, logoKey);
   } catch (err) {
-    error('Business-Service', 'Error retrieving logo', { 
+    error('Business-Service', 'Error retrieving logo', sanitizeLogValue({ 
       error: err.message,
       stack: err.stack,
       workspaceId: req.query.workspaceId
-    }, req ?? null);
+    }), req ?? null);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
 router.post('/xero/connect', authenticateToken, async (req, res) => {
   try {
-    const workspaceId = req.body.workspaceId?.toString();
+    const workspaceId = toRequiredQueryString(req.body.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
     const { tokens, organization } = req.body;
 
-    let business = await Business.findOne({ workspaceId });
+    let business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
     if (!business) {
       const now = new Date();
       business = new Business({
@@ -430,10 +335,10 @@ router.post('/xero/connect', authenticateToken, async (req, res) => {
 
 router.post('/xero/disconnect', authenticateToken, async (req, res) => {
   try {
-    const workspaceId = req.body.workspaceId?.toString();
+    const workspaceId = toRequiredQueryString(req.body.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
 
-    const business = await Business.findOne({ workspaceId });
+    const business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
     if (!business) {
       warn('Business-Service', 'Business not found', { workspaceId }, req ?? null);
       return res.status(404).json({ message: 'Business not found' });
@@ -458,10 +363,10 @@ router.post('/xero/disconnect', authenticateToken, async (req, res) => {
 
 router.post('/xero/update-organization', authenticateToken, async (req, res) => {
   try {
-    const workspaceId = req.body.workspaceId?.toString();
+    const workspaceId = toRequiredQueryString(req.body.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
 
-    const business = await Business.findOne({ workspaceId });
+    const business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
     if (!business) {
       warn('Business-Service', 'Business not found', { workspaceId }, req ?? null);
       return res.status(404).json({ message: 'Business not found' });
@@ -503,8 +408,8 @@ router.post('/xero/update-organization', authenticateToken, async (req, res) => 
 router.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      warn('Business-Service', 'File upload failed', { message: 'File size too large. Maximum size is 10MB' }, req ?? null);
-      return res.status(400).json({ status: 'error', message: 'File size too large. Maximum size is 10MB' });
+      warn('Business-Service', 'File upload failed', { message: `File size too large. Maximum size is ${MULTER_UPLOAD_LIMITS.fileSize / (1024 * 1024)}MB` }, req ?? null);
+      return res.status(400).json({ status: 'error', message: 'File size too large. Maximum size is 8MB' });
     }
   }
   error('Business-Service', 'File upload failed', { message: err.message || 'An unknown error occurred', stack: err.stack }, req ?? null);

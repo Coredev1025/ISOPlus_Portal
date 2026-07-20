@@ -1,6 +1,7 @@
 import { getBoardAttributes } from '../services/isoplus.js';
 import Item from '../models/Item.js';
 import { getReferences, getAttribute } from '../services/isoplus.js';
+import { mongoEq } from './securityHelpers.js';
 
 export const LEGACY_DIRECT_SUPPORT_ATTR = 'Direct Support Item Number';
 export const NEW_SUPPORT_ITEM_ATTR = 'Support Item Number';
@@ -83,13 +84,13 @@ export async function boardUsesNewNdisPricing(workspaceId, boardId) {
     return !(await boardUsesLegacyNdisPricing(workspaceId, boardId));
 }
 
-/** @returns {'legacy' | 'new'} */
+/** @returns {Promise<'legacy' | 'new'>} */
 export async function resolveNdisPricingRuleForBoard(workspaceId, boardId) {
     const legacy = await boardUsesLegacyNdisPricing(workspaceId, boardId);
     return legacy ? 'legacy' : 'new';
 }
 
-/** @returns {'legacy' | 'new'} */
+/** @returns {Promise<'legacy' | 'new'>} */
 export async function resolveNdisPricingRuleForServicePlan(workspaceId, servicePlanItem, fallbackBoardId) {
     const inferred = inferPricingRuleFromServicePlanData(servicePlanItem?.data);
     if (inferred) return inferred;
@@ -99,15 +100,15 @@ export async function resolveNdisPricingRuleForServicePlan(workspaceId, serviceP
     return resolveNdisPricingRuleForBoard(workspaceId, boardId);
 }
 
-/** @returns {'legacy' | 'new'} */
+/** @returns {Promise<'legacy' | 'new'>} */
 export async function resolveNdisPricingRuleForAutomation(workspaceId, boardId, itemId, itemsValues) {
     const fromWebhook = inferPricingRuleFromServicePlanData(itemsValues);
     if (fromWebhook) return fromWebhook;
 
     if (itemId && workspaceId) {
         const doc = await Item.findOne({
-            workspaceId: workspaceId.toString(),
-            itemId: String(itemId),
+            workspaceId: mongoEq(workspaceId),
+            itemId: mongoEq(itemId),
         }).select('data').lean();
         const fromStoredItem = inferPricingRuleFromServicePlanData(doc?.data);
         if (fromStoredItem) return fromStoredItem;
@@ -130,8 +131,8 @@ export async function getServicePlanBoardIdFromMasterPlan(workspaceId, masterPla
         if (attribute?.name !== 'Service Plan') continue;
         const servicePlanItemId = reference.to_item_id;
         const doc = await Item.findOne({
-            workspaceId: workspaceId.toString(),
-            itemId: servicePlanItemId,
+            workspaceId: mongoEq(workspaceId),
+            itemId: mongoEq(servicePlanItemId),
         }).select('boardId').lean();
         if (doc?.boardId) return doc.boardId;
         return masterPlanBoardId;
@@ -150,7 +151,10 @@ export async function masterPlanBoardUsesNewNdisPricing(workspaceId, masterPlanB
 export function isShiftCancelled(itemsValues) {
     const status = itemsValues?.['Job Status'] ?? itemsValues?.['Shift Status'];
     if (Array.isArray(status)) {
-        return status.some((s) => String(s).toLowerCase() === 'cancelled');
+        for (let i = 0; i < status.length; i++) {
+            if (String(status[i]).toLowerCase() === 'cancelled') return true;
+        }
+        return false;
     }
     return String(status || '').toLowerCase() === 'cancelled';
 }

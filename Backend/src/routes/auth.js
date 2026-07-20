@@ -9,6 +9,7 @@ import { error, info, warn, logLoginFailure, logLoginSuccess } from '../utils/lo
 import { getWorkspace, getMember, listWorkspacesForAuthorization } from '../services/isoplus.js';
 import { getFrontendBaseUrl, signOAuthState, verifyOAuthState } from '../utils/helpers.js';
 import OAuthTicket from '../models/OAuthTicket.js';
+import { getSafeString, toRequiredQueryString } from '../utils/securityHelpers.js';
 
 const router = express.Router();
 
@@ -96,9 +97,12 @@ router.post('/register',
     }
 
     try {
-      const email = req.body.email?.toString();
-      const password = req.body.password?.toString();
-      const name = req.body.name?.toString();
+      const email = getSafeString(req.body.email);
+      const password = getSafeString(req.body.password);
+      const name = getSafeString(req.body.name);
+      if (!email || !password || !name) {
+        return res.status(400).json({ message: 'Invalid registration input' });
+      }
 
       const existingUser = await User.findOne({ email });
       if (existingUser) {
@@ -140,8 +144,11 @@ router.post('/login',
     }
 
     try {
-      const email = req.body.email?.toString();
-      const password = req.body.password?.toString();
+      const email = getSafeString(req.body.email);
+      const password = getSafeString(req.body.password);
+      if (!email || !password) {
+        return res.status(400).json({ message: 'Invalid login input' });
+      }
       const user = await User.findOne({ email });
 
       if (!user || !(await user.comparePassword(password))) {
@@ -404,6 +411,18 @@ async function establishOAuthSession(req, { authorization, oauthData, method = '
   const name = oauthData?.name?.toString();
   const photo_url = oauthData?.photo_url?.toString();
 
+  if (!email || !oauthId) {
+    logLoginFailure('Auth-Service', 'OAuth login failed: incomplete profile data', {
+      method,
+      stage: 'invalid_profile',
+      reason: 'OAuth profile is missing email or id',
+      httpStatus: 400,
+      hasEmail: !!email,
+      hasOauthId: !!oauthId,
+    }, req ?? null);
+    return { status: 400, body: { message: 'Invalid OAuth profile data' } };
+  }
+
   let user = await User.findOne({ email, oauthId });
   const defaultRole = 'isoplus_user';
   if (!user) {
@@ -417,7 +436,9 @@ async function establishOAuthSession(req, { authorization, oauthData, method = '
     });
     await user.save();
   } else {
-    await User.findOneAndUpdate({ email: email, oauthId: oauthId }, { $set: { avatar: photo_url, name: name } });
+    user.avatar = photo_url;
+    user.name = name;
+    await user.save();
   }
 
   if (user.disabled) {
@@ -459,8 +480,8 @@ async function establishOAuthSession(req, { authorization, oauthData, method = '
     user.role = "owner";
   }
 
-  const workspace = workspaceResponse.workspace.map(w => {
-    const board = w.board.map(b => b.id);
+  const workspace = (workspaceResponse.workspace || []).map(w => {
+    const board = Array.isArray(w.board) ? w.board.map(b => b.id) : [];
     return {
       id: w.id,
       board: board,
@@ -494,7 +515,8 @@ async function establishOAuthSession(req, { authorization, oauthData, method = '
 router.post('/oauth-exchange', async (req, res) => {
   try {
     const { ticket } = req.body;
-    if (!ticket || typeof ticket !== 'string') {
+    const safeTicket = getSafeString(ticket);
+    if (!safeTicket) {
       logLoginFailure('Auth-Service', 'OAuth exchange failed: ticket missing or malformed', {
         method: 'oauth-exchange',
         stage: 'ticket_missing',
@@ -504,7 +526,7 @@ router.post('/oauth-exchange', async (req, res) => {
       return res.status(400).json({ message: 'Ticket is required' });
     }
 
-    const record = await OAuthTicket.findOneAndDelete({ ticket });
+    const record = await OAuthTicket.findOneAndDelete({ ticket: safeTicket });
     if (!record) {
       logLoginFailure('Auth-Service', 'OAuth exchange failed: ticket invalid, expired, or already used', {
         method: 'oauth-exchange',
@@ -663,7 +685,10 @@ router.get('/users', validateApiKey, async (req, res) => {
 
 router.patch('/users/:userId/disable', validateApiKey, async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = toRequiredQueryString(req.params.userId);
+    if (!userId) {
+      return res.status(400).json({ message: 'Invalid user id' });
+    }
     
     const user = await User.findById(userId);
     if (!user) {
@@ -693,7 +718,10 @@ router.patch('/users/:userId/disable', validateApiKey, async (req, res) => {
 
 router.patch('/users/:userId/enable', validateApiKey, async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = toRequiredQueryString(req.params.userId);
+    if (!userId) {
+      return res.status(400).json({ message: 'Invalid user id' });
+    }
     
     const user = await User.findById(userId);
     if (!user) {

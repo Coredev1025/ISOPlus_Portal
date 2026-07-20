@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { authenticateToken, requirePortalOwnerOrSupport } from '../middleware/auth.js';
 import Subscription from '../models/Subscription.js';
 import { info, error as logError } from '../utils/logger.js';
+import { pickAllowedValue, toQueryString, toRequiredQueryString } from '../utils/securityHelpers.js';
 import sanitizeHtml from 'sanitize-html';
 
 const router = express.Router();
@@ -209,7 +210,7 @@ router.get('/', authenticateToken, requirePortalOwnerOrSupport, async (req, res)
   try {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
-    const search = req.query.search || '';
+    const search = toQueryString(req.query.search) || '';
 
     const filter = {};
     if (search) {
@@ -226,8 +227,9 @@ router.get('/', authenticateToken, requirePortalOwnerOrSupport, async (req, res)
       ];
     }
 
-    if (req.query.status && req.query.status !== 'all') {
-      filter.status = req.query.status;
+    const statusFilter = pickAllowedValue(req.query.status, ['request_received', 'account_created']);
+    if (statusFilter) {
+      filter.status = statusFilter;
     }
 
     const skip = (page - 1) * limit;
@@ -272,6 +274,10 @@ router.get('/', authenticateToken, requirePortalOwnerOrSupport, async (req, res)
 router.patch('/:id', authenticateToken, requirePortalOwnerOrSupport, async (req, res) => {
   try {
     const { id } = req.params;
+    const subscriptionId = toRequiredQueryString(id);
+    if (!subscriptionId) {
+      return res.status(400).json({ message: 'Invalid subscription id' });
+    }
     const { status, notes } = req.body;
 
     const updateFields = {};
@@ -293,7 +299,7 @@ router.patch('/:id', authenticateToken, requirePortalOwnerOrSupport, async (req,
     }
 
     const subscription = await Subscription.findByIdAndUpdate(
-      id,
+      subscriptionId,
       { $set: updateFields },
       { new: true, runValidators: true }
     );

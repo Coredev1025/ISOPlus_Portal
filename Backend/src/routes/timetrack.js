@@ -5,8 +5,24 @@ import { transformItemData } from '../utils/itemTransform.js';
 import { info, error, warn } from '../utils/logger.js';
 import TimeTrack from '../models/TimeTrack.js';
 import Item from '../models/Item.js';
+import { toRequiredQueryString, mongoEq } from '../utils/securityHelpers.js';
 
 const router = express.Router();
+
+function parseWorkspaceBoardQuery(query) {
+  return {
+    workspaceId: toRequiredQueryString(query?.workspaceId),
+    boardId: toRequiredQueryString(query?.boardId),
+  };
+}
+
+function parseWorkspaceBoardItemBody(body) {
+  return {
+    workspaceId: toRequiredQueryString(body?.workspaceId),
+    boardId: toRequiredQueryString(body?.boardId),
+    itemId: toRequiredQueryString(body?.itemId),
+  };
+}
 
 function computeDuration(start, end) {
     return Math.floor((end - start) / 1000);
@@ -55,15 +71,15 @@ function resolveItemName(itemData, fallbackId) {
 }
 
 router.get('/tasks', authenticateToken, requirePortalOwnerOrSupport, async (req, res) => {
-    const { workspaceId, boardId } = req.query;
+    const { workspaceId, boardId } = parseWorkspaceBoardQuery(req.query);
     if (!workspaceId || !boardId) {
         return res.status(400).json({ message: 'workspaceId and boardId are required' });
     }
     try {
         const items = await Item.find(
             {
-                workspaceId,
-                boardId,
+                workspaceId: mongoEq(workspaceId),
+                boardId: mongoEq(boardId),
                 $or: [
                     { 'data._hasTimeTracking': true },
                     { 'data._timeTrackingAttributeId': { $exists: true } },
@@ -97,14 +113,14 @@ router.get('/tasks', authenticateToken, requirePortalOwnerOrSupport, async (req,
 });
 
 router.get('/status', authenticateToken, requirePortalOwnerOrSupport, async (req, res) => {
-    const { workspaceId, boardId } = req.query;
+    const { workspaceId, boardId } = parseWorkspaceBoardQuery(req.query);
     if (!workspaceId || !boardId) {
         return res.status(400).json({ message: 'workspaceId and boardId are required' });
     }
     try {
         const active = await TimeTrack.findOne({
-            workspaceId,
-            boardId,
+            workspaceId: mongoEq(workspaceId),
+            boardId: mongoEq(boardId),
             User: req.user.email,
             ended_at: null
         }).lean();
@@ -115,7 +131,7 @@ router.get('/status', authenticateToken, requirePortalOwnerOrSupport, async (req
 
         let taskName = active.Task;
         if (active.itemId) {
-            const item = await Item.findOne({ itemId: active.itemId }, { data: 1 }).lean();
+            const item = await Item.findOne({ itemId: mongoEq(active.itemId) }, { data: 1 }).lean();
             if (item) {
                 taskName = resolveItemName(item.data, taskName);
             }
@@ -143,13 +159,13 @@ router.get('/status', authenticateToken, requirePortalOwnerOrSupport, async (req
 });
 
 router.get('/', authenticateToken, requirePortalOwnerOrSupport, async (req, res) => {
-    const { workspaceId, boardId } = req.query;
+    const { workspaceId, boardId } = parseWorkspaceBoardQuery(req.query);
     if (!workspaceId || !boardId) {
         return res.status(400).json({ message: 'workspaceId and boardId are required' });
     }
     try {
         const entries = await TimeTrack.find(
-            { workspaceId, boardId },
+            { workspaceId: mongoEq(workspaceId), boardId: mongoEq(boardId) },
             null,
             { sort: { started_at: -1 } }
         ).lean();
@@ -195,20 +211,25 @@ router.get('/', authenticateToken, requirePortalOwnerOrSupport, async (req, res)
 });
 
 router.post('/start', authenticateToken, requirePortalOwnerOrSupport, async (req, res) => {
-    const { workspaceId, boardId, itemId, location, notes } = req.body || {};
+    const { workspaceId, boardId, itemId } = parseWorkspaceBoardItemBody(req.body);
+    const { location, notes } = req.body || {};
     if (!workspaceId || !boardId || !itemId) {
         return res.status(400).json({ message: 'workspaceId, boardId, and itemId are required' });
     }
     try {
-        const item = await Item.findOne({ itemId, boardId, workspaceId }, { data: 1 }).lean();
+        const item = await Item.findOne({
+            itemId: mongoEq(itemId),
+            boardId: mongoEq(boardId),
+            workspaceId: mongoEq(workspaceId),
+        }, { data: 1 }).lean();
         if (!item) {
             return res.status(404).json({ message: 'Task item not found for this board' });
         }
         const taskName = resolveItemName(item.data, itemId);
 
         const existing = await TimeTrack.findOne({
-            workspaceId,
-            boardId,
+            workspaceId: mongoEq(workspaceId),
+            boardId: mongoEq(boardId),
             User: req.user.email,
             ended_at: null
         });
@@ -258,13 +279,16 @@ router.post('/start', authenticateToken, requirePortalOwnerOrSupport, async (req
 });
 
 router.post('/stop', authenticateToken, requirePortalOwnerOrSupport, async (req, res) => {
-    const { workspaceId, boardId, itemId, location, notes } = req.body || {};
+    const { workspaceId, boardId, itemId } = parseWorkspaceBoardItemBody(req.body);
+    const { location, notes } = req.body || {};
     if (!workspaceId || !boardId || !itemId) {
         return res.status(400).json({ message: 'workspaceId, boardId, and itemId are required' });
     }
     try {
         const entry = await TimeTrack.findOne({
-            workspaceId, boardId, itemId,
+            workspaceId: mongoEq(workspaceId),
+            boardId: mongoEq(boardId),
+            itemId: mongoEq(itemId),
             User: req.user.email,
             ended_at: null
         }).lean();

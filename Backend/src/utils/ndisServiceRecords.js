@@ -1,6 +1,7 @@
 const SYDNEY_TIME_ZONE = 'Australia/Sydney';
 
 import { buildNewNdisMasterPlanServiceRows } from './ndisServiceRecordsNew.js';
+import { buildLegacyNdisMasterPlanServiceRows as buildLegacyNdisMasterPlanServiceRowsImpl } from './ndisLegacyMasterPlanServiceHelpers.js';
 
 export const NDIS_MASTERPLAN_ATTR = {
   PARTICIPANT_PROFILE: 'Participant Profile',
@@ -347,26 +348,30 @@ export function minutesToHhhMm(minutesValue) {
   return `${wholeHours}:${String(minutes).padStart(2, '0')}`;
 }
 
+function formatDurationFromTimeString(s) {
+  const timeMatch = s.match(/^(\d+):(\d{1,2})(?::\d{1,2})?$/);
+  if (!timeMatch) return null;
+  const h = Number(timeMatch[1]);
+  const m = Number(timeMatch[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(m) || m < 0 || m >= 60) return null;
+  return `${h}:${String(m).padStart(2, '0')}`;
+}
+
+function formatDurationFromString(s, source) {
+  const formatted = formatDurationFromTimeString(s);
+  if (formatted) return formatted;
+  const n = Number(s);
+  if (!Number.isFinite(n)) return '';
+  return source === 'minutes' ? minutesToHhhMm(n) : hoursToHhhMm(n);
+}
+
 export function formatDurationHhhMm(value, source = 'hours') {
   if (value === null || value === undefined || value === '') return '';
 
   if (typeof value === 'string') {
     const s = value.trim();
     if (!s) return '';
-
-    // Accept preformatted duration strings and trim optional seconds.
-    const timeMatch = s.match(/^(\d+):(\d{1,2})(?::\d{1,2})?$/);
-    if (timeMatch) {
-      const h = Number(timeMatch[1]);
-      const m = Number(timeMatch[2]);
-      if (Number.isFinite(h) && Number.isFinite(m) && m >= 0 && m < 60) {
-        return `${h}:${String(m).padStart(2, '0')}`;
-      }
-    }
-
-    const n = Number(s);
-    if (!Number.isFinite(n)) return '';
-    return source === 'minutes' ? minutesToHhhMm(n) : hoursToHhhMm(n);
+    return formatDurationFromString(s, source);
   }
 
   const n = Number(value);
@@ -582,6 +587,25 @@ export function isCancelledShiftStatus(jobStatus) {
   return String(jobStatus || '').trim().toLowerCase() === 'cancelled';
 }
 
+function getShiftTimeRange(jobStatus, actualStart, actualEnd, scheduledStart, scheduledEnd) {
+  if (isCompletedShiftStatus(jobStatus)) {
+    return { startRaw: actualStart, endRaw: actualEnd };
+  }
+  if (isCancelledShiftStatus(jobStatus)) {
+    return { startRaw: scheduledStart, endRaw: scheduledEnd };
+  }
+  return { startRaw: null, endRaw: null };
+}
+
+function appendHourUnitTimeRange(desc, unit, jobStatus, actualStart, actualEnd, scheduledStart, scheduledEnd, timeZone) {
+  if (!isHourUnitLabel(unit)) return desc;
+  const { startRaw, endRaw } = getShiftTimeRange(jobStatus, actualStart, actualEnd, scheduledStart, scheduledEnd);
+  const startTime = formatDateTimeForDesc(startRaw, timeZone);
+  const endTime = formatDateTimeForDesc(endRaw, timeZone);
+  if (!startTime || !endTime) return desc;
+  return `${desc ? `${desc} - ` : ''}from ${startTime} to ${endTime}`;
+}
+
 export function buildServiceItemDescription({
   itemNumber,
   itemName,
@@ -597,24 +621,7 @@ export function buildServiceItemDescription({
 }) {
   let desc = itemName || '';
   if (itemNumber) desc += `${desc ? ' - ' : ''}${itemNumber}`;
-
-  if (isHourUnitLabel(unit)) {
-    let startRaw = null;
-    let endRaw = null;
-    if (isCompletedShiftStatus(jobStatus)) {
-      startRaw = actualStart;
-      endRaw = actualEnd;
-    } else if (isCancelledShiftStatus(jobStatus)) {
-      startRaw = scheduledStart;
-      endRaw = scheduledEnd;
-    }
-    const startTime = formatDateTimeForDesc(startRaw, timeZone);
-    const endTime = formatDateTimeForDesc(endRaw, timeZone);
-    if (startTime && endTime) {
-      desc += `${desc ? ' - ' : ''}from ${startTime} to ${endTime}`;
-    }
-  }
-
+  desc = appendHourUnitTimeRange(desc, unit, jobStatus, actualStart, actualEnd, scheduledStart, scheduledEnd, timeZone);
   if (!desc) desc = fallback || 'Service';
   if (groupSize && Number(groupSize) !== 1) desc += ` - Group Size: ${groupSize}`;
   return desc;
@@ -665,653 +672,10 @@ function buildSimpleItemDesc({ itemNumber, itemName, fallback, unit, jobStatus, 
   return desc;
 }
 
-export function buildLegacyNdisMasterPlanServiceRows({
-  masterPlanItem,
-  participantName,
-  participantProfileItem,
-  servicePlanItem,
-  supportCatalogue,
-  cancellationTypeItem,
-  invoiceNumber,
-  invoicePdfLink,
-  timeZone = SYDNEY_TIME_ZONE,
-}) {
-  const rows = [];
-  const itemId = masterPlanItem?.itemId;
-  const master = masterPlanItem?.data || {};
-
-  const groupSize = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.GROUP_SIZE]) || 1;
-  const jobStatus = getMasterPlanLabel(masterPlanItem, [
-    NDIS_MASTERPLAN_ATTR.JOB_STATUS,
-    'Shift Status',
-    'Job status',
-    'JobStatus',
-    'ShiftStatus',
-  ]);
-  const paymentStatus = getMasterPlanLabel(masterPlanItem, [
-    NDIS_MASTERPLAN_ATTR.PAYMENT_STATUS,
-    'Payment status',
-    'PaymentStatus',
-  ]);
-
-  const scheduledStart = master[NDIS_MASTERPLAN_ATTR.SCHEDULED_START];
-  const scheduledEnd = getValueMulti(masterPlanItem, [
-    NDIS_MASTERPLAN_ATTR.SCHEDULED_END,
-    'Scheduled Shift End Date and Time',
-    'Scheduled Shift End Date & Time',
-  ]);
-  const actualStart = getValueMulti(masterPlanItem, [
-    NDIS_MASTERPLAN_ATTR.ACTUAL_START,
-    'Actual Shift Start Date & Time',
-  ]);
-  const actualEnd = getValueMulti(masterPlanItem, [
-    NDIS_MASTERPLAN_ATTR.ACTUAL_END,
-    'Actual Shift End Date & Time',
-  ]);
-
-  const computeDurationHr = (startRaw, endRaw) => {
-    if (!startRaw || !endRaw) return 0;
-    const s = new Date(startRaw);
-    const e = new Date(endRaw);
-    if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return 0;
-    const ms = e.getTime() - s.getTime();
-    if (!Number.isFinite(ms) || ms <= 0) return 0;
-    return ms / (60 * 60 * 1000);
-  };
-
-  let actualDurationHr = getMasterPlanNumber(masterPlanItem, [
-    NDIS_MASTERPLAN_ATTR.ACTUAL_DURATION_HR,
-    'Actual Shift Duration (Hr.)',
-    'Actual Shift Duration (Hr)',
-    'Actual Shift Duration(Hrs.)',
-    'Actual Shift Duration (Hrs.)',
-    'Actual Shift Duration',
-  ]);
-  if (actualDurationHr <= 0) {
-    actualDurationHr = computeDurationHr(actualStart, actualEnd);
-  }
-
-  let scheduledDurationHr = getMasterPlanNumber(masterPlanItem, [
-    NDIS_MASTERPLAN_ATTR.SCHEDULED_DURATION_HR,
-    'Scheduled Shift Duration (Hr.)',
-    'Scheduled Shift Duration (Hr)',
-    'Scheduled Shift Duration(Hrs.)',
-    'Scheduled Shift Duration',
-  ]);
-  if (scheduledDurationHr <= 0) {
-    scheduledDurationHr = computeDurationHr(scheduledStart, scheduledEnd);
-  }
-
-  const scheduledServiceDate = scheduledStart || null;
-  const serviceDeliveryDate = actualStart || null;
-
-  const status = invoiceNumber ? 'invoiced' : 'pending';
-
-  const servicePlan = servicePlanItem || null;
-  const spDirectUnit = getServicePlanLabel(servicePlan, [
-    NDIS_SERVICEPLAN_ATTR.UNIT_DIRECT_SUPPORT,
-    'Unit (Direct Support)',
-  ]);
-  const spDirectUnitPrice = getServicePlanNumber(servicePlan, [
-    NDIS_SERVICEPLAN_ATTR.PRICE_DIRECT_SUPPORT,
-    'Agreed Unit Price for Direct Support ($)',
-    'Agreed Unit Price for Direct Support($)',
-  ]);
-  const spNonLabourUnit = getServicePlanLabel(servicePlan, [
-    NDIS_SERVICEPLAN_ATTR.UNIT_PROVIDER_TRAVEL_NON_LABOUR,
-    'Unit (Provider Travel Non-Labour Cost)',
-    'Unit (Provider Travel - Non-Labour Costs)',
-  ]);
-  const spNonLabourUnitPrice = getServicePlanNumber(servicePlan, [
-    NDIS_SERVICEPLAN_ATTR.PRICE_PROVIDER_TRAVEL_NON_LABOUR,
-    'Agreed Unit Price for Non-Labour Travel ($)',
-    'Agreed Unit Price for Non-Labour Travel($)',
-  ]);
-  const spActivityUnit = getServicePlanLabel(servicePlan, [
-    NDIS_SERVICEPLAN_ATTR.UNIT_ACTIVITY_TRANSPORT,
-    'Unit (Activity Base Transport)',
-  ]);
-  const spActivityUnitPrice = getServicePlanNumber(servicePlan, [
-    NDIS_SERVICEPLAN_ATTR.PRICE_ACTIVITY_TRANSPORT,
-    'Agreed Price for Activity Base Transport ($)',
-    'Agreed Unit Price for Activity Based Transport ($)',
-  ]);
-  const spCentreUnit = getServicePlanLabel(servicePlan, [
-    NDIS_SERVICEPLAN_ATTR.UNIT_CENTRE_CAPITAL,
-    'Unit (Centre Capital Cost)',
-    'Unit (Centre Capital Costs)',
-  ]);
-  const spCentreUnitPrice = getServicePlanNumber(servicePlan, [
-    NDIS_SERVICEPLAN_ATTR.PRICE_CENTRE_CAPITAL,
-    'Agreed Unit Price for Centre Capital Cost($)',
-    'Agreed Unit Price for Centre Capital Costs ($)',
-    'Agreed Unit Price for Centre Capital Costs($)',
-  ]);
-  const spLabourUnit = getServicePlanLabel(servicePlan, [
-    NDIS_SERVICEPLAN_ATTR.UNIT_LABOUR_TRAVEL_TIME,
-    'Unit (Labour Travel Time)',
-  ]);
-  const spLabourUnitPrice = getServicePlanNumber(servicePlan, [
-    NDIS_SERVICEPLAN_ATTR.PRICE_LABOUR_TRAVEL_TIME,
-    'Agreed Unit Price for Labour Travel Time ($)',
-    'Agreed Unit Price for Labour Travel Time($)',
-  ]);
-  const spAllowancesUnit = getServicePlanLabel(servicePlan, [
-    NDIS_SERVICEPLAN_ATTR.UNIT_ALLOWANCES,
-    'Unit (Allowances)',
-  ]);
-  const spNonFaceUnit = getServicePlanLabel(servicePlan, [
-    NDIS_SERVICEPLAN_ATTR.UNIT_NON_FACE_TO_FACE,
-    'Unit (Non Face to Face Support)',
-  ]);
-  const spNonFaceUnitPrice = getServicePlanNumber(servicePlan, [
-    NDIS_SERVICEPLAN_ATTR.PRICE_NON_FACE_TO_FACE,
-    'Agreed Unit Price for Non-Face-to-Face Support($)',
-    'Agreed Unit Price for Non Face to Face Support($)',
-    'Agreed Unit Price for Non-Face-to-Face Support ($)',
-  ]);
-
-  const directSupportItemNumber = getSupportItemNumber(
-    supportCatalogue?.directSupport,
-    getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.ITEM_DIRECT_SUPPORT)
-  );
-  const directSupportItemName = getSupportItemName(supportCatalogue?.directSupport, '');
-
-  const providerTravelItemNumber = getSupportItemNumber(
-    supportCatalogue?.providerTravelNonLabour,
-    getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR)
-  );
-  const providerTravelItemName = getSupportItemName(supportCatalogue?.providerTravelNonLabour, '');
-
-  const activityItemNumber = getSupportItemNumber(
-    supportCatalogue?.activityTransport,
-    getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT)
-  );
-  const activityItemName = getSupportItemName(supportCatalogue?.activityTransport, '');
-
-  const centreCapitalItemNumber = getSupportItemNumber(
-    supportCatalogue?.centreCapital,
-    getValue(servicePlan, NDIS_SERVICEPLAN_ATTR.ITEM_CENTRE_CAPITAL)
-  );
-  const centreCapitalItemName = getSupportItemName(supportCatalogue?.centreCapital, '');
-
-  const serviceDeliveryModeValue = getValueMulti(masterPlanItem, [
-    NDIS_MASTERPLAN_ATTR.SERVICE_DELIVERY_MODE,
-    'Service Delivery Mode',
-  ]);
-
-  const addRow = (row) => {
-    const claimType = resolveNdisClaimType(
-      row.claimType,
-      serviceDeliveryModeValue,
-      row.code,
-      row.supportNumber || ''
-    );
-    rows.push({
-      id: `${itemId}:${row.code}`,
-      sourceItemId: itemId,
-      status,
-      participant: participantName || getParticipantDisplayName(participantProfileItem) || String(master[NDIS_MASTERPLAN_ATTR.PARTICIPANT_FULL_NAME] || ''),
-      scheduledServiceDate,
-      serviceDeliveryDate,
-      jobStatus,
-      paymentStatus,
-      invoiceNumber,
-      fileUrl: invoicePdfLink || null,
-      gst: row.gst ?? 'GST Free',
-      ...row,
-      claimType,
-    });
-  };
-
-  const isCancelled = jobStatus.toLowerCase() === 'cancelled';
-
-  if (!isCancelled) {
-    // 1) Direct Support - Hour based
-    const directTimeAmount = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.DIRECT_SUPPORT_VALUE_TIME]);
-    if (directTimeAmount > 0 && spDirectUnit.includes('Hour')) {
-      let unitPrice = groupSize > 0 ? spDirectUnitPrice / groupSize : 0;
-      let qty = round1(actualDurationHr);
-      // If duration is not stored, derive qty using the catalog rate (before group division)
-      // so that quantity reflects hours, not a doubled value for group > 1
-      if (qty <= 0 && directTimeAmount > 0 && spDirectUnitPrice > 0) {
-        qty = round1(directTimeAmount / spDirectUnitPrice);
-      }
-      // If unit price is missing but qty exists, derive unit price from amount/qty
-      if (unitPrice <= 0 && directTimeAmount > 0 && qty > 0) {
-        unitPrice = parseFloat((directTimeAmount / qty).toFixed(2));
-      }
-
-      if (qty > 0 && unitPrice > 0) {
-        addRow({
-          code: 'direct_support_time',
-          service: buildServiceItemDescription({
-            itemNumber: directSupportItemNumber,
-            itemName: directSupportItemName,
-            unit: spDirectUnit || 'Hour(H)',
-            jobStatus,
-            actualStart,
-            actualEnd,
-            scheduledStart,
-            scheduledEnd,
-            fallback: 'Direct Support - Hour based',
-            groupSize,
-            timeZone,
-          }),
-          unit: spDirectUnit || 'Hour(H)',
-          quantity: qty,
-          unitPrice,
-          totalAmount: parseFloat((qty * unitPrice).toFixed(2)),
-          supportNumber: directSupportItemNumber,
-          claimType: '',
-        });
-      }
-    }
-
-    // 2) Direct Support - Non hour based
-    const directNonTimeAmount = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.DIRECT_SUPPORT_VALUE_NON_TIME]);
-    if (directNonTimeAmount > 0 && !spDirectUnit.includes('Hour')) {
-      let qty = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.QUANTITY_DIRECT_SUPPORT_NON_TIME]);
-      let unitPrice = spDirectUnitPrice;
-      if (qty <= 0 && directNonTimeAmount > 0 && unitPrice > 0) {
-        qty = parseNumberValue(parseFloat((directNonTimeAmount / unitPrice).toFixed(2)));
-      }
-      if (unitPrice <= 0 && directNonTimeAmount > 0 && qty > 0) {
-        unitPrice = parseFloat((directNonTimeAmount / qty).toFixed(2));
-      }
-
-      if (qty > 0 && unitPrice > 0) {
-        addRow({
-          code: 'direct_support_non_time',
-          service: (() => {
-            let desc = buildSimpleItemDesc({
-              itemNumber: directSupportItemNumber,
-              itemName: directSupportItemName,
-              fallback: 'Direct Support - NOT Hour based',
-            });
-            if (qty && spDirectUnit) desc += ` - ${qty} ${spDirectUnit}`;
-            return desc;
-          })(),
-          unit: spDirectUnit || '',
-          quantity: qty,
-          unitPrice,
-          totalAmount: directNonTimeAmount,
-          supportNumber: directSupportItemNumber,
-          claimType: '',
-        });
-      }
-    }
-
-    // 3) Provider Travel - Non-Labour Cost (unitPrice=1, quantity=amount)
-    let providerAmount = getMasterPlanNumber(masterPlanItem, [
-      NDIS_MASTERPLAN_ATTR.PROVIDER_TRAVEL_NON_LABOUR_AMOUNT,
-      'Provider Travel - Non-Labour Amount($)',
-      'Provider Travel - Non-Labour Cost Amount ($)',
-    ]);
-    const providerMileageRaw = getValueMulti(masterPlanItem, [
-        NDIS_MASTERPLAN_ATTR.PROVIDER_TRAVEL_MILEAGE,
-        'Provider Travel - Non-Labour Mileage (kms) as per the Service Plan, if a vehicle is used.',
-      ]);
-    const providerOthersRaw = getValueMulti(masterPlanItem, [
-        NDIS_MASTERPLAN_ATTR.PROVIDER_TRAVEL_OTHER_COSTS,
-        'Provider Travel - Non-Labour - Other Costs as per the Service Plan, if other costs are applied.',
-      ]);
-    const providerMileageNum = parseNumberValue(providerMileageRaw);
-    const providerOthersNum = parseNumberValue(providerOthersRaw);
-    if (providerAmount <= 0) {
-      const computed = computeProviderTravelNonLabourAmount(spNonLabourUnitPrice, providerMileageNum, providerOthersNum);
-      if (computed > 0) providerAmount = computed;
-    }
-
-    if (providerAmount > 0) {
-      addRow({
-        code: 'provider_travel_non_labour',
-        service: (() => {
-          let desc = buildSimpleItemDesc({
-            itemNumber: providerTravelItemNumber,
-            itemName: providerTravelItemName,
-            fallback: 'Provider Travel - Non-Labour Cost Item',
-          });
-          if (providerMileageNum) desc += ` - ${providerMileageNum}km`;
-          if (providerOthersNum) desc += ` - Others: ${providerOthersNum}`;
-          return desc;
-        })(),
-        unit: spNonLabourUnit || '',
-        quantity: providerAmount,
-        unitPrice: 1,
-        totalAmount: providerAmount,
-        supportNumber: providerTravelItemNumber,
-        claimType: '',
-      });
-    }
-
-    // 4) Activity Based Transport (unitPrice=1, quantity=amount)
-    let activityAmount = getMasterPlanNumber(masterPlanItem, [
-      NDIS_MASTERPLAN_ATTR.ACTIVITY_BASE_TRANSPORT_AMOUNT,
-      'Activity Based Transport Amount($)',
-      'Activity Based Transport Amount ($)',
-      'Activity Base Transport Amount ($)',
-    ]);
-    const activityMileageRaw = getValueMulti(masterPlanItem, [
-        NDIS_MASTERPLAN_ATTR.ACTIVITY_TRANSPORT_MILEAGE,
-        'Activity Based Transport Mileage(Kms) as per the Service Plan, if a vehicle is used.',
-      ]);
-    const activityOthersRaw = getValueMulti(masterPlanItem, [
-        NDIS_MASTERPLAN_ATTR.ACTIVITY_TRANSPORT_OTHER_COSTS,
-        'Activity Based Transport Costs as per the Service Plan, if other costs are applied.',
-      ]);
-    const activityMileageNum = parseNumberValue(activityMileageRaw);
-    const activityOthersNum = parseNumberValue(activityOthersRaw);
-    if (activityAmount <= 0) {
-      const computed = computeActivityBaseTransportAmount(spActivityUnitPrice, activityMileageNum, activityOthersNum);
-      if (computed > 0) activityAmount = computed;
-    }
-
-    if (activityAmount > 0) {
-      addRow({
-        code: 'activity_transport',
-        service: (() => {
-          let desc = buildSimpleItemDesc({
-            itemNumber: activityItemNumber,
-            itemName: activityItemName,
-            fallback: 'Activity Based Transport Item',
-          });
-          if (activityMileageNum) desc += ` - ${activityMileageNum}km`;
-          if (activityOthersNum) desc += ` - Others: ${activityOthersNum}`;
-          return desc;
-        })(),
-        unit: spActivityUnit || 'Each(E)',
-        quantity: activityAmount,
-        unitPrice: 1,
-        totalAmount: activityAmount,
-        supportNumber: activityItemNumber,
-        claimType: '',
-      });
-    }
-
-    // 5) Centre Capital Costs
-    let centreAmount = getMasterPlanNumber(masterPlanItem, [
-      NDIS_MASTERPLAN_ATTR.CENTRE_CAPITAL_COSTS_AMOUNT,
-      'Centre Capital Cost Amount($)',
-      'Centre Capital Cost Amount ($)',
-      'Centre Capital Costs Amount ($)',
-    ]);
-    // Prefer actual duration, but if it's missing use qty = amount / unitPrice
-    // (this matches the NDIS PDF invoice output where Centre Capital quantity is still shown).
-    let qty = round1(actualDurationHr);
-    let unitPrice = spCentreUnitPrice;
-    if (qty <= 0 && centreAmount > 0 && unitPrice > 0) {
-      qty = round1(centreAmount / unitPrice);
-    }
-    if (unitPrice <= 0 && centreAmount > 0 && qty > 0) {
-      unitPrice = parseFloat((centreAmount / qty).toFixed(2));
-    }
-    if (centreAmount <= 0 && qty > 0 && unitPrice > 0) {
-      centreAmount = qty * unitPrice;
-    }
-
-    if (centreAmount > 0) {
-      if (qty > 0 && unitPrice > 0) {
-        addRow({
-          code: 'centre_capital_costs',
-          service: buildServiceItemDescription({
-            itemNumber: centreCapitalItemNumber,
-            itemName: centreCapitalItemName,
-            unit: spCentreUnit || 'Hour(H)',
-            jobStatus,
-            actualStart,
-            actualEnd,
-            scheduledStart,
-            scheduledEnd,
-            fallback: 'Centre Capital Costs Item',
-            timeZone,
-          }),
-          unit: spCentreUnit || 'Hour(H)',
-          quantity: qty,
-          unitPrice,
-          totalAmount: centreAmount,
-          supportNumber: centreCapitalItemNumber,
-          claimType: '',
-        });
-      }
-    }
-
-    // 6) Labour Travel Time (quantity in hours, derived from minutes)
-    const labourAmount = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.LABOUR_TRAVEL_TIME_AMOUNT]);
-    if (labourAmount > 0) {
-      const labourMinRaw = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.LABOUR_TRAVEL_TIME_MIN]);
-      const qty = round1(labourMinRaw / 60);
-      if (qty > 0 && spLabourUnitPrice > 0) {
-        addRow({
-          code: 'labour_travel_time',
-          service: buildServiceItemDescription({
-            itemNumber: directSupportItemNumber,
-            itemName: 'Provider Travel - Labour Travel Time Costs',
-            unit: spLabourUnit || 'Hour(H)',
-            jobStatus,
-            actualStart,
-            actualEnd,
-            scheduledStart,
-            scheduledEnd,
-            fallback: 'Provider Travel - Labour Travel Time Costs',
-            timeZone,
-          }),
-          unit: spLabourUnit || '',
-          quantity: qty,
-          unitPrice: spLabourUnitPrice,
-          totalAmount: labourAmount,
-          supportNumber: directSupportItemNumber,
-          claimType: 'TRAN',
-        });
-      }
-    }
-
-    // 7) Allowances (quantity=1, unitPrice=Used Allowance Amount)
-    const allowancesAmount = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.ALLOWANCES_AMOUNT]);
-    if (allowancesAmount > 0) {
-      const usedAllowanceUnitPrice = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.USED_ALLOWANCE_AMOUNT]) || allowancesAmount;
-      const allowancesType = formatLabelValue(master[NDIS_MASTERPLAN_ATTR.ALLOWANCES_TYPE]).trim();
-      const allowancesTypeLower = allowancesType.toLowerCase();
-      const isNdiaRequiredReport =
-        allowancesTypeLower.includes('report') &&
-        (allowancesTypeLower.includes('ndia') ||
-          allowancesTypeLower.includes('required') ||
-          allowancesTypeLower.includes('requested') ||
-          allowancesTypeLower.includes('mandatory'));
-      addRow({
-        code: 'allowances',
-        service: `Allowances${allowancesType ? ` - ${allowancesType}` : ''}`,
-        unit: spAllowancesUnit || '',
-        quantity: 1,
-        unitPrice: usedAllowanceUnitPrice,
-        totalAmount: allowancesAmount,
-        supportNumber: directSupportItemNumber,
-        claimType: isNdiaRequiredReport ? 'REPW' : '',
-      });
-    }
-
-    // 8) Non-Face-to-Face Support (quantity=hours)
-    const nonFaceAmount = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_AMOUNT]);
-    if (nonFaceAmount > 0) {
-      const qty = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_TIME_HR]);
-      const nf2fType = formatLabelValue(master[NDIS_MASTERPLAN_ATTR.NON_FACE_TO_FACE_SUPPORTS]).trim();
-      if (qty > 0 && spNonFaceUnitPrice > 0) {
-        addRow({
-          code: 'non_face_to_face',
-          service: buildServiceItemDescription({
-            itemNumber: directSupportItemNumber,
-            itemName: `Non-Face-to-Face Support${nf2fType ? ` - ${nf2fType}` : ''}`,
-            unit: spNonFaceUnit || 'Hour(H)',
-            jobStatus,
-            actualStart,
-            actualEnd,
-            scheduledStart,
-            scheduledEnd,
-            fallback: 'Non-Face-to-Face Support',
-            timeZone,
-          }),
-          unit: spNonFaceUnit || '',
-          quantity: qty,
-          unitPrice: spNonFaceUnitPrice,
-          totalAmount: nonFaceAmount,
-          supportNumber: directSupportItemNumber,
-          claimType: 'NF2F',
-        });
-      }
-    }
-  } else {
-    const cancellationFee = parseNumberValue(master[NDIS_MASTERPLAN_ATTR.CANCELLATION_FEE]);
-    if (cancellationFee > 0) {
-      const billablePct = parseNumberValue(getValue(cancellationTypeItem, NDIS_CANCELLATION_TYPE_ATTR.BILLABLE_TO_CLIENT_PCT));
-      const scheduledDuration = round1(scheduledDurationHr);
-
-      const directShortNotice = getShortNoticeCancellationsFlag(supportCatalogue?.directSupport);
-      const providerShortNotice = getShortNoticeCancellationsFlag(supportCatalogue?.providerTravelNonLabour);
-      const activityShortNotice = getShortNoticeCancellationsFlag(supportCatalogue?.activityTransport);
-      const centreShortNotice = getShortNoticeCancellationsFlag(supportCatalogue?.centreCapital);
-
-      if (directShortNotice) {
-        const qty = spDirectUnit.includes('Hour')
-          ? scheduledDuration
-          : parseNumberValue(master[NDIS_MASTERPLAN_ATTR.QUANTITY_DIRECT_SUPPORT_NON_TIME]);
-        const baseUnitPrice = spDirectUnit.includes('Hour')
-          ? (groupSize > 0 ? spDirectUnitPrice / groupSize : 0)
-          : spDirectUnitPrice;
-        const unitPriceRaw = baseUnitPrice * (billablePct / 100);
-        const unitPrice = parseFloat(unitPriceRaw.toFixed(2));
-        const totalAmount = parseFloat((qty * unitPrice).toFixed(2));
-        if (qty > 0 && unitPrice > 0) {
-          addRow({
-            code: 'canc_direct_support',
-            service: (() => {
-              let desc = buildServiceItemDescription({
-                itemNumber: directSupportItemNumber,
-                itemName: directSupportItemName
-                  ? `Cancellation Fee - ${directSupportItemName}`
-                  : 'Cancellation Fee',
-                unit: spDirectUnit,
-                jobStatus: 'Cancelled',
-                scheduledStart,
-                scheduledEnd,
-                groupSize,
-                timeZone,
-              });
-              if (billablePct) desc += ` - ${billablePct}%`;
-              return desc;
-            })(),
-            unit: spDirectUnit || '',
-            quantity: qty,
-            unitPrice,
-            totalAmount,
-            supportNumber: directSupportItemNumber,
-            claimType: 'CANC',
-          });
-        }
-      }
-
-      if (providerShortNotice) {
-        const qty = scheduledDuration;
-        const unitPriceRaw = spNonLabourUnitPrice * (billablePct / 100);
-        const unitPrice = parseFloat(unitPriceRaw.toFixed(2));
-        const totalAmount = parseFloat((qty * unitPrice).toFixed(2));
-        if (qty > 0 && unitPrice > 0) {
-          addRow({
-            code: 'canc_provider_travel',
-            service: (() => {
-              let desc = buildServiceItemDescription({
-                itemNumber: providerTravelItemNumber,
-                itemName: providerTravelItemName
-                  ? `Cancellation Fee - ${providerTravelItemName}`
-                  : 'Cancellation Fee',
-                unit: spNonLabourUnit,
-                jobStatus: 'Cancelled',
-                scheduledStart,
-                scheduledEnd,
-                timeZone,
-              });
-              if (billablePct) desc += ` - ${billablePct}%`;
-              return desc;
-            })(),
-            unit: spNonLabourUnit || '',
-            quantity: qty,
-            unitPrice,
-            totalAmount,
-            supportNumber: providerTravelItemNumber,
-            claimType: 'CANC',
-          });
-        }
-      }
-
-      if (activityShortNotice) {
-        const qty = scheduledDuration;
-        const unitPriceRaw = spActivityUnitPrice * (billablePct / 100);
-        const unitPrice = parseFloat(unitPriceRaw.toFixed(2));
-        const totalAmount = parseFloat((qty * unitPrice).toFixed(2));
-        if (qty > 0 && unitPrice > 0) {
-          addRow({
-            code: 'canc_activity_transport',
-            service: (() => {
-              let desc = buildServiceItemDescription({
-                itemNumber: activityItemNumber,
-                itemName: activityItemName
-                  ? `Cancellation Fee - ${activityItemName}`
-                  : 'Cancellation Fee',
-                unit: spActivityUnit,
-                jobStatus: 'Cancelled',
-                scheduledStart,
-                scheduledEnd,
-                timeZone,
-              });
-              if (billablePct) desc += ` - ${billablePct}%`;
-              return desc;
-            })(),
-            unit: spActivityUnit || '',
-            quantity: qty,
-            unitPrice,
-            totalAmount,
-            supportNumber: activityItemNumber,
-            claimType: 'CANC',
-          });
-        }
-      }
-
-      if (centreShortNotice) {
-        const qty = scheduledDuration;
-        const unitPriceRaw = spCentreUnitPrice * (billablePct / 100);
-        const unitPrice = parseFloat(unitPriceRaw.toFixed(2));
-        const totalAmount = parseFloat((qty * unitPrice).toFixed(2));
-        if (qty > 0 && unitPrice > 0) {
-          addRow({
-            code: 'canc_centre_capital',
-            service: (() => {
-              let desc = buildServiceItemDescription({
-                itemNumber: centreCapitalItemNumber,
-                itemName: centreCapitalItemName
-                  ? `Cancellation Fee - ${centreCapitalItemName}`
-                  : 'Cancellation Fee',
-                unit: spCentreUnit,
-                jobStatus: 'Cancelled',
-                scheduledStart,
-                scheduledEnd,
-                timeZone,
-              });
-              if (billablePct) desc += ` - ${billablePct}%`;
-              return desc;
-            })(),
-            unit: spCentreUnit || '',
-            quantity: qty,
-            unitPrice,
-            totalAmount,
-            supportNumber: centreCapitalItemNumber,
-            claimType: 'CANC',
-          });
-        }
-      }
-    }
-  }
-
-  return rows;
+export function buildLegacyNdisMasterPlanServiceRows(args) {
+  return buildLegacyNdisMasterPlanServiceRowsImpl(args);
 }
+
 
 export function collectNdisSupportCatalogueRefIds(servicePlanData, pricingRule = 'legacy') {
   if (!servicePlanData || typeof servicePlanData !== 'object') return [];
@@ -1339,35 +703,36 @@ export function collectNdisSupportCatalogueRefIds(servicePlanData, pricingRule =
   return ids;
 }
 
+function resolveRefItem(refItemsMap, data, attr) {
+  const id = extractRefId(data[attr]);
+  return id ? refItemsMap.get(id) : null;
+}
+
+function buildNewNdisSupportCatalogue(data, refItemsMap) {
+  return {
+    support: resolveRefItem(refItemsMap, data, NDIS_SERVICEPLAN_ATTR.ITEM_SUPPORT),
+    providerTravelNonLabour: resolveRefItem(refItemsMap, data, NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR),
+    labourTravelTime: resolveRefItem(refItemsMap, data, NDIS_SERVICEPLAN_ATTR.ITEM_LABOUR_TRAVEL_TIME),
+    cancellation: resolveRefItem(refItemsMap, data, NDIS_SERVICEPLAN_ATTR.ITEM_CANCELLATION),
+    activityTransport: resolveRefItem(refItemsMap, data, NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT),
+  };
+}
+
+function buildLegacyNdisSupportCatalogue(data, refItemsMap) {
+  return {
+    directSupport: resolveRefItem(refItemsMap, data, NDIS_SERVICEPLAN_ATTR.ITEM_DIRECT_SUPPORT),
+    providerTravelNonLabour: resolveRefItem(refItemsMap, data, NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR),
+    activityTransport: resolveRefItem(refItemsMap, data, NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT),
+    centreCapital: resolveRefItem(refItemsMap, data, NDIS_SERVICEPLAN_ATTR.ITEM_CENTRE_CAPITAL),
+  };
+}
+
 export function buildNdisSupportCatalogueForServicePlan(servicePlanItem, refItemsMap, pricingRule = 'legacy') {
   if (!servicePlanItem?.data || !refItemsMap) return {};
   const data = servicePlanItem.data;
-
-  if (pricingRule === 'new') {
-    const supportId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_SUPPORT]);
-    const ptId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR]);
-    const ltId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_LABOUR_TRAVEL_TIME]);
-    const cancId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_CANCELLATION]);
-    const abtId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT]);
-    return {
-      support: supportId ? refItemsMap.get(supportId) : null,
-      providerTravelNonLabour: ptId ? refItemsMap.get(ptId) : null,
-      labourTravelTime: ltId ? refItemsMap.get(ltId) : null,
-      cancellation: cancId ? refItemsMap.get(cancId) : null,
-      activityTransport: abtId ? refItemsMap.get(abtId) : null,
-    };
-  }
-
-  const dsId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_DIRECT_SUPPORT]);
-  const ptId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_PROVIDER_TRAVEL_NON_LABOUR]);
-  const abtId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_ACTIVITY_TRANSPORT]);
-  const cccId = extractRefId(data[NDIS_SERVICEPLAN_ATTR.ITEM_CENTRE_CAPITAL]);
-  return {
-    directSupport: dsId ? refItemsMap.get(dsId) : null,
-    providerTravelNonLabour: ptId ? refItemsMap.get(ptId) : null,
-    activityTransport: abtId ? refItemsMap.get(abtId) : null,
-    centreCapital: cccId ? refItemsMap.get(cccId) : null,
-  };
+  return pricingRule === 'new'
+    ? buildNewNdisSupportCatalogue(data, refItemsMap)
+    : buildLegacyNdisSupportCatalogue(data, refItemsMap);
 }
 
 export function buildNdisMasterPlanServiceRows(args) {

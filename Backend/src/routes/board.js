@@ -14,10 +14,58 @@ const getValueFromItem = (item, attrName) => {
     if (typeof d === 'object' && d?.name) return String(d.name);
     return String(d);
 };
-import { enableBoardSync, disableBoardSync } from '../services/sync.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
+import { toRequiredQueryString, toMongoQueryValue } from '../utils/securityHelpers.js';
+import {
+  handleBoardSyncDisable,
+  handleBoardSyncEnable,
+  parseSyncToggle,
+  revertBoardSyncFlag,
+} from '../utils/boardSyncActions.js';
 
 const router = express.Router();
+
+function pickBoardAttribute(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const attribute = {};
+  const id = value.id != null ? toMongoQueryValue(value.id) : undefined;
+  const name = value.name != null ? toMongoQueryValue(value.name) : undefined;
+  if (id != null) attribute.id = id;
+  if (name != null) attribute.name = name;
+  return Object.keys(attribute).length > 0 ? attribute : undefined;
+}
+
+function buildBoardUpdatePayload(body) {
+  const payload = {};
+  const stringFields = [
+    'name', 'description', 'color', 'og_image', 'label',
+    'timeTrackStartAttributeId', 'timeTrackEndAttributeId',
+  ];
+
+  for (const field of stringFields) {
+    if (body[field] !== undefined) {
+      payload[field] = toMongoQueryValue(body[field]) ?? '';
+    }
+  }
+
+  if (body.boardId !== undefined) {
+    payload.boardId = toMongoQueryValue(body.boardId);
+  }
+  if (body.workspaceId !== undefined) {
+    payload.workspaceId = toMongoQueryValue(body.workspaceId);
+  }
+  if (body.syncData !== undefined) {
+    payload.syncData = body.syncData === true || body.syncData === 'true';
+  }
+
+  const attribute = pickBoardAttribute(body.attribute);
+  if (attribute) payload.attribute = attribute;
+
+  const pdfAttribute = pickBoardAttribute(body.pdfAttribute);
+  if (pdfAttribute) payload.pdfAttribute = pdfAttribute;
+
+  return payload;
+}
 
 router.post('/', authenticateToken, async (req, res) => {
     try {
@@ -26,9 +74,9 @@ router.post('/', authenticateToken, async (req, res) => {
             warn('Board-Service', 'Access denied creating board', { userId: req.user.userId, role: req.user.role }, req ?? null);
             return res.status(403).json({ message: 'Access denied. Owner or Support Admin permission required.' });
         }
-        const boardId = req.body.id?.toString();
+        const boardId = toRequiredQueryString(req.body.id);
         if (!boardId) return res.status(400).json({ message: 'Invalid boardId' });
-        const existingBoard = await Board.findOne({ boardId }).lean();
+        const existingBoard = await Board.findOne({ boardId: { $eq: String(boardId) } }).lean();
         if (existingBoard) {
             warn('Board-Service', 'Board already exists', { boardId: req.body.boardId }, req ?? null);
             res.status(200).json({ board: existingBoard });
@@ -63,9 +111,9 @@ router.post('/', authenticateToken, async (req, res) => {
 
 router.get('/', authenticateToken, async (req, res) => {
     try {
-        const boardId = req.query.id?.toString();
+        const boardId = toRequiredQueryString(req.query.id);
         if (!boardId) return res.status(400).json({ message: 'Invalid boardId' });
-        const existingBoard = await Board.findOne({ boardId }).lean();
+        const existingBoard = await Board.findOne({ boardId: { $eq: String(boardId) } }).lean();
 
         if (existingBoard) {
             info('Board-Service', 'Successfully fetching board detail data', { boardId: req.query.id }, req ?? null);
@@ -87,62 +135,27 @@ router.put('/', authenticateToken, async (req, res) => {
             warn('Board-Service', 'Access denied updating board', { userId: req.user.userId, role: req.user.role, boardId: req.body.boardId }, req ?? null);
             return res.status(403).json({ message: 'Access denied. Owner or Support Admin permission required.' });
         }
-        const boardId = req.body.boardId?.toString();
-        const workspaceId = req.body.workspaceId?.toString();
+        const boardId = toRequiredQueryString(req.body.boardId);
+        const workspaceId = toRequiredQueryString(req.body.workspaceId);
         if (!boardId || !workspaceId) return res.status(400).json({ message: 'Invalid boardId or workspaceId' });
         
         // Get current board state to check if syncData is changing
-        const existingBoard = await Board.findOne({ boardId }).select('syncData').lean();
-        const wasSyncEnabled = existingBoard?.syncData || false;
-        const willSyncBeEnabled = req.body.syncData === true || req.body.syncData === 'true';
+        const existingBoard = await Board.findOne({ boardId: { $eq: String(boardId) } }).select('syncData').lean();
+        const { wasSyncEnabled, willSyncBeEnabled } = parseSyncToggle(req.body, existingBoard);
         
-        // Update board configuration
-        const result = await Board.updateOne({ boardId }, { $set: { ...req.body } }, { upsert: true });
+        const boardUpdate = buildBoardUpdatePayload(req.body);
+        const result = await Board.updateOne({ boardId: { $eq: String(boardId) } }, { $set: boardUpdate }, { upsert: true });
         
-        // Check if board was found and updated (matchedCount > 0) or created via upsert (upsertedCount > 0)
         if (result.matchedCount === 0 && result.upsertedCount === 0) {
             warn('Board-Service', 'Board not found and not created', { boardId: req.body.boardId }, req ?? null);
             return res.status(404).json({ message: 'Board not found' });
         }
         
-        // Handle sync enable/disable
         let syncResult = null;
         
-        // If sync is being enabled (was false, now true)
         if (!wasSyncEnabled && willSyncBeEnabled) {
-            info('Board-Service', 'Sync enabled in board configuration, triggering sync job', { 
-                boardId, 
-                workspaceId 
-            }, req ?? null);
-            
             try {
-                syncResult = await enableBoardSync(req.session.Authorization, workspaceId, boardId);
-                
-                if (syncResult.success) {
-                    info('Board-Service', 'Sync job queued successfully', { 
-                        boardId, 
-                        workspaceId,
-                        jobId: syncResult.jobId 
-                    }, req ?? null);
-                    
-                    await logAuditTrail({ 
-                        workspaceId, 
-                        boardId,
-                        action: 'Enabled Board Sync', 
-                        detail: `Board sync enabled and validation job queued (Job ID: ${syncResult.jobId})`, 
-                        req,
-                        category: 'Sync',
-                        entityType: 'Board',
-                        entityId: boardId,
-                        success: true
-                    });
-                } else {
-                    warn('Board-Service', 'Sync job queue failed', { 
-                        boardId, 
-                        workspaceId,
-                        reason: syncResult.message 
-                    }, req ?? null);
-                }
+                ({ syncResult } = await handleBoardSyncEnable({ req, workspaceId, boardId }));
             } catch (syncErr) {
                 error('Board-Service', 'Failed to enable sync', { 
                     boardId, 
@@ -151,54 +164,21 @@ router.put('/', authenticateToken, async (req, res) => {
                     stack: syncErr.stack
                 }, req ?? null);
                 
-                // Revert syncData to false if sync enablement failed
-                await Board.updateOne({ boardId }, { $set: { syncData: false } });
+                await revertBoardSyncFlag(boardId);
                 
                 return res.status(500).json({ 
                     message: 'Board updated but sync enablement failed', 
                     error: syncErr.message,
-                    board: await Board.findOne({ boardId }).lean()
+                    board: await Board.findOne({ boardId: { $eq: String(boardId) } }).lean()
                 });
             }
         }
         
-        // If sync is being disabled (was true, now false)
         if (wasSyncEnabled && !willSyncBeEnabled) {
-            info('Board-Service', 'Sync disabled in board configuration', { 
-                boardId, 
-                workspaceId 
-            }, req ?? null);
-            
-            try {
-                syncResult = await disableBoardSync(boardId);
-                
-                info('Board-Service', 'Sync disabled successfully', { 
-                    boardId, 
-                    workspaceId 
-                }, req ?? null);
-                
-                await logAuditTrail({ 
-                    workspaceId, 
-                    boardId,
-                    action: 'Disabled Board Sync', 
-                    detail: 'Board sync disabled and pending jobs cancelled', 
-                    req,
-                    category: 'Sync',
-                    entityType: 'Board',
-                    entityId: boardId,
-                    success: true
-                });
-            } catch (syncErr) {
-                error('Board-Service', 'Failed to disable sync', { 
-                    boardId, 
-                    workspaceId,
-                    error: syncErr.message,
-                    stack: syncErr.stack
-                }, req ?? null);
-            }
+            ({ syncResult } = await handleBoardSyncDisable({ req, workspaceId, boardId }));
         }
         
-        const updatedBoard = await Board.findOne({ boardId }).lean();
+        const updatedBoard = await Board.findOne({ boardId: { $eq: String(boardId) } }).lean();
         
         info('Board-Service', 'Board updated', { 
             boardId: req.body.boardId, 

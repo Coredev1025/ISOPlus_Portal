@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
+import mongoSanitize from 'express-mongo-sanitize';
 import axios from 'axios';
 import http from 'http';
 import https from 'https';
@@ -52,7 +53,10 @@ if (missingEnvVars.length > 0) {
   process.exit(1);
 }
 
+mongoose.set('strictQuery', true);
+
 const app = express();
+app.disable('x-powered-by');
 
 app.set('etag', false);
 
@@ -97,9 +101,10 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-const requestBodyLimit = process.env.REQUEST_BODY_LIMIT || '25mb';
-app.use(express.json({ limit: requestBodyLimit }));
-app.use(express.urlencoded({ extended: true, limit: requestBodyLimit }));
+const requestBodyLimitBytes = 2 * 1024 * 1024; // 2 MB (SonarQube recommended max for non-file requests)
+app.use(express.json({ limit: requestBodyLimitBytes }));
+app.use(express.urlencoded({ extended: true, limit: requestBodyLimitBytes }));
+app.use(mongoSanitize({ replaceWith: '_', allowDots: true }));
 
 const isProduction = process.env.NODE_ENV === 'production';
 app.use(session({

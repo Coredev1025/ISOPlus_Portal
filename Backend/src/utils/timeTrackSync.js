@@ -1,5 +1,6 @@
 import TimeTrack from '../models/TimeTrack.js';
 import { warn, info } from './logger.js';
+import { mongoEq } from './securityHelpers.js';
 
 function computeDuration(start, end) {
     return Math.floor((new Date(end) - new Date(start)) / 1000);
@@ -8,14 +9,19 @@ function computeDuration(start, end) {
 export async function syncTimeTrackingFromItem(workspaceId, boardId, itemId, itemData) {
     if (!itemData?._hasTimeTracking) return 0;
 
+    const safeWorkspaceId = mongoEq(workspaceId);
+    const safeBoardId = mongoEq(boardId);
+    const safeItemId = mongoEq(itemId);
+    if (!safeWorkspaceId || !safeBoardId || !safeItemId) return 0;
+
     const ttKey = itemData._timeTrackingKey;
     const entries = itemData[ttKey];
     if (!Array.isArray(entries) || entries.length === 0) return 0;
 
-    const taskName = itemData._primaryValue || itemId;
+    const taskName = itemData._primaryValue || safeItemId;
 
     const existing = await TimeTrack.find(
-        { boardId, itemId },
+        { boardId: safeBoardId, itemId: safeItemId },
         { started_at: 1 }
     ).lean();
 
@@ -34,9 +40,9 @@ export async function syncTimeTrackingFromItem(workspaceId, boardId, itemId, ite
             const duration = computeDuration(startTime, endTime);
 
             await TimeTrack.create({
-                workspaceId,
-                boardId,
-                itemId,
+                workspaceId: safeWorkspaceId,
+                boardId: safeBoardId,
+                itemId: safeItemId,
                 Task: taskName,
                 started_at: startTime,
                 ended_at:   endTime,
@@ -53,8 +59,8 @@ export async function syncTimeTrackingFromItem(workspaceId, boardId, itemId, ite
         } catch (err) {
             if (err.code !== 11000) {
                 warn('TimeTrackSync', 'Failed to import ISO+ time-track entry', {
-                    boardId,
-                    itemId,
+                    boardId: safeBoardId,
+                    itemId: safeItemId,
                     started_at: entry.started_at,
                     error: err.message
                 });
@@ -63,7 +69,7 @@ export async function syncTimeTrackingFromItem(workspaceId, boardId, itemId, ite
     }
 
     if (synced > 0) {
-        info('TimeTrackSync', 'Imported ISO+ time-track entries', { boardId, itemId, synced });
+        info('TimeTrackSync', 'Imported ISO+ time-track entries', { boardId: safeBoardId, itemId: safeItemId, synced });
     }
 
     return synced;

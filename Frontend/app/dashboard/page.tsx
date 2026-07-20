@@ -18,6 +18,7 @@ import { isAxiosError } from "axios";
 import { Search, Terminal, Download, Filter, AlertTriangle, AlertCircle, Info, Bug, XCircle, ChevronRight, LayoutGrid } from "lucide-react";
 import { Header } from "@/components/ui/header";
 import { Card } from "@/components/ui/card";
+import { secureRandomFloat, secureRandomInt } from "@/lib/secure-random";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
@@ -165,12 +166,12 @@ const generateAuditTrail = () => Array.from({ length: 50 }, (_, i) => {
   return {
     id: `audit - ${i + 1} `,
     timestamp: date.toISOString(),
-    action: actions[Math.floor(Math.random() * actions.length)],
-    user: users[Math.floor(Math.random() * users.length)],
-    ipAddress: `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)} `,
+    action: actions[secureRandomInt(actions.length)],
+    user: users[secureRandomInt(users.length)],
+    ipAddress: `192.168.${secureRandomInt(255)}.${secureRandomInt(255)} `,
     details: {
-      resourceId: `resource - ${Math.floor(Math.random() * 1000)} `,
-      changes: Math.random() > 0.5 ? { before: "old value", after: "new value" } : null
+      resourceId: `resource - ${secureRandomInt(1000)} `,
+      changes: secureRandomFloat() > 0.5 ? { before: "old value", after: "new value" } : null
     }
   };
 });

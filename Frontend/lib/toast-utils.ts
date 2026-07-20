@@ -313,34 +313,43 @@ type AxiosLikeError = {
   message?: string;
 };
 
-export const getApiErrorMessage = (
-  err: unknown,
-  fallback = 'Something went wrong. Please try again.'
-): string => {
-  const error = err as AxiosLikeError;
+function readServerErrorMessage(error: AxiosLikeError): string | undefined {
   const serverMessage = error.response?.data?.message || error.response?.data?.error;
   if (typeof serverMessage === 'string' && serverMessage.trim()) {
     return serverMessage.trim();
   }
+  return undefined;
+}
 
-  const status = error.response?.status;
+function readStatusFallback(status: number | undefined): string | undefined {
   if (status === 401) {
     return 'Your session has expired. Please sign in again, then try the export again.';
   }
   if (status === 403) {
     return 'You do not have permission to perform this export. Contact your workspace administrator if you need access.';
   }
+  return undefined;
+}
 
+function readClientErrorMessage(error: AxiosLikeError, fallback: string): string | undefined {
   const clientMessage = typeof error.message === 'string' ? error.message.trim() : '';
-  if (clientMessage) {
-    if (/request failed with status code \d+/i.test(clientMessage)) {
-      return fallback;
-    }
-    if (/network error/i.test(clientMessage)) {
-      return 'Unable to reach the server. Check your internet connection and try again.';
-    }
-    return clientMessage;
+  if (!clientMessage) return undefined;
+  if (/request failed with status code \d+/i.test(clientMessage)) return fallback;
+  if (/network error/i.test(clientMessage)) {
+    return 'Unable to reach the server. Check your internet connection and try again.';
   }
+  return clientMessage;
+}
 
-  return fallback;
+export const getApiErrorMessage = (
+  err: unknown,
+  fallback = 'Something went wrong. Please try again.'
+): string => {
+  const error = err as AxiosLikeError;
+  return (
+    readServerErrorMessage(error) ||
+    readStatusFallback(error.response?.status) ||
+    readClientErrorMessage(error, fallback) ||
+    fallback
+  );
 };
