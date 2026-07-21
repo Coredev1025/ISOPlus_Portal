@@ -14,10 +14,12 @@ if (dsn) {
     replaysOnErrorSampleRate: 0,
 
     beforeSend(event) {
+      // Only forward ISO+ auth diagnostic events from the browser.
+      const isAuthEvent = event.tags?.feature === "auth";
+      const method = event.tags?.auth_method;
       const isIsoplusLogin =
-        event.tags?.feature === "auth" &&
-        (event.tags?.auth_method === "isoplus_oauth_redirect" ||
-          event.tags?.auth_method === "oauth_ticket_exchange");
+        isAuthEvent &&
+        (method === "isoplus_oauth_redirect" || method === "oauth_ticket_exchange");
       return isIsoplusLogin ? event : null;
     },
   });

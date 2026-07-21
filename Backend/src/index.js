@@ -1,4 +1,5 @@
 import './instrument.js';
+import * as Sentry from '@sentry/node';
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -173,6 +174,12 @@ process.on('unhandledRejection', (reason) => {
 process.on('uncaughtException', (err) => {
   logError('Process', 'Uncaught exception', err);
 });
+
+// Sentry Express error handler must be registered after all controllers
+// and before any other error middleware (see Sentry Node SDK setup).
+if (Sentry.isInitialized()) {
+  Sentry.setupExpressErrorHandler(app);
+}
 
 // Global error handler (must be after routes)
 app.use(errorHandler);

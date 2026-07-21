@@ -13,6 +13,11 @@ import { verifySession } from "./utils/cookies";
 import { useAppContext } from "@/app/context/index";
 import Spinner from "@/components/ui/spin";
 import { showSuccessToast, showErrorToast } from "@/lib/toast-utils";
+import {
+  captureAuthFailure,
+  captureAuthMessage,
+  captureAuthStep,
+} from "@/lib/auth-sentry";
 
 const exchangedTickets = new Set<string>();
 
@@ -35,6 +40,11 @@ export default function LoginPage() {
       if (exchangedTickets.has(ticket)) return;
       exchangedTickets.add(ticket);
       setIsLoading(true);
+      captureAuthStep(
+        "oauth_ticket_exchange",
+        "ticket_redeem_start",
+        "Client redeeming OAuth ticket"
+      );
       try {
         const response = await axios.post(
           `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/oauth-exchange`,
@@ -42,6 +52,11 @@ export default function LoginPage() {
           { withCredentials: true }
         );
         if (response.status === 200) {
+          captureAuthStep(
+            "oauth_ticket_exchange",
+            "ticket_redeem_ok",
+            "Client OAuth ticket exchange succeeded"
+          );
           setUser(response.data.user);
           showSuccessToast("Login successful");
           cleanUrl();
@@ -51,6 +66,11 @@ export default function LoginPage() {
       } catch (err: any) {
         if (err.name !== "CanceledError" && err.name !== "AbortError") {
           console.error("OAuth ticket exchange failed:", err);
+          captureAuthFailure("oauth_ticket_exchange", err, {
+            stage: "ticket_redeem",
+            httpStatus: err.response?.status,
+            message: err.response?.data?.message,
+          });
           showErrorToast("OAuth login failed", {
             description:
               err.response?.data?.message || "An error occurred during OAuth login",
@@ -73,6 +93,11 @@ export default function LoginPage() {
     }
 
     if (loginError === "error") {
+      captureAuthMessage(
+        "oauth_ticket_exchange",
+        "OAuth login failed: redirected with login=error",
+        { stage: "oauth_callback_redirect" }
+      );
       showErrorToast("OAuth login failed", {
         description: "Authentication failed. Please try again.",
       });
@@ -156,6 +181,11 @@ export default function LoginPage() {
   const handleISOPlusLogin = useCallback(async () => {
     setIsLoading(true);
     setError("");
+    captureAuthStep(
+      "isoplus_oauth_redirect",
+      "redirect_start",
+      "Client requesting ISO+ OAuth redirect URI"
+    );
     try {
       const redirectUrl = await axios.get(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/isoplus/redirect`,
@@ -165,13 +195,28 @@ export default function LoginPage() {
       );
 
       if (redirectUrl.status === 200 && redirectUrl.data?.redirect_uri) {
+        captureAuthStep(
+          "isoplus_oauth_redirect",
+          "redirect_navigate",
+          "Client navigating to ISO+ authorization endpoint"
+        );
         window.location.href = redirectUrl.data.redirect_uri;
         return;
       }
+      captureAuthMessage(
+        "isoplus_oauth_redirect",
+        "OAuth redirect failed: missing redirect_uri in response",
+        { stage: "redirect_missing_uri", httpStatus: redirectUrl.status }
+      );
       setIsLoading(false);
     } catch (err: any) {
       if (err.name !== "CanceledError" && err.name !== "AbortError") {
         console.error("Failed to initiate OAuth login:", err);
+        captureAuthFailure("isoplus_oauth_redirect", err, {
+          stage: "redirect_uri_fetch",
+          httpStatus: err.response?.status,
+          message: err.response?.data?.message,
+        });
         showErrorToast("OAuth redirect failed", { description: err.response?.data?.message || "Failed to initiate OAuth login" });
       }
       setIsLoading(false);
