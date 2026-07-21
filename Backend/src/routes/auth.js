@@ -69,9 +69,17 @@ async function collectWorkspaceMemberRows(req = null) {
     return { ok: false, workspaceRows: [], message: wsResult.message };
   }
 
+  const portalUsers = await User.find({}).select('_id email').lean();
+  const portalUserIdByEmail = new Map();
+  for (const u of portalUsers) {
+    if (!u?.email) continue;
+    portalUserIdByEmail.set(String(u.email).toLowerCase().trim(), u._id.toString());
+  }
+
   const workspaces = wsResult.workspaces || [];
   info('User-Service', 'CSV export starting workspace member scan', {
     workspaceCount: workspaces.length,
+    portalUserCount: portalUserIdByEmail.size,
   }, req ?? null);
 
   const workspaceRows = [];
@@ -80,6 +88,7 @@ async function collectWorkspaceMemberRows(req = null) {
   let workspacesWithMembers = 0;
   let membersSeen = 0;
   let membersSkippedNoEmail = 0;
+  let membersMappedFromPortalDb = 0;
   const memberFetchFailures = [];
 
   for (const w of workspaces) {
@@ -113,7 +122,11 @@ async function collectWorkspaceMemberRows(req = null) {
         continue;
       }
 
-      const { memberId: isoplusMemberId, userId: isoplusUserId } = isoplusIdsFromWorkspaceMember(m);
+      const { memberId: isoplusMemberId, userId: apiIsoplusUserId } = isoplusIdsFromWorkspaceMember(m);
+      const portalMongoId = portalUserIdByEmail.get(email) || '';
+      if (portalMongoId) membersMappedFromPortalDb += 1;
+      const isoplusUserId = portalMongoId || apiIsoplusUserId || '';
+
       workspaceRows.push({
         name: memberName(m),
         email,
@@ -133,6 +146,7 @@ async function collectWorkspaceMemberRows(req = null) {
     workspacesWithMembers,
     membersSeen,
     membersSkippedNoEmail,
+    membersMappedFromPortalDb,
     exportRowCount: workspaceRows.length,
     sampleMemberFetchFailures: memberFetchFailures,
   };
