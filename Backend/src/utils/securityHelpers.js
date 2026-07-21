@@ -83,7 +83,13 @@ export function mongoEq(value) {
 }
 
 export function sanitizeApiPathSegment(value, label = 'id') {
-  const normalized = getSafeString(value);
+  if (value === null || value === undefined) {
+    throw new Error(`Invalid ${label}: expected a non-empty string.`);
+  }
+  if (typeof value === 'object') {
+    throw new Error(`Invalid ${label}: path segment must be a string or number.`);
+  }
+  const normalized = String(value).trim();
   if (!normalized) {
     throw new Error(`Invalid ${label}: expected a non-empty string.`);
   }

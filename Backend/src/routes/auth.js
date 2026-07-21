@@ -37,13 +37,24 @@ function isoplusIdsFromWorkspaceMember(m) {
   };
 }
 
+function memberName(m) {
+  const raw = m?.name ?? m?.user?.name ?? m?.profile?.name;
+  return raw != null ? String(raw).trim() : '';
+}
+
+function isoplusCreatedAtFromMember(m) {
+  const createdAt =
+    m?.created_at ?? m?.user?.created_at ?? m?.profile?.created_at ?? m?.createdAt;
+  return createdAt != null && createdAt !== '' ? String(createdAt) : '';
+}
+
 function pakAuthorization() {
   const pak = process.env.PERSONAL_ACCESS_TOKEN;
   if (!pak) return null;
   return `Bearer ${pak}`;
 }
 
-async function collectPortalUserWorkspaceRows(byEmail) {
+async function collectWorkspaceMemberRows(req = null) {
   const authorization = pakAuthorization();
   if (!authorization) {
     return { ok: false, workspaceRows: [], message: 'PERSONAL_ACCESS_TOKEN is not configured' };
@@ -51,28 +62,62 @@ async function collectPortalUserWorkspaceRows(byEmail) {
 
   const wsResult = await listWorkspacesForAuthorization(authorization);
   if (wsResult.status !== 200) {
+    warn('User-Service', 'CSV export workspace list failed', {
+      status: wsResult.status,
+      message: wsResult.message,
+    }, req ?? null);
     return { ok: false, workspaceRows: [], message: wsResult.message };
   }
 
+  const workspaces = wsResult.workspaces || [];
+  info('User-Service', 'CSV export starting workspace member scan', {
+    workspaceCount: workspaces.length,
+  }, req ?? null);
+
   const workspaceRows = [];
-  for (const w of wsResult.workspaces || []) {
+  let workspacesSkippedNoId = 0;
+  let workspacesMemberFetchFailed = 0;
+  let workspacesWithMembers = 0;
+  let membersSeen = 0;
+  let membersSkippedNoEmail = 0;
+  const memberFetchFailures = [];
+
+  for (const w of workspaces) {
     const wid = w.id;
-    if (wid == null) continue;
+    if (wid == null) {
+      workspacesSkippedNoId += 1;
+      continue;
+    }
     const wname = w.name || w.label || '';
     const mem = await getMember(authorization, wid);
-    if (mem.status !== 200 || !Array.isArray(mem.members)) continue;
+    if (mem.status !== 200 || !Array.isArray(mem.members)) {
+      workspacesMemberFetchFailed += 1;
+      if (memberFetchFailures.length < 5) {
+        memberFetchFailures.push({
+          workspaceId: String(wid),
+          workspaceName: String(wname),
+          status: mem.status,
+          message: mem.message || null,
+        });
+      }
+      continue;
+    }
+
+    if (mem.members.length > 0) workspacesWithMembers += 1;
+    membersSeen += mem.members.length;
 
     for (const m of mem.members) {
       const email = memberEmailLower(m);
-      if (!email) continue;
-      const portalUser = byEmail.get(email);
-      if (!portalUser) continue;
+      if (!email) {
+        membersSkippedNoEmail += 1;
+        continue;
+      }
 
       const { memberId: isoplusMemberId, userId: isoplusUserId } = isoplusIdsFromWorkspaceMember(m);
       workspaceRows.push({
-        userId: portalUser._id.toString(),
-        name: portalUser.name || '',
-        email: portalUser.email || '',
+        name: memberName(m),
+        email,
+        isoplusCreatedAt: isoplusCreatedAtFromMember(m),
         isoplusMemberId,
         isoplusUserId,
         workspaceId: String(wid),
@@ -80,7 +125,25 @@ async function collectPortalUserWorkspaceRows(byEmail) {
       });
     }
   }
-  return { ok: true, workspaceRows };
+
+  const summary = {
+    workspaceCount: workspaces.length,
+    workspacesSkippedNoId,
+    workspacesMemberFetchFailed,
+    workspacesWithMembers,
+    membersSeen,
+    membersSkippedNoEmail,
+    exportRowCount: workspaceRows.length,
+    sampleMemberFetchFailures: memberFetchFailures,
+  };
+
+  if (workspaceRows.length === 0) {
+    warn('User-Service', 'CSV export produced no member rows', summary, req ?? null);
+  } else {
+    info('User-Service', 'CSV export workspace member scan complete', summary, req ?? null);
+  }
+
+  return { ok: true, workspaceRows, summary };
 }
 
 router.post('/register',
@@ -821,44 +884,21 @@ router.get(
         return res.status(500).json({ message: 'Server configuration error: PERSONAL_ACCESS_TOKEN not set' });
       }
 
-      const users = await User.find({}).select('-password').lean();
-      const byEmail = new Map();
-      for (const u of users) {
-        byEmail.set(String(u.email).toLowerCase(), u);
-      }
-
-      const collected = await collectPortalUserWorkspaceRows(byEmail);
+      const collected = await collectWorkspaceMemberRows(req);
       if (!collected.ok) {
         return res.status(502).json({
           message: collected.message || 'Failed to list workspaces from ISO+',
         });
       }
 
+      // Dedupe per (email, workspace) in case a member is returned more than once.
       const seenPair = new Set();
       const finalRows = [];
       for (const r of collected.workspaceRows) {
-        const key = `${r.userId}:${r.workspaceId}`;
+        const key = `${String(r.email).toLowerCase()}:${r.workspaceId}`;
         if (seenPair.has(key)) continue;
         seenPair.add(key);
         finalRows.push(r);
-      }
-
-      const userIdsWithWorkspace = new Set(finalRows.map((r) => r.userId));
-      let orphanUserCount = 0;
-      for (const u of users) {
-        const uid = u._id.toString();
-        if (!userIdsWithWorkspace.has(uid)) {
-          orphanUserCount += 1;
-          finalRows.push({
-            userId: uid,
-            name: u.name || '',
-            email: u.email || '',
-            isoplusMemberId: '',
-            isoplusUserId: '',
-            workspaceId: 'none',
-            workspaceName: 'No ISO+ workspace membership',
-          });
-        }
       }
 
       finalRows.sort((a, b) => {
@@ -868,7 +908,7 @@ router.get(
       });
 
       const header = [
-        'user_id', 'name', 'email',
+        'name', 'email', 'created_at',
         'isoplus_member_id', 'isoplus_user_id',
         'workspace_id', 'workspace_name',
       ];
@@ -876,9 +916,9 @@ router.get(
         header.join(','),
         ...finalRows.map((r) =>
           [
-            csvEscape(r.userId),
             csvEscape(r.name),
             csvEscape(r.email),
+            csvEscape(r.isoplusCreatedAt),
             csvEscape(r.isoplusMemberId),
             csvEscape(r.isoplusUserId),
             csvEscape(r.workspaceId),
@@ -892,9 +932,9 @@ router.get(
       res.setHeader('Content-Disposition', `attachment; filename="portal-users-${dateStamp}.csv"`);
       res.send(`\uFEFF${lines.join('\r\n')}`);
 
-      info('User-Service', 'Portal users CSV exported', {
+      info('User-Service', 'ISO+ workspace members CSV exported', {
         rowCount: finalRows.length,
-        orphanUsersNoIsoWorkspace: orphanUserCount,
+        ...(collected.summary ? { scan: collected.summary } : {}),
       }, req ?? null);
     } catch (err) {
       error('User-Service', 'CSV export failed', { err }, req);
