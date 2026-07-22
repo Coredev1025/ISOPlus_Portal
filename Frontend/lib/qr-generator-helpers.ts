@@ -84,12 +84,7 @@ export async function overlayLogoOnQrCanvas(canvas: HTMLCanvasElement, logoUrl: 
         ctx.closePath();
         ctx.fill();
 
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2, 0, 2 * Math.PI);
-        ctx.clip();
         ctx.drawImage(logoImage, logoX, logoY, logoSize, logoSize);
-        ctx.restore();
 
         resolve();
       } catch (error) {
