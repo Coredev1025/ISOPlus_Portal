@@ -226,14 +226,16 @@ export default function WorkspaceDetail() {
                 </h1>
                 <p className="text-muted-foreground font-mono text-sm">ID: {workspace?.id}</p>
               </div>
-              <Button
-                onClick={() => router.push(`/workspace/${workspace?.id}/usage-report`)}
-                variant="outline"
-                className="gap-2"
-              >
-                <BarChart className="h-4 w-4" />
-                View Usage Report
-              </Button>
+              {isOwnerOrSupportUser && (
+                <Button
+                  onClick={() => router.push(`/workspace/${workspace?.id}/usage-report`)}
+                  variant="outline"
+                  className="gap-2"
+                >
+                  <BarChart className="h-4 w-4" />
+                  View Usage Report
+                </Button>
+              )}
             </div>
           </Card>
 
