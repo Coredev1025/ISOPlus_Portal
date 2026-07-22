@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/select";
 import { useState, useEffect } from "react";
 import axios from "@/app/utils/axiosConfig";
+import { useAppContext } from "@/app/context";
+import { isOwnerOrSupport } from "@/lib/access";
 import {
   LineChart,
   Line,
@@ -134,13 +136,23 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
 export default function UsageReportPage() {
   const router = useRouter();
   const pathname = usePathname();
+  const { user } = useAppContext();
   const id = pathname.split('/')[2];
   const [dateRange, setDateRange] = useState("30");
   const [dailyData, setDailyData] = useState(() => generateDailyData(30));
   const [usageSummary, setUsageSummary] = useState(usageData);
   const [loading, setLoading] = useState(true);
+  const isOwnerOrSupportUser = isOwnerOrSupport(user);
 
   useEffect(() => {
+    if (!isOwnerOrSupportUser) {
+      router.replace("/workspace/access-denied");
+    }
+  }, [isOwnerOrSupportUser, router]);
+
+  useEffect(() => {
+    if (!isOwnerOrSupportUser) return;
+
     const abortController = new AbortController();
 
     const fetchUsageData = async () => {
@@ -192,12 +204,16 @@ export default function UsageReportPage() {
     return () => {
       abortController.abort();
     };
-  }, [id, dateRange]);
+  }, [id, dateRange, isOwnerOrSupportUser]);
 
   const handleDateRangeChange = (value: string) => {
     setDateRange(value);
     setLoading(true);
   };
+
+  if (!isOwnerOrSupportUser) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-background">
