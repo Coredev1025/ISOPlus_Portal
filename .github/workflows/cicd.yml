@@ -35,6 +35,11 @@ jobs:
         id: filter
         uses: dorny/paths-filter@v3
         with:
+          # For push events, diff against the first parent of the current commit (HEAD~1) instead of
+          # relying on github.event.before, which can be the null SHA (e.g. on the first tracked push)
+          # and cause paths-filter to silently fall back to a merge-base comparison that reports 0 changes.
+          # For pull_request events, leave base unset so paths-filter uses its own PR-base-branch API lookup.
+          base: ${{ github.event_name == 'push' && 'HEAD~1' || '' }}
           filters: |
             backend:
               - 'Backend/**'
