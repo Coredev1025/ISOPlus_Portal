@@ -40,17 +40,53 @@ const DEFAULT_WORKSPACE_DETAIL_CONCURRENCY = Math.max(parseInt(process.env.ISOPL
 const CACHE_TTL_MS = Math.max(parseInt(process.env.ISOPLUS_COLLECTION_CACHE_TTL_MS || '30000', 10), 0);
 const CACHE_MAX_ENTRIES = Math.max(parseInt(process.env.ISOPLUS_COLLECTION_CACHE_MAX_ENTRIES || '500', 10), 50);
 
+const sleep = (ms = 0) => new Promise(resolve => setTimeout(resolve, ms));
+const withAfterParam = (params, after) => (after ? { ...params, after } : params);
+
 const isoPlusClient = axios.create({
     timeout: Math.max(parseInt(process.env.ISOPLUS_HTTP_TIMEOUT_MS || '30000', 10), 1000),
     httpAgent: new http.Agent({ keepAlive: true, maxSockets: 100 }),
     httpsAgent: new https.Agent({ keepAlive: true, maxSockets: 100 }),
 });
 
+const ISOPLUS_MAX_RETRIES = Math.max(parseInt(process.env.ISOPLUS_HTTP_MAX_RETRIES || '4', 10), 0);
+
+function isRetryableIsoPlusError(err) {
+    const status = err?.response?.status;
+    if (status === 429 || status === 503) return true;
+    const code = err?.code;
+    return code === 'ECONNABORTED' || code === 'ETIMEDOUT' || code === 'ECONNRESET';
+}
+
+isoPlusClient.interceptors.response.use(
+    (response) => response,
+    async (err) => {
+        const config = err?.config;
+        if (!config) throw err;
+
+        const attempt = config.__isoplusRetryAttempt || 0;
+        if (attempt >= ISOPLUS_MAX_RETRIES || !isRetryableIsoPlusError(err)) {
+            throw err;
+        }
+
+        config.__isoplusRetryAttempt = attempt + 1;
+        const jitter = 1 + (secureRandomFloat() * 0.3);
+        const backoffMs = Math.min(1000 * Math.pow(2, attempt) * jitter, 15000);
+        warn('ISO+™ Service', 'Retrying ISO+ HTTP request after transient error', {
+            attempt: config.__isoplusRetryAttempt,
+            maxRetries: ISOPLUS_MAX_RETRIES,
+            backoffMs: Math.floor(backoffMs),
+            status: err?.response?.status,
+            code: err?.code,
+            url: config.url,
+        });
+        await sleep(backoffMs);
+        return isoPlusClient.request(config);
+    }
+);
+
 const responseCache = new Map();
 const inflightCache = new Map();
-
-const sleep = (ms = 0) => new Promise(resolve => setTimeout(resolve, ms));
-const withAfterParam = (params, after) => (after ? { ...params, after } : params);
 
 function readFromCache(key) {
     if (CACHE_TTL_MS <= 0) return null;
@@ -419,15 +455,19 @@ export async function getWorkspace(authorization, userEmail = null, options = {}
     try {
         const includeBoards = options.includeBoards !== false;
         const workspaceRolesById = options.workspaceRolesById || null;
+        const detailConcurrency = Math.max(
+            parseInt(options.detailConcurrency ?? DEFAULT_WORKSPACE_DETAIL_CONCURRENCY, 10) || DEFAULT_WORKSPACE_DETAIL_CONCURRENCY,
+            1
+        );
         const normalizedEmail = userEmail ? userEmail.toLowerCase() : null;
-        const cacheKey = `workspace:${authorization}:${normalizedEmail || ''}:${includeBoards ? 'with-boards' : 'no-boards'}`;
+        const cacheKey = `workspace:${authorization}:${normalizedEmail || ''}:${includeBoards ? 'with-boards' : 'no-boards'}:c${detailConcurrency}`;
 
         const workspaceResults = await getOrSetCache(cacheKey, async () => {
             const workspaces = await collectPaginated(iterateWorkspaces(authorization));
 
             return mapWithConcurrency(
                 workspaces,
-                DEFAULT_WORKSPACE_DETAIL_CONCURRENCY,
+                detailConcurrency,
                 async (item) => {
                     const workspaceId = item.id?.toString();
                     const roleFromToken = workspaceRolesById && workspaceId

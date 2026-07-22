@@ -19,10 +19,14 @@ const oauthTicketSchema = new mongoose.Schema({
     name: String,
     photo_url: String,
   },
+  claimedAt: {
+    type: Date,
+    default: null,
+  },
   createdAt: {
     type: Date,
     default: Date.now,
-    expires: 120,
+    expires: 300,
   },
 });
 
