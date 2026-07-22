@@ -31,15 +31,19 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0  # Full history needed so paths-filter can diff against the correct previous commit
+      - name: Resolve previous commit for push events
+        id: base_ref
+        if: github.event_name == 'push'
+        run: echo "sha=$(git rev-parse HEAD~1)" >> "$GITHUB_OUTPUT"
       - name: Filter paths
         id: filter
         uses: dorny/paths-filter@v3
         with:
-          # For push events, diff against the first parent of the current commit (HEAD~1) instead of
+          # For push events, diff against the resolved SHA of the first parent commit instead of
           # relying on github.event.before, which can be the null SHA (e.g. on the first tracked push)
           # and cause paths-filter to silently fall back to a merge-base comparison that reports 0 changes.
           # For pull_request events, leave base unset so paths-filter uses its own PR-base-branch API lookup.
-          base: ${{ github.event_name == 'push' && 'HEAD~1' || '' }}
+          base: ${{ github.event_name == 'push' && steps.base_ref.outputs.sha || '' }}
           filters: |
             backend:
               - 'Backend/**'
