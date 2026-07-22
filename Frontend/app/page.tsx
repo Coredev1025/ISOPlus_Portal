@@ -18,8 +18,14 @@ import {
   captureAuthMessage,
   captureAuthStep,
 } from "@/lib/auth-sentry";
+import { RedirectProcessingOverlay } from "@/components/ui/redirect-processing-overlay";
 
 const exchangedTickets = new Set<string>();
+
+function hasOAuthTicketInUrl(): boolean {
+  if (typeof window === "undefined") return false;
+  return Boolean(new URLSearchParams(window.location.search).get("ticket"));
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -29,6 +35,8 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [isSupportLogin, setIsSupportLogin] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  // Show overlay immediately on callback return (avoids login-form flash while exchanging ticket)
+  const [isFinishingSignIn, setIsFinishingSignIn] = useState(hasOAuthTicketInUrl);
   
   useEffect(() => {
     let cancelled = false;
@@ -40,6 +48,7 @@ export default function LoginPage() {
       if (exchangedTickets.has(ticket)) return;
       exchangedTickets.add(ticket);
       setIsLoading(true);
+      setIsFinishingSignIn(true);
       captureAuthStep(
         "oauth_ticket_exchange",
         "ticket_redeem_start",
@@ -61,31 +70,45 @@ export default function LoginPage() {
           showSuccessToast("Login successful");
           cleanUrl();
           router.push("/dashboard");
+          // Keep overlay until navigation completes
           return;
         }
       } catch (err: any) {
+        const status = err.response?.status;
+        const retryable =
+          status === 409 ||
+          err.response?.data?.retryable === true ||
+          (status != null && status !== 401 && status !== 400);
+        if (retryable) {
+          exchangedTickets.delete(ticket);
+        }
+
         if (err.name !== "CanceledError" && err.name !== "AbortError") {
           console.error("OAuth ticket exchange failed:", err);
           captureAuthFailure("oauth_ticket_exchange", err, {
             stage: "ticket_redeem",
-            httpStatus: err.response?.status,
+            httpStatus: status,
             message: err.response?.data?.message,
+            retryable,
           });
           showErrorToast("OAuth login failed", {
             description:
               err.response?.data?.message || "An error occurred during OAuth login",
           });
         }
-        cleanUrl();
+        if (!retryable) cleanUrl();
         setIsLoading(false);
+        setIsFinishingSignIn(false);
       }
     };
 
     const params = new URLSearchParams(window.location.search);
     const ticket = params.get("ticket");
     const loginError = params.get("login");
+    const loginReason = params.get("reason");
 
     if (ticket) {
+      setIsFinishingSignIn(true);
       redeemTicket(ticket);
       return () => {
         cancelled = true;
@@ -93,14 +116,26 @@ export default function LoginPage() {
     }
 
     if (loginError === "error") {
+      const reasonDescriptions: Record<string, string> = {
+        state_expired:
+          "Sign-in timed out. Please click Sign in with ISO+™ again (do not refresh the callback page).",
+        state_missing: "Sign-in security check failed. Please try again.",
+        state_invalid:
+          "Sign-in security check failed. Please start login again from this Portal.",
+        missing_code: "ISO+ did not return an authorization code. Please try again.",
+        token_exchange: "Could not complete sign-in with ISO+. Please try again.",
+        profile_fetch: "Could not load your ISO+ profile. Please try again.",
+      };
+      const description =
+        (loginReason && reasonDescriptions[loginReason]) ||
+        "Authentication failed. Please try again.";
+
       captureAuthMessage(
         "oauth_ticket_exchange",
         "OAuth login failed: redirected with login=error",
-        { stage: "oauth_callback_redirect" }
+        { stage: "oauth_callback_redirect", reason: loginReason || "unknown" }
       );
-      showErrorToast("OAuth login failed", {
-        description: "Authentication failed. Please try again.",
-      });
+      showErrorToast("OAuth login failed", { description });
       cleanUrl();
     }
 
@@ -225,6 +260,9 @@ export default function LoginPage() {
 
   return (
     <div className="relative min-h-screen bg-background flex items-center justify-center p-4 sm:p-8 overflow-hidden">
+      {isFinishingSignIn && (
+        <RedirectProcessingOverlay message="Finishing sign-in…" />
+      )}
       <div
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,hsl(var(--primary)/0.12),transparent)]"
         aria-hidden
