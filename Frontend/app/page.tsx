@@ -18,7 +18,6 @@ import {
   captureAuthMessage,
   captureAuthStep,
 } from "@/lib/auth-sentry";
-import { RedirectProcessingOverlay } from "@/components/ui/redirect-processing-overlay";
 
 const exchangedTickets = new Set<string>();
 
@@ -34,9 +33,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSupportLogin, setIsSupportLogin] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  // Show overlay immediately on callback return (avoids login-form flash while exchanging ticket)
-  const [isFinishingSignIn, setIsFinishingSignIn] = useState(hasOAuthTicketInUrl);
+  // Disable + button spinner immediately on OAuth callback return (ticket in URL)
+  const [isLoading, setIsLoading] = useState(hasOAuthTicketInUrl);
   
   useEffect(() => {
     let cancelled = false;
@@ -48,7 +46,6 @@ export default function LoginPage() {
       if (exchangedTickets.has(ticket)) return;
       exchangedTickets.add(ticket);
       setIsLoading(true);
-      setIsFinishingSignIn(true);
       captureAuthStep(
         "oauth_ticket_exchange",
         "ticket_redeem_start",
@@ -70,7 +67,7 @@ export default function LoginPage() {
           showSuccessToast("Login successful");
           cleanUrl();
           router.push("/dashboard");
-          // Keep overlay until navigation completes
+          // Keep button loading until navigation completes
           return;
         }
       } catch (err: any) {
@@ -98,7 +95,6 @@ export default function LoginPage() {
         }
         if (!retryable) cleanUrl();
         setIsLoading(false);
-        setIsFinishingSignIn(false);
       }
     };
 
@@ -108,7 +104,7 @@ export default function LoginPage() {
     const loginReason = params.get("reason");
 
     if (ticket) {
-      setIsFinishingSignIn(true);
+      setIsLoading(true);
       redeemTicket(ticket);
       return () => {
         cancelled = true;
@@ -259,9 +255,6 @@ export default function LoginPage() {
 
   return (
     <div className="relative min-h-screen bg-background flex items-center justify-center p-4 sm:p-8 overflow-hidden">
-      {isFinishingSignIn && (
-        <RedirectProcessingOverlay message="Finishing sign-in…" />
-      )}
       <div
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,hsl(var(--primary)/0.12),transparent)]"
         aria-hidden
@@ -376,7 +369,7 @@ export default function LoginPage() {
               size="lg"
               disabled={isLoading}
             >
-              Sign in with ISO+™
+              {isLoading ? "Signing in…" : "Sign in with ISO+™"}
               {isLoading && <Spinner />}
             </Button>
             <div className="text-center text-sm text-muted-foreground leading-relaxed">
