@@ -155,7 +155,6 @@ export default function LoginPage() {
           setUser(valid.data.user);
           router.push("/dashboard");
         } else {
-          await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/logout`, {});
           if (cancelled) return;
           localStorage.removeItem("user");
           localStorage.removeItem("workspace");
