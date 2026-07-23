@@ -212,10 +212,10 @@ function WorkspacesList() {
   }, [searchQuery]);
 
   useEffect(() => {
-    if (!user?.role) return;
+    if (!user?.id || !user?.role) return;
 
     let cancelled = false;
-    const dedupeKey = `workspaces:first:${user.role}:${debouncedQuery}`;
+    const dedupeKey = `workspaces:first:${user.id}:${user.role}:${debouncedQuery}`;
 
     const fetchWorkspaces = async () => {
       setLoading(true);
@@ -282,7 +282,7 @@ function WorkspacesList() {
     return () => {
       cancelled = true;
     };
-  }, [debouncedQuery, router, setWorkspaces, user.role]);
+  }, [debouncedQuery, router, setWorkspaces, user.id, user.role]);
 
   const loadMore = async () => {
     if (isLoadingMore) return;

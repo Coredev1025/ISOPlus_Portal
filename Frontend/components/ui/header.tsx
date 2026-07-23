@@ -64,21 +64,19 @@ export function Header() {
   }, [router, setUser, setWorkspaces]);
 
   const handleLogout = () => {
-    axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/logout`, {})
-      .then(() => {
-        localStorage.removeItem("user");
-        localStorage.removeItem("workspace");
-        localStorage.removeItem("board");
-        setUser({
-          id: "",
-          name: "",
-          email: "",
-          avatar: "",
-          role: "isoplus_user"
-        });
-        setWorkspaces([]);
-        router.push("/");
-      })
+    localStorage.removeItem("user");
+    localStorage.removeItem("workspace");
+    localStorage.removeItem("board");
+    setUser({
+      id: "",
+      name: "",
+      email: "",
+      avatar: "",
+      role: "isoplus_user"
+    });
+    setWorkspaces([]);
+    router.push("/");
+    axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/logout`, {}).catch(() => {});
   };
 
   return (
