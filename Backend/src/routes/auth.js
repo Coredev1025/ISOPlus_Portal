@@ -7,12 +7,14 @@ import querystring from 'querystring';
 import axios from 'axios';
 import { error, info, warn } from '../utils/logger.js';
 import { authStep, authFailure, authSuccess } from '../utils/authSentry.js';
-import { getWorkspace, getMember, listWorkspacesForAuthorization } from '../services/isoplus.js';
+import { getMember, listWorkspacesForAuthorization } from '../services/isoplus.js';
 import { getFrontendBaseUrl, signOAuthState, verifyOAuthState } from '../utils/helpers.js';
 import OAuthTicket from '../models/OAuthTicket.js';
 import { getSafeString, toRequiredQueryString } from '../utils/securityHelpers.js';
 
 const router = express.Router();
+
+const OAUTH_TICKET_CLAIM_MS = 45_000;
 
 function csvEscape(value) {
   if (value === null || value === undefined) return '';
@@ -375,8 +377,6 @@ router.get('/verify', async (req, res) => {
         name: user.name,
         role: user.role,
         avatar: user.avatar,
-        workspace: decoded.workspace,
-        board: decoded.board
       },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
@@ -433,7 +433,8 @@ router.get("/isoplus/callback", async (req, res) => {
   const authMethod = 'isoplus-oauth';
   const { code, state } = req.query;
   const frontendBase = getFrontendBaseUrl();
-  const loginErrorRedirect = `${frontendBase}/?login=error`;
+  const loginErrorRedirect = (reason) =>
+    `${frontendBase}/?login=error${reason ? `&reason=${encodeURIComponent(reason)}` : ''}`;
 
   authStep(req, {
     authMethod,
@@ -460,19 +461,36 @@ router.get("/isoplus/callback", async (req, res) => {
         oauthErrorDescription: req.query?.error_description,
       },
     });
-    return res.redirect(loginErrorRedirect);
+    return res.redirect(loginErrorRedirect('missing_code'));
   }
 
   authStep(req, { authMethod, stage: 'verify_state', message: 'Verifying OAuth state parameter' });
-  if (!verifyOAuthState(state)) {
+  const stateResult = verifyOAuthState(typeof state === 'string' ? state : null);
+  if (!stateResult.ok) {
+    const reasonMap = {
+      absent: 'State parameter absent',
+      expired: 'OAuth state JWT expired (user took too long or replayed callback)',
+      invalid_signature: 'OAuth state JWT signature invalid (wrong JWT_SECRET or tampered state)',
+    };
+    const clientReason =
+      stateResult.reason === 'expired'
+        ? 'state_expired'
+        : stateResult.reason === 'absent'
+          ? 'state_missing'
+          : 'state_invalid';
     authFailure(req, {
       authMethod,
       stage: 'callback_invalid_state',
       message: 'ISO+ OAuth callback failed: invalid or missing state',
-      reason: state ? 'State signature invalid or expired (possible CSRF)' : 'State parameter absent',
-      data: { hasCode: true, hasState: !!state },
+      reason: reasonMap[stateResult.reason] || 'State verification failed',
+      data: {
+        hasCode: true,
+        hasState: !!state,
+        stateReason: stateResult.reason,
+        stateErrorName: stateResult.errorName,
+      },
     });
-    return res.redirect(loginErrorRedirect);
+    return res.redirect(loginErrorRedirect(clientReason));
   }
 
   authStep(req, { authMethod, stage: 'state_ok', message: 'OAuth state verified' });
@@ -509,7 +527,7 @@ router.get("/isoplus/callback", async (req, res) => {
           tokenEndpoint: process.env.TOKEN_ENDPOINT,
         },
       });
-      return res.redirect(loginErrorRedirect);
+      return res.redirect(loginErrorRedirect('token_exchange'));
     }
 
     authStep(req, {
@@ -546,7 +564,7 @@ router.get("/isoplus/callback", async (req, res) => {
         upstreamStatus: userResponse.status,
         data: { profileEndpoint: process.env.USER_INFORMATION_ENDPOINT },
       });
-      return res.redirect(loginErrorRedirect);
+      return res.redirect(loginErrorRedirect('profile_fetch'));
     }
 
     const safeUserData = {
@@ -606,14 +624,89 @@ router.get("/isoplus/callback", async (req, res) => {
         isTimeout: err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT',
       },
     });
-    return res.redirect(loginErrorRedirect);
+    return res.redirect(loginErrorRedirect(stage));
   }
 });
 
+function normalizeOAuthEmail(raw) {
+  const email = getSafeString(raw)?.toLowerCase();
+  return email || null;
+}
+
+async function findOrCreateOAuthUser(req, { authMethod, email, oauthId, name, photo_url }) {
+  authStep(req, {
+    authMethod,
+    stage: 'lookup_or_create_user',
+    message: 'Looking up portal user by oauthId or email',
+    email,
+    userId: oauthId,
+  });
+
+  let user = await User.findOne({ oauthId });
+  if (!user) {
+    user = await User.findOne({ email });
+  }
+
+  if (!user) {
+    authStep(req, {
+      authMethod,
+      stage: 'create_user',
+      message: 'Creating new portal user from OAuth profile',
+      email,
+      userId: oauthId,
+    });
+    user = new User({
+      email,
+      name,
+      password: '',
+      oauthId,
+      avatar: photo_url,
+      role: 'isoplus_user',
+    });
+    await user.save();
+    return user;
+  }
+
+  authStep(req, {
+    authMethod,
+    stage: 'update_user_profile',
+    message: 'Updating existing portal user profile from OAuth',
+    email,
+    userId: user._id?.toString(),
+  });
+  user.avatar = photo_url;
+  user.name = name;
+  if (!user.oauthId) user.oauthId = oauthId;
+  if (user.email !== email) user.email = email;
+  await user.save();
+  return user;
+}
+
+async function claimOAuthTicket(safeTicket) {
+  const staleBefore = new Date(Date.now() - OAUTH_TICKET_CLAIM_MS);
+  return OAuthTicket.findOneAndUpdate(
+    {
+      ticket: safeTicket,
+      $or: [
+        { claimedAt: null },
+        { claimedAt: { $exists: false } },
+        { claimedAt: { $lte: staleBefore } },
+      ],
+    },
+    { $set: { claimedAt: new Date() } },
+    { new: true }
+  );
+}
+
+async function releaseOAuthTicketClaim(ticketId) {
+  if (!ticketId) return;
+  await OAuthTicket.updateOne({ _id: ticketId }, { $unset: { claimedAt: 1 } }).catch(() => {});
+}
+
 async function establishOAuthSession(req, { authorization, oauthData, method = 'oauth-exchange' }) {
   const authMethod = method;
-  const email = oauthData?.email?.toString();
-  const oauthId = oauthData?.id?.toString();
+  const email = normalizeOAuthEmail(oauthData?.email?.toString());
+  const oauthId = getSafeString(oauthData?.id?.toString());
   const name = oauthData?.name?.toString();
   const photo_url = oauthData?.photo_url?.toString();
 
@@ -639,44 +732,24 @@ async function establishOAuthSession(req, { authorization, oauthData, method = '
     return { status: 400, body: { message: 'Invalid OAuth profile data' } };
   }
 
-  authStep(req, {
-    authMethod,
-    stage: 'lookup_or_create_user',
-    message: 'Looking up portal user by email + oauthId',
-    email,
-    userId: oauthId,
-  });
-
-  let user = await User.findOne({ email, oauthId });
-  const defaultRole = 'isoplus_user';
-  if (!user) {
-    authStep(req, {
-      authMethod,
-      stage: 'create_user',
-      message: 'Creating new portal user from OAuth profile',
-      email,
-      userId: oauthId,
-    });
-    user = new User({
-      email: email,
-      name: name,
-      password: "",
-      oauthId: oauthId,
-      avatar: photo_url,
-      role: defaultRole
-    });
-    await user.save();
-  } else {
-    authStep(req, {
-      authMethod,
-      stage: 'update_user_profile',
-      message: 'Updating existing portal user profile from OAuth',
-      email,
-      userId: user._id?.toString(),
-    });
-    user.avatar = photo_url;
-    user.name = name;
-    await user.save();
+  let user;
+  try {
+    user = await findOrCreateOAuthUser(req, { authMethod, email, oauthId, name, photo_url });
+  } catch (err) {
+    if (err?.code === 11000) {
+      authFailure(req, {
+        authMethod,
+        stage: 'user_conflict',
+        message: 'OAuth login failed: user record conflict',
+        reason: err.message,
+        httpStatus: 409,
+        email,
+        userId: oauthId,
+        error: err,
+      });
+      return { status: 409, body: { message: 'Account conflict during OAuth login. Please try again.' } };
+    }
+    throw err;
   }
 
   if (user.disabled) {
@@ -691,70 +764,7 @@ async function establishOAuthSession(req, { authorization, oauthData, method = '
     return { status: 403, body: { message: 'Account is disabled' } };
   }
 
-  authStep(req, {
-    authMethod,
-    stage: 'workspace_fetch_start',
-    message: 'Fetching ISO+ workspaces for user',
-    email: user.email,
-    userId: user._id?.toString(),
-  });
-
   req.session.Authorization = authorization;
-  const workspaceResponse = await getWorkspace(req.session.Authorization, user.email);
-
-  if (workspaceResponse.status !== 200) {
-    authFailure(req, {
-      authMethod,
-      stage: 'workspace_fetch',
-      message: 'OAuth login failed: could not fetch ISO+ workspaces',
-      reason: workspaceResponse.message || 'Workspace lookup did not return 200',
-      httpStatus: workspaceResponse.status || 500,
-      upstreamStatus: workspaceResponse.upstreamStatus ?? workspaceResponse.status,
-      level: (workspaceResponse.status || 500) >= 500 ? 'error' : 'warning',
-      email: user.email,
-      userId: user._id?.toString(),
-      data: {
-        errorCode: workspaceResponse.errorCode,
-        isTimeout: workspaceResponse.errorCode === 'ECONNABORTED' || workspaceResponse.errorCode === 'ETIMEDOUT',
-      },
-    });
-    return {
-      status: workspaceResponse.status || 500,
-      body: { message: workspaceResponse.message || 'Failed to fetch workspace data' }
-    };
-  }
-
-  const workspaceCount = Array.isArray(workspaceResponse.workspace) ? workspaceResponse.workspace.length : 0;
-  authStep(req, {
-    authMethod,
-    stage: 'workspace_fetch_ok',
-    message: 'ISO+ workspaces fetched',
-    email: user.email,
-    userId: user._id?.toString(),
-    data: { workspaceCount },
-  });
-
-  const role = workspaceResponse.workspace[0]?.user_role || "isoplus_user";
-  if (role === "owner" && user.role !== "owner") {
-    authStep(req, {
-      authMethod,
-      stage: 'promote_owner_role',
-      message: 'Promoting portal user role to owner from workspace membership',
-      email: user.email,
-      userId: user._id?.toString(),
-    });
-    await User.findByIdAndUpdate({ _id: user._id }, { $set: { role: "owner" } });
-    user.role = "owner";
-  }
-
-  const workspace = (workspaceResponse.workspace || []).map(w => {
-    const board = Array.isArray(w.board) ? w.board.map(b => b.id) : [];
-    return {
-      id: w.id,
-      board: board,
-      user_role: w.user_role
-    };
-  });
 
   authStep(req, {
     authMethod,
@@ -762,11 +772,17 @@ async function establishOAuthSession(req, { authorization, oauthData, method = '
     message: 'Issuing portal session JWT',
     email: user.email,
     userId: user._id?.toString(),
-    data: { role: user.role, workspaceCount: workspace.length },
+    data: { role: user.role },
   });
 
   const token = jwt.sign(
-    { userId: user._id, email: user.email, name: user.name, role: user.role, avatar: user.avatar, workspace: workspace },
+    {
+      userId: user._id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      avatar: user.avatar,
+    },
     process.env.JWT_SECRET,
     { expiresIn: '24h' }
   );
@@ -779,7 +795,7 @@ async function establishOAuthSession(req, { authorization, oauthData, method = '
     message: 'OAuth login successful',
     email: user.email,
     userId: user._id?.toString(),
-    data: { role: user.role, workspaceCount: workspace.length },
+    data: { role: user.role },
   });
 
   return {
@@ -800,6 +816,8 @@ router.post('/oauth-exchange', async (req, res) => {
   const authMethod = 'oauth-exchange';
   authStep(req, { authMethod, stage: 'exchange_started', message: 'OAuth ticket exchange started' });
 
+  let claimedTicketId = null;
+
   try {
     const { ticket } = req.body;
     const safeTicket = getSafeString(ticket);
@@ -817,25 +835,41 @@ router.post('/oauth-exchange', async (req, res) => {
     authStep(req, {
       authMethod,
       stage: 'ticket_redeem_start',
-      message: 'Redeeming one-time OAuth ticket',
+      message: 'Claiming OAuth ticket for session exchange',
     });
 
-    const record = await OAuthTicket.findOneAndDelete({ ticket: safeTicket });
+    const record = await claimOAuthTicket(safeTicket);
     if (!record) {
+      const existing = await OAuthTicket.findOne({ ticket: safeTicket }).lean();
+      if (existing) {
+        authFailure(req, {
+          authMethod,
+          stage: 'ticket_claim_in_progress',
+          message: 'OAuth exchange failed: ticket claim already in progress',
+          reason: 'Another exchange is using this ticket (retry shortly)',
+          httpStatus: 409,
+        });
+        return res.status(409).json({
+          message: 'Login already in progress. Please wait a moment and try again.',
+          retryable: true,
+        });
+      }
       authFailure(req, {
         authMethod,
         stage: 'ticket_redeem',
         message: 'OAuth exchange failed: ticket invalid, expired, or already used',
-        reason: 'No matching ticket (single-use, 120s TTL — likely already redeemed or expired)',
+        reason: 'No matching ticket (single-use, 300s TTL — already redeemed or expired)',
         httpStatus: 401,
       });
       return res.status(401).json({ message: 'Invalid or expired login ticket' });
     }
 
+    claimedTicketId = record._id;
+
     authStep(req, {
       authMethod,
       stage: 'ticket_redeem_ok',
-      message: 'OAuth ticket redeemed',
+      message: 'OAuth ticket claimed',
       email: record.oauthData?.email,
       userId: record.oauthData?.id,
     });
@@ -845,8 +879,18 @@ router.post('/oauth-exchange', async (req, res) => {
       oauthData: record.oauthData,
       method: 'oauth-exchange',
     });
+
+    if (result.status === 200) {
+      await OAuthTicket.deleteOne({ _id: record._id });
+      claimedTicketId = null;
+    } else {
+      await releaseOAuthTicketClaim(record._id);
+      claimedTicketId = null;
+    }
+
     return res.status(result.status).json(result.body);
   } catch (err) {
+    await releaseOAuthTicketClaim(claimedTicketId);
     authFailure(req, {
       authMethod,
       stage: 'server_error',

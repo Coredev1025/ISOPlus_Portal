@@ -21,6 +21,11 @@ import {
 
 const exchangedTickets = new Set<string>();
 
+function hasOAuthTicketInUrl(): boolean {
+  if (typeof window === "undefined") return false;
+  return Boolean(new URLSearchParams(window.location.search).get("ticket"));
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const { setUser, setWorkspaces } = useAppContext();
@@ -28,7 +33,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSupportLogin, setIsSupportLogin] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  // Disable + button spinner immediately on OAuth callback return (ticket in URL)
+  const [isLoading, setIsLoading] = useState(hasOAuthTicketInUrl);
   
   useEffect(() => {
     let cancelled = false;
@@ -61,22 +67,33 @@ export default function LoginPage() {
           showSuccessToast("Login successful");
           cleanUrl();
           router.push("/dashboard");
+          // Keep button loading until navigation completes
           return;
         }
       } catch (err: any) {
+        const status = err.response?.status;
+        const retryable =
+          status === 409 ||
+          err.response?.data?.retryable === true ||
+          (status != null && status !== 401 && status !== 400);
+        if (retryable) {
+          exchangedTickets.delete(ticket);
+        }
+
         if (err.name !== "CanceledError" && err.name !== "AbortError") {
           console.error("OAuth ticket exchange failed:", err);
           captureAuthFailure("oauth_ticket_exchange", err, {
             stage: "ticket_redeem",
-            httpStatus: err.response?.status,
+            httpStatus: status,
             message: err.response?.data?.message,
+            retryable,
           });
           showErrorToast("OAuth login failed", {
             description:
               err.response?.data?.message || "An error occurred during OAuth login",
           });
         }
-        cleanUrl();
+        if (!retryable) cleanUrl();
         setIsLoading(false);
       }
     };
@@ -84,8 +101,10 @@ export default function LoginPage() {
     const params = new URLSearchParams(window.location.search);
     const ticket = params.get("ticket");
     const loginError = params.get("login");
+    const loginReason = params.get("reason");
 
     if (ticket) {
+      setIsLoading(true);
       redeemTicket(ticket);
       return () => {
         cancelled = true;
@@ -93,14 +112,26 @@ export default function LoginPage() {
     }
 
     if (loginError === "error") {
+      const reasonDescriptions: Record<string, string> = {
+        state_expired:
+          "Sign-in timed out. Please click Sign in with ISO+™ again (do not refresh the callback page).",
+        state_missing: "Sign-in security check failed. Please try again.",
+        state_invalid:
+          "Sign-in security check failed. Please start login again from this Portal.",
+        missing_code: "ISO+ did not return an authorization code. Please try again.",
+        token_exchange: "Could not complete sign-in with ISO+. Please try again.",
+        profile_fetch: "Could not load your ISO+ profile. Please try again.",
+      };
+      const description =
+        (loginReason && reasonDescriptions[loginReason]) ||
+        "Authentication failed. Please try again.";
+
       captureAuthMessage(
         "oauth_ticket_exchange",
         "OAuth login failed: redirected with login=error",
-        { stage: "oauth_callback_redirect" }
+        { stage: "oauth_callback_redirect", reason: loginReason || "unknown" }
       );
-      showErrorToast("OAuth login failed", {
-        description: "Authentication failed. Please try again.",
-      });
+      showErrorToast("OAuth login failed", { description });
       cleanUrl();
     }
 
@@ -120,7 +151,6 @@ export default function LoginPage() {
           setUser(valid.data.user);
           router.push("/dashboard");
         } else {
-          await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/auth/logout`, {});
           if (cancelled) return;
           localStorage.removeItem("user");
           localStorage.removeItem("workspace");
@@ -339,7 +369,7 @@ export default function LoginPage() {
               size="lg"
               disabled={isLoading}
             >
-              Sign in with ISO+™
+              {isLoading ? "Signing in…" : "Sign in with ISO+™"}
               {isLoading && <Spinner />}
             </Button>
             <div className="text-center text-sm text-muted-foreground leading-relaxed">

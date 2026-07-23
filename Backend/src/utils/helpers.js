@@ -199,15 +199,26 @@ export function getFrontendBaseUrl() {
     return 'http://localhost:3000';
 }
 
-export function signOAuthState(payload = {}, expiresIn = '10m') {
+export function getOAuthStateExpiresIn() {
+    const fromEnv = process.env.OAUTH_STATE_TTL;
+    if (typeof fromEnv === 'string' && fromEnv.trim()) return fromEnv.trim();
+    return '30m';
+}
+
+export function signOAuthState(payload = {}, expiresIn = getOAuthStateExpiresIn()) {
     return jwt.sign({ ...payload, nonce: randomAlphanumeric(16) }, process.env.JWT_SECRET, { expiresIn });
 }
 
 export function verifyOAuthState(state) {
-    if (!state) return null;
+    if (!state || typeof state !== 'string') {
+        return { ok: false, reason: 'absent', errorName: null, payload: null };
+    }
     try {
-        return jwt.verify(state, process.env.JWT_SECRET);
-    } catch {
-        return null;
+        const payload = jwt.verify(state, process.env.JWT_SECRET);
+        return { ok: true, reason: null, errorName: null, payload };
+    } catch (err) {
+        const errorName = err?.name || 'JsonWebTokenError';
+        const reason = errorName === 'TokenExpiredError' ? 'expired' : 'invalid_signature';
+        return { ok: false, reason, errorName, payload: null };
     }
 }
