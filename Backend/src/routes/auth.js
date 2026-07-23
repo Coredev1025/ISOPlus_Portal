@@ -7,7 +7,7 @@ import querystring from 'querystring';
 import axios from 'axios';
 import { error, info, warn } from '../utils/logger.js';
 import { authStep, authFailure, authSuccess } from '../utils/authSentry.js';
-import { getWorkspace, getMember, listWorkspacesForAuthorization } from '../services/isoplus.js';
+import { getMember, listWorkspacesForAuthorization } from '../services/isoplus.js';
 import { getFrontendBaseUrl, signOAuthState, verifyOAuthState } from '../utils/helpers.js';
 import OAuthTicket from '../models/OAuthTicket.js';
 import { getSafeString, toRequiredQueryString } from '../utils/securityHelpers.js';
@@ -377,8 +377,6 @@ router.get('/verify', async (req, res) => {
         name: user.name,
         role: user.role,
         avatar: user.avatar,
-        workspace: decoded.workspace,
-        board: decoded.board
       },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
@@ -684,14 +682,6 @@ async function findOrCreateOAuthUser(req, { authMethod, email, oauthId, name, ph
   return user;
 }
 
-function mapWorkspacesForJwt(workspaceList) {
-  return (workspaceList || []).map((w) => ({
-    id: w.id,
-    board: Array.isArray(w.board) ? w.board.map((b) => b.id) : [],
-    user_role: w.user_role,
-  }));
-}
-
 async function claimOAuthTicket(safeTicket) {
   const staleBefore = new Date(Date.now() - OAUTH_TICKET_CLAIM_MS);
   return OAuthTicket.findOneAndUpdate(
@@ -774,68 +764,7 @@ async function establishOAuthSession(req, { authorization, oauthData, method = '
     return { status: 403, body: { message: 'Account is disabled' } };
   }
 
-  authStep(req, {
-    authMethod,
-    stage: 'workspace_fetch_start',
-    message: 'Fetching ISO+ workspaces for user',
-    email: user.email,
-    userId: user._id?.toString(),
-  });
-
   req.session.Authorization = authorization;
-  const workspaceResponse = await getWorkspace(req.session.Authorization, user.email, {
-    detailConcurrency: 3,
-  });
-
-  if (workspaceResponse.status !== 200) {
-    authFailure(req, {
-      authMethod,
-      stage: 'workspace_fetch',
-      message: 'OAuth login failed: could not fetch ISO+ workspaces',
-      reason: workspaceResponse.message || 'Workspace lookup did not return 200',
-      httpStatus: workspaceResponse.status || 500,
-      upstreamStatus: workspaceResponse.upstreamStatus ?? workspaceResponse.status,
-      level: (workspaceResponse.status || 500) >= 500 ? 'error' : 'warning',
-      email: user.email,
-      userId: user._id?.toString(),
-      data: {
-        errorCode: workspaceResponse.errorCode,
-        isTimeout: workspaceResponse.errorCode === 'ECONNABORTED' || workspaceResponse.errorCode === 'ETIMEDOUT',
-      },
-    });
-    return {
-      status: workspaceResponse.status || 500,
-      body: {
-        message: workspaceResponse.message || 'Failed to fetch workspace data',
-        retryable: true,
-      }
-    };
-  }
-
-  const workspaceCount = Array.isArray(workspaceResponse.workspace) ? workspaceResponse.workspace.length : 0;
-  authStep(req, {
-    authMethod,
-    stage: 'workspace_fetch_ok',
-    message: 'ISO+ workspaces fetched',
-    email: user.email,
-    userId: user._id?.toString(),
-    data: { workspaceCount },
-  });
-
-  const role = workspaceResponse.workspace[0]?.user_role || "isoplus_user";
-  if (role === "owner" && user.role !== "owner") {
-    authStep(req, {
-      authMethod,
-      stage: 'promote_owner_role',
-      message: 'Promoting portal user role to owner from workspace membership',
-      email: user.email,
-      userId: user._id?.toString(),
-    });
-    await User.findByIdAndUpdate({ _id: user._id }, { $set: { role: "owner" } });
-    user.role = "owner";
-  }
-
-  const workspace = mapWorkspacesForJwt(workspaceResponse.workspace);
 
   authStep(req, {
     authMethod,
@@ -843,11 +772,17 @@ async function establishOAuthSession(req, { authorization, oauthData, method = '
     message: 'Issuing portal session JWT',
     email: user.email,
     userId: user._id?.toString(),
-    data: { role: user.role, workspaceCount: workspace.length },
+    data: { role: user.role },
   });
 
   const token = jwt.sign(
-    { userId: user._id, email: user.email, name: user.name, role: user.role, avatar: user.avatar, workspace: workspace },
+    {
+      userId: user._id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      avatar: user.avatar,
+    },
     process.env.JWT_SECRET,
     { expiresIn: '24h' }
   );
@@ -860,7 +795,7 @@ async function establishOAuthSession(req, { authorization, oauthData, method = '
     message: 'OAuth login successful',
     email: user.email,
     userId: user._id?.toString(),
-    data: { role: user.role, workspaceCount: workspace.length },
+    data: { role: user.role },
   });
 
   return {
