@@ -50,6 +50,67 @@ jobs:
             frontend:
               - 'Frontend/**'
 
+  test-backend:
+    name: Backend Unit Tests
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup NodeJS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Backend/package-lock.json
+      - name: Cache MongoDB binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: ${{ runner.os }}-mongodb-binaries-${{ hashFiles('Backend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-mongodb-binaries-
+      - name: Install Dependencies
+        working-directory: Backend
+        run: npm ci
+      - name: Run Unit & Integration Tests
+        working-directory: Backend
+        run: npm run test:coverage
+      - name: Upload Coverage Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-unit-coverage
+          path: Backend/coverage
+          if-no-files-found: ignore
+
+  test-frontend:
+    name: Frontend Unit Tests
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup NodeJS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+      - name: Install Dependencies
+        working-directory: Frontend
+        run: npm ci --legacy-peer-deps
+      - name: Run Unit Tests
+        working-directory: Frontend
+        run: npm run test:coverage
+      - name: Upload Coverage Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-unit-coverage
+          path: Frontend/coverage
+          if-no-files-found: ignore
+
   sonarqube-backend:
     name: SonarQube - Backend
     needs: detect-changes
