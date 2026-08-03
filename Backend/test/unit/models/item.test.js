@@ -1,7 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import Item from '../../../src/models/Item.js';
 
 describe('Item model', () => {
+  beforeAll(async () => {
+    await Item.init();
+  });
+
   it('requires workspaceId, boardId, folderId, itemId', async () => {
     await expect(Item.create({})).rejects.toThrow();
   });
