@@ -99,7 +99,7 @@ jobs:
           cache-dependency-path: Frontend/package-lock.json
       - name: Install Dependencies
         working-directory: Frontend
-        run: npm ci --legacy-peer-deps
+        run: npm ci
       - name: Run Unit Tests
         working-directory: Frontend
         run: npm run test:coverage
@@ -120,16 +120,11 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
-      - name: Setup NodeJS
-        uses: actions/setup-node@v4
+      - name: Download coverage report
+        uses: actions/download-artifact@v4
         with:
-          node-version: 22
-      - name: Install Dependencies
-        working-directory: Backend
-        run: npm ci
-      - name: Run tests with coverage (skips if no test script yet)
-        working-directory: Backend
-        run: npm test --if-present -- --coverage --coverageReporters=lcov
+          name: backend-unit-coverage
+          path: Backend/coverage
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
         with:
@@ -146,16 +141,11 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
-      - name: Setup NodeJS
-        uses: actions/setup-node@v4
+      - name: Download coverage report
+        uses: actions/download-artifact@v4
         with:
-          node-version: 22
-      - name: Install Dependencies
-        working-directory: Frontend
-        run: npm ci
-      - name: Run tests with coverage (skips if no test script yet)
-        working-directory: Frontend
-        run: npm test --if-present -- --coverage --coverageReporters=lcov
+          name: frontend-unit-coverage
+          path: Frontend/coverage
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
         with:
