@@ -113,7 +113,7 @@ jobs:
 
   sonarqube-backend:
     name: SonarQube - Backend
-    needs: detect-changes
+    needs: [detect-changes, test-backend]
     if: needs.detect-changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -139,7 +139,7 @@ jobs:
 
   sonarqube-frontend:
     name: SonarQube - Frontend
-    needs: detect-changes
+    needs: [detect-changes, test-frontend]
     if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -164,8 +164,20 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_FRONTEND }}
 
   build-and-deploy:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.backend == 'true'
+    needs:
+      - detect-changes
+      - test-backend
+      - test-frontend
+      - sonarqube-backend
+      - sonarqube-frontend
+    if: >
+      always() &&
+      needs.detect-changes.result == 'success' &&
+      needs.detect-changes.outputs.backend == 'true' &&
+      needs.test-backend.result == 'success' &&
+      needs.sonarqube-backend.result == 'success' &&
+      (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped') &&
+      (needs.sonarqube-frontend.result == 'success' || needs.sonarqube-frontend.result == 'skipped')
     runs-on: [ ubuntu-latest ]
     steps:
       - name: Checkout Source

@@ -1,7 +1,25 @@
+import { accessSync, constants } from 'node:fs';
 import { beforeAll, afterAll, afterEach, vi } from 'vitest';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { server } from './msw/server.js';
+
+function resolveSystemMongod() {
+  const candidates = [
+    process.env.MONGOMS_SYSTEM_BINARY,
+    '/usr/bin/mongod',
+    '/usr/local/bin/mongod',
+    '/opt/homebrew/bin/mongod',
+  ].filter(Boolean);
+  for (const p of candidates) {
+    try {
+      accessSync(p, constants.X_OK);
+      return p;
+    } catch {
+    }
+  }
+  return undefined;
+}
 
 vi.mock('ioredis', () => {
   class RedisMock {
@@ -53,24 +71,13 @@ beforeAll(async () => {
   process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_jwt_secret';
   process.env.SESSION_SECRET = process.env.SESSION_SECRET || 'test_session_secret';
 
-  mongoServer = await MongoMemoryServer.create({
-    instance: {
-      args: ['--nounixsocket']
-    },
-    binary: {
-      systemBinary: process.env.MONGODB_SYSTEM_BINARY || '/usr/bin/mongod'
-    }
-  });
-
+  const systemBinary = resolveSystemMongod();
+  const mongoOptions = systemBinary ? { binary: { systemBinary } } : {};
+  mongoServer = await MongoMemoryServer.create(mongoOptions);
   const uri = mongoServer.getUri();
   process.env.MONGODB_URI = uri;
 
-  await mongoose.connect(uri, {
-    serverSelectionTimeoutMS: 3000,
-    autoIndex: true,
-  });
-
-  await mongoose.connection.syncIndexes();
+  await mongoose.connect(uri);
 
   server.listen({ onUnhandledRequest: 'error' });
 });
