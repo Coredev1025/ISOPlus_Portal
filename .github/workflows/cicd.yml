@@ -50,25 +50,101 @@ jobs:
             frontend:
               - 'Frontend/**'
 
+  test-backend:
+    name: Backend Unit Tests
+    needs: detect-changes
+    if: needs.detect-changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup NodeJS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Backend/package-lock.json
+      - name: Cache MongoDB binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: ${{ runner.os }}-mongodb-binaries-${{ hashFiles('Backend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-mongodb-binaries-
+      - name: Install Dependencies
+        working-directory: Backend
+        run: npm ci
+      - name: Run Unit & Integration Tests
+        working-directory: Backend
+        run: npm run test:coverage
+      - name: Verify coverage report for Sonar
+        working-directory: Backend
+        run: |
+          test -f coverage/lcov.info
+          echo "Backend coverage report ready:"
+          wc -l coverage/lcov.info
+          head -n 5 coverage/lcov.info
+      - name: Upload Coverage Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-unit-coverage
+          path: Backend/coverage
+          if-no-files-found: ignore
+
+  test-frontend:
+    name: Frontend Unit Tests
+    needs: detect-changes
+    if: needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup NodeJS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+      - name: Install Dependencies
+        working-directory: Frontend
+        run: npm ci
+      - name: Run Unit Tests
+        working-directory: Frontend
+        run: npm run test:coverage
+      - name: Verify coverage report for Sonar
+        working-directory: Frontend
+        run: |
+          test -f coverage/lcov.info
+          echo "Frontend coverage report ready:"
+          wc -l coverage/lcov.info
+          head -n 5 coverage/lcov.info
+      - name: Upload Coverage Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-unit-coverage
+          path: Frontend/coverage
+          if-no-files-found: ignore
+
   sonarqube-backend:
     name: SonarQube - Backend
-    needs: detect-changes
+    needs: [detect-changes, test-backend]
     if: needs.detect-changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
-      - name: Setup NodeJS
-        uses: actions/setup-node@v4
+      - name: Download coverage report
+        uses: actions/download-artifact@v4
         with:
-          node-version: 22
-      - name: Install Dependencies
+          name: backend-unit-coverage
+          path: Backend/coverage
+      - name: Confirm Sonar coverage input
         working-directory: Backend
-        run: npm ci
-      - name: Run tests with coverage (skips if no test script yet)
-        working-directory: Backend
-        run: npm test --if-present -- --coverage --coverageReporters=lcov
+        run: |
+          test -f coverage/lcov.info
+          echo "Sonar will import:"
+          ls -la coverage/lcov.info
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
         with:
@@ -78,23 +154,24 @@ jobs:
 
   sonarqube-frontend:
     name: SonarQube - Frontend
-    needs: detect-changes
+    needs: [detect-changes, test-frontend]
     if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
-      - name: Setup NodeJS
-        uses: actions/setup-node@v4
+      - name: Download coverage report
+        uses: actions/download-artifact@v4
         with:
-          node-version: 22
-      - name: Install Dependencies
+          name: frontend-unit-coverage
+          path: Frontend/coverage
+      - name: Confirm Sonar coverage input
         working-directory: Frontend
-        run: npm ci
-      - name: Run tests with coverage (skips if no test script yet)
-        working-directory: Frontend
-        run: npm test --if-present -- --coverage --coverageReporters=lcov
+        run: |
+          test -f coverage/lcov.info
+          echo "Sonar will import:"
+          ls -la coverage/lcov.info
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
         with:
@@ -103,8 +180,20 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_FRONTEND }}
 
   build-and-deploy:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.backend == 'true'
+    needs:
+      - detect-changes
+      - test-backend
+      - test-frontend
+      - sonarqube-backend
+      - sonarqube-frontend
+    if: >
+      always() &&
+      needs.detect-changes.result == 'success' &&
+      needs.detect-changes.outputs.backend == 'true' &&
+      needs.test-backend.result == 'success' &&
+      needs.sonarqube-backend.result == 'success' &&
+      (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped') &&
+      (needs.sonarqube-frontend.result == 'success' || needs.sonarqube-frontend.result == 'skipped')
     runs-on: [ ubuntu-latest ]
     steps:
       - name: Checkout Source

@@ -52,6 +52,7 @@ const consoleFormat = printf(({ level, message, timestamp, source, ip, email, ..
 });
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/business-dashboard';
+const shouldUseMongoTransport = process.env.NODE_ENV !== 'test' && Boolean(process.env.MONGODB_URI);
 
 // Cache to store recent log entries to prevent duplicates
 const logCache = new Map();
@@ -267,24 +268,26 @@ const logger = winston.createLogger({
         winston.format.json()
       )
     }),
-    new winston.transports.MongoDB({
-      level: 'debug', // Set to the lowest level to log all levels
-      db: MONGODB_URI,
-      options: {
-        useUnifiedTopology: true
-      },
-      collection: 'logs',
-      format: winston.format.combine(
-        dropHttpLifecycleForPersistence(),
-        mongoSanitizeFormat(),
-        json()
-      ),
-      tryReconnect: true,
-      metaKey: 'metadata',
-      // Add options to reduce memory usage
-      capped: false, // Set to true if you want capped collection (limits size)
-      expireAfterSeconds: parseInt(process.env.LOG_TTL_DAYS) ? parseInt(process.env.LOG_TTL_DAYS) * 24 * 60 * 60 : undefined // Auto-delete old logs
-    })
+    ...(shouldUseMongoTransport
+      ? [new winston.transports.MongoDB({
+          level: 'debug', // Set to the lowest level to log all levels
+          db: MONGODB_URI,
+          options: {
+            useUnifiedTopology: true
+          },
+          collection: 'logs',
+          format: winston.format.combine(
+            dropHttpLifecycleForPersistence(),
+            mongoSanitizeFormat(),
+            json()
+          ),
+          tryReconnect: true,
+          metaKey: 'metadata',
+          // Add options to reduce memory usage
+          capped: false, // Set to true if you want capped collection (limits size)
+          expireAfterSeconds: parseInt(process.env.LOG_TTL_DAYS) ? parseInt(process.env.LOG_TTL_DAYS) * 24 * 60 * 60 : undefined // Auto-delete old logs
+        })]
+      : [])
   ]
 });
 

@@ -1299,7 +1299,8 @@ function applyBudgetMapping(templateInputs, aggregate, mappings = []) {
 
 function validateRequestParams(req) {
     const { workspaceId, boardId } = req.params;
-    if (!req.body.items?.length) {
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (!items.length) {
         error('Webhook-Service', 'Server error', { message: "There are no items." }, req ?? null);
         throw new Error('No items found in the payload');
     }

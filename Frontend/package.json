@@ -6,7 +6,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "e2e": "playwright test",
+    "e2e:install": "playwright install chromium",
+    "e2e:ui": "playwright test --ui",
+    "e2e:report": "playwright show-report"
   },
   "dependencies": {
     "@babel/runtime": "^7.26.10",
@@ -90,6 +97,17 @@
     "@opentelemetry/core": "^2.8.0"
   },
   "devDependencies": {
-    "@types/toastify-js": "^1.12.4"
+    "@types/toastify-js": "^1.12.4",
+    "@playwright/test": "^1.55.0",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@vitejs/plugin-react": "^6.0.2",
+    "@vitest/coverage-v8": "^4.1.6",
+    "jsdom": "^27.0.1",
+    "msw": "^2.11.6",
+    "vite": "^8.0.13",
+    "vitest": "^4.0.7"
   }
 }
