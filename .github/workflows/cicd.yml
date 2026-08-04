@@ -76,6 +76,13 @@ jobs:
       - name: Run Unit & Integration Tests
         working-directory: Backend
         run: npm run test:coverage
+      - name: Verify coverage report for Sonar
+        working-directory: Backend
+        run: |
+          test -f coverage/lcov.info
+          echo "Backend coverage report ready:"
+          wc -l coverage/lcov.info
+          head -n 5 coverage/lcov.info
       - name: Upload Coverage Report
         if: always()
         uses: actions/upload-artifact@v4
@@ -103,6 +110,13 @@ jobs:
       - name: Run Unit Tests
         working-directory: Frontend
         run: npm run test:coverage
+      - name: Verify coverage report for Sonar
+        working-directory: Frontend
+        run: |
+          test -f coverage/lcov.info
+          echo "Frontend coverage report ready:"
+          wc -l coverage/lcov.info
+          head -n 5 coverage/lcov.info
       - name: Upload Coverage Report
         if: always()
         uses: actions/upload-artifact@v4
@@ -125,6 +139,12 @@ jobs:
         with:
           name: backend-unit-coverage
           path: Backend/coverage
+      - name: Confirm Sonar coverage input
+        working-directory: Backend
+        run: |
+          test -f coverage/lcov.info
+          echo "Sonar will import:"
+          ls -la coverage/lcov.info
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
         with:
@@ -146,6 +166,12 @@ jobs:
         with:
           name: frontend-unit-coverage
           path: Frontend/coverage
+      - name: Confirm Sonar coverage input
+        working-directory: Frontend
+        run: |
+          test -f coverage/lcov.info
+          echo "Sonar will import:"
+          ls -la coverage/lcov.info
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
         with:
