@@ -16,6 +16,7 @@
     "worktree": "node scripts/dev.mjs worktree",
     "doctor": "node scripts/dev.mjs doctor",
     "migrate": "node scripts/dev.mjs migrate",
-    "schema": "node scripts/dev.mjs schema"
+    "schema": "node scripts/dev.mjs schema",
+    "dev:user": "node scripts/dev.mjs user"
   }
 }

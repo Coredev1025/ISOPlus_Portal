@@ -44,6 +44,7 @@ are Node, not shell, precisely so there is no Git Bash requirement on Windows.
 | `npm run dev:status` | What is running, on which ports, against which database. |
 | `npm run dev:logs` | Tail everything. `npm run dev:logs -- backend` for one service. |
 | `npm run seed` | Restore a dump into Mongo. See [seed/README.md](../seed/README.md). |
+| `npm run dev:user` | Set a known password on the local support-admin account so you can sign in. See below. |
 | `npm run schema` | Declared vs actual database schema, and the drift between them. See [migrations.md](./migrations.md). |
 | `npm run migrate` | Create and run database migrations. See [migrations.md](./migrations.md). |
 | `npm run worktree` | Manage worktrees. See [worktrees.md](./worktrees.md). |
@@ -51,6 +52,65 @@ are Node, not shell, precisely so there is no Git Bash requirement on Windows.
 
 Passing flags through npm needs `--`: `npm run dev:down -- --all`. Calling the
 CLI directly avoids that: `node scripts/dev.mjs down --all`.
+
+## Logging in locally
+
+The login screen's primary button, **Sign in with ISO+™**, starts an OAuth flow
+against `https://app.isoplus.online`. That cannot complete locally: `CLIENT_ID`,
+`CLIENT_SECRET` and `PERSONAL_ACCESS_TOKEN` are blank in a local `Backend/.env`,
+and real ones come from the ISO+ team. Clicking it sends you to a live system
+that will refuse you.
+
+Use the **second** login path instead, which the application already ships and
+which works entirely offline:
+
+```bash
+npm run dev:user
+```
+
+That sets a known password on the seeded `support_admin` account and prints it:
+
+```
+  database  business-dashboard
+  email     arnold@hillsgrade.com.au
+  password  local-dev-only
+```
+
+Then at `http://localhost:3100`, click **administrator credentials** at the
+bottom of the login screen — this swaps the ISO+ button for an email/password
+form — and sign in with those.
+
+| Flag | Effect |
+|---|---|
+| `--list` | Show local users, roles and disabled state; change nothing |
+| `--email <address>` | Target a specific user |
+| `--password <value>` | Use a password other than the default |
+| `--create` | Create the user when none exists |
+
+**Re-seeding clears it.** `npm run seed` restores with `--drop`, replacing the
+`users` collection, so the password stops working. `seed` prints a reminder;
+just run `npm run dev:user` again.
+
+**This adds no authentication code to the application.** It writes one row in
+your local database, using a login route that already ships to production. The
+script refuses to run against any non-local `MONGODB_URI` and has **no override
+flag**, because setting a known password on a real database would be an
+immediate account compromise.
+
+## What still will not work without ISO+ credentials
+
+Signing in locally gets you into the application, but the portal is a front end
+over the ISO+ platform, and several endpoints **proxy to the live ISO+ API**
+rather than reading Mongo. Without a real `PERSONAL_ACCESS_TOKEN` those return
+`401` with `{"error_type":"oauth"}` — for example `GET /api/workspaces`, which
+fetches workspaces from ISO+ rather than from the seeded database. This is also
+why the seeded `workspaces` collection is empty while `boards` is not.
+
+So local development is fully usable for anything that reads seeded Mongo data,
+and blocked for anything that needs live ISO+ data. Getting further needs either
+real ISO+ credentials or a local mock of the ISO+ API, which is deliberately out
+of scope for now — see
+[the local auth design](./superpowers/specs/2026-08-05-local-auth-design.md).
 
 ## The two stacks
 

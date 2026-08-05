@@ -8,6 +8,7 @@
 //   node scripts/dev.mjs seed          restore seed/*.gz into Mongo
 //   node scripts/dev.mjs schema        declared vs actual schema, and the drift
 //   node scripts/dev.mjs migrate ...   run database migrations
+//   node scripts/dev.mjs user          local login account with a known password
 //   node scripts/dev.mjs worktree ...  create / list / remove worktrees
 //   node scripts/dev.mjs doctor        check prerequisites
 //
@@ -220,6 +221,7 @@ async function runSeed(args) {
   const { stdout } = await infraStack.exec(seed.countArgs(targetDb), { capture: true })
   const collections = stdout.trim().split(/\r?\n/).pop()
   green(`restore complete — "${targetDb}" now has ${collections} collections`)
+  seed.remindAboutLocalUser()
 }
 
 // --- migrate ----------------------------------------------------------------
@@ -241,6 +243,26 @@ async function schema(args) {
   }
   const { code } = await appStack.exec([
     'exec', '-T', 'backend', 'node', 'scripts/schema.mjs', ...args,
+  ])
+  if (code !== 0) process.exit(code)
+}
+
+/**
+ * Ensure a local support-admin account with a known password.
+ *
+ * Runs in the backend container so it uses that worktree's MONGODB_URI and the
+ * app's own User model — the password must be hashed by the model's pre('save')
+ * hook or POST /api/auth/login will never match it.
+ */
+async function user(args) {
+  docker.assertDockerAvailable()
+  if (!(await docker.containerIds(appStack)).length) {
+    red('the backend container is not running')
+    note('start it first: npm run dev:up')
+    process.exit(1)
+  }
+  const { code } = await appStack.exec([
+    'exec', '-T', 'backend', 'node', 'scripts/dev-user.mjs', ...args,
   ])
   if (code !== 0) process.exit(code)
 }
@@ -576,7 +598,7 @@ async function doctor() {
 
 // --- dispatch ---------------------------------------------------------------
 
-const COMMANDS = { up, down, status, seed: runSeed, migrate, schema, worktree, doctor }
+const COMMANDS = { up, down, status, seed: runSeed, migrate, schema, user, worktree, doctor }
 
 const [command, ...rest] = process.argv.slice(2)
 const handler = COMMANDS[command]
@@ -590,6 +612,7 @@ if (!handler) {
   seed [file] [--yes]          restore seed/*.gz into Mongo
   migrate <list|create|up|down>  run a migration in the backend container
   schema [collection] [--json]  declared vs actual schema, and the drift
+  user [--list] [--create]     local support-admin login with a known password
   doctor                       check prerequisites
 
   worktree new [--type T --ticket ISO-1 --desc "..."]   (asks if omitted)

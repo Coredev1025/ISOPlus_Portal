@@ -77,6 +77,16 @@ export async function confirm(question) {
   }
 }
 
+/**
+ * A restore replaces the users collection, so any password set by
+ * `npm run dev:user` is gone. That presents as "my local login stopped
+ * working", which is a confusing thing to rediscover.
+ */
+export function remindAboutLocalUser() {
+  cyan('the users collection was replaced — local login password cleared')
+  note('restore it with: npm run dev:user')
+}
+
 export function describeDestructive(targetDb, file) {
   cyan('this restore is destructive')
   note(`archive : ${file}`)

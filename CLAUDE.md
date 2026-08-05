@@ -74,6 +74,16 @@ Be aware the repository's actual history diverges from this: of the last 40 merg
 
 - **`scripts/` is deliberately dependency-free** and must stay that way — no lodash there. It runs on a fresh clone before any `npm install`, and there is no root `node_modules`. Pure functions still apply: see `scripts/lib/branch.mjs`, which is entirely pure and therefore trivially checkable.
 
+## Logging in locally
+
+The login screen's primary **Sign in with ISO+™** button starts an OAuth flow against the live `app.isoplus.online`, which cannot complete locally — the ISO+ credentials are blank in a local `Backend/.env`. Do not try to make that path work offline; use the credentials path the app already ships:
+
+- `npm run dev:user` sets a known password (`local-dev-only`) on the seeded `support_admin` account and prints it. Then click **administrator credentials** at the bottom of the login screen and sign in.
+- `npm run seed` replaces the `users` collection and clears that password. Re-run `dev:user` afterwards; `seed` prints a reminder.
+- The script writes one row in a local database using an already-shipping route. It adds **no** auth code to the application, and refuses any non-local `MONGODB_URI` with no override flag. Do not add a dev-login endpoint or a `NODE_ENV` branch to the auth routes — that would put a real auth bypass in a repo that auto-deploys.
+
+**Being logged in is not the same as having data.** Several endpoints proxy to the live ISO+ API rather than reading Mongo — `GET /api/workspaces` is one — and return `401` with `{"error_type":"oauth"}` without a real `PERSONAL_ACCESS_TOKEN`. That is also why the seeded `workspaces` collection is empty while `boards` is not. Anything backed by seeded Mongo data works locally; anything needing live ISO+ data does not. When a local 401 appears, check the response body before assuming the session broke: `{"message":"Authentication required"}` is the auth middleware, `{"error_type":"oauth"}` is the upstream ISO+ call.
+
 ## Database schema and migrations
 
 Schema changes go through **migrations**, never a manual edit to the database. Full detail in `docs/migrations.md`.
