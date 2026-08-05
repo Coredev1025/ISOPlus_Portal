@@ -129,3 +129,22 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# --- Local agentic / editor tooling (per-developer, intentionally untracked) --
+# The project-level setup that IS shared lives in docker-compose*.yml, docs/,
+# scripts/ and CLAUDE.md. Everything below is whatever agent or editor each
+# developer happens to use, and is deliberately not imposed on the team.
+.claude/
+.agents/
+.agent-native/
+.cursor/
+.vscode/
+.mcp.json
+opencode.json
+agent-native.json
+
+# --- Local dev seed data -----------------------------------------------------
+# Database dumps used to seed the local stack. These contain real business data
+# and must never be committed. See seed/README.md and scripts/db-restore.sh.
+seed/*
+!seed/README.md
