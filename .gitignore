@@ -142,9 +142,10 @@ dist
 .mcp.json
 opencode.json
 agent-native.json
+skills-lock.json
 
 # --- Local dev seed data -----------------------------------------------------
 # Database dumps used to seed the local stack. These contain real business data
-# and must never be committed. See seed/README.md and scripts/db-restore.sh.
+# and must never be committed. See seed/README.md and `npm run seed`.
 seed/*
 !seed/README.md

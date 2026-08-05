@@ -45,6 +45,35 @@ Full detail in **`docs/local-development.md`**; worktrees in **`docs/worktrees.m
 - **Cognitive complexity must be < 15** for every file (SonarJS rule S3776; see `.eslintrc.complexity.cjs`). This is why the backend `utils/` folder is split into dozens of small `*Helpers.js` files — when a route/service grows complex, extract helpers rather than nesting logic. Follow this pattern.
 - SonarQube scans both apps in CI (`sonar-project.properties` in each). Backend excludes `src/assets/**`.
 
+## Branching, tickets and worktrees
+
+**When starting any feature or fix, ask the user for the work type and the ticket number before creating a branch.** Do not invent a branch name. `npm run worktree -- new` prompts for exactly this and composes the name; use it rather than raw `git checkout -b`.
+
+- **Branch naming**: `<type>/<TICKET>_<snake_case_description>` — e.g. `feature/ISO-412_time_tracking`, `bugfix/ISO-98_login_spinner`. Types are `feature/`, `bugfix/`, `hotfix/`. The ticket keeps its own hyphen; the description is snake_case, matching the 20-of-27 majority of existing branches.
+- **Tickets are required** and validated as `PREFIX-NUMBER`. Note this is a *new* convention — no existing branch or commit carries a ticket, so do not expect to find them in history.
+- **Base branches**: `feature/` and `bugfix/` branch from `origin/develop`; `hotfix/` from `origin/main`. PRs target `develop` except hotfixes.
+- **Commit messages** follow the loose convention already in use: `feat:`, `fix:`, `refactor:`. Include the ticket in the PR title or body.
+
+Be aware the repository's actual history diverges from this: of the last 40 merges into `main`, only 9 came from `develop` — 31 were topic branches merged straight to production. `main` and `develop` have drifted apart. Prefer the documented flow; flag it rather than copying the drift.
+
+`npm run worktree -- new` also handles environment initialization: it allocates a port pair no other worktree has reserved, copies the gitignored `Backend/.env` / `Frontend/.env.local`, and **rewrites the copied `MONGODB_URI` to point at that worktree's own database**. Without that rewrite an `--isolated-db` worktree is only isolated inside Docker — anything run natively (`npm run migrate`, `npm run schema`, `npm run dev` in `Backend/`) reads the file directly and would silently hit the shared database.
+
+## Code style: pure functions and lodash
+
+- **Prefer pure functions.** A function that takes its inputs as arguments and returns a value — no hidden reads of module state, no mutation of its arguments, no I/O — is why the cognitive-complexity gate is satisfiable at all, and it is the reason `Backend/src/utils/` is 73 small `*Helpers.js` files. Continue that pattern: keep I/O and Express/React concerns at the edges, and push logic into helpers that can be reasoned about and tested in isolation.
+- **Do not mutate inputs.** Return new objects and arrays. This matters especially in the Frontend, where mutating state defeats React's change detection.
+- **`lodash-es` is available in both apps** (ESM, tree-shakeable — import named functions, never the default namespace):
+
+  ```js
+  import { groupBy, isEqual, cloneDeep } from 'lodash-es'
+  ```
+
+  Reach for it where it genuinely beats hand-rolled code: `cloneDeep`, `isEqual`, `get`/`set` for uncertain paths, `groupBy`/`keyBy`/`partition`, `debounce`/`throttle`, `chunk`, `uniqBy`, `omit`/`pick`. These replace exactly the nested loops and guard pyramids that drive cognitive complexity over the limit.
+
+  **Prefer native where native is already clear** — `map`/`filter`/`reduce`, `Object.entries`, spread, optional chaining and `??`. Wrapping a one-line native expression in a lodash call adds a dependency hop without reducing complexity. The goal is simpler code, not maximal lodash.
+
+- **`scripts/` is deliberately dependency-free** and must stay that way — no lodash there. It runs on a fresh clone before any `npm install`, and there is no root `node_modules`. Pure functions still apply: see `scripts/lib/branch.mjs`, which is entirely pure and therefore trivially checkable.
+
 ## Database schema and migrations
 
 Schema changes go through **migrations**, never a manual edit to the database. Full detail in `docs/migrations.md`.

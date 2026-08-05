@@ -13,8 +13,8 @@ Worktrees are created as **siblings** of the main clone, never inside it:
 hillsgrade/
 ├── isoplus-portal/                 main clone, develop, :3100 / :4001
 └── worktrees/
-    ├── feature-invoice-export/     :3110 / :4011
-    └── bugfix-login-spinner/       :3120 / :4021
+    ├── feature-iso-412-time-tracking/  :3110 / :4011
+    └── bugfix-iso-98-login-spinner/    :3120 / :4021
 ```
 
 Placing them outside the repository keeps them out of Docker build contexts,
@@ -23,35 +23,87 @@ out of `next build` traversal, and out of every glob in the repo.
 ## Creating one
 
 ```bash
-npm run worktree -- new feature/invoice-export
+npm run worktree -- new
 ```
 
-This does five things:
+With no arguments it asks what it needs:
 
-1. Creates the worktree at `../worktrees/feature-invoice-export`. If the branch
-   exists locally it is reused; if it exists on `origin` it is checked out with
-   tracking; otherwise it is cut from `origin/develop` (override with
-   `--from <ref>`).
-2. Picks a **frontend/backend port pair that is genuinely free**, by asking the
-   OS to bind them rather than parsing `netstat`.
-3. Writes the worktree's `.env` with those ports and a distinct
-   `COMPOSE_PROJECT_NAME`.
-4. Copies `Backend/.env` and `Frontend/.env.local` from the main clone. These
-   are gitignored, so a fresh worktree would otherwise have neither, and the
-   API calls `process.exit(1)` on boot without them. **This is the step that is
-   easiest to forget when doing it by hand.**
-5. Prints the URLs.
+```
+What kind of work is this?
+  > 1) feature  — new functionality
+    2) bugfix   — a defect in develop, not yet in production
+    3) hotfix   — urgent fix for production — branches from main
+Choose 1-3 [1]: 1
+Ticket number (e.g. ISO-412): ISO-412
+Short description: time tracking
+```
+
+and produces the branch `feature/ISO-412_time_tracking`. Tickets are validated
+as `PREFIX-NUMBER` and upper-cased, so `iso-412` is accepted.
+
+Supply any answer as a flag to skip that question — required when there is no
+terminal, such as in CI, where the tool fails with instructions rather than
+hanging on input:
+
+```bash
+npm run worktree -- new --type feature --ticket ISO-412 --desc "time tracking"
+npm run worktree -- new feature/ISO-412_time_tracking   # existing branch, as-is
+```
+
+### What it sets up
+
+1. **The branch.** Reused if it already exists locally, checked out with
+   tracking if it exists on `origin`, otherwise cut from `origin/develop` —
+   or `origin/main` for a `hotfix`. Override with `--from <ref>`. Branching a
+   non-hotfix off `main` prints a warning, because that bypasses integration.
+2. **A port pair no one else is using.** Checked two ways: the OS is asked to
+   bind them, *and* the ports already recorded in sibling worktrees' `.env`
+   files are excluded. Binding alone is not enough — a stopped worktree's ports
+   test as free, and two worktrees would then collide the moment both start.
+3. **The worktree's `.env`**, with those ports, a distinct
+   `COMPOSE_PROJECT_NAME`, and `TICKET` for later reuse.
+4. **`Backend/.env` and `Frontend/.env.local`**, copied from the main clone.
+   They are gitignored, so a fresh worktree would otherwise have neither, and
+   the API calls `process.exit(1)` on boot without them. **This is the step
+   that is easiest to forget when doing it by hand.**
+5. **A rewritten `MONGODB_URI`** in that copied `Backend/.env`, pointing at this
+   worktree's database. The previous value is kept as a comment. See below for
+   why this matters.
 
 Then:
 
 ```bash
-cd ../worktrees/feature-invoice-export
+cd ../worktrees/feature-iso-412-time-tracking
 npm run dev:up
 ```
+
+## Why MONGODB_URI is rewritten
+
+`Backend/.env` is copied verbatim, so without this step every worktree would
+inherit the main clone's connection string.
+
+Inside Docker that is harmless — `docker-compose.yml` overrides `MONGODB_URI`
+itself. But anything run **natively** reads the file directly: `npm run
+migrate`, `npm run schema`, or `npm run dev` from inside `Backend/`. On an
+`--isolated-db` worktree that would mean a migration silently applied to the
+shared database — precisely the failure isolation exists to prevent.
+
+If you ever re-copy the env files, `npm run worktree -- sync-env` reapplies the
+rewrite.
 
 The first `dev:up` in a new worktree builds its own images. This is faster than
 it sounds — the expensive `npm ci` layer is shared through Docker's build cache
 whenever the lockfile is unchanged.
+
+## Ticket conventions
+
+Branches are `<type>/<TICKET>_<snake_case_description>`. The ticket is stored as
+`TICKET` in the worktree's `.env` and shown by `worktree list`, so it can be
+reused in commit messages and PR bodies without re-parsing the branch name.
+
+This is a **new** convention: no branch currently on `origin` carries a ticket.
+Passing an existing branch name directly bypasses the prompts, which is how you
+check out pre-convention branches.
 
 ## What is shared, what is not
 
@@ -75,15 +127,15 @@ migrations, destructive backfills, schema experiments — will corrupt what othe
 worktrees see. For those:
 
 ```bash
-npm run worktree -- new feature/schema-change --isolated-db
+npm run worktree -- new --type feature --ticket ISO-412 --desc "schema change" --isolated-db
 ```
 
-That worktree gets `MONGO_DB=business-dashboard-feature-schema-change`: still
+That worktree gets its own `MONGO_DB`: still
 the same Mongo container, but a separate database inside it, so there is no
 extra memory cost. Seed it separately:
 
 ```bash
-cd ../worktrees/feature-schema-change
+cd ../worktrees/feature-iso-412-schema-change
 npm run seed
 ```
 
@@ -97,12 +149,12 @@ npm run worktree -- list
 
 ```
 ==> 2 worktree(s)
-    develop                 :3100/:4001  db=business-dashboard  /home/you/hillsgrade/isoplus-portal  <- you are here
-    feature/invoice-export  :3110/:4011  db=business-dashboard  /home/you/hillsgrade/worktrees/feature-invoice-export
+    develop                       —        :3100/:4001  db=business-dashboard  .../isoplus-portal  <- you are here
+    feature/ISO-412_time_tracking ISO-412  :3110/:4011  db=business-dashboard  .../worktrees/feature-iso-412-time-tracking
 ```
 
 ```bash
-npm run worktree -- remove feature-invoice-export
+npm run worktree -- remove feature-iso-412-time-tracking
 ```
 
 Removal stops that worktree's containers and volumes first — otherwise they are

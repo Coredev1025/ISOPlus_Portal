@@ -23,7 +23,11 @@ import { join, relative } from 'node:path'
 import * as docker from './lib/docker.mjs'
 import * as seed from './lib/seed.mjs'
 import * as wt from './lib/worktree.mjs'
-import { copyAppEnvFiles, missingAppEnvFiles, readEnv, writeEnv, DEFAULTS } from './lib/env.mjs'
+import * as branchLib from './lib/branch.mjs'
+import {
+  copyAppEnvFiles, missingAppEnvFiles, readEnv, setBackendMongoUri, writeEnv, DEFAULTS,
+} from './lib/env.mjs'
+import { ask, choose, isInteractive } from './lib/prompt.mjs'
 import { findFreePortSet, isPortFree } from './lib/ports.mjs'
 import { cyan, green, note, red, table, yellow, fail } from './lib/log.mjs'
 
@@ -279,18 +283,115 @@ function worktreeList() {
       const env = readEnv(e.path)
       const here = e.path === root ? '  <- you are here' : ''
       const ports = `:${env.FRONTEND_PORT}/:${env.BACKEND_PORT}`
-      return [e.branch ?? '(detached)', `${ports}  db=${env.MONGO_DB}  ${e.path}${here}`]
+      const ticket = env.TICKET ?? branchLib.ticketFromBranch(e.branch) ?? '—'
+      return [e.branch ?? '(detached)', `${ticket}  ${ports}  db=${env.MONGO_DB}  ${e.path}${here}`]
     }),
   )
 }
 
-async function worktreeNew(args) {
-  const branch = args.find((a) => !a.startsWith('-'))
-  if (!branch) fail('usage: node scripts/dev.mjs worktree new <branch> [--isolated-db] [--from <ref>]')
+// Flags that consume the following argument. Without this list, `--type
+// feature` leaves "feature" looking like a positional branch name, which
+// silently skips every prompt and every validation.
+const VALUE_FLAGS = new Set(['--type', '--ticket', '--desc', '--description', '--from'])
 
-  const isolatedDb = args.includes('--isolated-db')
-  const fromIndex = args.indexOf('--from')
-  const baseRef = fromIndex !== -1 ? args[fromIndex + 1] : 'origin/develop'
+function parseArgs(args) {
+  const flags = {}
+  const positional = []
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]
+    if (VALUE_FLAGS.has(arg)) {
+      flags[arg] = args[i + 1]
+      i += 1
+    } else if (arg.startsWith('-')) {
+      flags[arg] = true
+    } else {
+      positional.push(arg)
+    }
+  }
+  return { flags, positional }
+}
+
+/**
+ * Gather branch details, asking for whatever was not supplied as a flag.
+ *
+ * Every question has a flag equivalent so this is usable without a TTY; with
+ * no TTY and missing details it fails loudly rather than hanging on input.
+ */
+async function resolveBranchDetails(flags, positional) {
+  // An explicit branch name bypasses the questions entirely — needed for
+  // checking out a branch that already exists and predates this convention.
+  const explicit = positional[0]
+  if (explicit) return { branch: explicit, ticket: branchLib.ticketFromBranch(explicit) }
+
+  let type = flags['--type']
+  let ticket = flags['--ticket']
+  let description = flags['--desc'] ?? flags['--description']
+
+  const needsInput = !type || !ticket || !description
+  if (needsInput && !isInteractive()) {
+    fail(
+      'not a terminal, so nothing can be prompted for.\n' +
+        '    Supply everything as flags:\n' +
+        '      worktree new --type feature --ticket ISO-412 --desc "time tracking"\n' +
+        '    Or pass an existing branch name directly: worktree new feature/ISO-412_time_tracking',
+    )
+  }
+
+  type ??= await choose(
+    'What kind of work is this?',
+    branchLib.TYPES.map((t) => ({ value: t.value, label: t.label, hint: t.hint })),
+  )
+
+  if (!ticket) {
+    ticket = await ask('Ticket number (e.g. ISO-412)', { validate: branchLib.validateTicket })
+  } else {
+    const error = branchLib.validateTicket(ticket)
+    if (error) fail(error)
+  }
+
+  description ??= await ask('Short description', { validate: branchLib.validateDescription })
+
+  return {
+    branch: branchLib.composeBranch({ type, ticket, description }),
+    ticket: branchLib.normaliseTicket(ticket),
+    type,
+  }
+}
+
+async function worktreeNew(args) {
+  const { flags, positional } = parseArgs(args)
+
+  if (flags['--help'] || flags['-h']) {
+    console.log(`usage: node scripts/dev.mjs worktree new [options]
+
+Asks for the branch type, ticket and description when not supplied.
+
+  --type <feature|bugfix|hotfix>   kind of work
+  --ticket <ISO-412>               ticket reference
+  --desc "<short description>"     becomes the snake_case branch suffix
+  --from <ref>                     base to branch from (default: origin/develop,
+                                   or origin/main for a hotfix)
+  --isolated-db                    give this worktree its own database
+
+Or pass an existing branch name directly:
+  worktree new feature/ISO-412_time_tracking
+`)
+    return
+  }
+
+  const { branch, ticket, type } = await resolveBranchDetails(flags, positional)
+
+  const isolatedDb = Boolean(flags['--isolated-db'])
+  const explicitBase = flags['--from']
+  const baseRef = explicitBase ?? `origin/${branchLib.defaultBase(type ?? 'feature')}`
+
+  // CLAUDE.md says to open PRs against develop, but 31 of the last 40 merges
+  // into main came straight from topic branches. Say so rather than silently
+  // going along with it.
+  if (/(^|\/)main$/.test(baseRef) && type !== 'hotfix') {
+    yellow(`branching from ${baseRef} bypasses develop, where integration happens.`)
+    note('That is what a hotfix is for. For anything else, prefer origin/develop.')
+  }
 
   const main = wt.mainWorktree(root)
   const target = wt.worktreePathFor(branch, root)
@@ -313,10 +414,18 @@ async function worktreeNew(args) {
   if (result.code !== 0) fail(`git worktree add failed: ${result.stderr}`)
 
   // Free ports for this worktree. The main clone keeps 3100/4001, so worktrees
-  // start one step above and step until the OS says the pair is actually free.
+  // start one step above and step until the OS says the pair is actually free
+  // AND no sibling worktree has already reserved it.
+  const reserved = new Set()
+  for (const entry of wt.listWorktrees(root)) {
+    const env = readEnv(entry.path)
+    reserved.add(Number(env.FRONTEND_PORT))
+    reserved.add(Number(env.BACKEND_PORT))
+  }
+
   const [frontendPort, backendPort] = await findFreePortSet(
     [Number(DEFAULTS.FRONTEND_PORT) + 10, Number(DEFAULTS.BACKEND_PORT) + 10],
-    { stride: 10 },
+    { stride: 10, reserved },
   )
 
   const mainEnv = readEnv(main)
@@ -328,6 +437,9 @@ async function worktreeNew(args) {
     REDIS_PORT: mainEnv.REDIS_PORT,
   }
   if (isolatedDb) values.MONGO_DB = `${DEFAULTS.MONGO_DB}-${name}`
+  // Recorded so commit messages, PR bodies and `worktree list` can recover it
+  // without re-parsing the branch name.
+  if (ticket) values.TICKET = ticket
 
   writeEnv(
     target,
@@ -344,16 +456,27 @@ async function worktreeNew(args) {
   if (copied.length) note(`copied from the main clone: ${copied.join(', ')}`)
   if (missing.length) yellow(`not found in the main clone, create manually: ${missing.join(', ')}`)
 
+  // Backend/.env arrived as a verbatim copy, so it still points at the main
+  // clone's database. Anything run natively — migrate, schema, npm run dev in
+  // Backend/ — reads it directly, so it has to be repointed at this worktree's
+  // database or an isolated worktree is only isolated inside Docker.
+  const db = values.MONGO_DB ?? DEFAULTS.MONGO_DB
+  const uri = setBackendMongoUri(target, { port: values.MONGO_PORT, db })
+  if (uri) note(`Backend/.env MONGODB_URI -> ${uri}`)
+
   console.log('')
   green(`worktree ready: ${target}`)
   table([
     ['branch', branch],
+    ...(ticket ? [['ticket', ticket]] : []),
+    ['base', baseRef],
     ['project', values.COMPOSE_PROJECT_NAME],
     ['frontend', `http://localhost:${frontendPort}`],
     ['api', `http://localhost:${backendPort}`],
-    ['database', values.MONGO_DB ?? `${DEFAULTS.MONGO_DB} (shared)`],
+    ['database', isolatedDb ? `${db} (isolated)` : `${db} (shared)`],
   ])
   console.log('')
+  if (isolatedDb) note('seed it before use: npm run seed')
   note(`cd ${target}`)
   note('npm run dev:up')
 }
@@ -402,6 +525,11 @@ function worktreeSyncEnv() {
   const { copied, missing } = copyAppEnvFiles(main, root)
   if (copied.length) green(`copied from the main clone: ${copied.join(', ')}`)
   if (missing.length) yellow(`not found in the main clone: ${missing.join(', ')}`)
+
+  // The fresh copy carries the main clone's MONGODB_URI again, so repoint it.
+  const env = readEnv(root)
+  const uri = setBackendMongoUri(root, { port: env.MONGO_PORT, db: env.MONGO_DB })
+  if (uri) note(`Backend/.env MONGODB_URI -> ${uri}`)
 }
 
 // --- doctor -----------------------------------------------------------------
@@ -464,7 +592,7 @@ if (!handler) {
   schema [collection] [--json]  declared vs actual schema, and the drift
   doctor                       check prerequisites
 
-  worktree new <branch> [--isolated-db] [--from <ref>]
+  worktree new [--type T --ticket ISO-1 --desc "..."]   (asks if omitted)
   worktree list
   worktree remove <name> [--force]
   worktree sync-env            re-copy Backend/.env + Frontend/.env.local

@@ -28,9 +28,15 @@ export function isPortFree(port) {
  * Ports are allocated in matched pairs so a worktree's frontend and backend
  * stay a predictable distance apart: 3110/4011, 3120/4021, and so on.
  */
-export async function findFreePortSet(bases, { stride = 10, maxSteps = 40 } = {}) {
+export async function findFreePortSet(bases, { stride = 10, maxSteps = 40, reserved = new Set() } = {}) {
   for (let step = 0; step < maxSteps; step += 1) {
     const candidate = bases.map((base) => base + step * stride)
+
+    // A port belonging to a stopped worktree tests as free, so binding is not
+    // enough — without checking what siblings have already claimed, two
+    // worktrees get the same pair and collide the moment both are started.
+    if (candidate.some((port) => reserved.has(port))) continue
+
     const results = await Promise.all(candidate.map(isPortFree))
     if (results.every(Boolean)) return candidate
   }

@@ -80,3 +80,47 @@ export function copyAppEnvFiles(fromRoot, toRoot) {
 export function missingAppEnvFiles(root) {
   return APP_ENV_FILES.filter((rel) => !existsSync(join(root, rel)))
 }
+
+/**
+ * Point a worktree's Backend/.env at that worktree's own database.
+ *
+ * Necessary because Backend/.env is copied verbatim from the main clone, so
+ * without this every worktree inherits the main clone's MONGODB_URI. Inside
+ * Docker that does not matter — docker-compose.yml overrides the key — but
+ * anything running natively against the file reads it directly: `npm run
+ * migrate`, `npm run schema`, `npm run dev` in Backend/. On an --isolated-db
+ * worktree that means a migration silently pointed at the shared database,
+ * which is the exact failure isolation was meant to prevent.
+ *
+ * The previous value is preserved as a comment rather than discarded, since it
+ * may have carried credentials or options worth recovering.
+ */
+export function setBackendMongoUri(root, { host = 'localhost', port, db }) {
+  const file = join(root, 'Backend', '.env')
+  if (!existsSync(file)) return null
+
+  const uri = `mongodb://${host}:${port}/${db}`
+  const lines = readFileSync(file, 'utf8').split(/\r?\n/)
+  const out = []
+  let replaced = false
+
+  for (const line of lines) {
+    if (/^\s*MONGODB_URI\s*=/.test(line)) {
+      if (!replaced) {
+        out.push('# Replaced by scripts/dev.mjs when this worktree was created.')
+        out.push(`# Previous value: ${line.replace(/^\s*MONGODB_URI\s*=/, '').trim()}`)
+        out.push(`MONGODB_URI=${uri}`)
+        replaced = true
+      }
+      continue
+    }
+    out.push(line)
+  }
+
+  if (!replaced) {
+    out.push('', '# Written by scripts/dev.mjs when this worktree was created.', `MONGODB_URI=${uri}`)
+  }
+
+  writeFileSync(file, out.join('\n'), 'utf8')
+  return uri
+}
