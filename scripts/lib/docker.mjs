@@ -5,6 +5,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 import { cyan, yellow } from './log.mjs'
 
 export const INFRA_FILE = 'docker-compose.infra.yml'
+export const INFRA_PROJECT = 'isoplus-infra'
 
 // `docker` resolves to docker.exe on Windows without any special handling, but
 // spawning through a shell would then need quoting rules that differ per
@@ -54,10 +55,17 @@ export const app = (root) => ({
   label: 'app',
 })
 
-/** Compose bound to the shared infra stack (one per machine). */
+/**
+ * Compose bound to the shared infra stack (one per machine).
+ *
+ * `-p` is not optional. A worktree's .env sets COMPOSE_PROJECT_NAME to steer
+ * the APP stack, and Compose would otherwise apply it here too — every worktree
+ * would then try to stand up its own mongo/redis and collide on the
+ * container_name. The -p flag outranks the environment variable.
+ */
 export const infra = (root) => ({
   exec: (args, opts = {}) =>
-    run(['compose', '-f', INFRA_FILE, ...args], { cwd: root, ...opts }),
+    run(['compose', '-p', INFRA_PROJECT, '-f', INFRA_FILE, ...args], { cwd: root, ...opts }),
   label: 'infra',
 })
 
