@@ -1,0 +1,6 @@
+{
+  "collection": "migrations",
+  "migrationsPath": "./migrations",
+  "templatePath": "./migrations/template.js",
+  "autosync": false
+}

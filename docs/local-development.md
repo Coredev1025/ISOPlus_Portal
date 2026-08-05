@@ -44,6 +44,8 @@ are Node, not shell, precisely so there is no Git Bash requirement on Windows.
 | `npm run dev:status` | What is running, on which ports, against which database. |
 | `npm run dev:logs` | Tail everything. `npm run dev:logs -- backend` for one service. |
 | `npm run seed` | Restore a dump into Mongo. See [seed/README.md](../seed/README.md). |
+| `npm run schema` | Declared vs actual database schema, and the drift between them. See [migrations.md](./migrations.md). |
+| `npm run migrate` | Create and run database migrations. See [migrations.md](./migrations.md). |
 | `npm run worktree` | Manage worktrees. See [worktrees.md](./worktrees.md). |
 | `npm run doctor` | Check prerequisites and report what is missing. |
 
@@ -139,7 +141,7 @@ git rm --cached -r . && git reset --hard
 | `network isoplus-net declared as external, but could not be found` | Shared infra is not running. `npm run dev:up` starts it, or `docker compose -f docker-compose.infra.yml up -d`. |
 | Login fails, everything else works | Expected. `CLIENT_ID`, `CLIENT_SECRET` and `PERSONAL_ACCESS_TOKEN` for ISO+ OAuth are blank placeholders in the example env. Real credentials come from the ISO+ team. |
 | Edits do not trigger a reload | On macOS/Windows, set `WATCH_POLLING=true` (above). |
-| Dependency changes ignored | `npm ci` runs inside the image. `npm run dev:build`. |
+| Dependency changes ignored | `npm ci` runs inside the image, and `node_modules` is a named volume that Docker fills **only when it is empty** — so rebuilding the image alone never reaches an existing volume. `npm run dev:build` handles this by discarding the project's `node_modules`/`.next` volumes first. Plain `docker compose up --build` does not, and will silently leave the new dependency missing. |
 | Everything is confusing | `npm run dev:down -- --all -v` wipes containers and data, then `npm run dev:build` and `npm run seed`. |
 
 ## Teardown

@@ -45,6 +45,24 @@ Full detail in **`docs/local-development.md`**; worktrees in **`docs/worktrees.m
 - **Cognitive complexity must be < 15** for every file (SonarJS rule S3776; see `.eslintrc.complexity.cjs`). This is why the backend `utils/` folder is split into dozens of small `*Helpers.js` files — when a route/service grows complex, extract helpers rather than nesting logic. Follow this pattern.
 - SonarQube scans both apps in CI (`sonar-project.properties` in each). Backend excludes `src/assets/**`.
 
+## Database schema and migrations
+
+Schema changes go through **migrations**, never a manual edit to the database. Full detail in `docs/migrations.md`.
+
+**Before writing a migration — or any feature that changes the shape of stored data — run `npm run schema`** (optionally `npm run schema -- <collection>`, or `--json` when you want to parse it). Do not infer the current shape from `Backend/src/models/*.js` alone: the models say what the code expects, and the data frequently disagrees. The report prints, per collection, the declared Mongoose paths beside what a live sample actually contains, the real indexes, and an explicit **drift** section:
+
+- *declared but absent from the sample* — the model gained a field existing documents never got. A schema `default` applies to new documents only; it does **not** backfill stored ones. If code will read the field, the migration must write it.
+- *in the data but not in the model* — removed from the schema but never cleaned up. Only drop it once you have confirmed nothing reads it.
+- *required but not universally present* — a migration assuming the field exists will throw partway and leave the collection half-migrated. Guard the query.
+
+Then:
+
+- `npm run migrate -- create <name>` scaffolds into `Backend/migrations/` as **`.js`** (ESM, matching the rest of the Backend). Migrations are committed.
+- Both `up` and `down` receive the live Mongoose connection. **Always write a real `down`** — a migration that cannot be rolled back cannot be safely deployed. Prefer raw `connection.collection(...)` access over importing models, which drift over time.
+- `up`/`down` take the bare name (`add-archived-flag`), not the filename.
+- Never edit a migration that has already run anywhere but your own machine — write a new one.
+- Migrations do **not** run automatically on boot or deploy; that is deliberate (containers would race, and a bad migration would become an outage with no decision point). The wrapper refuses non-local database URIs unless given `--allow-remote`.
+
 ### Engineering rules (binding)
 
 The codebase is production and **deploys automatically on merge**, so:

@@ -14,6 +14,8 @@
     "dev:logs": "docker compose logs -f",
     "seed": "node scripts/dev.mjs seed",
     "worktree": "node scripts/dev.mjs worktree",
-    "doctor": "node scripts/dev.mjs doctor"
+    "doctor": "node scripts/dev.mjs doctor",
+    "migrate": "node scripts/dev.mjs migrate",
+    "schema": "node scripts/dev.mjs schema"
   }
 }

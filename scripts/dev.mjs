@@ -6,6 +6,8 @@
 //   node scripts/dev.mjs down          stop it
 //   node scripts/dev.mjs status        what is running, and where
 //   node scripts/dev.mjs seed          restore seed/*.gz into Mongo
+//   node scripts/dev.mjs schema        declared vs actual schema, and the drift
+//   node scripts/dev.mjs migrate ...   run database migrations
 //   node scripts/dev.mjs worktree ...  create / list / remove worktrees
 //   node scripts/dev.mjs doctor        check prerequisites
 //
@@ -59,9 +61,20 @@ async function up(args) {
       '    inspect with: docker compose -f docker-compose.infra.yml logs --tail 40')
   }
 
+  const rebuild = args.includes('--build')
+
+  // A named volume is populated from the image ONLY when it is empty, so a
+  // rebuilt image never reaches an existing node_modules volume — a new
+  // dependency would silently stay missing. Recreating the app project's
+  // volumes is safe: since mongo and redis moved to the infra project, all
+  // that lives here is node_modules and .next, both derived from the lockfile.
+  if (rebuild && (await docker.containerIds(appStack)).length) {
+    cyan('discarding this project\'s node_modules/.next volumes so the rebuild takes effect')
+    await appStack.exec(['down', '-v'])
+  }
+
   cyan(`starting apps for project "${env.COMPOSE_PROJECT_NAME}" (db: ${env.MONGO_DB})`)
-  const upArgs = ['up', '-d']
-  if (args.includes('--build')) upArgs.push('--build')
+  const upArgs = rebuild ? ['up', '-d', '--build'] : ['up', '-d']
   const result = await appStack.exec(upArgs)
   if (result.code !== 0) fail('docker compose up failed (see output above)')
 
@@ -203,6 +216,48 @@ async function runSeed(args) {
   const { stdout } = await infraStack.exec(seed.countArgs(targetDb), { capture: true })
   const collections = stdout.trim().split(/\r?\n/).pop()
   green(`restore complete — "${targetDb}" now has ${collections} collections`)
+}
+
+// --- migrate ----------------------------------------------------------------
+
+/**
+ * Run a database migration inside this worktree's backend container.
+ *
+ * Going through the container rather than the host is deliberate: the backend's
+ * node_modules live in a named volume, never on the host, and the container
+ * already has MONGODB_URI pointing at the right database for this worktree —
+ * including a --isolated-db one.
+ */
+async function schema(args) {
+  docker.assertDockerAvailable()
+  if (!(await docker.containerIds(appStack)).length) {
+    red('the backend container is not running')
+    note('start it first: npm run dev:up')
+    process.exit(1)
+  }
+  const { code } = await appStack.exec([
+    'exec', '-T', 'backend', 'node', 'scripts/schema.mjs', ...args,
+  ])
+  if (code !== 0) process.exit(code)
+}
+
+async function migrate(args) {
+  docker.assertDockerAvailable()
+
+  const running = await docker.containerIds(appStack)
+  if (!running.length) {
+    red('the backend container is not running')
+    note('start it first: npm run dev:up')
+    process.exit(1)
+  }
+
+  const env = readEnv(root)
+  cyan(`migrate ${args.join(' ') || 'list'} — against "${env.MONGO_DB}"`)
+
+  const { code } = await appStack.exec([
+    'exec', '-T', 'backend', 'node', 'scripts/migrate.mjs', ...(args.length ? args : ['list']),
+  ])
+  if (code !== 0) process.exit(code)
 }
 
 // --- worktree ---------------------------------------------------------------
@@ -393,7 +448,7 @@ async function doctor() {
 
 // --- dispatch ---------------------------------------------------------------
 
-const COMMANDS = { up, down, status, seed: runSeed, worktree, doctor }
+const COMMANDS = { up, down, status, seed: runSeed, migrate, schema, worktree, doctor }
 
 const [command, ...rest] = process.argv.slice(2)
 const handler = COMMANDS[command]
@@ -405,6 +460,8 @@ if (!handler) {
   down [--all] [-v]            stop it; --all also stops shared infra
   status                       what is running, and on which ports
   seed [file] [--yes]          restore seed/*.gz into Mongo
+  migrate <list|create|up|down>  run a migration in the backend container
+  schema [collection] [--json]  declared vs actual schema, and the drift
   doctor                       check prerequisites
 
   worktree new <branch> [--isolated-db] [--from <ref>]
