@@ -2,8 +2,9 @@ name: isoplus-portal
 
 # Application containers for ISO+ Portal local development.
 #
-#   ./scripts/dev-up.sh              start infra + these, health-gated
-#   ./scripts/dev-down.sh            stop these (--all also stops infra)
+#   npm run dev:up                   start infra + these, health-gated
+#   npm run dev:build                same, rebuilding images
+#   npm run dev:down                 stop these (-- --all also stops infra)
 #   docker compose logs -f backend   tail the API
 #
 # The stateful services (mongo, redis) are NOT here — they live in
@@ -22,12 +23,12 @@ name: isoplus-portal
 #      worktree's .env, takes precedence over it.
 #
 # Host ports and the target database are overridable via a .env file in this
-# directory — see .env.docker.example. scripts/worktree.sh writes one
+# directory — see .env.docker.example. `npm run worktree -- new` writes one
 # automatically for new worktrees.
 #
 # There is no `depends_on` for mongo/redis: they belong to a different compose
-# project and are therefore not addressable here. dev-up.sh gates on their
-# health before starting these services.
+# project and are therefore not addressable here. `npm run dev:up` gates on
+# their health before starting these services.
 #
 # See docs/local-development.md and docs/worktrees.md.
 

@@ -7,7 +7,7 @@ name: isoplus-infra
 # (backend, frontend) live in docker-compose.yml and are started once per
 # worktree, joining the network created below.
 #
-#   ./scripts/dev-up.sh              starts this automatically if needed
+#   npm run dev:up                   starts this automatically if needed
 #   docker compose -f docker-compose.infra.yml up -d
 #   docker compose -f docker-compose.infra.yml down      (-v also wipes data)
 #
