@@ -75,6 +75,28 @@ Be aware the repository's actual history diverges from this: of the last 40 merg
 
 `npm run worktree -- new` also handles environment initialization: it allocates a port pair no other worktree has reserved, copies the gitignored `Backend/.env` / `Frontend/.env.local`, and **rewrites the copied `MONGODB_URI` to point at that worktree's own database**. Without that rewrite an `--isolated-db` worktree is only isolated inside Docker — anything run natively (`npm run migrate`, `npm run schema`, `npm run dev` in `Backend/`) reads the file directly and would silently hit the shared database.
 
+## Pull requests
+
+A PR description is written for the person who has to review it and for whoever reads it in a year wondering why the code looks like this. Because merging deploys, the reviewer's first question is always "what is the blast radius" — answer it before they ask.
+
+Include, in this order, and omit any section that genuinely does not apply rather than writing "N/A":
+
+1. **Summary** — what changed and why, in a few sentences. Lead with the problem, not the solution.
+2. **Ticket** — `PREFIX-NUMBER`, in the title or the body.
+3. **What's included** — grouped by area, not a commit list. The commit log is already in the PR; the description is the part it cannot generate.
+4. **Blast radius** — which apps are touched, whether any existing route, response shape or stored data changes, and whether auth, sync, PDF generation or Xero is involved. If the answer is "none", say so explicitly; that is the most useful sentence in the description.
+5. **New dependencies** — each one, and why it was worth adding. Reviewers of an auto-deploying repo care.
+6. **Migrations** — whether any are included, and that they do not run automatically on deploy, so someone must run them deliberately.
+7. **Verification** — the commands actually run and their actual output. Not "tested locally". If something is unverified, say which part and why.
+8. **Follow-ups** — known gaps deliberately left out of scope.
+
+Two rules about the content:
+
+- **Claims need evidence.** "All containers healthy" is worth nothing without the output that shows it. Paste the real thing.
+- **No AI attribution anywhere.** No `Co-Authored-By` trailer on commits, no "Generated with" line in the PR body.
+
+PRs target `develop` except hotfixes, which target `main`.
+
 ## Code style: pure functions and lodash
 
 - **Prefer pure functions.** A function that takes its inputs as arguments and returns a value — no hidden reads of module state, no mutation of its arguments, no I/O — is why the cognitive-complexity gate is satisfiable at all, and it is the reason `Backend/src/utils/` is 73 small `*Helpers.js` files. Continue that pattern: keep I/O and Express/React concerns at the edges, and push logic into helpers that can be reasoned about and tested in isolation.
