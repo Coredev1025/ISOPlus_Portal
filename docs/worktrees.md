@@ -15,8 +15,20 @@ isoplus-portal/                          main clone, develop, :3100 / :4001
 ├── Frontend/
 └── worktrees/                           gitignored
     ├── feature-iso-412-time-tracking/   :3110 / :4011
+    │   ├── Backend/                     its own checkout, at its own commit
+    │   ├── Frontend/                    likewise
+    │   └── .env                         COMPOSE_PROJECT_NAME + these ports
     └── bugfix-iso-98-login-spinner/     :3120 / :4021
+        ├── Backend/
+        └── Frontend/
 ```
+
+Each worktree is a **complete checkout of the repository**, not a partial one:
+it has its own `Backend/` and `Frontend/` at whatever commit its branch points
+to, its own `node_modules` volumes, and its own compose project. That is exactly
+what lets it run a second stack — and it is why `worktrees/` must stay
+gitignored, since these are full working trees of the repository that contains
+them.
 
 `worktrees/` is gitignored, so these full checkouts are never added back to the
 repository that contains them. The directory also sits above both Docker build

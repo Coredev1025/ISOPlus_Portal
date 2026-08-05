@@ -1,7 +1,35 @@
 # Repo-native agentic workspace, Docker and worktrees
 
 **Date:** 2026-08-05
-**Status:** Approved design, pending implementation
+**Status:** Implemented, with deviations — see "Changes since approval" below.
+
+> This document has been updated to describe what shipped. Where the
+> implementation departed from the approved design, the departure and its reason
+> are recorded in [Changes since approval](#changes-since-approval) rather than
+> quietly rewritten. Conventions that outlived this document live in
+> [`CLAUDE.md`](../../../CLAUDE.md); operational detail lives in
+> [`docs/local-development.md`](../../local-development.md) and
+> [`docs/worktrees.md`](../../worktrees.md), which supersede this spec as the
+> source of truth.
+
+## Changes since approval
+
+| Designed | Shipped | Why |
+|---|---|---|
+| Four POSIX shell scripts (`dev-up.sh`, `dev-down.sh`, `worktree.sh`, `db-restore.sh`) | One Node CLI, `scripts/dev.mjs` plus pure helpers in `scripts/lib/*.mjs`, exposed as npm scripts | Shell required Git Bash on Windows, and the port probe used `ss -ltn`, which is Linux-only. Node runs unmodified on Linux, macOS and Windows including PowerShell. `scripts/` stays dependency-free so it works on a fresh clone before any `npm install`. |
+| Worktrees as siblings of the main clone, outside it | `worktrees/` at the top of the main clone, gitignored | A worktree no longer depends on a directory outside the repository. The build-context and `next build` reasons still hold at the new location; the repo-root glob reason does not, and is documented in `docs/worktrees.md`. |
+| `db-restore.sh` | `npm run seed` | Folded into the Node CLI with the same `--nsFrom`/`--nsTo` remap and confirmation prompt. |
+
+Also shipped, beyond the scope of this design:
+
+- **Migrations** — `npm run migrate` and the `npm run schema` drift inspector.
+  See [`docs/migrations.md`](../../migrations.md).
+- **Local login** — `npm run dev:user`, so local work does not depend on the
+  live ISO+ OAuth flow. See
+  [`2026-08-05-local-auth-design.md`](2026-08-05-local-auth-design.md).
+- **Skill unification** — `npm run agents`, making `.agents/skills/` canonical
+  and linking each assistant's directory to it.
+- **`npm run doctor`** — prerequisite and drift checks.
 
 ## Problem
 
@@ -78,10 +106,9 @@ Frontend/.dockerignore        unchanged
 CLAUDE.md                     plus a worktrees/local-stack section
 docs/local-development.md     new
 docs/worktrees.md             new
-scripts/dev-up.sh             new
-scripts/dev-down.sh           new
-scripts/worktree.sh           new
-scripts/db-restore.sh         new
+scripts/dev.mjs               new — the whole CLI
+scripts/lib/*.mjs             new — pure helpers it composes
+package.json                  new — npm script surface, no dependencies
 .gitignore                    extended
 ```
 
@@ -132,18 +159,31 @@ stateful services:
 
 ### Worktree layout
 
-Worktrees are siblings of the main clone, outside it, so they never fall inside
-a Docker build context:
+Worktrees live under `worktrees/` at the top of the main clone, gitignored, and
+above both Docker build contexts so they never fall inside one:
 
 ```
-/home/allanaire/hillsgrade/
-├── .claude/settings.local.json     personal, unchanged
-├── (proposals, estimates, PDFs)    personal, unchanged
-├── isoplus-portal/                 main clone, develop, ports 3100/4001
-└── worktrees/
+isoplus-portal/                     main clone, develop, ports 3100/4001
+├── Backend/                        build context
+├── Frontend/                       build context
+└── worktrees/                      gitignored
     ├── feature-x/                  ports 3110/4011
+    │   ├── Backend/                its own checkout, at its own commit
+    │   ├── Frontend/               likewise
+    │   └── .env                    COMPOSE_PROJECT_NAME + this pair of ports
     └── bugfix-y/                   ports 3120/4021
+        ├── Backend/
+        └── Frontend/
 ```
+
+Each worktree is a **complete checkout** — it has its own `Backend/` and
+`Frontend/`, at whatever commit its branch points to, with its own
+`node_modules` volumes and its own compose project. That is what makes a second
+stack possible, and it is also why `worktrees/` must stay gitignored: these are
+full working trees of the very repository that contains them.
+
+The approved design placed these outside the clone; see
+[Changes since approval](#changes-since-approval).
 
 ### Port allocation
 
@@ -151,34 +191,42 @@ Ports are assigned by scanning for genuinely free ports rather than by hashing
 names, which avoids both silent collisions and clashes with the unrelated
 `agenticflo` stack that holds 3000, 3001 and 6379 on this machine.
 
-`scripts/worktree.sh new <branch>` probes upward from 3110 (frontend) and 4011
-(backend) in steps of 10, testing each candidate with `ss -ltn`, and writes the
-first free pair into the worktree's `.env` alongside `COMPOSE_PROJECT_NAME`.
+`npm run worktree -- new` probes upward from 3110 (frontend) and 4011 (backend)
+in steps of 10 and writes the first free pair into the worktree's `.env`
+alongside `COMPOSE_PROJECT_NAME`. A candidate must be both bindable *and*
+unclaimed by any existing worktree's `.env` — the design's `ss -ltn` check was
+replaced with a Node bind probe, which is portable and also catches the case
+where a reserved port is merely not listening yet.
 
 ### Environment files
 
 `Backend/.env` and `Frontend/.env.local` are gitignored, so a fresh worktree has
 neither, and the API `process.exit(1)`s on boot without `MONGODB_URI`,
-`JWT_SECRET` and `SESSION_SECRET`. `worktree.sh new` therefore copies both files
+`JWT_SECRET` and `SESSION_SECRET`. `worktree -- new` therefore copies both files
 from the main clone into the new worktree. This is the most easily missed step
 in the whole design and is called out in `docs/worktrees.md`.
 
 ### Scripts
 
-Each is a small POSIX shell script, `set -euo pipefail`, runnable from any
-worktree, resolving the repo root via `git rev-parse --show-toplevel`.
+One Node CLI, `scripts/dev.mjs`, runnable from any worktree and resolving the
+repo root via `git rev-parse --show-toplevel`. Logic lives in pure helpers under
+`scripts/lib/`; the CLI keeps the I/O. No dependencies, so it runs on a fresh
+clone before any `npm install`.
 
-- **`dev-up.sh`** — start shared infra if not already healthy, then this
+- **`npm run dev:up`** — start shared infra if not already healthy, then this
   worktree's `backend`/`frontend`; gate on health rather than on `up` exiting 0;
   verify every service shows a `->` port mapping; print a table of URLs.
-- **`dev-down.sh`** — stop this worktree's apps. `--all` also stops shared infra;
-  `-v` wipes the shared volumes.
-- **`worktree.sh`** — `new <branch> [--isolated-db]`, `list`, `remove <name>`.
-  `new` creates the worktree, allocates ports, writes `.env`, copies the two env
-  files. `--isolated-db` adds `MONGO_DB=business-dashboard-<name>`.
-  `remove` stops that worktree's stack before removing the tree, and drops its
-  isolated database if it had one.
-- **`db-restore.sh`** — restore `seed/*.archive.gz` into the shared mongo:
+  `npm run dev:build` is the same with `--build`.
+- **`npm run dev:down`** — stop this worktree's apps. `-- --all` also stops
+  shared infra; `-v` wipes the shared volumes.
+- **`npm run worktree`** — `new [--isolated-db]`, `list`, `remove <name>`,
+  `sync-env`. `new` prompts for work type and ticket, composes the branch name,
+  creates the worktree, allocates ports, writes `.env`, and copies the two env
+  files — rewriting `MONGODB_URI` in the copy so a native `npm run migrate` in
+  that worktree cannot reach the shared database. `--isolated-db` adds
+  `MONGO_DB=business-dashboard-<name>`. `remove` stops that worktree's stack
+  before removing the tree, and drops its isolated database if it had one.
+- **`npm run seed`** — restore `seed/*.archive.gz` into the shared mongo:
 
   ```
   mongorestore --archive --gzip --drop \
@@ -230,7 +278,7 @@ complete only when the following have been run and their output confirmed:
 3. **Port mappings are real.** `docker compose ps` for both projects shows a
    `->` mapping on every row — a healthy container with an empty `PORTS` column
    is the known silent failure.
-4. **Seeding works.** Run `db-restore.sh`, then count documents in a known
+4. **Seeding works.** Run `npm run seed`, then count documents in a known
    collection in `business-dashboard` and confirm it is non-zero.
 5. **Isolated DB works.** A worktree created with `--isolated-db` reads a
    different database, confirmed by differing collection counts.
@@ -247,7 +295,7 @@ complete only when the following have been run and their output confirmed:
 | Committing secrets | `Backend/.env` / `Frontend/.env.local` already gitignored; step 7 re-checks. |
 | Removing `container_name:` breaks existing muscle memory and the personal skill | The skill file and all docs are updated in the same change to use `docker compose ps`. |
 | Shared database lets a destructive migration on one branch corrupt another | `--isolated-db` opt-in, documented in `docs/worktrees.md`. |
-| Port scan races another process between probe and bind | `dev-up.sh` verifies real `->` mappings after start (step 3) rather than trusting the probe. |
+| Port scan races another process between probe and bind | `npm run dev:up` verifies real `->` mappings after start (step 3) rather than trusting the probe. |
 | Team pushback on committing local-dev Docker to a shared repo | Change is additive and touches no application code, no CI and no deploy config; delivered as a PR against `develop` for review, not pushed directly. |
 
 ## Out of scope for this change

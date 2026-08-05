@@ -40,6 +40,23 @@ Full detail in **`docs/local-development.md`**; worktrees in **`docs/worktrees.m
 - Tooling in `scripts/` is Node, not shell, so it runs unmodified on Linux, macOS and Windows (PowerShell included) with no Git Bash requirement. Keep it that way — no `.sh`, no platform-specific binaries like `ss` or `readlink -f`.
 - On macOS/Windows, hot reload needs `WATCH_POLLING=true` in `.env`: Docker Desktop does not forward inotify events across bind mounts.
 
+## Documentation layout
+
+`docs/` is organized by how far a piece of work has progressed. Put a document in the directory matching its stage, and move it along rather than duplicating it.
+
+| Directory | Holds | Horizon |
+|---|---|---|
+| `docs/roadmap/` | What we intend to do, before it has a design. One file per theme. | Quarters |
+| `docs/superpowers/specs/` | Approved designs — what we are building and why. `YYYY-MM-DD-<topic>-design.md`. | Per change |
+| `docs/plans/` | Step-by-step execution of a design, with verification per step. `YYYY-MM-DD-<topic>-plan.md`. Kept after merge as the record of how something was built. | Per change |
+| `docs/ongoing/` | Handover notes for work in flight — what is done, what is blocked, what local state a successor needs. One file per ticket, **deleted on merge**. | Days |
+
+Reference material sits outside that progression and stays current: `docs/local-development.md`, `docs/worktrees.md`, `docs/migrations.md`.
+
+Each directory has a `README.md` stating its purpose and pointing back here. **This file remains the single source of truth for conventions** — branching, tickets, commit format, the complexity gate, the engineering rules. Documents under `docs/` should link to it rather than restating it, so there is one copy to keep correct. Stale duplication is a real failure mode here: the compose headers spent weeks telling people to run shell scripts that had been replaced by `scripts/dev.mjs`.
+
+A design that has shipped is not deleted or silently rewritten. Mark its status, and record where the implementation departed from it and why — see the "Changes since approval" section in `docs/superpowers/specs/2026-08-05-agentic-workspace-in-repo-design.md`.
+
 ## Code quality gate (enforced, not optional)
 
 - **Cognitive complexity must be < 15** for every file (SonarJS rule S3776; see `.eslintrc.complexity.cjs`). This is why the backend `utils/` folder is split into dozens of small `*Helpers.js` files — when a route/service grows complex, extract helpers rather than nesting logic. Follow this pattern.
