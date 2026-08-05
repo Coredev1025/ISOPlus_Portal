@@ -50,6 +50,7 @@ Full detail in **`docs/local-development.md`**; worktrees in **`docs/worktrees.m
 | `docs/superpowers/specs/` | Approved designs — what we are building and why. `YYYY-MM-DD-<topic>-design.md`. | Per change |
 | `docs/plans/` | Step-by-step execution of a design, with verification per step. `YYYY-MM-DD-<topic>-plan.md`. Kept after merge as the record of how something was built. | Per change |
 | `docs/ongoing/` | Handover notes for work in flight — what is done, what is blocked, what local state a successor needs. One file per ticket, **deleted on merge**. | Days |
+| `docs/open/` | Documentation for readers **outside this repo** — chiefly the ISO+ teams, who integrate via webhooks and have no source access. Describes interfaces from the outside; never file paths or internals. | Ongoing |
 
 Reference material sits outside that progression and stays current: `docs/local-development.md`, `docs/worktrees.md`, `docs/migrations.md`.
 
