@@ -7,18 +7,28 @@ applications at once on different ports.
 
 ## Layout
 
-Worktrees are created as **siblings** of the main clone, never inside it:
+Worktrees are created under `worktrees/` at the top of the main clone:
 
 ```
-hillsgrade/
-├── isoplus-portal/                 main clone, develop, :3100 / :4001
-└── worktrees/
-    ├── feature-iso-412-time-tracking/  :3110 / :4011
-    └── bugfix-iso-98-login-spinner/    :3120 / :4021
+isoplus-portal/                          main clone, develop, :3100 / :4001
+├── Backend/
+├── Frontend/
+└── worktrees/                           gitignored
+    ├── feature-iso-412-time-tracking/   :3110 / :4011
+    └── bugfix-iso-98-login-spinner/     :3120 / :4021
 ```
 
-Placing them outside the repository keeps them out of Docker build contexts,
-out of `next build` traversal, and out of every glob in the repo.
+`worktrees/` is gitignored, so these full checkouts are never added back to the
+repository that contains them. The directory also sits above both Docker build
+contexts (`./Backend` and `./Frontend`) and outside `next build`'s traversal,
+so nothing in here reaches an image or a bundle.
+
+What it *is* inside is the repository root, so anything that walks the tree from
+there — ripgrep, editor search, a root-level glob added later — will descend
+into every worktree and report each match several times over. Scope such
+searches to `Backend/` and `Frontend/`, or exclude `worktrees/`. This is the
+cost of keeping them in the clone; the benefit is that a worktree travels with
+the repo instead of depending on a directory beside it.
 
 ## Creating one
 
@@ -150,7 +160,7 @@ npm run worktree -- list
 ```
 ==> 2 worktree(s)
     develop                       —        :3100/:4001  db=business-dashboard  .../isoplus-portal  <- you are here
-    feature/ISO-412_time_tracking ISO-412  :3110/:4011  db=business-dashboard  .../worktrees/feature-iso-412-time-tracking
+    feature/ISO-412_time_tracking ISO-412  :3110/:4011  db=business-dashboard  .../isoplus-portal/worktrees/feature-iso-412-time-tracking
 ```
 
 ```bash
@@ -170,7 +180,7 @@ separately.
 Rotated a secret in the main clone and want it everywhere:
 
 ```bash
-cd ../worktrees/whichever
+cd worktrees/whichever
 npm run worktree -- sync-env
 ```
 

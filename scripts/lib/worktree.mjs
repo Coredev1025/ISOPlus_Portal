@@ -29,9 +29,20 @@ export function mainWorktree(from = process.cwd()) {
   return resolve(stdout, '..')
 }
 
-/** Worktrees live beside the main clone, never inside it. */
+/**
+ * Worktrees live in `worktrees/` at the top of the main clone.
+ *
+ * That directory is gitignored, and it sits above both Docker build contexts
+ * (`./Backend`, `./Frontend`) and outside `next build`'s traversal, so a
+ * checkout in here is not picked up by a build. Tooling that walks the repo
+ * from the root — ripgrep, editor search, any future root-level glob — will
+ * see them, so scope those to Backend/ and Frontend/ rather than the root.
+ *
+ * Anchored on the main clone, so this resolves to the same directory whether
+ * it is called from the main clone or from inside a linked worktree.
+ */
 export function worktreesDir(from = process.cwd()) {
-  return join(resolve(mainWorktree(from), '..'), 'worktrees')
+  return join(mainWorktree(from), 'worktrees')
 }
 
 export function listWorktrees(from = process.cwd()) {

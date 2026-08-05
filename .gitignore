@@ -153,3 +153,10 @@ skills-lock.json
 # and must never be committed. See seed/README.md and `npm run seed`.
 seed/*
 !seed/README.md
+
+# --- Git worktrees -----------------------------------------------------------
+# `npm run worktree -- new` creates linked checkouts in here. They are full
+# working trees of this same repository, so they must never be added to it.
+# Anchored with a leading slash: only the one at the repo root, not any
+# directory named "worktrees" elsewhere. See docs/worktrees.md.
+/worktrees/
