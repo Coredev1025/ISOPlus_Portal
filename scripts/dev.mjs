@@ -161,14 +161,22 @@ async function runSeed(args) {
   const env = readEnv(root)
   const targetDb = env.MONGO_DB
 
+  // seed/ is gitignored, so a worktree never has its own archive. Fall back to
+  // the main clone's, which is where the dump actually lives.
   const explicit = args.find((a) => !a.startsWith('-'))
-  const archive = explicit ? join(root, explicit) : seed.findArchive(root)
+  const main = wt.mainWorktree(root)
+  const archive = explicit
+    ? join(root, explicit)
+    : (seed.findArchive(root) ?? seed.findArchive(main))
 
   if (!archive || !existsSync(archive)) {
     red('no seed archive found')
-    note(`put a mongodump --archive --gzip file in ${seed.SEED_DIR}/ — see ${seed.SEED_DIR}/README.md`)
+    note(`looked in ${join(root, seed.SEED_DIR)}`)
+    if (main !== root) note(`and in ${join(main, seed.SEED_DIR)}`)
+    note(`put a mongodump --archive --gzip file there — see ${seed.SEED_DIR}/README.md`)
     process.exit(1)
   }
+  if (!archive.startsWith(root)) note(`using the main clone's archive: ${archive}`)
 
   if (!(await docker.containerIds(infraStack)).length) {
     cyan('starting shared infra first')
