@@ -9,6 +9,7 @@
 //   node scripts/dev.mjs schema        declared vs actual schema, and the drift
 //   node scripts/dev.mjs migrate ...   run database migrations
 //   node scripts/dev.mjs user          local login account with a known password
+//   node scripts/dev.mjs agents        unify AGENTS.md + skills across assistants
 //   node scripts/dev.mjs worktree ...  create / list / remove worktrees
 //   node scripts/dev.mjs doctor        check prerequisites
 //
@@ -29,6 +30,7 @@ import {
   copyAppEnvFiles, missingAppEnvFiles, readEnv, setBackendMongoUri, writeEnv, DEFAULTS,
 } from './lib/env.mjs'
 import { ask, choose, isInteractive } from './lib/prompt.mjs'
+import * as agentsync from './lib/agentsync.mjs'
 import { findFreePortSet, isPortFree } from './lib/ports.mjs'
 import { cyan, green, note, red, table, yellow, fail } from './lib/log.mjs'
 
@@ -554,6 +556,79 @@ function worktreeSyncEnv() {
   if (uri) note(`Backend/.env MONGODB_URI -> ${uri}`)
 }
 
+// --- agents -----------------------------------------------------------------
+
+const AGENTS_MD_ADVICE = {
+  ok: 'symlink -> CLAUDE.md',
+  absent: 'missing',
+  'wrong-target': 'symlink points somewhere unexpected',
+  'broken-on-windows': 'a plain file containing "CLAUDE.md" (symlink lost in checkout)',
+  'copy-in-sync': 'a copy, currently identical to CLAUDE.md',
+  'copy-diverged': 'a copy that has DIVERGED from CLAUDE.md',
+  'missing-source': 'CLAUDE.md itself is missing',
+}
+
+/**
+ * Unify agent instructions and skills across every assistant.
+ *
+ * Skills installed by any one tool become visible to all, because each tool's
+ * directory is a link to a single canonical directory rather than a copy.
+ */
+async function agents(args) {
+  const check = args.includes('--check')
+  let problems = 0
+
+  const md = agentsync.checkAgentsMd(root)
+  cyan(`${agentsync.INSTRUCTIONS_ALIAS}: ${AGENTS_MD_ADVICE[md.state]}${md.detail ? ` (${md.detail})` : ''}`)
+  if (md.state !== 'ok' && md.state !== 'copy-in-sync') {
+    problems += 1
+    if (md.state === 'missing-source') {
+      fail('CLAUDE.md does not exist — nothing to alias')
+    } else if (check) {
+      note(`fix with: npm run agents`)
+    } else {
+      const how = agentsync.repairAgentsMd(root)
+      green(`repaired as a ${how}`)
+      problems -= 1
+    }
+  }
+
+  const before = agentsync.inspectSkills(root)
+  console.log('')
+  cyan(`canonical skills (${agentsync.CANONICAL_SKILLS}): ${before.canonical.length}`)
+  for (const s of before.canonical) note(s)
+
+  for (const tool of before.tools) {
+    if (tool.state === 'linked') continue
+    problems += 1
+    console.log('')
+    yellow(`${tool.tool} (${tool.dir}) is ${tool.state}, not linked`)
+    if (tool.extra.length) note(`has skills the others cannot see: ${tool.extra.join(', ')}`)
+    if (tool.missing.length) note(`cannot see: ${tool.missing.join(', ')}`)
+  }
+
+  if (check) {
+    console.log('')
+    if (problems) fail(`${problems} issue(s) — run: npm run agents`)
+    green('all assistants share one set of skills')
+    return
+  }
+
+  const actions = agentsync.unifySkills(root)
+  const adopted = actions.filter((a) => a.kind === 'adopt')
+  const linked = actions.filter((a) => a.kind === 'link')
+
+  console.log('')
+  for (const a of adopted) green(`adopted "${a.skill}" from ${a.tool} into the canonical set`)
+  for (const a of linked) green(`${a.tool}: ${a.dir} -> ${agentsync.CANONICAL_SKILLS}`)
+  if (!adopted.length && !linked.length) green('already unified — nothing to do')
+
+  const after = agentsync.inspectSkills(root)
+  console.log('')
+  cyan(`every assistant now sees ${after.canonical.length} skill(s): ${after.canonical.join(', ')}`)
+  note('a skill installed by any tool lands in the canonical set automatically')
+}
+
 // --- doctor -----------------------------------------------------------------
 
 async function doctor() {
@@ -587,6 +662,16 @@ async function doctor() {
   const archive = seed.findArchive(root)
   add('seed archive', Boolean(archive), archive ? relative(root, archive) : `none in ${seed.SEED_DIR}/`)
 
+  const md = agentsync.checkAgentsMd(root)
+  add('AGENTS.md', md.state === 'ok' || md.state === 'copy-in-sync', AGENTS_MD_ADVICE[md.state])
+
+  const unlinked = agentsync.inspectSkills(root).tools.filter((t) => t.state !== 'linked')
+  add(
+    'agent skills unified',
+    unlinked.length === 0,
+    unlinked.length ? `${unlinked.map((t) => t.dir).join(', ')} — run: npm run agents` : 'all assistants linked',
+  )
+
   console.log('')
   for (const [state, name, detail] of checks) {
     const mark = state === 'PASS' ? '  ok  ' : ' FAIL '
@@ -598,7 +683,7 @@ async function doctor() {
 
 // --- dispatch ---------------------------------------------------------------
 
-const COMMANDS = { up, down, status, seed: runSeed, migrate, schema, user, worktree, doctor }
+const COMMANDS = { up, down, status, seed: runSeed, migrate, schema, user, agents, worktree, doctor }
 
 const [command, ...rest] = process.argv.slice(2)
 const handler = COMMANDS[command]
@@ -613,6 +698,7 @@ if (!handler) {
   migrate <list|create|up|down>  run a migration in the backend container
   schema [collection] [--json]  declared vs actual schema, and the drift
   user [--list] [--create]     local support-admin login with a known password
+  agents [--check]             unify AGENTS.md + skills across all assistants
   doctor                       check prerequisites
 
   worktree new [--type T --ticket ISO-1 --desc "..."]   (asks if omitted)

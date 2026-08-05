@@ -113,7 +113,13 @@ The codebase is production and **deploys automatically on merge**, so:
 
 ### Agent and editor configuration
 
-Per-developer agent/editor config — `.claude/`, `.agents/`, `.agent-native/`, `.cursor/`, `.vscode/`, `.mcp.json`, `opencode.json`, `agent-native.json` — is **intentionally gitignored**. The shared, reviewable project setup is `docker-compose*.yml`, `scripts/`, `docs/`, `.gitattributes` and this file. Do not commit personal tooling config; do not assume a teammate has the same tools.
+Per-developer agent/editor config — `.claude/`, `.agents/`, `.agent-native/`, `.cursor/`, `.vscode/`, `.opencode/`, `.mcp.json`, `opencode.json`, `agent-native.json` — is **intentionally gitignored**. The shared, reviewable project setup is `docker-compose*.yml`, `scripts/`, `docs/`, `.gitattributes`, `AGENTS.md` and this file. Do not commit personal tooling config; do not assume a teammate has the same tools.
+
+**`AGENTS.md` is a tracked symlink to this file.** Every assistant — Claude Code, Codex, opencode, Cursor — reads the same instructions. Edit `CLAUDE.md`; never edit `AGENTS.md` directly or replace it with a copy, and never let the two diverge.
+
+**Skills are shared across all assistants, not per-tool.** `.agents/skills/` is canonical; `.claude/skills/` and `.opencode/skill/` are symlinks to it. A skill installed by any tool is therefore immediately visible to all of them. Do not copy a skill from one tool's directory into another — that is what caused the drift this replaced, where `isoplus-local-env` existed only for Claude Code. To adopt a new assistant, add a row to `TOOL_SKILL_DIRS` in `scripts/lib/agentsync.mjs` and run `npm run agents`, which adopts anything unique to that tool before linking.
+
+`npm run agents` unifies both; `npm run agents -- --check` and `npm run doctor` report drift without changing anything.
 
 ## Backend architecture
 

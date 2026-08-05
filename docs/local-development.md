@@ -48,6 +48,7 @@ are Node, not shell, precisely so there is no Git Bash requirement on Windows.
 | `npm run schema` | Declared vs actual database schema, and the drift between them. See [migrations.md](./migrations.md). |
 | `npm run migrate` | Create and run database migrations. See [migrations.md](./migrations.md). |
 | `npm run worktree` | Manage worktrees. See [worktrees.md](./worktrees.md). |
+| `npm run agents` | Unify AGENTS.md and skills across every assistant. `-- --check` reports without changing. |
 | `npm run doctor` | Check prerequisites and report what is missing. |
 
 Passing flags through npm needs `--`: `npm run dev:down -- --all`. Calling the
@@ -214,3 +215,60 @@ npm run dev:down -- --all -v    # also wipe all data (every worktree's)
 
 `-v` with `--all` destroys the database shared by every worktree. It is not
 scoped to the one you are standing in.
+
+## Agent tooling consistency
+
+Different assistants read different files. Keeping them in step is handled by
+one rule: **one source of truth, everything else a link to it.**
+
+```bash
+npm run agents            # unify
+npm run agents -- --check # report only; non-zero exit if out of step
+```
+
+`npm run doctor` reports both of the checks below as well.
+
+### Instructions
+
+`CLAUDE.md` is the real file. `AGENTS.md` — the cross-tool convention read by
+Codex, opencode, Cursor and others — is a **tracked symlink** to it, so every
+assistant gets the same instructions and there is nothing to keep in sync.
+
+This is the one symlink that travels through git, which matters on Windows.
+Without Developer Mode, Git checks the link out as a *regular file containing
+the text* `CLAUDE.md` — nine bytes where the instructions should be, and every
+assistant silently reads nothing. `npm run agents` detects that and repairs it,
+falling back to a real copy if symlinks are unavailable. It also detects the
+worse case: a copy that has since **diverged** from `CLAUDE.md`.
+
+### Skills
+
+Assistants each read their own directory. Copying skills between them lets them
+drift — this repo already had `isoplus-local-env` in `.claude/skills` and
+nowhere else, so Cursor and opencode never saw it.
+
+Instead, `.agents/skills/` is canonical and every other tool directory is a
+symlink to it:
+
+```
+.agents/skills/      <- canonical, the real directory
+.claude/skills/      -> .agents/skills
+.opencode/skill/     -> .agents/skills
+```
+
+**A skill installed by any assistant is therefore immediately available to all
+of them**, with no sync step to remember — the install writes straight through
+the link into the canonical directory.
+
+These directories are gitignored, so unlike `AGENTS.md` these symlinks never
+travel through a checkout. On Windows they are created as junctions, which need
+no Developer Mode.
+
+Adopting a new assistant means adding one row to `TOOL_SKILL_DIRS` in
+`scripts/lib/agentsync.mjs`. Running `npm run agents` then adopts anything
+unique to that tool into the canonical set *before* linking, so nothing is lost.
+
+Cursor is deliberately not in that list: `.cursor/rules/*.mdc` is a different
+format, not a skills directory, and linking it would produce files Cursor cannot
+read. Its engineering rules live in `CLAUDE.md` instead — and therefore in
+`AGENTS.md` too.

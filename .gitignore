@@ -143,6 +143,10 @@ dist
 opencode.json
 agent-native.json
 skills-lock.json
+.opencode/
+
+# AGENTS.md is the exception: it is a TRACKED symlink to CLAUDE.md, so every
+# assistant reads the same instructions. Keep it out of the ignores above.
 
 # --- Local dev seed data -----------------------------------------------------
 # Database dumps used to seed the local stack. These contain real business data
