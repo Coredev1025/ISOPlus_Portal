@@ -22,6 +22,7 @@ export default defineConfig({
         'src/utils/helpers.js',
         'src/utils/dynamicLinking.js',
         'src/utils/auditLogger.js',
+        'src/services/offlineIsoplus.js',
         'src/services/webhookService.js',
         'src/services/sync/validator.js',
         'src/routes/heathcheck.js',
