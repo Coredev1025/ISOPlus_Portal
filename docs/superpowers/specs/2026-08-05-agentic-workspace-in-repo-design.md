@@ -56,13 +56,31 @@ Added later on the same branch, 2026-08-06:
   libraries. Both Dockerfiles now install them. 140 unit/integration tests and
   8 end-to-end tests pass in-container.
 
-### One caveat this design's goal does not yet cover
+### A boundary this design drew, and one place it leaked
 
-`.gitignore` has `.cursor/`, with no negation for `.cursor/rules/`. The rule file
-is tracked only because it predates that line, and tracked files bypass ignores.
-A *new* Cursor rule is therefore not committable without `git add -f` and will
-be silently lost — which defeats the "nothing survives a fresh clone" defect this
-design set out to fix, for that one assistant. Wants `!.cursor/rules/`.
+The ignore block for `.claude/`, `.agents/`, `.agent-native/`, `.vscode/`,
+`.mcp.json`, `opencode.json` and `skills-lock.json` is deliberate and stays:
+that is per-developer tooling, not imposed on the team. What is shared is
+`CLAUDE.md`, the tracked `AGENTS.md` symlink, `docs/`, `scripts/` and the
+compose files. Auditing this is worthwhile precisely because the list *looks*
+like an accident and is not.
+
+`.cursor` was the leak. It was blanket-ignored alongside the rest, while
+`.cursor/rules/full-stack-engineering.mdc` was tracked — an undocumented
+exception that worked only because ignore rules do not apply to already-tracked
+files. Any **new** rule file was silently unaddable without `git add -f`, which
+is the "invisible to git" defect this design exists to fix, still live for one
+assistant.
+
+Resolved 2026-08-06 by narrowing the pattern to `.cursor/*` with `.cursor/rules/*.mdc`
+re-included. It is spelled out rather than written as `.cursor/` plus a negation
+because **git cannot re-include a file whose parent directory is excluded** — the
+obvious one-line fix would have appeared to work and done nothing.
+
+The rules are the right thing to share: they carry project standards and point
+at `AGENTS.md` and [`docs/full-stack-engineering.md`](../../full-stack-engineering.md),
+so a Cursor user who does not get them does not get the conventions either.
+`.cursor/mcp.json` stays ignored — that is per-developer server configuration.
 
 ## Problem
 

@@ -137,8 +137,22 @@ dist
 .claude/
 .agents/
 .agent-native/
-.cursor/
 .vscode/
+
+# .cursor is per-developer EXCEPT its rules, which are project standards rather
+# than tooling preference: `.cursor/rules/*.mdc` points Cursor at AGENTS.md and
+# docs/full-stack-engineering.md, so a Cursor user who does not get them does
+# not get the conventions either.
+#
+# Spelled out rather than `.cursor/` + a negation, because git cannot re-include
+# a file whose parent directory is excluded — the negation would silently do
+# nothing. This was already the de facto state: full-stack-engineering.mdc is
+# tracked, so `.cursor/` never applied to it, while any NEW rule file was
+# silently unaddable without `git add -f`.
+.cursor/*
+!.cursor/rules/
+.cursor/rules/*
+!.cursor/rules/*.mdc
 .mcp.json
 opencode.json
 agent-native.json
