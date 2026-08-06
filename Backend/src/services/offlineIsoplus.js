@@ -21,6 +21,8 @@
 // asserting real ISO+ behaviour belongs in a live test — see
 // Backend/test/fixtures/README.md.
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import Business from '../models/Business.js';
 import Board from '../models/Board.js';
 import { warn } from '../utils/logger.js';
@@ -167,4 +169,63 @@ export async function getBoardPageOffline(_authorization, workspaceId, options =
  */
 export async function getMemberRoleOffline(_authorization, _workspaceId, _userEmail) {
     return { role: null, status: 200 };
+}
+
+// --- board attributes --------------------------------------------------------
+
+let fixtureCache;
+let fixtureMissingWarned = false;
+
+/**
+ * Board attributes come from the committed fixture, not Mongo — the Portal has
+ * no Attribute model, because attributes have always been read straight from
+ * ISO+. Backend/test/fixtures/ndis-quote-board.json is the only checked-in
+ * record of their shape.
+ *
+ * Only the offline path reads it, and only lazily, so a deployment that ships
+ * without test/ is unaffected.
+ */
+function loadFixture() {
+    if (fixtureCache !== undefined) return fixtureCache;
+    try {
+        const path = fileURLToPath(new URL('../../test/fixtures/ndis-quote-board.json', import.meta.url));
+        fixtureCache = JSON.parse(readFileSync(path, 'utf8'));
+    } catch {
+        fixtureCache = null;
+    }
+    return fixtureCache;
+}
+
+/**
+ * Mirrors getBoardAttributes(workspaceId, boardId) — { attribute, status }.
+ *
+ * The fixture holds the subset of attributes worth committing (13), not the
+ * board's full 511. That is enough for Board Configuration, whose two dropdowns
+ * want `longtext` attributes and are satisfied by Integration Message and
+ * Generated PDF Link. It is not enough to reason about pricing rules — those
+ * need live ISO+, and boardAttributesUseLegacyNdisPricing() will read this
+ * partial list and conclude whatever the fixture says.
+ */
+export async function getBoardAttributesOffline(_workspaceId, boardId) {
+    const fixture = loadFixture();
+
+    if (!fixture) {
+        if (!fixtureMissingWarned) {
+            fixtureMissingWarned = true;
+            warn('Offline-Mode', 'No fixture available for board attributes', {
+                boardId,
+                hint: 'expected Backend/test/fixtures/ndis-quote-board.json',
+            });
+        }
+        return { attribute: [], status: 200 };
+    }
+
+    const known = fixture.board?.boardId;
+    if (known && String(boardId) !== String(known)) {
+        // Returning another board's attributes would be worse than returning
+        // none: the caller cannot tell they are wrong.
+        return { attribute: [], status: 200 };
+    }
+
+    return { attribute: fixture.attributes ?? [], status: 200 };
 }

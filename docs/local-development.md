@@ -146,10 +146,14 @@ it does not make the app fully offline:
 - The ISO+ button on the login screen still needs `CLIENT_ID`/`CLIENT_SECRET`.
   Without them the authorize URL carries an empty `client_id` and ISO+ answers
   `unsupported_grant_type`. Use the **administrator credentials** link instead.
-- Attributes, items, references and pricing rules still read live ISO+.
-  `boardUsesLegacyNdisPricing()` in particular fails closed and defaults every
-  item to `legacy` — the opposite of the live board. See
-  [the fixture README](../Backend/test/fixtures/README.md).
+- **Board attributes** are served from
+  [the committed fixture](../Backend/test/fixtures/ndis-quote-board.json), which
+  holds 13 of the board's 511. Enough for Board Configuration, whose dropdowns
+  want `longtext` and get Integration Message and Generated PDF Link. Not enough
+  to reason about pricing: `boardAttributesUseLegacyNdisPricing()` will read the
+  partial list and conclude whatever the fixture says. Attributes for any board
+  other than `eNiJpH14PN3` come back empty rather than wrong.
+- Items, references and values still read live ISO+.
 - Board scoping is approximate. In the seed dump 33 of 34 boards have
   `workspaceId: null`, so offline mode includes unassigned boards in whichever
   workspace you ask for, and logs how many. Correct for one workspace, wrong for
