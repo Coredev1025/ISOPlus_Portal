@@ -89,6 +89,65 @@ A design that has shipped is not deleted or silently rewritten. Mark its status,
 
 Be aware the repository's actual history diverges from this: of the last 40 merges into `main`, only 9 came from `develop` — 31 were topic branches merged straight to production. `main` and `develop` have drifted apart. Prefer the documented flow; flag it rather than copying the drift.
 
+### Keeping a branch current: rebase, do not merge
+
+**When `develop` moves ahead of your branch, rebase onto it.** Do not merge
+`develop` into your branch. A merge commit buries the conflict resolution inside
+a commit nobody reads, and leaves a diff against `develop` that no longer matches
+the commits that produced it.
+
+```bash
+git fetch origin
+git tag -f backup/pre-rebase-<TICKET> HEAD     # 1. always, before rewriting anything
+git rebase origin/develop                      # 2.
+# resolve, then: git rebase --continue
+git diff backup/pre-rebase-<TICKET> HEAD       # 3. MUST be empty
+npm test --prefix Backend                      # 4.
+git push --force-with-lease                    # 5. never plain --force
+```
+
+**Step 3 is the one people skip, and it is the one that makes this safe.** A
+rebase replays every commit, so a bad conflict resolution silently changes the
+final content. If that diff is empty the history changed and the code did not,
+which is exactly the claim a force-push is making. If it is not empty, you have
+found a real mistake — investigate before pushing.
+
+**`--force-with-lease`, never `--force`.** It refuses if anyone else pushed since
+you last fetched, instead of overwriting their work.
+
+**Turn on rerere once**, and git records each conflict resolution and replays it
+automatically when the same conflict reappears — which it will, since a rebase
+replays every commit that touched the file:
+
+```bash
+git config rerere.enabled true
+git config rerere.autoUpdate true
+```
+
+#### Resolving the conflicts this repo actually produces
+
+Nearly all of them are `package.json` and lockfiles, because both sides add
+dependencies.
+
+- **`package.json`** — a union, almost always. Both sides added entries; keep
+  both. Read the two sides rather than taking one wholesale: `--ours` during a
+  rebase means `develop`, not your branch, which is the reverse of what people
+  expect and a fast way to silently drop your own work.
+- **Lockfiles — regenerate, never hand-merge.** Take one side, then
+  `npm install --package-lock-only` in that app so npm reconciles it against the
+  merged `package.json`. A hand-edited lockfile can look plausible and fail
+  `npm ci` with `Missing: <pkg> from lock file`.
+- **`yarn.lock`** is committed but vestigial; CI uses `npm ci`. Nobody here has
+  yarn installed, so it cannot be regenerated — restore it from the backup tag
+  rather than leaving it disagreeing with `package.json`. That mismatch is real
+  drift even though nothing currently reads it.
+
+#### When a merge is right after all
+
+Rebase rewrites history, so do not rebase a branch other people are committing
+to. Merge that one, or agree the rewrite first. Everything else — a topic branch
+with one author, which is nearly all of them here — rebases.
+
 `npm run worktree -- new` also handles environment initialization: it allocates a port pair no other worktree has reserved, copies the gitignored `Backend/.env` / `Frontend/.env.local`, and **rewrites the copied `MONGODB_URI` to point at that worktree's own database**. Without that rewrite an `--isolated-db` worktree is only isolated inside Docker — anything run natively (`npm run migrate`, `npm run schema`, `npm run dev` in `Backend/`) reads the file directly and would silently hit the shared database.
 
 ## Pull requests

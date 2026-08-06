@@ -682,6 +682,21 @@ async function doctor() {
     add(`${label} port ${port}`, true, free ? 'free' : 'in use (by this stack, or a conflict)')
   }
 
+  // rerere replays a conflict resolution the next time the same conflict shows
+  // up, which during a rebase is every commit that touched the file. Enabling it
+  // is per-clone git config, so it cannot be committed — doctor is where a
+  // per-clone setting gets noticed. Reported, not set: doctor diagnoses.
+  // `git config --get` exits 1 when the key is unset, so read stdout rather than
+  // trusting the exit code.
+  const rerere = wt.git(['config', '--get', 'rerere.enabled'], root).stdout === 'true'
+  add(
+    'git rerere',
+    rerere,
+    rerere
+      ? 'on — conflict resolutions are replayed'
+      : 'off — enable with: git config rerere.enabled true && git config rerere.autoUpdate true',
+  )
+
   const archive = seed.findArchive(root)
   add('seed archive', Boolean(archive), archive ? relative(root, archive) : `none in ${seed.SEED_DIR}/`)
 
