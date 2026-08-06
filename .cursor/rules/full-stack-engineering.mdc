@@ -41,9 +41,18 @@ Do not refactor, restructure or rewrite code you were not asked to change.
 Prefer minimal, surgical edits. For non-trivial changes, explain the problem,
 show the diff, and wait for approval before applying anything hard to reverse.
 
-## Never
+## Prohibited
 
-- Add AI attribution to commit messages or PR bodies — no `Co-Authored-By`, no
-  "Generated with" line.
-- Invent a branch name or ticket number. Ask.
-- Commit secrets. New environment variables go in `.env.example` too.
+- **No AI attribution anywhere in commit messages or PR bodies.** Do not add a
+  `Co-Authored-By` trailer. Do not add a "Generated with" or "Created by" line.
+  Do not name any AI tool or model. Commits and PRs read as though a person
+  wrote them, because a person is accountable for them.
+- **Do not invent a branch name or a ticket number.** Both are required and both
+  come from the user — ask for them.
+- **Do not commit secrets**, tokens, credentials or `.env` files.
+
+## Required
+
+- Every new environment variable is added to the matching `.env.example` with a
+  comment saying what breaks without it. An undocumented variable is one nobody
+  sets: `BACKEND_URL` went undocumented and silently degraded two features.
