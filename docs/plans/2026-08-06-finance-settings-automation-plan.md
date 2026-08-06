@@ -42,8 +42,66 @@ Found by reading the code, not the spec. Each one changes a task, so settle them
 | R6 | — | `authenticateToken` reads `req.session.token`, not an `Authorization` header (`middleware/auth.js:43`) | Tests need a cookie jar and a real `POST /api/auth/login`, not a bearer token |
 | R7 | Reuse "the existing Redis queue" | One queue exists: `syncQueue` in `services/sync/queue.js:101`, drained by `workers/syncWorker.js:693` | Decide: second queue, or new job type on `syncQueue`. Task 13 assumes a **separate** `automationQueue` so a stuck sync backlog cannot delay billing |
 | R8 | Epic 7: "create a schedule to sync automatically" | One sentence, no acceptance criteria, no cadence, no failure behaviour | **Underspecified.** Task 17 covers only the mechanism; the policy needs a design first |
+| R9 | — | `GET /api/workspaces` does **not** read Mongo. It proxies `https://app.isoplus.online/api/v2/workspaces` using `req.session.Authorization` (`workspace.js:145` → `isoplus.js:261`) | A workspace cannot be seeded into existence. Task 6 cannot baseline it offline — see [Local environment](#local-environment-how-a-workspace-actually-loads) |
+| R10 | — | `BACKEND_URL` is unset in `Backend/.env`. `automationUrlUpdate.js:7` silently no-ops the automation-URL rewrite when it is missing, and `webhookServiceHelpers.js:13` falls back to `http://localhost:3001` while still reporting success | Blocks pointing a live board at a local backend. See the ngrok note below |
 
 **R8 is the one to resolve before Phase 2.** The rest can be decided in review.
+
+---
+
+## Local environment: how a workspace actually loads
+
+This was the open question, and the answer changes the test strategy — so it is stated before the matrix rather than buried in a task.
+
+**A workspace cannot be seeded.** `GET /api/workspaces` proxies ISO+ live; the Mongo `Workspace` model is not what the list renders from. What Mongo holds is the Portal's own copy — `Business`, `Board`, `Item`.
+
+The bridge already exists in `middleware/authHelpers.js:37`:
+
+```js
+export function applyPrivilegedSessionAuth(req, user) {
+  if (user.role === 'support_admin' || user.role === 'owner') {
+    req.session.Authorization = `Bearer ${process.env.PERSONAL_ACCESS_TOKEN}`;
+  }
+}
+```
+
+So the working local recipe, which was never written down anywhere:
+
+```bash
+npm run dev:up
+npm run dev:user -- --create      # local support-admin login, bypasses ISO+ OAuth
+# Backend/.env must carry a valid PERSONAL_ACCESS_TOKEN
+npm run seed                      # or: npm run dev:fixture
+```
+
+Log in through the "administrator credentials" link, not the ISO+ OAuth button. Workspace `55369` then appears, proxied live.
+
+**Consequence for the test plan.** The local frontend is *not* offline — no `PERSONAL_ACCESS_TOKEN`, no workspaces. Any test that touches workspace listing therefore depends on live ISO+ and network. Phase 1 handles this by splitting the suite:
+
+| Suite | Depends on | Runs in CI |
+|---|---|---|
+| `test/baseline/**` | local Mongo (+ Redis where marked) | yes |
+| `test/live/**` | live ISO+ and a real token | no — opt in with `ISOPLUS_LIVE=1` |
+
+Anything reading workspaces, board attributes, or references belongs in `test/live/`, skipped by default:
+
+```javascript
+const live = process.env.ISOPLUS_LIVE === '1'
+test('GET /api/workspaces returns workspace 55369', { skip: !live && 'set ISOPLUS_LIVE=1' }, async () => { /* … */ })
+```
+
+This is the same offline/online split that already bites the pricing dispatch: `boardUsesLegacyNdisPricing()` reads the live API and defaults to `legacy` when it cannot (see `Backend/test/fixtures/README.md`).
+
+### Pointing a live board at a local backend (ngrok) — later stage
+
+Not planned as a task; recorded so the prerequisite is not rediscovered. Two settings already read `BACKEND_URL`, and both degrade silently while it is unset (R10):
+
+1. `automationUrlUpdate.js:7` — `PUT /api/automation` rewrites `workflow[].config.url` for automations named `Portal - ` only (`:38`). With `BACKEND_URL` unset it warns and changes nothing.
+2. `webhookServiceHelpers.js:13` — the sync hook callback falls back to `http://localhost:3001`, and registration still reports success.
+
+Setting `BACKEND_URL=https://<id>.ngrok-free.app` and running the rewrite points the board's 26 `Portal - ` automations at the local backend; the other 15 are untouched by design.
+
+**This mutates the live board.** Production automations stay pointed at the tunnel until rewritten back, and a laptop that goes offline takes real billing traffic with it. Before doing it: capture the current URLs (`GET /api/<team>/automations/<board>` is authoritative — the UI truncates the field without indication), and have the restore path tested, not assumed.
 
 ---
 
@@ -64,7 +122,9 @@ This is the Phase 1 deliverable: the existing surfaces each epic disturbs, and t
 | PDF quote generation | `/api/pdf/:ws/:board/quotendis` (`webhook.js:1674`) | E5 | contract from the committed fixture still holds | 5 |
 | Audit trail write | `models/AuditTrail.js`, `middleware/auditHttp.js` | E5, E6 | a request writes exactly one row with the documented fields | 7 |
 | Sync queue | `services/sync/queue.js:101` | E5, E6, E7 | enqueue/drain works against a test Redis | 7 |
-| Workspace CRUD | `routes/workspace.js:145,227` | E2 | create/list unaffected by the new flag | 6 |
+| Workspace listing | `routes/workspace.js:145` → live ISO+ | E2 | **live-only** — proxied, cannot run offline (R9) | 6 |
+| Workspace document | `models/Workspace.js` | E2 | a new document carries no automation flag | 6 |
+| Local login → ISO+ bearer | `authHelpers.js:37` | E2, E6 | `owner`/`support_admin` login populates `session.Authorization` | 3 |
 | Item/board storage | `models/Item.js`, `Board.js` | E5, E7 | fixture loads and reads back identically | 7 |
 
 Where a touchpoint already has a committed fixture — `Backend/test/fixtures/ndis-quote-board.json` — the baseline test consumes it rather than inventing new data.
@@ -586,9 +646,35 @@ for (const [role, expectation] of Object.entries(EXPECTED)) {
 
 This matrix is what Epic 2 and Epic 6 reuse. Getting it wrong means the feature toggle is visible to clients.
 
-- [ ] **Step 2: Baseline workspace create/list**
+- [ ] **Step 2: Baseline workspace listing — as a *live* test, not a baseline one**
 
-Assert `GET /api/workspaces` and `POST /api/workspaces` (`workspace.js:145,227`) behave as they do now, and that a created workspace has **no** automation flag — the assertion Task 8 will deliberately update.
+Per R9, `GET /api/workspaces` proxies ISO+ and cannot run offline. It goes in `test/live/workspaces.test.mjs`, skipped unless `ISOPLUS_LIVE=1`:
+
+```javascript
+const live = process.env.ISOPLUS_LIVE === '1'
+
+test('GET /api/workspaces proxies ISO+ and includes workspace 55369',
+  { skip: !live && 'set ISOPLUS_LIVE=1 and a valid PERSONAL_ACCESS_TOKEN' },
+  async () => {
+    const { cookie } = await loginAs(server.baseUrl, 'owner')
+    const res = await authedFetch(server.baseUrl, cookie, '/api/workspaces')
+    assert.equal(res.status, 200)
+    const body = await res.json()
+    const ids = (body.workspaces ?? body).map((w) => String(w.id ?? w.workspaceId))
+    assert.ok(ids.includes('55369'), `expected 55369 among ${ids.join(', ')}`)
+  })
+```
+
+- [ ] **Step 3: Baseline the offline half instead**
+
+What *can* be pinned without the network is the `Workspace` Mongo model — the document `POST /api/workspaces` writes. Assert a created workspace has **no** automation flag; this is the assertion Task 8 deliberately updates.
+
+```javascript
+test('a new Workspace document has no automation flag yet', async () => {
+  const ws = await Workspace.create({ name: 'Fixture WS', userId: someUserId, businessId: someBusinessId })
+  assert.equal(ws.invoiceStatementAutomationEnabled, undefined)
+})
+```
 
 - [ ] **Step 3: Run, then commit**
 
