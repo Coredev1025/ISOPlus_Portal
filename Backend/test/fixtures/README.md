@@ -31,6 +31,35 @@ npm run dev:fixture -- --remove                      # delete just these documen
 `--remove` is scoped to the exact ids in the fixture. A seeded database holds
 real boards under the same workspace and this must not take them with it.
 
+### Three hops, three keyings
+
+Observed end to end on 2026-08-06, by reading quote 17 and then editing a field
+on it. This is the contract the fixture records:
+
+| Hop | Request | Keyed by |
+|---|---|---|
+| Read | `POST /api/{ws}/{board}/items/values` | `attribute_id` |
+| UI write | `PUT /api/{ws}/values/{valueId}` | `attribute_id` |
+| **Webhook, ISO+ → Portal** | `POST /api/pdf/{ws}/{board}/quotendis` | **attribute name** |
+| Write-back, Portal → ISO+ | `PUT /api/v2/workspaces/{ws}/boards/{board}/items/{item}` | `attribute_id` |
+
+Only the webhook uses names — and it is the only hop the Portal branches on.
+That asymmetry is why renaming a column in the ISO+ UI silently repoints
+backend dispatch with no error anywhere.
+
+Note the UI write is workspace-scoped with no board id, carries a
+client-generated value id, and upserts: `row_version: 0` means new.
+
+### `board.attribute` is the Integration Message field
+
+Easy to get wrong, so stated plainly: `Board.attribute.id` is **not** a pricing
+field. It is where `setIntegrationMessage()` writes progress and errors
+(`src/services/isoplus.js:659`), and `Board.pdfAttribute.id` is where
+`handlePDFSuccess` puts the generated link. If `attribute.id` is unset every
+write-back throws *"Internal message attribute not found in board
+configuration"* — which is exactly the gap in the seed dump that this fixture
+fills.
+
 ### Why the item data looks the way it does
 
 `resolveNdisPricingRuleForAutomation()` (`src/utils/ndisPricingRules.js:104`)

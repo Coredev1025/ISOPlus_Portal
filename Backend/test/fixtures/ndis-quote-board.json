@@ -45,12 +45,13 @@
     "label": "NDIS",
     "syncData": true,
     "syncStatus": "realtime_sync",
+    "$attributeNote": "board.attribute is the INTEGRATION MESSAGE target, not a pricing field — setIntegrationMessage() writes to board.attribute.id (services/isoplus.js:659). board.pdfAttribute is where handlePDFSuccess puts the link. Both are real ids from the live board.",
     "attribute": {
-      "id": "019efd37-866f-7266-a2d6-6de8458096c9",
-      "name": "Support Item Number"
+      "id": "05344a1b-cc91-4eb9-b9bd-fe708e023cf2",
+      "name": "Integration Message"
     },
     "pdfAttribute": {
-      "id": "fixture-pdf-link-attr",
+      "id": "1b9d68df-553b-4f2d-bcf2-59a240bb4176",
       "name": "Generated PDF Link"
     }
   },
@@ -79,9 +80,10 @@
     { "id": "fixture-attr-cancellation", "name": "Cancellation Item Number", "type": "reference" },
     { "id": "fixture-attr-labour-travel", "name": "Provider Travel - Labour Travel Time Costs Item Number", "type": "reference" },
     { "id": "fixture-attr-service-area", "name": "Service Area", "type": "reference" },
-    { "id": "fixture-pdf-link-attr", "name": "Generated PDF Link", "type": "text" },
-    { "id": "fixture-attr-integration-message", "name": "Integration Message", "type": "text" },
-    { "id": "fixture-attr-generated-quote-number", "name": "Generated NDIS Quote Number", "type": "text" }
+    { "id": "1b9d68df-553b-4f2d-bcf2-59a240bb4176", "name": "Generated PDF Link", "type": "longtext" },
+    { "id": "05344a1b-cc91-4eb9-b9bd-fe708e023cf2", "name": "Integration Message", "type": "longtext" },
+    { "id": "276ca02c-e555-4d22-8cdc-4d52b125fd8b", "name": "Generated NDIS Quote Number", "type": "text" },
+    { "id": "f6297f38-4745-4d52-a485-2b0f1540f747", "name": "Recipient of the Quote", "type": "text" }
   ],
 
   "$itemsNote": [
@@ -98,7 +100,8 @@
         "Issue Date": "2026-08-07",
         "Expiry Date": "2025-10-08",
         "Type of Lead": "Current Participant",
-        "Quote Provided to ...": "Participant/Representative"
+        "Quote Provided to ...": "Participant/Representative",
+        "Recipient of the Quote": "Fixture Test Recipient"
       }
     },
     {
@@ -138,6 +141,44 @@
       }
     }
   ],
+
+  "$keyingNote": [
+    "Three hops, three different keyings. This is the whole reason a rename in the",
+    "ISO+ UI can silently repoint backend dispatch. Observed end to end 2026-08-06.",
+    "",
+    "1. READ   GET/POST /api/{ws}/{board}/items/values   → keyed by attribute_id",
+    "2. WEBHOOK ISO+ → Portal, bodies below              → keyed by attribute NAME",
+    "3. WRITE-BACK Portal → ISO+ (services/isoplus.js)   → keyed by attribute_id",
+    "",
+    "Only hop 2 uses names, and only hop 2 is the one the Portal branches on."
+  ],
+  "valueWrite": {
+    "$description": "What the ISO+ UI sends when a field on an item is edited. Captured by editing 'Recipient of the Quote' on quote 17. The Portal does not send this shape — it is here so the read/write contract is recorded in one place.",
+    "$url": "PUT /api/55369/values/{valueId}",
+    "$note": "Workspace-scoped — no board id in the path. The value id is client-generated; row_version 0 means a new value, and the server increments it. Upsert, not create-then-update.",
+    "example": {
+      "id": "6adca94675d423a1",
+      "row_version": 0,
+      "created_at": "2026-08-06T03:17:58.919Z",
+      "updated_at": "2026-08-06 03:17:58",
+      "data": "Fixture Test Recipient",
+      "item_id": "cfd84160-cb3d-4b86-b9d0-a5cb20c674ce",
+      "attribute_id": "f6297f38-4745-4d52-a485-2b0f1540f747"
+    }
+  },
+  "portalWriteBack": {
+    "$description": "How the Portal writes results back to ISO+ — setIntegrationMessage (services/isoplus.js:646), handlePDFSuccess, setGeneratedField. Different API surface from everything above: /api/v2, board-scoped, values batched.",
+    "$url": "PUT /api/v2/workspaces/{ws}/boards/{board}/items/{item}",
+    "example": {
+      "values": [
+        {
+          "attribute_id": "05344a1b-cc91-4eb9-b9bd-fe708e023cf2",
+          "data": "<p>Running...</p>"
+        }
+      ]
+    },
+    "$attributeIdSource": "board.attribute.id in Mongo, falling back to env INTEGRATION_MESSAGE_ATTRIBUTE_ID, then a hardcoded id. If board.attribute.id is unset the write throws 'Internal message attribute not found in board configuration' — which is why this fixture sets it."
+  },
 
   "$webhookNote": [
     "Bodies as ISO+ posts them. `values` is keyed by attribute name, which is why",
