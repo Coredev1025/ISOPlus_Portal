@@ -1,7 +1,55 @@
 # Logging in locally without the live ISO+ OAuth
 
 **Date:** 2026-08-05
-**Status:** Approved design
+**Status:** Implemented, and since extended — see [Changes since approval](#changes-since-approval).
+
+> `npm run dev:user` shipped as designed. What the design did not anticipate is
+> that logging in was not sufficient to *use* the application locally, which is
+> recorded below rather than quietly rewritten. Operational detail lives in
+> [`docs/local-development.md`](../../local-development.md), which supersedes
+> this spec as the source of truth.
+
+## Changes since approval
+
+**Shipped as designed.** `npm run dev:user`, the local-only guard with no
+`--allow-remote` escape hatch, no new authentication code, and no change to the
+login UI. All goals in this document were met on their own terms.
+
+**The gap this design missed.** Its first goal was "get a developer logged in
+locally, offline, with no ISO+ connectivity". That was achieved — and a
+developer who did it still saw an empty application. Signing in is not the
+boundary that matters; `GET /api/workspaces` does not read MongoDB, it proxies
+`app.isoplus.online/api/v2/workspaces` using the bearer that
+`applyPrivilegedSessionAuth` builds from `PERSONAL_ACCESS_TOKEN`
+(`middleware/authHelpers.js:37` → `services/isoplus.js:261`). With that variable
+blank — which is how `.env.example` ships — the workspace list came back empty
+and every page below it was unreachable. No amount of seeding fixed it, because
+the list never came from the database.
+
+So the design solved *authentication* and left *authorization-to-data* untouched,
+having treated "logged in" as the finish line. Worth remembering as a general
+shape: in a front end over someone else's platform, being signed in and having
+data are separate problems.
+
+**What closed it: offline mode**, `Backend/src/services/offlineIsoplus.js`.
+Workspaces and boards are served from Mongo when `PERSONAL_ACCESS_TOKEN` is
+blank and `NODE_ENV` is not production; `ISOPLUS_OFFLINE=1`/`0` forces it either
+way. Board attributes come from a committed fixture. `routes/workspace.js`
+already injected the ISO+ collection functions as dependencies, so this swaps
+the provider rather than branching inside the request handler.
+
+**This does not contradict the OAuth non-goal below.** Offline mode is not a
+mock OAuth provider and touches no authentication code. The ISO+ button still
+cannot work locally without `CLIENT_ID` — it builds an authorize URL with an
+empty `client_id` and ISO+ answers `unsupported_grant_type`. That remains
+deferred, and the administrator-credentials path from this design remains the
+way in.
+
+**Its limits**, in [`docs/local-development.md`](../../local-development.md#what-offline-mode-is-not):
+items, references and values still read live ISO+; the attribute fixture holds
+13 of the board's 511, enough for Board Configuration but not for reasoning
+about pricing rules; and board scoping is approximate because 33 of 34 seeded
+boards have a null `workspaceId`.
 
 ## Problem
 

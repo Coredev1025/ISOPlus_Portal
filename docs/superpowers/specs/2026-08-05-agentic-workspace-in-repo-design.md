@@ -31,6 +31,39 @@ Also shipped, beyond the scope of this design:
   and linking each assistant's directory to it.
 - **`npm run doctor`** — prerequisite and drift checks.
 
+Added later on the same branch, 2026-08-06:
+
+- **Offline mode** — the stack is usable with no ISO+ credentials at all.
+  `npm run dev:user` got a developer *logged in*; it did not get them a
+  workspace, because `GET /api/workspaces` proxies ISO+ rather than reading
+  Mongo. See
+  [`2026-08-05-local-auth-design.md`](2026-08-05-local-auth-design.md#changes-since-approval).
+- **`npm run dev:fixture`** — a committed, invented NDIS quote scenario
+  (`Backend/test/fixtures/`), loaded into local Mongo. The counterpart to
+  `npm run seed`: that restores a real, gitignored, destructive dump; this is
+  small, reviewable and additive.
+- **Engineering standards as shared instructions** —
+  [`docs/full-stack-engineering.md`](../../full-stack-engineering.md), linked
+  from `CLAUDE.md`, with `.cursor/rules/` reduced to a pointer. It previously
+  held its own copy of the standards, which no other assistant could read and
+  which said nothing about tests. This completes the goal of one set of
+  instructions for every assistant: `AGENTS.md` → `CLAUDE.md` →
+  `docs/full-stack-engineering.md`, with each rule written once.
+- **A runnable test suite in the dev containers.** `develop` gained Vitest,
+  `mongodb-memory-server`, `msw`, `supertest` and Playwright via PR #848, but
+  neither suite could run here: the backend image lacked `libcurl4`, which the
+  downloaded mongod needs, and the frontend image lacked Chromium's shared
+  libraries. Both Dockerfiles now install them. 140 unit/integration tests and
+  8 end-to-end tests pass in-container.
+
+### One caveat this design's goal does not yet cover
+
+`.gitignore` has `.cursor/`, with no negation for `.cursor/rules/`. The rule file
+is tracked only because it predates that line, and tracked files bypass ignores.
+A *new* Cursor rule is therefore not committable without `git add -f` and will
+be silently lost — which defeats the "nothing survives a fresh clone" defect this
+design set out to fix, for that one assistant. Wants `!.cursor/rules/`.
+
 ## Problem
 
 The agentic development workspace for ISO+ Portal exists only as untracked files
