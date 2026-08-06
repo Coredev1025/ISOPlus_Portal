@@ -1,10 +1,10 @@
 # Webhooks and automation — endpoint map and test seed
 
 **Status:** In progress. No ticket yet.
-**Verified against:** workspace `55369` ("Test"), board `eNiJpH14PN3` ("Care Management (NDIS) 2026 Pricing"), read live on 2026-08-05, plus backend source.
-**Coverage:** one board, fully (41 automations). Other boards in the workspace not yet enumerated — see [Not yet covered](#not-yet-covered).
+**Verified against:** workspace `55369` ("Test"), board `eNiJpH14PN3` ("Care Management (NDIS) 2026 Pricing"), read live on 2026-08-05 (automations) and 2026-08-06 (attributes, items, quote 17), plus backend source.
+**Coverage:** one board, fully (41 automations, 511 attributes). Other boards in the workspace not yet enumerated — see [Not yet covered](#not-yet-covered).
 
-Read-only throughout: automations were opened and their config read. Nothing was saved, deleted, toggled or test-triggered.
+Read-only throughout: automations, attributes and items were read; quote 17 was opened. Nothing was saved, deleted, toggled or test-triggered.
 
 ---
 
@@ -101,7 +101,34 @@ So of the 22 live automations on this board:
 
 Which path an item takes is data-dependent, so the same automation succeeds or silently no-ops depending on the item it fires for. **Every one of these returns HTTP 200**, so ISO+ records a successful delivery either way. The legacy branch even reports `"Invalid type in set-unit"` while serving `participants-service-plan` — a copy-paste artifact that makes the logs misleading.
 
-I have not confirmed which path real items take. That is the first thing to establish.
+**Confirmed on 2026-08-06: the board resolves to `new`, so the type split is a live defect, not latent.**
+
+Read from `GET /api/55369/eNiJpH14PN3/attributes` (511 attributes):
+
+| Sentinel in `ndisPricingRules.js` | On the live board |
+|---|---|
+| `Direct Support Item Number` (`:6`, legacy) | **absent** — renamed `OLD Direct Support Item Number`, still type `reference` |
+| `Support Item Number` (`:7`, new) | present, type `reference` (`019efd37-866f-7266-a2d6-6de8458096c9`) |
+
+`boardAttributesUseLegacyNdisPricing()` needs a `reference` attribute named
+*exactly* `Direct Support Item Number`. The `OLD ` prefix means it finds none, so
+`hasLegacy` is false, `hasNew` is true, and the board resolves to **new**. (A
+second `Support Item Number` of type `text` also exists; `isReferenceAttribute()`
+correctly ignores it.)
+
+The per-item override cannot save the legacy automations either. ISO+ keys
+webhook `values` by attribute *name*, so a `direct_support` automation now sends
+`OLD Direct Support Item Number` — which matches neither sentinel,
+`inferPricingRuleFromServicePlanData()` returns null, and dispatch falls through
+to the board rule. So the **4 automations sending `?type=direct_support` and
+`?type=centre_capital_cost` return `{"error":"Invalid type"}` on every fire**,
+at HTTP 200, with ISO+ recording a successful delivery.
+
+The `OLD ` rename is the whole cause. Renaming a column in the ISO+ UI silently
+repoints backend dispatch, with no error anywhere. The same migration renamed
+`Provider Travel - Non-Labour Cost Item Number` the same way, keeping both.
+
+Reproduce offline: `npm run dev:fixture` (see [Using this as a test seed](#using-this-as-a-test-seed)).
 
 ### Also still open from the source pass
 
@@ -129,7 +156,9 @@ The 26-row inventory is a ready-made contract fixture: it is the exact set of re
 
 **5. Inbound sync-hook tests.** Post each of the eight `BOARD_WEBHOOK_EVENTS` to `/api/webhooks/isoplus` with a minimal payload, assert each is handled rather than falling to the ignore branch. Add the negative cases (`{}`, missing `payload`) for the 400. When signature verification is added, this file is where it gets tested.
 
-**Seed data.** The existing Mongo dump already provides the `Business`, `Board` and `Item` documents these paths read (34 boards, 3205 items locally). What it does not provide is a board whose `attribute.id` and `pdfAttribute.id` are set to known values — worth adding a small dedicated fixture board so write-back assertions do not depend on whatever the dump happened to contain.
+**Seed data — done, 2026-08-06.** `Backend/test/fixtures/ndis-quote-board.json` plus `npm run dev:fixture` (`Backend/scripts/dev-fixture.mjs`, wired into `dev.mjs` alongside `seed`). Committed and invented, where `seed/` is gitignored and real; additive, where `seed` is destructive. It provides the board with known `attribute.id` / `pdfAttribute.id` that the dump does not, quote 17 as it actually stands, and the four ISO+ webhook bodies — replayable with `--replay <name> [--dry-run]`.
+
+The non-obvious part, and the reason the fixture items look odd: **step 3 of `resolveNdisPricingRuleForAutomation()` cannot work offline.** It calls the live ISO+ API; `getBoardAttributes()` fails, `boardUsesLegacyNdisPricing()` swallows that and returns `true`, so locally every item resolves to `legacy` — the exact opposite of production. Anyone testing this path against a local stack and trusting the result will draw the wrong conclusion. The fixture therefore carries the sentinel keys in `Item.data` so dispatch settles at step 1 or 2, before the network. `--list` prints which rule each item takes.
 
 **Order.** Steps 2 and 3 need no infrastructure and would have caught the type split; do those first. Note the repo has **no test runner configured** — `Backend` has no `test` script, and CI runs `npm test --if-present`. Picking a runner is a prerequisite, and its own decision.
 
@@ -139,7 +168,8 @@ The 26-row inventory is a ready-made contract fixture: it is the exact set of re
 
 - **Other boards in workspace 55369.** Only `eNiJpH14PN3` was enumerated. `/api/55369/boards` is 404; the per-board endpoint is `/api/55369/boards/<id>`, so listing needs the Boards menu or a known id. `/api/me/workspaces` confirms exactly one workspace.
 - **`/api/age-care`** receives no automation traffic on this board. Its two routes may be driven from another board.
-- **Which dispatch path real items take** — the question that decides whether the type split is a live defect or latent.
+- **Whether other boards were migrated the same way.** The `OLD ` rename was found on `eNiJpH14PN3` only. Any other NDIS board carrying the same rename has the same broken automations.
+- **The 18 quote items' actual values.** Only quote 17 was read in full; it is nearly empty (4 values), so it exercises the fall-through but not the populated-quote PDF path.
 - The ISO+ automations endpoint only responds while the automations panel is open; a standalone fetch afterwards returns 403. Relevant to anyone scripting this.
 
 ## Before this becomes a plan

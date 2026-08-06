@@ -269,6 +269,29 @@ async function user(args) {
   if (code !== 0) process.exit(code)
 }
 
+/**
+ * Load the committed NDIS quote fixture into this worktree's database.
+ *
+ * Runs in the backend container for the same reason `user` does: node_modules
+ * live in a named volume, and the container's MONGODB_URI already points at the
+ * right database — including an --isolated-db worktree's own.
+ *
+ * Complements `seed`, it does not replace it. `seed` restores a real dump and is
+ * destructive; this writes a handful of invented documents and is additive.
+ */
+async function fixture(args) {
+  docker.assertDockerAvailable()
+  if (!(await docker.containerIds(appStack)).length) {
+    red('the backend container is not running')
+    note('start it first: npm run dev:up')
+    process.exit(1)
+  }
+  const { code } = await appStack.exec([
+    'exec', '-T', 'backend', 'node', 'scripts/dev-fixture.mjs', ...args,
+  ])
+  if (code !== 0) process.exit(code)
+}
+
 async function migrate(args) {
   docker.assertDockerAvailable()
 
@@ -683,7 +706,7 @@ async function doctor() {
 
 // --- dispatch ---------------------------------------------------------------
 
-const COMMANDS = { up, down, status, seed: runSeed, migrate, schema, user, agents, worktree, doctor }
+const COMMANDS = { up, down, status, seed: runSeed, fixture, migrate, schema, user, agents, worktree, doctor }
 
 const [command, ...rest] = process.argv.slice(2)
 const handler = COMMANDS[command]
@@ -695,6 +718,8 @@ if (!handler) {
   down [--all] [-v]            stop it; --all also stops shared infra
   status                       what is running, and on which ports
   seed [file] [--yes]          restore seed/*.gz into Mongo
+  fixture [--list] [--remove]  load the committed NDIS quote fixture
+  fixture --replay <name> [--dry-run]   POST a recorded ISO+ webhook body
   migrate <list|create|up|down>  run a migration in the backend container
   schema [collection] [--json]  declared vs actual schema, and the drift
   user [--list] [--create]     local support-admin login with a known password

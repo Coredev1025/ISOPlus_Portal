@@ -13,6 +13,7 @@
     "dev:status": "node scripts/dev.mjs status",
     "dev:logs": "docker compose logs -f",
     "seed": "node scripts/dev.mjs seed",
+    "dev:fixture": "node scripts/dev.mjs fixture",
     "worktree": "node scripts/dev.mjs worktree",
     "doctor": "node scripts/dev.mjs doctor",
     "migrate": "node scripts/dev.mjs migrate",
