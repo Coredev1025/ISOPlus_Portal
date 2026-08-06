@@ -2,6 +2,19 @@
 
 Committed, invented data that reproduces a real ISO+ scenario locally.
 
+Sits alongside the Vitest suite in `Backend/test/` (`unit/`, `integration/`,
+`msw/`, `real-api/`, `helpers/`). `vitest.config.js` collects
+`test/**/*.test.js`, so nothing in this directory is treated as a test — import
+the JSON from a test that needs it:
+
+```js
+import fixture from '../fixtures/ndis-quote-board.json' with { type: 'json' };
+```
+
+For faking ISO+ *responses* rather than seeding Portal-side documents, prefer
+`test/msw/handlers.js` — it intercepts at the HTTP layer, which is the only
+practical way to drive both branches of the pricing dispatch.
+
 This is the counterpart to `seed/`. The dump in `seed/` is a real database with
 real customer records — gitignored, obtained by asking the team, and whatever
 board it happens to contain is not a stable thing to write code against.

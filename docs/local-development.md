@@ -98,6 +98,48 @@ script refuses to run against any non-local `MONGODB_URI` and has **no override
 flag**, because setting a known password on a real database would be an
 immediate account compromise.
 
+## Tests
+
+Vitest, in `Backend/`:
+
+```bash
+cd Backend
+npm test                 # vitest run
+npm run test:watch
+npm run test:coverage
+npm run test:api:live    # RUN_REAL_API_TESTS=1 — hits the real ISO+ API
+```
+
+The suite needs **neither Mongo nor Redis**: `test/setup.js` starts
+`mongodb-memory-server` and mocks `ioredis`. So it does not care whether the
+Docker stack is up, and it never touches your seeded database.
+
+To run it the way CI does, in the container:
+
+```bash
+docker compose run --rm --no-deps backend npm test
+```
+
+`Backend/Dockerfile` installs `libcurl4` for this. The mongod binary that
+`mongodb-memory-server` downloads links against `libcurl.so.4`, which
+`node:22-bookworm-slim` does not ship — without it every test file fails at
+startup with *"a library is missing or cannot be opened"*, while CI passes
+because `ubuntu-latest` has it.
+
+Layout, all under `Backend/test/`:
+
+| Directory | Holds |
+|---|---|
+| `unit/` | pure functions, models, middleware |
+| `integration/` | `supertest` against `createApp()` from `src/app.js` |
+| `msw/` | ISO+ HTTP mocks — shape an upstream response per test |
+| `real-api/` | hits the real ISO+ API; excluded from `npm test` |
+| `helpers/` | `auth.js` for a logged-in session |
+| `fixtures/` | committed sample data — see [its README](../Backend/test/fixtures/README.md) |
+
+`vitest.config.js` collects `test/**/*.test.js` **only**. A file named
+`.test.mjs` is not an error — it is silently never run.
+
 ## Running without ISO+ credentials
 
 The portal is a front end over the ISO+ platform, and several endpoints **proxy

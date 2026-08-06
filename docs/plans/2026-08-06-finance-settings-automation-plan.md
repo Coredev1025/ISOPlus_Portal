@@ -9,9 +9,39 @@
 
 **Goal:** Ship the Finance Settings & Automation area — a renamed entry point, a per-workspace feature toggle, relocated Financial Settings, a multi-provider Accounting Integrations tab, scheduled invoice/statement generation and delivery, and the monitoring to see it working — on top of an end-to-end test baseline that covers every existing touchpoint the seven epics disturb.
 
-**Architecture:** Phase 0 makes the backend testable at all (the Express app is currently not importable). Phase 1 writes characterization tests against **existing** behaviour at each touchpoint, before any of it is moved — so the large relocations in Epics 3 and 4 are provably behaviour-preserving. Phase 2 builds the epics against that net. The scheduler follows the spec's "tick + existing queue" approach: one EventBridge rule hits an internal endpoint, which enqueues due automations onto the BullMQ/Redis instance already used for sync.
+**Architecture:** Phase 1 writes characterization tests against **existing** behaviour at each touchpoint, before any of it is moved — so the large relocations in Epics 3 and 4 are provably behaviour-preserving. Phase 2 builds the epics against that net. The scheduler follows the spec's "tick + existing queue" approach: one EventBridge rule hits an internal endpoint, which enqueues due automations onto the BullMQ/Redis instance already used for sync.
 
-**Tech Stack:** Node 20+ ESM, Express, Mongoose/MongoDB, BullMQ + Redis, Next.js 15 App Router, shadcn/ui, AWS SES + EventBridge Scheduler, `node:test` + `node:assert/strict`.
+**Tech Stack:** Node 20+ ESM, Express, Mongoose/MongoDB, BullMQ + Redis, Next.js 15 App Router, shadcn/ui, AWS SES + EventBridge Scheduler, **Vitest** + `supertest` + `msw` + `mongodb-memory-server`.
+
+> ## Phase 0 is done — superseded by PR #848
+>
+> This plan was written on 2026-08-06 against a repo with no test runner. Later
+> that day `develop` merged PR #848, which had already built it, and better:
+>
+> | Plan's Phase 0 | What #848 shipped |
+> |---|---|
+> | Task 1 — extract `createApp()` | `Backend/src/app.js` exports `createApp()` — same name |
+> | Task 1 — pick `node:test` | **Vitest**, with `test:watch` and `test:coverage` |
+> | Task 2 — test-database helper | `mongodb-memory-server` in `test/setup.js` — no local Mongo needed |
+> | Task 3 — session-login helper | `test/helpers/auth.js` + `supertest` |
+> | Live/offline split (see below) | `test/real-api/`, gated on `RUN_REAL_API_TESTS=1` |
+> | *(not planned)* | `msw` — mock ISO+ at the HTTP layer, which is stronger than anything proposed here |
+>
+> **Tasks 1–3 are withdrawn. Do not do them.** Phase 1 is rewritten below to use
+> what exists. Two corrections that follow from it:
+>
+> - Test files must end **`.test.js`**. `vitest.config.js` collects
+>   `test/**/*.test.js` only, so the `.test.mjs` names this plan originally used
+>   would have been silently ignored — no error, just zero tests collected.
+> - This plan's proposed `ISOPLUS_LIVE=1` gate is superseded by
+>   **`RUN_REAL_API_TESTS=1`** and `npm run test:api:live`. Use theirs.
+>
+> One caveat inherited rather than fixed: `src/app.js` is a **parallel copy** of
+> `src/index.js`, not a refactor — `index.js` still builds its own app and still
+> calls `listen()`. They have already drifted, with `/api/queues` mounted in
+> `index.js` and absent from `app.js`. So integration tests exercise an app that
+> is not the one serving traffic, and every new route must be mounted twice.
+> Worth its own ticket; not in scope here.
 
 ---
 
@@ -38,8 +68,8 @@ Found by reading the code, not the spec. Each one changes a task, so settle them
 | R2 | "Rename dashboard tile" | The "Xero Integration" tile is on the **workspace** page, `Frontend/app/workspace/[id]/page.tsx:266`, not the dashboard homepage | Epic 1.1 touches the workspace page. There is also a separate `xero-integration/page.tsx` |
 | R3 | Bank Details / Document Numbering move "from Configure Your Business" | They are inside the **"Additional Settings" tab** of `configure-business/page.tsx` (`:569`, `:907`, `:976`) | Epic 3 is a tab-to-page move; the migration in 3.5 is about *where values are edited*, not a data reshape — `Business.documentNumbering` already holds them |
 | R4 | Statement Numbers is a "new numbering series alongside Invoice/PO/Quote" | `Business.documentNumbering` has exactly `invoice`, `purchaseOrder`, `quote`, each `{prefix, nextNumber}` (`models/Business.js:96-125`) | Add a fourth sub-document of identical shape. Genuinely additive |
-| R5 | — | `src/index.js` calls `app.listen()` (`:188`) and `mongoose.connect()` (`:164`) at import time and **never exports the app** | **Nothing can be tested end-to-end until this is split.** Task 1 |
-| R6 | — | `authenticateToken` reads `req.session.token`, not an `Authorization` header (`middleware/auth.js:43`) | Tests need a cookie jar and a real `POST /api/auth/login`, not a bearer token |
+| R5 | — | ~~`src/index.js` never exports the app~~ — **resolved by PR #848**: `src/app.js` exports `createApp()` | Use it. But `index.js` still builds its own app and still `listen()`s, so the two definitions have already drifted (`/api/queues` is in `index.js` only) — tests exercise an app that is not the one serving traffic |
+| R6 | — | `authenticateToken` reads `req.session.token`, not an `Authorization` header (`middleware/auth.js:43`) | Tests need a session cookie, not a bearer token. `test/helpers/auth.js` already handles this — reuse it |
 | R7 | Reuse "the existing Redis queue" | One queue exists: `syncQueue` in `services/sync/queue.js:101`, drained by `workers/syncWorker.js:693` | Decide: second queue, or new job type on `syncQueue`. Task 13 assumes a **separate** `automationQueue` so a stuck sync backlog cannot delay billing |
 | R8 | Epic 7: "create a schedule to sync automatically" | One sentence, no acceptance criteria, no cadence, no failure behaviour | **Underspecified.** Task 17 covers only the mechanism; the policy needs a design first |
 | R9 | — | `GET /api/workspaces` does **not** read Mongo. It proxies `https://app.isoplus.online/api/v2/workspaces` using `req.session.Authorization` (`workspace.js:145` → `isoplus.js:261`) | A workspace cannot be seeded into existence. Task 6 cannot baseline it offline — see [Local environment](#local-environment-how-a-workspace-actually-loads) |
@@ -81,13 +111,13 @@ Log in through the "administrator credentials" link, not the ISO+ OAuth button. 
 | Suite | Depends on | Runs in CI |
 |---|---|---|
 | `test/baseline/**` | local Mongo (+ Redis where marked) | yes |
-| `test/live/**` | live ISO+ and a real token | no — opt in with `ISOPLUS_LIVE=1` |
+| `test/real-api/**` | live ISO+ and a real token | no — opt in with `RUN_REAL_API_TESTS=1` |
 
-Anything reading workspaces, board attributes, or references belongs in `test/live/`, skipped by default:
+Anything reading workspaces, board attributes, or references belongs in `test/real-api/`, skipped by default:
 
 ```javascript
-const live = process.env.ISOPLUS_LIVE === '1'
-test('GET /api/workspaces returns workspace 55369', { skip: !live && 'set ISOPLUS_LIVE=1' }, async () => { /* … */ })
+const live = process.env.RUN_REAL_API_TESTS === '1'
+test('GET /api/workspaces returns workspace 55369', { skip: !live && 'set RUN_REAL_API_TESTS=1' }, async () => { /* … */ })
 ```
 
 This is the same offline/online split that already bites the pricing dispatch: `boardUsesLegacyNdisPricing()` reads the live API and defaults to `legacy` when it cannot (see `Backend/test/fixtures/README.md`).
@@ -137,14 +167,15 @@ Where a touchpoint already has a committed fixture — `Backend/test/fixtures/nd
 
 - Create `Backend/src/app.js` — builds and returns the configured Express app. All middleware and route mounting moves here from `index.js`. Exports `createApp()`. No `listen`, no `mongoose.connect`.
 - Modify `Backend/src/index.js` — becomes the bootstrap only: connect Mongo, `createApp()`, `listen`, startup job retry.
-- Create `Backend/test/helpers/app.mjs` — boots an app instance on an ephemeral port for a test file; returns `{ baseUrl, close }`.
-- Create `Backend/test/helpers/db.mjs` — connects to a **test** database, and truncates between files.
-- Create `Backend/test/helpers/auth.mjs` — logs a role in and returns a cookie jar.
-- Modify `Backend/package.json` — add `"test": "node --test test/**/*.test.mjs"`.
+All of it exists — nothing to create. `Backend/src/app.js` (`createApp()`),
+`test/setup.js` (mongodb-memory-server + `ioredis` mock), `test/helpers/auth.js`,
+`test/msw/` and the four `npm test` scripts all shipped with PR #848.
+`Backend/Dockerfile` gained `libcurl4` on this branch so the suite runs in the
+dev container as well as in CI.
 
 **Phase 1 — baseline** (one file per touchpoint group, so a failure names its own subject)
 
-- `Backend/test/baseline/health.test.mjs`, `business-profile.test.mjs`, `document-numbering.test.mjs`, `xero-connection.test.mjs`, `role-gate.test.mjs`, `audit-trail.test.mjs`, `queue.test.mjs`, `fixture-load.test.mjs`
+- `Backend/test/baseline/health.test.js`, `business-profile.test.js`, `document-numbering.test.js`, `xero-connection.test.js`, `role-gate.test.js`, `audit-trail.test.js`, `queue.test.js`, `fixture-load.test.js`
 
 **Phase 2 — epics**
 
@@ -159,331 +190,50 @@ Phase 0 and Phase 1 are written to full step granularity with real code, because
 
 ---
 
-# Phase 0 — Make the backend testable
+# Phase 0 — Withdrawn (already built by PR #848)
 
-### Task 1: Extract `createApp()` so the app can be imported without listening
+Tasks 1, 2 and 3 extracted `createApp()`, built a test-database helper and built
+a session-login helper. All three exist on `develop`. **Do not do them.** The
+detail is in the banner at the top of this plan.
 
-**Files:**
-- Create: `Backend/src/app.js`
-- Modify: `Backend/src/index.js`
-- Modify: `Backend/package.json`
-- Test: `Backend/test/baseline/health.test.mjs`
-
-**Interfaces:**
-- Consumes: nothing
-- Produces: `createApp(): express.Application` from `src/app.js` — every later test imports this.
-
-- [ ] **Step 1: Add the test script**
-
-In `Backend/package.json`, add to `scripts`:
-
-```json
-"test": "node --test test/**/*.test.mjs"
-```
-
-CI already runs `npm test --if-present`, so this starts running on merge with no CI change.
-
-- [ ] **Step 2: Write the failing test**
-
-`Backend/test/baseline/health.test.mjs`:
-
-```javascript
-import { test } from 'node:test'
-import assert from 'node:assert/strict'
-import { createApp } from '../../src/app.js'
-
-test('createApp returns an app without binding a port', async () => {
-  const app = createApp()
-  assert.equal(typeof app.listen, 'function')
-})
-
-test('GET /api/healthcheck reports OK', async () => {
-  const app = createApp()
-  const server = app.listen(0)
-  try {
-    const { port } = server.address()
-    const res = await fetch(`http://127.0.0.1:${port}/api/healthcheck`)
-    assert.equal(res.status, 200)
-    assert.deepEqual(await res.json(), { status: 'OK' })
-  } finally {
-    server.close()
-  }
-})
-```
-
-- [ ] **Step 3: Run it and watch it fail**
-
-Run: `cd Backend && npm test`
-Expected: FAIL — `Cannot find module '../../src/app.js'`.
-
-- [ ] **Step 4: Create `src/app.js`**
-
-Move everything from `index.js` between `const app = express()` and the `errorHandler` mount into a `createApp()` function, unchanged. Keep import order — `requestContextMiddleware` and `auditHttpMiddleware` must stay ahead of the route mounts or audit rows lose their request context.
-
-```javascript
-export function createApp() {
-  const app = express()
-  // ... existing middleware, in the existing order ...
-  // ... existing app.use('/api/...', ...) mounts, unchanged ...
-  app.use(errorHandler)   // must remain last
-  return app
-}
-```
-
-- [ ] **Step 5: Reduce `index.js` to a bootstrap**
-
-```javascript
-import mongoose from 'mongoose'
-import { createApp } from './app.js'
-import { info, error as logError } from './utils/logger.js'
-import { checkAndRetryFailedJobs } from './services/sync/queue.js'
-
-await mongoose.connect(process.env.MONGODB_URI)
-
-const app = createApp()
-const PORT = process.env.PORT || 3001
-
-app.listen(PORT, () => {
-  info('Bootstrap', `Server is running on port ${PORT}`)
-  setTimeout(async () => {
-    try {
-      await checkAndRetryFailedJobs()
-    } catch (err) {
-      logError('Bootstrap', 'Error checking failed jobs on startup', err)
-    }
-  }, 3000)
-})
-```
-
-Match the real import paths in the current `index.js` — the names above are illustrative of shape, not a licence to guess module locations.
-
-- [ ] **Step 6: Run the test**
-
-Run: `cd Backend && npm test`
-Expected: PASS, 2 tests.
-
-- [ ] **Step 7: Verify the real server still boots**
-
-Run: `npm run dev:up && curl -s localhost:4001/api/healthcheck`
-Expected: `{"status":"OK"}`. Also confirm Bull Board still answers at `localhost:4001/api/queues` — that mount is easy to drop during the move.
-
-- [ ] **Step 8: Commit**
+What replaces them is a one-line orientation for anyone picking this up:
 
 ```bash
-git add Backend/src/app.js Backend/src/index.js Backend/package.json Backend/test
-git commit -m "refactor: extract createApp so the backend can be tested without listening"
+cd Backend
+npm test                 # vitest run — 35 files, 140 tests
+npm run test:watch
+npm run test:coverage
+npm run test:api:live    # RUN_REAL_API_TESTS=1, hits the real ISO+ API
 ```
 
----
+The suite needs **no** local Mongo and **no** Redis: `test/setup.js` starts
+`mongodb-memory-server` and mocks `ioredis`.
 
-### Task 2: Test database helper
-
-**Files:**
-- Create: `Backend/test/helpers/db.mjs`
-- Test: `Backend/test/baseline/fixture-load.test.mjs`
-
-**Interfaces:**
-- Consumes: `createApp()` (Task 1)
-- Produces: `connectTestDb(): Promise<mongoose.Connection>`, `resetTestDb(): Promise<void>`, `disconnectTestDb(): Promise<void>`
-
-- [ ] **Step 1: Write the helper**
-
-`Backend/test/helpers/db.mjs`:
-
-```javascript
-import mongoose from 'mongoose'
-
-// Never the dev database. A test run truncates collections, and pointing this
-// at business-dashboard would delete a seeded dump someone waited on.
-const TEST_DB = process.env.MONGO_TEST_DB || 'business-dashboard-test'
-
-function testUri() {
-  const base = process.env.MONGODB_URI
-  if (!base) throw new Error('MONGODB_URI is not set')
-  const uri = new URL(base)
-  uri.pathname = `/${TEST_DB}`
-  if (!/(?:@|\/\/)(?:localhost|127\.0\.0\.1|mongo)[:/]/.test(base)) {
-    throw new Error(`refusing to run tests against a non-local database: ${uri.host}`)
-  }
-  return uri.toString()
-}
-
-export async function connectTestDb() {
-  if (mongoose.connection.readyState === 0) await mongoose.connect(testUri())
-  return mongoose.connection
-}
-
-export async function resetTestDb() {
-  const { collections } = mongoose.connection
-  await Promise.all(Object.values(collections).map((c) => c.deleteMany({})))
-}
-
-export async function disconnectTestDb() {
-  await mongoose.disconnect()
-}
-```
-
-- [ ] **Step 2: Write the failing test**
-
-`Backend/test/baseline/fixture-load.test.mjs`:
-
-```javascript
-import { test, before, after, beforeEach } from 'node:test'
-import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { connectTestDb, resetTestDb, disconnectTestDb } from '../helpers/db.mjs'
-import Item from '../../src/models/Item.js'
-
-const fixture = JSON.parse(
-  readFileSync(new URL('../fixtures/ndis-quote-board.json', import.meta.url)),
-)
-
-before(connectTestDb)
-beforeEach(resetTestDb)
-after(disconnectTestDb)
-
-test('fixture items round-trip through the Item model', async () => {
-  const [quote17] = fixture.items
-  await Item.create({
-    workspaceId: fixture.business.workspaceId,
-    boardId: fixture.board.boardId,
-    folderId: quote17.folderId,
-    itemId: quote17.itemId,
-    data: quote17.data,
-  })
-
-  const found = await Item.findOne({ itemId: quote17.itemId }).lean()
-  assert.equal(found.data['Recipient of the Quote'], 'Fixture Test Recipient')
-  assert.equal(found.isoPlusItemId, quote17.itemId, 'pre-save hook mirrors itemId')
-})
-```
-
-- [ ] **Step 3: Run it and watch it fail**
-
-Run: `cd Backend && npm test`
-Expected: FAIL — helper module not found, then a connection error if Mongo is down.
-
-- [ ] **Step 4: Make it pass**
-
-Start infra: `npm run dev:up`. Re-run.
-Expected: PASS.
-
-> The `isoPlusItemId` assertion is deliberate. `Item.pre('save')` sets it, but `findOneAndUpdate` — which `dev-fixture.mjs` uses — **does not fire that hook**. This test documents the difference; expect it to matter in Task 7.
-
-- [ ] **Step 5: Commit**
+**One environment fix was needed** and is included on this branch. The mongod
+binary that `mongodb-memory-server` downloads links against `libcurl.so.4`,
+which `node:22-bookworm-slim` does not ship, so all 35 files failed at startup
+inside the dev container while CI passed on `ubuntu-latest`. `Backend/Dockerfile`
+now installs `libcurl4`. Run the suite in the container with:
 
 ```bash
-git add Backend/test
-git commit -m "test: add a test-database helper and pin Item round-tripping"
+docker compose run --rm --no-deps backend npm test
 ```
 
----
+### What to reuse rather than rebuild
 
-### Task 3: Authenticated request helper
+| Need | Use |
+|---|---|
+| An app instance | `import { createApp } from '../../src/app.js'` |
+| HTTP assertions | `supertest` — `await request(app).get('/api/healthcheck')` |
+| A logged-in session | `test/helpers/auth.js` |
+| A database | nothing — `test/setup.js` provides it |
+| A fake ISO+ response | `test/msw/handlers.js` |
+| Committed sample data | `test/fixtures/ndis-quote-board.json` |
 
-**Files:**
-- Create: `Backend/test/helpers/app.mjs`
-- Create: `Backend/test/helpers/auth.mjs`
-- Test: `Backend/test/baseline/role-gate.test.mjs` (started here, completed in Task 6)
-
-**Interfaces:**
-- Consumes: `createApp()`, `connectTestDb()`
-- Produces:
-  - `startTestServer(): Promise<{ baseUrl: string, close: () => Promise<void> }>`
-  - `loginAs(baseUrl, role: 'owner'|'support_admin'|'isoplus_user'): Promise<{ cookie: string }>`
-  - `authedFetch(baseUrl, cookie, path, init?): Promise<Response>`
-
-- [ ] **Step 1: Write `app.mjs`**
-
-```javascript
-import { createApp } from '../../src/app.js'
-
-export async function startTestServer() {
-  const server = createApp().listen(0)
-  await new Promise((r) => server.once('listening', r))
-  const { port } = server.address()
-  return {
-    baseUrl: `http://127.0.0.1:${port}`,
-    close: () => new Promise((r) => server.close(r)),
-  }
-}
-```
-
-- [ ] **Step 2: Write `auth.mjs`**
-
-Auth is a **session cookie**, not a bearer header (`middleware/auth.js:43`), so the helper logs in for real and keeps the `Set-Cookie` value.
-
-```javascript
-import User from '../../src/models/User.js'
-
-const PASSWORD = 'test-only-password'
-
-export async function loginAs(baseUrl, role) {
-  const email = `${role}@fixture.test`
-  // The User pre('save') hook hashes the password; setting it directly would
-  // store plaintext and the login below would never match.
-  let user = await User.findOne({ email })
-  if (!user) user = new User({ email, role })
-  user.password = PASSWORD
-  user.role = role
-  user.disabled = false
-  await user.save()
-
-  const res = await fetch(`${baseUrl}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password: PASSWORD }),
-  })
-  if (res.status !== 200) {
-    throw new Error(`login failed for ${role}: ${res.status} ${await res.text()}`)
-  }
-  const cookie = res.headers.getSetCookie().join('; ')
-  if (!cookie) throw new Error(`login for ${role} returned no session cookie`)
-  return { cookie }
-}
-
-export function authedFetch(baseUrl, cookie, path, init = {}) {
-  return fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: { 'Content-Type': 'application/json', cookie, ...(init.headers || {}) },
-  })
-}
-```
-
-- [ ] **Step 3: Write the failing test**
-
-`Backend/test/baseline/role-gate.test.mjs`:
-
-```javascript
-import { test, before, after } from 'node:test'
-import assert from 'node:assert/strict'
-import { startTestServer } from '../helpers/app.mjs'
-import { loginAs } from '../helpers/auth.mjs'
-import { connectTestDb, resetTestDb, disconnectTestDb } from '../helpers/db.mjs'
-
-let server
-before(async () => { await connectTestDb(); await resetTestDb(); server = await startTestServer() })
-after(async () => { await server.close(); await disconnectTestDb() })
-
-for (const role of ['owner', 'support_admin', 'isoplus_user']) {
-  test(`${role} can log in and receives a session cookie`, async () => {
-    const { cookie } = await loginAs(server.baseUrl, role)
-    assert.match(cookie, /connect\.sid|session/i)
-  })
-}
-```
-
-- [ ] **Step 4: Run it**
-
-Run: `cd Backend && npm test`
-Expected: PASS. If the cookie name assertion fails, read the actual `Set-Cookie` and fix the pattern — do not weaken it to `assert.ok(cookie)`.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add Backend/test/helpers Backend/test/baseline/role-gate.test.mjs
-git commit -m "test: add server and session-login helpers for end-to-end tests"
-```
+`msw` is the important one and was not in the original plan. Because it
+intercepts at the HTTP layer, an ISO+ response can be shaped per test — which is
+the only practical way to drive both branches of the pricing dispatch, since
+that decision reads `getBoardAttributes()` from the live API.
 
 ---
 
@@ -494,7 +244,7 @@ Every test here asserts what the code does **today**. If one fails, the test is 
 ### Task 4: Business profile, bank details and document numbering
 
 **Files:**
-- Test: `Backend/test/baseline/business-profile.test.mjs`, `Backend/test/baseline/document-numbering.test.mjs`
+- Test: `Backend/test/baseline/business-profile.test.js`, `Backend/test/baseline/document-numbering.test.js`
 
 **Interfaces:**
 - Consumes: `startTestServer`, `loginAs`, `authedFetch`, `connectTestDb`
@@ -573,7 +323,7 @@ git commit -m "test: baseline business profile, bank details and document number
 ### Task 5: Xero connection and the document-push contracts
 
 **Files:**
-- Test: `Backend/test/baseline/xero-connection.test.mjs`
+- Test: `Backend/test/baseline/xero-connection.test.js`
 
 - [ ] **Step 1: Baseline the connection endpoints**
 
@@ -610,7 +360,7 @@ test('POST /api/pdf/:ws/:board/quotendis answers 200 and reports failure in the 
 - [ ] **Step 3: Run, then commit**
 
 ```bash
-git add Backend/test/baseline/xero-connection.test.mjs
+git add Backend/test/baseline/xero-connection.test.js
 git commit -m "test: baseline Xero connection auth and the quote-push contract"
 ```
 
@@ -619,8 +369,8 @@ git commit -m "test: baseline Xero connection auth and the quote-push contract"
 ### Task 6: Role gate and workspace CRUD
 
 **Files:**
-- Modify: `Backend/test/baseline/role-gate.test.mjs`
-- Test: `Backend/test/baseline/workspace.test.mjs`
+- Modify: `Backend/test/baseline/role-gate.test.js`
+- Test: `Backend/test/baseline/workspace.test.js`
 
 - [ ] **Step 1: Pin the role gate on a route that already uses it**
 
@@ -648,13 +398,13 @@ This matrix is what Epic 2 and Epic 6 reuse. Getting it wrong means the feature 
 
 - [ ] **Step 2: Baseline workspace listing — as a *live* test, not a baseline one**
 
-Per R9, `GET /api/workspaces` proxies ISO+ and cannot run offline. It goes in `test/live/workspaces.test.mjs`, skipped unless `ISOPLUS_LIVE=1`:
+Per R9, `GET /api/workspaces` proxies ISO+ and cannot run offline. It goes in `test/real-api/workspaces.test.js`, skipped unless `RUN_REAL_API_TESTS=1`:
 
 ```javascript
-const live = process.env.ISOPLUS_LIVE === '1'
+const live = process.env.RUN_REAL_API_TESTS === '1'
 
 test('GET /api/workspaces proxies ISO+ and includes workspace 55369',
-  { skip: !live && 'set ISOPLUS_LIVE=1 and a valid PERSONAL_ACCESS_TOKEN' },
+  { skip: !live && 'set RUN_REAL_API_TESTS=1 and a valid PERSONAL_ACCESS_TOKEN' },
   async () => {
     const { cookie } = await loginAs(server.baseUrl, 'owner')
     const res = await authedFetch(server.baseUrl, cookie, '/api/workspaces')
@@ -688,7 +438,7 @@ git commit -m "test: baseline the owner/support role gate and workspace CRUD"
 ### Task 7: Audit trail and the job queue
 
 **Files:**
-- Test: `Backend/test/baseline/audit-trail.test.mjs`, `Backend/test/baseline/queue.test.mjs`
+- Test: `Backend/test/baseline/audit-trail.test.js`, `Backend/test/baseline/queue.test.js`
 
 - [ ] **Step 1: Baseline audit writes**
 
@@ -722,13 +472,10 @@ test('syncQueue accepts a job and reports a countable depth', async () => {
 })
 ```
 
-Guard the file with a skip when `REDIS_HOST` is unset, so the suite stays runnable without Redis:
-
-```javascript
-import { test } from 'node:test'
-const noRedis = !process.env.REDIS_HOST
-test('…', { skip: noRedis && 'REDIS_HOST not set' }, async () => { /* … */ })
-```
+No Redis guard is needed. `test/setup.js` mocks `ioredis` for the whole suite, so
+queue code runs against the mock rather than a real broker. If a test genuinely
+needs real Redis, put it in `test/real-api/` behind `RUN_REAL_API_TESTS=1` rather
+than adding a per-file skip.
 
 - [ ] **Step 3: Run the whole baseline, then commit**
 
@@ -748,7 +495,7 @@ Each task below is a candidate for its own expanded plan when picked up. Track A
 
 ### Task 8: Epic 2 — workspace feature toggle (Track A, unblocks everything)
 
-**Files:** Modify `Backend/src/models/Workspace.js`, `Backend/src/routes/workspace.js`; Test `Backend/test/epics/feature-toggle.test.mjs`
+**Files:** Modify `Backend/src/models/Workspace.js`, `Backend/src/routes/workspace.js`; Test `Backend/test/epics/feature-toggle.test.js`
 
 **Interfaces produced:** `Workspace.invoiceStatementAutomationEnabled: Boolean` (default `false`); `PATCH /api/workspaces/:workspaceId/features` accepting `{ invoiceStatementAutomationEnabled: boolean }`, gated by `requirePortalOwnerOrSupport`; `GET /api/workspaces` includes the flag.
 

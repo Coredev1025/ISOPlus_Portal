@@ -160,7 +160,11 @@ The 26-row inventory is a ready-made contract fixture: it is the exact set of re
 
 The non-obvious part, and the reason the fixture items look odd: **step 3 of `resolveNdisPricingRuleForAutomation()` cannot work offline.** It calls the live ISO+ API; `getBoardAttributes()` fails, `boardUsesLegacyNdisPricing()` swallows that and returns `true`, so locally every item resolves to `legacy` — the exact opposite of production. Anyone testing this path against a local stack and trusting the result will draw the wrong conclusion. The fixture therefore carries the sentinel keys in `Item.data` so dispatch settles at step 1 or 2, before the network. `--list` prints which rule each item takes.
 
-**Order.** Steps 2 and 3 need no infrastructure and would have caught the type split; do those first. Note the repo has **no test runner configured** — `Backend` has no `test` script, and CI runs `npm test --if-present`. Picking a runner is a prerequisite, and its own decision.
+**Order.** Steps 2 and 3 need no infrastructure and would have caught the type split; do those first.
+
+**The runner prerequisite is resolved.** PR #848 added **Vitest** to `develop`, with `mongodb-memory-server`, `msw` and `supertest`, and integration tests covering `board`, `business`, `workspace`, `auth`, `webhooks` and `isoplusWebhook` routes. `npm test` in `Backend/` runs it; `npm run test:api:live` (`RUN_REAL_API_TESTS=1`) is the separate live-ISO+ config. Write the steps above as `test/**/*.test.js` — `vitest.config.js` collects that pattern only.
+
+`msw` matters for step 3 in particular: the dispatch split turns on `getBoardAttributes()`, so the two paths can now be driven by mocking the ISO+ attributes response rather than by reaching the network or waiting on a real board.
 
 ---
 

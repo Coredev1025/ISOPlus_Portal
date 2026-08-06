@@ -17,7 +17,10 @@ The product ("ISO+ Portal") is a business dashboard that syncs data from the ISO
 - `npm run dev` — run with nodemon (hot reload) against `src/index.js`.
 - `npm start` — production start (`NODE_ENV=production`).
 - `npm run debug` — start with `--inspect-brk`.
-- No test script exists yet; CI runs `npm test --if-present`. There is no lint script — complexity is enforced by SonarQube (see below).
+- `npm test` — **Vitest** (`vitest run`), added in PR #848. Also `test:watch`, `test:coverage`, and `test:api:live` (`RUN_REAL_API_TESTS=1`, a separate config that hits the real ISO+ API and is excluded from the default run).
+- Tests live in `Backend/test/`: `unit/`, `integration/` (supertest against `createApp()`), `msw/` (ISO+ HTTP mocks), `real-api/`, plus `fixtures/` for committed sample data. `vitest.config.js` includes `test/**/*.test.js` only — a `.mjs` suffix will not be collected.
+- `test/setup.js` starts `mongodb-memory-server` and mocks `ioredis`, so the suite needs neither a database nor Redis. It prefers a system mongod when `MONGOMS_SYSTEM_BINARY` or `/usr/bin/mongod` exists.
+- There is no lint script — complexity is enforced by SonarQube (see below).
 
 ### Frontend (`cd Frontend`)
 - `npm run dev` — Next dev server (default port 3000).
