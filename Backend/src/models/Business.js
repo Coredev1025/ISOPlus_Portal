@@ -53,6 +53,9 @@ const businessSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  xeroTenantId: {
+    type: String
+  },
   xeroTokens: {
     accessToken: String,
     refreshToken: String,
@@ -68,6 +71,35 @@ const businessSchema = new mongoose.Schema({
     countryCode: String,
     isDemoCompany: Boolean,
     organisationStatus: String
+  },
+  xeroLineItemMapping: {
+    quote: {
+      accountCode: { type: String },
+      taxType: { type: String },
+      taxFreeType: { type: String }
+    },
+    purchaseOrder: {
+      accountCode: { type: String },
+      taxType: { type: String },
+      taxFreeType: { type: String }
+    },
+    invoice: {
+      accountCode: { type: String },
+      taxType: { type: String },
+      taxFreeType: { type: String }
+    },
+    quoteOverrides: {
+      quoteService: {
+        accountCode: { type: String },
+        taxType: { type: String },
+        taxFreeType: { type: String }
+      },
+      material: {
+        accountCode: { type: String },
+        taxType: { type: String },
+        taxFreeType: { type: String }
+      }
+    }
   },
   bankDetails: {
     accountName: {
@@ -123,6 +155,22 @@ const businessSchema = new mongoose.Schema({
         type: Number,
         default: 1000
       }
+    },
+    statement: {
+      prefix: {
+        type: String,
+        default: 'STMT-'
+      },
+      nextNumber: {
+        type: Number,
+        default: 1000
+      }
+    }
+  },
+  featureToggles: {
+    invoiceStatementAutomation: {
+      type: Boolean,
+      default: false
     }
   }
 });

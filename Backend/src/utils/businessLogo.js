@@ -1,4 +1,5 @@
 import { getS3FileUrl, getS3File, getContentType } from './uploadS3.js';
+import { normalizeFeatureTogglesForProfile } from './workspaceFeatureToggleHelpers.js';
 
 export const LOGO_FIELDS = ['defaultLogo', 'squareLogo', 'wideLogo'];
 export const LOGO_URL_EXPIRY_SECONDS = 3600;
@@ -24,7 +25,7 @@ export async function buildLogoUrls(business) {
 export async function formatBusinessProfileResponse(business) {
   const plain = business?.toObject ? business.toObject() : { ...business };
   plain.logoUrls = await buildLogoUrls(plain);
-  return plain;
+  return normalizeFeatureTogglesForProfile(plain);
 }
 
 export function resolveQrLogoField(business) {

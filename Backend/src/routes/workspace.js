@@ -22,6 +22,16 @@ import {
   getBoardPageOffline,
   getMemberRoleOffline,
 } from '../services/offlineIsoplus.js';
+import {
+  requireOwnerOrSupportAdmin,
+  parseWorkspaceIdParam,
+  buildFeatureTogglesPayload,
+  parseInvoiceStatementAutomationBody,
+  findBusinessByWorkspaceId,
+  upsertInvoiceStatementAutomation,
+  getInvoiceStatementAutomationFlag,
+  auditFeatureToggleUpdate,
+} from '../utils/workspaceFeatureToggleHelpers.js';
 
 const router = express.Router();
 
@@ -274,6 +284,86 @@ router.post('/', authenticateToken, async (req, res) => {
   } catch (err) {
     error('Workspace-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.get('/:workspaceId/feature-toggles', authenticateToken, async (req, res) => {
+  try {
+    if (!requireOwnerOrSupportAdmin(req, res)) return;
+
+    const workspaceId = parseWorkspaceIdParam(req.params.workspaceId);
+    if (!workspaceId) {
+      return res.status(400).json({ message: 'Invalid workspaceId' });
+    }
+
+    const business = await findBusinessByWorkspaceId(workspaceId);
+    info(
+      'Workspace-Service',
+      'Fetched feature toggles',
+      sanitizeLogValue({ workspaceId }),
+      req ?? null
+    );
+    return res.status(200).json(buildFeatureTogglesPayload(business));
+  } catch (err) {
+    error(
+      'Workspace-Service',
+      'Failed to fetch feature toggles',
+      sanitizeLogValue({
+        workspaceId: req.params.workspaceId,
+        error: err.message,
+        stack: err.stack,
+      }),
+      req ?? null
+    );
+    return res.status(500).json({ message: 'Failed to fetch feature toggles' });
+  }
+});
+
+router.put('/:workspaceId/feature-toggles', authenticateToken, async (req, res) => {
+  try {
+    if (!requireOwnerOrSupportAdmin(req, res)) return;
+
+    const workspaceId = parseWorkspaceIdParam(req.params.workspaceId);
+    if (!workspaceId) {
+      return res.status(400).json({ message: 'Invalid workspaceId' });
+    }
+
+    const parsed = parseInvoiceStatementAutomationBody(req.body);
+    if (parsed.error) {
+      return res.status(400).json({ message: parsed.error });
+    }
+
+    const existing = await findBusinessByWorkspaceId(workspaceId);
+    const previous = getInvoiceStatementAutomationFlag(existing);
+    const business = await upsertInvoiceStatementAutomation(workspaceId, parsed.value);
+    const payload = buildFeatureTogglesPayload(business);
+
+    await auditFeatureToggleUpdate({
+      workspaceId,
+      enabled: parsed.value,
+      previous,
+      req,
+    });
+
+    info(
+      'Workspace-Service',
+      'Updated feature toggles',
+      sanitizeLogValue({ workspaceId, ...payload }),
+      req ?? null
+    );
+    return res.status(200).json(payload);
+  } catch (err) {
+    error(
+      'Workspace-Service',
+      'Failed to update feature toggles',
+      sanitizeLogValue({
+        workspaceId: req.params.workspaceId,
+        error: err.message,
+        stack: err.stack,
+      }),
+      req ?? null
+    );
+    return res.status(500).json({ message: 'Failed to update feature toggles' });
   }
 });
 

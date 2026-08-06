@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Upload, AlertCircle, Loader2, X } from "lucide-react";
+import { ArrowLeft, Upload, Loader2, X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Header } from "@/components/ui/header";
@@ -24,22 +24,11 @@ import {
 } from "@/lib/business-logo";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { showSaveSuccessToast, showSaveErrorToast, showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
-import { extractDocumentNumberingSequences, mapBusinessProfileToFormData } from "@/lib/configure-business-helpers";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-
-interface NumberSequence {
-  prefix: string;
-  nextNumber: number;
-}
+  extractDocumentNumberingSequences,
+  mapBusinessProfileToFormData,
+  type NumberSequence,
+} from "@/lib/configure-business-helpers";
 
 export default function ConfigureBusinessPage() {
   const router = useRouter();
@@ -53,10 +42,11 @@ export default function ConfigureBusinessPage() {
   const [wideLogoPreview, setWideLogoPreview] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
   const [showError, setShowError] = useState(false);
-  // Document number sequences
+  // Document number sequences (passthrough so Basic save does not clear Financial Settings)
   const [invoiceSequence, setInvoiceSequence] = useState<NumberSequence>({ prefix: "INV-", nextNumber: 1000 });
   const [purchaseOrderSequence, setPurchaseOrderSequence] = useState<NumberSequence>({ prefix: "PO-", nextNumber: 1000 });
   const [quoteSequence, setQuoteSequence] = useState<NumberSequence>({ prefix: "QT-", nextNumber: 1000 });
+  const [statementSequence, setStatementSequence] = useState<NumberSequence>({ prefix: "STMT-", nextNumber: 1000 });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [apiError, setApiError] = useState<string>('');
@@ -108,21 +98,6 @@ export default function ConfigureBusinessPage() {
       Object.values(logoPreviewBlobUrls.current).forEach((url) => revokeBlobUrl(url));
     };
   }, []);
-
-  // Alert dialog state
-  const [alertDialog, setAlertDialog] = useState<{
-    isOpen: boolean;
-    title: string;
-    description: string;
-    type: 'invoice' | 'purchaseOrder' | 'quote';
-    newValue: number;
-  }>({
-    isOpen: false,
-    title: '',
-    description: '',
-    type: 'invoice',
-    newValue: 0
-  });
 
   const countryStates: { [key: string]: string[] } = {
     "Afghanistan": [],
@@ -364,9 +339,10 @@ export default function ConfigureBusinessPage() {
           setFormData(mapBusinessProfileToFormData(data, id));
 
           const sequences = extractDocumentNumberingSequences(data);
-          if (sequences.invoice) setInvoiceSequence(sequences.invoice);
-          if (sequences.purchaseOrder) setPurchaseOrderSequence(sequences.purchaseOrder);
-          if (sequences.quote) setQuoteSequence(sequences.quote);
+          setInvoiceSequence(sequences.invoice);
+          setPurchaseOrderSequence(sequences.purchaseOrder);
+          setQuoteSequence(sequences.quote);
+          setStatementSequence(sequences.statement);
 
           // Load logo previews via authenticated API (no expiring presigned URLs in UI)
           await applyLogoPreviews({
@@ -425,7 +401,8 @@ export default function ConfigureBusinessPage() {
       formDataToSend.append('documentNumbering', JSON.stringify({
         invoice: invoiceSequence,
         purchaseOrder: purchaseOrderSequence,
-        quote: quoteSequence
+        quote: quoteSequence,
+        statement: statementSequence,
       }));
 
       if (logoFile) {
@@ -496,41 +473,6 @@ export default function ConfigureBusinessPage() {
     }
   };
 
-  const handleNumberChange = (type: 'invoice' | 'purchaseOrder' | 'quote', value: string) => {
-    const newValue = parseInt(value);
-    const currentValue = type === 'invoice'
-      ? invoiceSequence.nextNumber
-      : type === 'purchaseOrder'
-        ? purchaseOrderSequence.nextNumber
-        : quoteSequence.nextNumber;
-
-    if (newValue < currentValue) {
-      setAlertDialog({
-        isOpen: true,
-        title: 'Warning: Reducing Number Sequence',
-        description: 'Reducing the next number may result in duplicate document numbers if previous numbers have been used. Are you sure you want to continue?',
-        type,
-        newValue
-      });
-    } else {
-      updateNumberSequence(type, newValue);
-    }
-  };
-
-  const updateNumberSequence = (type: 'invoice' | 'purchaseOrder' | 'quote', value: number) => {
-    switch (type) {
-      case 'invoice':
-        setInvoiceSequence(prev => ({ ...prev, nextNumber: value }));
-        break;
-      case 'purchaseOrder':
-        setPurchaseOrderSequence(prev => ({ ...prev, nextNumber: value }));
-        break;
-      case 'quote':
-        setQuoteSequence(prev => ({ ...prev, nextNumber: value }));
-        break;
-    }
-  };
-
   const handleRemoveLogo = (type: 'default' | 'square' | 'wide') => {
     switch (type) {
       case 'default':
@@ -561,16 +503,20 @@ export default function ConfigureBusinessPage() {
         </Button>
 
         <Card className="max-w-2xl mx-auto p-6">
-          <h1 className="text-2xl font-bold mb-6">Configure Your Business</h1>
+          <h1 className="text-2xl font-bold mb-2">Configure Your Business</h1>
+          <p className="mb-6 text-sm text-muted-foreground">
+            Bank details and document numbering are managed under{" "}
+            <button
+              type="button"
+              className="font-medium text-foreground underline underline-offset-2"
+              onClick={() => router.push(`/workspace/${id}/finance-settings?tab=financial`)}
+            >
+              Finance Settings & Automation
+            </button>
+            .
+          </p>
 
-          <Tabs defaultValue="basic" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="basic">Basic Information</TabsTrigger>
-              <TabsTrigger value="additional">Additional Settings</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="basic">
-              <div className="space-y-6">
+          <div className="space-y-6">
                 <div className="space-y-4 border rounded-lg p-5">
                   <h3 className="text-lg font-semibold">Company Logos</h3>
                   <p className="text-sm text-muted-foreground">
@@ -899,177 +845,7 @@ export default function ConfigureBusinessPage() {
                     </div>
                   </div>
                 </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="additional">
-              <div className="space-y-6">
-                {/* Bank Details */}
-                <div className="space-y-4 border rounded-lg p-5">
-                  <h3 className="text-lg font-semibold">Bank Details</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    These details will appear on your invoices for receiving payments
-                  </p>
-
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="bankName">Bank Name</Label>
-                      <Input
-                        id="bankName"
-                        placeholder="Enter bank name"
-                        value={formData.bankName}
-                        onChange={handleInputChange}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="bankAccountName">Account Name</Label>
-                      <Input
-                        id="bankAccountName"
-                        value={formData.bankAccountName}
-                        onChange={handleInputChange}
-                        placeholder="Enter account name"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="bsb">BSB</Label>
-                        <Input
-                          id="bsb"
-                          placeholder="Enter BSB"
-                          value={formData.bsb}
-                          onChange={handleInputChange}
-                          maxLength={6}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="accountNumber">Account Number</Label>
-                        <Input
-                          id="accountNumber"
-                          placeholder="Enter account number"
-                          value={formData.accountNumber}
-                          onChange={handleInputChange}
-                        />
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="accountsReceivableTerms">Accounts Receivable Payment Terms</Label>
-                      <Input
-                        id="accountsReceivableTerms"
-                        placeholder="When clients are expected to pay you"
-                        value={formData.accountsReceivableTerms}
-                        onChange={handleInputChange}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="accountsPayableTerms">Accounts Payable Payment Terms</Label>
-                      <Input
-                        id="accountsPayableTerms"
-                        placeholder="When your business pays contractors or suppliers"
-                        value={formData.accountsPayableTerms}
-                        onChange={handleInputChange}
-                      />
-                    </div>
-                  </div>
-                </div>
-                <div className="space-y-4 border rounded-lg p-5">
-                  <h3 className="text-lg font-semibold">Document Number Configuration</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Configure prefixes and next numbers for various document types
-                  </p>
-
-                  {/* Invoice Numbers */}
-                  <div className="space-y-4">
-                    <div className="p-4 bg-muted/30 rounded-lg space-y-3">
-                      <h4 className="font-medium">Invoice Numbers</h4>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="invoice-prefix">Prefix</Label>
-                          <Input
-                            id="invoice-prefix"
-                            value={invoiceSequence.prefix}
-                            onChange={(e) => setInvoiceSequence(prev => ({ ...prev, prefix: e.target.value }))}
-                            placeholder="e.g. INV-"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="invoice-next">Next Number</Label>
-                          <Input
-                            id="invoice-next"
-                            type="number"
-                            value={invoiceSequence.nextNumber}
-                            onChange={(e) => handleNumberChange('invoice', e.target.value)}
-                            min={1}
-                          />
-                        </div>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        Next invoice will be: {invoiceSequence.prefix}{invoiceSequence.nextNumber}
-                      </p>
-                    </div>
-
-                    {/* Purchase Order Numbers */}
-                    <div className="p-4 bg-muted/30 rounded-lg space-y-3">
-                      <h4 className="font-medium">Purchase Order Numbers</h4>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="po-prefix">Prefix</Label>
-                          <Input
-                            id="po-prefix"
-                            value={purchaseOrderSequence.prefix}
-                            onChange={(e) => setPurchaseOrderSequence(prev => ({ ...prev, prefix: e.target.value }))}
-                            placeholder="e.g. PO-"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="po-next">Next Number</Label>
-                          <Input
-                            id="po-next"
-                            type="number"
-                            value={purchaseOrderSequence.nextNumber}
-                            onChange={(e) => handleNumberChange('purchaseOrder', e.target.value)}
-                            min={1}
-                          />
-                        </div>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        Next purchase order will be: {purchaseOrderSequence.prefix}{purchaseOrderSequence.nextNumber}
-                      </p>
-                    </div>
-
-                    {/* Quote Numbers */}
-                    <div className="p-4 bg-muted/30 rounded-lg space-y-3">
-                      <h4 className="font-medium">Quote Numbers</h4>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="quote-prefix">Prefix</Label>
-                          <Input
-                            id="quote-prefix"
-                            value={quoteSequence.prefix}
-                            onChange={(e) => setQuoteSequence(prev => ({ ...prev, prefix: e.target.value }))}
-                            placeholder="e.g. QT-"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="quote-next">Next Number</Label>
-                          <Input
-                            id="quote-next"
-                            type="number"
-                            value={quoteSequence.nextNumber}
-                            onChange={(e) => handleNumberChange('quote', e.target.value)}
-                            min={1}
-                          />
-                        </div>
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        Next quote will be: {quoteSequence.prefix}{quoteSequence.nextNumber}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </TabsContent>
-          </Tabs>
+          </div>
 
           <div className="mt-6">
             {errors.length > 0 && (
@@ -1116,34 +892,6 @@ export default function ConfigureBusinessPage() {
         </Card>
       </div >
 
-      {/* Warning Dialog for Number Sequence Reduction */}
-      <AlertDialog
-        open={alertDialog.isOpen}
-        onOpenChange={(open) => setAlertDialog(prev => ({ ...prev, isOpen: open }))}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-destructive" />
-              {alertDialog.title}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {alertDialog.description}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                updateNumberSequence(alertDialog.type, alertDialog.newValue);
-                setAlertDialog(prev => ({ ...prev, isOpen: false }));
-              }}
-            >
-              Continue
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div >
   );
 }

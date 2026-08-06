@@ -10,5 +10,7 @@ describe('Business model', () => {
     expect(biz.documentNumbering.quote.prefix).toBe('QT-');
     expect(biz.xeroIntegrated).toBe(false);
     expect(biz.headOfficeTimezone).toBe('Australia/Sydney');
+    expect(biz.featureToggles.invoiceStatementAutomation).toBe(false);
   });
 });
+
