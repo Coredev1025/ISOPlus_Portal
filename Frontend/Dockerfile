@@ -9,7 +9,12 @@ RUN chown node:node /app
 USER node
 
 FROM base AS deps
-COPY --chown=node:node package.json package-lock.json ./
+# .npmrc must come too. It carries legacy-peer-deps=true, which every other way
+# of installing this app picks up automatically — a developer running npm in
+# Frontend/, and CI, which checks out the whole repo. Only this build saw a
+# different npm config, so only this build failed, with an ERESOLVE that looked
+# like a dependency problem rather than a missing config file.
+COPY --chown=node:node package.json package-lock.json .npmrc ./
 RUN npm ci
 
 FROM base AS dev
