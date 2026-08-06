@@ -15,10 +15,22 @@ Fixtures here are small, committed, and describe one scenario deliberately.
 
 ## `ndis-quote-board.json`
 
-Workspace `55369` / board `eNiJpH14PN3` ("Care Management (NDIS) 2026 Pricing"),
-the Quotes folder, and the four ISO+ webhook bodies that reach the Portal from
+**Source: the NDIS care management board.** Workspace `55369` ("Test") / board
+`eNiJpH14PN3` ("Care Management (NDIS) 2026 Pricing"), Quotes folder
+(`BFMUenisoQ4`), plus the four ISO+ webhook bodies that reach the Portal from
 it. Structure was read live on 2026-08-06; every person, address and contact
 value is invented.
+
+The board name is not incidental — it is where the route mount gets its name:
+
+| ISO+ board | Backend mount |
+|---|---|
+| Care Management (NDIS) 2026 Pricing | `/api/care-management-ndis-pricing` → `routes/ndis.js` (`index.js:143`) |
+
+22 of the board's 26 `Portal - ` automations point at that mount. The other 4
+are `ButtonTrigger`s going to `/api/pdf` and `/api/xero`. The "2026 Pricing" in
+the name is the migration that renamed `Direct Support Item Number` and broke
+the dispatch — see below.
 
 ```bash
 npm run dev:fixture                                  # load it

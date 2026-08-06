@@ -1,7 +1,7 @@
 {
-  "$schema": "./ndis-quote-board.md",
   "$description": [
-    "A reproduction of the NDIS quote scenario on the live board, for local work.",
+    "Source: the ISO+ board 'Care Management (NDIS) 2026 Pricing' — the NDIS care",
+    "management board — Quotes folder, in workspace 'Test'. See capturedFrom below.",
     "Structure is copied from ISO+; all person, address and contact data is invented.",
     "See Backend/test/fixtures/README.md before changing anything here."
   ],
