@@ -98,19 +98,65 @@ script refuses to run against any non-local `MONGODB_URI` and has **no override
 flag**, because setting a known password on a real database would be an
 immediate account compromise.
 
-## What still will not work without ISO+ credentials
+## Running without ISO+ credentials
 
-Signing in locally gets you into the application, but the portal is a front end
-over the ISO+ platform, and several endpoints **proxy to the live ISO+ API**
-rather than reading Mongo. Without a real `PERSONAL_ACCESS_TOKEN` those return
-`401` with `{"error_type":"oauth"}` — for example `GET /api/workspaces`, which
-fetches workspaces from ISO+ rather than from the seeded database. This is also
-why the seeded `workspaces` collection is empty while `boards` is not.
+The portal is a front end over the ISO+ platform, and several endpoints **proxy
+the live ISO+ API** rather than reading Mongo. `GET /api/workspaces` is the one
+that bites first: it fetches workspaces from ISO+, not from the seeded database,
+so no amount of seeding puts a workspace on screen. That is also why the seeded
+`workspaces` collection is empty while `boards` is not.
 
-So local development is fully usable for anything that reads seeded Mongo data,
-and blocked for anything that needs live ISO+ data. Getting further needs either
-real ISO+ credentials or a local mock of the ISO+ API, which is deliberately out
-of scope for now — see
+**Offline mode covers this.** When `PERSONAL_ACCESS_TOKEN` is blank, the backend
+serves workspaces and boards from Mongo instead, and the app is usable with no
+credentials and no network:
+
+```bash
+npm run dev:up
+npm run dev:user -- --create   # local login; sign in via "administrator credentials"
+npm run seed                   # or: npm run dev:fixture
+```
+
+Verify it without a browser:
+
+```bash
+curl -s -c /tmp/jar -X POST localhost:4001/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"local-dev-only"}'
+curl -s -b /tmp/jar localhost:4001/api/workspaces
+# {"workspace":[{"id":"55369","name":"Test","user_role":"admin"}],...}
+```
+
+The backend logs `Offline-Mode: Serving ISO+ workspaces and boards from MongoDB`
+once per process, with the reason, so the mode is never a silent surprise.
+
+| `ISOPLUS_OFFLINE` | Behaviour |
+|---|---|
+| unset | on when `PERSONAL_ACCESS_TOKEN` is blank **and** `NODE_ENV` is not `production` |
+| `1` | forced on, even with a token |
+| `0` | forced off — reproduces the real "credentials missing" failure |
+
+It never applies in production: there, a blank token is a misconfiguration that
+must fail loudly rather than quietly serve stub data.
+
+### What offline mode is not
+
+It serves two collection endpoints from Mongo. It is **not** a mock of ISO+, and
+it does not make the app fully offline:
+
+- The ISO+ button on the login screen still needs `CLIENT_ID`/`CLIENT_SECRET`.
+  Without them the authorize URL carries an empty `client_id` and ISO+ answers
+  `unsupported_grant_type`. Use the **administrator credentials** link instead.
+- Attributes, items, references and pricing rules still read live ISO+.
+  `boardUsesLegacyNdisPricing()` in particular fails closed and defaults every
+  item to `legacy` — the opposite of the live board. See
+  [the fixture README](../Backend/test/fixtures/README.md).
+- Board scoping is approximate. In the seed dump 33 of 34 boards have
+  `workspaceId: null`, so offline mode includes unassigned boards in whichever
+  workspace you ask for, and logs how many. Correct for one workspace, wrong for
+  several — which is why it lives in `services/offlineIsoplus.js` and not in
+  `services/isoplus.js`.
+
+For anything asserting real ISO+ behaviour, use real credentials. Background in
 [the local auth design](./superpowers/specs/2026-08-05-local-auth-design.md).
 
 ## The two stacks

@@ -15,8 +15,34 @@ import {
   collectWorkspacePages,
   enrichWorkspaceDetails,
 } from '../utils/workspaceListHelpers.js';
+import {
+  isOfflineMode,
+  announceOfflineMode,
+  getWorkspacePageOffline,
+  getBoardPageOffline,
+  getMemberRoleOffline,
+} from '../services/offlineIsoplus.js';
 
 const router = express.Router();
+
+/**
+ * Which ISO+ collection provider to use for this request.
+ *
+ * Resolved per request rather than at import time so a test can flip
+ * ISOPLUS_OFFLINE without re-importing the module. The offline provider returns
+ * the same shapes, so the request handler below is identical either way.
+ */
+function isoplusCollectionProvider() {
+  if (!isOfflineMode()) {
+    return { getWorkspacePage, getBoardPage, getMemberRole };
+  }
+  announceOfflineMode();
+  return {
+    getWorkspacePage: getWorkspacePageOffline,
+    getBoardPage: getBoardPageOffline,
+    getMemberRole: getMemberRoleOffline,
+  };
+}
 
 function sanitizeLogValue(value) {
   if (value === null || value === undefined) return value;
@@ -144,6 +170,7 @@ async function persistBoardsInBackground(boards, req) {
 
 router.get('/', authenticateToken, async (req, res) => {
   try {
+    const provider = isoplusCollectionProvider();
     return await handleWorkspacesListRequest(req, res, {
       warn,
       error,
@@ -151,9 +178,7 @@ router.get('/', authenticateToken, async (req, res) => {
       normalizeQuery,
       ISOPLUS_MAX_LIMIT,
       withTimeout,
-      getWorkspacePage,
-      getBoardPage,
-      getMemberRole,
+      ...provider,
       mapWithConcurrency,
       workspaceMatchesQuery,
       buildWorkspaceMetaById,
@@ -197,7 +222,7 @@ router.get('/boards', authenticateToken, async (req, res) => {
       q,
       maxScanPages,
       timeoutMs,
-      getBoardPage,
+      getBoardPage: isoplusCollectionProvider().getBoardPage,
       withTimeout,
       boardMatchesQuery,
       persistBoardsInBackground,
