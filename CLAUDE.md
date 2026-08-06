@@ -55,7 +55,19 @@ Full detail in **`docs/local-development.md`**; worktrees in **`docs/worktrees.m
 | `docs/ongoing/` | Handover notes for work in flight — what is done, what is blocked, what local state a successor needs. One file per ticket, **deleted on merge**. | Days |
 | `docs/open/` | Documentation for readers **outside this repo** — chiefly the ISO+ teams, who integrate via webhooks and have no source access. Describes interfaces from the outside; never file paths or internals. | Ongoing |
 
-Reference material sits outside that progression and stays current: `docs/local-development.md`, `docs/worktrees.md`, `docs/migrations.md`.
+Reference material sits outside that progression and stays current: [`docs/full-stack-engineering.md`](docs/full-stack-engineering.md), `docs/local-development.md`, `docs/worktrees.md`, `docs/migrations.md`.
+
+## How to work here
+
+**[`docs/full-stack-engineering.md`](docs/full-stack-engineering.md) is required reading before changing code.** This file says what the conventions are; that one says how to work — test-first, end-to-end coverage, change control, security, code quality. It links back here rather than restating, so there is one copy of each rule.
+
+Three of its rules decide what you do on the first step, so they are repeated here and nowhere else:
+
+- **Write the failing test first.** Write the test, run it, watch it fail for the expected reason, then implement. Bug fixes too — the failing test is the reproduction. Never weaken an assertion to get to green; decide whether the code or the expectation was wrong, and say which.
+- **Characterize before you move.** Relocating existing behaviour needs a test that passes against the *unmodified* code first. "No behaviour change" with no test that ran beforehand is an assertion, not evidence.
+- **A user-visible change needs an end-to-end test** (Playwright, `Frontend/e2e/`). A feature with perfect unit tests that nothing links to is not done.
+
+Every assistant gets this by the same route: `AGENTS.md` is a symlink to this file, and `.cursor/rules/full-stack-engineering.mdc` points at both rather than keeping its own copy. Run `npm run agents -- --check` to verify that wiring.
 
 Each directory has a `README.md` stating its purpose and pointing back here. **This file remains the single source of truth for conventions** — branching, tickets, commit format, the complexity gate, the engineering rules. Documents under `docs/` should link to it rather than restating it, so there is one copy to keep correct. Stale duplication is a real failure mode here: the compose headers spent weeks telling people to run shell scripts that had been replaced by `scripts/dev.mjs`.
 

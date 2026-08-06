@@ -1,6 +1,11 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000';
+// 3100, not 3000. This repo deliberately avoids 3000/3001 because another local
+// stack holds them — see docs/local-development.md. FRONTEND_PORT is what
+// scripts/dev.mjs allocates, and a worktree gets its own pair from 3110 upward,
+// so read it before falling back.
+const port = process.env.FRONTEND_PORT || '3100';
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://localhost:${port}`;
 
 export default defineConfig({
   testDir: './e2e',
@@ -12,6 +17,9 @@ export default defineConfig({
     baseURL,
     trace: 'retain-on-failure',
   },
+  // Locally the app is already served by the Docker stack (npm run dev:up), and
+  // `next dev` started here would bind a different port and talk to no backend.
+  // So reuse whatever is listening, and only spawn a server in CI.
   webServer: {
     command: 'npm run dev',
     url: baseURL,

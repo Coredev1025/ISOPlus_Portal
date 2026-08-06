@@ -20,6 +20,22 @@ RUN npm ci
 FROM base AS dev
 ENV NODE_ENV=development
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# Shared libraries Chromium needs for the Playwright suite (npm run e2e).
+# Without them the browser exits 127 with "libglib-2.0.so.0: cannot open shared
+# object file" and every e2e test fails at launch — which is why that suite had
+# never actually run. Dev stage only, so production images stay lean; the
+# browser binary itself is not baked in, `npm run e2e:install` fetches it into
+# the container's cache on first use.
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libglib2.0-0 libnss3 libnspr4 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 \
+        libcups2 libdrm2 libxkbcommon0 libatspi2.0-0 libxcomposite1 libxdamage1 \
+        libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2 \
+    && rm -rf /var/lib/apt/lists/*
+USER node
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY --chown=node:node . .
 # Pre-create .next so the named volume mounted there inherits node ownership

@@ -140,6 +140,38 @@ Layout, all under `Backend/test/`:
 `vitest.config.js` collects `test/**/*.test.js` **only**. A file named
 `.test.mjs` is not an error — it is silently never run.
 
+### End-to-end (Playwright)
+
+Against the running stack, so `npm run dev:up` first:
+
+```bash
+cd Frontend
+npm run e2e:install   # once — downloads Chromium into the container cache
+npm run e2e
+npm run e2e:ui        # watch it drive the browser
+npm run e2e:report
+```
+
+Or in the container, which is how it was verified:
+
+```bash
+docker compose exec -e PLAYWRIGHT_BASE_URL=http://localhost:3000 frontend npx playwright test
+```
+
+Note the port difference: **3100 from the host, 3000 inside the container.**
+`playwright.config.ts` reads `FRONTEND_PORT` and falls back to 3100, because
+this repo avoids 3000/3001 — the config previously hardcoded 3000 and could
+never have connected from a host run.
+
+`Frontend/Dockerfile` installs Chromium's shared libraries in the `dev` stage.
+Without them the browser exits 127 with *"libglib-2.0.so.0: cannot open shared
+object file"* and every test fails at launch, which is why this suite had never
+actually run. The browser binary itself is not baked in — `e2e:install` fetches
+it on first use.
+
+Tests live in `Frontend/e2e/`. They assert on roles and text rather than CSS, so
+a restyle does not break them, and they need no ISO+ credentials.
+
 ## Running without ISO+ credentials
 
 The portal is a front end over the ISO+ platform, and several endpoints **proxy
