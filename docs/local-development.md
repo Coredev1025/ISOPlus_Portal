@@ -114,6 +114,15 @@ The suite needs **neither Mongo nor Redis**: `test/setup.js` starts
 `mongodb-memory-server` and mocks `ioredis`. So it does not care whether the
 Docker stack is up, and it never touches your seeded database.
 
+That last part depends on one easily-missed line: `test/setup.js` sets
+`NODE_ENV=test` at **module scope**, not inside `beforeAll`. Integration tests
+call `createApp()` at module top level, which Vitest runs before `beforeAll`
+hooks — so with the assignment in the hook, `app.js` saw `NODE_ENV=development`,
+built a `MongoStore` session store against the real `business-dashboard`, and
+put sessions outside the in-memory database that `afterEach` truncates. That
+produced intermittent `401`s in authenticated tests and left session documents
+in the developer's own database. Do not move it back into the hook.
+
 To run it the way CI does, in the container:
 
 ```bash
