@@ -1,0 +1,232 @@
+{
+  "$description": [
+    "Source: the ISO+ board 'Care Management (NDIS) 2026 Pricing' — the NDIS care",
+    "management board — Quotes folder, in workspace 'Test'. See capturedFrom below.",
+    "Structure is copied from ISO+; all person, address and contact data is invented.",
+    "See Backend/test/fixtures/README.md before changing anything here."
+  ],
+  "capturedFrom": {
+    "workspaceId": "55369",
+    "workspaceName": "Test",
+    "boardId": "eNiJpH14PN3",
+    "boardName": "Care Management (NDIS) 2026 Pricing",
+    "quotesFolderId": "BFMUenisoQ4",
+    "quotesFolderName": "Quotes",
+    "readOn": "2026-08-06",
+    "via": "GET /api/55369/eNiJpH14PN3/attributes, /items, POST /items/values"
+  },
+
+  "business": {
+    "workspaceId": "55369",
+    "name": "Local Fixture Care Services",
+    "abn": "12 345 678 901",
+    "headOfficeTimezone": "Australia/Sydney",
+    "address": {
+      "street": "1 Fixture Street",
+      "suburb": "Testville",
+      "state": "NSW",
+      "postcode": "2000",
+      "country": "Australia"
+    },
+    "bankDetails": {
+      "accountsReceivableTerms": "Payment due within 14 days of invoice date."
+    },
+    "documentNumbering": {
+      "quote": { "prefix": "QT-", "nextNumber": 1090 },
+      "invoice": { "prefix": "IN-", "nextNumber": 1000 },
+      "purchaseOrder": { "prefix": "PO-", "nextNumber": 1000 }
+    }
+  },
+
+  "board": {
+    "boardId": "eNiJpH14PN3",
+    "workspaceId": "55369",
+    "name": "Care Management (NDIS) 2026 Pricing",
+    "label": "NDIS",
+    "syncData": true,
+    "syncStatus": "realtime_sync",
+    "$attributeNote": "board.attribute is the INTEGRATION MESSAGE target, not a pricing field — setIntegrationMessage() writes to board.attribute.id (services/isoplus.js:659). board.pdfAttribute is where handlePDFSuccess puts the link. Both are real ids from the live board.",
+    "attribute": {
+      "id": "05344a1b-cc91-4eb9-b9bd-fe708e023cf2",
+      "name": "Integration Message"
+    },
+    "pdfAttribute": {
+      "id": "1b9d68df-553b-4f2d-bcf2-59a240bb4176",
+      "name": "Generated PDF Link"
+    }
+  },
+
+  "$attributesNote": [
+    "The subset of board attributes that the pricing-dispatch rule keys on.",
+    "ndisPricingRules.js reads these from the LIVE ISO+ API, not from Mongo, so",
+    "this list does not drive local behaviour — it records the live state that",
+    "the item data below is built to reproduce offline. The decisive facts:",
+    "  * 'Direct Support Item Number' (LEGACY_DIRECT_SUPPORT_ATTR) is ABSENT.",
+    "    It was renamed 'OLD Direct Support Item Number' during the 2026 migration.",
+    "  * 'Support Item Number' (NEW_SUPPORT_ITEM_ATTR) is present as a reference.",
+    "  * A second, unrelated 'Support Item Number' of type text also exists;",
+    "    only the reference one satisfies isReferenceAttribute().",
+    "Together these make boardAttributesUseLegacyNdisPricing() return false, so",
+    "the live board resolves to the NEW pricing path."
+  ],
+  "attributes": [
+    { "id": "019efd37-866f-7266-a2d6-6de8458096c9", "name": "Support Item Number", "type": "reference" },
+    { "id": "cebce714-5d25-4b94-9fef-cc57d4113b0b", "name": "Support Item Number", "type": "text" },
+    { "id": "019f1a87-9c98-77ee-ae5c-d094e35e23f1", "name": "Activity Based Transport Item Number", "type": "reference" },
+    { "id": "ebca140d-8cf8-473d-affe-03c34fa73a06", "name": "OLD Direct Support Item Number", "type": "reference" },
+    { "id": "fixture-attr-old-provider-travel", "name": "OLD Provider Travel - Non-Labour Cost Item Number", "type": "reference" },
+    { "id": "fixture-attr-provider-travel", "name": "Provider Travel - Non-Labour Cost Item Number", "type": "reference" },
+    { "id": "fixture-attr-centre-capital", "name": "Centre Capital Costs Item", "type": "reference" },
+    { "id": "fixture-attr-cancellation", "name": "Cancellation Item Number", "type": "reference" },
+    { "id": "fixture-attr-labour-travel", "name": "Provider Travel - Labour Travel Time Costs Item Number", "type": "reference" },
+    { "id": "fixture-attr-service-area", "name": "Service Area", "type": "reference" },
+    { "id": "1b9d68df-553b-4f2d-bcf2-59a240bb4176", "name": "Generated PDF Link", "type": "longtext" },
+    { "id": "05344a1b-cc91-4eb9-b9bd-fe708e023cf2", "name": "Integration Message", "type": "longtext" },
+    { "id": "276ca02c-e555-4d22-8cdc-4d52b125fd8b", "name": "Generated NDIS Quote Number", "type": "text" },
+    { "id": "f6297f38-4745-4d52-a485-2b0f1540f747", "name": "Recipient of the Quote", "type": "text" }
+  ],
+
+  "$itemsNote": [
+    "Item.data is keyed by ATTRIBUTE NAME, matching both the webhook payload",
+    "shape and inferPricingRuleFromServicePlanData(). The three items below give",
+    "deterministic offline coverage of every branch of that function."
+  ],
+  "items": [
+    {
+      "$case": "Quote 17 as it stands live: opened during initial setup, almost empty. Carries NEITHER sentinel key, so inferPricingRuleFromServicePlanData() returns null and dispatch falls through to the board rule (which needs the live ISO+ API).",
+      "itemId": "cfd84160-cb3d-4b86-b9d0-a5cb20c674ce",
+      "folderId": "BFMUenisoQ4",
+      "data": {
+        "Issue Date": "2026-08-07",
+        "Expiry Date": "2025-10-08",
+        "Type of Lead": "Current Participant",
+        "Quote Provided to ...": "Participant/Representative",
+        "Recipient of the Quote": "Fixture Test Recipient"
+      }
+    },
+    {
+      "$case": "Resolves to 'new' with no network call: has Support Item Number and not Direct Support Item Number.",
+      "itemId": "fixture-quote-new-pricing",
+      "folderId": "BFMUenisoQ4",
+      "data": {
+        "Issue Date": "2026-08-07",
+        "Expiry Date": "2026-10-08",
+        "Recipient of the Quote": "Jordan Fixture",
+        "Recipient Address": "2 Sample Road",
+        "Suburb": "Testville",
+        "State": "NSW",
+        "Postcode": "2000",
+        "Support Item Number": ["fixture-support-item-ref"],
+        "Quantity (Direct Support)": 4,
+        "Unit Price for Direct Support($)": 67.56,
+        "Total Price for Direct Support($)": 270.24
+      }
+    },
+    {
+      "$case": "Resolves to 'legacy' with no network call: has Direct Support Item Number and not Support Item Number. Note this key no longer exists on the live board — kept so the legacy branch stays reachable in local work.",
+      "itemId": "fixture-quote-legacy-pricing",
+      "folderId": "BFMUenisoQ4",
+      "data": {
+        "Issue Date": "2026-08-07",
+        "Expiry Date": "2026-10-08",
+        "Recipient of the Quote": "Sam Fixture",
+        "Recipient Address": "3 Sample Road",
+        "Suburb": "Testville",
+        "State": "VIC",
+        "Postcode": "3000",
+        "Direct Support Item Number": ["fixture-direct-support-ref"],
+        "Quantity (Direct Support)": 2,
+        "Unit Price for Direct Support($)": 62.17,
+        "Total Price for Direct Support($)": 124.34
+      }
+    }
+  ],
+
+  "$keyingNote": [
+    "Three hops, three different keyings. This is the whole reason a rename in the",
+    "ISO+ UI can silently repoint backend dispatch. Observed end to end 2026-08-06.",
+    "",
+    "1. READ   GET/POST /api/{ws}/{board}/items/values   → keyed by attribute_id",
+    "2. WEBHOOK ISO+ → Portal, bodies below              → keyed by attribute NAME",
+    "3. WRITE-BACK Portal → ISO+ (services/isoplus.js)   → keyed by attribute_id",
+    "",
+    "Only hop 2 uses names, and only hop 2 is the one the Portal branches on."
+  ],
+  "valueWrite": {
+    "$description": "What the ISO+ UI sends when a field on an item is edited. Captured by editing 'Recipient of the Quote' on quote 17. The Portal does not send this shape — it is here so the read/write contract is recorded in one place.",
+    "$url": "PUT /api/55369/values/{valueId}",
+    "$note": "Workspace-scoped — no board id in the path. The value id is client-generated; row_version 0 means a new value, and the server increments it. Upsert, not create-then-update.",
+    "example": {
+      "id": "6adca94675d423a1",
+      "row_version": 0,
+      "created_at": "2026-08-06T03:17:58.919Z",
+      "updated_at": "2026-08-06 03:17:58",
+      "data": "Fixture Test Recipient",
+      "item_id": "cfd84160-cb3d-4b86-b9d0-a5cb20c674ce",
+      "attribute_id": "f6297f38-4745-4d52-a485-2b0f1540f747"
+    }
+  },
+  "portalWriteBack": {
+    "$description": "How the Portal writes results back to ISO+ — setIntegrationMessage (services/isoplus.js:646), handlePDFSuccess, setGeneratedField. Different API surface from everything above: /api/v2, board-scoped, values batched.",
+    "$url": "PUT /api/v2/workspaces/{ws}/boards/{board}/items/{item}",
+    "example": {
+      "values": [
+        {
+          "attribute_id": "05344a1b-cc91-4eb9-b9bd-fe708e023cf2",
+          "data": "<p>Running...</p>"
+        }
+      ]
+    },
+    "$attributeIdSource": "board.attribute.id in Mongo, falling back to env INTEGRATION_MESSAGE_ATTRIBUTE_ID, then a hardcoded id. If board.attribute.id is unset the write throws 'Internal message attribute not found in board configuration' — which is why this fixture sets it."
+  },
+
+  "$webhookNote": [
+    "Bodies as ISO+ posts them. `values` is keyed by attribute name, which is why",
+    "a rename in ISO+ silently changes backend dispatch. Replay with:",
+    "  npm run dev:fixture -- --replay quotendis"
+  ],
+  "webhookPayloads": {
+    "quotendis": {
+      "$url": "POST /api/pdf/55369/eNiJpH14PN3/quotendis",
+      "$automation": "Portal - PDF (for NDIS Quote)  [ButtonTrigger]",
+      "items": [
+        {
+          "id": "cfd84160-cb3d-4b86-b9d0-a5cb20c674ce",
+          "values": {
+            "Issue Date": "2026-08-07",
+            "Expiry Date": "2025-10-08",
+            "Type of Lead": "Current Participant",
+            "Quote Provided to ...": "Participant/Representative"
+          }
+        }
+      ]
+    },
+    "xero-quotendis": {
+      "$url": "POST /api/xero/55369/eNiJpH14PN3/quotendis",
+      "$automation": "Portal - Xero (for NDIS Quote)  [ButtonTrigger]",
+      "items": [{ "id": "cfd84160-cb3d-4b86-b9d0-a5cb20c674ce", "values": {} }]
+    },
+    "participants-service-plan-support": {
+      "$url": "POST /api/care-management-ndis-pricing/55369/eNiJpH14PN3/participants-service-plan?type=support",
+      "$automation": "Portal - Update Support Item Number (for ServicePlan)  [ValueChange on 019efd37-866f-7266-a2d6-6de8458096c9]",
+      "$expect": "new path only — the legacy path rejects ?type=support with {\"error\":\"Invalid type\"} at HTTP 200",
+      "items": [
+        {
+          "id": "fixture-quote-new-pricing",
+          "values": { "Support Item Number": ["fixture-support-item-ref"] }
+        }
+      ]
+    },
+    "participants-service-plan-direct-support": {
+      "$url": "POST /api/care-management-ndis-pricing/55369/eNiJpH14PN3/participants-service-plan?type=direct_support",
+      "$automation": "Portal - Update Direct Support Item Number (for ServicePlan)  [ValueChange]",
+      "$expect": "legacy path only — this is the live defect: the board now resolves to 'new', so the 2 live direct_support automations get {\"error\":\"Invalid type\"} at HTTP 200",
+      "items": [
+        {
+          "id": "fixture-quote-legacy-pricing",
+          "values": { "Direct Support Item Number": ["fixture-direct-support-ref"] }
+        }
+      ]
+    }
+  }
+}

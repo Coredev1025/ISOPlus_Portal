@@ -4,6 +4,7 @@ import Board from '../models/Board.js';
 import TimeTrack from '../models/TimeTrack.js';
 import { info, error, warn } from '../utils/logger.js';
 import { getBoardAttributes, getAllViews, getItemValues, ITEM_DELETED } from '../services/isoplus.js';
+import { isOfflineMode, getBoardAttributesOffline } from '../services/offlineIsoplus.js';
 
 const slugify = (str) => (str || '').toString().toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w-]+/g, '').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
 
@@ -212,13 +213,26 @@ router.put('/', authenticateToken, async (req, res) => {
 
 router.get('/attribute', authenticateToken, async (req, res) => {
     try {
-        const attributes = await getBoardAttributes(req.query.workspaceId, req.query.boardId);
-        const data = attributes.attribute.filter(item => item.type == "text" || item.type == "longtext");
-        if (!data) {
-            warn('Board-Service', 'Failed fetching board attribute data', { boardId: req.query.boardId }, req ?? null);
-            return res.status(404).json({ message: 'Attribute not found' });
+        const fetchAttributes = isOfflineMode() ? getBoardAttributesOffline : getBoardAttributes;
+        const attributes = await fetchAttributes(req.query.workspaceId, req.query.boardId);
+
+        // getBoardAttributes() returns { message, status } with NO `attribute`
+        // key when the ISO+ call throws, so reading .attribute directly turned
+        // every upstream failure into a TypeError and an opaque 500. Surface the
+        // real status instead.
+        if (!Array.isArray(attributes?.attribute)) {
+            warn('Board-Service', 'Failed fetching board attribute data', {
+                boardId: req.query.boardId,
+                status: attributes?.status,
+                message: attributes?.message,
+            }, req ?? null);
+            return res.status(attributes?.status === 200 ? 404 : (attributes?.status || 502)).json({
+                message: attributes?.message || 'Attribute not found',
+            });
         }
-        res.status(attributes.status).json({ attributes: data || [] });
+
+        const data = attributes.attribute.filter(item => item.type == "text" || item.type == "longtext");
+        res.status(attributes.status).json({ attributes: data });
     } catch (err) {
         error('Board-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
         res.status(500).json({ message: 'Server error' });

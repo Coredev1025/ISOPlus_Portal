@@ -21,6 +21,19 @@ function resolveSystemMongod() {
   return undefined;
 }
 
+// Set at module scope, NOT in beforeAll. Vitest imports this setup file before
+// the test file, but `beforeAll` hooks run after it — and every integration test
+// calls createApp() at module top level. With NODE_ENV still "development" at
+// that moment, app.js takes `isTest === false` and builds a MongoStore session
+// store against process.env.MONGODB_URI, which is the real development database
+// rather than the in-memory server beforeAll is about to start.
+//
+// Two consequences, both observed: sessions lived outside the database
+// afterEach() truncates, so authenticated requests intermittently came back 401
+// instead of their expected status; and running the suite wrote session
+// documents into the developer's own business-dashboard.
+process.env.NODE_ENV = 'test';
+
 vi.mock('ioredis', () => {
   class RedisMock {
     constructor() {}

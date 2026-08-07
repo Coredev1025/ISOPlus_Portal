@@ -1,0 +1,42 @@
+# Normalize line endings so the repo behaves identically on Windows, macOS and
+# Linux. Without this, a Windows checkout with core.autocrlf=true rewrites these
+# files to CRLF, and anything consumed by a Linux container then breaks in ways
+# that are tedious to diagnose:
+#
+#   *.sh          -> `#!/usr/bin/env bash\r: no such file or directory`
+#   Dockerfile    -> the CRLF is carried into RUN commands inside the image
+#   .env          -> values silently gain a trailing \r
+#   *.mjs/*.js    -> harmless to Node, but noisy in diffs
+#
+# Text files are stored as LF in the repo; `text=auto` still lets Git present
+# CRLF in the working tree where a platform genuinely wants it.
+
+* text=auto eol=lf
+
+# Files that must be LF even in the working tree, because a Linux container or
+# a POSIX interpreter reads them verbatim.
+*.sh            text eol=lf
+*.mjs           text eol=lf
+*.js            text eol=lf
+*.ts            text eol=lf
+*.tsx           text eol=lf
+*.json          text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+Dockerfile      text eol=lf
+*.dockerignore  text eol=lf
+.env*           text eol=lf
+*.md            text eol=lf
+
+# Binary — never touch these.
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.ico           binary
+*.pdf           binary
+*.gz            binary
+*.zip           binary
+*.woff          binary
+*.woff2         binary
+*.ttf           binary
