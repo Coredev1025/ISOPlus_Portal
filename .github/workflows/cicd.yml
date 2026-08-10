@@ -209,7 +209,12 @@ jobs:
         id: set_var
         run: |
           TIMESTAMP=$(date +'%Y%m%d%H%M%S')
-          FILE_NAME="$TIMESTAMP-isoplus-backend-package-${{ github.ref_name }}-${{ github.sha }}.zip"
+          # github.ref_name is a branch name on push ("develop") but "<pr>/merge"
+          # on pull_request. That slash made zip read the prefix as a directory
+          # and fail with "Could not create output file", so the packaging check
+          # went red on every backend PR while nothing was actually wrong.
+          SAFE_REF="${GITHUB_REF_NAME//\//-}"
+          FILE_NAME="$TIMESTAMP-isoplus-backend-package-$SAFE_REF-${{ github.sha }}.zip"
           VERSION_LABEL="$TIMESTAMP-${{ github.sha }}"
           echo "PACKAGE_FILE_NAME=$FILE_NAME" >> $GITHUB_ENV
           echo "VERSION_LABEL=$VERSION_LABEL" >> $GITHUB_ENV
