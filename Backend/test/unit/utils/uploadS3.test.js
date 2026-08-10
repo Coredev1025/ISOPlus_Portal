@@ -273,7 +273,7 @@ describe('getS3File', () => {
 
     const buffer = await getS3File('logos/empty.png');
 
-    expect(buffer.length).toBe(0);
+    expect(buffer).toHaveLength(0);
   });
 
   it('reads from the public bucket when publicRead is true', async () => {

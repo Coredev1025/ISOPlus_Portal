@@ -700,7 +700,7 @@ describe('Item', () => {
 
   it('reports every problem rather than stopping at the first', () => {
     const result = Item.validate('Contact', {});
-    expect(result.error.details.length).toBe(3);
+    expect(result.error.details).toHaveLength(3);
   });
 });
 

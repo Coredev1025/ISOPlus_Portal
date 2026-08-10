@@ -89,7 +89,7 @@ describe('paginatePdfmeTemplateTableByRows', () => {
 
       const result = paginatePdfmeTemplateTableByRows(null, 'orders', rows);
 
-      expect(result.template).toBe(null);
+      expect(result.template).toBeNull();
       expect(JSON.parse(result.tableInputs.orders)).toEqual(rows);
     });
 

@@ -198,9 +198,9 @@ describe('resolveLegacyServiceAreaReference', () => {
   });
 
   it('returns null when the referenced item was deleted or could not be loaded', async () => {
-    await expect(resolveLegacyServiceAreaReference(WS, BOARD, ref('a', 'gone'), async () => ITEM_DELETED)).resolves.toBe(null);
-    await expect(resolveLegacyServiceAreaReference(WS, BOARD, ref('a', 'gone'), async () => null)).resolves.toBe(null);
-    await expect(resolveLegacyServiceAreaReference(WS, BOARD, ref('a', 'gone'), async () => undefined)).resolves.toBe(null);
+    await expect(resolveLegacyServiceAreaReference(WS, BOARD, ref('a', 'gone'), async () => ITEM_DELETED)).resolves.toBeNull();
+    await expect(resolveLegacyServiceAreaReference(WS, BOARD, ref('a', 'gone'), async () => null)).resolves.toBeNull();
+    await expect(resolveLegacyServiceAreaReference(WS, BOARD, ref('a', 'gone'), async () => undefined)).resolves.toBeNull();
   });
 });
 
@@ -225,8 +225,8 @@ describe('resolveLegacyPricingCatalogReference', () => {
   });
 
   it('returns null for a deleted or unloadable reference', async () => {
-    await expect(resolveLegacyPricingCatalogReference(WS, BOARD, ref('a', 'gone'), async () => ITEM_DELETED)).resolves.toBe(null);
-    await expect(resolveLegacyPricingCatalogReference(WS, BOARD, ref('a', 'gone'), async () => null)).resolves.toBe(null);
+    await expect(resolveLegacyPricingCatalogReference(WS, BOARD, ref('a', 'gone'), async () => ITEM_DELETED)).resolves.toBeNull();
+    await expect(resolveLegacyPricingCatalogReference(WS, BOARD, ref('a', 'gone'), async () => null)).resolves.toBeNull();
   });
 
   it('throws when the referenced row has no Support Item Number', async () => {
@@ -269,8 +269,8 @@ describe('resolveLegacyLabourTravelReference', () => {
   });
 
   it('returns null for a deleted or unloadable reference', async () => {
-    await expect(resolveLegacyLabourTravelReference(WS, BOARD, ref('a', 'gone'), async () => ITEM_DELETED)).resolves.toBe(null);
-    await expect(resolveLegacyLabourTravelReference(WS, BOARD, ref('a', 'gone'), async () => null)).resolves.toBe(null);
+    await expect(resolveLegacyLabourTravelReference(WS, BOARD, ref('a', 'gone'), async () => ITEM_DELETED)).resolves.toBeNull();
+    await expect(resolveLegacyLabourTravelReference(WS, BOARD, ref('a', 'gone'), async () => null)).resolves.toBeNull();
   });
 
   it('throws rather than returning null when the row carries no values array', async () => {
@@ -492,7 +492,7 @@ describe('loadReferencedItemValuesWithWarn', () => {
   it('warns that the item was deleted in ISO+ and returns null', async () => {
     const warn = vi.fn();
     await expect(loadReferencedItemValuesWithWarn(WS, BOARD, 'ref-1', 'Service Area', async () => ITEM_DELETED, warn, ctx))
-      .resolves.toBe(null);
+      .resolves.toBeNull();
     expect(warn).toHaveBeenCalledWith('ISO+™ Service', 'Referenced item deleted in ISO+', {
       workspaceId: WS, boardId: BOARD, itemId: 'plan-1', referenceName: 'Service Area', referencedItemId: 'ref-1',
     });
@@ -501,7 +501,7 @@ describe('loadReferencedItemValuesWithWarn', () => {
   it('warns that the item could not be loaded and returns null', async () => {
     const warn = vi.fn();
     await expect(loadReferencedItemValuesWithWarn(WS, BOARD, 'ref-1', 'Service Area', async () => null, warn, ctx))
-      .resolves.toBe(null);
+      .resolves.toBeNull();
     expect(warn).toHaveBeenCalledWith('ISO+™ Service', 'Referenced item not found or failed to load', {
       workspaceId: WS, boardId: BOARD, itemId: 'plan-1', referenceName: 'Service Area', referencedItemId: 'ref-1',
     });
@@ -510,7 +510,7 @@ describe('loadReferencedItemValuesWithWarn', () => {
   it('warns with the offending type when values is not an array', async () => {
     const warn = vi.fn();
     await expect(loadReferencedItemValuesWithWarn(WS, BOARD, 'ref-1', 'Service Area', async () => ({ id: 'ref-1', values: 'oops' }), warn, ctx))
-      .resolves.toBe(null);
+      .resolves.toBeNull();
     expect(warn).toHaveBeenCalledWith('ISO+™ Service', 'Referenced item values missing/invalid', {
       workspaceId: WS, boardId: BOARD, itemId: 'plan-1', referenceName: 'Service Area', referencedItemId: 'ref-1',
       valuesType: 'string',
@@ -520,7 +520,7 @@ describe('loadReferencedItemValuesWithWarn', () => {
   it('rejects a missing values array as invalid rather than defaulting it to empty', async () => {
     const warn = vi.fn();
     await expect(loadReferencedItemValuesWithWarn(WS, BOARD, 'ref-1', 'Service Area', async () => ({ id: 'ref-1' }), warn, ctx))
-      .resolves.toBe(null);
+      .resolves.toBeNull();
     expect(warn.mock.calls[0][2].valuesType).toBe('undefined');
   });
 });
@@ -568,7 +568,7 @@ describe('createLegacyParticipantsPlanReferenceHandlers', () => {
     const warn = vi.fn();
     const handlers = createLegacyParticipantsPlanReferenceHandlers(warn, ctx);
     await expect(handlers['Activity Based Transport Item Number'].handler(WS, BOARD, ref('a', 'gone'), async () => ITEM_DELETED))
-      .resolves.toBe(null);
+      .resolves.toBeNull();
     expect(warn).toHaveBeenCalledWith('ISO+™ Service', 'Referenced item deleted in ISO+', expect.objectContaining({
       referenceName: 'Activity Based Transport Item Number', referencedItemId: 'gone',
     }));
@@ -609,7 +609,7 @@ describe('createLegacyParticipantsPlanReferenceHandlers', () => {
     const warn = vi.fn();
     const handlers = createLegacyParticipantsPlanReferenceHandlers(warn, ctx);
     await expect(handlers['Participant Intake Form'].handler(WS, BOARD, ref('a', 'gone'), async () => ITEM_DELETED))
-      .resolves.toBe(null);
+      .resolves.toBeNull();
     expect(warn).toHaveBeenCalledWith('ISO+™ Service', 'Referenced item deleted in ISO+', {
       ...ctx, referenceName: 'Participant Intake Form', referencedItemId: 'gone',
     });
@@ -619,7 +619,7 @@ describe('createLegacyParticipantsPlanReferenceHandlers', () => {
     const warn = vi.fn();
     const handlers = createLegacyParticipantsPlanReferenceHandlers(warn, ctx);
     await expect(handlers['Participant Intake Form'].handler(WS, BOARD, ref('a', 'gone'), async () => null))
-      .resolves.toBe(null);
+      .resolves.toBeNull();
     expect(warn).toHaveBeenCalledWith('ISO+™ Service', 'Referenced item not found or failed to load', {
       ...ctx, referenceName: 'Participant Intake Form', referencedItemId: 'gone',
     });
@@ -689,9 +689,9 @@ describe('fetchLegacyNdisParticipantsPlanReferencedItems', () => {
       nonFaceToFaceSupportProvision: 'NA',
       shortNoticeCancellations: 'NA',
     });
-    expect(result[2]).toBe(null);
-    expect(result[3]).toBe(null);
-    expect(result[4]).toBe(null);
+    expect(result[2]).toBeNull();
+    expect(result[3]).toBeNull();
+    expect(result[4]).toBeNull();
     expect(result[5]).toEqual({ fullName: 'Jordan Fixture', firstName: 'Jordan', lastName: 'Fixture' });
     expect(warn).not.toHaveBeenCalled();
   });
@@ -760,8 +760,8 @@ describe('resolveServiceAreaReference (new pricing)', () => {
   });
 
   it('returns null for a deleted or unloadable reference', async () => {
-    await expect(resolveServiceAreaReference(WS, BOARD, ref('a', 'gone'), async () => ITEM_DELETED, NEW_MAP)).resolves.toBe(null);
-    await expect(resolveServiceAreaReference(WS, BOARD, ref('a', 'gone'), async () => null, NEW_MAP)).resolves.toBe(null);
+    await expect(resolveServiceAreaReference(WS, BOARD, ref('a', 'gone'), async () => ITEM_DELETED, NEW_MAP)).resolves.toBeNull();
+    await expect(resolveServiceAreaReference(WS, BOARD, ref('a', 'gone'), async () => null, NEW_MAP)).resolves.toBeNull();
   });
 
   it('throws a TypeError on a value row with no attribute, where the legacy resolver would not', async () => {
@@ -790,20 +790,20 @@ describe('resolveCatalogReference', () => {
 
   it('returns null when the built catalog has no item number', async () => {
     const getItemValues = itemValuesFrom({ 'catalog-1': { id: 'catalog-1', values: [value('Support Item Name', 'Nameless')] } });
-    await expect(resolveCatalogReference(WS, BOARD, ref('a', 'catalog-1'), getItemValues, build)).resolves.toBe(null);
+    await expect(resolveCatalogReference(WS, BOARD, ref('a', 'catalog-1'), getItemValues, build)).resolves.toBeNull();
   });
 
   it('hands the builder an empty array when values is missing', async () => {
     const builder = vi.fn(() => ({ itemNumber: '' }));
     const getItemValues = itemValuesFrom({ 'catalog-1': { id: 'catalog-1' } });
-    await expect(resolveCatalogReference(WS, BOARD, ref('a', 'catalog-1'), getItemValues, builder)).resolves.toBe(null);
+    await expect(resolveCatalogReference(WS, BOARD, ref('a', 'catalog-1'), getItemValues, builder)).resolves.toBeNull();
     expect(builder).toHaveBeenCalledWith([]);
   });
 
   it('returns null for a deleted or unloadable reference without calling the builder', async () => {
     const builder = vi.fn();
-    await expect(resolveCatalogReference(WS, BOARD, ref('a', 'gone'), async () => ITEM_DELETED, builder)).resolves.toBe(null);
-    await expect(resolveCatalogReference(WS, BOARD, ref('a', 'gone'), async () => null, builder)).resolves.toBe(null);
+    await expect(resolveCatalogReference(WS, BOARD, ref('a', 'gone'), async () => ITEM_DELETED, builder)).resolves.toBeNull();
+    await expect(resolveCatalogReference(WS, BOARD, ref('a', 'gone'), async () => null, builder)).resolves.toBeNull();
     expect(builder).not.toHaveBeenCalled();
   });
 });

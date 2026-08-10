@@ -78,7 +78,7 @@ describe('validateHookRegistrationAuthorization', () => {
   it('returns null and logs nothing when an authorization header is present', () => {
     const error = vi.fn();
 
-    expect(validateHookRegistrationAuthorization('Bearer tok', 'ws_1', 'b_1', error)).toBe(null);
+    expect(validateHookRegistrationAuthorization('Bearer tok', 'ws_1', 'b_1', error)).toBeNull();
     expect(error).not.toHaveBeenCalled();
   });
 
@@ -271,21 +271,21 @@ describe('resolveDuplicateHookRegistration', () => {
   it('returns null without looking anything up when the registration succeeded', async () => {
     const getBoardHooks = vi.fn();
 
-    expect(await call({ result: { success: true, hookId: 'hook_01' }, getBoardHooks })).toBe(null);
+    expect(await call({ result: { success: true, hookId: 'hook_01' }, getBoardHooks })).toBeNull();
     expect(getBoardHooks).not.toHaveBeenCalled();
   });
 
   it('returns null for a failure that is not a duplicate', async () => {
     const getBoardHooks = vi.fn();
 
-    expect(await call({ result: { success: false, error: 'Authorization token is required' }, getBoardHooks })).toBe(null);
+    expect(await call({ result: { success: false, error: 'Authorization token is required' }, getBoardHooks })).toBeNull();
     expect(getBoardHooks).not.toHaveBeenCalled();
   });
 
   it('returns null when the failure carries neither an error string nor errorDetails', async () => {
     const getBoardHooks = vi.fn();
 
-    expect(await call({ result: { success: false }, getBoardHooks })).toBe(null);
+    expect(await call({ result: { success: false }, getBoardHooks })).toBeNull();
     expect(getBoardHooks).not.toHaveBeenCalled();
   });
 
@@ -316,7 +316,7 @@ describe('resolveDuplicateHookRegistration', () => {
   it('does not treat a non-409 errorDetails code as a duplicate', async () => {
     const getBoardHooks = vi.fn();
 
-    expect(await call({ result: { success: false, errorDetails: { code: 500 } }, getBoardHooks })).toBe(null);
+    expect(await call({ result: { success: false, errorDetails: { code: 500 } }, getBoardHooks })).toBeNull();
     expect(getBoardHooks).not.toHaveBeenCalled();
   });
 
@@ -352,16 +352,16 @@ describe('resolveDuplicateHookRegistration', () => {
     const info = vi.fn();
     const getBoardHooks = vi.fn().mockResolvedValue({ success: true, hooks: [existing] });
 
-    expect(await call({ result: { success: false, errorDetails: { code: 409 } }, getBoardHooks, info })).toBe(null);
+    expect(await call({ result: { success: false, errorDetails: { code: 409 } }, getBoardHooks, info })).toBeNull();
     expect(info).not.toHaveBeenCalled();
   });
 
   it('returns null when the duplicate lookup itself fails or comes back empty', async () => {
     const duplicate = { success: false, error: 'already exists' };
 
-    expect(await call({ result: duplicate, getBoardHooks: vi.fn().mockResolvedValue({ success: false, hooks: [] }) })).toBe(null);
-    expect(await call({ result: duplicate, getBoardHooks: vi.fn().mockResolvedValue({ success: true, hooks: [] }) })).toBe(null);
-    expect(await call({ result: duplicate, getBoardHooks: vi.fn().mockResolvedValue({ success: true }) })).toBe(null);
+    expect(await call({ result: duplicate, getBoardHooks: vi.fn().mockResolvedValue({ success: false, hooks: [] }) })).toBeNull();
+    expect(await call({ result: duplicate, getBoardHooks: vi.fn().mockResolvedValue({ success: true, hooks: [] }) })).toBeNull();
+    expect(await call({ result: duplicate, getBoardHooks: vi.fn().mockResolvedValue({ success: true }) })).toBeNull();
   });
 
   it('picks the first hook that matches, not the last', async () => {

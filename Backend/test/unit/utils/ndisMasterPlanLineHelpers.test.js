@@ -100,7 +100,7 @@ describe('formatNdisAmount', () => {
     expect(formatNdisAmount('')).toBe('0.00');
     expect(formatNdisAmount(null)).toBe('0.00');
     expect(formatNdisAmount('abc')).toBe('abc');
-    expect(formatNdisAmount(undefined)).toBe(undefined);
+    expect(formatNdisAmount(undefined)).toBeUndefined();
   });
 });
 

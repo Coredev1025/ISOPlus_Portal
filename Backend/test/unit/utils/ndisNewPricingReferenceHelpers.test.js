@@ -164,7 +164,7 @@ describe('createNewParticipantsPlanReferenceHandlers', () => {
 
   it('drops a catalogue reference with no item number', async () => {
     const getItemValues = itemValuesFrom({ 'sup-1': { id: 'sup-1', values: [value('Unit', 'H')] } });
-    await expect(handlers()['Support Item Number'].handler(WS, BOARD, ref('a', 'sup-1'), getItemValues)).resolves.toBe(null);
+    await expect(handlers()['Support Item Number'].handler(WS, BOARD, ref('a', 'sup-1'), getItemValues)).resolves.toBeNull();
   });
 
   it('maps the service area through the supplied map', async () => {
@@ -192,7 +192,7 @@ describe('createNewParticipantsPlanReferenceHandlers', () => {
   it('warns and returns null when the intake form was deleted', async () => {
     const warn = vi.fn();
     await expect(handlers(warn)['Participant Intake Form'].handler(WS, BOARD, ref('a', 'gone'), async () => ITEM_DELETED))
-      .resolves.toBe(null);
+      .resolves.toBeNull();
     expect(warn).toHaveBeenCalledWith('ISO+™ Service', 'Referenced item deleted in ISO+', {
       workspaceId: WS, boardId: BOARD, itemId: 'plan-1',
       referenceName: 'Participant Intake Form', referencedItemId: 'gone',
@@ -272,7 +272,7 @@ describe('fetchNewNdisParticipantsPlanReferencedItems', () => {
 
   it('leaves unreferenced buckets null and skips unhandled attributes', async () => {
     const result = await run([ref('ref-pdf', 'x'), ref('ref-sup', 'sup-1')]);
-    expect(result[0]).toBe(null);
+    expect(result[0]).toBeNull();
     expect(result[1]).toEqual({ id: 'sup-1', ...supportCatalogue });
     expect(result.slice(2)).toEqual([null, null, null, null, null]);
   });
@@ -376,7 +376,7 @@ describe('buildNewMasterPlanServicePlanValues', () => {
     expect(buildNewMasterPlanServicePlanValues({ values: withoutUnit }, refs).labourTravelTimeUnit).toBe('H');
 
     refs[4] = { id: 'ltt-1', itemNumber: 'x' };
-    expect(buildNewMasterPlanServicePlanValues({ values: withoutUnit }, refs).labourTravelTimeUnit).toBe(null);
+    expect(buildNewMasterPlanServicePlanValues({ values: withoutUnit }, refs).labourTravelTimeUnit).toBeNull();
   });
 
   it('keeps a zero agreed price as the string "0" rather than dropping it', () => {
@@ -397,13 +397,13 @@ describe('buildNewMasterPlanServicePlanValues', () => {
     const row = buildNewMasterPlanServicePlanValues({
       values: [value('Agreed Unit Price for Support ($)', null, 'number')],
     }, []);
-    expect(row.supportUnitPrice).toBe(null);
+    expect(row.supportUnitPrice).toBeNull();
   });
 
   it('treats a non-array values property as empty', () => {
     const row = buildNewMasterPlanServicePlanValues({ values: 'oops' }, []);
     expect(row.supportItemNumber).toBe('');
-    expect(row.supportUnit).toBe(null);
+    expect(row.supportUnit).toBeNull();
   });
 
   it('throws a TypeError on a value row with no attribute descriptor', () => {
@@ -586,7 +586,7 @@ describe('resolveMasterPlanNewReference', () => {
       const { value: resolved } = await resolveMasterPlanNewReference(
         attributeName, ref('a', 'gone'), WS, BOARD, async () => ITEM_DELETED, fetchParticipantsPlanRefs,
       );
-      expect(resolved).toBe(null);
+      expect(resolved).toBeNull();
     },
   );
 
@@ -697,7 +697,7 @@ describe('fetchNewNdisMasterPlanReferencedItems', () => {
       getItemValues: async (_ws, _b, itemId) => (itemId === 'plan-1' ? ITEM_DELETED : table[itemId]),
       fetchParticipantsPlanRefs: async () => [null, null, null, null, null, null, null],
     });
-    expect(result[0]).toBe(null);
+    expect(result[0]).toBeNull();
     expect(result[2]).toEqual({ fundingBudgetStatus: '👍 Within Budget' });
   });
 

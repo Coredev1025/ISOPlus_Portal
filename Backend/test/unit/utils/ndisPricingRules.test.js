@@ -169,14 +169,14 @@ describe('inferPricingRuleFromServicePlanData', () => {
   const fixtureItem = (itemId) => fixture.items.find((i) => i.itemId === itemId).data;
 
   it('returns null for nullish and non-object data', () => {
-    expect(inferPricingRuleFromServicePlanData(null)).toBe(null);
-    expect(inferPricingRuleFromServicePlanData(undefined)).toBe(null);
-    expect(inferPricingRuleFromServicePlanData('Support Item Number')).toBe(null);
-    expect(inferPricingRuleFromServicePlanData(7)).toBe(null);
+    expect(inferPricingRuleFromServicePlanData(null)).toBeNull();
+    expect(inferPricingRuleFromServicePlanData(undefined)).toBeNull();
+    expect(inferPricingRuleFromServicePlanData('Support Item Number')).toBeNull();
+    expect(inferPricingRuleFromServicePlanData(7)).toBeNull();
   });
 
   it('returns null when neither key is present', () => {
-    expect(inferPricingRuleFromServicePlanData(fixtureItem('cfd84160-cb3d-4b86-b9d0-a5cb20c674ce'))).toBe(null);
+    expect(inferPricingRuleFromServicePlanData(fixtureItem('cfd84160-cb3d-4b86-b9d0-a5cb20c674ce'))).toBeNull();
   });
 
   it("returns 'legacy' for the fixture item that carries only the legacy key", () => {
@@ -212,7 +212,7 @@ describe('inferPricingRuleFromServicePlanData', () => {
 
   it('does not treat an inherited key as present', () => {
     const parent = { [NEW_SUPPORT_ITEM_ATTR]: ['x'] };
-    expect(inferPricingRuleFromServicePlanData(Object.create(parent))).toBe(null);
+    expect(inferPricingRuleFromServicePlanData(Object.create(parent))).toBeNull();
   });
 });
 
@@ -449,7 +449,7 @@ describe('getServicePlanBoardIdFromMasterPlan', () => {
       ],
     });
     getAttribute.mockResolvedValueOnce({ name: 'Fund' }).mockResolvedValueOnce({ name: 'Participant Profile' });
-    expect(await getServicePlanBoardIdFromMasterPlan('55369', 'master-board', 'master-item')).toBe(null);
+    expect(await getServicePlanBoardIdFromMasterPlan('55369', 'master-board', 'master-item')).toBeNull();
   });
 
   it('stops at the first Service Plan reference', async () => {
@@ -476,10 +476,10 @@ describe('getServicePlanBoardIdFromMasterPlan', () => {
 
   it('returns null when there are no references at all', async () => {
     getReferences.mockResolvedValue(undefined);
-    expect(await getServicePlanBoardIdFromMasterPlan('55369', 'master-board', 'master-item')).toBe(null);
+    expect(await getServicePlanBoardIdFromMasterPlan('55369', 'master-board', 'master-item')).toBeNull();
 
     getReferences.mockResolvedValue({ data: [] });
-    expect(await getServicePlanBoardIdFromMasterPlan('55369', 'master-board', 'master-item')).toBe(null);
+    expect(await getServicePlanBoardIdFromMasterPlan('55369', 'master-board', 'master-item')).toBeNull();
   });
 });
 
