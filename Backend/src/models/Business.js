@@ -76,28 +76,28 @@ const businessSchema = new mongoose.Schema({
     quote: {
       accountCode: { type: String },
       taxType: { type: String },
-      taxFreeType: { type: String }
+      taxRatePercent: { type: Number, default: null }
     },
     purchaseOrder: {
       accountCode: { type: String },
       taxType: { type: String },
-      taxFreeType: { type: String }
+      taxRatePercent: { type: Number, default: null }
     },
     invoice: {
       accountCode: { type: String },
       taxType: { type: String },
-      taxFreeType: { type: String }
+      taxRatePercent: { type: Number, default: null }
     },
     quoteOverrides: {
       quoteService: {
         accountCode: { type: String },
         taxType: { type: String },
-        taxFreeType: { type: String }
+        taxRatePercent: { type: Number, default: null }
       },
       material: {
         accountCode: { type: String },
         taxType: { type: String },
-        taxFreeType: { type: String }
+        taxRatePercent: { type: Number, default: null }
       }
     }
   },

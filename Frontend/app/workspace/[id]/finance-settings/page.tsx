@@ -89,7 +89,7 @@ function FinanceSettingsContent() {
 
   return (
     <>
-      <Button variant="ghost" className="mb-6" onClick={() => router.replace(`/workspace/${id}`)}>
+      <Button variant="ghost" className="mb-6" onClick={() => router.replace(`/workspace/${workspaceId}`)}>
         <ArrowLeft className="h-4 w-4 mr-2" />
         Back to Workspace
       </Button>

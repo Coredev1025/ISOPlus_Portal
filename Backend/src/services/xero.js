@@ -273,6 +273,7 @@ export async function createInvoice(invoice) {
                 reference: invoice.reference,
                 date: normalizeDateOnly(invoice.date),
                 dueDate: normalizeDateOnly(invoice.dueDate),
+                lineAmountTypes: invoice.lineAmountTypes || 'Exclusive',
                 lineItems: mapInvoiceLineItems(invoice.lineItems),
                 status: invoice.status || 'AUTHORISED'
             }]
@@ -458,7 +459,10 @@ export async function createQuote(quote) {
         const { token, xeroTenantId } = await createToken();
 
         const quotes = {
-            quotes: [quote],
+            quotes: [{
+                ...quote,
+                lineAmountTypes: quote.lineAmountTypes || 'Exclusive',
+            }],
         };
 
         const createdQuotes = await xeroClient.accountingApi.createQuotes(
@@ -523,7 +527,10 @@ export async function createPurchaseOrder(purchaseOrder) {
         const { token, xeroTenantId } = await createToken();
 
         const purchaseOrders = {
-            purchaseOrders: [purchaseOrder],
+            purchaseOrders: [{
+                ...purchaseOrder,
+                lineAmountTypes: purchaseOrder.lineAmountTypes || 'Exclusive',
+            }],
         };
 
         const createdPurchaseOrders = await xeroClient.accountingApi.createPurchaseOrders(

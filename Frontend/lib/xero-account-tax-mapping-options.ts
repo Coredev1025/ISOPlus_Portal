@@ -12,12 +12,13 @@ export type XeroTaxRateOption = {
   status: string;
   canApplyToRevenue: boolean;
   canApplyToExpenses: boolean;
+  effectiveRate: number | null;
 };
 
 export type XeroDocMapping = {
   accountCode: string;
   taxType: string;
-  taxFreeType: string;
+  taxRatePercent: number | null;
 };
 
 export type XeroQuoteOverrideKind = "quoteService" | "material";
@@ -32,7 +33,7 @@ export type XeroLineItemMapping = {
 const EMPTY_DOC: XeroDocMapping = {
   accountCode: "",
   taxType: "",
-  taxFreeType: "",
+  taxRatePercent: null
 };
 
 export const EMPTY_LINE_ITEM_MAPPING: XeroLineItemMapping = {
@@ -45,18 +46,15 @@ export const EMPTY_LINE_ITEM_MAPPING: XeroLineItemMapping = {
   },
 };
 
-const TAX_FREE_DEFAULTS: Record<"quote" | "purchaseOrder" | "invoice", string> =
-  {
-    quote: "EXEMPTOUTPUT",
-    purchaseOrder: "EXEMPTEXPENSES",
-    invoice: "EXEMPTOUTPUT",
-  };
-
 function pickDoc(d?: Partial<XeroDocMapping>): XeroDocMapping {
+  const rate =
+    typeof d?.taxRatePercent === "number" && Number.isFinite(d.taxRatePercent)
+      ? d.taxRatePercent
+      : null;
   return {
     accountCode: d?.accountCode ?? "",
     taxType: d?.taxType ?? "",
-    taxFreeType: d?.taxFreeType ?? "",
+    taxRatePercent: rate,
   };
 }
 
@@ -90,27 +88,8 @@ export function taxRatesForAccount(
   );
 }
 
-export function withDefaultTaxFreeType(
-  doc: XeroDocMapping,
-  docType: "quote" | "purchaseOrder" | "invoice"
-): XeroDocMapping {
-  if (doc.taxFreeType) return doc;
-  return { ...doc, taxFreeType: TAX_FREE_DEFAULTS[docType] };
-}
-
 export function prepareMappingForSave(
   mapping: XeroLineItemMapping
 ): XeroLineItemMapping {
-  return {
-    quote: withDefaultTaxFreeType(mapping.quote, "quote"),
-    purchaseOrder: withDefaultTaxFreeType(mapping.purchaseOrder, "purchaseOrder"),
-    invoice: withDefaultTaxFreeType(mapping.invoice, "invoice"),
-    quoteOverrides: {
-      quoteService: withDefaultTaxFreeType(
-        mapping.quoteOverrides.quoteService,
-        "quote"
-      ),
-      material: withDefaultTaxFreeType(mapping.quoteOverrides.material, "quote"),
-    },
-  };
+  return normalizeMapping(mapping);
 }

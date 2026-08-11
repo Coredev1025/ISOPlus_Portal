@@ -116,7 +116,7 @@ function buildNonFaceToFaceQuoteLine(NDISQuoteValues, gstType) {
   };
 }
 
-export function buildNdisQuoteXeroLineItems(NDISQuoteValues, refs) {
+export function buildNdisQuoteXeroLineItems(NDISQuoteValues, refs, options = {}) {
   const [
     directSupportValues,
     providerTravelValues,
@@ -124,8 +124,9 @@ export function buildNdisQuoteXeroLineItems(NDISQuoteValues, refs) {
     centreCapitalCostsValues,
     providerTravelLabourTravelTime,
   ] = refs;
-  const gstType = 'EXEMPTOUTPUT';
-  return [
+  const gstType = options.gstType || 'EXEMPTOUTPUT';
+  const accountCode = options.accountCode;
+  const lines = [
     buildDirectSupportQuoteLine(NDISQuoteValues, directSupportValues, gstType),
     buildProviderTravelQuoteLine(NDISQuoteValues, providerTravelValues, gstType),
     buildActivityTransportQuoteLine(NDISQuoteValues, activityBasedTransportValues, gstType),
@@ -134,6 +135,9 @@ export function buildNdisQuoteXeroLineItems(NDISQuoteValues, refs) {
     buildAllowancesQuoteLine(NDISQuoteValues, gstType),
     buildNonFaceToFaceQuoteLine(NDISQuoteValues, gstType),
   ].filter(Boolean);
+
+  if (!accountCode) return lines;
+  return lines.map((line) => ({ ...line, accountCode }));
 }
 
 function pushPdfOrder(ordersArr, subTotalRef, formatValue, gstLabel, desc, unit, qty, unitPrice) {

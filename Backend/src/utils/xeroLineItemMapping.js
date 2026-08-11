@@ -3,21 +3,31 @@ export const XERO_DOC_TYPES = ['quote', 'purchaseOrder', 'invoice'];
 export const XERO_QUOTE_OVERRIDE_KINDS = ['quoteService', 'material'];
 
 export const XERO_LINE_ITEM_TAX_DEFAULTS = {
-  quote: { taxType: 'OUTPUT', taxFreeType: 'EXEMPTOUTPUT' },
-  purchaseOrder: { taxType: 'INPUT', taxFreeType: 'EXEMPTEXPENSES' },
-  invoice: { taxType: 'OUTPUT', taxFreeType: 'EXEMPTOUTPUT' }
+  quote: { taxType: 'OUTPUT' },
+  purchaseOrder: { taxType: 'INPUT' },
+  invoice: { taxType: 'OUTPUT' }
 };
 
 function cleanString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function toRatePercent(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const n = Number.parseFloat(value);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
 function normalizeDocMapping(src) {
   const input = src && typeof src === 'object' ? src : {};
+  const rate = toRatePercent(input.taxRatePercent);
   return {
     accountCode: cleanString(input.accountCode),
     taxType: cleanString(input.taxType),
-    taxFreeType: cleanString(input.taxFreeType)
+    taxRatePercent: rate == null ? null : rate,
   };
 }
 
@@ -35,20 +45,82 @@ function pickMappingForResolve(business, docType, lineKind) {
   return {
     accountCode: cleanString(override.accountCode) || docMapping.accountCode,
     taxType: cleanString(override.taxType) || docMapping.taxType,
-    taxFreeType: cleanString(override.taxFreeType) || docMapping.taxFreeType
+    taxRatePercent:
+      toRatePercent(override.taxRatePercent) ?? toRatePercent(docMapping.taxRatePercent),
   };
+}
+
+export function inferTaxRatePercentFromTaxType(taxType) {
+  const code = cleanString(taxType).toUpperCase();
+  if (!code) return null;
+  if (code.includes('EXEMPT') || code === 'NONE' || code === 'BASEXCLUDED') return 0;
+  if (
+    code === 'OUTPUT'
+    || code === 'INPUT'
+    || code.startsWith('OUTPUT')
+    || code.startsWith('INPUT')
+  ) {
+    return 10;
+  }
+  return null;
+}
+
+export function lookupTaxRatePercent(taxRates, taxType) {
+  const code = cleanString(taxType);
+  if (!code || !Array.isArray(taxRates)) return null;
+  const match = taxRates.find(
+    (rate) => cleanString(rate.taxType || rate.TaxType) === code
+  );
+  if (!match) return null;
+  return (
+    toRatePercent(match.effectiveRate)
+    ?? toRatePercent(match.EffectiveRate)
+    ?? toRatePercent(match.displayTaxRate)
+    ?? toRatePercent(match.DisplayTaxRate)
+  );
 }
 
 export function resolveLineItemTax(business, docType, gstValue, lineKind) {
   const mapping = pickMappingForResolve(business, docType, lineKind);
   const defaults = XERO_LINE_ITEM_TAX_DEFAULTS[docType] || {};
-  const taxType = isGstApplied(gstValue)
-    ? (mapping.taxType || defaults.taxType)
-    : (mapping.taxFreeType || defaults.taxFreeType);
+  const mappedTaxType = cleanString(mapping.taxType);
+
+  let taxType = mappedTaxType;
+  if (!taxType) {
+    taxType = defaults.taxType || '';
+  }
+
   return {
-    accountCode: mapping.accountCode || undefined,
-    taxType
+    accountCode: cleanString(mapping.accountCode) || undefined,
+    taxType: taxType || undefined,
   };
+}
+
+export function pickGstValue(...candidates) {
+  for (const candidate of candidates) {
+    if (candidate === undefined || candidate === null) continue;
+    const normalized = String(candidate).trim();
+    if (normalized) return normalized;
+  }
+  return '';
+}
+
+export function resolveSalesLineMapping(
+  business,
+  docType,
+  gstValue,
+  accounts,
+  lineKind,
+  options = {}
+) {
+  const resolved = resolveLineItemTax(business, docType, gstValue, lineKind);
+  const fallbackType = options.fallbackAccountType || 'REVENUE';
+  const defaultCode = options.defaultAccountCode ?? '200';
+  const accountCode =
+    resolved.accountCode
+    || accounts?.find((acc) => acc.Type === fallbackType)?.Code
+    || defaultCode;
+  return { accountCode, taxType: resolved.taxType };
 }
 
 export function normalizeLineItemMapping(input) {
@@ -66,4 +138,27 @@ export function normalizeLineItemMapping(input) {
     out.quoteOverrides[kind] = normalizeDocMapping(overridesSrc[kind]);
   }
   return out;
+}
+
+export function enrichMappingWithTaxRatePercents(mapping, taxRates) {
+  const next = normalizeLineItemMapping(mapping);
+  const fill = (doc) => {
+    if (!doc.taxType) return doc;
+    if (doc.taxRatePercent != null) return doc;
+    const lookedUp = lookupTaxRatePercent(taxRates, doc.taxType);
+    const inferred = inferTaxRatePercentFromTaxType(doc.taxType);
+    return {
+      ...doc,
+      taxRatePercent: lookedUp ?? inferred ?? null,
+    };
+  };
+  return {
+    quote: fill(next.quote),
+    purchaseOrder: fill(next.purchaseOrder),
+    invoice: fill(next.invoice),
+    quoteOverrides: {
+      quoteService: fill(next.quoteOverrides.quoteService),
+      material: fill(next.quoteOverrides.material),
+    },
+  };
 }

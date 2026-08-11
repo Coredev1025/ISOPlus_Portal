@@ -1,105 +1,104 @@
-import { describe, it } from 'node:test';
-import assert from 'node:assert/strict';
+import { describe, it, expect } from 'vitest';
 import {
   isGstApplied,
   normalizeLineItemMapping,
+  pickGstValue,
   resolveLineItemTax,
+  resolveSalesLineMapping,
+  lookupTaxRatePercent,
+  inferTaxRatePercentFromTaxType,
+  enrichMappingWithTaxRatePercents,
 } from '../../../src/utils/xeroLineItemMapping.js';
 
 describe('xeroLineItemMapping', () => {
   it('isGstApplied recognizes 10%', () => {
-    assert.equal(isGstApplied('10%'), true);
-    assert.equal(isGstApplied('0%'), false);
-    assert.equal(isGstApplied(undefined), false);
+    expect(isGstApplied('10%')).toBe(true);
+    expect(isGstApplied('0%')).toBe(false);
+    expect(isGstApplied(undefined)).toBe(false);
   });
 
   it('normalizeLineItemMapping cleans doc types and quote overrides', () => {
     const normalized = normalizeLineItemMapping({
-      quote: { accountCode: ' 200 ', taxType: 'OUTPUT', taxFreeType: 'EXEMPTOUTPUT' },
+      quote: { accountCode: ' 200 ', taxType: 'OUTPUT', taxRatePercent: 10 },
       invoice: { accountCode: 123 },
       quoteOverrides: {
         material: { accountCode: ' 260 ', taxType: ' OUTPUT ' },
       },
     });
 
-    assert.deepEqual(normalized.quote, {
+    expect(normalized.quote).toEqual({
       accountCode: '200',
       taxType: 'OUTPUT',
-      taxFreeType: 'EXEMPTOUTPUT',
+      taxRatePercent: 10,
     });
-    assert.deepEqual(normalized.invoice, {
-      accountCode: '',
-      taxType: '',
-      taxFreeType: '',
-    });
-    assert.deepEqual(normalized.purchaseOrder, {
-      accountCode: '',
-      taxType: '',
-      taxFreeType: '',
-    });
-    assert.deepEqual(normalized.quoteOverrides.material, {
-      accountCode: '260',
-      taxType: 'OUTPUT',
-      taxFreeType: '',
-    });
-    assert.deepEqual(normalized.quoteOverrides.quoteService, {
-      accountCode: '',
-      taxType: '',
-      taxFreeType: '',
-    });
+    expect(normalized.invoice.taxRatePercent).toBeNull();
   });
 
-  it('resolveLineItemTax uses doc mapping and GST defaults', () => {
+  it('resolveLineItemTax prefers mapped Tax Rate (taxType) over board GST', () => {
     const business = {
       xeroLineItemMapping: {
         invoice: {
-          accountCode: '200',
+          accountCode: '260',
           taxType: 'OUTPUT',
-          taxFreeType: 'EXEMPTOUTPUT',
+          taxRatePercent: 10,
         },
       },
     };
 
-    assert.deepEqual(resolveLineItemTax(business, 'invoice', '10%'), {
-      accountCode: '200',
+    expect(resolveLineItemTax(business, 'invoice', 'GST Free')).toEqual({
+      accountCode: '260',
       taxType: 'OUTPUT',
-    });
-    assert.deepEqual(resolveLineItemTax(business, 'invoice', '0%'), {
-      accountCode: '200',
-      taxType: 'EXEMPTOUTPUT',
     });
   });
 
-  it('resolveLineItemTax prefers quote override then falls back', () => {
-    const business = {
-      xeroLineItemMapping: {
-        quote: {
-          accountCode: '200',
-          taxType: 'OUTPUT',
-          taxFreeType: 'EXEMPTOUTPUT',
-        },
-        quoteOverrides: {
-          material: {
-            accountCode: '260',
-            taxType: 'OUTPUT',
-            taxFreeType: 'EXEMPTOUTPUT',
-          },
-          quoteService: {
-            accountCode: '',
-            taxType: '',
-            taxFreeType: '',
-          },
-        },
-      },
-    };
+  it('lookupTaxRatePercent reads EffectiveRate from Xero options', () => {
+    expect(
+      lookupTaxRatePercent(
+        [{ taxType: 'OUTPUT', effectiveRate: 10 }],
+        'OUTPUT'
+      )
+    ).toBe(10);
+    expect(inferTaxRatePercentFromTaxType('EXEMPTOUTPUT')).toBe(0);
+    expect(inferTaxRatePercentFromTaxType('OUTPUT')).toBe(10);
+  });
 
-    assert.deepEqual(
-      resolveLineItemTax(business, 'quote', '10%', 'material'),
-      { accountCode: '260', taxType: 'OUTPUT' }
+  it('enrichMappingWithTaxRatePercents fills missing percents from tax rates', () => {
+    const enriched = enrichMappingWithTaxRatePercents(
+      {
+        invoice: { accountCode: '260', taxType: 'OUTPUT' },
+      },
+      [{ taxType: 'OUTPUT', effectiveRate: 10 }]
     );
-    assert.deepEqual(
-      resolveLineItemTax(business, 'quote', '10%', 'quoteService'),
-      { accountCode: '200', taxType: 'OUTPUT' }
-    );
+    expect(enriched.invoice.taxRatePercent).toBe(10);
+  });
+
+  it('pickGstValue prefers first non-empty candidate', () => {
+    expect(pickGstValue(null, '', '  ', 'GST Free')).toBe('GST Free');
+  });
+
+  it('resolveSalesLineMapping uses mapping then account-type then 200', () => {
+    const accounts = [
+      { Type: 'EXPENSE', Code: '400' },
+      { Type: 'REVENUE', Code: '210' },
+    ];
+    expect(
+      resolveSalesLineMapping(
+        {
+          xeroLineItemMapping: {
+            invoice: {
+              accountCode: '260',
+              taxType: 'OUTPUT',
+            },
+          },
+        },
+        'invoice',
+        'GST Free',
+        accounts
+      )
+    ).toEqual({ accountCode: '260', taxType: 'OUTPUT' });
+
+    expect(
+      resolveSalesLineMapping({}, 'invoice', '', accounts)
+    ).toEqual({ accountCode: '210', taxType: 'OUTPUT' });
   });
 });

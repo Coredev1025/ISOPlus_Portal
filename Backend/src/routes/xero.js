@@ -36,7 +36,7 @@ import {
 } from '../services/xero.js';
 import { Item as ItemPayloadDTO } from '../dto/itemsPayload.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
-import { resolveLineItemTax } from '../utils/xeroLineItemMapping.js';
+import { resolveSalesLineMapping } from '../utils/xeroLineItemMapping.js';
 import {
   NDIS_MASTERPLAN_ATTR as NDIS_MASTERPLAN_ATTR_DB,
   buildNdisMasterPlanServiceRows,
@@ -382,11 +382,14 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
-    const invoiceLineTax = resolveLineItemTax(business, 'invoice', item.values["GST"]);
     const accounts = await getAccounts(workspaceId);
-    const salesAccountCode = invoiceLineTax.accountCode
-      || accounts.find((acc) => acc.Type === 'REVENUE')?.Code
-      || '200';
+    const invoiceLineTax = resolveSalesLineMapping(
+      business,
+      'invoice',
+      item.values["GST"],
+      accounts
+    );
+    const salesAccountCode = invoiceLineTax.accountCode;
 
     if (!(await isAccountTaxRateMatched(workspaceId, salesAccountCode, invoiceLineTax.taxType))) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "Account code and Tax rate is not matched, please update them in ISO+ portal");
@@ -398,6 +401,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       contact: { contactID: contact.contactID },
       reference: jobPlanningValues.jobNumber,
       lineItems: [],
+      lineAmountTypes: 'Exclusive',
       date: getDateOnlyIso(new Date(), business?.headOfficeTimezone || 'Australia/Sydney'),
       dueDate: (() => { const d = new Date(); d.setDate(d.getDate() + 30); return getDateOnlyIso(d, business?.headOfficeTimezone || 'Australia/Sydney'); })(),
       status: "DRAFT"
@@ -657,10 +661,12 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
-    const quoteLineTax = resolveLineItemTax(
+    const accounts = await getAccounts(workspaceId);
+    const quoteLineTax = resolveSalesLineMapping(
       business,
       'quote',
       quoteValues['GST'],
+      accounts,
       'quoteService'
     );
     if (!(await isAccountTaxRateMatched(workspaceId, quoteLineTax.accountCode, quoteLineTax.taxType))) {
@@ -677,7 +683,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
         quantity: quoteValues.Quantity,
         unitAmount: quoteValues['Unit Price($) - GST Excl.'],
         taxType: quoteLineTax.taxType,
-        ...(quoteLineTax.accountCode ? { accountCode: quoteLineTax.accountCode } : {}),
+        accountCode: quoteLineTax.accountCode,
       },
     ];
     const mappedQuote = {
@@ -815,10 +821,14 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
-    const poLineTax = resolveLineItemTax(
+    const accounts = await getAccounts(workspaceId);
+    const poLineTax = resolveSalesLineMapping(
       business,
       'purchaseOrder',
-      purchaseOrderValues['GST']
+      purchaseOrderValues['GST'],
+      accounts,
+      undefined,
+      { fallbackAccountType: 'EXPENSE' }
     );
     if (!(await isAccountTaxRateMatched(workspaceId, poLineTax.accountCode, poLineTax.taxType))) {
       await setIntegrationMessage(workspaceId, boardId, item.id, "Account code and Tax rate is not matched, please update them in ISO+ portal");
@@ -849,7 +859,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
           quantity: purchaseOrderValues.Quantity,
           unitAmount: purchaseOrderValues['Unit Price($) - GST Excl.'],
           taxType: poLineTax.taxType,
-          ...(poLineTax.accountCode ? { accountCode: poLineTax.accountCode } : {}),
+          accountCode: poLineTax.accountCode,
         }
       ]
     };

@@ -84,7 +84,7 @@ function AccountTaxPair({
   accounts: XeroAccountOption[];
   taxRates: XeroTaxRateOption[];
   disabled: boolean;
-  onChange: (field: keyof XeroDocMapping, value: string) => void;
+  onChange: (patch: Partial<XeroDocMapping>) => void;
 }) {
   const selectedAccount = useMemo(
     () => accounts.find((account) => account.code === doc.accountCode),
@@ -111,7 +111,9 @@ function AccountTaxPair({
         placeholder={accountOptions.length ? "Select account" : "No accounts available"}
         options={accountOptions}
         disabled={disabled}
-        onChange={(v) => onChange("accountCode", v)}
+        onChange={(v) =>
+          onChange({ accountCode: v, taxType: "", taxRatePercent: null })
+        }
       />
       <MappingSelect
         label="Tax Rate"
@@ -119,7 +121,13 @@ function AccountTaxPair({
         placeholder={selectedAccount ? "Select tax rate" : "Select an account first"}
         options={taxOptions}
         disabled={disabled || !selectedAccount}
-        onChange={(v) => onChange("taxType", v)}
+        onChange={(v) => {
+          const rate = availableTaxRates.find((r) => r.taxType === v);
+          onChange({
+            taxType: v,
+            taxRatePercent: rate?.effectiveRate ?? null
+          });
+        }}
       />
     </div>
   );
@@ -148,7 +156,7 @@ function QuoteOverrideRow({
   accounts: XeroAccountOption[];
   taxRates: XeroTaxRateOption[];
   disabled: boolean;
-  onChange: (kind: XeroQuoteOverrideKind, field: keyof XeroDocMapping, value: string) => void;
+  onChange: (kind: XeroQuoteOverrideKind, patch: Partial<XeroDocMapping>) => void;
 }) {
   const selectedAccount = accounts.find((a) => a.code === doc.accountCode);
   const rowTaxRates = taxRatesForAccount(taxRates, selectedAccount);
@@ -161,7 +169,11 @@ function QuoteOverrideRow({
           disabled={disabled}
           value={doc.accountCode === "" ? USE_DEFAULT : doc.accountCode}
           onValueChange={(next) =>
-            onChange(kind, "accountCode", next === USE_DEFAULT ? "" : next)
+            onChange(kind, {
+              accountCode: next === USE_DEFAULT ? "" : next,
+              taxType: "",
+              taxRatePercent: null,
+            })
           }
         >
           <SelectTrigger className="h-8">
@@ -181,9 +193,17 @@ function QuoteOverrideRow({
         <Select
           disabled={disabled || !selectedAccount}
           value={doc.taxType === "" ? USE_DEFAULT : doc.taxType}
-          onValueChange={(next) =>
-            onChange(kind, "taxType", next === USE_DEFAULT ? "" : next)
-          }
+          onValueChange={(next) => {
+            if (next === USE_DEFAULT) {
+              onChange(kind, { taxType: "", taxRatePercent: null});
+              return;
+            }
+            const rate = rowTaxRates.find((r) => r.taxType === next);
+            onChange(kind, {
+              taxType: next,
+              taxRatePercent: rate?.effectiveRate ?? null
+            });
+          }}
         >
           <SelectTrigger className="h-8">
             <SelectValue placeholder="Use quote default" />
@@ -275,34 +295,25 @@ export function XeroAccountTaxMapping({
   const updateDoc = useCallback(
     (
       docKey: "quote" | "purchaseOrder" | "invoice",
-      field: keyof XeroDocMapping,
-      value: string
+      patch: Partial<XeroDocMapping>
     ) => {
-      setMapping((prev) => {
-        const nextDoc = { ...prev[docKey], [field]: value };
-        if (field === "accountCode") {
-          nextDoc.taxType = "";
-          nextDoc.taxFreeType = "";
-        }
-        return { ...prev, [docKey]: nextDoc };
-      });
+      setMapping((prev) => ({
+        ...prev,
+        [docKey]: { ...prev[docKey], ...patch },
+      }));
     },
     []
   );
 
   const updateOverride = useCallback(
-    (kind: XeroQuoteOverrideKind, field: keyof XeroDocMapping, value: string) => {
-      setMapping((prev) => {
-        const nextDoc = { ...prev.quoteOverrides[kind], [field]: value };
-        if (field === "accountCode") {
-          nextDoc.taxType = "";
-          nextDoc.taxFreeType = "";
-        }
-        return {
-          ...prev,
-          quoteOverrides: { ...prev.quoteOverrides, [kind]: nextDoc },
-        };
-      });
+    (kind: XeroQuoteOverrideKind, patch: Partial<XeroDocMapping>) => {
+      setMapping((prev) => ({
+        ...prev,
+        quoteOverrides: {
+          ...prev.quoteOverrides,
+          [kind]: { ...prev.quoteOverrides[kind], ...patch },
+        },
+      }));
     },
     []
   );
@@ -337,9 +348,6 @@ export function XeroAccountTaxMapping({
       <div>
         <div className="mb-1 flex items-center gap-2">
           <h5 className="text-[13px] font-bold">Default account &amp; tax mapping</h5>
-          <Badge className="bg-emerald-100 text-emerald-800 text-[10px] uppercase dark:bg-emerald-950 dark:text-emerald-200">
-            new
-          </Badge>
         </div>
         <p className="text-[12.5px] text-muted-foreground">
           Sets the Xero account code and tax rate ISO+ uses when creating each synced
@@ -367,7 +375,7 @@ export function XeroAccountTaxMapping({
           accounts={accounts}
           taxRates={taxRates}
           disabled={disabled}
-          onChange={(field, value) => updateDoc("quote", field, value)}
+          onChange={(patch) => updateDoc("quote", patch)}
         />
         <div className="overflow-x-auto rounded-lg border">
           <table className="w-full text-[12.5px]">
@@ -405,7 +413,7 @@ export function XeroAccountTaxMapping({
           accounts={accounts}
           taxRates={taxRates}
           disabled={disabled}
-          onChange={(field, value) => updateDoc("purchaseOrder", field, value)}
+          onChange={(patch) => updateDoc("purchaseOrder", patch)}
         />
       </div>
 
@@ -418,7 +426,7 @@ export function XeroAccountTaxMapping({
           accounts={accounts}
           taxRates={taxRates}
           disabled={disabled}
-          onChange={(field, value) => updateDoc("invoice", field, value)}
+          onChange={(patch) => updateDoc("invoice", patch)}
         />
       </div>
 

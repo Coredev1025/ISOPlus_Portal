@@ -26,7 +26,7 @@ import {
   parseLogoRemovals,
 } from '../utils/businessProfileUpdate.js';
 import { sanitizeLogValue } from '../utils/sanitizeLog.js';
-import { normalizeLineItemMapping } from '../utils/xeroLineItemMapping.js';
+import { normalizeLineItemMapping, enrichMappingWithTaxRatePercents } from '../utils/xeroLineItemMapping.js';
 
 function mapXeroAccountOptions(rawAccounts) {
   return (rawAccounts || [])
@@ -48,6 +48,11 @@ function mapXeroTaxRateOptions(rawTaxRates) {
       status: t.Status ?? t.status ?? '',
       canApplyToRevenue: t.CanApplyToRevenue ?? t.canApplyToRevenue ?? false,
       canApplyToExpenses: t.CanApplyToExpenses ?? t.canApplyToExpenses ?? false,
+      effectiveRate: Number(t.EffectiveRate ?? t.effectiveRate ?? t.DisplayTaxRate ?? t.displayTaxRate ?? NaN),
+    }))
+    .map((t) => ({
+      ...t,
+      effectiveRate: Number.isFinite(t.effectiveRate) ? t.effectiveRate : null,
     }))
     .filter((t) => t.taxType && t.status !== 'DELETED' && t.status !== 'ARCHIVED');
 }
@@ -509,7 +514,14 @@ router.put('/xero/line-item-mapping', authenticateToken, async (req, res) => {
     const workspaceId = toRequiredQueryString(req.body.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
 
-    const mapping = normalizeLineItemMapping(req.body.mapping);
+    let mapping = normalizeLineItemMapping(req.body.mapping);
+    try {
+      const rawTaxRates = await getTaxRates(workspaceId);
+      mapping = enrichMappingWithTaxRatePercents(mapping, mapXeroTaxRateOptions(rawTaxRates));
+    } catch {
+      mapping = enrichMappingWithTaxRatePercents(mapping, []);
+    }
+
     const business = await Business.findOneAndUpdate(
       { workspaceId: { $eq: String(workspaceId) } },
       { $set: { xeroLineItemMapping: mapping } },
