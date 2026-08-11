@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import ScheduledJob from '../../../src/models/ScheduledJob.js';
 import { runTick } from '../../../src/services/scheduler/tick.js';
 import {
@@ -24,6 +24,10 @@ async function due(kind, overrides = {}) {
 describe('runTick', () => {
   beforeEach(() => {
     clearRegistry();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('dispatches a due schedule and reports it', async () => {
@@ -161,5 +165,22 @@ describe('runTick', () => {
     ]);
 
     expect(a.claimed + b.claimed).toBe(1);
+  });
+
+  it('continues to the next candidate after losing a claim race', async () => {
+    const handler = vi.fn();
+    register('demo', { handler, policy: AT_MOST_ONCE });
+    await due('demo', { nextRunAt: new Date('2026-08-11T03:00:00Z') }); // claimed first
+    await due('demo', { nextRunAt: new Date('2026-08-11T03:30:00Z') }); // must still be reached
+
+    // One lost CAS: findOneAndUpdate resolves null exactly once, as it does when
+    // another instance claimed the row between our read and our update.
+    vi.spyOn(ScheduledJob, 'findOneAndUpdate').mockResolvedValueOnce(null);
+
+    const summary = await runTick({ now: NOW });
+
+    // Old behaviour (stop on a lost CAS) gives claimed: 0 here.
+    expect(summary.claimed).toBe(1);
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 });
