@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildCron, describeCron } from '../../../src/services/scheduler/cadence.js';
 import { isValidSchedule, minIntervalMinutes } from '../../../src/services/scheduler/nextRun.js';
+import { AT_MOST_ONCE_MIN_INTERVAL_MINUTES } from '../../../src/services/scheduler/intervalFloor.js';
 
 const TZ = 'Australia/Sydney';
 const NOW = new Date('2026-08-11T00:00:00Z');
@@ -212,16 +213,48 @@ describe('every buildCron output is a schedulable, sufficiently-spaced cron', ()
   });
 
   // Daily, weekly and monthly cadences are all >= 24 hours apart, so the
-  // 60-minute AT_MOST_ONCE floor (intervalFloor.js) can never reject picker
-  // output. Asserted directly against minIntervalMinutes, rather than
-  // reasoned about, so the guarantee is re-checked automatically if someone
-  // later adds a sub-daily frequency to the picker without revisiting the
-  // floor.
+  // AT_MOST_ONCE floor (intervalFloor.js) can never reject picker output.
+  // Asserted directly against minIntervalMinutes, rather than reasoned about,
+  // so the guarantee is re-checked automatically if someone later adds a
+  // sub-daily frequency to the picker without revisiting the floor.
+  //
+  // The floor is imported rather than written as a literal: hard-coding 60
+  // would keep passing if the constant were raised, which is exactly the
+  // change this test exists to catch.
   it.each(pickers)(
-    'always satisfies the 60-minute AT_MOST_ONCE floor: $frequency',
+    'always satisfies the AT_MOST_ONCE floor: $frequency',
     (picker) => {
       const minutes = minIntervalMinutes(buildCron(picker), TZ, NOW);
-      expect(minutes).toBeGreaterThanOrEqual(60);
+      expect(minutes).toBeGreaterThanOrEqual(AT_MOST_ONCE_MIN_INTERVAL_MINUTES);
     },
   );
+});
+
+// The guards throw TypeError for a wrong-type argument and RangeError for an
+// in-range-check failure, so a caller can tell the two apart without parsing
+// the message. Asserting only on message text would let the two throws be
+// swapped without any test noticing, which would defeat the distinction.
+describe('argument guards throw the specific built-in', () => {
+  it('throws TypeError when a numeric field is not an integer', () => {
+    expect(() => buildCron({ frequency: 'daily', hour: 9.5, minute: 0 })).toThrow(TypeError);
+    expect(() => buildCron({ frequency: 'daily', hour: '9', minute: 0 })).toThrow(TypeError);
+  });
+
+  it('throws RangeError when an integer field is out of bounds', () => {
+    expect(() => buildCron({ frequency: 'daily', hour: 24, minute: 0 })).toThrow(RangeError);
+    expect(() => buildCron({ frequency: 'daily', hour: 9, minute: -1 })).toThrow(RangeError);
+  });
+
+  it('distinguishes the two for dayOfMonth', () => {
+    const base = { frequency: 'monthly', hour: 2, minute: 0 };
+    expect(() => buildCron({ ...base, dayOfMonth: 1.5 })).toThrow(TypeError);
+    expect(() => buildCron({ ...base, dayOfMonth: 29 })).toThrow(RangeError);
+  });
+
+  it('does not throw RangeError where TypeError is meant, or vice versa', () => {
+    // RangeError is not a TypeError and vice versa, so these assertions fail
+    // if the two throws are ever swapped.
+    expect(() => buildCron({ frequency: 'daily', hour: 9.5, minute: 0 })).not.toThrow(RangeError);
+    expect(() => buildCron({ frequency: 'daily', hour: 24, minute: 0 })).not.toThrow(TypeError);
+  });
 });

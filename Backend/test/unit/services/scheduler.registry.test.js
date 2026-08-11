@@ -41,6 +41,14 @@ describe('scheduler registry', () => {
     expect(() => register('demo', { policy: AT_MOST_ONCE })).toThrow(/handler/i);
   });
 
+  it('throws TypeError specifically when the handler is not a function', () => {
+    // The class is asserted, not just the message: a caller should be able to
+    // tell a wrong-type argument apart without string-matching, and asserting
+    // only on text would let this be reverted to a generic Error unnoticed.
+    expect(() => register('demo', { policy: AT_MOST_ONCE })).toThrow(TypeError);
+    expect(() => register('demo', { handler: 'nope', policy: AT_MOST_ONCE })).toThrow(TypeError);
+  });
+
   it('refuses to register the same kind twice', () => {
     register('demo', { handler: () => {}, policy: AT_LEAST_ONCE });
     expect(() =>
