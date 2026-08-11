@@ -41,32 +41,56 @@ async function claimNext(now, excludeIds) {
       return { ...candidate, dueAt: candidate.nextRunAt };
     }
 
-    const claimed = await ScheduledJob.findOneAndUpdate(
-      { _id: candidate._id, nextRunAt: candidate.nextRunAt },
-      {
-        $set: {
-          nextRunAt: computeNextRun(candidate.cron, candidate.timezone, now),
-          lastRunAt: now,
-        },
-        $inc: {
-          missedRuns: countMissedSlots(
-            candidate.cron,
-            candidate.timezone,
-            candidate.nextRunAt,
-            now,
-          ),
-        },
-      },
-      { new: true, lean: true },
-    );
-
-    if (claimed) return { ...claimed, dueAt: candidate.nextRunAt };
-
-    // Another caller claimed it between the read and the update. Skip it for
-    // the rest of this tick and try the next candidate — do NOT stop here, or
-    // one lost race would abandon every remaining due schedule.
-    excludeIds.push(candidate._id);
+    const claimed = await claimAtMostOnce(candidate, now, excludeIds);
+    if (claimed) return claimed;
+    // claimAtMostOnce already excluded the candidate — either it lost the CAS
+    // race to another instance, or its cron/timezone would not parse. Either
+    // way, do NOT stop here: one bad row must not abandon every remaining due
+    // schedule, this tick or any future one.
   }
+}
+
+/**
+ * The compare-and-swap for an at-most-once claim. A cron/timezone that no
+ * longer parses — a row written directly against the collection, bypassing
+ * both upsertSchedule and the model validator — must be recorded and skipped
+ * rather than throwing out of the tick: that throw is what previously took
+ * every other schedule down with it, every minute, forever.
+ */
+async function claimAtMostOnce(candidate, now, excludeIds) {
+  let update;
+  try {
+    update = {
+      $set: {
+        nextRunAt: computeNextRun(candidate.cron, candidate.timezone, now),
+        lastRunAt: now,
+      },
+      $inc: {
+        missedRuns: countMissedSlots(
+          candidate.cron,
+          candidate.timezone,
+          candidate.nextRunAt,
+          now,
+        ),
+      },
+    };
+  } catch (err) {
+    await recordFailure(candidate, AT_MOST_ONCE, err, now);
+    excludeIds.push(candidate._id);
+    return null;
+  }
+
+  const claimed = await ScheduledJob.findOneAndUpdate(
+    { _id: candidate._id, nextRunAt: candidate.nextRunAt },
+    update,
+    { new: true, lean: true },
+  );
+
+  if (claimed) return { ...claimed, dueAt: candidate.nextRunAt };
+
+  // Another caller claimed it between the read and the update.
+  excludeIds.push(candidate._id);
+  return null;
 }
 
 /**

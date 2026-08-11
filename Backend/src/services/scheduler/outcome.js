@@ -40,28 +40,48 @@ export async function recordSuccess(job, policy, now) {
   await ScheduledJob.updateOne({ _id: job._id }, update);
 }
 
+/**
+ * The give-up advance itself calls computeNextRun, which throws for a
+ * cron/timezone that no longer parses — a row written directly against the
+ * collection, bypassing both upsertSchedule and the model validator. That
+ * must not stop lastError/consecutiveFailures from being recorded, and must
+ * not escape recordFailure: this is the row already failing every tick, and a
+ * throw here previously took the rest of the tick down with it.
+ */
+function tryAdvancePastFailureLimit(job, now) {
+  try {
+    return computeNextRun(job.cron, job.timezone, now);
+  } catch (err) {
+    logError('Scheduler', 'Could not advance an unparseable schedule past its failure limit', {
+      kind: job.kind,
+      targetId: job.targetId,
+      error: describeError(err),
+    });
+    return undefined;
+  }
+}
+
 export async function recordFailure(job, policy, err, now) {
   const failures = (job.consecutiveFailures || 0) + 1;
   const errorDescription = describeError(err);
-  const update = {
-    $set: { lastError: errorDescription, consecutiveFailures: failures },
-  };
+  const set = { lastError: errorDescription, consecutiveFailures: failures };
 
   // At-least-once normally leaves nextRunAt alone so the next tick retries the
   // same slot. Once it has failed this many times running, give up on the slot
   // rather than retrying it every minute indefinitely.
   if (policy === AT_LEAST_ONCE && failures >= MAX_CONSECUTIVE_FAILURES) {
-    update.$set.nextRunAt = computeNextRun(job.cron, job.timezone, now);
+    const advanced = tryAdvancePastFailureLimit(job, now);
+    if (advanced) set.nextRunAt = advanced;
   }
 
-  await ScheduledJob.updateOne({ _id: job._id }, update);
+  await ScheduledJob.updateOne({ _id: job._id }, { $set: set });
 
   logError('Scheduler', 'Dispatch failed', {
     kind: job.kind,
     targetId: job.targetId,
     policy,
     consecutiveFailures: failures,
-    advanced: Boolean(update.$set.nextRunAt),
+    advanced: Boolean(set.nextRunAt),
     error: errorDescription,
   });
 }

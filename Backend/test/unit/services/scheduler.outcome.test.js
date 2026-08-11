@@ -88,6 +88,28 @@ describe('recordFailure', () => {
     expect(fresh.enabled).toBe(true);
   });
 
+  it('still records the error and consecutiveFailures when the give-up advance cannot parse the cron', async () => {
+    // A row whose cron/timezone stopped parsing (written directly, bypassing
+    // upsertSchedule and the model validator) must not make recordFailure
+    // itself throw once it tries to advance past MAX_CONSECUTIVE_FAILURES —
+    // that throw is what took every other schedule down with it.
+    const job = await makeJob({
+      consecutiveFailures: MAX_CONSECUTIVE_FAILURES - 1,
+    });
+    const unparseableJob = { ...job.toObject(), cron: 'not-a-cron' };
+
+    await expect(
+      recordFailure(unparseableJob, AT_LEAST_ONCE, new Error('still broken'), NOW),
+    ).resolves.toBeUndefined();
+
+    const fresh = await ScheduledJob.findById(job._id);
+    expect(fresh.consecutiveFailures).toBe(MAX_CONSECUTIVE_FAILURES);
+    expect(fresh.lastError).toContain('still broken');
+    // The advance itself could not happen, so nextRunAt is left where it was
+    // rather than crashing the caller.
+    expect(fresh.nextRunAt.toISOString()).toBe(job.nextRunAt.toISOString());
+  });
+
   it('describes plain objects (not Error instances) usefully without stringifying to [object Object]', async () => {
     const job = await makeJob();
     const plainObj = { code: 'ETIMEDOUT', syscall: 'connect' };

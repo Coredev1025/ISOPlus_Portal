@@ -61,4 +61,27 @@ describe('ScheduledJob model', () => {
       ScheduledJob.create({ kind: 'board_sync', targetId: 'board-2' }),
     ).rejects.toThrow();
   });
+
+  it('rejects a cron expression that does not parse', async () => {
+    await expect(
+      ScheduledJob.create({
+        kind: 'board_sync',
+        targetId: 'board-bad-cron',
+        cron: 'not-a-cron',
+        nextRunAt: new Date('2026-08-11T00:00:00Z'),
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('rejects a timezone that is not a valid IANA name', async () => {
+    await expect(
+      ScheduledJob.create({
+        kind: 'board_sync',
+        targetId: 'board-bad-tz',
+        cron: '*/30 * * * *',
+        timezone: 'Mars/Olympus',
+        nextRunAt: new Date('2026-08-11T00:00:00Z'),
+      }),
+    ).rejects.toThrow();
+  });
 });

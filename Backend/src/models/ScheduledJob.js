@@ -1,5 +1,19 @@
 import mongoose from 'mongoose';
 
+import { isValidSchedule } from '../services/scheduler/nextRun.js';
+
+// A cron/timezone pair is only valid together — 'not-a-cron' is invalid on its
+// own, but so is a well-formed cron paired with a timezone Intl does not
+// recognise. Both fields validate against the combination so either one being
+// edited in isolation is still caught.
+function cronIsValid(value) {
+  return isValidSchedule(value, this.timezone);
+}
+
+function timezoneIsValid(value) {
+  return isValidSchedule(this.cron, value);
+}
+
 const scheduledJobSchema = new mongoose.Schema(
   {
     // Registry key. Not an enum: kinds are registered in code, and a schema
@@ -18,14 +32,25 @@ const scheduledJobSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    // Validated together with timezone via isValidSchedule (nextRun.js) — the
+    // same check upsertSchedule already runs before writing, now enforced for
+    // any write, including ones that bypass that service function.
     cron: {
       type: String,
       required: true,
+      validate: {
+        validator: cronIsValid,
+        message: (props) => `"${props.value}" is not a valid cron expression`,
+      },
     },
     timezone: {
       type: String,
       required: true,
       default: 'Australia/Sydney',
+      validate: {
+        validator: timezoneIsValid,
+        message: (props) => `"${props.value}" is not a valid IANA timezone`,
+      },
     },
     enabled: {
       type: Boolean,

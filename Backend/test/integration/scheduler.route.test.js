@@ -65,6 +65,42 @@ describe('POST /api/scheduler/tick', () => {
     expect(handler).toHaveBeenCalledTimes(1);
   });
 
+  it('does not let one un-parseable cron take the whole tick down with it', async () => {
+    // Bypass the model entirely, the same way a row written directly against
+    // the collection (as docs/scheduling.md tells support they may do) would
+    // reach production with no validator to stop it.
+    await ScheduledJob.collection.insertOne({
+      kind: 'demo',
+      targetId: 'bad-cron-target',
+      cron: 'not-a-cron',
+      timezone: 'Australia/Sydney',
+      enabled: true,
+      nextRunAt: new Date('2000-01-01T00:00:00Z'),
+      missedRuns: 0,
+      consecutiveFailures: 0,
+    });
+    const handler = vi.fn().mockResolvedValue(undefined);
+    register('demo', { handler, policy: AT_MOST_ONCE });
+    await ScheduledJob.create({
+      kind: 'demo',
+      targetId: 'good-target',
+      cron: '*/30 * * * *',
+      timezone: 'Australia/Sydney',
+      nextRunAt: new Date('2000-01-01T00:00:01Z'),
+    });
+
+    const res = await request(app)
+      .post('/api/scheduler/tick')
+      .set('Authorization', 'test-admin-key');
+
+    expect(res.status).toBe(200);
+    expect(res.body.dispatched).toBe(1);
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    const bad = await ScheduledJob.findOne({ targetId: 'bad-cron-target' });
+    expect(bad.lastError).toBeTruthy();
+  });
+
   it('returns a zero summary when nothing is due', async () => {
     const res = await request(app)
       .post('/api/scheduler/tick')
