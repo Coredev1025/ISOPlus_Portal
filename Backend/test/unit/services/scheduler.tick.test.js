@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import ScheduledJob from '../../../src/models/ScheduledJob.js';
+import SchedulerHealth, { SCHEDULER_HEALTH_KEY } from '../../../src/models/SchedulerHealth.js';
 import { runTick } from '../../../src/services/scheduler/tick.js';
 import {
   register,
@@ -200,6 +201,61 @@ describe('runTick', () => {
     ]);
 
     expect(a.claimed + b.claimed).toBe(1);
+  });
+
+  it('records a heartbeat on a tick that claims nothing, proving the clock is alive', async () => {
+    await runTick({ now: NOW });
+
+    const health = await SchedulerHealth.findOne({ key: SCHEDULER_HEALTH_KEY }).lean();
+    expect(health).not.toBeNull();
+    expect(health.lastTickAt.toISOString()).toBe(NOW.toISOString());
+    expect(health).toMatchObject({ claimed: 0, dispatched: 0, failed: 0, capped: false });
+  });
+
+  it('updates the same heartbeat document across ticks instead of duplicating it', async () => {
+    await runTick({ now: NOW });
+    const later = new Date(NOW.getTime() + 60_000);
+    await runTick({ now: later });
+
+    const count = await SchedulerHealth.countDocuments({ key: SCHEDULER_HEALTH_KEY });
+    expect(count).toBe(1);
+
+    const health = await SchedulerHealth.findOne({ key: SCHEDULER_HEALTH_KEY }).lean();
+    expect(health.lastTickAt.toISOString()).toBe(later.toISOString());
+  });
+
+  it('records the tick summary counts on the heartbeat', async () => {
+    register('demo', { handler: vi.fn().mockResolvedValue(undefined), policy: AT_MOST_ONCE });
+    await due('demo');
+
+    await runTick({ now: NOW });
+
+    const health = await SchedulerHealth.findOne({ key: SCHEDULER_HEALTH_KEY }).lean();
+    expect(health).toMatchObject({ claimed: 1, dispatched: 1, failed: 0, capped: false });
+  });
+
+  it('records the heartbeat even when dispatches failed, because the clock still fired', async () => {
+    register('bad', {
+      handler: vi.fn().mockRejectedValue(new Error('nope')),
+      policy: AT_MOST_ONCE,
+    });
+    await due('bad');
+
+    await runTick({ now: NOW });
+
+    const health = await SchedulerHealth.findOne({ key: SCHEDULER_HEALTH_KEY }).lean();
+    expect(health).toMatchObject({ claimed: 1, dispatched: 0, failed: 1 });
+    expect(health.lastTickAt.toISOString()).toBe(NOW.toISOString());
+  });
+
+  it('returns the tick summary normally even when the heartbeat write fails', async () => {
+    vi.spyOn(SchedulerHealth, 'findOneAndUpdate').mockRejectedValueOnce(new Error('mongo down'));
+
+    const summary = await runTick({ now: NOW });
+
+    expect(summary).toEqual({ claimed: 0, dispatched: 0, failed: 0, capped: false });
+    const count = await SchedulerHealth.countDocuments({ key: SCHEDULER_HEALTH_KEY });
+    expect(count).toBe(0);
   });
 
   it('continues to the next candidate after losing a claim race', async () => {

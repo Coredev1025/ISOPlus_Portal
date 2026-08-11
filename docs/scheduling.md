@@ -330,7 +330,39 @@ a race between two Elastic Beanstalk instances will double-dispatch it.
 
 ## What to alert on
 
-Per `ScheduledJob` document (`Backend/src/models/ScheduledJob.js`):
+- **`lastTickAt` staleness — the primary signal for a missing or
+  misconfigured EventBridge rule.** `runTick`
+  (`Backend/src/services/scheduler/tick.js`) upserts a single document in the
+  `schedulerhealths` collection
+  (`Backend/src/models/SchedulerHealth.js`, `key: "scheduler"`) on **every**
+  tick, including one that claims nothing — a `claimed: 0` heartbeat is the
+  normal, healthy state, not an absence of signal. That document's
+  `lastTickAt` field is the only signal in this section that distinguishes
+  "the clock stopped" from "nothing was due": every other alert below lives
+  on a `ScheduledJob` document and cannot fire at all if no schedule exists
+  yet, or degrades to a slow per-schedule staleness check at best. `lastTickAt`
+  needs neither.
+
+  **Alert when `lastTickAt` is older than 2× the expected tick interval.**
+  With the documented EventBridge rule of `rate(1 minute)` (see "The AWS
+  EventBridge rule" above), that means alerting once `lastTickAt` is more than
+  roughly **two minutes** old. The 2× margin absorbs a single slow or
+  overlapping tick without false-alarming; a rule that is missing, disabled,
+  or pointed at the wrong host will blow well past that threshold and stay
+  there, since nothing else advances the field.
+
+  Epic 6 (System Health screen) should read `lastTickAt` — along with
+  `claimed`/`dispatched`/`failed`/`capped` from the same document, recorded
+  from the same tick summary, for context beyond the bare timestamp — from
+  the `schedulerhealths` collection's single `{ key: "scheduler" }` document.
+
+  A heartbeat write failure is logged at `warn` and does not fail the tick
+  itself (`Backend/src/services/scheduler/heartbeat.js`) — losing a heartbeat
+  is a monitoring gap, not an outage, so the tick's own summary is still
+  returned and any due schedules are still dispatched.
+
+Per `ScheduledJob` document (`Backend/src/models/ScheduledJob.js`), for the
+schedule-level detail `lastTickAt` cannot provide on its own:
 
 - **`missedRuns > 0`, but only for `AT_MOST_ONCE` schedules.** `claimNext`
   (`Backend/src/services/scheduler/tick.js:40`) returns early for any policy
@@ -396,16 +428,19 @@ Per `ScheduledJob` document (`Backend/src/models/ScheduledJob.js`):
   anything. This is also the check to run after creating a new AWS rule
   (see "Verifying a rule after creating it" above), and it is the correct
   substitute for `missedRuns` when the schedule in question is
-  `AT_LEAST_ONCE`.
+  `AT_LEAST_ONCE`. Note this still requires at least one `ScheduledJob`
+  document to exist and be due before it says anything; `lastTickAt` above is
+  what to watch when there may be none.
 
-Support can read the `scheduledjobs` collection directly for now; there is no
-admin screen for it.
+Support can read the `scheduledjobs` and `schedulerhealths` collections
+directly for now; there is no admin screen for either.
 
 ## Related
 
 - Design: [`docs/superpowers/specs/2026-08-11-scheduled-job-trigger-design.md`](./superpowers/specs/2026-08-11-scheduled-job-trigger-design.md)
 - Code: `Backend/src/services/scheduler/` (`tick.js`, `registry.js`,
-  `handlers.js`, `nextRun.js`, `outcome.js`, `schedules.js`, `auth.js`),
-  `Backend/src/routes/scheduler.js`, `Backend/src/models/ScheduledJob.js`.
+  `handlers.js`, `nextRun.js`, `outcome.js`, `schedules.js`, `auth.js`,
+  `heartbeat.js`), `Backend/src/routes/scheduler.js`,
+  `Backend/src/models/ScheduledJob.js`, `Backend/src/models/SchedulerHealth.js`.
 - Conventions for branching, commits, migrations and the complexity gate live
   in [`CLAUDE.md`](../CLAUDE.md) — not restated here.

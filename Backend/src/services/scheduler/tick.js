@@ -3,6 +3,7 @@ import { info, warn } from '../../utils/logger.js';
 import { computeNextRun, countMissedSlots } from './nextRun.js';
 import { resolve, AT_MOST_ONCE } from './registry.js';
 import { recordSuccess, recordFailure } from './outcome.js';
+import { recordHeartbeat } from './heartbeat.js';
 
 export const BATCH_LIMIT = 100;
 
@@ -154,5 +155,6 @@ export async function runTick({ now = new Date(), limit = BATCH_LIMIT } = {}) {
 
   const summary = { claimed: claimedIds.length, dispatched, failed, capped };
   info('Scheduler', 'Tick complete', summary);
+  await recordHeartbeat(summary, now);
   return summary;
 }
