@@ -72,6 +72,7 @@ POST /api/scheduler/tick            validateApiKey (Admin_API_Key)
 | `src/services/scheduler/nextRun.js` | Cron + timezone → next slot; missed-slot count. Pure. |
 | `src/services/scheduler/auth.js` | `getSchedulerAuthorization()`. |
 | `src/models/ScheduledJob.js` | Mongoose schema. |
+| `scripts/dev.mjs tick` | Local stand-in for EventBridge. Not application code — see below. |
 
 Four files rather than one because the cognitive-complexity gate (SonarJS
 S3776, < 15) will not survive claim plus cron arithmetic plus dispatch plus
@@ -308,16 +309,59 @@ ships the screen. Recorded here rather than quietly skipped, because
 
 ## Operations
 
-One EventBridge rule per environment in `ap-southeast-2`, `rate(1 minute)`,
-delivering to an **API Destination** whose Connection uses API-key auth. Set
-the header name to `Authorization` and the value to `Admin_API_Key`; that
-satisfies `validateApiKey`'s raw-header comparison with no code change.
+### Local scheduling — `npm run tick`
+
+Because the application knows nothing about AWS, the clock is replaceable. A
+small subcommand in `scripts/` drives the same endpoint on an interval, so the
+whole feature is developable and demonstrable with no AWS account involved:
+
+```bash
+npm run tick              # every 60s until interrupted, printing each summary
+npm run tick -- --once    # a single tick; what verification steps use
+npm run tick -- --every 5 # tighter loop while developing
+```
+
+It reads the API port from the root `.env` and `Admin_API_Key` from
+`Backend/.env` through the existing `parseEnv`/`readEnv` in
+`scripts/lib/env.mjs`, so there is nothing to configure. Consistent with the
+rest of `scripts/`, it is Node rather than shell, uses global `fetch`, and adds
+**no dependency** — that directory has none by design and must keep having none.
+
+This is **not** the in-process fallback timer that this design rejected. It is a
+developer tool in a directory that is never deployed; the application still has
+no timer in it, and production scheduling is still external. The distinction
+matters because an in-process timer would fire once per Elastic Beanstalk
+instance.
+
+### AWS
+
+One EventBridge rule per environment in `ap-southeast-2`:
+
+| Setting | Value |
+|---|---|
+| Rule type | Schedule, `rate(1 minute)` |
+| Target | API Destination |
+| Endpoint | `https://<env-host>/api/scheduler/tick` |
+| Method | `POST` |
+| Connection auth | API key |
+| Header name | `Authorization` |
+| Header value | the environment's `Admin_API_Key`, verbatim |
+
+The header value must be the key **exactly** — no `Bearer ` prefix.
+`validateApiKey` (`src/middleware/auth.js:12`) compares the raw header against
+`process.env.Admin_API_Key` with `!==`, so any prefix or whitespace fails as a
+401.
+
+Dev and prod need separate rules pointing at separate hosts with separate keys.
+A rule aimed at the wrong environment is not detectable from inside the
+application — both would answer 200.
 
 This is the one part that merging cannot verify. Nothing breaks if the rule is
-missing — schedules simply never fire, silently. The implementation plan
+missing; schedules simply never fire, silently. The implementation plan
 therefore carries rule creation as an explicit step with a verification
-(`lastRunAt` advancing and `missedRuns` staying at 0 on a test schedule), and it
-is written down in `docs/scheduling.md` rather than living in someone's memory.
+(`lastRunAt` advancing and `missedRuns` staying at 0 on a test schedule, with
+nobody calling the endpoint by hand), and it is written down in
+`docs/scheduling.md` rather than living in someone's memory.
 
 ## Risks
 
