@@ -2,9 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Ticket:** _none yet — required before branching (see [CLAUDE.md](../../CLAUDE.md))_
+**Tickets:**
+- Epic 1 (navigation & entry) — **KAN-6** — implemented on `feature/invoice-statement-automation-toggle`
+- Epic 2 (workspace feature toggle) — **KAN-7** — implemented on the same branch
+- Later epics — tickets still required before branching further work from `develop`
+
 **Date:** 2026-08-06
-**Status:** Draft, pending approval
+**Status:** In progress — **Epic 1 (KAN-6) and Epic 2 (KAN-7) implemented** on `feature/invoice-statement-automation-toggle` (not yet merged to `develop`). Epics 3–7 remain open.
 **Source spec:** six documents, `1. System Health & Monitoring` … `6. Implementation Task Breakdown`, dated 2026-08-02
 
 **Goal:** Ship the Finance Settings & Automation area — a renamed entry point, a per-workspace feature toggle, relocated Financial Settings, a multi-provider Accounting Integrations tab, scheduled invoice/statement generation and delivery, and the monitoring to see it working — on top of an end-to-end test baseline that covers every existing touchpoint the seven epics disturb.
@@ -45,6 +49,58 @@
 
 ---
 
+## Epic 1 (KAN-6) & Epic 2 (KAN-7) — implemented
+
+Shipped on branch `feature/invoice-statement-automation-toggle` (commit family
+around `86021e7`). Acceptance below matches the epics as built; **do not
+re-implement Task 8 / Task 9**. Next work starts at Epic 3+.
+
+### Epic 2 — Workspace Configuration: Feature Toggle (KAN-7)
+
+| Item | Status | What shipped |
+|---|---|---|
+| **2.1** Enable/disable on Workspace Configuration; System Owner + Support Admin only | Done | Switch on Configuration via `workspace-feature-toggles-card.tsx`; API gated with `requirePortalOwnerOrSupport` (`owner` / `support_admin`, per R1) |
+| **2.2** Default disabled for existing and new workspaces | Done | `Business.featureToggles.invoiceStatementAutomation` default `false` |
+| **2.3** Persist per workspace; FE can gate the Automation tab | Done | `GET` / `PUT /api/workspaces/:workspaceId/feature-toggles` body `{ invoiceStatementAutomation: boolean }`; also exposed on business profile as `featureToggles` |
+| **2.4** Docs for System Owner / Support Admin | Done | Expanded inline help on the Feature Toggles card (and related permission copy) — no separate markdown guide |
+
+**Departures from the original Task 8 sketch in this plan:**
+
+| Plan said | Code does |
+|---|---|
+| `Workspace.invoiceStatementAutomationEnabled` | Flag lives on **`Business.featureToggles.invoiceStatementAutomation`** (workspace identity is still `workspaceId` on the Business doc) |
+| `PATCH /api/workspaces/:id/features` with `invoiceStatementAutomationEnabled` | **`GET`/`PUT /api/workspaces/:id/feature-toggles`** with `invoiceStatementAutomation` |
+| Flag appears on `GET /api/workspaces` | Flag is **not** on the ISO+ proxied workspace list (R9); FE loads it from **feature-toggles** and/or **business profile** |
+| Tests under `Backend/test/epics/feature-toggle.test.js` | `Backend/test/unit/utils/workspaceFeatureToggleHelpers.test.js` + `Backend/test/integration/workspace.route.test.js` + model default assertion |
+
+### Epic 1 — Navigation & Entry Point (KAN-6)
+
+| Item | Status | What shipped |
+|---|---|---|
+| **Prep** Test coverage for helpers / toggle / tab resolve | Done | Backend unit + integration above; `Frontend/test/unit/finance-settings-tab.test.ts` |
+| **1.1** Rename tile to “Finance Settings & Automation” | Done | Workspace page tile (`Frontend/app/workspace/[id]/page.tsx`) — not the homepage, per R2 |
+| **1.2** Page shell: header, navigation back, full-width content | Done | `Frontend/app/workspace/[id]/finance-settings/page.tsx` — **Back to Workspace** button (not a formal shadcn breadcrumb trail) |
+| **1.3** Three-tab nav | Done | Financial Settings / Accounting Integrations / Invoice & Statement Automation (`finance-settings-page.tsx`) |
+| **1.4** Automation tab only when flag is on | Done | Tab hidden when flag is false; `?tab=automation` resolves back to `financial` via `resolveActiveFinanceTab` |
+
+**Scope note for Epic 1:** tab 3 is a **placeholder** panel (“built in a later update”). Schedule/email UI and engine are Epics 5–6 — not KAN-6.
+
+Old `/xero-integration` redirects into finance-settings (`?tab=accounting`).
+
+**Key files (Epic 1–2):**
+
+- Backend: `models/Business.js` (`featureToggles`), `utils/workspaceFeatureToggleHelpers.js`, `routes/workspace.js` (feature-toggles routes)
+- Frontend: `lib/workspace-feature-toggles*.tsx`, `app/workspace/[id]/configuration/page.tsx`, `app/workspace/[id]/finance-settings/page.tsx`, `lib/finance-settings-page.tsx`, `lib/finance-settings-tab.ts`
+
+**Verify:**
+
+```bash
+cd Backend && npm test -- test/unit/utils/workspaceFeatureToggleHelpers.test.js test/integration/workspace.route.test.js
+cd Frontend && npm test -- test/unit/finance-settings-tab.test.ts
+```
+
+---
+
 ## Global Constraints
 
 - **Cognitive complexity < 15 per file** (SonarJS S3776, `.eslintrc.complexity.cjs`). Extract into `utils/*Helpers.js` rather than nesting — this is enforced in CI, not advisory.
@@ -74,8 +130,9 @@ Found by reading the code, not the spec. Each one changes a task, so settle them
 | R8 | Epic 7: "create a schedule to sync automatically" | One sentence, no acceptance criteria, no cadence, no failure behaviour | **Underspecified.** Task 17 covers only the mechanism; the policy needs a design first |
 | R9 | — | `GET /api/workspaces` does **not** read Mongo. It proxies `https://app.isoplus.online/api/v2/workspaces` using `req.session.Authorization` (`workspace.js:145` → `isoplus.js:261`) | A workspace cannot be seeded into existence. Task 6 cannot baseline it offline — see [Local environment](#local-environment-how-a-workspace-actually-loads) |
 | R10 | — | `BACKEND_URL` is unset in `Backend/.env`. `automationUrlUpdate.js:7` silently no-ops the automation-URL rewrite when it is missing, and `webhookServiceHelpers.js:13` falls back to `http://localhost:3001` while still reporting success | Blocks pointing a live board at a local backend. See the ngrok note below |
+| R11 | Feature flag on Workspace + appear in `GET /api/workspaces` | Epic 2 (KAN-7) stores the flag on **`Business.featureToggles`** and exposes it via **`/feature-toggles` + profile**, not the proxied workspace list | Later epics must read `Business.featureToggles.invoiceStatementAutomation` — see [Epic 1 (KAN-6) & Epic 2 (KAN-7) — implemented](#epic-1-kan-6--epic-2-kan-7--implemented) |
 
-**R8 is the one to resolve before Phase 2.** The rest can be decided in review.
+**R8 is the one to resolve before Epic 7.** Epics 1–2 (Tasks 8–9) are done; remaining Phase 2 starts at Epic 3.
 
 ---
 
@@ -417,9 +474,10 @@ test('GET /api/workspaces proxies ISO+ and includes workspace 55369',
 
 - [ ] **Step 3: Baseline the offline half instead**
 
-What *can* be pinned without the network is the `Workspace` Mongo model — the document `POST /api/workspaces` writes. Assert a created workspace has **no** automation flag; this is the assertion Task 8 deliberately updates.
+What *can* be pinned without the network is the business document that owns workspace-scoped portal settings. **Superseded by Epic 2 (KAN-7):** assert a new `Business` defaults `featureToggles.invoiceStatementAutomation` to `false` (see `Backend/test/unit/models/business.test.js` / feature-toggle helpers). The historical sketch below used a Workspace field that was never shipped:
 
 ```javascript
+// Historical sketch — do not implement. Epic 2 uses Business.featureToggles instead.
 test('a new Workspace document has no automation flag yet', async () => {
   const ws = await Workspace.create({ name: 'Fixture WS', userId: someUserId, businessId: someBusinessId })
   assert.equal(ws.invoiceStatementAutomationEnabled, undefined)
@@ -493,31 +551,37 @@ git commit -m "test: baseline audit trail writes and sync queue depth"
 
 Each task below is a candidate for its own expanded plan when picked up. Track A and Track B can proceed in parallel after Task 8.
 
-### Task 8: Epic 2 — workspace feature toggle (Track A, unblocks everything)
+**Progress:** Tasks 8–9 (Epic 2 / Epic 1 — KAN-7 / KAN-6) are **done**. See [Epic 1 (KAN-6) & Epic 2 (KAN-7) — implemented](#epic-1-kan-6--epic-2-kan-7--implemented). Resume at Task 10 (Epic 3).
 
-**Files:** Modify `Backend/src/models/Workspace.js`, `Backend/src/routes/workspace.js`; Test `Backend/test/epics/feature-toggle.test.js`
+### Task 8: Epic 2 — workspace feature toggle (Track A, unblocks everything) — **DONE (KAN-7)**
 
-**Interfaces produced:** `Workspace.invoiceStatementAutomationEnabled: Boolean` (default `false`); `PATCH /api/workspaces/:workspaceId/features` accepting `{ invoiceStatementAutomationEnabled: boolean }`, gated by `requirePortalOwnerOrSupport`; `GET /api/workspaces` includes the flag.
+> Implemented. See [Epic 1 (KAN-6) & Epic 2 (KAN-7) — implemented](#epic-1-kan-6--epic-2-kan-7--implemented) above. Do not re-do this task.
 
-- [ ] Write failing tests: default is `false` for a newly created workspace (2.2); `isoplus_user` gets 403 from the PATCH (2.1); `owner` and `support_admin` both succeed; the flag persists and appears in `GET /api/workspaces` (2.3).
-- [ ] Add the field to the schema. Mongo is schema-less but Mongoose will silently drop an undeclared field — declare it.
-- [ ] Add the route using the **existing** `requirePortalOwnerOrSupport`, per R1.
-- [ ] Update the Task 6 baseline assertion that said the flag does not exist, in the same commit, with the reason in the message.
-- [ ] Update System Owner / Support Admin documentation (2.4).
+**Files (as built):** `Backend/src/models/Business.js`, `Backend/src/utils/workspaceFeatureToggleHelpers.js`, `Backend/src/routes/workspace.js`; `Frontend/lib/workspace-feature-toggles.ts`, `Frontend/lib/workspace-feature-toggles-card.tsx`, `Frontend/app/workspace/[id]/configuration/page.tsx`; Tests `Backend/test/unit/utils/workspaceFeatureToggleHelpers.test.js`, `Backend/test/integration/workspace.route.test.js`, `Backend/test/unit/models/business.test.js`
+
+**Interfaces produced (as built):** `Business.featureToggles.invoiceStatementAutomation: Boolean` (default `false`); `GET` / `PUT /api/workspaces/:workspaceId/feature-toggles` accepting `{ invoiceStatementAutomation: boolean }`, gated by `requirePortalOwnerOrSupport`; profile responses include `featureToggles`. *(Original sketch used `Workspace.invoiceStatementAutomationEnabled` and `PATCH .../features` — superseded.)*
+
+- [x] Write failing tests: default is `false` (2.2); `isoplus_user` cannot mutate; `owner` and `support_admin` succeed; flag persists via feature-toggles API (2.3).
+- [x] Add the field to the schema (`Business.featureToggles`).
+- [x] Add the routes using the **existing** `requirePortalOwnerOrSupport`, per R1.
+- [x] Expose the flag to the frontend for tab gating (profile + dedicated endpoints; not via proxied `GET /api/workspaces`).
+- [x] Update System Owner / Support Admin documentation (2.4) — inline help on the Feature Toggles card.
 
 **Covers:** 2.1, 2.2, 2.3, 2.4. **Also satisfies** the doc-5 note that this same toggle hides the tab for NDIS/SaH/IMS workspaces — no separate toggle.
 
 ---
 
-### Task 9: Epic 1 — navigation and entry point (Track A)
+### Task 9: Epic 1 — navigation and entry point (Track A) — **DONE (KAN-6)**
 
-**Files:** Modify `Frontend/app/workspace/[id]/page.tsx:266`; Create `Frontend/app/workspace/[id]/finance-settings/page.tsx`
+> Implemented. See [Epic 1 (KAN-6) & Epic 2 (KAN-7) — implemented](#epic-1-kan-6--epic-2-kan-7--implemented) above. Do not re-do this task.
 
-- [ ] Rename the tile "Xero Integration" → "Finance Settings & Automation", title and subtitle only (1.1). Per R2 this is the **workspace** page, not the dashboard homepage — confirm the intended surface before editing.
-- [ ] Build the page shell: header, breadcrumb, **full-width** content area, not the centre column (1.2, explicit feedback in the spec).
-- [ ] Build the three-tab nav: Financial Settings / Accounting Integrations / Invoice & Statement Automation (1.3).
-- [ ] Render tab 3 only when `invoiceStatementAutomationEnabled` is true for the workspace (1.4 — needs Task 8).
-- [ ] Test: tab 3 absent when the flag is false, present when true.
+**Files (as built):** `Frontend/app/workspace/[id]/page.tsx`; `Frontend/app/workspace/[id]/finance-settings/page.tsx`; `Frontend/lib/finance-settings-page.tsx`, `Frontend/lib/finance-settings-tab.ts`; Test `Frontend/test/unit/finance-settings-tab.test.ts`. `/xero-integration` redirects to finance-settings accounting tab.
+
+- [x] Rename the tile "Xero Integration" → "Finance Settings & Automation", title and subtitle (1.1). Workspace page, per R2.
+- [x] Build the page shell: header, **Back to Workspace**, **full-width** content (1.2). Formal breadcrumb component not used.
+- [x] Build the three-tab nav: Financial Settings / Accounting Integrations / Invoice & Statement Automation (1.3).
+- [x] Render tab 3 only when `featureToggles.invoiceStatementAutomation` is true (1.4 — needs Task 8). Placeholder body until Epic 5.
+- [x] Test: tab resolve hides/redirects automation when the flag is false; shows when true.
 
 **Covers:** 1.1, 1.2, 1.3, 1.4.
 
@@ -665,6 +729,6 @@ Carried from doc 6, not planned here: Contact/Invoice/Customer/Payment Sync work
 - The Quote-only line-item override (doc 4) is an open question the spec itself raises.
 - Phase 2 tasks are specified to interface level, not line level — stated in the depth note above, deliberately.
 
-**Type consistency.** `createApp()`, `startTestServer()`, `loginAs()`, `authedFetch()`, `connectTestDb()`, `resetTestDb()`, `seedBusiness()` and `computeNextRun()` are used with the same names and signatures wherever they appear. `Business.documentNumbering.statement` (Task 10) and `Workspace.invoiceStatementAutomationEnabled` (Task 8) are referenced consistently by later tasks.
+**Type consistency.** `createApp()`, `startTestServer()`, `loginAs()`, `authedFetch()`, `connectTestDb()`, `resetTestDb()`, `seedBusiness()` and `computeNextRun()` are used with the same names and signatures wherever they appear. `Business.documentNumbering.statement` (Task 10) remains for Epic 3. **Epic 2 shipped as** `Business.featureToggles.invoiceStatementAutomation` (not `Workspace.invoiceStatementAutomationEnabled`) — later tasks must use that name and the feature-toggles / profile APIs.
 
-**Ordering.** Task 1 blocks all tests. Task 8 blocks Task 9.4. Task 12 blocks 13, which blocks 14. Task 14's SES production access has external lead time and should be requested during Phase 0.
+**Ordering.** Task 1 blocks all tests. Task 8 blocks Task 9.4 — **both done (KAN-7 / KAN-6)**. Task 12 blocks 13, which blocks 14. Task 14's SES production access has external lead time and should be requested during Phase 0.
