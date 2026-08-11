@@ -1,8 +1,8 @@
 import ScheduledJob from '../../models/ScheduledJob.js';
 import { info } from '../../utils/logger.js';
 import { computeNextRun, isValidSchedule } from './nextRun.js';
-
-const DEFAULT_TIMEZONE = 'Australia/Sydney';
+import { resolveTimezone } from './timezone.js';
+import { assertMinimumInterval } from './intervalFloor.js';
 
 /**
  * The only sanctioned way to create or change a schedule. Features call this
@@ -16,14 +16,18 @@ export async function upsertSchedule({
   targetId,
   workspaceId = null,
   cron,
-  timezone = DEFAULT_TIMEZONE,
+  timezone,
   now = new Date(),
 }) {
-  if (!isValidSchedule(cron, timezone)) {
+  const effectiveTimezone = await resolveTimezone({ workspaceId, timezone });
+
+  if (!isValidSchedule(cron, effectiveTimezone)) {
     throw new Error(
-      `Scheduler: invalid schedule for "${kind}" — cron "${cron}", timezone "${timezone}"`,
+      `Scheduler: invalid schedule for "${kind}" — cron "${cron}", timezone "${effectiveTimezone}"`,
     );
   }
+
+  assertMinimumInterval({ kind, cron, timezone: effectiveTimezone, now });
 
   const job = await ScheduledJob.findOneAndUpdate(
     { kind, targetId },
@@ -31,9 +35,9 @@ export async function upsertSchedule({
       $set: {
         workspaceId,
         cron,
-        timezone,
+        timezone: effectiveTimezone,
         enabled: true,
-        nextRunAt: computeNextRun(cron, timezone, now),
+        nextRunAt: computeNextRun(cron, effectiveTimezone, now),
         lastError: null,
         consecutiveFailures: 0,
       },
@@ -45,7 +49,7 @@ export async function upsertSchedule({
     kind,
     targetId,
     cron,
-    timezone,
+    timezone: effectiveTimezone,
     nextRunAt: job.nextRunAt,
   });
 

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   register,
   resolve,
+  tryResolve,
   clearRegistry,
   registeredKinds,
   AT_MOST_ONCE,
@@ -45,6 +46,19 @@ describe('scheduler registry', () => {
     expect(() =>
       register('demo', { handler: () => {}, policy: AT_LEAST_ONCE }),
     ).toThrow(/already registered/i);
+  });
+
+  it('tryResolve resolves a registered handler and its policy, same as resolve', () => {
+    const handler = () => 'ok';
+    register('demo', { handler, policy: AT_LEAST_ONCE });
+
+    const entry = tryResolve('demo');
+    expect(entry.handler).toBe(handler);
+    expect(entry.policy).toBe(AT_LEAST_ONCE);
+  });
+
+  it('tryResolve returns null for an unregistered kind rather than throwing', () => {
+    expect(tryResolve('nope')).toBeNull();
   });
 
   it('lists what is registered', () => {

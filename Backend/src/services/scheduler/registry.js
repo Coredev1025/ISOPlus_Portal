@@ -43,6 +43,16 @@ export function resolve(kind) {
   return entry;
 }
 
+/**
+ * Same lookup as resolve(), but returns null for an unregistered kind rather
+ * than throwing. For callers — the minimum-interval floor is the current
+ * one — that can legitimately run before a handler is registered in this
+ * process (a test, a script) and must not be blocked by that.
+ */
+export function tryResolve(kind) {
+  return handlers.get(kind) ?? null;
+}
+
 export function registeredKinds() {
   return [...handlers.keys()];
 }

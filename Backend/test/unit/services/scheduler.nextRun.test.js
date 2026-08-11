@@ -3,6 +3,7 @@ import {
   computeNextRun,
   countMissedSlots,
   isValidSchedule,
+  minIntervalMinutes,
 } from '../../../src/services/scheduler/nextRun.js';
 
 const TZ = 'Australia/Sydney';
@@ -73,6 +74,40 @@ describe('countMissedSlots', () => {
       10,
     );
     expect(missed).toBe(10);
+  });
+});
+
+describe('minIntervalMinutes', () => {
+  it('returns the constant gap for a simple interval expression', () => {
+    const minutes = minIntervalMinutes('*/30 * * * *', TZ, new Date('2026-08-11T00:00:00Z'));
+    expect(minutes).toBe(30);
+  });
+
+  it('returns the smallest gap, not the average, for a mixed-cadence expression', () => {
+    // Fires hourly from 9am-5pm and not at all overnight, so most gaps are 60
+    // minutes but one gap per day is much larger. The floor check cares about
+    // the smallest gap a hand-edited cron could actually produce.
+    const minutes = minIntervalMinutes('0 9-17 * * *', TZ, new Date('2026-08-11T00:00:00Z'));
+    expect(minutes).toBe(60);
+  });
+
+  it('does not spuriously shrink or invert across a Sydney DST transition', () => {
+    // Sydney clocks fall back on 5 Apr 2026 (03:00 -> 02:00), so the walk
+    // below crosses a transition where a naive implementation could compute a
+    // zero or negative gap. A daily cron's true minimum gap should still be a
+    // healthy number of hours, nowhere near the 60-minute at-most-once floor.
+    const minutes = minIntervalMinutes(
+      '0 2 * * *',
+      TZ,
+      new Date('2026-04-03T12:00:00Z'), // a couple of days before the transition
+    );
+    expect(minutes).toBeGreaterThanOrEqual(23 * 60);
+  });
+
+  it('walks from the given reference time, not from a fixed slot', () => {
+    const early = minIntervalMinutes('*/30 * * * *', TZ, new Date('2026-08-11T00:00:00Z'));
+    const later = minIntervalMinutes('*/30 * * * *', TZ, new Date('2026-08-11T06:00:00Z'));
+    expect(early).toBe(later);
   });
 });
 

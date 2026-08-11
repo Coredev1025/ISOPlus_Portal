@@ -1,10 +1,31 @@
-import { describe, it, expect, beforeEach, afterEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import ScheduledJob from '../../../src/models/ScheduledJob.js';
+import Business from '../../../src/models/Business.js';
 import {
   upsertSchedule,
   disableSchedule,
 } from '../../../src/services/scheduler/schedules.js';
 import { getSchedulerAuthorization } from '../../../src/services/scheduler/auth.js';
+import {
+  register,
+  clearRegistry,
+  AT_MOST_ONCE,
+  AT_LEAST_ONCE,
+} from '../../../src/services/scheduler/registry.js';
+import {
+  AT_MOST_ONCE_MIN_INTERVAL_MINUTES,
+  AT_LEAST_ONCE_MIN_INTERVAL_MINUTES,
+} from '../../../src/services/scheduler/intervalFloor.js';
+
+vi.mock('../../../src/utils/logger.js', () => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+  default: {},
+}));
+
+const { warn } = await import('../../../src/utils/logger.js');
 
 const NOW = new Date('2026-08-11T04:05:00Z');
 
@@ -143,6 +164,187 @@ describe('disableSchedule', () => {
   it('returns null for a schedule that does not exist', async () => {
     const job = await disableSchedule({ kind: 'board_sync', targetId: 'missing' });
     expect(job).toBeNull();
+  });
+});
+
+describe('upsertSchedule — timezone inheritance', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('inherits headOfficeTimezone from the Business for the workspace when no timezone is passed', async () => {
+    await Business.create({ workspaceId: 'ws-inherit', headOfficeTimezone: 'Australia/Perth' });
+
+    const job = await upsertSchedule({
+      kind: 'board_sync',
+      targetId: 'board-inherit',
+      workspaceId: 'ws-inherit',
+      cron: '0 2 1 * *',
+      now: NOW,
+    });
+
+    expect(job.timezone).toBe('Australia/Perth');
+  });
+
+  it('an explicit timezone argument overrides the workspace default', async () => {
+    await Business.create({ workspaceId: 'ws-explicit', headOfficeTimezone: 'Australia/Perth' });
+
+    const job = await upsertSchedule({
+      kind: 'board_sync',
+      targetId: 'board-explicit',
+      workspaceId: 'ws-explicit',
+      cron: '0 2 1 * *',
+      timezone: 'Pacific/Auckland',
+      now: NOW,
+    });
+
+    expect(job.timezone).toBe('Pacific/Auckland');
+  });
+
+  it('falls back to Australia/Sydney when no Business exists for the workspace', async () => {
+    const job = await upsertSchedule({
+      kind: 'board_sync',
+      targetId: 'board-no-business',
+      workspaceId: 'ws-does-not-exist',
+      cron: '0 2 1 * *',
+      now: NOW,
+    });
+
+    expect(job.timezone).toBe('Australia/Sydney');
+  });
+
+  it('falls back to Australia/Sydney when neither a timezone nor a workspaceId is given', async () => {
+    const job = await upsertSchedule({
+      kind: 'board_sync',
+      targetId: 'board-no-workspace',
+      cron: '0 2 1 * *',
+      now: NOW,
+    });
+
+    expect(job.timezone).toBe('Australia/Sydney');
+  });
+
+  it('falls back to Australia/Sydney and logs a warning when the inherited timezone is not a valid IANA zone', async () => {
+    await Business.create({ workspaceId: 'ws-bad-tz', headOfficeTimezone: 'Mars/Olympus' });
+
+    const job = await upsertSchedule({
+      kind: 'board_sync',
+      targetId: 'board-bad-tz',
+      workspaceId: 'ws-bad-tz',
+      cron: '0 2 1 * *',
+      now: NOW,
+    });
+
+    expect(job.timezone).toBe('Australia/Sydney');
+    expect(warn).toHaveBeenCalledWith(
+      'Scheduler',
+      expect.stringMatching(/timezone/i),
+      expect.objectContaining({ workspaceId: 'ws-bad-tz', timezone: 'Mars/Olympus' }),
+    );
+  });
+});
+
+describe('upsertSchedule — minimum-interval floor', () => {
+  beforeEach(() => {
+    clearRegistry();
+    vi.clearAllMocks();
+  });
+  afterEach(() => {
+    clearRegistry();
+  });
+
+  it('rejects a 30-minute cron for an AT_MOST_ONCE kind, before writing anything', async () => {
+    register('invoice_issuance', { handler: () => {}, policy: AT_MOST_ONCE });
+
+    await expect(
+      upsertSchedule({
+        kind: 'invoice_issuance',
+        targetId: 'ws-invoice-1',
+        cron: '*/30 * * * *',
+        now: NOW,
+      }),
+    ).rejects.toThrow(
+      /cron "\*\/30 \* \* \* \*".*invoice_issuance.*30.*60-minute floor.*at_most_once/is,
+    );
+
+    expect(await ScheduledJob.countDocuments({ targetId: 'ws-invoice-1' })).toBe(0);
+  });
+
+  it('accepts a monthly cron for an AT_MOST_ONCE kind', async () => {
+    register('invoice_issuance', { handler: () => {}, policy: AT_MOST_ONCE });
+
+    const job = await upsertSchedule({
+      kind: 'invoice_issuance',
+      targetId: 'ws-invoice-2',
+      cron: '0 2 1 * *',
+      now: NOW,
+    });
+
+    expect(job.cron).toBe('0 2 1 * *');
+  });
+
+  it('accepts a 30-minute cron for an AT_LEAST_ONCE kind', async () => {
+    register('board_sync', { handler: () => {}, policy: AT_LEAST_ONCE });
+
+    const job = await upsertSchedule({
+      kind: 'board_sync',
+      targetId: 'board-30min',
+      cron: '*/30 * * * *',
+      now: NOW,
+    });
+
+    expect(job.cron).toBe('*/30 * * * *');
+  });
+
+  it('rejects a once-a-minute cron for an AT_LEAST_ONCE kind, before writing anything', async () => {
+    register('board_sync', { handler: () => {}, policy: AT_LEAST_ONCE });
+
+    await expect(
+      upsertSchedule({
+        kind: 'board_sync',
+        targetId: 'board-every-minute',
+        cron: '* * * * *',
+        now: NOW,
+      }),
+    ).rejects.toThrow(/cron "\* \* \* \* \*".*board_sync.*1.*5-minute floor.*at_least_once/is);
+
+    expect(await ScheduledJob.countDocuments({ targetId: 'board-every-minute' })).toBe(0);
+  });
+
+  it('applies the lenient AT_LEAST_ONCE floor to a kind with no registered handler, and logs it', async () => {
+    const job = await upsertSchedule({
+      kind: 'not_yet_registered',
+      targetId: 'target-unregistered',
+      cron: '*/10 * * * *',
+      now: NOW,
+    });
+
+    expect(job.cron).toBe('*/10 * * * *');
+    expect(warn).toHaveBeenCalledWith(
+      'Scheduler',
+      expect.stringMatching(/no registered handler/i),
+      expect.objectContaining({ kind: 'not_yet_registered' }),
+    );
+  });
+
+  it('rejects a too-frequent cron for a kind with no registered handler, using the lenient floor', async () => {
+    await expect(
+      upsertSchedule({
+        kind: 'not_yet_registered',
+        targetId: 'target-unregistered-too-frequent',
+        cron: '* * * * *',
+        now: NOW,
+      }),
+    ).rejects.toThrow(/5-minute floor/);
+
+    expect(
+      await ScheduledJob.countDocuments({ targetId: 'target-unregistered-too-frequent' }),
+    ).toBe(0);
+  });
+
+  it('exports the two floor constants for reuse', () => {
+    expect(AT_MOST_ONCE_MIN_INTERVAL_MINUTES).toBe(60);
+    expect(AT_LEAST_ONCE_MIN_INTERVAL_MINUTES).toBe(5);
   });
 });
 
