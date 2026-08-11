@@ -16,6 +16,7 @@ in its errata table; these are the ones that change what this document says.
 |---|---|---|
 | The router is mounted in `src/app.js`. | Mounted in **both** `src/app.js` and `src/index.js`, with `registerSchedulerHandlers()` called at boot in `index.js`. | `index.js` is the production entry point and does not use `createApp()`; they are parallel express apps. Mounting only in `app.js` gave an endpoint that existed in tests and 404'd in production while the entire suite passed. |
 | `recordFailure` stores `String(err?.message ǀǀ err)`. | A `describeError` helper handling `Error`, string and other values, with a `try/catch` around `JSON.stringify` for circular structures. | The original stored `"[object Object]"` for a non-`Error` throw, making `lastError` useless to the operator it exists for. |
+| "No migration and no backfill" — the collection is new, so Mongoose builds its indexes on connect. | Still no backfill, but a migration **is** included: `Backend/migrations/1786439847318-add-scheduled-job-indexes.js`. | Index creation was a side effect of application boot via `autoIndex`, which defaults to true. The unique constraint on `{ kind, targetId }` is what stops a toggle flipped twice creating two schedules for one board; leaving it dependent on a setting someone may disable for performance made it silently droppable. The migration is idempotent — `createIndex` no-ops when the index already matches. |
 
 Two claims in this document need qualifying:
 
