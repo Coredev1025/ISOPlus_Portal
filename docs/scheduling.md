@@ -313,6 +313,64 @@ Schedules themselves are only ever written through
 `Backend/src/services/scheduler/schedules.js` — `upsertSchedule` /
 `disableSchedule`. Nothing should write `ScheduledJob` documents directly.
 
+## The picker ↔ cron translation — `cadence.js`
+
+The Epic 5 UI (not yet built) exposes user-facing schedule fields — *Generate
+Invoices Every / Run On / Run At / Start Date / Next Run* — not a cron
+expression. An end user picks a frequency, and where relevant a day, from a
+constrained set; they never type cron syntax.
+`Backend/src/services/scheduler/cadence.js` is the translation layer between
+that picker and the `cron` string `upsertSchedule` actually stores, built with
+the scheduler from the start rather than bolted on once the UI exists. It is
+pure — no I/O, no database, no Express — and, as of this writing, not wired
+into any route: there is no consumer yet.
+
+**The picker vocabulary** is deliberately small:
+
+- `frequency`: `daily`, `weekly`, or `monthly`.
+- `dayOfWeek` (0 = Sunday .. 6 = Saturday): required for `weekly`, rejected
+  for `daily` and `monthly`.
+- `dayOfMonth`: required for `monthly`, rejected for `daily` and `weekly`.
+- `hour` (0–23) and `minute` (0–59): always required.
+
+`buildCron(picker)` validates every field and throws, naming the offending
+field and its allowed range, rather than coercing or ignoring anything —
+including a `dayOfWeek` passed alongside a `monthly` frequency, which is
+rejected rather than silently dropped, on the view that a caller passing a
+field the frequency does not use has a bug worth surfacing.
+
+**`dayOfMonth` is restricted to 1–28 — the single most valuable check in the
+module.** A monthly schedule on the 29th, 30th or 31st silently skips
+whichever months are too short for it: every February for 29 or 30, most of
+the year for 31. For invoice issuance that is not a cosmetic gap, it means a
+client simply does not get billed that month, discovered only when someone
+notices the missing invoice. `buildCron` rejects those three values outright,
+with a message that says so explicitly and points at raw cron as the
+sanctioned way to get a genuine end-of-month cadence — see below.
+
+**Raw cron remains a fully-supported escape hatch.** The `cron` field on a
+`ScheduledJob` accepts anything `isValidSchedule` (`nextRun.js`) accepts, not
+only what the picker can produce — "last business day of the month" and
+similar shapes the picker was never meant to express are configured by
+hand-editing the schedule record, no UI work required. `describeCron(cron)` is
+the inverse of `buildCron`: given a cron string, it returns the equivalent
+picker object, or **`null`** — never throws — when the expression is outside
+the picker's vocabulary (a step, a list, a range, a month restriction, or a
+`dayOfMonth` of 29–31 even though cron syntax itself permits it). An
+ops-authored cron in one of those shapes is a legitimate state, not an error;
+a `null` result is the signal for the Epic 5 UI to fall back to showing the
+raw expression read-only instead of trying to render it as a picker selection.
+
+`describeCron(buildCron(picker))` deep-equals `picker` for every valid picker
+— the round-trip is the module's core correctness property, covered for all
+three frequencies in `Backend/test/unit/services/scheduler.cadence.test.js`.
+That file also asserts, via `minIntervalMinutes`, that every cron `buildCron`
+can produce clears the 60-minute `AT_MOST_ONCE` floor (`intervalFloor.js`):
+daily, weekly and monthly cadences are all at least 24 hours apart, so this
+can never reject picker output — checked directly rather than reasoned about,
+so the guarantee is re-verified automatically if a sub-daily frequency is ever
+added to the picker without someone revisiting the floor.
+
 ## The two delivery policies
 
 Declared at registration, not stored on the schedule record — an operator
