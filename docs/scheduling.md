@@ -238,7 +238,11 @@ register('board_sync', {
 });
 ```
 
-Five rules apply to every handler (`Backend/src/services/scheduler/registry.js`):
+Five rules apply to every handler. Only the first is enforced in code
+(`register()` in `Backend/src/services/scheduler/registry.js` throws at boot
+if no policy is declared); the rest are conventions from the design and from
+the comments in `handlers.js` and `tick.js` — nothing stops a handler from
+violating them, so review for these deliberately:
 
 1. **Declare a policy.** `AT_MOST_ONCE` or `AT_LEAST_ONCE` — there is no
    default. `register()` throws at boot if the policy is missing or not one
@@ -286,18 +290,41 @@ a race between two Elastic Beanstalk instances will double-dispatch it.
 
 Per `ScheduledJob` document (`Backend/src/models/ScheduledJob.js`):
 
-- **`missedRuns > 0`** — the app was down across one or more scheduled slots;
-  the job ran once on recovery and the skipped count was added here instead of
-  backfilling. A missed monthly statement or invoice run should not be silent.
+- **`missedRuns > 0`, but only for `AT_MOST_ONCE` schedules.** `claimNext`
+  (`Backend/src/services/scheduler/tick.js:40`) returns early for any policy
+  that is not `AT_MOST_ONCE`, so the `$inc` on `missedRuns` only ever runs on
+  the at-most-once claim path. For `AT_LEAST_ONCE` schedules — `board_sync` —
+  `missedRuns` is **permanently zero**, no matter how long the app was down;
+  do not build a per-`board_sync` alert on this field, it can never fire.
+  For `AT_MOST_ONCE` schedules (`invoice_issuance`), a missed slot really does
+  increment it, and a missed monthly statement or invoice run should not be
+  silent. The underlying asymmetry is worth knowing before you go looking for
+  a count that isn't there: an `AT_LEAST_ONCE` schedule that comes due after
+  downtime just runs once and advances to the next slot, with no record of
+  how many slots it skipped.
 - **`consecutiveFailures > 0`** — the handler is throwing. There is
-  deliberately no auto-disable (five consecutive failures on a monthly
-  schedule is five months of silence if it disabled itself), so this counter
-  is the only signal that a schedule is failing every time it fires.
+  deliberately no auto-disable (`enabled` is never flipped off), so this
+  counter is the main signal that a schedule is failing every time it fires.
+  For `AT_LEAST_ONCE` schedules it does not mean "still retrying the same
+  slot forever," though: once `consecutiveFailures` reaches
+  `MAX_CONSECUTIVE_FAILURES` (5, `Backend/src/services/scheduler/outcome.js:12`),
+  `recordFailure` (`outcome.js:53-55`) advances `nextRunAt` to the next cron
+  slot instead of continuing to retry the failed one — that slot is
+  abandoned and the schedule degrades to at-most-once behaviour from then on.
+  `consecutiveFailures` itself is never reset by this — it is incremented
+  unconditionally on every failure (`outcome.js:44,47`) and only returns to 0
+  on a success — so once it passes 5 it keeps climbing on every subsequent
+  slot the handler still fails on, rather than holding steady. A
+  `consecutiveFailures` alert past 5 and still rising means the give-up path
+  is active and the schedule is now advancing every slot without retrying
+  any of them; check `lastError` for why the handler keeps failing.
 - **`lastRunAt` not advancing** — the most direct way to catch a schedule that
   is not firing at all: a misconfigured or missing EventBridge rule, a
   disabled schedule, or a `kind` whose handler throws before recording
   anything. This is also the check to run after creating a new AWS rule
-  (see "Verifying a rule after creating it" above).
+  (see "Verifying a rule after creating it" above), and it is the correct
+  substitute for `missedRuns` when the schedule in question is
+  `AT_LEAST_ONCE`.
 
 Support can read the `scheduledjobs` collection directly for now; there is no
 admin screen for it.
