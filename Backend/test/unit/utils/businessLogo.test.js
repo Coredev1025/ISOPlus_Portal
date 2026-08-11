@@ -128,6 +128,9 @@ describe('formatBusinessProfileResponse', () => {
     expect(response.name).toBe('Hillsgrade Care Services');
     expect(response.email).toBe('accounts@hillsgrade.example');
     expect(response.xeroIntegrated).toBe(false);
+    expect(response.featureToggles).toEqual({
+      invoiceStatementAutomation: false,
+    });
     expect(response.logoUrls).toEqual({
       defaultLogo: {
         url: 'https://signed.example/logos/ws_4821/default-logo.png',
@@ -156,8 +159,11 @@ describe('formatBusinessProfileResponse', () => {
     expect(doc.logoUrls).toBeUndefined();
   });
 
-  it('returns just logoUrls for a nullish business', async () => {
-    expect(await formatBusinessProfileResponse(null)).toEqual({ logoUrls: {} });
+  it('returns logoUrls and default featureToggles for a nullish business', async () => {
+    expect(await formatBusinessProfileResponse(null)).toEqual({
+      logoUrls: {},
+      featureToggles: { invoiceStatementAutomation: false },
+    });
   });
 });
 

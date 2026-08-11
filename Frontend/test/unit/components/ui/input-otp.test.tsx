@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {
   InputOTP,
@@ -20,6 +20,18 @@ beforeAll(() => {
   document.elementFromPoint ??= () => null;
 });
 
+beforeEach(() => {
+  // input-otp schedules caret sync timeouts that otherwise fire after the
+  // jsdom environment is torn down → ReferenceError: window is not defined.
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+});
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllTimers();
+  vi.useRealTimers();
+});
+
 function renderOtp(props: Record<string, unknown> = {}, length = 4) {
   return render(
     <InputOTP maxLength={length} {...props}>
@@ -30,6 +42,14 @@ function renderOtp(props: Record<string, unknown> = {}, length = 4) {
       </InputOTPGroup>
     </InputOTP>,
   );
+}
+
+function createUser() {
+  return userEvent.setup({
+    advanceTimers: (ms) => {
+      vi.advanceTimersByTime(ms);
+    },
+  });
 }
 
 /** The visible slots, in order, as their rendered characters. */
@@ -53,7 +73,7 @@ describe('InputOTP', () => {
   });
 
   it('fills the slots left to right as the user types', async () => {
-    const user = userEvent.setup();
+    const user = createUser();
     const { container } = renderOtp();
 
     await user.type(screen.getByRole('textbox'), '12');
@@ -62,7 +82,7 @@ describe('InputOTP', () => {
   });
 
   it('reports the value on every keystroke', async () => {
-    const user = userEvent.setup();
+    const user = createUser();
     const onChange = vi.fn();
     renderOtp({ onChange });
 
@@ -72,7 +92,7 @@ describe('InputOTP', () => {
   });
 
   it('stops accepting input at maxLength', async () => {
-    const user = userEvent.setup();
+    const user = createUser();
     const { container } = renderOtp({}, 4);
 
     await user.type(screen.getByRole('textbox'), '123456');
@@ -81,7 +101,7 @@ describe('InputOTP', () => {
   });
 
   it('fires onComplete once the final slot is filled', async () => {
-    const user = userEvent.setup();
+    const user = createUser();
     const onComplete = vi.fn();
     renderOtp({ onComplete });
 
@@ -93,7 +113,7 @@ describe('InputOTP', () => {
   });
 
   it('clears the last slot on backspace', async () => {
-    const user = userEvent.setup();
+    const user = createUser();
     const { container } = renderOtp();
 
     await user.type(screen.getByRole('textbox'), '12');
@@ -117,7 +137,7 @@ describe('InputOTP', () => {
   });
 
   it('accepts no input while disabled', async () => {
-    const user = userEvent.setup();
+    const user = createUser();
     const onChange = vi.fn();
     const { container } = renderOtp({ disabled: true, onChange });
 

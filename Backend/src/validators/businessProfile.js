@@ -12,10 +12,6 @@ function validateSequenceFields(type, sequence, errors) {
 }
 
 function validateDocumentNumbering(numbering, errors) {
-  if (!numbering.statement) {
-    errors.push('statement numbering is required');
-  }
-
   DOC_NUMBERING_TYPES.forEach((type) => {
     if (!numbering[type]) return;
     validateSequenceFields(type, numbering[type], errors);

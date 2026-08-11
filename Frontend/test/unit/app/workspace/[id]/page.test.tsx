@@ -322,8 +322,11 @@ describe('workspace detail page', () => {
     );
     expect(router.push).toHaveBeenCalledWith('/workspace/ws-1/configure-business');
 
-    await user.click(screen.getByRole('button', { name: 'Setup Xero' }));
-    expect(router.push).toHaveBeenCalledWith('/workspace/ws-1/xero-integration');
+    const financeCard = screen
+      .getByRole('heading', { name: 'Finance Settings & Automation' })
+      .closest('div.card-hover') as HTMLElement;
+    await user.click(within(financeCard).getByRole('button', { name: 'Open' }));
+    expect(router.push).toHaveBeenCalledWith('/workspace/ws-1/finance-settings');
 
     await user.click(screen.getByRole('button', { name: 'View Audit Trail' }));
     expect(router.push).toHaveBeenCalledWith('/workspace/ws-1/audit-trail');
