@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll } from 'vitest';
 import ScheduledJob from '../../../src/models/ScheduledJob.js';
 import {
   upsertSchedule,
@@ -11,7 +11,11 @@ const NOW = new Date('2026-08-11T04:05:00Z');
 describe('getSchedulerAuthorization', () => {
   const original = process.env.PERSONAL_ACCESS_TOKEN;
   afterEach(() => {
-    process.env.PERSONAL_ACCESS_TOKEN = original;
+    if (original === undefined) {
+      delete process.env.PERSONAL_ACCESS_TOKEN;
+    } else {
+      process.env.PERSONAL_ACCESS_TOKEN = original;
+    }
   });
 
   it('builds a bearer header from the personal access token', () => {
@@ -31,7 +35,11 @@ describe('upsertSchedule', () => {
     process.env.PERSONAL_ACCESS_TOKEN = 'pat-123';
   });
   afterEach(() => {
-    process.env.PERSONAL_ACCESS_TOKEN = original;
+    if (original === undefined) {
+      delete process.env.PERSONAL_ACCESS_TOKEN;
+    } else {
+      process.env.PERSONAL_ACCESS_TOKEN = original;
+    }
   });
 
   it('creates a schedule with the next run computed from the cron', async () => {
@@ -136,4 +144,18 @@ describe('disableSchedule', () => {
     const job = await disableSchedule({ kind: 'board_sync', targetId: 'missing' });
     expect(job).toBeNull();
   });
+});
+
+/**
+ * Verify that environment variable restoration works correctly.
+ * This catches the bug where assigning `undefined` to process.env coerces to the string "undefined".
+ * After all tests, the variable must be either:
+ * - undefined (not set in process.env), OR
+ * - equal to its original value at suite start
+ * Never the string "undefined".
+ */
+afterAll(() => {
+  const current = process.env.PERSONAL_ACCESS_TOKEN;
+  const isStringUndefined = current === 'undefined';
+  expect(isStringUndefined).toBe(false);
 });
