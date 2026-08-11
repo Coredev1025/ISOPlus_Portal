@@ -45,7 +45,13 @@ export function isGstApplied(gstValue) {
 function pickMappingForResolve(business, docType, lineKind) {
   const root = business?.xeroLineItemMapping || {};
   const docMapping = root[docType] || {};
-  if (!lineKind || !XERO_QUOTE_OVERRIDE_KINDS.includes(lineKind)) return docMapping;
+  if (
+    docType !== 'quote'
+    || !lineKind
+    || !XERO_QUOTE_OVERRIDE_KINDS.includes(lineKind)
+  ) {
+    return docMapping;
+  }
   const override = root.quoteOverrides?.[lineKind];
   if (!override || typeof override !== 'object') return docMapping;
   return {

@@ -72,7 +72,7 @@ describe('xeroLineItemMapping', () => {
     });
   });
 
-  it('resolveLineItemTax applies quoteOverrides.material for invoice and quote', () => {
+  it('resolveLineItemTax applies quoteOverrides.material only for quotes', () => {
     const business = {
       xeroLineItemMapping: {
         invoice: { accountCode: '200', taxType: 'OUTPUT' },
@@ -84,8 +84,8 @@ describe('xeroLineItemMapping', () => {
     };
 
     expect(resolveLineItemTax(business, 'invoice', '10%', 'material')).toEqual({
-      accountCode: '260',
-      taxType: 'EXEMPTOUTPUT',
+      accountCode: '200',
+      taxType: 'OUTPUT',
     });
     expect(resolveLineItemTax(business, 'quote', '10%', 'material')).toEqual({
       accountCode: '260',
@@ -152,7 +152,7 @@ describe('xeroLineItemMapping', () => {
         '10%',
         [{ Type: 'REVENUE', Code: '200' }],
         undefined,
-        { fallbackAccountType: 'EXPENSE', requireAccountCode: true }
+        { fallbackAccountType: 'EXPENSE', defaultAccountCode: undefined }
       )
     ).toEqual({ accountCode: undefined, taxType: 'INPUT' });
 
@@ -163,7 +163,7 @@ describe('xeroLineItemMapping', () => {
         '10%',
         [{ Type: 'EXPENSE', Code: '400' }],
         undefined,
-        { fallbackAccountType: 'EXPENSE', requireAccountCode: true }
+        { fallbackAccountType: 'EXPENSE', defaultAccountCode: undefined }
       )
     ).toEqual({ accountCode: '400', taxType: 'INPUT' });
   });

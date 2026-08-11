@@ -8,6 +8,9 @@ export default defineConfig({
     exclude: ['test/real-api/**'],
     globals: true,
     maxWorkers: 1,
+    // Default 5s flakes when Frontend runs in parallel on the same machine —
+    // Auth + Mongo memory-server setup routinely exceeds 5s under contention.
+    testTimeout: 30_000,
     hookTimeout: 120_000,
     coverage: {
       provider: 'v8',

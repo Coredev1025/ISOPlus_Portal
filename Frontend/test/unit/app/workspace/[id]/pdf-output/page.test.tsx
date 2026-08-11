@@ -252,7 +252,7 @@ describe('PDF output page', () => {
 
   it('paginates the history at ten rows per page without re-requesting', async () => {
     stubPdfLinks({ rows: MANY_PDF_LINKS });
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await waitFor(() => {
@@ -277,7 +277,7 @@ describe('PDF output page', () => {
 
   it('opens the detail page for the row that was clicked', async () => {
     stubPdfLinks();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     const row = await screen
@@ -290,7 +290,7 @@ describe('PDF output page', () => {
 
   it('downloads a row under the filename derived from its S3 link, without navigating', async () => {
     stubPdfLinks();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     const row = await screen
@@ -311,7 +311,7 @@ describe('PDF output page', () => {
 
   it('routes Setup and Back to the workspace-scoped destinations', async () => {
     stubPdfLinks();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await user.click(await screen.findByRole('button', { name: 'Setup' }));

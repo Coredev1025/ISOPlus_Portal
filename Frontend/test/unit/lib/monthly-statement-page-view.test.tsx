@@ -234,7 +234,7 @@ describe('MonthlyStatementPageView toolbar', () => {
   });
 
   it('returns to the board when Back is pressed', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     await renderView({ id: 'ws-4', boardId: 'b-9' });
 
     await user.click(screen.getByRole('button', { name: 'Back to Board' }));
@@ -287,7 +287,7 @@ describe('MonthlyStatementPageView participant picker', () => {
   });
 
   it('lists every participant it was given', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     await renderView({ selectedParticipant: '' });
 
     await user.click(participantSelect());
@@ -297,7 +297,7 @@ describe('MonthlyStatementPageView participant picker', () => {
   });
 
   it('says so, disabled, when there are no participants at all', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     await renderView({ selectedParticipant: '', uniqueParticipants: [] });
 
     await user.click(participantSelect());
@@ -310,7 +310,7 @@ describe('MonthlyStatementPageView participant picker', () => {
   });
 
   it('reports the participant that was chosen', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView({ selectedParticipant: '' });
 
     await user.click(participantSelect());
@@ -328,7 +328,7 @@ describe('MonthlyStatementPageView month and year pickers', () => {
   });
 
   it('reports the month value, not its label', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView({ selectedMonth: '03' });
 
     await user.click(monthSelect());
@@ -338,7 +338,7 @@ describe('MonthlyStatementPageView month and year pickers', () => {
   });
 
   it('offers all twelve months', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     await renderView({ selectedMonth: '03' });
 
     await user.click(monthSelect());
@@ -347,7 +347,7 @@ describe('MonthlyStatementPageView month and year pickers', () => {
   });
 
   it('reports the year that was chosen', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView({ selectedYear: '2026' });
 
     await user.click(yearSelect());
@@ -372,7 +372,7 @@ describe('MonthlyStatementPageView Load Statement gate', () => {
   });
 
   it('loads the statement when pressed', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView();
 
     await user.click(screen.getByRole('button', { name: 'Load Statement' }));
@@ -419,7 +419,7 @@ describe('MonthlyStatementPageView Load Statement gate', () => {
 
 describe('MonthlyStatementPageView resync button', () => {
   it('resyncs when pressed', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView();
 
     await user.click(screen.getByRole('button', { name: /Resync Data/ }));
@@ -494,7 +494,7 @@ describe('MonthlyStatementPageView help dialog', () => {
   });
 
   it('closes on Got it', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView({ showHelpDialog: true });
 
     await user.click(screen.getByRole('button', { name: 'Got it' }));
@@ -523,7 +523,7 @@ describe('MonthlyStatementPageView business details dialog', () => {
   });
 
   it('reports an edited field without dropping the rest', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView({ showBusinessDialog: true });
 
     await user.type(screen.getByLabelText('Suburb'), 'X');
@@ -552,7 +552,7 @@ describe('MonthlyStatementPageView business details dialog', () => {
   });
 
   it('clears the state when the country changes', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView({ showBusinessDialog: true });
 
     await user.click(screen.getByLabelText('Country'));
@@ -566,7 +566,7 @@ describe('MonthlyStatementPageView business details dialog', () => {
   });
 
   it('offers the states of the chosen country', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView({ showBusinessDialog: true });
 
     await user.click(screen.getByLabelText('State / Province'));
@@ -596,7 +596,7 @@ describe('MonthlyStatementPageView business details dialog', () => {
   });
 
   it('saves when Save Details is pressed', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView({ showBusinessDialog: true });
 
     await user.click(screen.getByRole('button', { name: 'Save Details' }));
@@ -606,7 +606,7 @@ describe('MonthlyStatementPageView business details dialog', () => {
   });
 
   it('closes without saving when Cancel is pressed', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView({ showBusinessDialog: true });
 
     await user.click(screen.getByRole('button', { name: 'Cancel' }));

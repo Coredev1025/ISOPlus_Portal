@@ -893,7 +893,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
       purchaseOrderValues['GST'],
       chart.accounts,
       undefined,
-      { fallbackAccountType: 'EXPENSE', requireAccountCode: true }
+      { fallbackAccountType: 'EXPENSE', defaultAccountCode: undefined }
     );
     const poMismatch = await rejectIfAccountTaxMismatch({
       workspaceId,

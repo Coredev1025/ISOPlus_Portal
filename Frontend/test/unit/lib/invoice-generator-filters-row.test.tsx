@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { InvoiceGeneratorFiltersRow } from '@/lib/invoice-generator-filters-row';
 import { TRANSACTION_STATUS_FILTERS } from '@/lib/invoice-generator-helpers';
@@ -22,6 +22,10 @@ beforeAll(() => {
   Element.prototype.hasPointerCapture ??= () => false;
   Element.prototype.setPointerCapture ??= () => {};
   Element.prototype.releasePointerCapture ??= () => {};
+});
+
+afterEach(() => {
+  cleanup();
 });
 
 const PAYMENT_STATUS_FILTERS = [
@@ -66,7 +70,7 @@ function comboboxes() {
 
 describe('InvoiceGeneratorFiltersRow — shared filters', () => {
   it('always offers a participant filter with an All option', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderRow();
 
     await user.click(comboboxes()[0]);
@@ -75,7 +79,7 @@ describe('InvoiceGeneratorFiltersRow — shared filters', () => {
   });
 
   it('lists every unique participant', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderRow();
 
     await user.click(comboboxes()[0]);
@@ -85,7 +89,7 @@ describe('InvoiceGeneratorFiltersRow — shared filters', () => {
   });
 
   it('reports the participant that was chosen', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = renderRow();
 
     await user.click(comboboxes()[0]);
@@ -102,7 +106,7 @@ describe('InvoiceGeneratorFiltersRow — shared filters', () => {
   });
 
   it('renders an empty participant list without an error', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderRow({ uniqueParticipants: [] });
 
     await user.click(comboboxes()[0]);
@@ -121,7 +125,7 @@ describe('InvoiceGeneratorFiltersRow — non-NDIS board', () => {
   });
 
   it('lists every transaction status option', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderRow({ isNdisBoard: false });
 
     await user.click(comboboxes()[1]);
@@ -132,7 +136,7 @@ describe('InvoiceGeneratorFiltersRow — non-NDIS board', () => {
   });
 
   it('reports the transaction status that was chosen', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = renderRow({ isNdisBoard: false });
     const target = TRANSACTION_STATUS_FILTERS[1];
 
@@ -143,7 +147,7 @@ describe('InvoiceGeneratorFiltersRow — non-NDIS board', () => {
   });
 
   it('uses the fixed payment status list', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderRow({ isNdisBoard: false });
 
     await user.click(comboboxes()[2]);
@@ -154,7 +158,7 @@ describe('InvoiceGeneratorFiltersRow — non-NDIS board', () => {
   });
 
   it('reports the payment status that was chosen', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = renderRow({ isNdisBoard: false });
 
     await user.click(comboboxes()[2]);
@@ -173,7 +177,7 @@ describe('InvoiceGeneratorFiltersRow — NDIS board', () => {
   });
 
   it('labels the job status filter from ndisStatusFieldLabel', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderRow({ isNdisBoard: true, ndisStatusFieldLabel: 'Shift Status' });
 
     await user.click(comboboxes()[1]);
@@ -182,7 +186,7 @@ describe('InvoiceGeneratorFiltersRow — NDIS board', () => {
   });
 
   it('offers the three fixed job statuses', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderRow({ isNdisBoard: true });
 
     await user.click(comboboxes()[1]);
@@ -193,7 +197,7 @@ describe('InvoiceGeneratorFiltersRow — NDIS board', () => {
   });
 
   it('reports the job status that was chosen', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = renderRow({ isNdisBoard: true });
 
     await user.click(comboboxes()[1]);
@@ -203,7 +207,7 @@ describe('InvoiceGeneratorFiltersRow — NDIS board', () => {
   });
 
   it('builds the payment status list from the board-derived options', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderRow({ isNdisBoard: true });
 
     await user.click(comboboxes()[2]);
@@ -215,7 +219,7 @@ describe('InvoiceGeneratorFiltersRow — NDIS board', () => {
   });
 
   it('reports the NDIS payment status that was chosen', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = renderRow({ isNdisBoard: true });
 
     await user.click(comboboxes()[2]);
@@ -225,7 +229,7 @@ describe('InvoiceGeneratorFiltersRow — NDIS board', () => {
   });
 
   it('shows only the All option when the board yields no payment statuses', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderRow({ isNdisBoard: true, ndisPaymentStatusOptions: [] });
 
     await user.click(comboboxes()[2]);

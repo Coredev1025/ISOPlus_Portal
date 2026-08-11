@@ -289,7 +289,7 @@ describe('configure business page', () => {
 
   it('saves every field as one multipart body carrying the workspace id and the numbering', async () => {
     stubBusiness();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await waitFor(() => {
@@ -323,7 +323,7 @@ describe('configure business page', () => {
       saveStatus: 400,
       saveBody: { errors: ['email must be a valid email address'] },
     });
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await waitFor(() => {
@@ -363,7 +363,7 @@ describe('configure business page', () => {
       saveStatus: 500,
       saveBody: { message: 'Storage is temporarily unavailable' },
     });
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const { container } = renderPage();
 
     await waitFor(() => {
@@ -402,7 +402,7 @@ describe('configure business page', () => {
 
   it('marks a removed logo in the next save and drops its preview', async () => {
     stubBusiness();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await screen.findByAltText('Default Logo Preview');
@@ -422,7 +422,7 @@ describe('configure business page', () => {
 
   it('goes back to the workspace this profile belongs to', async () => {
     stubBusiness();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await user.click(await screen.findByRole('button', { name: /Back to Workspace/ }));

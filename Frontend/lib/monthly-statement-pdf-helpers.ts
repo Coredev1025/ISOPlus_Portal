@@ -12,7 +12,11 @@ export async function downloadMonthlyStatementPdf(fileUrl: string, filename?: st
   link.click();
 
   setTimeout(() => {
-    document.body.removeChild(link);
+    // Guard teardown: vitest/jsdom can destroy `document` before this fires,
+    // and a bare removeChild becomes an unhandled ReferenceError.
+    if (typeof document !== 'undefined' && link.parentNode) {
+      link.parentNode.removeChild(link);
+    }
     URL.revokeObjectURL(pdfObjectUrl);
   }, 100);
 }

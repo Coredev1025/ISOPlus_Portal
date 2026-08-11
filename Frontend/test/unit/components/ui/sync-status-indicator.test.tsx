@@ -65,6 +65,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe('SyncStatusIndicator', () => {
@@ -202,6 +203,21 @@ describe('SyncStatusIndicator', () => {
 
   it('renders nothing again once the sync disappears from the poll', async () => {
     let boards: unknown[] = [inProgressBoard()];
+    const pollCallbacks: Array<() => void> = [];
+    const realSetInterval = global.setInterval.bind(global);
+    vi.spyOn(global, 'setInterval').mockImplementation(((
+      handler: TimerHandler,
+      ms?: number,
+      ...args: unknown[]
+    ) => {
+      if (typeof handler === 'function' && ms === 10_000) {
+        pollCallbacks.push(handler as () => void);
+        // Keep a long-lived handle so clearInterval in cleanup still works.
+        return realSetInterval(() => {}, 60_000);
+      }
+      return realSetInterval(handler as never, ms as never, ...(args as never[]));
+    }) as typeof setInterval);
+
     server.use(
       http.get(`*/api/sync/workspace/status/ws-1`, () =>
         HttpResponse.json({ boards }),
@@ -212,18 +228,15 @@ describe('SyncStatusIndicator', () => {
     await screen.findByText('NDIS Services');
 
     boards = [];
-    // The component re-polls on a 10s interval.
+    expect(pollCallbacks.length).toBeGreaterThan(0);
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await pollCallbacks[0]();
     });
 
-    await waitFor(
-      async () => {
-        expect(container.textContent).not.toContain('NDIS Services');
-      },
-      { timeout: 15000 },
-    );
-  }, 20000);
+    await waitFor(() => {
+      expect(container.textContent).not.toContain('NDIS Services');
+    });
+  });
 
   it('survives a failing poll without crashing', async () => {
     server.use(
