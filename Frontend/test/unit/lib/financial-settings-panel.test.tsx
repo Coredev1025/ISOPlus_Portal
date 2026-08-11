@@ -1,0 +1,158 @@
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('@/app/utils/axiosConfig', () => ({
+  default: {
+    get: vi.fn(),
+    put: vi.fn(),
+  },
+}));
+
+vi.mock('@/lib/toast-utils', () => ({
+  showFetchErrorToast: vi.fn(),
+  showFetchSuccessToast: vi.fn(),
+  showSaveErrorToast: vi.fn(),
+  showSaveSuccessToast: vi.fn(),
+}));
+
+import axios from '@/app/utils/axiosConfig';
+import { FinancialSettingsPanel } from '@/lib/financial-settings-panel';
+import {
+  showFetchErrorToast,
+  showFetchSuccessToast,
+  showSaveErrorToast,
+  showSaveSuccessToast,
+} from '@/lib/toast-utils';
+
+const PROFILE = {
+  name: 'Acme Care',
+  phone: '',
+  email: '',
+  companyRegistrationId: '',
+  address: {},
+  abn: '',
+  acn: '',
+  bankDetails: {
+    bankName: 'CBA',
+    accountName: 'Acme',
+    bsb: '062000',
+    accountNumber: '12345678',
+    accountsReceivableTerms: 'Net 14',
+    accountsPayableTerms: 'Net 30',
+  },
+  documentNumbering: {
+    invoice: { prefix: 'INV-', nextNumber: 1042 },
+    purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
+    quote: { prefix: 'QT-', nextNumber: 1007 },
+    statement: { prefix: 'STMT-', nextNumber: 1000 },
+  },
+};
+
+describe('FinancialSettingsPanel', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.NEXT_PUBLIC_BACKEND_URL = 'http://localhost:3001';
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('loads profile data into the form', async () => {
+    (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: PROFILE });
+
+    render(<FinancialSettingsPanel workspaceId="ws-1" />);
+
+    expect(await screen.findByDisplayValue('CBA')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Acme')).toBeInTheDocument();
+    expect(showFetchSuccessToast).toHaveBeenCalledWith('Financial settings');
+  });
+
+  it('blocks save when business name is missing and maps API validation errors', async () => {
+    const user = userEvent.setup();
+    (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { ...PROFILE, name: '' },
+    });
+
+    render(<FinancialSettingsPanel workspaceId="ws-1" />);
+    await screen.findByDisplayValue('CBA');
+
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    expect(
+      await screen.findByText(/set company name in configure business first/i)
+    ).toBeInTheDocument();
+    expect(axios.put).not.toHaveBeenCalled();
+    expect(showSaveErrorToast).toHaveBeenCalled();
+  });
+
+  it('saves merged bank details and document numbering', async () => {
+    const user = userEvent.setup();
+    (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: PROFILE });
+    (axios.put as ReturnType<typeof vi.fn>).mockResolvedValue({
+      status: 200,
+      data: PROFILE,
+    });
+
+    render(<FinancialSettingsPanel workspaceId="ws-1" />);
+    await screen.findByDisplayValue('CBA');
+
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() => expect(axios.put).toHaveBeenCalled());
+    const [, body] = (axios.put as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(body).toBeInstanceOf(FormData);
+    expect(showSaveSuccessToast).toHaveBeenCalledWith('Financial settings');
+  });
+
+  it('toasts fetch failures', async () => {
+    (axios.get as ReturnType<typeof vi.fn>).mockRejectedValue({
+      name: 'Error',
+      response: { data: { message: 'boom' } },
+    });
+
+    render(<FinancialSettingsPanel workspaceId="ws-1" />);
+
+    await waitFor(() => {
+      expect(showFetchErrorToast).toHaveBeenCalledWith('financial settings', 'boom');
+    });
+  });
+
+  it('restores default sequences and remaps save validation errors', async () => {
+    const user = userEvent.setup();
+    (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: PROFILE });
+    (axios.put as ReturnType<typeof vi.fn>).mockRejectedValue({
+      response: {
+        data: { errors: ['Business name is required'] },
+      },
+    });
+
+    render(<FinancialSettingsPanel workspaceId="ws-1" />);
+    await screen.findByDisplayValue('CBA');
+
+    await user.click(screen.getByRole('button', { name: /restore defaults/i }));
+    expect(screen.getAllByDisplayValue('1000').length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    expect(
+      await screen.findByText(/set company name in configure business first/i)
+    ).toBeInTheDocument();
+    expect(showSaveErrorToast).toHaveBeenCalled();
+  });
+
+  it('shows a generic api error when save fails without validation errors', async () => {
+    const user = userEvent.setup();
+    (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: PROFILE });
+    (axios.put as ReturnType<typeof vi.fn>).mockRejectedValue({
+      response: { data: { message: 'profile locked' } },
+    });
+
+    render(<FinancialSettingsPanel workspaceId="ws-1" />);
+    await screen.findByDisplayValue('CBA');
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    expect(await screen.findByText('profile locked')).toBeInTheDocument();
+  });
+});

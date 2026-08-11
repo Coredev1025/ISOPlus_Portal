@@ -76,16 +76,15 @@ function ConnectionStatusDot({
   connected: boolean;
   needsReconnect: boolean;
 }) {
-  const label = !connected
-    ? "Not connected"
-    : needsReconnect
-      ? "Reconnect required"
-      : "Connected";
-  const dotClass = !connected
-    ? "bg-muted-foreground/50"
-    : needsReconnect
-      ? "bg-amber-500"
-      : "bg-emerald-500";
+  let label = "Not connected";
+  let dotClass = "bg-muted-foreground/50";
+  if (connected && needsReconnect) {
+    label = "Reconnect required";
+    dotClass = "bg-amber-500";
+  } else if (connected) {
+    label = "Connected";
+    dotClass = "bg-emerald-500";
+  }
 
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-[11.5px] text-muted-foreground">
