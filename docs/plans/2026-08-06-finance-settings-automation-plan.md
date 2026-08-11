@@ -95,8 +95,8 @@ Old `/xero-integration` redirects into finance-settings (`?tab=accounting`).
 **Verify:**
 
 ```bash
-cd Backend && npm test -- test/unit/utils/workspaceFeatureToggleHelpers.test.js test/integration/workspace.route.test.js
-cd Frontend && npm test -- test/unit/finance-settings-tab.test.ts
+cd Backend && npm test -- test/unit/utils/workspaceFeatureToggleHelpers.test.js test/unit/models/business.test.js test/integration/workspace.route.test.js
+cd Frontend && npm test -- test/unit/finance-settings-tab.test.ts test/unit/workspace-feature-toggles.test.ts
 ```
 
 ---

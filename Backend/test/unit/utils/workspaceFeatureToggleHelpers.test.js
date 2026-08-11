@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('../../../src/utils/auditLogger.js', () => ({
+  logAuditTrail: vi.fn(async () => {}),
+}));
+
 import Business from '../../../src/models/Business.js';
+import { logAuditTrail } from '../../../src/utils/auditLogger.js';
 import {
   requireOwnerOrSupportAdmin,
   parseWorkspaceIdParam,
@@ -9,6 +15,7 @@ import {
   parseInvoiceStatementAutomationBody,
   findBusinessByWorkspaceId,
   upsertInvoiceStatementAutomation,
+  auditFeatureToggleUpdate,
 } from '../../../src/utils/workspaceFeatureToggleHelpers.js';
 
 function mockRes() {
@@ -81,6 +88,26 @@ describe('feature toggle payload helpers', () => {
       featureToggles: { invoiceStatementAutomation: false },
     });
   });
+
+  it('normalizes profile featureToggles when automation is enabled (Epic 1 tab gate)', () => {
+    expect(
+      normalizeFeatureTogglesForProfile({
+        name: 'Acme',
+        featureToggles: { invoiceStatementAutomation: true },
+      })
+    ).toEqual({
+      name: 'Acme',
+      featureToggles: { invoiceStatementAutomation: true },
+    });
+  });
+
+  it('treats non-boolean truthy stored values as enabled via Boolean()', () => {
+    expect(
+      getInvoiceStatementAutomationFlag({
+        featureToggles: { invoiceStatementAutomation: 1 },
+      })
+    ).toBe(true);
+  });
 });
 
 describe('parseInvoiceStatementAutomationBody', () => {
@@ -123,5 +150,34 @@ describe('upsertInvoiceStatementAutomation persistence', () => {
 
     const disabled = await upsertInvoiceStatementAutomation('ws-toggle-1', false);
     expect(disabled.featureToggles.invoiceStatementAutomation).toBe(false);
+  });
+});
+
+describe('auditFeatureToggleUpdate (Epic 2 / KAN-7)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('writes before/after invoiceStatementAutomation to the audit trail', async () => {
+    const req = { user: { email: 'owner@example.com' } };
+    await auditFeatureToggleUpdate({
+      workspaceId: 'ws-audit-1',
+      enabled: true,
+      previous: false,
+      req,
+    });
+
+    expect(logAuditTrail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: 'ws-audit-1',
+        action: 'Updated workspace feature toggles',
+        detail: 'Invoice & Statement Automation set to true',
+        entityType: 'Workspace',
+        entityId: 'ws-audit-1',
+        before: { invoiceStatementAutomation: false },
+        after: { invoiceStatementAutomation: true },
+        req,
+      })
+    );
   });
 });
