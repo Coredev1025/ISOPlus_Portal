@@ -204,7 +204,7 @@ describe('extractDocumentNumberingSequences', () => {
       invoice: { prefix: 'INV-', nextNumber: 1042 },
       purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
       quote: { prefix: 'QT-', nextNumber: 1007 },
-      statement: { prefix: 'STMT-', nextNumber: 1000 },
+      statement: { prefix: 'STM-', nextNumber: 1000 },
     });
   });
 
@@ -213,7 +213,7 @@ describe('extractDocumentNumberingSequences', () => {
       invoice: { prefix: 'INV-', nextNumber: 1000 },
       purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
       quote: { prefix: 'QT-', nextNumber: 1000 },
-      statement: { prefix: 'STMT-', nextNumber: 1000 },
+      statement: { prefix: 'STM-', nextNumber: 1000 },
     });
   });
 
@@ -222,7 +222,7 @@ describe('extractDocumentNumberingSequences', () => {
       invoice: { prefix: 'INV-', nextNumber: 1000 },
       purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
       quote: { prefix: 'QT-', nextNumber: 1000 },
-      statement: { prefix: 'STMT-', nextNumber: 1000 },
+      statement: { prefix: 'STM-', nextNumber: 1000 },
     });
   });
 
@@ -235,7 +235,7 @@ describe('extractDocumentNumberingSequences', () => {
       invoice: { prefix: 'INV-', nextNumber: 1042 },
       purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
       quote: { prefix: 'QT-', nextNumber: 1000 },
-      statement: { prefix: 'STMT-', nextNumber: 1000 },
+      statement: { prefix: 'STM-', nextNumber: 1000 },
     });
   });
 
@@ -252,7 +252,7 @@ describe('extractDocumentNumberingSequences', () => {
       invoice: { prefix: 'INV-', nextNumber: 1000 },
       purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
       quote: { prefix: 'QT-', nextNumber: 1000 },
-      statement: { prefix: 'STMT-', nextNumber: 1000 },
+      statement: { prefix: 'STM-', nextNumber: 1000 },
     });
   });
 });

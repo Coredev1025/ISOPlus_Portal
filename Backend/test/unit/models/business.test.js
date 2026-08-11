@@ -8,6 +8,8 @@ describe('Business model', () => {
     expect(biz.documentNumbering.invoice.nextNumber).toBe(1000);
     expect(biz.documentNumbering.purchaseOrder.prefix).toBe('PO-');
     expect(biz.documentNumbering.quote.prefix).toBe('QT-');
+    expect(biz.documentNumbering.statement.prefix).toBe('STM-');
+    expect(biz.documentNumbering.statement.nextNumber).toBe(1000);
     expect(biz.xeroIntegrated).toBe(false);
     expect(biz.headOfficeTimezone).toBe('Australia/Sydney');
     expect(biz.featureToggles.invoiceStatementAutomation).toBe(false);

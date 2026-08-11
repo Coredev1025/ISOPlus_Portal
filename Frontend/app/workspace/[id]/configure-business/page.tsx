@@ -46,7 +46,7 @@ export default function ConfigureBusinessPage() {
   const [invoiceSequence, setInvoiceSequence] = useState<NumberSequence>({ prefix: "INV-", nextNumber: 1000 });
   const [purchaseOrderSequence, setPurchaseOrderSequence] = useState<NumberSequence>({ prefix: "PO-", nextNumber: 1000 });
   const [quoteSequence, setQuoteSequence] = useState<NumberSequence>({ prefix: "QT-", nextNumber: 1000 });
-  const [statementSequence, setStatementSequence] = useState<NumberSequence>({ prefix: "STMT-", nextNumber: 1000 });
+  const [statementSequence, setStatementSequence] = useState<NumberSequence>({ prefix: "STM-", nextNumber: 1000 });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [apiError, setApiError] = useState<string>('');

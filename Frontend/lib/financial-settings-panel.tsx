@@ -35,7 +35,7 @@ const DEFAULT_SEQUENCES: DocumentSequences = {
   invoice: { prefix: "INV-", nextNumber: 1000 },
   purchaseOrder: { prefix: "PO-", nextNumber: 1000 },
   quote: { prefix: "QT-", nextNumber: 1000 },
-  statement: { prefix: "STMT-", nextNumber: 1000 },
+  statement: { prefix: "STM-", nextNumber: 1000 },
 };
 
 const MISSING_BUSINESS_NAME_HINT =

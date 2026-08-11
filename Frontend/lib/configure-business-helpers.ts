@@ -35,7 +35,7 @@ const DEFAULT_SEQUENCES: Record<
   invoice: { prefix: "INV-", nextNumber: 1000 },
   purchaseOrder: { prefix: "PO-", nextNumber: 1000 },
   quote: { prefix: "QT-", nextNumber: 1000 },
-  statement: { prefix: "STMT-", nextNumber: 1000 },
+  statement: { prefix: "STM-", nextNumber: 1000 },
 };
 
 function toSequence(

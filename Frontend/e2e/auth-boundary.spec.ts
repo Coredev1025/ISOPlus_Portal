@@ -10,6 +10,9 @@ test.describe('signed-out visitor', () => {
     '/dashboard',
     '/workspace/55369',
     '/workspace/55369/board/eNiJpH14PN3/configuration',
+    // Epic 3 — Financial Settings lives here; signed-out visitors must not see
+    // relocated bank / document-numbering values from the seed.
+    '/workspace/55369/finance-settings',
   ];
 
   for (const path of protectedPaths) {

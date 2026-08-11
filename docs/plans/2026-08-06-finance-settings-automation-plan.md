@@ -5,10 +5,11 @@
 **Tickets:**
 - Epic 1 (navigation & entry) — **KAN-6** — implemented on `feature/invoice-statement-automation-toggle`
 - Epic 2 (workspace feature toggle) — **KAN-7** — implemented on the same branch
+- Epic 3 (Financial Settings tab) — **KAN-8** — gap-finished on `feature/KAN-8-epic-3-financial-settings-tab-relocation-one`
 - Later epics — tickets still required before branching further work from `develop`
 
 **Date:** 2026-08-06
-**Status:** In progress — **Epic 1 (KAN-6) and Epic 2 (KAN-7) implemented** on `feature/invoice-statement-automation-toggle` (not yet merged to `develop`). Epics 3–7 remain open.
+**Status:** In progress — Epics 1–3 implemented on the finance-settings topic branches (not all merged to `develop`). Epics 4–7 remain open.
 **Source spec:** six documents, `1. System Health & Monitoring` … `6. Implementation Task Breakdown`, dated 2026-08-02
 
 **Goal:** Ship the Finance Settings & Automation area — a renamed entry point, a per-workspace feature toggle, relocated Financial Settings, a multi-provider Accounting Integrations tab, scheduled invoice/statement generation and delivery, and the monitoring to see it working — on top of an end-to-end test baseline that covers every existing touchpoint the seven epics disturb.
@@ -589,17 +590,17 @@ Each task below is a candidate for its own expanded plan when picked up. Track A
 
 ### Task 10: Epic 3 — Financial Settings tab (Track A)
 
-**Files:** Modify `Backend/src/models/Business.js:96`; Create `Frontend/components/finance-settings/financial-settings-tab.tsx`; Modify `Frontend/app/workspace/[id]/configure-business/page.tsx`
+**Files:** `Frontend/lib/financial-settings-{form,panel}.tsx`, `Frontend/lib/finance-settings-page.tsx`, `Backend/src/models/Business.js`, `Frontend/app/workspace/[id]/configure-business/page.tsx`
 
-**Interfaces produced:** `Business.documentNumbering.statement: { prefix: String (default 'ST-'), nextNumber: Number (default 1000) }` — same shape as the other three, per R4.
+**Interfaces produced:** `Business.documentNumbering.statement: { prefix: String (default 'STM-'), nextNumber: Number (default 1000) }` — same shape as the other three, per R4. Default prefix follows the Finance Settings mockup (`STM-`), not the earlier plan draft (`ST-`).
 
-- [ ] Move Bank Details (`configure-business/page.tsx:907`) and Document Number Configuration (`:976`) out of the Additional Settings tab into the new tab, **no behaviour change** (3.1, 3.2).
-- [ ] Add Statement Numbers — real, required, feeds Task 13 (3.3).
-- [ ] Add Credit Note Numbers **disabled/greyed**, not hidden (3.4).
-- [ ] Data migration (3.5): per R3 the values already live in `Business.documentNumbering`, so this is a UI relocation. Confirm no client has values stored anywhere else before declaring the migration a no-op — and if it is a no-op, say so in the PR rather than shipping an empty migration.
-- [ ] Regression (3.6): the Task 4 baseline tests must still pass **unchanged** except for the deliberate `statement` assertion update. That is the whole reason Phase 1 exists.
+- [x] Move Bank Details and Document Number Configuration out of Configure Your Business → Additional Settings into the Financial Settings tab, **no behaviour change** (3.1, 3.2). Additional Settings tab removed; Configure Business Basic save still passthroughs numbering so it cannot wipe Financial Settings.
+- [x] Add Statement Numbers — real, required (same validation as Invoice/PO/Quote), feeds Task 13 (3.3).
+- [x] Add Credit Note Numbers **disabled/greyed**, not hidden (3.4).
+- [x] Data migration (3.5): **no-op**. Bank details and Invoice/PO/Quote numbering already live on `Business.bankDetails` / `Business.documentNumbering`; clients keep those values. No second storage location and no empty migration file. Statement is additive (`STM-` / `1000` via schema default for new docs; existing docs gain it on next profile save or when Mongoose applies defaults on create paths).
+- [x] Regression (3.6): Configure Business no longer exposes Additional Settings; Financial Settings form/panel unit tests cover Bank Details + Document Numbering (+ statement / disabled credit note); Xero accounting routes and signed-out finance-settings auth boundary remain covered separately.
 
-**Covers:** 3.1–3.6.
+**Covers:** 3.1–3.6. Status: done on `feature/KAN-8-epic-3-financial-settings-tab-relocation-one`.
 
 ---
 
