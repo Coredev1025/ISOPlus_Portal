@@ -27,9 +27,11 @@ import syncRoutes from './routes/sync.js';
 import itemsRoutes from './routes/items.js';
 import exportOptimizedRoutes from './routes/exportOptimized.js';
 import subscriptionRoutes from './routes/subscription.js';
+import schedulerRoutes from './routes/scheduler.js';
 import session from 'express-session';
 import MongoStore from 'connect-mongo';
 import syncWorker, { checkAndRetryFailedJobs } from './workers/syncWorker.js'; // Initialize sync worker
+import { registerSchedulerHandlers } from './services/scheduler/handlers.js';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
@@ -40,6 +42,10 @@ import { errorHandler } from './middleware/errorHandler.js';
 import { info, error as logError } from './utils/logger.js';
 
 dotenv.config();
+
+// Register scheduler job handlers alongside the other background wiring
+// (sync worker, queue) so the registry is populated before the first tick.
+registerSchedulerHandlers();
 
 axios.defaults.timeout = Math.max(parseInt(process.env.HTTP_CLIENT_TIMEOUT_MS || '30000', 10), 1000);
 axios.defaults.httpAgent = new http.Agent({ keepAlive: true, maxSockets: 100 });
@@ -146,6 +152,7 @@ app.use('/api/sync', syncRoutes);
 app.use('/api/items', itemsRoutes);
 app.use('/api/export', exportOptimizedRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/scheduler', schedulerRoutes);
 
 // Setup Bull Board for queue monitoring
 const serverAdapter = new ExpressAdapter();
