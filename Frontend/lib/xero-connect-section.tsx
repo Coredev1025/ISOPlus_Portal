@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link2, Loader2 } from "lucide-react";
 import axios from "@/app/utils/axiosConfig";
 import { Button } from "@/components/ui/button";
@@ -68,6 +68,25 @@ export function XeroConnectSection({
   const [isConnecting, setIsConnecting] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const oauthMessageListenerRef = useRef<((event: MessageEvent) => void) | null>(
+    null
+  );
+
+  useEffect(() => {
+    return () => {
+      if (oauthMessageListenerRef.current) {
+        window.removeEventListener("message", oauthMessageListenerRef.current);
+        oauthMessageListenerRef.current = null;
+      }
+    };
+  }, []);
+
+  const clearOauthMessageListener = useCallback(() => {
+    if (oauthMessageListenerRef.current) {
+      window.removeEventListener("message", oauthMessageListenerRef.current);
+      oauthMessageListenerRef.current = null;
+    }
+  }, []);
 
   const completeOAuth = useCallback(
     async (
@@ -100,9 +119,10 @@ export function XeroConnectSection({
       }
 
       const popup = openXeroPopup(data.url);
+      clearOauthMessageListener();
       const handleMessage = async (event: MessageEvent) => {
         if (event.data?.type !== "XERO_AUTH") return;
-        window.removeEventListener("message", handleMessage);
+        clearOauthMessageListener();
         if (popup) popup.close();
         if (!event.data.success || abortController.signal.aborted) {
           showErrorToast("Failed to connect to Xero", {
@@ -136,6 +156,7 @@ export function XeroConnectSection({
           });
         }
       };
+      oauthMessageListenerRef.current = handleMessage;
       window.addEventListener("message", handleMessage);
     } catch (error: unknown) {
       const err = error as {
@@ -153,7 +174,7 @@ export function XeroConnectSection({
     } finally {
       if (!abortController.signal.aborted) setIsConnecting(false);
     }
-  }, [completeOAuth, workspaceId]);
+  }, [clearOauthMessageListener, completeOAuth, workspaceId]);
 
   const handleTestConnection = useCallback(async () => {
     try {

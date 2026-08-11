@@ -31,12 +31,19 @@ import {
   getContactByEmail,
   getContactByName,
   findOrCreateItem,
-  getAccounts,
-  isAccountTaxRateMatched,
 } from '../services/xero.js';
 import { Item as ItemPayloadDTO } from '../dto/itemsPayload.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
 import { resolveSalesLineMapping } from '../utils/xeroLineItemMapping.js';
+import {
+  loadXeroChartOptions,
+  rejectIfAccountTaxMismatch,
+} from '../utils/xeroAccountTaxHelpers.js';
+import {
+  buildUsedMaterialLineItem,
+  getPayableMaterialFeeAmount,
+  resolveMaterialSalesLine,
+} from '../utils/xeroMaterialLineHelpers.js';
 import {
   NDIS_MASTERPLAN_ATTR as NDIS_MASTERPLAN_ATTR_DB,
   buildNdisMasterPlanServiceRows,
@@ -382,18 +389,45 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
-    const accounts = await getAccounts(workspaceId);
+    const chart = await loadXeroChartOptions(workspaceId);
+    const gstValue = item.values["GST"];
     const invoiceLineTax = resolveSalesLineMapping(
       business,
       'invoice',
-      item.values["GST"],
-      accounts
+      gstValue,
+      chart.accounts
     );
     const salesAccountCode = invoiceLineTax.accountCode;
+    const materialFeeAmount = getPayableMaterialFeeAmount(item.values);
+    const materialLineTax = resolveMaterialSalesLine(
+      business,
+      'invoice',
+      gstValue,
+      chart.accounts
+    );
 
-    if (!(await isAccountTaxRateMatched(workspaceId, salesAccountCode, invoiceLineTax.taxType))) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "Account code and Tax rate is not matched, please update them in ISO+ portal");
-      return res.status(200).json({ message: "Account code and Tax rate is not matched" });
+    const mismatchResponse = await rejectIfAccountTaxMismatch({
+      workspaceId,
+      boardId,
+      itemId: item.id,
+      accountCode: salesAccountCode,
+      taxType: invoiceLineTax.taxType,
+      res,
+      chart,
+    });
+    if (mismatchResponse) return mismatchResponse;
+
+    if (materialFeeAmount > 0) {
+      const materialMismatch = await rejectIfAccountTaxMismatch({
+        workspaceId,
+        boardId,
+        itemId: item.id,
+        accountCode: materialLineTax.accountCode || salesAccountCode,
+        taxType: materialLineTax.taxType,
+        res,
+        chart,
+      });
+      if (materialMismatch) return materialMismatch;
     }
 
     const invoice = {
@@ -417,14 +451,10 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       accountCode: salesAccountCode
     });
 
-    if (item.values['Payable Material Fee($) - GST Excl.'] > 0) {
-      invoice.lineItems.push({
-        description: "Used Material/Part",
-        quantity: 1,
-        unitAmount: item.values['Payable Material Fee($) - GST Excl.'],
-        taxType: invoiceLineTax.taxType,
-        accountCode: salesAccountCode
-      });
+    if (materialFeeAmount > 0) {
+      invoice.lineItems.push(
+        buildUsedMaterialLineItem(materialFeeAmount, materialLineTax, salesAccountCode)
+      );
     }
 
     if (item.values['Other Payable Fee($) - GST Excl.'] > 0) {
@@ -661,17 +691,43 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
-    const accounts = await getAccounts(workspaceId);
+    const chart = await loadXeroChartOptions(workspaceId);
+    const quoteGst = quoteValues['GST'];
     const quoteLineTax = resolveSalesLineMapping(
       business,
       'quote',
-      quoteValues['GST'],
-      accounts,
+      quoteGst,
+      chart.accounts,
       'quoteService'
     );
-    if (!(await isAccountTaxRateMatched(workspaceId, quoteLineTax.accountCode, quoteLineTax.taxType))) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "Account code and Tax rate is not matched, please update them in ISO+ portal");
-      return res.status(200).json({ message: "Account code and Tax rate is not matched" });
+    const materialFeeAmount = getPayableMaterialFeeAmount(quoteValues);
+    const materialLineTax = resolveMaterialSalesLine(
+      business,
+      'quote',
+      quoteGst,
+      chart.accounts
+    );
+    const quoteMismatch = await rejectIfAccountTaxMismatch({
+      workspaceId,
+      boardId,
+      itemId: item.id,
+      accountCode: quoteLineTax.accountCode,
+      taxType: quoteLineTax.taxType,
+      res,
+      chart,
+    });
+    if (quoteMismatch) return quoteMismatch;
+    if (materialFeeAmount > 0) {
+      const materialMismatch = await rejectIfAccountTaxMismatch({
+        workspaceId,
+        boardId,
+        itemId: item.id,
+        accountCode: materialLineTax.accountCode || quoteLineTax.accountCode,
+        taxType: materialLineTax.taxType,
+        res,
+        chart,
+      });
+      if (materialMismatch) return materialMismatch;
     }
     const jobDescription = quoteValues['Job Description']
       ? quoteValues['Job Description'].toString().replace(/<[^>]*>/g, '')
@@ -686,6 +742,15 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
         accountCode: quoteLineTax.accountCode,
       },
     ];
+    if (materialFeeAmount > 0) {
+      lineItems.push(
+        buildUsedMaterialLineItem(
+          materialFeeAmount,
+          materialLineTax,
+          quoteLineTax.accountCode
+        )
+      );
+    }
     const mappedQuote = {
       issueDate: quoteValues['Issue Date'],
       expiryDate: quoteValues['Expiry Date'],
@@ -821,19 +886,25 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
-    const accounts = await getAccounts(workspaceId);
+    const chart = await loadXeroChartOptions(workspaceId);
     const poLineTax = resolveSalesLineMapping(
       business,
       'purchaseOrder',
       purchaseOrderValues['GST'],
-      accounts,
+      chart.accounts,
       undefined,
-      { fallbackAccountType: 'EXPENSE' }
+      { fallbackAccountType: 'EXPENSE', requireAccountCode: true }
     );
-    if (!(await isAccountTaxRateMatched(workspaceId, poLineTax.accountCode, poLineTax.taxType))) {
-      await setIntegrationMessage(workspaceId, boardId, item.id, "Account code and Tax rate is not matched, please update them in ISO+ portal");
-      return res.status(200).json({ message: "Account code and Tax rate is not matched" });
-    }
+    const poMismatch = await rejectIfAccountTaxMismatch({
+      workspaceId,
+      boardId,
+      itemId: item.id,
+      accountCode: poLineTax.accountCode,
+      taxType: poLineTax.taxType,
+      res,
+      chart,
+    });
+    if (poMismatch) return poMismatch;
 
     const mappedPO = {
       clientsOrderNumber: purchaseOrderValues["Client's Order Number"],

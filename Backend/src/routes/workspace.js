@@ -334,8 +334,18 @@ router.put('/:workspaceId/feature-toggles', authenticateToken, async (req, res) 
     }
 
     const existing = await findBusinessByWorkspaceId(workspaceId);
+    if (!existing) {
+      return res.status(404).json({
+        message: 'Business not found. Configure the business profile first.',
+      });
+    }
     const previous = getInvoiceStatementAutomationFlag(existing);
     const business = await upsertInvoiceStatementAutomation(workspaceId, parsed.value);
+    if (!business) {
+      return res.status(404).json({
+        message: 'Business not found. Configure the business profile first.',
+      });
+    }
     const payload = buildFeatureTogglesPayload(business);
 
     await auditFeatureToggleUpdate({

@@ -50,17 +50,16 @@ export async function findBusinessByWorkspaceId(workspaceId) {
 }
 
 export async function upsertInvoiceStatementAutomation(workspaceId, enabled) {
-  const business = await Business.findOneAndUpdate(
+  // Update only — do not upsert a stub Business from the feature-toggle API.
+  return Business.findOneAndUpdate(
     { workspaceId: { $eq: String(workspaceId) } },
     {
       $set: {
-        workspaceId: String(workspaceId),
         'featureToggles.invoiceStatementAutomation': enabled,
       },
     },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
+    { new: true }
   );
-  return business;
 }
 
 export async function auditFeatureToggleUpdate({

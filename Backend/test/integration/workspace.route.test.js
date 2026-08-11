@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { authenticatedAgent } from '../helpers/auth.js';
+import Business from '../../src/models/Business.js';
 
 const app = createApp();
 
@@ -64,7 +65,17 @@ describe('Workspace feature-toggles routes', () => {
     expect(res.body.message).toMatch(/boolean/i);
   });
 
+  it('returns 404 on PUT when business profile is missing', async () => {
+    const { agent } = await authenticatedAgent(app, { role: 'owner' });
+    const putRes = await agent
+      .put('/api/workspaces/ws-no-biz/feature-toggles')
+      .send({ invoiceStatementAutomation: true });
+    expect(putRes.status).toBe(404);
+    expect(putRes.body.message).toMatch(/business/i);
+  });
+
   it('persists flag via PUT and returns it on GET for owner', async () => {
+    await Business.create({ name: 'Owner Biz', workspaceId: 'ws-put-2' });
     const { agent } = await authenticatedAgent(app, { role: 'owner' });
     const putRes = await agent
       .put('/api/workspaces/ws-put-2/feature-toggles')
@@ -77,4 +88,3 @@ describe('Workspace feature-toggles routes', () => {
     expect(getRes.body).toEqual({ invoiceStatementAutomation: true });
   });
 });
-

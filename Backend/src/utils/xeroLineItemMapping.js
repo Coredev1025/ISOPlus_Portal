@@ -5,7 +5,14 @@ export const XERO_QUOTE_OVERRIDE_KINDS = ['quoteService', 'material'];
 export const XERO_LINE_ITEM_TAX_DEFAULTS = {
   quote: { taxType: 'OUTPUT' },
   purchaseOrder: { taxType: 'INPUT' },
-  invoice: { taxType: 'OUTPUT' }
+  invoice: { taxType: 'OUTPUT' },
+};
+
+/** Board-GST tax-free fallback when Finance Settings has no mapped taxType. */
+export const XERO_TAX_FREE_DEFAULTS = {
+  quote: 'EXEMPTOUTPUT',
+  purchaseOrder: 'EXEMPTEXPENSES',
+  invoice: 'EXEMPTOUTPUT',
 };
 
 function cleanString(value) {
@@ -38,8 +45,7 @@ export function isGstApplied(gstValue) {
 function pickMappingForResolve(business, docType, lineKind) {
   const root = business?.xeroLineItemMapping || {};
   const docMapping = root[docType] || {};
-  if (docType !== 'quote' || !lineKind) return docMapping;
-  if (!XERO_QUOTE_OVERRIDE_KINDS.includes(lineKind)) return docMapping;
+  if (!lineKind || !XERO_QUOTE_OVERRIDE_KINDS.includes(lineKind)) return docMapping;
   const override = root.quoteOverrides?.[lineKind];
   if (!override || typeof override !== 'object') return docMapping;
   return {
@@ -48,6 +54,17 @@ function pickMappingForResolve(business, docType, lineKind) {
     taxRatePercent:
       toRatePercent(override.taxRatePercent) ?? toRatePercent(docMapping.taxRatePercent),
   };
+}
+
+function resolveUnmappedTaxType(docType, gstValue, options = {}) {
+  const taxableDefault = XERO_LINE_ITEM_TAX_DEFAULTS[docType]?.taxType || 'OUTPUT';
+  const taxFreeDefault =
+    cleanString(options.unmappedTaxFreeType)
+    || XERO_TAX_FREE_DEFAULTS[docType]
+    || 'EXEMPTOUTPUT';
+
+  if (isGstApplied(gstValue)) return taxableDefault;
+  return taxFreeDefault;
 }
 
 export function inferTaxRatePercentFromTaxType(taxType) {
@@ -80,15 +97,15 @@ export function lookupTaxRatePercent(taxRates, taxType) {
   );
 }
 
-export function resolveLineItemTax(business, docType, gstValue, lineKind) {
+/**
+ * Resolve Account Code + TaxType for a Xero line.
+ * Explicit Finance Settings mapping wins; otherwise board GST selects
+ * taxable vs tax-free defaults (and options.unmappedTaxFreeType for NDIS).
+ */
+export function resolveLineItemTax(business, docType, gstValue, lineKind, options = {}) {
   const mapping = pickMappingForResolve(business, docType, lineKind);
-  const defaults = XERO_LINE_ITEM_TAX_DEFAULTS[docType] || {};
   const mappedTaxType = cleanString(mapping.taxType);
-
-  let taxType = mappedTaxType;
-  if (!taxType) {
-    taxType = defaults.taxType || '';
-  }
+  const taxType = mappedTaxType || resolveUnmappedTaxType(docType, gstValue, options);
 
   return {
     accountCode: cleanString(mapping.accountCode) || undefined,
@@ -105,6 +122,17 @@ export function pickGstValue(...candidates) {
   return '';
 }
 
+function resolveFallbackAccountCode(accounts, options = {}) {
+  const fallbackType = options.fallbackAccountType || 'REVENUE';
+  const typed = accounts?.find((acc) => acc.Type === fallbackType)?.Code;
+  if (typed) return typed;
+  if (options.requireAccountCode) return undefined;
+  if (Object.hasOwn(options, 'defaultAccountCode')) {
+    return options.defaultAccountCode || undefined;
+  }
+  return '200';
+}
+
 export function resolveSalesLineMapping(
   business,
   docType,
@@ -113,13 +141,9 @@ export function resolveSalesLineMapping(
   lineKind,
   options = {}
 ) {
-  const resolved = resolveLineItemTax(business, docType, gstValue, lineKind);
-  const fallbackType = options.fallbackAccountType || 'REVENUE';
-  const defaultCode = options.defaultAccountCode ?? '200';
+  const resolved = resolveLineItemTax(business, docType, gstValue, lineKind, options);
   const accountCode =
-    resolved.accountCode
-    || accounts?.find((acc) => acc.Type === fallbackType)?.Code
-    || defaultCode;
+    resolved.accountCode || resolveFallbackAccountCode(accounts, options);
   return { accountCode, taxType: resolved.taxType };
 }
 

@@ -734,21 +734,30 @@ export async function getTaxRates(workspaceId) {
     }
 }
 
-export async function isAccountTaxRateMatched(workspaceId, accountCode, taxType) {
+export async function isAccountTaxRateMatched(workspaceId, accountCode, taxType, chart) {
     if (!accountCode || !taxType) return true;
+
     let accounts;
     let taxRates;
     try {
-        [accounts, taxRates] = await Promise.all([
-            getAccounts(workspaceId),
-            getTaxRates(workspaceId)
-        ]);
+        if (chart?.accounts && chart?.taxRates) {
+            accounts = chart.accounts;
+            taxRates = chart.taxRates;
+        } else {
+            // Sequential: concurrent getAccounts + getTaxRates can race refresh tokens.
+            accounts = await getAccounts(workspaceId);
+            taxRates = await getTaxRates(workspaceId);
+        }
     } catch {
+        // Cannot validate (auth/network) — do not block create.
         return true;
     }
+
     const account = (accounts || []).find((a) => (a.Code ?? a.code) === accountCode);
     const rate = (taxRates || []).find((t) => (t.TaxType ?? t.taxType) === taxType);
-    if (!account || !rate) return false;
+    // Unknown account or tax type in chart: skip gate (not a confirmed mismatch).
+    if (!account || !rate) return true;
+
     const accountClass = String(account.Class ?? account._class ?? account.class ?? '').toUpperCase();
     const canApplyToRevenue = rate.CanApplyToRevenue ?? rate.canApplyToRevenue ?? false;
     const canApplyToExpenses = rate.CanApplyToExpenses ?? rate.canApplyToExpenses ?? false;

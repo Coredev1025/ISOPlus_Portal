@@ -140,7 +140,9 @@ describe('upsertInvoiceStatementAutomation persistence', () => {
     expect(biz.featureToggles.invoiceStatementAutomation).toBe(false);
   });
 
-  it('upserts the flag and findBusinessByWorkspaceId reads it', async () => {
+  it('updates an existing business flag and findBusinessByWorkspaceId reads it', async () => {
+    await Business.create({ name: 'Toggle Biz', workspaceId: 'ws-toggle-1' });
+
     const updated = await upsertInvoiceStatementAutomation('ws-toggle-1', true);
     expect(updated.featureToggles.invoiceStatementAutomation).toBe(true);
 
@@ -150,6 +152,12 @@ describe('upsertInvoiceStatementAutomation persistence', () => {
 
     const disabled = await upsertInvoiceStatementAutomation('ws-toggle-1', false);
     expect(disabled.featureToggles.invoiceStatementAutomation).toBe(false);
+  });
+
+  it('does not create a stub Business when none exists', async () => {
+    const updated = await upsertInvoiceStatementAutomation('ws-missing-toggle', true);
+    expect(updated).toBeNull();
+    expect(await findBusinessByWorkspaceId('ws-missing-toggle')).toBeNull();
   });
 });
 

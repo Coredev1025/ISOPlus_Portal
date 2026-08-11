@@ -1,7 +1,7 @@
 import Business from '../models/Business.js';
 import Item from '../models/Item.js';
 import { setIntegrationMessage, setGeneratedField, getQuoteNDISReferencedItems, getNDISMasterPlanReferencedItems, validateItemBelongsToTenant } from '../services/isoplus.js';
-import { createInvoice, createQuote, createOrUpdateContact, getContactByEmail, getContactByName, getAccounts, configure, ensureAuthenticated, isAccountTaxRateMatched } from '../services/xero.js';
+import { createInvoice, createQuote, createOrUpdateContact, getContactByEmail, getContactByName, configure, ensureAuthenticated } from '../services/xero.js';
 import { Item as ItemPayloadDTO } from '../dto/itemsPayload.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
 import { getDateOnlyIso } from '../utils/ndisServiceRecords.js';
@@ -10,6 +10,10 @@ import {
   pickGstValue,
   resolveSalesLineMapping,
 } from '../utils/xeroLineItemMapping.js';
+import {
+  loadXeroChartOptions,
+  rejectIfAccountTaxMismatch,
+} from '../utils/xeroAccountTaxHelpers.js';
 import {
   getNdisInvoiceGeneratorContextFromMasterItems,
   prepareParticipantForInvoiceGenerator,
@@ -52,25 +56,7 @@ const REF_ATTRIBUTE_NAMES = {
 };
 
 const DEFAULT_XERO_TIMEZONE = 'Australia/Sydney';
-const ACCOUNT_TAX_MISMATCH_MESSAGE =
-  'Account code and Tax rate is not matched, please update them in ISO+ portal';
-
-async function rejectIfAccountTaxMismatch({
-  workspaceId,
-  boardId,
-  itemId,
-  accountCode,
-  taxType,
-  res,
-}) {
-  if (await isAccountTaxRateMatched(workspaceId, accountCode, taxType)) {
-    return null;
-  }
-  if (itemId) {
-    await setIntegrationMessage(workspaceId, boardId, itemId, ACCOUNT_TAX_MISMATCH_MESSAGE);
-  }
-  return res.status(200).json({ message: 'Account code and Tax rate is not matched' });
-}
+const NDIS_SALES_MAPPING_OPTIONS = { unmappedTaxFreeType: 'EXEMPTOUTPUT' };
 
 function parseMasterItemIdEntry(entry) {
   if (!entry) return null;
@@ -246,10 +232,10 @@ export async function handleXeroInvoicendis({
     const timezone = business?.headOfficeTimezone || DEFAULT_XERO_TIMEZONE;
     const serviceDate = computeNdisServiceDate(invoiceValues, timezone);
 
-    const [[servicePlanValues, cancellationTypeValues, , participantProfileValues], accounts] =
+    const [[servicePlanValues, cancellationTypeValues, , participantProfileValues], chart] =
       await Promise.all([
         getNDISMasterPlanReferencedItems(workspaceId, boardId, item.id),
-        getAccounts(workspaceId),
+        loadXeroChartOptions(workspaceId),
       ]);
     await assertMasterPlanReferences(workspaceId, boardId, item.id, servicePlanValues, participantProfileValues);
 
@@ -270,7 +256,9 @@ export async function handleXeroInvoicendis({
       business,
       'invoice',
       gstValue,
-      accounts
+      chart.accounts,
+      undefined,
+      NDIS_SALES_MAPPING_OPTIONS,
     );
     const mismatchResponse = await rejectIfAccountTaxMismatch({
       workspaceId,
@@ -279,6 +267,7 @@ export async function handleXeroInvoicendis({
       accountCode: salesAccountCode,
       taxType: gstType,
       res,
+      chart,
     });
     if (mismatchResponse) return mismatchResponse;
 
@@ -364,14 +353,15 @@ export async function handleXeroQuotendis({
       itemId: item.id,
     });
 
-    const accounts = await getAccounts(workspaceId);
+    const chart = await loadXeroChartOptions(workspaceId);
     const gstValue = pickGstValue(NDISQuoteValues.GST, NDISQuoteValues['GST']);
     const { accountCode, taxType: gstType } = resolveSalesLineMapping(
       business,
       'quote',
       gstValue,
-      accounts,
-      'quoteService'
+      chart.accounts,
+      'quoteService',
+      NDIS_SALES_MAPPING_OPTIONS,
     );
     const mismatchResponse = await rejectIfAccountTaxMismatch({
       workspaceId,
@@ -380,6 +370,7 @@ export async function handleXeroQuotendis({
       accountCode,
       taxType: gstType,
       res,
+      chart,
     });
     if (mismatchResponse) return mismatchResponse;
 
@@ -505,7 +496,7 @@ export async function handleXeroInvoicendisInvoiceGenerator({
       );
     }
 
-    const [contact, business, accounts] = await Promise.all([
+    const [contact, business, chart] = await Promise.all([
       buildParticipantTaxContact({
         billingContact,
         participantProfile,
@@ -514,7 +505,7 @@ export async function handleXeroInvoicendisInvoiceGenerator({
         createOrUpdateContact,
       }),
       fetchBusinessForXero(workspaceId),
-      getAccounts(workspaceId),
+      loadXeroChartOptions(workspaceId),
     ]);
     const xeroNdisTimezone = business?.headOfficeTimezone || DEFAULT_XERO_TIMEZONE;
 
@@ -555,7 +546,9 @@ export async function handleXeroInvoicendisInvoiceGenerator({
       business,
       'invoice',
       gstValue,
-      accounts
+      chart.accounts,
+      undefined,
+      NDIS_SALES_MAPPING_OPTIONS,
     );
     const mismatchResponse = await rejectIfAccountTaxMismatch({
       workspaceId,
@@ -564,6 +557,7 @@ export async function handleXeroInvoicendisInvoiceGenerator({
       accountCode: salesAccountCode,
       taxType: gstType,
       res,
+      chart,
     });
     if (mismatchResponse) return mismatchResponse;
 
@@ -632,7 +626,7 @@ export async function handleXeroInvoiceParticipantTax({
       effectiveParticipantName,
     } = getParticipantTaxBillingDetails(participantProfileItem);
 
-    const [contact, accounts] = await Promise.all([
+    const [contact, chart] = await Promise.all([
       buildParticipantTaxContact({
         billingContact: receiverName,
         participantProfile: {
@@ -644,7 +638,7 @@ export async function handleXeroInvoiceParticipantTax({
         getContactByName,
         createOrUpdateContact,
       }),
-      getAccounts(workspaceId),
+      loadXeroChartOptions(workspaceId),
     ]);
 
     const effectiveDueDate = resolveParticipantTaxDueDate(invoiceDate, dueDate, true);
@@ -658,7 +652,9 @@ export async function handleXeroInvoiceParticipantTax({
       business,
       'invoice',
       gstValue,
-      accounts
+      chart.accounts,
+      undefined,
+      NDIS_SALES_MAPPING_OPTIONS,
     );
     const mismatchResponse = await rejectIfAccountTaxMismatch({
       workspaceId,
@@ -667,6 +663,7 @@ export async function handleXeroInvoiceParticipantTax({
       accountCode: salesAccountCode,
       taxType: gstType,
       res,
+      chart,
     });
     if (mismatchResponse) return mismatchResponse;
 

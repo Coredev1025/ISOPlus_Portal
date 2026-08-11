@@ -8,12 +8,14 @@ import {
   lookupTaxRatePercent,
   inferTaxRatePercentFromTaxType,
   enrichMappingWithTaxRatePercents,
+  XERO_TAX_FREE_DEFAULTS,
 } from '../../../src/utils/xeroLineItemMapping.js';
 
 describe('xeroLineItemMapping', () => {
   it('isGstApplied recognizes 10%', () => {
     expect(isGstApplied('10%')).toBe(true);
     expect(isGstApplied('0%')).toBe(false);
+    expect(isGstApplied('GST Free')).toBe(false);
     expect(isGstApplied(undefined)).toBe(false);
   });
 
@@ -51,6 +53,46 @@ describe('xeroLineItemMapping', () => {
     });
   });
 
+  it('resolveLineItemTax uses board GST when mapping taxType is unset', () => {
+    expect(resolveLineItemTax({}, 'invoice', '10%')).toEqual({
+      accountCode: undefined,
+      taxType: 'OUTPUT',
+    });
+    expect(resolveLineItemTax({}, 'invoice', 'GST Free')).toEqual({
+      accountCode: undefined,
+      taxType: 'EXEMPTOUTPUT',
+    });
+    expect(resolveLineItemTax({}, 'invoice', '0%')).toEqual({
+      accountCode: undefined,
+      taxType: 'EXEMPTOUTPUT',
+    });
+    expect(resolveLineItemTax({}, 'purchaseOrder', 'GST Free')).toEqual({
+      accountCode: undefined,
+      taxType: 'EXEMPTEXPENSES',
+    });
+  });
+
+  it('resolveLineItemTax applies quoteOverrides.material for invoice and quote', () => {
+    const business = {
+      xeroLineItemMapping: {
+        invoice: { accountCode: '200', taxType: 'OUTPUT' },
+        quote: { accountCode: '200', taxType: 'OUTPUT' },
+        quoteOverrides: {
+          material: { accountCode: '260', taxType: 'EXEMPTOUTPUT' },
+        },
+      },
+    };
+
+    expect(resolveLineItemTax(business, 'invoice', '10%', 'material')).toEqual({
+      accountCode: '260',
+      taxType: 'EXEMPTOUTPUT',
+    });
+    expect(resolveLineItemTax(business, 'quote', '10%', 'material')).toEqual({
+      accountCode: '260',
+      taxType: 'EXEMPTOUTPUT',
+    });
+  });
+
   it('lookupTaxRatePercent reads EffectiveRate from Xero options', () => {
     expect(
       lookupTaxRatePercent(
@@ -76,7 +118,7 @@ describe('xeroLineItemMapping', () => {
     expect(pickGstValue(null, '', '  ', 'GST Free')).toBe('GST Free');
   });
 
-  it('resolveSalesLineMapping uses mapping then account-type then 200', () => {
+  it('resolveSalesLineMapping uses mapping then account-type then default', () => {
     const accounts = [
       { Type: 'EXPENSE', Code: '400' },
       { Type: 'REVENUE', Code: '210' },
@@ -98,7 +140,37 @@ describe('xeroLineItemMapping', () => {
     ).toEqual({ accountCode: '260', taxType: 'OUTPUT' });
 
     expect(
-      resolveSalesLineMapping({}, 'invoice', '', accounts)
-    ).toEqual({ accountCode: '210', taxType: 'OUTPUT' });
+      resolveSalesLineMapping({}, 'invoice', 'GST Free', accounts)
+    ).toEqual({ accountCode: '210', taxType: 'EXEMPTOUTPUT' });
+  });
+
+  it('resolveSalesLineMapping does not invent revenue 200 for purchase orders', () => {
+    expect(
+      resolveSalesLineMapping(
+        {},
+        'purchaseOrder',
+        '10%',
+        [{ Type: 'REVENUE', Code: '200' }],
+        undefined,
+        { fallbackAccountType: 'EXPENSE', requireAccountCode: true }
+      )
+    ).toEqual({ accountCode: undefined, taxType: 'INPUT' });
+
+    expect(
+      resolveSalesLineMapping(
+        {},
+        'purchaseOrder',
+        '10%',
+        [{ Type: 'EXPENSE', Code: '400' }],
+        undefined,
+        { fallbackAccountType: 'EXPENSE', requireAccountCode: true }
+      )
+    ).toEqual({ accountCode: '400', taxType: 'INPUT' });
+  });
+
+  it('exports tax-free defaults for invoice and purchaseOrder', () => {
+    expect(XERO_TAX_FREE_DEFAULTS.invoice).toBe('EXEMPTOUTPUT');
+    expect(XERO_TAX_FREE_DEFAULTS.purchaseOrder).toBe('EXEMPTEXPENSES');
+    expect(XERO_TAX_FREE_DEFAULTS.quote).toBe('EXEMPTOUTPUT');
   });
 });

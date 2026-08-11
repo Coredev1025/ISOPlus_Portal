@@ -13,8 +13,6 @@ import {
   buildLogoUrls,
 } from '../utils/businessLogo.js';
 import {
-  getAccounts,
-  getTaxRates,
   updateOrganizationInfo,
 } from '../services/xero.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
@@ -27,6 +25,8 @@ import {
 } from '../utils/businessProfileUpdate.js';
 import { sanitizeLogValue } from '../utils/sanitizeLog.js';
 import { normalizeLineItemMapping, enrichMappingWithTaxRatePercents } from '../utils/xeroLineItemMapping.js';
+import { loadXeroChartOptions } from '../utils/xeroAccountTaxHelpers.js';
+import { requireOwnerOrSupportAdmin } from '../utils/workspaceFeatureToggleHelpers.js';
 
 function mapXeroAccountOptions(rawAccounts) {
   return (rawAccounts || [])
@@ -477,6 +477,8 @@ router.post('/xero/update-organization', authenticateToken, async (req, res) => 
 
 router.get('/xero/account-tax-options', authenticateToken, async (req, res) => {
   try {
+    if (!requireOwnerOrSupportAdmin(req, res)) return;
+
     const workspaceId = toRequiredQueryString(req.query.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
 
@@ -486,10 +488,8 @@ router.get('/xero/account-tax-options', authenticateToken, async (req, res) => {
       return res.status(400).json({ message: 'Xero integration not found' });
     }
 
-    const [rawAccounts, rawTaxRates] = await Promise.all([
-      getAccounts(workspaceId),
-      getTaxRates(workspaceId),
-    ]);
+    const { accounts: rawAccounts, taxRates: rawTaxRates } =
+      await loadXeroChartOptions(workspaceId);
     const accounts = mapXeroAccountOptions(rawAccounts);
     const taxRates = mapXeroTaxRateOptions(rawTaxRates);
 
@@ -504,19 +504,21 @@ router.get('/xero/account-tax-options', authenticateToken, async (req, res) => {
       stack: err.stack,
     }, req ?? null);
     res.status(500).json({
-      message: err.message || 'Failed to load Xero account and tax options',
+      message: 'Failed to load Xero account and tax options',
     });
   }
 });
 
 router.put('/xero/line-item-mapping', authenticateToken, async (req, res) => {
   try {
+    if (!requireOwnerOrSupportAdmin(req, res)) return;
+
     const workspaceId = toRequiredQueryString(req.body.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
 
     let mapping = normalizeLineItemMapping(req.body.mapping);
     try {
-      const rawTaxRates = await getTaxRates(workspaceId);
+      const { taxRates: rawTaxRates } = await loadXeroChartOptions(workspaceId);
       mapping = enrichMappingWithTaxRatePercents(mapping, mapXeroTaxRateOptions(rawTaxRates));
     } catch {
       mapping = enrichMappingWithTaxRatePercents(mapping, []);
