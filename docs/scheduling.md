@@ -62,6 +62,48 @@ The 401 above is `curl` sending no `Authorization` header at all — the point
 being that the route is live and the auth gate is doing its job, not that
 this particular call was a misconfiguration.
 
+## Deploying: run the index migration
+
+Migrations do **not** run on deploy in this repo — that is deliberate, so a bad
+one cannot become an outage with no decision point. Someone runs this by hand,
+once per environment:
+
+```bash
+npm run migrate -- up add-scheduled-job-indexes
+```
+
+Against a non-local database the wrapper refuses unless you add
+`--allow-remote`. Check what is already applied with:
+
+```bash
+npm run migrate -- list
+```
+
+It creates the two indexes on `scheduledjobs`: `{ enabled: 1, nextRunAt: 1 }`
+(the only query the tick makes) and a **unique** `{ kind: 1, targetId: 1 }`.
+
+**It is safe to run even if the indexes already exist.** They are also declared
+on the schema, and Mongoose builds them on connect because `autoIndex` defaults
+to true — so on most environments this migration will find its work already
+done and no-op. `createIndex` is a no-op when an index with the same keys,
+options and name is present.
+
+Which raises the obvious question: why run it at all? Because the unique
+constraint is load-bearing — it is what stops a toggle flipped twice from
+creating two schedules for the same board, which would double-dispatch. Leaving
+it to `autoIndex` makes it a side effect of application boot. If anyone disables
+`autoIndex` for performance, the constraint silently stops being created on
+fresh environments and nothing catches the duplicate.
+
+To roll back: `npm run migrate -- down add-scheduled-job-indexes`. Note this
+only removes them until the next application boot recreates them from the
+schema. The migration makes index creation deliberate; it cannot make it
+exclusive.
+
+If the migration has not been run and `autoIndex` is on, the scheduler still
+works — this is a durability measure, not a prerequisite. Check the indexes
+that actually exist with `npm run schema -- scheduledjobs`.
+
 ## The AWS EventBridge rule
 
 One rule per environment, in `ap-southeast-2`. This is the one part of this
