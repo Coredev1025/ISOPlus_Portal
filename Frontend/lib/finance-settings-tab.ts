@@ -1,15 +1,15 @@
 export type FinanceSettingsTab = "financial" | "accounting" | "automation";
 
-const VALID_TABS: FinanceSettingsTab[] = [
+const VALID_TABS = new Set<FinanceSettingsTab>([
   "financial",
   "accounting",
   "automation",
-];
+]);
 
 export function parseFinanceSettingsTab(
   raw: string | null | undefined
 ): FinanceSettingsTab {
-  if (raw && VALID_TABS.includes(raw as FinanceSettingsTab)) {
+  if (raw && VALID_TABS.has(raw as FinanceSettingsTab)) {
     return raw as FinanceSettingsTab;
   }
   return "financial";

@@ -513,7 +513,7 @@ export default function ConfigureBusinessPage() {
             >
               Finance Settings & Automation
             </button>
-            .
+            {"."}
           </p>
 
           <div className="space-y-6">

@@ -18,7 +18,6 @@ import {
   showSaveSuccessToast,
 } from "@/lib/toast-utils";
 import {
-  EMPTY_LINE_ITEM_MAPPING,
   normalizeMapping,
   prepareMappingForSave,
   taxRatesForAccount,
@@ -28,6 +27,9 @@ import {
   type XeroQuoteOverrideKind,
   type XeroTaxRateOption,
 } from "@/lib/xero-account-tax-mapping-options";
+
+export { EMPTY_LINE_ITEM_MAPPING } from "@/lib/xero-account-tax-mapping-options";
+export { normalizeMapping };
 
 const USE_DEFAULT = "__default__";
 
@@ -442,5 +444,3 @@ export function XeroAccountTaxMapping({
     </div>
   );
 }
-
-export { EMPTY_LINE_ITEM_MAPPING, normalizeMapping };

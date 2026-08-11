@@ -177,7 +177,13 @@ export function FinancialSettingsPanel({
         workspaceId,
       };
       for (const [key, value] of Object.entries(merged)) {
-        formDataToSend.append(key, String(value ?? ""));
+        const text =
+          typeof value === "string" ||
+          typeof value === "number" ||
+          typeof value === "boolean"
+            ? String(value)
+            : "";
+        formDataToSend.append(key, text);
       }
       formDataToSend.append(
         "documentNumbering",

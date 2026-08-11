@@ -189,7 +189,7 @@ export function FinancialSettingsForm({
     type: DocumentSequenceType,
     value: string
   ) => {
-    const newValue = parseInt(value, 10);
+    const newValue = Number.parseInt(value, 10);
     if (!Number.isFinite(newValue)) return;
 
     if (newValue < sequences[type].nextNumber) {
