@@ -104,6 +104,20 @@ describe('minIntervalMinutes', () => {
     expect(minutes).toBeGreaterThanOrEqual(23 * 60);
   });
 
+  it('does not spuriously shrink or invert across a Sydney spring-forward transition', () => {
+    // Sydney clocks spring forward on 4 Oct 2026 (02:00 -> 03:00), so that
+    // local day is only 23 hours long — the direction that can produce a
+    // spuriously *short* gap, unlike the April fall-back case above which can
+    // only lengthen one. A daily cron's true minimum gap should still be a
+    // healthy number of hours, nowhere near the 60-minute at-most-once floor.
+    const minutes = minIntervalMinutes(
+      '0 2 * * *',
+      TZ,
+      new Date('2026-10-01T12:00:00Z'), // a couple of days before the transition
+    );
+    expect(minutes).toBeGreaterThanOrEqual(23 * 60);
+  });
+
   it('walks from the given reference time, not from a fixed slot', () => {
     const early = minIntervalMinutes('*/30 * * * *', TZ, new Date('2026-08-11T00:00:00Z'));
     const later = minIntervalMinutes('*/30 * * * *', TZ, new Date('2026-08-11T06:00:00Z'));

@@ -242,6 +242,33 @@ describe('upsertSchedule — timezone inheritance', () => {
       expect.objectContaining({ workspaceId: 'ws-bad-tz', timezone: 'Mars/Olympus' }),
     );
   });
+
+  it('rejects an explicitly-passed invalid timezone rather than falling back, even with a valid inherited value available', async () => {
+    // Contrast with the inherited case above: a Business with a *valid*
+    // headOfficeTimezone exists for this workspace, so a fallback would have
+    // something good to fall back to. The explicit argument still wins and
+    // is still invalid, so this must reject — an inherited bad setting must
+    // not make schedules uncreatable, but a caller passing a bad value
+    // directly is a caller error, not something to paper over.
+    await Business.create({
+      workspaceId: 'ws-explicit-bad-tz',
+      headOfficeTimezone: 'Australia/Perth',
+    });
+
+    await expect(
+      upsertSchedule({
+        kind: 'board_sync',
+        targetId: 'board-explicit-bad-tz',
+        workspaceId: 'ws-explicit-bad-tz',
+        cron: '*/30 * * * *',
+        timezone: 'Mars/Olympus',
+        now: NOW,
+      }),
+    ).rejects.toThrow(/invalid schedule/i);
+
+    expect(await ScheduledJob.countDocuments({ targetId: 'board-explicit-bad-tz' })).toBe(0);
+    expect(warn).not.toHaveBeenCalled();
+  });
 });
 
 describe('upsertSchedule — minimum-interval floor', () => {
@@ -268,6 +295,21 @@ describe('upsertSchedule — minimum-interval floor', () => {
     );
 
     expect(await ScheduledJob.countDocuments({ targetId: 'ws-invoice-1' })).toBe(0);
+  });
+
+  it('accepts a cron whose minimum interval is exactly the 60-minute floor for an AT_MOST_ONCE kind', async () => {
+    // The comparison in assertMinimumInterval is strict (`<`), so a gap of
+    // exactly the floor must be accepted, not rejected.
+    register('invoice_issuance', { handler: () => {}, policy: AT_MOST_ONCE });
+
+    const job = await upsertSchedule({
+      kind: 'invoice_issuance',
+      targetId: 'ws-invoice-exact-floor',
+      cron: '0 * * * *',
+      now: NOW,
+    });
+
+    expect(job.cron).toBe('0 * * * *');
   });
 
   it('accepts a monthly cron for an AT_MOST_ONCE kind', async () => {
