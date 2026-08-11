@@ -1,0 +1,312 @@
+# Scheduling
+
+The scheduler is a clock, not a worker. It decides *when* a piece of recurring
+work is due and hands it to the queue that already exists — it never performs
+the work itself. It never calls ISO+, never generates a PDF, never touches
+Xero. See
+[`docs/superpowers/specs/2026-08-11-scheduled-job-trigger-design.md`](./superpowers/specs/2026-08-11-scheduled-job-trigger-design.md)
+for the full design rationale; this file is the operational reference —
+what to configure in AWS, what the endpoint does, how to run it locally, and
+how a feature registers into it.
+
+Ticket: KAN-15.
+
+## What it does, and what it does not
+
+- It claims due `ScheduledJob` documents from Mongo and dispatches each one to
+  a handler registered for its `kind`.
+- A handler's job is to **enqueue and return**. For `board_sync` that means a
+  BullMQ job on the existing `board-sync` queue
+  (`Backend/src/services/sync/queue.js`); the sync worker
+  (`Backend/src/workers/syncWorker.js`) does the actual work, on its own
+  existing retry and concurrency settings.
+- The scheduler holds no business logic for any feature. It does not know what
+  a board sync or an invoice is — only that a `kind` has a handler and a
+  policy.
+- One HTTP endpoint, driven externally. The application has no in-process
+  timer — see "Why not `node-schedule`" below for why that matters.
+
+## The endpoint
+
+`POST /api/scheduler/tick`
+
+- **Auth**: `validateApiKey` (`Backend/src/middleware/auth.js:12`) — the raw
+  `Authorization` header must equal `process.env.Admin_API_Key` exactly. No
+  session, no JWT. Missing header → 401. Wrong value → 401.
+- **Body**: none required.
+- **Response** (200):
+
+  ```json
+  { "claimed": 3, "dispatched": 3, "failed": 0, "capped": false }
+  ```
+
+  `claimed` is how many due schedules this tick took; `dispatched` and
+  `failed` split that by outcome; `capped` is `true` only when the 100-per-tick
+  batch limit was hit, so remaining due schedules waited for the next tick
+  rather than being silently dropped.
+
+Verified against the local stack:
+
+```
+$ curl -s localhost:4001/api/healthcheck
+{"status":"OK"}
+
+$ npm run tick -- --once
+[2026-08-11T08:14:40.871Z] claimed=0 dispatched=0 failed=0 (81ms)
+
+$ curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:4001/api/scheduler/tick
+401
+```
+
+The 401 above is `curl` sending no `Authorization` header at all — the point
+being that the route is live and the auth gate is doing its job, not that
+this particular call was a misconfiguration.
+
+## The AWS EventBridge rule
+
+One rule per environment, in `ap-southeast-2`. This is the one part of this
+feature that merging cannot verify — nothing breaks if the rule is missing or
+misconfigured, schedules simply never fire, silently. Set it up from this
+table, then confirm with the verification steps below.
+
+| Setting | Value |
+|---|---|
+| Rule type | Schedule, `rate(1 minute)` |
+| Target | API Destination |
+| Endpoint | `https://<env-host>/api/scheduler/tick` |
+| Method | `POST` |
+| Connection auth type | API key |
+| Header name | `Authorization` |
+| Header value | the environment's `Admin_API_Key`, **verbatim** |
+
+**The header value must be the key exactly — no `Bearer ` prefix, no leading
+or trailing whitespace.** `validateApiKey` compares the raw header against
+`process.env.Admin_API_Key` with `!==`:
+
+```js
+if (authHeader !== process.env.Admin_API_Key) {
+  // ... 401 Invalid API key
+}
+```
+
+Anything other than the bare key value — a `Bearer ` prefix, a stray space
+from copy-paste — fails that comparison and produces a 401. This is not a
+hypothetical: `Backend/test/integration/scheduler.route.test.js` has a test
+named exactly for this, "rejects the key with a Bearer prefix, which is the
+likely misconfiguration", asserting a 401 when the header is
+`Bearer <key>` instead of `<key>`.
+
+### Dev and prod are separate rules, separate hosts, separate keys
+
+Each environment needs its own EventBridge rule pointing at its own host with
+its own `Admin_API_Key`. There is no shared or default rule to fall back on.
+
+**A rule pointed at the wrong environment is undetectable from inside the
+application** — both dev and prod answer `200 {"claimed":...}` regardless of
+which one you meant to hit. The only way to catch a misrouted rule is to check
+which environment's `ScheduledJob` documents actually have `lastRunAt`
+advancing (see "What to alert on" below). Verify each rule against its own
+environment, not by assuming the pattern transferred correctly from the one
+you set up first.
+
+### Verifying a rule after creating it
+
+Once the rule exists, confirm on the target environment (not locally):
+
+1. Create or leave enabled a test schedule (or wait for a real `board_sync` /
+   `invoice_issuance` one already registered).
+2. Watch that record's `lastRunAt` advance on its own, with nobody calling the
+   endpoint by hand, and `missedRuns` staying at `0`.
+3. If `lastRunAt` is not moving, the rule is either missing, disabled, pointed
+   at the wrong host, or sending a malformed `Authorization` header — check
+   CloudWatch metrics on the API Destination for 401s before assuming the
+   application is broken.
+
+## Running it locally — `npm run tick`
+
+The application has no scheduling of its own, so locally you drive the same
+endpoint yourself. `scripts/dev.mjs tick` (via `scripts/lib/tick.mjs`) is a
+small Node script — no shell, no new dependency — that reads the API port from
+the root `.env` and `Admin_API_Key` from `Backend/.env`:
+
+```bash
+npm run tick              # every 60s until interrupted, printing each summary
+npm run tick -- --once    # a single tick; what verification steps use
+npm run tick -- --every 5 # tighter loop while developing
+npm run tick -- --url <url>   # override the endpoint
+```
+
+Each line printed looks like:
+
+```
+[2026-08-11T08:14:40.871Z] claimed=0 dispatched=0 failed=0 (81ms)
+```
+
+This is a developer convenience, not a fallback timer inside the app — the
+distinction matters, see the next section.
+
+## Why not `node-schedule`
+
+`node-schedule` is a declared dependency in `Backend/package.json` and is
+**not used anywhere in `src/`.** It was evaluated and rejected for this
+feature, deliberately, not overlooked:
+
+An in-process timer (`node-schedule`, `node-cron`, or anything similar) fires
+once **per running instance** of the app. Elastic Beanstalk can and does run
+more than one instance. The moment it scales past one, an in-process timer
+double-dispatches every scheduled job — every board sync would run twice,
+every invoice would be issued twice. External triggering (EventBridge calling
+one HTTP endpoint) avoids that entirely: however many instances are running,
+exactly one of them handles a given tick request, and the claim logic in
+`Backend/src/services/scheduler/tick.js` makes concurrent ticks from multiple
+instances safe regardless.
+
+Do not add a `node-schedule` call to wire this up "just for now." If the
+unused dependency is ever removed, that is a separate, deliberate cleanup —
+not something to route around here.
+
+## Trap: a route in this repo must be mounted twice
+
+`Backend/src/index.js` is the production entry point. It does **not** call
+`createApp()` from `Backend/src/app.js` — they are two parallel Express apps
+that happen to wire up nearly the same routes. `Backend/test/` builds its app
+via `createApp()` (see `Backend/test/integration/scheduler.route.test.js:11`),
+so a route mounted only in `app.js` is fully covered by the test suite and
+**404s in production**, because `index.js` never mounted it.
+
+The scheduler route is correctly mounted in both places:
+
+- `Backend/src/app.js:127` — `app.use('/api/scheduler', schedulerRoutes);`
+- `Backend/src/index.js:155` — `app.use('/api/scheduler', schedulerRoutes);`
+
+During this work the route was initially added only to `app.js`. Every test
+passed — the integration suite exercises `createApp()` — and the endpoint
+would have 404'd in the deployed API. Nothing in the test run would have
+caught it.
+
+**If you add a new route to this backend, mount it in both `app.js` and
+`index.js`, and manually check the deployed environment answers it** — a
+green test suite does not prove `index.js` was touched. This is the single
+most important thing to remember from this document if you are adding routes
+rather than working with the scheduler specifically.
+
+Also note `index.js` calls `registerSchedulerHandlers()` once at module load
+(`Backend/src/index.js:48`) so the registry is populated before the first
+tick can arrive. `createApp()` in `app.js` does not call it — tests register
+their own handlers per-case via `register()` /
+`clearRegistry()` (see `scheduler.route.test.js`).
+
+## Trap: adding `cron-parser` needs a container rebuild, not just a restart
+
+`cron-parser` (`Backend/src/services/scheduler/nextRun.js`) is a new direct
+dependency, pinned to `5.8.1` in `Backend/package.json`. BullMQ and
+`node-schedule` already depend on their own, older copy of the same package
+(`cron-parser@4.9.0`, nested under each in `Backend/package-lock.json`).
+
+A dev container image built **before** this dependency was added has only the
+nested `4.9.0` copies on disk, hoisted to the top-level `node_modules/cron-parser`
+because nothing else was requesting the package at the top level. Version
+`4.9.0` has no `CronExpressionParser` named export — that's a `5.x` API — so
+`import { CronExpressionParser } from 'cron-parser'` in `nextRun.js` resolves
+to `undefined`, and the backend crash-loops with an error that reads like a
+CommonJS/ESM interop bug in the code. It is not: it is a stale image with the
+wrong version hoisted.
+
+```bash
+npm run dev:build
+```
+
+fixes it, same as any other `package.json` change (see
+[`local-development.md`](./local-development.md)). `npm ci` in CI and on
+Elastic Beanstalk always resolves the lockfile fresh, so the deployed
+environments are never affected — this is purely a stale local Docker image
+issue.
+
+## Registering a handler
+
+Handlers live in `Backend/src/services/scheduler/handlers.js`, imported for
+its side effects at boot (`registerSchedulerHandlers()`, called once from
+`Backend/src/index.js:48`, before any tick can arrive). The registered
+example, `board_sync`:
+
+```js
+// Backend/src/services/scheduler/handlers.js
+register('board_sync', {
+  policy: AT_LEAST_ONCE,
+  handler: ({ targetId, workspaceId }) =>
+    triggerManualSync(getSchedulerAuthorization(), workspaceId, targetId),
+});
+```
+
+Five rules apply to every handler (`Backend/src/services/scheduler/registry.js`):
+
+1. **Declare a policy.** `AT_MOST_ONCE` or `AT_LEAST_ONCE` — there is no
+   default. `register()` throws at boot if the policy is missing or not one
+   of the two, because guessing wrong silently means either a duplicated
+   invoice or a silently skipped sync.
+2. **Enqueue and return.** Never `await` the actual work — only the enqueue.
+   This is what keeps a tick's duration bounded no matter how many boards or
+   workspaces exist.
+3. **Be idempotent for the period.** Mandatory under `AT_LEAST_ONCE`, which
+   double-dispatches by design when two instances race. `board_sync` already
+   satisfies this: `SyncExecution.hasRunningSync` and `checkActiveQueueJob`
+   refuse a second concurrent sync on the same board. Still expected under
+   `AT_MOST_ONCE`, since nothing downstream stops a retry arriving from
+   elsewhere — key on the billing period, not on the time of the call.
+4. **Throw on failure.** Do not swallow errors — the tick records
+   `lastError`/`consecutiveFailures` on the schedule, and under
+   `AT_LEAST_ONCE` throwing is what causes the next tick to retry the slot.
+5. **Take plain arguments.** `{ kind, targetId, workspaceId, scheduledFor }` —
+   no `req`, no session. That is what makes a handler callable from a cron
+   tick with no HTTP request behind it.
+
+An unregistered `kind` throws when the tick tries to resolve it, rather than
+silently no-oping.
+
+Schedules themselves are only ever written through
+`Backend/src/services/scheduler/schedules.js` — `upsertSchedule` /
+`disableSchedule`. Nothing should write `ScheduledJob` documents directly.
+
+## The two delivery policies
+
+Declared at registration, not stored on the schedule record — an operator
+editing a document must not be able to put a handler under a guarantee it
+cannot survive.
+
+| Policy | `nextRunAt` advances | Used by | Why |
+|---|---|---|---|
+| `AT_MOST_ONCE` | At claim, before the handler runs | `invoice_issuance` | A duplicated invoice sent to an NDIS participant is a client-facing incident. A lost run is a different kind of problem: it shows up in `missedRuns` and is recoverable by hand. |
+| `AT_LEAST_ONCE` | Only after the handler's enqueue succeeds | `board_sync` | Board sync is idempotent and cheap to repeat. A silent skip just makes data staler — worse than an occasional duplicate that the idempotency guard absorbs anyway. |
+
+Choose `AT_MOST_ONCE` when a duplicate is the worse failure mode. Choose
+`AT_LEAST_ONCE` only when the handler is genuinely idempotent — if it is not,
+a race between two Elastic Beanstalk instances will double-dispatch it.
+
+## What to alert on
+
+Per `ScheduledJob` document (`Backend/src/models/ScheduledJob.js`):
+
+- **`missedRuns > 0`** — the app was down across one or more scheduled slots;
+  the job ran once on recovery and the skipped count was added here instead of
+  backfilling. A missed monthly statement or invoice run should not be silent.
+- **`consecutiveFailures > 0`** — the handler is throwing. There is
+  deliberately no auto-disable (five consecutive failures on a monthly
+  schedule is five months of silence if it disabled itself), so this counter
+  is the only signal that a schedule is failing every time it fires.
+- **`lastRunAt` not advancing** — the most direct way to catch a schedule that
+  is not firing at all: a misconfigured or missing EventBridge rule, a
+  disabled schedule, or a `kind` whose handler throws before recording
+  anything. This is also the check to run after creating a new AWS rule
+  (see "Verifying a rule after creating it" above).
+
+Support can read the `scheduledjobs` collection directly for now; there is no
+admin screen for it.
+
+## Related
+
+- Design: [`docs/superpowers/specs/2026-08-11-scheduled-job-trigger-design.md`](./superpowers/specs/2026-08-11-scheduled-job-trigger-design.md)
+- Code: `Backend/src/services/scheduler/` (`tick.js`, `registry.js`,
+  `handlers.js`, `nextRun.js`, `outcome.js`, `schedules.js`, `auth.js`),
+  `Backend/src/routes/scheduler.js`, `Backend/src/models/ScheduledJob.js`.
+- Conventions for branching, commits, migrations and the complexity gate live
+  in [`CLAUDE.md`](../CLAUDE.md) — not restated here.
