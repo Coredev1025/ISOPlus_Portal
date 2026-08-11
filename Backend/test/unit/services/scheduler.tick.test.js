@@ -98,6 +98,41 @@ describe('runTick', () => {
     expect(after.nextRunAt.toISOString()).toBe('2026-08-11T04:30:00.000Z');
   });
 
+  it('passes the due slot as scheduledFor under at-most-once, not the post-claim next slot', async () => {
+    let seen;
+    register('demo', {
+      policy: AT_MOST_ONCE,
+      handler: async ({ scheduledFor }) => {
+        seen = scheduledFor;
+      },
+    });
+    const job = await due('demo');
+
+    await runTick({ now: NOW });
+
+    // The claim already advanced nextRunAt to the following slot (04:30); a
+    // handler keying off scheduledFor must still see the slot that was due
+    // (04:00), or an at-most-once consumer derives the wrong billing period.
+    expect(seen.toISOString()).toBe(job.nextRunAt.toISOString());
+    expect(seen.toISOString()).toBe('2026-08-11T04:00:00.000Z');
+  });
+
+  it('passes the due slot as scheduledFor under at-least-once', async () => {
+    let seen;
+    register('demo', {
+      policy: AT_LEAST_ONCE,
+      handler: async ({ scheduledFor }) => {
+        seen = scheduledFor;
+      },
+    });
+    const job = await due('demo');
+
+    await runTick({ now: NOW });
+
+    expect(seen.toISOString()).toBe(job.nextRunAt.toISOString());
+    expect(seen.toISOString()).toBe('2026-08-11T04:00:00.000Z');
+  });
+
   it('records missed slots when the schedule was due long ago', async () => {
     register('demo', { handler: vi.fn(), policy: AT_MOST_ONCE });
     const job = await due('demo', { nextRunAt: new Date('2026-08-11T01:00:00Z') });

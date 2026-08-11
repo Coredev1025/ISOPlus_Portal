@@ -37,7 +37,9 @@ async function claimNext(now, excludeIds) {
       // than being selected again on every iteration of this loop.
     }
 
-    if (policy !== AT_MOST_ONCE) return candidate;
+    if (policy !== AT_MOST_ONCE) {
+      return { ...candidate, dueAt: candidate.nextRunAt };
+    }
 
     const claimed = await ScheduledJob.findOneAndUpdate(
       { _id: candidate._id, nextRunAt: candidate.nextRunAt },
@@ -58,7 +60,7 @@ async function claimNext(now, excludeIds) {
       { new: true, lean: true },
     );
 
-    if (claimed) return claimed;
+    if (claimed) return { ...claimed, dueAt: candidate.nextRunAt };
 
     // Another caller claimed it between the read and the update. Skip it for
     // the rest of this tick and try the next candidate — do NOT stop here, or
@@ -67,13 +69,20 @@ async function claimNext(now, excludeIds) {
   }
 }
 
+/**
+ * `job.dueAt` is the slot that came due, set by claimNext — under at-most-once
+ * `job.nextRunAt` has already moved on to the following slot by this point, so
+ * `dueAt` is what must reach the handler as `scheduledFor`. Under at-least-once
+ * the two happen to be equal (nextRunAt is not advanced until after dispatch),
+ * but the handler should not have to know that.
+ */
 async function dispatch(job, now) {
   const { handler, policy } = resolve(job.kind);
   await handler({
     kind: job.kind,
     targetId: job.targetId,
     workspaceId: job.workspaceId,
-    scheduledFor: job.nextRunAt,
+    scheduledFor: job.dueAt,
   });
   await recordSuccess(job, policy, now);
 }
