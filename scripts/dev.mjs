@@ -26,6 +26,7 @@ import * as docker from './lib/docker.mjs'
 import * as seed from './lib/seed.mjs'
 import * as wt from './lib/worktree.mjs'
 import * as branchLib from './lib/branch.mjs'
+import { tickConfig, tickOnce } from './lib/tick.mjs'
 import {
   copyAppEnvFiles, missingAppEnvFiles, readEnv, setBackendMongoUri, writeEnv, DEFAULTS,
 } from './lib/env.mjs'
@@ -339,7 +340,7 @@ function worktreeList() {
 // Flags that consume the following argument. Without this list, `--type
 // feature` leaves "feature" looking like a positional branch name, which
 // silently skips every prompt and every validation.
-const VALUE_FLAGS = new Set(['--type', '--ticket', '--desc', '--description', '--from'])
+const VALUE_FLAGS = new Set(['--type', '--ticket', '--desc', '--description', '--from', '--every', '--url'])
 
 function parseArgs(args) {
   const flags = {}
@@ -652,6 +653,46 @@ async function agents(args) {
   note('a skill installed by any tool lands in the canonical set automatically')
 }
 
+// --- tick ---------------------------------------------------------------------
+
+async function tick(args) {
+  const { flags } = parseArgs(args)
+
+  if (flags['--help']) {
+    console.log(`usage: node scripts/dev.mjs tick [options]
+
+Calls the scheduler endpoint on an interval — a local stand-in for the
+EventBridge rule. Reads the port from .env and Admin_API_Key from Backend/.env.
+
+  --once            call once and exit
+  --every <secs>    interval between calls (default 60)
+  --url <url>       override the endpoint
+`)
+    return
+  }
+
+  const config = tickConfig(process.cwd(), { url: flags['--url'] })
+
+  if (!config.key) {
+    console.error('Admin_API_Key is not set in Backend/.env — the endpoint will answer 401')
+  }
+
+  const run = async () => {
+    try {
+      console.log(`[${new Date().toISOString()}] ${await tickOnce(config)}`)
+    } catch (err) {
+      console.error(`[${new Date().toISOString()}] ${err.message}`)
+    }
+  }
+
+  await run()
+  if (flags['--once']) return
+
+  const seconds = Number(flags['--every'] || 60)
+  console.log(`ticking ${config.url} every ${seconds}s — Ctrl-C to stop`)
+  setInterval(run, seconds * 1000)
+}
+
 // --- doctor -----------------------------------------------------------------
 
 async function doctor() {
@@ -721,7 +762,7 @@ async function doctor() {
 
 // --- dispatch ---------------------------------------------------------------
 
-const COMMANDS = { up, down, status, seed: runSeed, fixture, migrate, schema, user, agents, worktree, doctor }
+const COMMANDS = { up, down, status, seed: runSeed, fixture, migrate, schema, user, agents, tick, worktree, doctor }
 
 const [command, ...rest] = process.argv.slice(2)
 const handler = COMMANDS[command]
@@ -739,6 +780,7 @@ if (!handler) {
   schema [collection] [--json]  declared vs actual schema, and the drift
   user [--list] [--create]     local support-admin login with a known password
   agents [--check]             unify AGENTS.md + skills across all assistants
+  tick [--once] [--every 60]                          drive the scheduler locally
   doctor                       check prerequisites
 
   worktree new [--type T --ticket ISO-1 --desc "..."]   (asks if omitted)
