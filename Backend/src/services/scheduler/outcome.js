@@ -11,6 +11,21 @@ import { AT_LEAST_ONCE } from './registry.js';
  */
 export const MAX_CONSECUTIVE_FAILURES = 5;
 
+/**
+ * Describes any thrown value usefully for logging and storage.
+ * Error.message for Error instances, the value itself for strings,
+ * JSON stringification for objects, and String() fallback for circulars.
+ */
+function describeError(err) {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
 export async function recordSuccess(job, policy, now) {
   const update = {
     $set: { lastError: null, consecutiveFailures: 0, lastRunAt: now },
@@ -27,8 +42,9 @@ export async function recordSuccess(job, policy, now) {
 
 export async function recordFailure(job, policy, err, now) {
   const failures = (job.consecutiveFailures || 0) + 1;
+  const errorDescription = describeError(err);
   const update = {
-    $set: { lastError: String(err?.message || err), consecutiveFailures: failures },
+    $set: { lastError: errorDescription, consecutiveFailures: failures },
   };
 
   // At-least-once normally leaves nextRunAt alone so the next tick retries the
@@ -46,6 +62,6 @@ export async function recordFailure(job, policy, err, now) {
     policy,
     consecutiveFailures: failures,
     advanced: Boolean(update.$set.nextRunAt),
-    error: String(err?.message || err),
+    error: errorDescription,
   });
 }

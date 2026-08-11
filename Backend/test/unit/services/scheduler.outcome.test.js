@@ -87,4 +87,40 @@ describe('recordFailure', () => {
     expect(fresh.nextRunAt.toISOString()).toBe('2026-08-11T04:30:00.000Z');
     expect(fresh.enabled).toBe(true);
   });
+
+  it('describes plain objects (not Error instances) usefully without stringifying to [object Object]', async () => {
+    const job = await makeJob();
+    const plainObj = { code: 'ETIMEDOUT', syscall: 'connect' };
+
+    await recordFailure(job, AT_MOST_ONCE, plainObj, NOW);
+
+    const fresh = await ScheduledJob.findById(job._id);
+    expect(fresh.lastError).toContain('ETIMEDOUT');
+    expect(fresh.lastError).not.toBe('[object Object]');
+  });
+
+  it('describes thrown strings directly without wrapping', async () => {
+    const job = await makeJob();
+
+    await recordFailure(job, AT_MOST_ONCE, 'Something went wrong', NOW);
+
+    const fresh = await ScheduledJob.findById(job._id);
+    expect(fresh.lastError).toBe('Something went wrong');
+  });
+
+  it('handles circular objects without throwing out of recordFailure', async () => {
+    const job = await makeJob();
+    // Create a circular structure (common in driver/request objects)
+    const circular = { msg: 'error' };
+    circular.self = circular;
+
+    // This must not throw; recordFailure should survive circular refs gracefully
+    await recordFailure(job, AT_MOST_ONCE, circular, NOW);
+
+    const fresh = await ScheduledJob.findById(job._id);
+    // Should fall back to String(circular) which produces [object Object],
+    // but the important thing is it didn't throw
+    expect(fresh.lastError).toBeDefined();
+    expect(fresh.consecutiveFailures).toBe(1);
+  });
 });
