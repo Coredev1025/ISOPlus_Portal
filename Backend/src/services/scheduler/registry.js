@@ -20,7 +20,7 @@ const handlers = new Map();
 
 export function register(kind, { handler, policy } = {}) {
   if (typeof handler !== 'function') {
-    throw new Error(`Scheduler: handler for "${kind}" must be a function`);
+    throw new TypeError(`Scheduler: handler for "${kind}" must be a function`);
   }
   if (!POLICIES.has(policy)) {
     throw new Error(

@@ -16,11 +16,12 @@
 const FREQUENCIES = new Set(['daily', 'weekly', 'monthly']);
 
 function assertRange(name, value, min, max) {
-  if (!Number.isInteger(value) || value < min || value > max) {
-    throw new Error(
-      `cadence: ${name} must be an integer between ${min} and ${max}, got ${JSON.stringify(value)}`,
-    );
-  }
+  const message = `cadence: ${name} must be an integer between ${min} and ${max}, got ${JSON.stringify(value)}`;
+  // A non-integer is a wrong-type argument; an integer outside the bounds is a
+  // wrong-value one. Distinct built-ins so a caller can tell them apart without
+  // parsing the message.
+  if (!Number.isInteger(value)) throw new TypeError(message);
+  if (value < min || value > max) throw new RangeError(message);
 }
 
 function assertAbsent(name, value, frequency) {
@@ -47,14 +48,14 @@ function assertFrequency(frequency) {
  * schedule record instead, outside the picker.
  */
 function assertDayOfMonth(dayOfMonth) {
-  if (!Number.isInteger(dayOfMonth) || dayOfMonth < 1 || dayOfMonth > 28) {
-    throw new Error(
-      'cadence: dayOfMonth must be an integer between 1 and 28 — the 29th, 30th or 31st ' +
-        'would silently skip some months (every February for 29/30, most months for 31), ' +
-        'so a client scheduled there would simply not be billed that month. Use a raw ' +
-        'cron expression on the schedule record for a genuine end-of-month cadence.',
-    );
-  }
+  const message =
+    'cadence: dayOfMonth must be an integer between 1 and 28 — the 29th, 30th or 31st ' +
+    'would silently skip some months (every February for 29/30, most months for 31), ' +
+    'so a client scheduled there would simply not be billed that month. Use a raw ' +
+    'cron expression on the schedule record for a genuine end-of-month cadence.';
+
+  if (!Number.isInteger(dayOfMonth)) throw new TypeError(message);
+  if (dayOfMonth < 1 || dayOfMonth > 28) throw new RangeError(message);
 }
 
 function validateDailyFields({ dayOfWeek, dayOfMonth }) {
