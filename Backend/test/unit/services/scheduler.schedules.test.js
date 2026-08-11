@@ -26,8 +26,12 @@ describe('getSchedulerAuthorization', () => {
 });
 
 describe('upsertSchedule', () => {
+  const original = process.env.PERSONAL_ACCESS_TOKEN;
   beforeEach(() => {
     process.env.PERSONAL_ACCESS_TOKEN = 'pat-123';
+  });
+  afterEach(() => {
+    process.env.PERSONAL_ACCESS_TOKEN = original;
   });
 
   it('creates a schedule with the next run computed from the cron', async () => {
