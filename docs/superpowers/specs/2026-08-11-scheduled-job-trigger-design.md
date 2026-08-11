@@ -67,6 +67,8 @@ POST /api/scheduler/tick            validateApiKey (Admin_API_Key)
 |---|---|
 | `src/routes/scheduler.js` | Thin. Parse, call the service, respond. |
 | `src/services/scheduler/tick.js` | Claim → dispatch → summarise. |
+| `src/services/scheduler/outcome.js` | Recording success and failure per policy. Split out to keep `tick.js` under the complexity gate. |
+| `src/services/scheduler/handlers.js` | Where features register. Imported for its side effects at boot. |
 | `src/services/scheduler/registry.js` | `kind` → `{ handler, policy }` map. |
 | `src/services/scheduler/schedules.js` | `upsertSchedule` / `disableSchedule` — the only sanctioned writers of `ScheduledJob`. What Arnold's toggle and the invoice config call. |
 | `src/services/scheduler/nextRun.js` | Cron + timezone → next slot; missed-slot count. Pure. |
