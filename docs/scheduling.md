@@ -30,9 +30,9 @@ Ticket: KAN-15.
 
 `POST /api/scheduler/tick`
 
-- **Auth**: `validateApiKey` (`Backend/src/middleware/auth.js:12`) — the raw
-  `Authorization` header must equal `process.env.Admin_API_Key` exactly. No
-  session, no JWT. Missing header → 401. Wrong value → 401.
+- **Auth**: `validateSchedulerApiKey` (`Backend/src/middleware/auth.js`) — the
+  raw `Authorization` header must equal `process.env.SCHEDULER_API_KEY`
+  exactly. No session, no JWT. Missing header → 401. Wrong value → 401.
 - **Body**: none required.
 - **Response** (200):
 
@@ -119,14 +119,14 @@ table, then confirm with the verification steps below.
 | Method | `POST` |
 | Connection auth type | API key |
 | Header name | `Authorization` |
-| Header value | the environment's `Admin_API_Key`, **verbatim** |
+| Header value | the environment's `SCHEDULER_API_KEY`, **verbatim** |
 
 **The header value must be the key exactly — no `Bearer ` prefix, no leading
-or trailing whitespace.** `validateApiKey` compares the raw header against
-`process.env.Admin_API_Key` with `!==`:
+or trailing whitespace.** `validateSchedulerApiKey` compares the raw header
+against `process.env.SCHEDULER_API_KEY` with `!==`:
 
 ```js
-if (authHeader !== process.env.Admin_API_Key) {
+if (authHeader !== process.env.SCHEDULER_API_KEY) {
   // ... 401 Invalid API key
 }
 ```
@@ -141,7 +141,7 @@ likely misconfiguration", asserting a 401 when the header is
 ### Dev and prod are separate rules, separate hosts, separate keys
 
 Each environment needs its own EventBridge rule pointing at its own host with
-its own `Admin_API_Key`. There is no shared or default rule to fall back on.
+its own `SCHEDULER_API_KEY`. There is no shared or default rule to fall back on.
 
 **A rule pointed at the wrong environment is undetectable from inside the
 application** — both dev and prod answer `200 {"claimed":...}` regardless of
@@ -169,7 +169,7 @@ Once the rule exists, confirm on the target environment (not locally):
 The application has no scheduling of its own, so locally you drive the same
 endpoint yourself. `scripts/dev.mjs tick` (via `scripts/lib/tick.mjs`) is a
 small Node script — no shell, no new dependency — that reads the API port from
-the root `.env` and `Admin_API_Key` from `Backend/.env`:
+the root `.env` and `SCHEDULER_API_KEY` from `Backend/.env`:
 
 ```bash
 npm run tick              # every 60s until interrupted, printing each summary

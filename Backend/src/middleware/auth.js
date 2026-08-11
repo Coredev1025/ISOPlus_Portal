@@ -39,6 +39,36 @@ export const validateApiKey = (req, res, next) => {
   next();
 };
 
+export const validateSchedulerApiKey = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader) {
+    warn('Authentication-Service', 'No authorization header provided', {
+      error: 'No authorization header provided',
+    }, req);
+    return res.status(401).json({ message: 'Authorization header required' });
+  }
+
+
+  if (!process.env.SCHEDULER_API_KEY) {
+    warn('Authentication-Service', 'SCHEDULER_API_KEY not configured', {
+      error: 'SCHEDULER_API_KEY environment variable not set',
+    }, req);
+    return res.status(500).json({ message: 'Server configuration error' });
+  }
+
+  if (authHeader !== process.env.SCHEDULER_API_KEY) {
+    warn('Authentication-Service', 'Invalid API key provided', {
+      error: 'Invalid API key',
+      providedKey: authHeader.substring(0, 8) + '...', // Log only first 8 characters for security
+    }, req);
+    return res.status(401).json({ message: 'Invalid API key' });
+  }
+
+  info('Authentication-Service', 'API key validation successful', {}, req ?? null);
+  next();
+};
+
 export const authenticateToken = (req, res, next) => {
   const token = req.session.token;
   const { workspaceId, boardId } = getRequestScope(req);

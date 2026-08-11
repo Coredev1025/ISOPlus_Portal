@@ -22,7 +22,7 @@ export function tickConfig(root, overrides = {}) {
     url:
       overrides.url ||
       `http://localhost:${env.BACKEND_PORT}/api/scheduler/tick`,
-    key: overrides.key || backendEnv.Admin_API_Key || '',
+    key: overrides.key || backendEnv.SCHEDULER_API_KEY || '',
   }
 }
 

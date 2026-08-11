@@ -11,14 +11,20 @@ import {
 const app = createApp();
 
 describe('POST /api/scheduler/tick', () => {
+  const originalSchedulerApiKey = process.env.SCHEDULER_API_KEY;
   const originalAdminApiKey = process.env.Admin_API_Key;
 
   beforeEach(() => {
     clearRegistry();
-    process.env.Admin_API_Key = 'test-admin-key';
+    process.env.SCHEDULER_API_KEY = 'test-scheduler-key';
   });
 
   afterEach(() => {
+    if (originalSchedulerApiKey === undefined) {
+      delete process.env.SCHEDULER_API_KEY;
+    } else {
+      process.env.SCHEDULER_API_KEY = originalSchedulerApiKey;
+    }
     if (originalAdminApiKey === undefined) {
       delete process.env.Admin_API_Key;
     } else {
@@ -41,7 +47,15 @@ describe('POST /api/scheduler/tick', () => {
   it('rejects the key with a Bearer prefix, which is the likely misconfiguration', async () => {
     const res = await request(app)
       .post('/api/scheduler/tick')
-      .set('Authorization', 'Bearer test-admin-key');
+      .set('Authorization', 'Bearer test-scheduler-key');
+    expect(res.status).toBe(401);
+  });
+
+  it('rejects a correct Admin_API_Key that is not the scheduler key, proving the two secrets are separate', async () => {
+    process.env.Admin_API_Key = 'test-admin-key';
+    const res = await request(app)
+      .post('/api/scheduler/tick')
+      .set('Authorization', 'test-admin-key');
     expect(res.status).toBe(401);
   });
 
@@ -58,7 +72,7 @@ describe('POST /api/scheduler/tick', () => {
 
     const res = await request(app)
       .post('/api/scheduler/tick')
-      .set('Authorization', 'test-admin-key');
+      .set('Authorization', 'test-scheduler-key');
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ claimed: 1, dispatched: 1, failed: 0 });
@@ -91,7 +105,7 @@ describe('POST /api/scheduler/tick', () => {
 
     const res = await request(app)
       .post('/api/scheduler/tick')
-      .set('Authorization', 'test-admin-key');
+      .set('Authorization', 'test-scheduler-key');
 
     expect(res.status).toBe(200);
     expect(res.body.dispatched).toBe(1);
@@ -104,7 +118,7 @@ describe('POST /api/scheduler/tick', () => {
   it('returns a zero summary when nothing is due', async () => {
     const res = await request(app)
       .post('/api/scheduler/tick')
-      .set('Authorization', 'test-admin-key');
+      .set('Authorization', 'test-scheduler-key');
 
     expect(res.status).toBe(200);
     expect(res.body.claimed).toBe(0);

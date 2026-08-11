@@ -662,7 +662,7 @@ async function tick(args) {
     console.log(`usage: node scripts/dev.mjs tick [options]
 
 Calls the scheduler endpoint on an interval — a local stand-in for the
-EventBridge rule. Reads the port from .env and Admin_API_Key from Backend/.env.
+EventBridge rule. Reads the port from .env and SCHEDULER_API_KEY from Backend/.env.
 
   --once            call once and exit
   --every <secs>    interval between calls (default 60)
@@ -674,7 +674,7 @@ EventBridge rule. Reads the port from .env and Admin_API_Key from Backend/.env.
   const config = tickConfig(process.cwd(), { url: flags['--url'] })
 
   if (!config.key) {
-    console.error('Admin_API_Key is not set in Backend/.env — the endpoint will answer 401')
+    console.error('SCHEDULER_API_KEY is not set in Backend/.env — the endpoint will answer 401')
   }
 
   const run = async () => {
