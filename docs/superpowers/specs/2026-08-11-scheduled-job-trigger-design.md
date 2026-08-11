@@ -1,10 +1,33 @@
 # Scheduled job trigger — EventBridge to the existing queue
 
 **Date:** 2026-08-11
-**Status:** Approved, not yet implemented.
+**Status:** Implemented — see "Changes since approval" below.
 **Ticket:** KAN-15
 **Blocked on:** Arnold's invoice/statement toggle merging to `develop`. The
 branch for this work is cut from `origin/develop` after that lands.
+
+## Changes since approval
+
+Recorded rather than silently rewritten, per the convention in
+[`CLAUDE.md`](../../../CLAUDE.md). The implementation plan carries the full list
+in its errata table; these are the ones that change what this document says.
+
+| Designed | Shipped | Why |
+|---|---|---|
+| The router is mounted in `src/app.js`. | Mounted in **both** `src/app.js` and `src/index.js`, with `registerSchedulerHandlers()` called at boot in `index.js`. | `index.js` is the production entry point and does not use `createApp()`; they are parallel express apps. Mounting only in `app.js` gave an endpoint that existed in tests and 404'd in production while the entire suite passed. |
+| `recordFailure` stores `String(err?.message ǀǀ err)`. | A `describeError` helper handling `Error`, string and other values, with a `try/catch` around `JSON.stringify` for circular structures. | The original stored `"[object Object]"` for a non-`Error` throw, making `lastError` useless to the operator it exists for. |
+
+Two claims in this document need qualifying:
+
+- **"there is no `node-cron`, no `agenda`"** — true, but `node-schedule` **is** a
+  declared dependency in `Backend/package.json`. It is unused in `src/`. It was
+  not adopted because an in-process timer fires once per Elastic Beanstalk
+  instance, which is exactly the double-dispatch this design avoids.
+- **`missedRuns` is described as the general signal for a skipped slot.** It is
+  incremented only on the `AT_MOST_ONCE` claim path, so it is permanently zero
+  for `AT_LEAST_ONCE` schedules such as `board_sync`. `lastRunAt` staleness is
+  the signal for those. Documented in `docs/scheduling.md`; counting missed
+  slots for at-least-once schedules is left as a follow-up.
 
 ## Problem
 

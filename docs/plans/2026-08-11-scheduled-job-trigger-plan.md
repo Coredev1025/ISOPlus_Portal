@@ -23,6 +23,24 @@
 - **Commit format:** `feat:` / `fix:` / `refactor:` / `docs:`, ticket `KAN-15` in the PR title or body. **No AI attribution** — no `Co-Authored-By` trailer, no "Generated with" line.
 - **Do not modify** `src/services/sync.js`, `src/workers/syncWorker.js`, `src/services/sync/queue.js`, or any existing route. This change is additive.
 
+## Errata — corrections found while executing this plan
+
+**Status: executed and merged.** This plan is kept as the record of how the
+scheduler was built. Rather than silently rewriting it, the defects found during
+execution are listed here, following the same convention the specs use. Where an
+erratum contradicts a task's text below, **the erratum wins**.
+
+| # | Where | Defect | Correction |
+|---|---|---|---|
+| 1 | File structure, Task 7 | **Critical.** The plan named only `app.js` as needing the route mounted. `Backend/src/index.js` is the production entry point and does **not** use `createApp()` — they are parallel express apps. As first written, the endpoint existed in tests and returned 404 in production, with the whole suite passing. | The route is mounted in **both** (`app.js:127`, `index.js:155`), and `registerSchedulerHandlers()` is called at `index.js:48`. Any new route in this repo must be mounted twice. |
+| 2 | Task 7 | `registerSchedulerHandlers()` was defined but never called anywhere, so `board_sync` was absent from the registry. | Called once at boot in `index.js`, deliberately not inside `createApp()` — the integration tests call `clearRegistry()` and register their own fake handler. |
+| 3 | Task 5, `outcome.js` | `String(err?.message || err)` stores `"[object Object]"` when a handler throws a non-`Error`, leaving `lastError` undiagnosable. | Replaced with a `describeError` helper handling `Error`, string, and other values via `JSON.stringify` with a `try/catch` fallback for circular structures. |
+| 4 | Task 4, test code | `PERSONAL_ACCESS_TOKEN` was set in a `beforeEach` with no restore, and `vitest.config.js` sets `maxWorkers: 1`, so the value leaks into every later test file. | Both describe blocks restore it, using `delete process.env.X` when the original was `undefined` — assigning `undefined` back would store the literal string `"undefined"`. |
+| 5 | Task 6, test suite | No test distinguished "a lost compare-and-swap continues to the next candidate" from "returns null and stops" — the bug this design already had once. The single-row contention test cannot tell them apart. | Added a deterministic test stubbing `findOneAndUpdate` to resolve `null` once, verified to fail against deliberately broken code. A two-row *concurrent* test does **not** work: the winner claims both rows under the bug, so the totals match either way. |
+| 6 | Task 4 Step 5, Task 5 Step 4 | Stated "PASS, 10 tests" and "PASS, 6 tests"; the briefs' own test code defines **9** and **5**. | Corrected below. The other five per-task counts were audited against the shipped files and are correct. |
+
+**Also learned, not a plan defect:** adding `cron-parser` requires `npm run dev:build`. A container built before the change has BullMQ's `cron-parser` 4.9.0 hoisted at top level, which lacks `CronExpressionParser`, and the backend crash-loops with a "CommonJS module" error that reads like a code bug. The lockfile is correct and `npm ci` is unaffected. See `docs/scheduling.md`.
+
 ## Verified facts (spike results — do not re-derive)
 
 These were measured against `cron-parser@5.8.1`, not assumed. Use them as test expectations verbatim.
@@ -54,6 +72,7 @@ These were measured against `cron-parser@5.8.1`, not assumed. Use them as test e
 | `Backend/src/models/ScheduledJob.js` | Mongoose schema and indexes. |
 | `Backend/src/routes/scheduler.js` | Thin route. Parse, call `runTick`, respond. |
 | `Backend/src/app.js` | **Modify** — mount the router. |
+| `Backend/src/index.js` | **Modify** — mount the router *again*, and call `registerSchedulerHandlers()` at boot. See erratum 1: this is the production entry point and it does **not** use `createApp()`. |
 | `scripts/lib/tick.mjs` | Local ticker: config resolution and the loop. Pure-ish, no dependencies. |
 | `scripts/dev.mjs` | **Modify** — add the `tick` subcommand. |
 | `package.json` (root) | **Modify** — add the `tick` npm script. |
@@ -854,7 +873,7 @@ export async function disableSchedule({ kind, targetId }) {
 - [ ] **Step 5: Run the test and watch it pass**
 
 Run: `cd Backend && npx vitest run test/unit/services/scheduler.schedules.test.js`
-Expected: PASS, 10 tests
+Expected: PASS, 9 tests (erratum 6: the plan originally said 10)
 
 - [ ] **Step 6: Commit**
 
@@ -1045,7 +1064,7 @@ export async function recordFailure(job, policy, err, now) {
 - [ ] **Step 4: Run the test and watch it pass**
 
 Run: `cd Backend && npx vitest run test/unit/services/scheduler.outcome.test.js`
-Expected: PASS, 6 tests
+Expected: PASS, 5 tests (erratum 6: the plan originally said 6)
 
 - [ ] **Step 5: Commit**
 
