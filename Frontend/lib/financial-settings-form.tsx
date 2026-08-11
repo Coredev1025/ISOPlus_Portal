@@ -39,6 +39,15 @@ export type BankDetailsForm = {
   accountsPayableTerms: string;
 };
 
+type FieldProps = Readonly<{
+  id: string;
+  label: string;
+  children: ReactNode;
+  hint?: string;
+  disabled?: boolean;
+  badge?: ReactNode;
+}>;
+
 function Field({
   id,
   label,
@@ -46,14 +55,7 @@ function Field({
   hint,
   disabled = false,
   badge,
-}: {
-  id: string;
-  label: string;
-  children: ReactNode;
-  hint?: string;
-  disabled?: boolean;
-  badge?: ReactNode;
-}) {
+}: FieldProps) {
   return (
     <div className={`space-y-1.5 ${disabled ? "opacity-60" : ""}`}>
       <Label
@@ -71,15 +73,17 @@ function Field({
   );
 }
 
+type CardHeaderBlockProps = Readonly<{
+  icon: ReactNode;
+  title: string;
+  description: string;
+}>;
+
 function CardHeaderBlock({
   icon,
   title,
   description,
-}: {
-  icon: ReactNode;
-  title: string;
-  description: string;
-}) {
+}: CardHeaderBlockProps) {
   return (
     <div className="mb-4 flex items-start gap-3">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -95,7 +99,7 @@ function CardHeaderBlock({
   );
 }
 
-type SequenceFieldProps = {
+type SequenceFieldProps = Readonly<{
   label: string;
   prefixId: string;
   nextId: string;
@@ -105,7 +109,7 @@ type SequenceFieldProps = {
   badge?: ReactNode;
   onPrefixChange?: (value: string) => void;
   onNextChange?: (value: string) => void;
-};
+}>;
 
 function SequenceField({
   label,
@@ -144,7 +148,7 @@ function SequenceField({
   );
 }
 
-type FinancialSettingsFormProps = {
+type FinancialSettingsFormProps = Readonly<{
   bankDetails: BankDetailsForm;
   sequences: DocumentSequences;
   loading: boolean;
@@ -156,7 +160,7 @@ type FinancialSettingsFormProps = {
   onSequenceNextChange: (type: DocumentSequenceType, value: number) => void;
   onRestoreDefaults: () => void;
   onSave: () => void;
-};
+}>;
 
 export function FinancialSettingsForm({
   bankDetails,

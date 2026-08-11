@@ -3,7 +3,13 @@
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 
-const SYNC_TOGGLES = [
+type SyncToggle = Readonly<{
+  title: string;
+  description: string;
+  optional?: boolean;
+}>;
+
+const SYNC_TOGGLES: ReadonlyArray<SyncToggle> = [
   {
     title: "Invoice Sync Status",
     description: "Sync invoices between ISO+ and Xero",
@@ -21,7 +27,7 @@ const SYNC_TOGGLES = [
     description: "Sync contacts between ISO+ and Xero",
     optional: true,
   },
-] as const;
+];
 
 export function XeroDisabledSyncToggles() {
   return (
@@ -37,7 +43,7 @@ export function XeroDisabledSyncToggles() {
               <Badge variant="secondary" className="text-[10px] uppercase">
                 coming soon
               </Badge>
-              {"optional" in item && item.optional ? (
+              {item.optional ? (
                 <span className="text-xs font-normal text-muted-foreground">
                   (optional)
                 </span>

@@ -18,10 +18,10 @@ export {
 function PlaceholderPanel({
   title,
   description,
-}: {
+}: Readonly<{
   title: string;
   description: string;
-}) {
+}>) {
   return (
     <Card className="p-6 shadow-sm">
       <h3 className="mb-2 text-lg font-semibold">{title}</h3>
@@ -33,12 +33,12 @@ function PlaceholderPanel({
 const FINANCE_TAB_TRIGGER_CLASS =
   "rounded-none border-b-2 border-transparent bg-transparent px-1 py-2.5 text-[13.5px] font-semibold text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none";
 
-type FinanceSettingsTabsProps = {
+type FinanceSettingsTabsProps = Readonly<{
   workspaceId: string;
   activeTab: FinanceSettingsTab;
   automationEnabled: boolean;
   onTabChange: (tab: FinanceSettingsTab) => void;
-};
+}>;
 
 export function FinanceSettingsTabs({
   workspaceId,

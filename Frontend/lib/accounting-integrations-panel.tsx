@@ -20,17 +20,16 @@ import { showFetchErrorToast } from "@/lib/toast-utils";
 
 type ProviderTab = "xero" | "myob" | "quickbooks";
 
-type AccountingIntegrationsPanelProps = {
+type AccountingIntegrationsPanelProps = Readonly<{
   workspaceId: string;
-};
+}>;
 
-function ProviderSubTabs({
-  active,
-  onChange,
-}: {
+type ProviderSubTabsProps = Readonly<{
   active: ProviderTab;
   onChange: (tab: ProviderTab) => void;
-}) {
+}>;
+
+function ProviderSubTabs({ active, onChange }: ProviderSubTabsProps) {
   return (
     <div className="mb-5 flex flex-wrap gap-2">
       <button
@@ -69,13 +68,15 @@ function ProviderSubTabs({
   );
 }
 
+type ConnectionStatusDotProps = Readonly<{
+  connected: boolean;
+  needsReconnect: boolean;
+}>;
+
 function ConnectionStatusDot({
   connected,
   needsReconnect,
-}: {
-  connected: boolean;
-  needsReconnect: boolean;
-}) {
+}: ConnectionStatusDotProps) {
   let label = "Not connected";
   let dotClass = "bg-muted-foreground/50";
   if (connected && needsReconnect) {
@@ -88,7 +89,10 @@ function ConnectionStatusDot({
 
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-[11.5px] text-muted-foreground">
-      <i className={cn("inline-block h-1.5 w-1.5 rounded-full", dotClass)} />
+      <i
+        aria-hidden="true"
+        className={cn("inline-block h-1.5 w-1.5 rounded-full", dotClass)}
+      />
       {label}
     </span>
   );

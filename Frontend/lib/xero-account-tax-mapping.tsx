@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import axios from "@/app/utils/axiosConfig";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -32,14 +31,14 @@ import {
 
 const USE_DEFAULT = "__default__";
 
-type MappingSelectProps = {
+type MappingSelectProps = Readonly<{
   label: string;
   value: string;
   placeholder: string;
-  options: { value: string; label: string }[];
+  options: ReadonlyArray<{ value: string; label: string }>;
   disabled?: boolean;
   onChange: (next: string) => void;
-};
+}>;
 
 function MappingSelect({
   label,
@@ -73,19 +72,21 @@ function MappingSelect({
   );
 }
 
+type AccountTaxPairProps = Readonly<{
+  doc: XeroDocMapping;
+  accounts: XeroAccountOption[];
+  taxRates: XeroTaxRateOption[];
+  disabled: boolean;
+  onChange: (patch: Partial<XeroDocMapping>) => void;
+}>;
+
 function AccountTaxPair({
   doc,
   accounts,
   taxRates,
   disabled,
   onChange,
-}: {
-  doc: XeroDocMapping;
-  accounts: XeroAccountOption[];
-  taxRates: XeroTaxRateOption[];
-  disabled: boolean;
-  onChange: (patch: Partial<XeroDocMapping>) => void;
-}) {
+}: AccountTaxPairProps) {
   const selectedAccount = useMemo(
     () => accounts.find((account) => account.code === doc.accountCode),
     [accounts, doc.accountCode]
@@ -100,7 +101,7 @@ function AccountTaxPair({
   }));
   const taxOptions = availableTaxRates.map((rate) => ({
     value: rate.taxType,
-    label: rate.name || rate.taxType,
+    label: rate.name ?? rate.taxType,
   }));
 
   return (
@@ -141,6 +142,16 @@ const QUOTE_OVERRIDE_ROWS: {
   { key: "material", label: "Material" },
 ];
 
+type QuoteOverrideRowProps = Readonly<{
+  label: string;
+  kind: XeroQuoteOverrideKind;
+  doc: XeroDocMapping;
+  accounts: XeroAccountOption[];
+  taxRates: XeroTaxRateOption[];
+  disabled: boolean;
+  onChange: (kind: XeroQuoteOverrideKind, patch: Partial<XeroDocMapping>) => void;
+}>;
+
 function QuoteOverrideRow({
   label,
   kind,
@@ -149,15 +160,7 @@ function QuoteOverrideRow({
   taxRates,
   disabled,
   onChange,
-}: {
-  label: string;
-  kind: XeroQuoteOverrideKind;
-  doc: XeroDocMapping;
-  accounts: XeroAccountOption[];
-  taxRates: XeroTaxRateOption[];
-  disabled: boolean;
-  onChange: (kind: XeroQuoteOverrideKind, patch: Partial<XeroDocMapping>) => void;
-}) {
+}: QuoteOverrideRowProps) {
   const selectedAccount = accounts.find((a) => a.code === doc.accountCode);
   const rowTaxRates = taxRatesForAccount(taxRates, selectedAccount);
 
@@ -212,7 +215,7 @@ function QuoteOverrideRow({
             <SelectItem value={USE_DEFAULT}>Use quote default</SelectItem>
             {rowTaxRates.map((rate) => (
               <SelectItem key={rate.taxType} value={rate.taxType}>
-                {rate.name || rate.taxType}
+                {rate.name ?? rate.taxType}
               </SelectItem>
             ))}
           </SelectContent>
@@ -222,13 +225,13 @@ function QuoteOverrideRow({
   );
 }
 
-type XeroAccountTaxMappingProps = {
+type XeroAccountTaxMappingProps = Readonly<{
   workspaceId: string;
   isConnected: boolean;
   initialMapping: XeroLineItemMapping;
   onMappingSaved: (mapping: XeroLineItemMapping) => void;
   onOptionsLoadFailed?: () => void;
-};
+}>;
 
 export function XeroAccountTaxMapping({
   workspaceId,

@@ -6,14 +6,14 @@ import axios from "@/app/utils/axiosConfig";
 import { Button } from "@/components/ui/button";
 import { showErrorToast, showSuccessToast } from "@/lib/toast-utils";
 
-type XeroConnectSectionProps = {
+type XeroConnectSectionProps = Readonly<{
   workspaceId: string;
   isConnected: boolean;
   needsReconnect?: boolean;
   onConnectedChange: (connected: boolean) => void;
   onConnectionCleared?: () => void;
   onNeedsReconnectChange?: (needsReconnect: boolean) => void;
-};
+}>;
 
 function openXeroPopup(url: string) {
   const width = 600;
@@ -35,10 +35,12 @@ async function fetchXeroAuthUrl(workspaceId: string, signal: AbortSignal) {
   return response.data as { url?: string; error?: string; message?: string };
 }
 
-function resolveTenantIdFromOAuth(data: {
-  tenants?: Array<{ tenantId?: string }>;
-  organization?: { organisationId?: string };
-}) {
+function resolveTenantIdFromOAuth(
+  data: Readonly<{
+    tenants?: ReadonlyArray<{ tenantId?: string }>;
+    organization?: { organisationId?: string };
+  }>
+) {
   const fromTenant = data.tenants?.[0]?.tenantId;
   if (typeof fromTenant === "string" && fromTenant.trim()) return fromTenant.trim();
   const fromOrg = data.organization?.organisationId;
@@ -218,6 +220,7 @@ export function XeroConnectSection({
       onConnectionCleared?.();
       showSuccessToast("Successfully disconnected from Xero!");
     } catch {
+      // Disconnect already failed — show toast below without depending on error shape.
       showErrorToast("Failed to disconnect from Xero", {
         description: "Please try again.",
       });

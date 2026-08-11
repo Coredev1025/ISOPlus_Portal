@@ -16,9 +16,9 @@ import {
   saveWorkspaceFeatureToggles,
 } from "@/lib/workspace-feature-toggles";
 
-type WorkspaceFeatureTogglesCardProps = {
+type WorkspaceFeatureTogglesCardProps = Readonly<{
   workspaceId: string;
-};
+}>;
 
 export function WorkspaceFeatureTogglesCard({
   workspaceId,
@@ -37,11 +37,12 @@ export function WorkspaceFeatureTogglesCard({
         if (!cancelled) {
           setEnabled(toggles.invoiceStatementAutomation);
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         if (!cancelled) {
+          const err = error as { response?: { data?: { message?: string } } };
           showFetchErrorToast(
             "feature toggles",
-            error.response?.data?.message || "Failed to load feature toggles"
+            err.response?.data?.message || "Failed to load feature toggles"
           );
         }
       } finally {
@@ -63,10 +64,11 @@ export function WorkspaceFeatureTogglesCard({
       const toggles = await saveWorkspaceFeatureToggles(workspaceId, enabled);
       setEnabled(toggles.invoiceStatementAutomation);
       showSaveSuccessToast("Feature toggles");
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { message?: string } } };
       showSaveErrorToast(
         "feature toggles",
-        error.response?.data?.message || "Failed to save feature toggles"
+        err.response?.data?.message || "Failed to save feature toggles"
       );
     } finally {
       setSaving(false);

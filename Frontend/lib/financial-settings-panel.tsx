@@ -29,6 +29,8 @@ const EMPTY_BANK: BankDetailsForm = {
   accountsPayableTerms: "",
 };
 
+const EMPTY_BUSINESS_PROFILE: Record<string, never> = Object.freeze({});
+
 const DEFAULT_SEQUENCES: DocumentSequences = {
   invoice: { prefix: "INV-", nextNumber: 1000 },
   purchaseOrder: { prefix: "PO-", nextNumber: 1000 },
@@ -47,9 +49,9 @@ function mapFinancialSettingsErrors(errors: string[]): string[] {
   );
 }
 
-type FinancialSettingsPanelProps = {
+type FinancialSettingsPanelProps = Readonly<{
   workspaceId: string;
-};
+}>;
 
 function bankFromProfileForm(
   form: ReturnType<typeof mapBusinessProfileToFormData>
@@ -68,7 +70,7 @@ export function FinancialSettingsPanel({
   workspaceId,
 }: FinancialSettingsPanelProps) {
   const [profileForm, setProfileForm] = useState(() =>
-    mapBusinessProfileToFormData({}, workspaceId)
+    mapBusinessProfileToFormData(EMPTY_BUSINESS_PROFILE, workspaceId)
   );
   const [bankDetails, setBankDetails] = useState<BankDetailsForm>(EMPTY_BANK);
   const [sequences, setSequences] =
@@ -99,13 +101,17 @@ export function FinancialSettingsPanel({
         setBankDetails(bankFromProfileForm(mapped));
         setSequences(extractDocumentNumberingSequences(response.data));
         showFetchSuccessToast("Financial settings");
-      } catch (error: any) {
-        if (error.name === "CanceledError" || error.name === "AbortError") {
+      } catch (error: unknown) {
+        if (
+          error instanceof Error &&
+          (error.name === "CanceledError" || error.name === "AbortError")
+        ) {
           return;
         }
+        const err = error as { response?: { data?: { message?: string } } };
         showFetchErrorToast(
           "financial settings",
-          error.response?.data?.message || "Failed to load financial settings"
+          err.response?.data?.message || "Failed to load financial settings"
         );
       } finally {
         if (!abortController.signal.aborted) {
@@ -170,9 +176,9 @@ export function FinancialSettingsPanel({
         ...bankDetails,
         workspaceId,
       };
-      Object.entries(merged).forEach(([key, value]) => {
+      for (const [key, value] of Object.entries(merged)) {
         formDataToSend.append(key, String(value ?? ""));
-      });
+      }
       formDataToSend.append(
         "documentNumbering",
         JSON.stringify({
@@ -198,14 +204,17 @@ export function FinancialSettingsPanel({
         showSaveSuccessToast("Financial settings");
         setTimeout(() => setShowSuccess(false), 2000);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       setShowSuccess(false);
-      const responseErrors = Array.isArray(error.response?.data?.errors)
-        ? mapFinancialSettingsErrors(error.response.data.errors)
+      const err = error as {
+        response?: { data?: { errors?: string[]; message?: string } };
+      };
+      const responseErrors = Array.isArray(err.response?.data?.errors)
+        ? mapFinancialSettingsErrors(err.response.data.errors)
         : [];
       const errorMessage =
         responseErrors[0] ||
-        error.response?.data?.message ||
+        err.response?.data?.message ||
         "An unexpected error occurred";
       showSaveErrorToast("financial settings", errorMessage);
 

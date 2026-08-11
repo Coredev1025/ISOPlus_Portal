@@ -58,8 +58,10 @@ function pickDoc(d?: Partial<XeroDocMapping>): XeroDocMapping {
   };
 }
 
+const EMPTY_RAW_MAPPING = Object.freeze({});
+
 export function normalizeMapping(raw: unknown): XeroLineItemMapping {
-  const m = (raw ?? {}) as Partial<XeroLineItemMapping> & {
+  const m = (raw ?? EMPTY_RAW_MAPPING) as Partial<XeroLineItemMapping> & {
     quoteOverrides?: Partial<Record<XeroQuoteOverrideKind, Partial<XeroDocMapping>>>;
   };
   return {

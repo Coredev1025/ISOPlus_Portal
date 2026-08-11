@@ -33,6 +33,7 @@ export async function saveWorkspaceFeatureToggles(
 }
 
 /** Readable by any authenticated workspace user via business profile (not Owner-only toggles API). */
+
 export async function fetchInvoiceStatementAutomationFlag(
   workspaceId: string
 ): Promise<boolean> {
@@ -45,6 +46,7 @@ export async function fetchInvoiceStatementAutomationFlag(
       response.data?.featureToggles?.invoiceStatementAutomation
     );
   } catch {
+    // Profile may be missing or unauthorized for some users; default automation off.
     return false;
   }
 }
