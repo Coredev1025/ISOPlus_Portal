@@ -1,5 +1,8 @@
 import { computeNextRun as cronNextRun } from './nextRun.js';
-import { computeNextRun as pickerNextRun } from '../../utils/automationScheduleHelpers.js';
+import {
+  computeNextRun as pickerNextRun,
+  startOfDayInstant,
+} from '../../utils/automationScheduleHelpers.js';
 
 /**
  * automationScheduleHelpers.parseStartDate only matches a YYYY-MM-DD string
@@ -22,6 +25,25 @@ import { computeNextRun as pickerNextRun } from '../../utils/automationScheduleH
 function normaliseStartDate(startDate, timezone) {
   if (!(startDate instanceof Date)) return startDate;
   return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(startDate);
+}
+
+/**
+ * The value a schedule's startDate must be *stored* as, so that reading it
+ * back through normaliseStartDate above returns the calendar date the client
+ * actually sent.
+ *
+ * This is the write-side half of that pair, and the two only stay correct
+ * together — which is why they live in the same file. Without it, the first
+ * nextRunAt was computed from the raw client string ('2026-09-01') while every
+ * later advance re-read the Mongoose-cast Date (2026-09-01T00:00:00Z) and
+ * reformatted it in the job's timezone: one calendar day earlier for any zone
+ * west of Greenwich, which puts the whole series off phase from its second run
+ * onward. Anchoring on local midnight makes the round trip lossless, so both
+ * paths compute from the same calendar date. Idempotent: re-normalising an
+ * already-anchored value returns the same instant.
+ */
+export function canonicalStartDate(startDate, timezone) {
+  return startOfDayInstant(normaliseStartDate(startDate, timezone), timezone);
 }
 
 /**

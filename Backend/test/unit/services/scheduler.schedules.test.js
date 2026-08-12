@@ -5,6 +5,7 @@ import {
   upsertSchedule,
   disableSchedule,
 } from '../../../src/services/scheduler/schedules.js';
+import { advanceSchedule } from '../../../src/services/scheduler/advance.js';
 import { getSchedulerAuthorization } from '../../../src/services/scheduler/auth.js';
 import { register, clearRegistry } from '../../../src/services/scheduler/registry.js';
 import {
@@ -207,6 +208,49 @@ describe('upsertSchedule', () => {
     // startDate silently dropped would also be a Date and would pass a
     // looser assertion. 15 Aug 2026 09:00 Sydney (AEST, UTC+10).
     expect(job.nextRunAt.toISOString()).toBe('2026-08-14T23:00:00.000Z');
+  });
+
+  it('anchors the first run and every later advance on the same startDate, west of UTC', async () => {
+    // The write path used to compute the first nextRunAt from the raw client
+    // string ('2026-09-01'), while every later advance re-read the
+    // Mongoose-cast Date and reformatted it in the job's timezone. Cast to
+    // 2026-09-01T00:00:00Z and read back in New York, that is 31 August — so
+    // the series silently moved a month off phase from its second run onward:
+    // 1 Sep, then 1 Oct instead of 1 Nov.
+    //
+    // Every Australian zone is east of Greenwich, so nothing in production is
+    // exposed today; Business.headOfficeTimezone is a free-form String with no
+    // enum, so nothing stops one being stored.
+    const schedule = {
+      every: { n: 2, unit: 'month' },
+      runOn: 1,
+      runAt: '09:00',
+      startDate: '2026-09-01',
+    };
+
+    const job = await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-west-of-utc',
+      workspaceId: 'ws-west-of-utc',
+      schedule,
+      timezone: 'America/New_York',
+      now: new Date('2026-08-12T00:00:00Z'),
+    });
+
+    // 1 Sep 2026 09:00 New York, EDT (UTC-4).
+    expect(job.nextRunAt.toISOString()).toBe('2026-09-01T13:00:00.000Z');
+
+    // Advance from the stored document, exactly as the tick does.
+    const stored = await ScheduledJob.findOne({ targetId: 'ws-west-of-utc' }).lean();
+    const second = advanceSchedule(stored, job.nextRunAt);
+
+    // 1 Nov 2026 09:00 New York — two months later, and EST (UTC-5) by then,
+    // because US DST ends that morning. 2026-10-01T13:00:00.000Z is the drift.
+    expect(second.toISOString()).toBe('2026-11-01T14:00:00.000Z');
+
+    const dayOf = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(d);
+    expect(dayOf(job.nextRunAt)).toBe('2026-09-01');
+    expect(dayOf(second)).toBe('2026-11-01');
   });
 
   it('refuses a job given both cron and schedule, before writing anything', async () => {

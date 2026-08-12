@@ -3,7 +3,7 @@ import { info } from '../../utils/logger.js';
 import { isValidSchedule } from './nextRun.js';
 import { resolveTimezone } from './timezone.js';
 import { assertMinimumInterval } from './intervalFloor.js';
-import { advanceSchedule } from './advance.js';
+import { advanceSchedule, canonicalStartDate } from './advance.js';
 import { DUPLICATE_KEY, UPSERT_OPTIONS, LOG_SCOPE } from '../../constants/scheduler.js';
 
 /**
@@ -67,7 +67,18 @@ export async function upsertSchedule({
     assertMinimumInterval({ kind, cron, timezone: effectiveTimezone, now });
   }
 
-  const nextRunAt = advanceSchedule({ cron, schedule, timezone: effectiveTimezone }, now);
+  // Normalise the startDate once, here, and then both compute and store that
+  // one value: the first nextRunAt and every later advance must anchor on the
+  // same calendar date. See canonicalStartDate in advance.js for what went
+  // wrong when they did not.
+  const anchoredSchedule = schedule
+    ? { ...schedule, startDate: canonicalStartDate(schedule.startDate, effectiveTimezone) }
+    : schedule;
+
+  const nextRunAt = advanceSchedule(
+    { cron, schedule: anchoredSchedule, timezone: effectiveTimezone },
+    now,
+  );
 
   const job = await upsertConverging(
     { kind, targetId },
@@ -75,7 +86,7 @@ export async function upsertSchedule({
       $set: {
         workspaceId,
         cron,
-        schedule,
+        schedule: anchoredSchedule,
         timezone: effectiveTimezone,
         enabled: true,
         nextRunAt,
@@ -89,7 +100,7 @@ export async function upsertSchedule({
     kind,
     targetId,
     cron,
-    schedule,
+    schedule: anchoredSchedule,
     timezone: effectiveTimezone,
     nextRunAt: job.nextRunAt,
   });
