@@ -698,7 +698,13 @@ EventBridge rule. Reads the port from .env and SCHEDULER_API_KEY from Backend/.e
   const config = tickConfig(process.cwd(), { url: flags['--url'] })
 
   if (!config.key) {
+    // Backend/.env is gitignored, so a .env created before this key was added
+    // to .env.example will not have it. That is the common case, not an edge
+    // case, so say how to fix it rather than only what is wrong.
     console.error('SCHEDULER_API_KEY is not set in Backend/.env — the endpoint will answer 401')
+    console.error('  generate one:  echo "SCHEDULER_API_KEY=$(openssl rand -hex 32)" >> Backend/.env')
+    console.error('  then restart:  docker compose restart backend')
+    console.error('  see Backend/.env.example and docs/scheduling.md')
   }
 
   const run = async () => {
