@@ -6,6 +6,7 @@ import {
 
 describe("runOnOptionsForUnit", () => {
   it("gives no options for day", () => {
+    expect(runOnOptionsForUnit("day").kind).toBe("none");
     expect(runOnOptionsForUnit("day").options).toHaveLength(0);
   });
 
@@ -31,8 +32,10 @@ describe("runOnOptionsForUnit", () => {
 
 describe("defaultRunOnForUnit", () => {
   it("returns a unit-appropriate default", () => {
+    expect(defaultRunOnForUnit("day")).toBe(null);
     expect(defaultRunOnForUnit("week")).toBe("monday");
     expect(defaultRunOnForUnit("month")).toBe(1);
     expect(defaultRunOnForUnit("quarter")).toEqual({ month: 1, day: 1 });
+    expect(defaultRunOnForUnit("year")).toEqual({ month: 1, day: 1 });
   });
 });
