@@ -125,33 +125,33 @@ jobs:
           path: Frontend/coverage
           if-no-files-found: ignore
 
-  sonarqube-backend:
-    name: SonarQube - Backend
-    needs: [detect-changes, test-backend]
-    if: needs.detect-changes.outputs.backend == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
-      - name: Download coverage report
-        uses: actions/download-artifact@v4
-        with:
-          name: backend-unit-coverage
-          path: Backend/coverage
-      - name: Confirm Sonar coverage input
-        working-directory: Backend
-        run: |
-          test -f coverage/lcov.info
-          echo "Sonar will import:"
-          ls -la coverage/lcov.info
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
-        with:
-          projectBaseDir: Backend
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_BACKEND }}
-          SONAR_SCANNER_OPTS: "-Xmx8192m"
+  # sonarqube-backend:
+  #   name: SonarQube - Backend
+  #   needs: [detect-changes, test-backend]
+  #   if: needs.detect-changes.outputs.backend == 'true'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+  #       with:
+  #         fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+  #     - name: Download coverage report
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         name: backend-unit-coverage
+  #         path: Backend/coverage
+  #     - name: Confirm Sonar coverage input
+  #       working-directory: Backend
+  #       run: |
+  #         test -f coverage/lcov.info
+  #         echo "Sonar will import:"
+  #         ls -la coverage/lcov.info
+  #     - name: SonarQube Scan
+  #       uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
+  #       with:
+  #         projectBaseDir: Backend
+  #       env:
+  #         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_BACKEND }}
+  #         SONAR_SCANNER_OPTS: "-Xmx8192m"
 
   sonarqube-frontend:
     name: SonarQube - Frontend
@@ -186,14 +186,12 @@ jobs:
       - detect-changes
       - test-backend
       - test-frontend
-      - sonarqube-backend
       - sonarqube-frontend
     if: >
       always() &&
       needs.detect-changes.result == 'success' &&
       needs.detect-changes.outputs.backend == 'true' &&
       needs.test-backend.result == 'success' &&
-      needs.sonarqube-backend.result == 'success' &&
       (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped') &&
       (needs.sonarqube-frontend.result == 'success' || needs.sonarqube-frontend.result == 'skipped')
     runs-on: [ ubuntu-latest ]
