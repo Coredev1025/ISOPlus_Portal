@@ -356,6 +356,78 @@ For invoice issuance that is not cosmetic: the client does not get billed that
 month, and nobody finds out until someone notices the missing invoice. Use 1–28,
 or an explicit last-day expression, and check `lastRunAt` after the first month.
 
+## The picker schedule — a second representation, not a cron string
+
+The Epic 5 UI exposes user-facing schedule fields — *Generate Invoices Every /
+Run On / Run At / Start Date / Next Run* — not a cron expression. An end user
+picks an interval, and where relevant a day, from a constrained set; they never
+type cron syntax.
+
+**Cron cannot express what that picker offers.** "Every 2 weeks" and "every 3
+months from a start date" both need an anchor date and an interval count, and
+cron has neither — `*/2` on the day-of-month field restarts at the 1st of every
+month, and there is no week-of-year field at all. So a `ScheduledJob` carries
+**exactly one** of two representations, enforced in `upsertSchedule` and by the
+model's `pre('validate')` hook:
+
+- `cron` — a traditional expression, evaluated by `nextRun.js`.
+- `schedule` — the picker shape, evaluated by
+  `Backend/src/utils/automationScheduleHelpers.js`:
+
+  ```js
+  { every: { n, unit }, runOn, runAt: 'HH:MM', startDate }
+  ```
+
+  `unit` is one of `day | week | month | quarter | year` (`AUTOMATION_UNITS` in
+  `models/AutomationSettings.js`), and `runOn` changes shape with it:
+
+  | `unit` | `runOn` |
+  |---|---|
+  | `day` | ignored |
+  | `week` | a weekday name, `'monday'` … `'sunday'` |
+  | `month` | an integer day-of-month, **1–28** |
+  | `quarter` | `{ month, day }` — `month` selects the month within the quarter cycle |
+  | `year` | `{ month, day }` — month-of-year and day-of-month |
+
+  The API validates these shapes in `utils/automationSettingsHelpers.js`
+  (`validateRunOn`), and the arithmetic in `automationScheduleHelpers.js`
+  reads exactly the same ones. They have to agree: a shape one accepts and the
+  other cannot read is a save that throws, or a run at the wrong time.
+
+**`runOn` is restricted to 1–28 for `month` — the single most valuable check
+in the validator.** A monthly schedule on the 29th, 30th or 31st silently
+skips whichever months are too short for it: every February for 29 or 30, most
+of the year for 31. For invoice issuance that is not a cosmetic gap, it means a
+client simply does not get billed that month, discovered only when someone
+notices the missing invoice. The arithmetic clamps rather than rolling over if
+such a value reaches it anyway (a `{month, day}` of 31 in February becomes the
+28th, never 3 March), because rolling over shifts every subsequent run and can
+fire twice in one calendar month.
+
+**All picker arithmetic is wall-clock in the job's timezone**, so "09:00" stays
+09:00 across a daylight-saving transition. That makes `startDate` a *calendar
+date*, not an instant — and `ScheduledJob.schedule.startDate` is a Mongoose
+`Date`. `services/scheduler/advance.js` owns both halves of that conversion:
+`canonicalStartDate` normalises the value once on the way in (anchoring on
+local midnight in the job's timezone), and `normaliseStartDate` reads it back
+the same way. They only stay correct as a pair — anchoring the write on the raw
+client string and the read on the timezone-formatted Date puts the series a
+calendar day, and therefore a whole cadence, off phase for any zone west of
+Greenwich.
+
+**Raw cron remains a fully-supported escape hatch.** The `cron` field accepts
+anything `isValidSchedule` (`nextRun.js`) accepts, not only what the picker can
+produce — "last business day of the month" and similar shapes the picker was
+never meant to express are configured by hand-editing the schedule record, no
+UI work required.
+
+> An earlier iteration of this work shipped `cadence.js`, a picker→cron
+> translator over a `daily | weekly | monthly` vocabulary. It was deleted once
+> the picker above existed: cron cannot express what Epic 5 actually
+> specified, the module had no production callers, and a second incompatible
+> encoding of the same domain knowledge is exactly how someone later wires the
+> wrong one.
+
 ## The two delivery policies
 
 Declared at registration, not stored on the schedule record — an operator
@@ -479,8 +551,9 @@ directly for now; there is no admin screen for either.
 
 - Design: [`docs/superpowers/specs/2026-08-11-scheduled-job-trigger-design.md`](./superpowers/specs/2026-08-11-scheduled-job-trigger-design.md)
 - Code: `Backend/src/services/scheduler/` (`tick.js`, `registry.js`,
-  `handlers.js`, `nextRun.js`, `outcome.js`, `schedules.js`, `auth.js`,
-  `heartbeat.js`), `Backend/src/routes/scheduler.js`,
+  `handlers.js`, `nextRun.js`, `advance.js`, `outcome.js`, `schedules.js`,
+  `auth.js`, `heartbeat.js`), `Backend/src/utils/automationScheduleHelpers.js`,
+  `Backend/src/routes/scheduler.js`,
   `Backend/src/models/ScheduledJob.js`, `Backend/src/models/SchedulerHealth.js`.
 - Conventions for branching, commits, migrations and the complexity gate live
   in [`CLAUDE.md`](../CLAUDE.md) — not restated here.
