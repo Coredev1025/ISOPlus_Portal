@@ -24,9 +24,13 @@ export type AutomationSettings = {
   statement: AutomationBlock;
 };
 
-export const DEFAULT_BLOCK: AutomationBlock = {
+/**
+ * Frozen to prevent mutation of the module singleton.
+ * Consumers must copy deeply (not spread) to avoid aliasing the nested `every` object.
+ */
+export const DEFAULT_BLOCK: AutomationBlock = Object.freeze({
   enabled: false,
-  every: { n: 1, unit: "month" },
+  every: Object.freeze({ n: 1, unit: "month" }),
   runOn: 1,
   runAt: "09:00",
   startDate: null,
@@ -39,7 +43,7 @@ export const DEFAULT_BLOCK: AutomationBlock = {
   emailMessage: "",
   senderIdentityId: null,
   nextRun: null,
-};
+}) as AutomationBlock;
 
 const path = (workspaceId: string) =>
   `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/workspaces/${workspaceId}/automation-settings`;

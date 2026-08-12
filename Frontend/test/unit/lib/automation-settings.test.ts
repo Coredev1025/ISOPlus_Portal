@@ -35,4 +35,16 @@ describe("automation-settings client", () => {
       payload,
     );
   });
+
+  it("freezes the outer DEFAULT_BLOCK to prevent mutation", () => {
+    expect(() => {
+      (DEFAULT_BLOCK as any).enabled = true;
+    }).toThrow();
+  });
+
+  it("freezes the nested every object to prevent mutation", () => {
+    expect(() => {
+      (DEFAULT_BLOCK.every as any).unit = "day";
+    }).toThrow();
+  });
 });
