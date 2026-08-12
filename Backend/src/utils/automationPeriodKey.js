@@ -24,7 +24,10 @@ export function automationPeriodKey({ slot, timezone }) {
     .formatToParts(slot)
     .reduce((acc, part) => ({ ...acc, [part.type]: part.value }), {});
 
-  // Intl renders hour 24 for midnight in some engines; normalise it.
+  // Intl renders hour 24 for midnight in engines with hourCycle h24. This is
+  // defensive code: Node.js uses h23 (midnight → "00"), so this branch is not
+  // exercised on this engine. Other engines do render "24"; normalise it to "00"
+  // so the key is stable regardless of engine.
   const hour = parts.hour === '24' ? '00' : parts.hour;
 
   return `${parts.year}${parts.month}${parts.day}-${hour}${parts.minute}`;
