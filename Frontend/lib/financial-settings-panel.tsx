@@ -215,8 +215,9 @@ export function FinancialSettingsPanel({
       const err = error as {
         response?: { data?: { errors?: string[]; message?: string } };
       };
-      const responseErrors = Array.isArray(err.response?.data?.errors)
-        ? mapFinancialSettingsErrors(err.response.data.errors)
+      const rawErrors = err.response?.data?.errors;
+      const responseErrors = Array.isArray(rawErrors)
+        ? mapFinancialSettingsErrors(rawErrors)
         : [];
       const errorMessage =
         responseErrors[0] ||
