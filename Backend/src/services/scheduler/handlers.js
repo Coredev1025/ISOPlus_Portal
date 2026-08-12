@@ -5,6 +5,7 @@ import { info, warn } from '../../utils/logger.js';
 import { getAutomationQueue } from '../automation/queue.js';
 import { buildFanOutSpecs, KIND_INVOICE, KIND_STATEMENT } from '../automation/fanOut.js';
 import { triggerManualSync } from '../sync.js';
+import { isOfflineMode } from '../offlineIsoplus.js';
 import { getSchedulerAuthorization } from './auth.js';
 import { register } from './registry.js';
 import { AT_LEAST_ONCE } from '../../constants/scheduler.js';
@@ -112,6 +113,20 @@ export function registerSchedulerHandlers() {
   register('board_sync', {
     policy: AT_LEAST_ONCE,
     handler: async ({ targetId, workspaceId }) => {
+      // Local dev has no ISO+ credentials by default, so isOfflineMode() is
+      // true there — a schedule dispatched by `npm run tick` must not reach
+      // the live platform. A skip is a success (see policy note above): under
+      // AT_LEAST_ONCE the schedule only advances after the handler resolves,
+      // so throwing here would retry the same row on every tick forever.
+      if (isOfflineMode()) {
+        warn('Scheduler', 'board_sync skipped: backend is in offline mode', {
+          kind: 'board_sync',
+          targetId,
+          workspaceId,
+        });
+        return;
+      }
+
       const result = await triggerManualSync(
         getSchedulerAuthorization(),
         workspaceId,
