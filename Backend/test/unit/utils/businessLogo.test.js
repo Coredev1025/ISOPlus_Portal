@@ -165,6 +165,18 @@ describe('formatBusinessProfileResponse', () => {
       featureToggles: { invoiceStatementAutomation: false },
     });
   });
+
+  it('normalizes featureToggles.invoiceStatementAutomation from the stored flag', async () => {
+    const response = await formatBusinessProfileResponse({
+      workspaceId: 'ws_4821',
+      name: 'Hillsgrade Care Services',
+      featureToggles: { invoiceStatementAutomation: true },
+    });
+
+    expect(response.featureToggles).toEqual({
+      invoiceStatementAutomation: true,
+    });
+  });
 });
 
 describe('resolveQrLogoField', () => {

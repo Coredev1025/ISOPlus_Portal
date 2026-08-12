@@ -648,7 +648,8 @@ async function resolveActiveTenantId(workspaceId, refreshTokenExpiresAt) {
 
     const storedTenantId = await loadStoredXeroTenantId(workspaceId);
     if (storedTenantId) {
-        xeroClient.tenants = [{ tenantId: storedTenantId }];
+        // xero-node exposes tenants via a getter over `_tenants` (no setter).
+        xeroClient._tenants = [{ tenantId: storedTenantId }];
         return { tenantId: storedTenantId, tenant: { tenantId: storedTenantId } };
     }
 

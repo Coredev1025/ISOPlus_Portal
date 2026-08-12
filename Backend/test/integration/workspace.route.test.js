@@ -1,8 +1,22 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { authenticatedAgent } from '../helpers/auth.js';
 import Business from '../../src/models/Business.js';
+
+vi.mock('../../src/utils/workspaceFeatureToggleHelpers.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    findBusinessByWorkspaceId: vi.fn(actual.findBusinessByWorkspaceId),
+    upsertInvoiceStatementAutomation: vi.fn(actual.upsertInvoiceStatementAutomation),
+  };
+});
+
+import {
+  findBusinessByWorkspaceId,
+  upsertInvoiceStatementAutomation,
+} from '../../src/utils/workspaceFeatureToggleHelpers.js';
 
 const app = createApp();
 
@@ -28,6 +42,18 @@ describe('Workspace feature-toggles routes', () => {
   beforeEach(() => {
     process.env.JWT_SECRET = 'test-jwt-secret';
     process.env.PERSONAL_ACCESS_TOKEN = 'test-pat';
+    vi.clearAllMocks();
+    findBusinessByWorkspaceId.mockImplementation(async (workspaceId) =>
+      Business.findOne({ workspaceId: { $eq: String(workspaceId) } })
+    );
+    upsertInvoiceStatementAutomation.mockImplementation(
+      async (workspaceId, enabled) =>
+        Business.findOneAndUpdate(
+          { workspaceId: { $eq: String(workspaceId) } },
+          { $set: { 'featureToggles.invoiceStatementAutomation': enabled } },
+          { new: true }
+        )
+    );
   });
 
   it('requires authentication', async () => {
@@ -86,5 +112,26 @@ describe('Workspace feature-toggles routes', () => {
     const getRes = await agent.get('/api/workspaces/ws-put-2/feature-toggles');
     expect(getRes.status).toBe(200);
     expect(getRes.body).toEqual({ invoiceStatementAutomation: true });
+  });
+
+  it('returns 500 when GET feature-toggles helper throws', async () => {
+    findBusinessByWorkspaceId.mockRejectedValueOnce(new Error('db down'));
+    const { agent } = await authenticatedAgent(app, { role: 'owner' });
+    const res = await agent.get('/api/workspaces/ws-get-500/feature-toggles');
+    expect(res.status).toBe(500);
+    expect(res.body.message).toBe('Failed to fetch feature toggles');
+  });
+
+  it('returns 500 when PUT feature-toggles helper throws', async () => {
+    await Business.create({ name: 'Boom Biz', workspaceId: 'ws-put-500' });
+    upsertInvoiceStatementAutomation.mockRejectedValueOnce(
+      new Error('write failed')
+    );
+    const { agent } = await authenticatedAgent(app, { role: 'owner' });
+    const res = await agent
+      .put('/api/workspaces/ws-put-500/feature-toggles')
+      .send({ invoiceStatementAutomation: true });
+    expect(res.status).toBe(500);
+    expect(res.body.message).toBe('Failed to update feature toggles');
   });
 });

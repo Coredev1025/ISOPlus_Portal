@@ -230,6 +230,37 @@ describe('buildNdisQuoteXeroLineItems', () => {
       expect(typeof line.unitAmount).toBe('number');
     }
   });
+
+  it('uses options.gstType for every line taxType', () => {
+    const lines = buildNdisQuoteXeroLineItems(fullQuote(), refs(), {
+      gstType: 'OUTPUT',
+    });
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) {
+      expect(line.taxType).toBe('OUTPUT');
+    }
+  });
+
+  it('maps options.accountCode onto every returned line', () => {
+    const lines = buildNdisQuoteXeroLineItems(fullQuote(), refs(), {
+      gstType: 'EXEMPTOUTPUT',
+      accountCode: '200',
+    });
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) {
+      expect(line.accountCode).toBe('200');
+      expect(line.taxType).toBe('EXEMPTOUTPUT');
+    }
+  });
+
+  it('omits accountCode when options.accountCode is absent', () => {
+    const lines = buildNdisQuoteXeroLineItems(fullQuote(), refs(), {
+      gstType: 'EXEMPTOUTPUT',
+    });
+    for (const line of lines) {
+      expect(line).not.toHaveProperty('accountCode');
+    }
+  });
 });
 
 describe('buildNdisQuotePdfOrders', () => {

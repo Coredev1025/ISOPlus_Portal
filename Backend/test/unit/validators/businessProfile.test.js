@@ -40,4 +40,25 @@ describe('collectBusinessProfileErrors', () => {
     });
     expect(good).toEqual([]);
   });
+
+  it('validates statement sequence fields in document numbering', () => {
+    const errors = collectBusinessProfileErrors({
+      name: 'Acme',
+      documentNumbering: JSON.stringify({
+        statement: { prefix: 'STATEMENT-TOOLONG', nextNumber: 0 },
+      }),
+    });
+    expect(errors.some((e) => /statement prefix/i.test(e))).toBe(true);
+    expect(errors.some((e) => /statement number/i.test(e))).toBe(true);
+  });
+
+  it('accepts a valid statement numbering sequence', () => {
+    const errors = collectBusinessProfileErrors({
+      name: 'Acme',
+      documentNumbering: JSON.stringify({
+        statement: { prefix: 'STM-', nextNumber: 1 },
+      }),
+    });
+    expect(errors).toEqual([]);
+  });
 });

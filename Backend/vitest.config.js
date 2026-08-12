@@ -26,6 +26,8 @@ export default defineConfig({
         'src/utils/dynamicLinking.js',
         'src/utils/auditLogger.js',
         'src/utils/workspaceFeatureToggleHelpers.js',
+        'src/utils/businessLogo.js',
+        'src/utils/ndisQuoteLineHelpers.js',
         'src/utils/xeroAccountTaxHelpers.js',
         'src/utils/xeroLineItemMapping.js',
         'src/utils/xeroMaterialLineHelpers.js',

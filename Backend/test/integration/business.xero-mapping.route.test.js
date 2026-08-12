@@ -7,11 +7,20 @@ vi.mock('../../src/utils/xeroAccountTaxHelpers.js', () => ({
   loadXeroChartOptions: vi.fn(),
 }));
 
+vi.mock('../../src/services/xero.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    updateOrganizationInfo: vi.fn(),
+  };
+});
+
 vi.mock('../../src/utils/auditLogger.js', () => ({
   logAuditTrail: vi.fn(async () => {}),
 }));
 
 import { loadXeroChartOptions } from '../../src/utils/xeroAccountTaxHelpers.js';
+import { updateOrganizationInfo } from '../../src/services/xero.js';
 
 const app = createApp();
 
@@ -235,5 +244,112 @@ describe('Business Xero mapping routes', () => {
 
     expect(res.status).toBe(500);
     spy.mockRestore();
+  });
+
+  it('returns 409 when update-organization hits a Xero reconnect error', async () => {
+    await Business.create({
+      name: 'Reconnect',
+      workspaceId: 'ws-xero-reconnect',
+      xeroIntegrated: true,
+    });
+    updateOrganizationInfo.mockRejectedValueOnce(
+      new Error('Your Xero authorization token is expired. Please reconnect to Xero.')
+    );
+
+    const { agent } = await authenticatedAgent(app, { role: 'owner' });
+    const res = await agent.post('/api/business/xero/update-organization').send({
+      workspaceId: 'ws-xero-reconnect',
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.body.message).toMatch(/reconnect/i);
+  });
+
+  it('returns 409 when update-organization reports no linked organisation', async () => {
+    await Business.create({
+      name: 'No Org',
+      workspaceId: 'ws-xero-no-org',
+      xeroIntegrated: true,
+    });
+    updateOrganizationInfo.mockRejectedValueOnce(
+      new Error('No Xero organisation is linked. Disconnect and Connect Xero again, then select an organisation.')
+    );
+
+    const { agent } = await authenticatedAgent(app, { role: 'owner' });
+    const res = await agent.post('/api/business/xero/update-organization').send({
+      workspaceId: 'ws-xero-no-org',
+    });
+
+    expect(res.status).toBe(409);
+  });
+
+  it('returns 500 for non-reconnect update-organization failures', async () => {
+    await Business.create({
+      name: 'Boom Org',
+      workspaceId: 'ws-xero-org-boom',
+      xeroIntegrated: true,
+    });
+    updateOrganizationInfo.mockRejectedValueOnce(new Error('upstream exploded'));
+
+    const { agent } = await authenticatedAgent(app, { role: 'owner' });
+    const res = await agent.post('/api/business/xero/update-organization').send({
+      workspaceId: 'ws-xero-org-boom',
+    });
+
+    expect(res.status).toBe(500);
+    expect(res.body.message).toBe('upstream exploded');
+  });
+
+  it('persists organization info on successful update-organization', async () => {
+    await Business.create({
+      name: 'Fresh Org',
+      workspaceId: 'ws-xero-org-ok',
+      xeroIntegrated: true,
+    });
+    updateOrganizationInfo.mockResolvedValueOnce({
+      name: 'Acme Xero',
+      organisationId: 'org-123',
+      legalName: 'Acme Pty Ltd',
+    });
+
+    const { agent } = await authenticatedAgent(app, { role: 'owner' });
+    const res = await agent.post('/api/business/xero/update-organization').send({
+      workspaceId: 'ws-xero-org-ok',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.organization.organisationId).toBe('org-123');
+
+    const stored = await Business.findOne({ workspaceId: 'ws-xero-org-ok' }).lean();
+    expect(stored.xeroTenantId).toBe('org-123');
+    expect(stored.xeroOrganization.name).toBe('Acme Xero');
+  });
+
+  it('returns 404 / 400 guards for update-organization', async () => {
+    const { agent } = await authenticatedAgent(app, { role: 'owner' });
+    const missing = await agent.post('/api/business/xero/update-organization').send({
+      workspaceId: 'ws-xero-org-missing',
+    });
+    expect(missing.status).toBe(404);
+
+    await Business.create({
+      name: 'No Integration',
+      workspaceId: 'ws-xero-org-off',
+      xeroIntegrated: false,
+    });
+    const off = await agent.post('/api/business/xero/update-organization').send({
+      workspaceId: 'ws-xero-org-off',
+    });
+    expect(off.status).toBe(400);
+  });
+
+  it('returns 400 when line-item-mapping workspaceId is missing', async () => {
+    const { agent } = await authenticatedAgent(app, { role: 'owner' });
+    const res = await agent.put('/api/business/xero/line-item-mapping').send({
+      mapping: {},
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/workspaceId/i);
   });
 });
