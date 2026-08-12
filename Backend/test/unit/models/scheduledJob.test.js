@@ -85,3 +85,51 @@ describe('ScheduledJob model', () => {
     ).rejects.toThrow();
   });
 });
+
+describe('ScheduledJob cron/schedule exclusivity', () => {
+  const base = {
+    kind: 'invoice_automation',
+    targetId: 'ws-1',
+    timezone: 'Australia/Sydney',
+    nextRunAt: new Date('2026-09-01T09:00:00+10:00'),
+  };
+  const picker = {
+    every: { n: 1, unit: 'month' },
+    runOn: 15,
+    runAt: '09:00',
+    startDate: new Date('2026-08-01T00:00:00+10:00'),
+  };
+
+  it('accepts a cron-only job', async () => {
+    const doc = new ScheduledJob({ ...base, cron: '0 9 * * *' });
+    await expect(doc.validate()).resolves.toBeUndefined();
+  });
+
+  it('accepts a schedule-only job', async () => {
+    const doc = new ScheduledJob({ ...base, schedule: picker });
+    await expect(doc.validate()).resolves.toBeUndefined();
+  });
+
+  it('rejects a job with both', async () => {
+    const doc = new ScheduledJob({ ...base, cron: '0 9 * * *', schedule: picker });
+    await expect(doc.validate()).rejects.toThrow(/exactly one/i);
+  });
+
+  it('rejects a job with neither', async () => {
+    const doc = new ScheduledJob({ ...base });
+    await expect(doc.validate()).rejects.toThrow(/exactly one/i);
+  });
+
+  it('validates timezone on a schedule-only job, where cron is null', async () => {
+    const doc = new ScheduledJob({ ...base, timezone: 'Not/AZone', schedule: picker });
+    await expect(doc.validate()).rejects.toThrow(/timezone/i);
+  });
+
+  it('rejects an unknown unit', async () => {
+    const doc = new ScheduledJob({
+      ...base,
+      schedule: { ...picker, every: { n: 1, unit: 'fortnight' } },
+    });
+    await expect(doc.validate()).rejects.toThrow(/unit/);
+  });
+});
