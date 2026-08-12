@@ -113,10 +113,73 @@ function addMonthsClamped({ year, month }, offset, desiredDay) {
     };
 }
 
+/** A day-of-month, clamped to 1-31, falling back when the input is not a number. */
+function clampDay(value, fallback) {
+    const day = Number(value ?? fallback);
+    return Number.isFinite(day) ? Math.min(31, Math.max(1, Math.trunc(day))) : fallback;
+}
+
+/**
+ * How many months forward of the start month the series is anchored, so that
+ * it lands in the month the client picked.
+ *
+ * The shift is taken modulo one cycle — a quarter is 3 months, a year is 12 —
+ * so `month` is honoured without ever pushing the series past its own period.
+ * "Every quarter, in the third month" starting in January therefore means
+ * Mar, Jun, Sep, Dec; "every year, in September" means September.
+ */
+function monthShift(runOnMonth, startMonth, cycleMonths) {
+    const month = Number(runOnMonth);
+    if (!Number.isFinite(month)) return 0;
+    const wanted = Math.min(12, Math.max(1, Math.trunc(month)));
+    return (((wanted - startMonth) % cycleMonths) + cycleMonths) % cycleMonths;
+}
+
+/**
+ * The anchor and target day-of-month for a month/quarter/year series.
+ *
+ * `runOn` carries two shapes, matching exactly what the API accepts
+ * (utils/automationSettingsHelpers.js `validateRunOn`) and what the picker
+ * sends (Frontend/lib/automation-run-on-options.ts): an integer day-of-month
+ * for `month`, and `{month, day}` for `quarter` and `year`. Reading the object
+ * shape as a number is what produced `day: NaN` and an Invalid Date, and
+ * ignoring its `month` made "yearly on 15 March" inexpressible.
+ *
+ * The anchor's own day is irrelevant — nextByMonths re-clamps with
+ * `desiredDay` — so only its year and month are used.
+ */
+function monthlySeries(runOn, start, cycleMonths) {
+    const isMonthDay = runOn !== null && typeof runOn === 'object';
+    const desiredDay = clampDay(isMonthDay ? runOn.day : runOn, start.day);
+    const shift = isMonthDay ? monthShift(runOn.month, start.month, cycleMonths) : 0;
+    return { anchor: addMonthsClamped(start, shift, desiredDay), desiredDay };
+}
+
 function parseStartDate(startDate) {
     const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(startDate ?? ''));
     if (!match) return null;
     return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+}
+
+/**
+ * The instant at which the calendar day `YYYY-MM-DD` begins in `tz`.
+ *
+ * A startDate is a calendar date, but `ScheduledJob.schedule.startDate` is a
+ * Mongoose `Date`, so something has to choose which instant represents that
+ * day. Anchoring on local midnight is the choice that survives the round trip:
+ * reading the stored instant back in the same timezone yields the same
+ * calendar date, which is what the arithmetic here needs. Casting the bare
+ * string instead anchors on UTC midnight, which reads back as the *previous*
+ * day anywhere west of Greenwich.
+ *
+ * Anything that is not a parseable calendar date is returned untouched, so a
+ * client's `"not-a-date"` still reaches the schema and is still rejected as a
+ * CastError rather than being silently turned into null.
+ */
+export function startOfDayInstant(startDate, tz) {
+    const fields = parseStartDate(startDate);
+    if (!fields) return startDate;
+    return wallTimeToInstant({ ...fields, hour: 0, minute: 0 }, tz);
 }
 
 /** Step a day/week schedule forward until it passes `from`. */
@@ -190,8 +253,8 @@ export function computeNextRun(settings, from, timezone = 'Australia/Sydney') {
 
     const monthsPerUnit = MONTHS_PER_UNIT[unit];
     if (monthsPerUnit) {
-        const desiredDay = Math.min(31, Math.max(1, Number(settings?.runOn ?? start.day)));
-        return nextByMonths(start, n * monthsPerUnit, desiredDay, time, from, timezone);
+        const { anchor, desiredDay } = monthlySeries(settings?.runOn, start, monthsPerUnit);
+        return nextByMonths(anchor, n * monthsPerUnit, desiredDay, time, from, timezone);
     }
 
     // Unknown unit: treat as daily rather than throwing. A scheduler that stops

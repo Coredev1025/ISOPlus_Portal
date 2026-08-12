@@ -70,18 +70,65 @@ describe('computeNextRun', () => {
       expect(wallClock(next)).toBe('2026-04-15 09:00');
     });
 
+    // quarter and year take runOn as {month, day} — that is the shape
+    // parseAutomationSettingsBody accepts (automationSettingsHelpers.js
+    // validateRunOn rejects a bare integer for these two units) and the shape
+    // the picker sends (Frontend/lib/automation-run-on-options.ts). Passing an
+    // integer here pinned a path the API cannot produce.
     it('quarter: steps three months from the start date, not from `from`', () => {
-      const settings = { ...base, every: { n: 1, unit: 'quarter' }, runOn: 1 };
+      const settings = { ...base, every: { n: 1, unit: 'quarter' }, runOn: { month: 1, day: 1 } };
       // startDate is 2026-01-01, so the series is Jan 1, Apr 1, Jul 1, Oct 1.
       // Asking in April must give July, not "three months from today".
       const next = computeNextRun(settings, new Date('2026-04-02T00:00:00Z'), TZ);
       expect(wallClock(next)).toBe('2026-07-01 09:00');
+      expect(next.toISOString()).toBe('2026-06-30T23:00:00.000Z'); // AEST, UTC+10
     });
 
     it('year: steps twelve months from the start date', () => {
-      const settings = { ...base, every: { n: 1, unit: 'year' }, runOn: 1 };
+      const settings = { ...base, every: { n: 1, unit: 'year' }, runOn: { month: 1, day: 1 } };
       const next = computeNextRun(settings, new Date('2026-03-02T00:00:00Z'), TZ);
       expect(wallClock(next)).toBe('2027-01-01 09:00');
+      expect(next.toISOString()).toBe('2026-12-31T22:00:00.000Z'); // AEDT, UTC+11
+    });
+  });
+
+  // runOn.month is the half of the picker's answer that used to be dropped on
+  // the floor: the arithmetic read runOn as an integer, so `Number({month,
+  // day})` was NaN and every quarter/year schedule threw RangeError: Invalid
+  // time value out of Intl. Fixing the throw alone is not enough — a schedule
+  // saved as "yearly on 15 March" has to actually land in March.
+  describe('quarter and year: runOn {month, day}', () => {
+    it('quarter: honours a month already past in this cycle by stepping to the next one', () => {
+      // March is the third month of the quarter that starts at the January
+      // startDate, so the series is Mar 20, Jun 20, Sep 20, Dec 20. `from` is
+      // 25 March, five days after this cycle's slot.
+      const settings = { ...base, every: { n: 1, unit: 'quarter' }, runOn: { month: 3, day: 20 } };
+      const next = computeNextRun(settings, new Date('2026-03-25T00:00:00Z'), TZ);
+
+      expect(wallClock(next)).toBe('2026-06-20 09:00');
+      expect(next.toISOString()).toBe('2026-06-19T23:00:00.000Z'); // AEST, UTC+10
+    });
+
+    it('year: lands on a month later in the same year than `from`', () => {
+      const settings = { ...base, every: { n: 1, unit: 'year' }, runOn: { month: 9, day: 5 } };
+      const next = computeNextRun(settings, new Date('2026-03-02T00:00:00Z'), TZ);
+
+      // Ignoring runOn.month would answer 1 Jan 2027 — a schedule the client
+      // never asked for, ten months late.
+      expect(wallClock(next)).toBe('2026-09-05 09:00');
+      expect(next.toISOString()).toBe('2026-09-04T23:00:00.000Z'); // AEST, UTC+10
+    });
+
+    it('clamps the day to the length of the selected month', () => {
+      // validateRunOn range-checks neither half of {month, day} for these two
+      // units, so {month: 2, day: 31} reaches the arithmetic. February must
+      // clamp, exactly as the monthly path does — rolling into 3 March would
+      // shift every subsequent year of the series.
+      const settings = { ...base, every: { n: 1, unit: 'year' }, runOn: { month: 2, day: 31 } };
+      const next = computeNextRun(settings, new Date('2026-01-15T00:00:00Z'), TZ);
+
+      expect(wallClock(next)).toBe('2026-02-28 09:00');
+      expect(next.toISOString()).toBe('2026-02-27T22:00:00.000Z'); // AEDT, UTC+11
     });
   });
 

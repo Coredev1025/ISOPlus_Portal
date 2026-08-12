@@ -43,6 +43,20 @@ const MONTHLY_INVOICE = {
   recipient: 'billing_contact',
 };
 
+// quarter and year are the two units that made this route return 500 on save:
+// their runOn is {month, day} — the only shape validateRunOn accepts and the
+// only shape the picker sends — and the schedule arithmetic read it as an
+// integer, so Number({month, day}) was NaN and Intl threw RangeError: Invalid
+// time value out of computeNextRun, before anything was written.
+const QUARTERLY_INVOICE = {
+  enabled: true,
+  every: { n: 1, unit: 'quarter' },
+  runOn: { month: 3, day: 20 },
+  runAt: '09:00',
+  sendMethod: 'isoplus',
+  recipient: 'billing_contact',
+};
+
 const WEEKLY_STATEMENT = {
   enabled: true,
   every: { n: 2, unit: 'week' },
@@ -128,6 +142,32 @@ describe('GET/PUT /api/workspaces/:workspaceId/automation-settings', () => {
     expect(job.schedule.runOn).toBe(15);
     expect(job.schedule.runAt).toBe('09:00');
     expect(wallClock(job.nextRunAt)).toMatchObject({ day: '15', hour: '09', minute: '00' });
+    expect(job.nextRunAt.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('saves a quarterly block, whose runOn is {month, day}, and schedules it in the chosen month', async () => {
+    const res = await agent
+      .put(`/api/workspaces/${WS}/automation-settings`)
+      .send({ invoice: QUARTERLY_INVOICE });
+
+    expect(res.status).toBe(200);
+    expect(res.body.invoice.runOn).toEqual({ month: 3, day: 20 });
+
+    const job = await ScheduledJob.findOne({ kind: KIND_INVOICE, targetId: WS });
+    expect(job.schedule.runOn).toEqual({ month: 3, day: 20 });
+
+    // No startDate, so the series is anchored on today and the exact instant
+    // moves with the calendar. What must hold whatever day this runs on: the
+    // 20th, at 09:00, in a month sharing March's position in the quarter —
+    // i.e. March, June, September or December. Ignoring runOn.month would
+    // anchor on today's month instead, which for nine months of the year is
+    // none of those.
+    const clock = wallClock(job.nextRunAt);
+    expect(clock).toMatchObject({ day: '20', hour: '09', minute: '00' });
+
+    const month = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, month: '2-digit' })
+      .format(job.nextRunAt);
+    expect(['03', '06', '09', '12']).toContain(month);
     expect(job.nextRunAt.getTime()).toBeGreaterThan(Date.now());
   });
 
