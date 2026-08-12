@@ -94,6 +94,44 @@ export function parseAutomationSettingsBody(body) {
 }
 
 /**
+ * The `ScheduledJob.schedule` projection of a settings block.
+ *
+ * Pure: no clock and no I/O. Everything derived from this — the timezone and
+ * `nextRunAt` — is the scheduler's to compute, so this is only the shape.
+ * Callers pass a block that has already been through
+ * `parseAutomationSettingsBody`, which is what guarantees `every` is present.
+ */
+export function toScheduleInput(block) {
+  return {
+    every: { n: block.every.n, unit: block.every.unit },
+    runOn: block.runOn,
+    runAt: block.runAt,
+    startDate: block.startDate,
+  };
+}
+
+/**
+ * Is a failed schedule write the request body's fault rather than the
+ * server's? Two families, and deliberately only two:
+ *
+ *   - everything `services/scheduler/schedules.js` refuses to write for — an
+ *     invalid schedule, a timezone Intl does not recognise, both-or-neither
+ *     of cron/schedule, a breach of the minimum interval. It throws all of
+ *     them with a `Scheduler: ` prefix and throws nothing else.
+ *   - a Mongoose `CastError`/`ValidationError`, which is a field the client
+ *     sent in a type the schema cannot store — a `startDate` of
+ *     `"not-a-date"` is the one the route can actually reach, because
+ *     `parseAutomationSettingsBody` does not type-check that field.
+ *
+ * Anything else is a genuine server fault and has to stay a 500: a dropped
+ * connection must not be reported back to the client as their mistake.
+ */
+export function isScheduleClientError(err) {
+  if (err?.name === 'CastError' || err?.name === 'ValidationError') return true;
+  return String(err?.message ?? '').startsWith('Scheduler: ');
+}
+
+/**
  * `nextRun` is never stored on AutomationSettings — ScheduledJob.nextRunAt is
  * the single source of truth, because it is the value the tick claims on.
  * This merges it in for display only.

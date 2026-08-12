@@ -3,11 +3,16 @@ import { authenticateToken } from '../middleware/auth.js';
 import Workspace from '../models/Workspace.js';
 import Board from '../models/Board.js';
 import AutomationSettings from '../models/AutomationSettings.js';
+import ScheduledJob from '../models/ScheduledJob.js';
 import { info, error, warn } from '../utils/logger.js';
 import {
   parseAutomationSettingsBody,
   buildAutomationSettingsPayload,
+  toScheduleInput,
+  isScheduleClientError,
 } from '../utils/automationSettingsHelpers.js';
+import { upsertSchedule, disableSchedule } from '../services/scheduler/schedules.js';
+import { KIND_INVOICE, KIND_STATEMENT } from '../services/automation/fanOut.js';
 import { getWorkspace, getBoard, getWorkspacePage, getBoardPage, getMemberRole } from '../services/isoplus.js';
 import DynamicLinkingService from '../services/dynamicLinking.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
@@ -382,13 +387,64 @@ router.put('/:workspaceId/feature-toggles', authenticateToken, async (req, res) 
   }
 });
 
+/**
+ * The live ScheduledJob rows behind a workspace's automation, keyed by kind.
+ *
+ * `nextRun` is never stored on AutomationSettings: ScheduledJob.nextRunAt is
+ * the single source of truth, because it is the value the scheduler tick
+ * claims on. Reading anything else would let the UI and the scheduler
+ * disagree about when a run is due.
+ *
+ * Disabled rows are excluded rather than returned with their stale
+ * nextRunAt — a disabled job will not fire, so it has no next run.
+ */
+async function loadAutomationJobs(workspaceId) {
+  const jobs = await ScheduledJob.find({
+    kind: { $in: [KIND_INVOICE, KIND_STATEMENT] },
+    targetId: { $eq: workspaceId },
+    enabled: true,
+  })
+    .select('kind nextRunAt')
+    .lean();
+
+  return Object.fromEntries(jobs.map((job) => [job.kind, job]));
+}
+
+/**
+ * Bring both schedules in line with the settings the client just sent.
+ *
+ * `disableSchedule` sets `enabled: false` rather than deleting, so lastRunAt
+ * and missedRuns survive a toggle; for a block that was never enabled it
+ * matches nothing and is a harmless no-op.
+ */
+async function writeAutomationSchedules(workspaceId, value) {
+  const blocks = [
+    { kind: KIND_INVOICE, block: value.invoice },
+    { kind: KIND_STATEMENT, block: value.statement },
+  ];
+
+  for (const { kind, block } of blocks) {
+    if (block.enabled) {
+      await upsertSchedule({
+        kind,
+        targetId: workspaceId,
+        workspaceId,
+        schedule: toScheduleInput(block),
+      });
+    } else {
+      await disableSchedule({ kind, targetId: workspaceId });
+    }
+  }
+}
+
 router.get('/:workspaceId/automation-settings', authenticateToken, async (req, res) => {
   try {
     const workspaceId = parseWorkspaceIdParam(req.params.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
 
     const settings = await AutomationSettings.findOne({ workspaceId: { $eq: workspaceId } }).lean();
-    return res.status(200).json(buildAutomationSettingsPayload(settings, {}));
+    const jobs = await loadAutomationJobs(workspaceId);
+    return res.status(200).json(buildAutomationSettingsPayload(settings, jobs));
   } catch (err) {
     error(
       'Workspace-Service',
@@ -408,11 +464,25 @@ router.put('/:workspaceId/automation-settings', authenticateToken, async (req, r
     const parsed = parseAutomationSettingsBody(req.body);
     if (parsed.error) return res.status(400).json({ message: parsed.error });
 
+    // Schedules first, settings second, and the order is the whole safety
+    // mechanism: Mongo transactions need a replica set and local dev runs a
+    // standalone mongod, so these three writes cannot be made atomic. Writing
+    // the schedules first means a failure here leaves the settings document
+    // exactly as it was, and the UI keeps telling the truth. The other order
+    // would leave it reading "enabled" for automation that can never fire —
+    // the worst outcome available, because it looks fine.
+    await writeAutomationSchedules(workspaceId, parsed.value);
+
     const settings = await AutomationSettings.findOneAndUpdate(
       { workspaceId: { $eq: workspaceId } },
       { $set: { workspaceId, ...parsed.value } },
       { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true }
     ).lean();
+
+    // Read back rather than reuse what upsertSchedule returned, so the
+    // response carries the same nextRun a subsequent GET would, and the UI
+    // shows it immediately instead of after a reload.
+    const jobs = await loadAutomationJobs(workspaceId);
 
     info(
       'Workspace-Service',
@@ -420,8 +490,16 @@ router.put('/:workspaceId/automation-settings', authenticateToken, async (req, r
       sanitizeLogValue({ workspaceId }),
       req ?? null
     );
-    return res.status(200).json(buildAutomationSettingsPayload(settings, {}));
+    return res.status(200).json(buildAutomationSettingsPayload(settings, jobs));
   } catch (err) {
+    // A rejected schedule is caused by the request body, so it is a client
+    // error. Its message is the scheduler's own and safe to return; anything
+    // else is a server fault, which stays a generic 500 with the detail only
+    // in the log.
+    if (isScheduleClientError(err)) {
+      return res.status(400).json({ message: err.message });
+    }
+
     error(
       'Workspace-Service',
       'Failed to update automation settings',
