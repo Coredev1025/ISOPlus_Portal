@@ -71,6 +71,90 @@ describe('parseAutomationSettingsBody', () => {
     });
     expect(result.error).toBeUndefined();
   });
+
+  it('accepts a valid {month, day} runOn shape for unit quarter', () => {
+    const result = parseAutomationSettingsBody({
+      invoice: { ...validBlock, every: { n: 1, unit: 'quarter' }, runOn: { month: 1, day: 15 } },
+    });
+    expect(result.error).toBeUndefined();
+  });
+
+  it('rejects a quarter runOn that is not a {month, day} shape', () => {
+    const result = parseAutomationSettingsBody({
+      invoice: { ...validBlock, every: { n: 1, unit: 'quarter' }, runOn: 'monday' },
+    });
+    expect(result.error).toMatch(/runOn/);
+  });
+
+  it('accepts a valid {month, day} runOn shape for unit year', () => {
+    const result = parseAutomationSettingsBody({
+      invoice: { ...validBlock, every: { n: 1, unit: 'year' }, runOn: { month: 3, day: 20 } },
+    });
+    expect(result.error).toBeUndefined();
+  });
+
+  it('rejects a year runOn that is not a {month, day} shape', () => {
+    const result = parseAutomationSettingsBody({
+      invoice: { ...validBlock, every: { n: 1, unit: 'year' }, runOn: 5 },
+    });
+    expect(result.error).toMatch(/runOn/);
+  });
+
+  it('rejects a non-weekday runOn when the unit is week', () => {
+    const result = parseAutomationSettingsBody({
+      invoice: { ...validBlock, every: { n: 1, unit: 'week' }, runOn: 3 },
+    });
+    expect(result.error).toMatch(/runOn/);
+  });
+
+  it('rejects a non-integer every.n', () => {
+    const result = parseAutomationSettingsBody({
+      invoice: { ...validBlock, every: { n: 1.5, unit: 'week' } },
+    });
+    expect(result.error).toMatch(/every\.n/);
+  });
+
+  it('rejects an every.n less than 1', () => {
+    const result = parseAutomationSettingsBody({
+      invoice: { ...validBlock, every: { n: 0, unit: 'week' } },
+    });
+    expect(result.error).toMatch(/every\.n/);
+  });
+
+  it('rejects an invalid sendMethod', () => {
+    const result = parseAutomationSettingsBody({
+      invoice: { ...validBlock, sendMethod: 'paypal' },
+    });
+    expect(result.error).toMatch(/sendMethod/);
+  });
+
+  it('rejects an invalid recipient', () => {
+    const result = parseAutomationSettingsBody({
+      invoice: { ...validBlock, recipient: 'nobody' },
+    });
+    expect(result.error).toMatch(/recipient/);
+  });
+
+  it('ignores runOn for a day-unit block', () => {
+    const result = parseAutomationSettingsBody({
+      invoice: { ...validBlock, every: { n: 1, unit: 'day' }, runOn: 'nonsense-value' },
+    });
+    expect(result.error).toBeUndefined();
+  });
+
+  it('rejects a malformed replyTo', () => {
+    const result = parseAutomationSettingsBody({
+      invoice: { ...validBlock, replyTo: 'not-an-email' },
+    });
+    expect(result.error).toMatch(/replyTo/);
+  });
+
+  it('rejects a malformed emailFrom', () => {
+    const result = parseAutomationSettingsBody({
+      invoice: { ...validBlock, emailFrom: 'not-an-email' },
+    });
+    expect(result.error).toMatch(/emailFrom/);
+  });
 });
 
 describe('buildAutomationSettingsPayload', () => {
