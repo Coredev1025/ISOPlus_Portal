@@ -60,7 +60,7 @@ describe('FinancialSettingsForm', () => {
     expect(screen.queryByLabelText(/payment reference/i)).not.toBeInTheDocument();
 
     expect(screen.getByText('Statement Numbers')).toBeInTheDocument();
-    expect(screen.getByText(/^new$/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^new$/i)).not.toBeInTheDocument();
     expect(container.querySelector('#statement-prefix')).not.toBeDisabled();
     expect(container.querySelector('#statement-next')).not.toBeDisabled();
     expect(
