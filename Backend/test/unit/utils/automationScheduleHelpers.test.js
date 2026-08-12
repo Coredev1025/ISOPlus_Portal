@@ -132,6 +132,78 @@ describe('computeNextRun', () => {
     });
   });
 
+  // `every.n` is a free <input type="number" min={1}> and validateBlock accepts
+  // any positive integer, so n >= 2 is reachable. The alignment modulus has to
+  // match the step: aligning mod 3 while stepping 6 months means the chosen
+  // month only appears by parity luck.
+  describe('quarter and year: an interval greater than one', () => {
+    /** The first four runs of a series, as wall-clock strings. */
+    function series(settings, from, count = 4) {
+      const runs = [];
+      let cursor = from;
+      for (let i = 0; i < count; i += 1) {
+        cursor = computeNextRun(settings, cursor, TZ);
+        runs.push(wallClock(cursor));
+      }
+      return runs;
+    }
+
+    it('quarter n=2: lands in the chosen month, not the one six months off it', () => {
+      // Aligning mod 3 and stepping 6 produced Sep 20, Mar 20, Sep 20, Mar 20 —
+      // June never occurred, and {month: 3} gave the byte-identical series. A
+      // client who picked June was billed every September and March forever.
+      const settings = {
+        ...base,
+        startDate: '2026-08-01',
+        every: { n: 2, unit: 'quarter' },
+        runOn: { month: 6, day: 20 },
+      };
+      const from = new Date('2026-08-01T00:00:00Z');
+
+      expect(series(settings, from)).toEqual([
+        '2026-12-20 09:00',
+        '2027-06-20 09:00',
+        '2027-12-20 09:00',
+        '2028-06-20 09:00',
+      ]);
+
+      const first = computeNextRun(settings, from, TZ);
+      expect(first.toISOString()).toBe('2026-12-19T22:00:00.000Z'); // AEDT, UTC+11
+
+      // June and December, six months apart — and distinguishable from the
+      // March/September series a {month: 3} schedule produces.
+      const march = { ...settings, runOn: { month: 3, day: 20 } };
+      expect(computeNextRun(march, from, TZ).toISOString()).not.toBe(first.toISOString());
+    });
+
+    it('year n=2: honours the chosen month even when that delays the first run a cycle', () => {
+      // Deliberate, and pinned so nobody "fixes" it back. Starting Aug 2026,
+      // the March slot phase-aligned to a two-year step is March 2028, not
+      // March 2027 — one cycle later than the nearest March. Accepted: the
+      // client picked March and still gets March. Billing them in a month they
+      // did not choose, forever, is the worse failure.
+      const settings = {
+        ...base,
+        startDate: '2026-08-01',
+        every: { n: 2, unit: 'year' },
+        runOn: { month: 3, day: 20 },
+      };
+      const first = computeNextRun(settings, new Date('2026-08-01T00:00:00Z'), TZ);
+
+      expect(wallClock(first)).toBe('2028-03-20 09:00');
+      expect(first.toISOString()).toBe('2028-03-19T22:00:00.000Z'); // AEDT, UTC+11
+    });
+
+    it('quarter n=1 is unchanged: the modulus still collapses to three months', () => {
+      // n * MONTHS_PER_UNIT equals MONTHS_PER_UNIT when n is 1, so the mod-3
+      // behaviour every other quarter case pins must survive untouched.
+      const settings = { ...base, every: { n: 1, unit: 'quarter' }, runOn: { month: 3, day: 20 } };
+      const next = computeNextRun(settings, new Date('2026-03-25T00:00:00Z'), TZ);
+
+      expect(next.toISOString()).toBe('2026-06-19T23:00:00.000Z'); // AEST, UTC+10
+    });
+  });
+
   describe('the cases that cause double-billing', () => {
     it('clamps the 31st to the last day of a 30-day month', () => {
       // The bug this prevents: rolling 31 April into 1 May, which silently

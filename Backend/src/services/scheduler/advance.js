@@ -39,8 +39,14 @@ function normaliseStartDate(startDate, timezone) {
  * reformatted it in the job's timezone: one calendar day earlier for any zone
  * west of Greenwich, which puts the whole series off phase from its second run
  * onward. Anchoring on local midnight makes the round trip lossless, so both
- * paths compute from the same calendar date. Idempotent: re-normalising an
- * already-anchored value returns the same instant.
+ * paths compute from the same calendar date.
+ *
+ * Idempotent EXCEPT where local midnight does not exist — a spring-forward
+ * that jumps 00:00 to 01:00, e.g. '2026-09-06' in America/Santiago, which
+ * reads back as the 5th. Narrow (one date a year, only in zones whose
+ * transition is at midnight) and not a phase bug: both paths still anchor on
+ * the same value, so the series stays evenly spaced, and re-normalising
+ * converges after one step. Recorded as a follow-up rather than fixed here.
  */
 export function canonicalStartDate(startDate, timezone) {
   return startOfDayInstant(normaliseStartDate(startDate, timezone), timezone);

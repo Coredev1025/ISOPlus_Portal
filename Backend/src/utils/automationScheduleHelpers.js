@@ -123,10 +123,20 @@ function clampDay(value, fallback) {
  * How many months forward of the start month the series is anchored, so that
  * it lands in the month the client picked.
  *
- * The shift is taken modulo one cycle — a quarter is 3 months, a year is 12 —
- * so `month` is honoured without ever pushing the series past its own period.
- * "Every quarter, in the third month" starting in January therefore means
- * Mar, Jun, Sep, Dec; "every year, in September" means September.
+ * `cycleMonths` is the FULL step — `n * MONTHS_PER_UNIT[unit]`, i.e. 6 for
+ * "every 2 quarters", not 3. It must match the step `nextByMonths` takes, or
+ * the series is aligned on one modulus and sampled on another, and the chosen
+ * month only appears by parity luck: aligning mod 3 while stepping 6 months
+ * turned "every 2 quarters in June" into September and March forever, with
+ * June never occurring at all.
+ *
+ * The deliberate cost, for `year` with n >= 2: the first run can be pushed out
+ * by a whole cycle. A March schedule starting Aug 2026 lands on Mar 2028
+ * rather than Mar 2027, because Mar 2027 is not phase-aligned to a two-year
+ * step from the anchor. That trade is accepted on purpose — the client picked
+ * March and still gets March, just one cycle later. Silently billing them in a
+ * month they did not choose, every cycle, forever, is the worse failure. Do
+ * not "simplify" this back to MONTHS_PER_UNIT.
  */
 function monthShift(runOnMonth, startMonth, cycleMonths) {
     const month = Number(runOnMonth);
@@ -146,12 +156,13 @@ function monthShift(runOnMonth, startMonth, cycleMonths) {
  * ignoring its `month` made "yearly on 15 March" inexpressible.
  *
  * The anchor's own day is irrelevant — nextByMonths re-clamps with
- * `desiredDay` — so only its year and month are used.
+ * `desiredDay` — so only its year and month are used. `stepMonths` is the same
+ * step nextByMonths will take; see monthShift for why the two must agree.
  */
-function monthlySeries(runOn, start, cycleMonths) {
+function monthlySeries(runOn, start, stepMonths) {
     const isMonthDay = runOn !== null && typeof runOn === 'object';
     const desiredDay = clampDay(isMonthDay ? runOn.day : runOn, start.day);
-    const shift = isMonthDay ? monthShift(runOn.month, start.month, cycleMonths) : 0;
+    const shift = isMonthDay ? monthShift(runOn.month, start.month, stepMonths) : 0;
     return { anchor: addMonthsClamped(start, shift, desiredDay), desiredDay };
 }
 
@@ -253,8 +264,9 @@ export function computeNextRun(settings, from, timezone = 'Australia/Sydney') {
 
     const monthsPerUnit = MONTHS_PER_UNIT[unit];
     if (monthsPerUnit) {
-        const { anchor, desiredDay } = monthlySeries(settings?.runOn, start, monthsPerUnit);
-        return nextByMonths(anchor, n * monthsPerUnit, desiredDay, time, from, timezone);
+        const stepMonths = n * monthsPerUnit;
+        const { anchor, desiredDay } = monthlySeries(settings?.runOn, start, stepMonths);
+        return nextByMonths(anchor, stepMonths, desiredDay, time, from, timezone);
     }
 
     // Unknown unit: treat as daily rather than throwing. A scheduler that stops
