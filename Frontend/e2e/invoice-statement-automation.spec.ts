@@ -72,6 +72,14 @@ async function resetAutomationSettings(page: Page) {
   ).toBeTruthy();
 }
 
+// Serial, deliberately. Every test in this file drives the SAME workspace and
+// resets it to defaults in beforeEach — under the config's fullyParallel these
+// reset one another's state mid-test and fail for reasons that look nothing
+// like the real cause. Giving each test its own workspace would be the
+// alternative, but a workspace cannot be created locally: the list is proxied
+// from ISO+ rather than stored.
+test.describe.configure({ mode: "serial" });
+
 test.describe("Invoice & Statement Automation", () => {
   test.skip(
     !EMAIL || !PASSWORD,
