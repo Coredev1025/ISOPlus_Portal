@@ -1,8 +1,9 @@
 import ScheduledJob from '../../models/ScheduledJob.js';
 import { info } from '../../utils/logger.js';
-import { computeNextRun, isValidSchedule } from './nextRun.js';
+import { isValidSchedule } from './nextRun.js';
 import { resolveTimezone } from './timezone.js';
 import { assertMinimumInterval } from './intervalFloor.js';
+import { advanceSchedule } from './advance.js';
 import { DUPLICATE_KEY, UPSERT_OPTIONS, LOG_SCOPE } from '../../constants/scheduler.js';
 
 /**
@@ -30,24 +31,43 @@ async function upsertConverging(filter, update) {
  *
  * `now` is a parameter rather than a Date.now() call so the behaviour is
  * testable without freezing the clock.
+ *
+ * Exactly one of `cron` / `schedule` is required. This is enforced here in
+ * application code rather than left to the ScheduledJob schema: every write
+ * in this module uses findOneAndUpdate, which is query middleware and never
+ * triggers the model's pre('validate') hook — see the comment on `cron` in
+ * models/ScheduledJob.js.
  */
 export async function upsertSchedule({
   kind,
   targetId,
   workspaceId = null,
-  cron,
+  cron = null,
+  schedule = null,
   timezone,
   now = new Date(),
 }) {
   const effectiveTimezone = await resolveTimezone({ workspaceId, timezone });
 
-  if (!isValidSchedule(cron, effectiveTimezone)) {
-    throw new Error(
-      `Scheduler: invalid schedule for "${kind}" — cron "${cron}", timezone "${effectiveTimezone}"`,
-    );
+  if (Boolean(cron) === Boolean(schedule?.every?.unit)) {
+    throw new Error(`Scheduler: exactly one of cron or schedule is required for "${kind}"`);
   }
 
-  assertMinimumInterval({ kind, cron, timezone: effectiveTimezone, now });
+  if (cron) {
+    if (!isValidSchedule(cron, effectiveTimezone)) {
+      throw new Error(
+        `Scheduler: invalid schedule for "${kind}" — cron "${cron}", timezone "${effectiveTimezone}"`,
+      );
+    }
+    // The floor is computed by parsing a cron expression, so it only applies
+    // to cron jobs. A picker schedule cannot breach it anyway: the coarsest
+    // picker cadence is {n: 1, unit: 'day'} = 1440 minutes, against floors of
+    // 60 (AT_MOST_ONCE) and 5 (AT_LEAST_ONCE) minutes — skipping this check
+    // for picker schedules is deliberate, not an oversight.
+    assertMinimumInterval({ kind, cron, timezone: effectiveTimezone, now });
+  }
+
+  const nextRunAt = advanceSchedule({ cron, schedule, timezone: effectiveTimezone }, now);
 
   const job = await upsertConverging(
     { kind, targetId },
@@ -55,9 +75,10 @@ export async function upsertSchedule({
       $set: {
         workspaceId,
         cron,
+        schedule,
         timezone: effectiveTimezone,
         enabled: true,
-        nextRunAt: computeNextRun(cron, effectiveTimezone, now),
+        nextRunAt,
         lastError: null,
         consecutiveFailures: 0,
       },
@@ -68,6 +89,7 @@ export async function upsertSchedule({
     kind,
     targetId,
     cron,
+    schedule,
     timezone: effectiveTimezone,
     nextRunAt: job.nextRunAt,
   });

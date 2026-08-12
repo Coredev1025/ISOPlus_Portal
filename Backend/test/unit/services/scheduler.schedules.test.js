@@ -184,6 +184,48 @@ describe('upsertSchedule', () => {
 
     expect(await ScheduledJob.countDocuments({ targetId: 'board-tz' })).toBe(0);
   });
+
+  it('upserts a picker schedule and computes nextRunAt from it', async () => {
+    const job = await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-1',
+      workspaceId: 'ws-1',
+      schedule: {
+        every: { n: 1, unit: 'month' },
+        runOn: 15,
+        runAt: '09:00',
+        startDate: new Date('2026-08-01T00:00:00+10:00'),
+      },
+      timezone: 'Australia/Sydney',
+      now: new Date('2026-08-12T00:00:00Z'),
+    });
+
+    expect(job.cron).toBeNull();
+    expect(job.schedule.every.unit).toBe('month');
+    expect(job.nextRunAt).toBeInstanceOf(Date);
+  });
+
+  it('refuses a job given both cron and schedule', async () => {
+    await expect(
+      upsertSchedule({
+        kind: 'invoice_automation',
+        targetId: 'ws-2',
+        cron: '0 9 * * *',
+        schedule: { every: { n: 1, unit: 'month' }, runAt: '09:00' },
+        timezone: 'Australia/Sydney',
+      }),
+    ).rejects.toThrow(/exactly one/i);
+  });
+
+  it('refuses a job given neither cron nor schedule', async () => {
+    await expect(
+      upsertSchedule({
+        kind: 'invoice_automation',
+        targetId: 'ws-3',
+        timezone: 'Australia/Sydney',
+      }),
+    ).rejects.toThrow(/exactly one/i);
+  });
 });
 
 describe('disableSchedule', () => {
