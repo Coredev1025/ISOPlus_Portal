@@ -120,7 +120,14 @@ describe('ScheduledJob cron/schedule exclusivity', () => {
     await expect(doc.validate()).rejects.toThrow(/exactly one/i);
   });
 
-  it('validates timezone on a schedule-only job, where cron is null', async () => {
+  // Pins that timezone validation still runs on a schedule-only job (cron is
+  // null). Note this does NOT pin the `this.cron ?? PROBE_CRON` fallback
+  // specifically: cron-parser treats a null cron like '* * * * *' rather
+  // than throwing, so isValidSchedule(null, 'Not/AZone') already rejects via
+  // the Intl timezone check alone, before PROBE_CRON's value matters. The
+  // fallback is defensive (guards against a future cron-parser version that
+  // does throw on null) rather than load-bearing for this assertion.
+  it('validates timezone on a schedule-only job', async () => {
     const doc = new ScheduledJob({ ...base, timezone: 'Not/AZone', schedule: picker });
     await expect(doc.validate()).rejects.toThrow(/timezone/i);
   });

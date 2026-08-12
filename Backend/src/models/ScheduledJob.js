@@ -48,14 +48,21 @@ const scheduledJobSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
-    // Validated together with timezone via isValidSchedule (nextRun.js) — the
-    // same check upsertSchedule already runs before writing, now enforced for
-    // any write, including ones that bypass that service function.
-    //
-    // Exactly one of cron / schedule is required — see the pre('validate')
-    // hook below. cron is the traditional expression; schedule is the picker
+    // Validated together with timezone via isValidSchedule (nextRun.js), and
+    // exactly one of cron / schedule is enforced by the pre('validate') hook
+    // below. cron is the traditional expression; schedule is the picker
     // shape (every {n, unit} anchored on startDate) that cron cannot express,
     // e.g. "every 2 weeks".
+    //
+    // IMPORTANT: this validation runs on document middleware (.validate() /
+    // .save()), which today means only the unit tests. Every production
+    // write — upsertSchedule/disableSchedule in services/scheduler/schedules.js,
+    // plus outcome.js and tick.js — uses findOneAndUpdate/updateOne, neither
+    // of which triggers document middleware or passes runValidators. So this
+    // schema does NOT protect the real write path. upsertSchedule already
+    // knows this and calls isValidSchedule explicitly before writing; any
+    // caller that writes schedule via an update must do the equivalent
+    // exactly-one check itself rather than relying on this hook.
     cron: {
       type: String,
       default: null,
