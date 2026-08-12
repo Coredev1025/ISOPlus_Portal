@@ -5,6 +5,8 @@ export const KIND_STATEMENT = 'statement_automation';
 
 // The prefix keeps an invoice and a statement falling on the same slot for
 // the same board as two distinct jobs rather than one silently deduped away.
+// Intentionally not exported: the jobId format is fanOut's concern alone —
+// callers key on KIND_INVOICE/KIND_STATEMENT, never on the prefix directly.
 const KIND_PREFIX = {
   [KIND_INVOICE]: 'inv',
   [KIND_STATEMENT]: 'stmt',
