@@ -202,10 +202,22 @@ describe('upsertSchedule', () => {
 
     expect(job.cron).toBeNull();
     expect(job.schedule.every.unit).toBe('month');
-    expect(job.nextRunAt).toBeInstanceOf(Date);
+    // Pinned to the exact instant, not just toBeInstanceOf(Date): a value
+    // produced by cron arithmetic, by the wrong argument order, or with the
+    // startDate silently dropped would also be a Date and would pass a
+    // looser assertion. 15 Aug 2026 09:00 Sydney (AEST, UTC+10).
+    expect(job.nextRunAt.toISOString()).toBe('2026-08-14T23:00:00.000Z');
   });
 
-  it('refuses a job given both cron and schedule', async () => {
+  it('refuses a job given both cron and schedule, before writing anything', async () => {
+    // Match the full message upsertSchedule itself throws, not just
+    // /exactly one/i — that fragment also matches the message
+    // advanceSchedule throws, so a looser regex would still pass if the
+    // guard here were deleted and upsertSchedule fell through to
+    // advanceSchedule's own check instead. The point under test is that
+    // upsertSchedule enforces this itself, in application code, before any
+    // write — see the module comment on why (the model's pre('validate')
+    // hook never runs for findOneAndUpdate).
     await expect(
       upsertSchedule({
         kind: 'invoice_automation',
@@ -214,17 +226,46 @@ describe('upsertSchedule', () => {
         schedule: { every: { n: 1, unit: 'month' }, runAt: '09:00' },
         timezone: 'Australia/Sydney',
       }),
-    ).rejects.toThrow(/exactly one/i);
+    ).rejects.toThrow('Scheduler: exactly one of cron or schedule is required for "invoice_automation"');
+
+    expect(await ScheduledJob.countDocuments({ targetId: 'ws-2' })).toBe(0);
   });
 
-  it('refuses a job given neither cron nor schedule', async () => {
+  it('refuses a job given neither cron nor schedule, before writing anything', async () => {
     await expect(
       upsertSchedule({
         kind: 'invoice_automation',
         targetId: 'ws-3',
         timezone: 'Australia/Sydney',
       }),
-    ).rejects.toThrow(/exactly one/i);
+    ).rejects.toThrow('Scheduler: exactly one of cron or schedule is required for "invoice_automation"');
+
+    expect(await ScheduledJob.countDocuments({ targetId: 'ws-3' })).toBe(0);
+  });
+
+  it('rejects an unknown timezone for a picker schedule before writing anything, mirroring the cron case', async () => {
+    // Contrast with the cron path: isValidSchedule (and its friendly
+    // "invalid schedule" message) only runs `if (cron)`, so a picker
+    // schedule's timezone is never explicitly pre-checked. That is still
+    // safe — advanceSchedule is called before the ScheduledJob write, and it
+    // fails fast via Intl.DateTimeFormat rejecting the unknown zone — but the
+    // guarantee rested on an unasserted implementation detail of another
+    // module until this test pinned it.
+    await expect(
+      upsertSchedule({
+        kind: 'invoice_automation',
+        targetId: 'ws-bad-tz',
+        schedule: {
+          every: { n: 1, unit: 'month' },
+          runOn: 15,
+          runAt: '09:00',
+          startDate: new Date('2026-08-01T00:00:00+10:00'),
+        },
+        timezone: 'Mars/Olympus',
+      }),
+    ).rejects.toThrow(/invalid time zone/i);
+
+    expect(await ScheduledJob.countDocuments({ targetId: 'ws-bad-tz' })).toBe(0);
   });
 });
 

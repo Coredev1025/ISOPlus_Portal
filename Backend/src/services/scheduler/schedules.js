@@ -60,7 +60,7 @@ export async function upsertSchedule({
       );
     }
     // The floor is computed by parsing a cron expression, so it only applies
-    // to cron jobs. A picker schedule cannot breach it anyway: the coarsest
+    // to cron jobs. A picker schedule cannot breach it anyway: the finest
     // picker cadence is {n: 1, unit: 'day'} = 1440 minutes, against floors of
     // 60 (AT_MOST_ONCE) and 5 (AT_LEAST_ONCE) minutes — skipping this check
     // for picker schedules is deliberate, not an oversight.
