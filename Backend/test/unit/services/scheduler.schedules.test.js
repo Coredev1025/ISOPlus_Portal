@@ -119,6 +119,48 @@ describe('upsertSchedule', () => {
     expect(job.lastError).toBeNull();
   });
 
+  it('converges rather than throwing when a concurrent upsert wins the insert race', async () => {
+    // Two upserts for the same {kind,targetId} that both miss on the initial
+    // read: Mongo lets one insert and fails the other against the unique index
+    // with E11000. The documented remedy is to retry, which then matches the
+    // row the winner just wrote.
+    const duplicate = Object.assign(new Error('E11000 duplicate key error'), {
+      code: 11000,
+    });
+    vi.spyOn(ScheduledJob, 'findOneAndUpdate').mockRejectedValueOnce(duplicate);
+
+    const job = await upsertSchedule({
+      kind: 'board_sync',
+      targetId: 'board-race',
+      cron: '*/30 * * * *',
+      now: NOW,
+    });
+
+    expect(job.targetId).toBe('board-race');
+    expect(job.nextRunAt.toISOString()).toBe('2026-08-11T04:30:00.000Z');
+    expect(await ScheduledJob.countDocuments({ targetId: 'board-race' })).toBe(1);
+    vi.restoreAllMocks();
+  });
+
+  it('gives up on a duplicate-key error that does not clear on retry', async () => {
+    // A second E11000 is not the insert race — retrying forever would hide a
+    // real fault, so it surfaces.
+    const duplicate = Object.assign(new Error('E11000 duplicate key error'), {
+      code: 11000,
+    });
+    vi.spyOn(ScheduledJob, 'findOneAndUpdate').mockRejectedValue(duplicate);
+
+    await expect(
+      upsertSchedule({
+        kind: 'board_sync',
+        targetId: 'board-race-2',
+        cron: '*/30 * * * *',
+        now: NOW,
+      }),
+    ).rejects.toThrow(/E11000/);
+    vi.restoreAllMocks();
+  });
+
   it('rejects an invalid cron expression before writing anything', async () => {
     await expect(
       upsertSchedule({
