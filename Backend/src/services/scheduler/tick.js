@@ -2,7 +2,7 @@ import ScheduledJob from '../../models/ScheduledJob.js';
 import { info, warn } from '../../utils/logger.js';
 import { computeNextRun, countMissedSlots } from './nextRun.js';
 import { resolve, AT_MOST_ONCE } from './registry.js';
-import { recordSuccess, recordFailure } from './outcome.js';
+import { recordSuccess, recordFailure, quarantineSchedule } from './outcome.js';
 import { recordHeartbeat } from './heartbeat.js';
 
 export const BATCH_LIMIT = 100;
@@ -18,7 +18,7 @@ export const BATCH_LIMIT = 100;
  * Under at-least-once nextRunAt is deliberately left alone until the handler
  * succeeds, so the caller must exclude what it has already seen.
  */
-async function claimNext(now, excludeIds) {
+async function claimNext(now, excludeIds, stats) {
   for (;;) {
     const candidate = await ScheduledJob.findOne({
       enabled: true,
@@ -42,7 +42,7 @@ async function claimNext(now, excludeIds) {
       return { ...candidate, dueAt: candidate.nextRunAt };
     }
 
-    const claimed = await claimAtMostOnce(candidate, now, excludeIds);
+    const claimed = await claimAtMostOnce(candidate, now, excludeIds, stats);
     if (claimed) return claimed;
     // claimAtMostOnce already excluded the candidate — either it lost the CAS
     // race to another instance, or its cron/timezone would not parse. Either
@@ -57,8 +57,15 @@ async function claimNext(now, excludeIds) {
  * both upsertSchedule and the model validator — must be recorded and skipped
  * rather than throwing out of the tick: that throw is what previously took
  * every other schedule down with it, every minute, forever.
+ *
+ * Skipping alone is not enough, though. The claim advances nextRunAt, and
+ * advancing is precisely what cannot be done for a row whose cron will not
+ * parse — so it stays due, and the next tick selects it again, and every tick
+ * after that. It is quarantined instead, and counted as a failure so that a
+ * row which can never run is visible in the summary rather than silently
+ * absent from it.
  */
-async function claimAtMostOnce(candidate, now, excludeIds) {
+async function claimAtMostOnce(candidate, now, excludeIds, stats) {
   let update;
   try {
     update = {
@@ -76,8 +83,9 @@ async function claimAtMostOnce(candidate, now, excludeIds) {
       },
     };
   } catch (err) {
-    await recordFailure(candidate, AT_MOST_ONCE, err, now);
+    await quarantineSchedule(candidate, err, now);
     excludeIds.push(candidate._id);
+    stats.failed += 1;
     return null;
   }
 
@@ -118,11 +126,12 @@ export async function runTick({ now = new Date(), limit = BATCH_LIMIT } = {}) {
   // for, which must not count towards the batch cap or the claimed total.
   const excludeIds = [];
   const claimedIds = [];
-  let dispatched = 0;
-  let failed = 0;
+  // Mutable because claimNext also records failures — a row it could not claim
+  // at all is still a schedule that did not run, and must show in the summary.
+  const stats = { dispatched: 0, failed: 0 };
 
   while (claimedIds.length < limit) {
-    const job = await claimNext(now, excludeIds);
+    const job = await claimNext(now, excludeIds, stats);
     if (!job) break;
 
     claimedIds.push(job._id);
@@ -130,9 +139,9 @@ export async function runTick({ now = new Date(), limit = BATCH_LIMIT } = {}) {
 
     try {
       await dispatch(job, now);
-      dispatched += 1;
+      stats.dispatched += 1;
     } catch (err) {
-      failed += 1;
+      stats.failed += 1;
       let policy = AT_MOST_ONCE;
       try {
         ({ policy } = resolve(job.kind));
@@ -153,7 +162,7 @@ export async function runTick({ now = new Date(), limit = BATCH_LIMIT } = {}) {
     });
   }
 
-  const summary = { claimed: claimedIds.length, dispatched, failed, capped };
+  const summary = { claimed: claimedIds.length, ...stats, capped };
   info('Scheduler', 'Tick complete', summary);
   await recordHeartbeat(summary, now);
   return summary;

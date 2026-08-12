@@ -1,7 +1,7 @@
 import ScheduledJob from '../../models/ScheduledJob.js';
 import { error as logError } from '../../utils/logger.js';
 import { computeNextRun } from './nextRun.js';
-import { AT_LEAST_ONCE } from './registry.js';
+import { AT_LEAST_ONCE, AT_MOST_ONCE } from './registry.js';
 
 /**
  * How many consecutive failures an at-least-once schedule may accumulate
@@ -41,47 +41,106 @@ export async function recordSuccess(job, policy, now) {
 }
 
 /**
- * The give-up advance itself calls computeNextRun, which throws for a
- * cron/timezone that no longer parses — a row written directly against the
- * collection, bypassing both upsertSchedule and the model validator. That
- * must not stop lastError/consecutiveFailures from being recorded, and must
- * not escape recordFailure: this is the row already failing every tick, and a
- * throw here previously took the rest of the tick down with it.
+ * A schedule whose own next slot cannot be computed can never run again: the
+ * cron/timezone that has to be parsed in order to advance it is the thing that
+ * does not parse. Leaving such a row enabled means re-reading and re-failing it
+ * on every tick, forever. Disable it — non-destructively, so lastRunAt,
+ * missedRuns and lastError survive for whoever investigates — and let
+ * upsertSchedule re-enable it if the schedule is corrected.
  */
-function tryAdvancePastFailureLimit(job, now) {
-  try {
-    return computeNextRun(job.cron, job.timezone, now);
-  } catch (err) {
-    logError('Scheduler', 'Could not advance an unparseable schedule past its failure limit', {
-      kind: job.kind,
-      targetId: job.targetId,
-      error: describeError(err),
-    });
-    return undefined;
-  }
+async function disableUnrunnable(job, err) {
+  await ScheduledJob.updateOne({ _id: job._id }, { $set: { enabled: false } });
+
+  logError('Scheduler', 'Schedule disabled: its next run cannot be computed', {
+    kind: job.kind,
+    targetId: job.targetId,
+    cron: job.cron,
+    timezone: job.timezone,
+    error: describeError(err),
+  });
 }
 
-export async function recordFailure(job, policy, err, now) {
-  const failures = (job.consecutiveFailures || 0) + 1;
-  const errorDescription = describeError(err);
-  const set = { lastError: errorDescription, consecutiveFailures: failures };
+/**
+ * At-least-once normally leaves nextRunAt alone so the next tick retries the
+ * same slot. Once it has failed this many times running, give up on the slot
+ * rather than retrying it every minute indefinitely.
+ *
+ * The advance is guarded on the slot it was read for, for the same reason the
+ * failure itself is: a concurrent success may already have moved the schedule
+ * on. cron/timezone come from the caller's copy rather than the re-read row,
+ * because it is that copy the dispatch was made against.
+ */
+async function advancePastFailureLimit(job, failures, policy, now) {
+  if (policy !== AT_LEAST_ONCE || failures < MAX_CONSECUTIVE_FAILURES) return false;
 
-  // At-least-once normally leaves nextRunAt alone so the next tick retries the
-  // same slot. Once it has failed this many times running, give up on the slot
-  // rather than retrying it every minute indefinitely.
-  if (policy === AT_LEAST_ONCE && failures >= MAX_CONSECUTIVE_FAILURES) {
-    const advanced = tryAdvancePastFailureLimit(job, now);
-    if (advanced) set.nextRunAt = advanced;
+  let nextRunAt;
+  try {
+    nextRunAt = computeNextRun(job.cron, job.timezone, now);
+  } catch (err) {
+    await disableUnrunnable(job, err);
+    return false;
   }
 
-  await ScheduledJob.updateOne({ _id: job._id }, { $set: set });
+  const { modifiedCount } = await ScheduledJob.updateOne(
+    { _id: job._id, nextRunAt: job.nextRunAt },
+    { $set: { nextRunAt } },
+  );
+  return modifiedCount === 1;
+}
+
+/**
+ * Compare-and-swap on the slot this dispatch was made for. Under at-least-once
+ * two instances may dispatch the same slot — that is the guarantee, not a
+ * fault — so one may fail after the other has already succeeded and advanced
+ * the schedule. That late failure must not resurrect lastError, or a stale
+ * failure count, on a row that has moved on.
+ *
+ * consecutiveFailures is $inc'd rather than derived from the copy read before
+ * dispatch, for the same reason: two instances that both fail the same slot
+ * both read the same number, and computing it in memory writes it twice.
+ */
+export async function recordFailure(job, policy, err, now) {
+  const errorDescription = describeError(err);
+
+  const applied = await ScheduledJob.findOneAndUpdate(
+    { _id: job._id, nextRunAt: job.nextRunAt },
+    { $set: { lastError: errorDescription }, $inc: { consecutiveFailures: 1 } },
+    { new: true, lean: true },
+  );
+
+  if (!applied) {
+    logError('Scheduler', 'Discarded a failure for a schedule that had already moved on', {
+      kind: job.kind,
+      targetId: job.targetId,
+      policy,
+      error: errorDescription,
+    });
+    return;
+  }
+
+  const advanced = await advancePastFailureLimit(
+    job,
+    applied.consecutiveFailures,
+    policy,
+    now,
+  );
 
   logError('Scheduler', 'Dispatch failed', {
     kind: job.kind,
     targetId: job.targetId,
     policy,
-    consecutiveFailures: failures,
-    advanced: Boolean(set.nextRunAt),
+    consecutiveFailures: applied.consecutiveFailures,
+    advanced,
     error: errorDescription,
   });
+}
+
+/**
+ * For a schedule the tick could not even claim, because computing its next
+ * slot threw. Records the failure like any other, then takes it out of the
+ * claim query so it stops being selected on every tick.
+ */
+export async function quarantineSchedule(job, err, now) {
+  await recordFailure(job, AT_MOST_ONCE, err, now);
+  await disableUnrunnable(job, err);
 }

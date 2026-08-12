@@ -40,10 +40,18 @@ Ticket: KAN-15.
   { "claimed": 3, "dispatched": 3, "failed": 0, "capped": false }
   ```
 
-  `claimed` is how many due schedules this tick took; `dispatched` and
+  `claimed` is how many due schedules this tick took, and `dispatched` and
   `failed` split that by outcome; `capped` is `true` only when the 100-per-tick
   batch limit was hit, so remaining due schedules waited for the next tick
   rather than being silently dropped.
+
+  `dispatched + failed` normally equals `claimed`, but is not guaranteed to.
+  A schedule whose next slot cannot be computed is never claimed at all —
+  there is nothing to advance it to — so it counts in `failed` without
+  counting in `claimed`, and the totals come out one apart per such row. That
+  is deliberate: the alternative is a schedule that can never run being absent
+  from the summary entirely. See "`enabled: false` on a schedule nobody
+  disabled" below.
 
 Verified against the local stack:
 
@@ -434,52 +442,49 @@ schedule-level detail `lastTickAt` cannot provide on its own:
   a count that isn't there: an `AT_LEAST_ONCE` schedule that comes due after
   downtime just runs once and advances to the next slot, with no record of
   how many slots it skipped.
-- **`consecutiveFailures > 0`** — the handler is throwing. There is
-  deliberately no auto-disable (`enabled` is never flipped off), so this
-  counter is the main signal that a schedule is failing every time it fires.
-  For `AT_LEAST_ONCE` schedules it does not mean "still retrying the same
-  slot forever," though: once `consecutiveFailures` reaches
-  `MAX_CONSECUTIVE_FAILURES` (5, `Backend/src/services/scheduler/outcome.js:12`),
-  `recordFailure` (`outcome.js:72-75`) advances `nextRunAt` to the next cron
-  slot instead of continuing to retry the failed one — that slot is
-  abandoned and the schedule degrades to at-most-once behaviour from then on.
+- **`consecutiveFailures > 0`** — the handler is throwing. A failing handler is
+  never auto-disabled, so this counter is the main signal that a schedule is
+  failing every time it fires. For `AT_LEAST_ONCE` schedules it does not mean
+  "still retrying the same slot forever," though: once `consecutiveFailures`
+  reaches `MAX_CONSECUTIVE_FAILURES` (5,
+  `Backend/src/services/scheduler/outcome.js:12`), `recordFailure` advances
+  `nextRunAt` to the next cron slot instead of continuing to retry the failed
+  one — that slot is abandoned and the schedule degrades to at-most-once
+  behaviour from then on.
 
-  There is one exception, and it matters: the advance itself calls
-  `tryAdvancePastFailureLimit` (`outcome.js:51-62`), which calls
-  `computeNextRun` (`outcome.js:53`) — the very function that could not parse
-  the schedule in the first place if that is why it has been failing. That
-  call is wrapped in a `try`/`catch` so an unparseable `cron` or `timezone`
-  can no longer abort the whole tick (it used to, and took every other
-  schedule down with it from the fifth failure onward). But the advance is
-  then **silently skipped, not performed**: `nextRunAt` stays where it is,
-  `consecutiveFailures` is still recorded, and the row is claimed and
-  dispatched again on the very next tick — forever. For an `AT_LEAST_ONCE`
-  schedule such as `board_sync` that means the handler fires once per tick
-  indefinitely, and the row permanently occupies one of the 100 slots in a
-  tick's batch (`BATCH_LIMIT`, `tick.js:7`). This is strictly better than the
-  old all-ticks-fail behaviour, but "no longer fatal" is not "skipped" —
-  don't read a row in this state as harmless.
+  `consecutiveFailures` is never reset except by success, so once it passes 5
+  it keeps climbing on every subsequent slot the handler still fails on. It is
+  incremented with `$inc` against the stored value rather than from the copy
+  read before dispatch, so two `AT_LEAST_ONCE` instances that both fail the
+  same slot count twice rather than writing the same number twice.
+
+- **`enabled: false` on a schedule nobody disabled** — there is exactly one
+  thing that flips `enabled` off by itself, and it is not a failing handler.
+  A schedule whose **own next slot cannot be computed** is disabled, because
+  the `cron`/`timezone` that has to be parsed in order to advance it is the
+  thing that will not parse: it can never run again, and left enabled it is
+  re-read and re-failed on every tick, forever. Both paths that hit this do
+  the same thing:
+
+  - the `AT_MOST_ONCE` claim, which advances `nextRunAt` before dispatching
+    (`tick.js`, `quarantineSchedule`) — the row is also counted in the tick's
+    `failed` total, so a schedule that can never run is visible in the summary
+    rather than absent from it;
+  - the `AT_LEAST_ONCE` give-up advance past `MAX_CONSECUTIVE_FAILURES`
+    (`outcome.js`, `advancePastFailureLimit`).
+
+  `lastError`, `lastRunAt`, `missedRuns` and `consecutiveFailures` are all left
+  intact — the row is taken out of the claim query, not cleaned up — and
+  `upsertSchedule` sets `enabled: true`, so correcting the schedule through the
+  sanctioned path brings it back.
 
   Reaching this state requires a document written straight against the
   `scheduledjobs` collection (e.g. `collection.insertOne`), bypassing both
   the Mongoose validators on `cron` and `timezone` (`ScheduledJob.js`) and
   `upsertSchedule`'s own validation before it writes anything
-  (`schedules.js`). The sanctioned write path — `upsertSchedule` — cannot
-  produce a schedule whose `cron`/`timezone` fails to parse, so if you find
-  one in this state, something wrote to the collection directly.
-
-  `consecutiveFailures` itself is never reset except by success — it is
-  incremented unconditionally on every failure (`outcome.js:65,67`) — so once
-  it passes 5 it keeps climbing on every subsequent slot the handler still
-  fails on, whether or not the give-up advance actually succeeded. To tell
-  the two situations apart from a `consecutiveFailures > 5` alert, check
-  whether `nextRunAt` is moving tick-over-tick:
-  - **Advancing**: the give-up path succeeded. The schedule has degraded to
-    at-most-once and is no longer retrying that slot; check `lastError` for
-    why the handler keeps failing.
-  - **Frozen, with `consecutiveFailures` still rising**: the give-up advance
-    itself is failing. Check `lastError` for a cron/timezone parse error, and
-    expect to find a document that did not go through `upsertSchedule`.
+  (`schedules.js`). The sanctioned write path cannot produce a schedule whose
+  `cron`/`timezone` fails to parse, so if you find one disabled with a parse
+  error in `lastError`, something wrote to the collection directly.
 - **`lastRunAt` not advancing** — the most direct way to catch a schedule that
   is not firing at all: a misconfigured or missing EventBridge rule, a
   disabled schedule, or a `kind` whose handler throws before recording

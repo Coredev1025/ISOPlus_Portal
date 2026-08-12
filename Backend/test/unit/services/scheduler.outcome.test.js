@@ -108,6 +108,39 @@ describe('recordFailure', () => {
     // The advance itself could not happen, so nextRunAt is left where it was
     // rather than crashing the caller.
     expect(fresh.nextRunAt.toISOString()).toBe(job.nextRunAt.toISOString());
+    // ...and since it can never be advanced, it is taken out of the claim
+    // query rather than retried on every tick for the rest of time.
+    expect(fresh.enabled).toBe(false);
+  });
+
+  it('does not overwrite a success that already advanced the slot', async () => {
+    // Two instances may both dispatch the same at-least-once slot — that is
+    // the guarantee, not a bug. One succeeds, the other fails, and the failure
+    // lands second. It must not resurrect lastError or a stale failure count
+    // on a schedule that has already moved on.
+    const job = await makeJob();
+    const stale = job.toObject();
+
+    await recordSuccess(stale, AT_LEAST_ONCE, NOW);
+    await recordFailure(stale, AT_LEAST_ONCE, new Error('late failure'), NOW);
+
+    const fresh = await ScheduledJob.findById(job._id);
+    expect(fresh.consecutiveFailures).toBe(0);
+    expect(fresh.lastError).toBeNull();
+    expect(fresh.nextRunAt.toISOString()).toBe('2026-08-11T04:30:00.000Z');
+  });
+
+  it('counts a concurrent failure from the stored value, not the value it read before dispatching', async () => {
+    // Both instances read consecutiveFailures: 2 and both fail. Deriving the
+    // new count in memory writes 3 twice; the second failure is lost.
+    const job = await makeJob({ consecutiveFailures: 2 });
+    const stale = job.toObject();
+
+    await recordFailure(stale, AT_LEAST_ONCE, new Error('first'), NOW);
+    await recordFailure(stale, AT_LEAST_ONCE, new Error('second'), NOW);
+
+    const fresh = await ScheduledJob.findById(job._id);
+    expect(fresh.consecutiveFailures).toBe(4);
   });
 
   it('describes plain objects (not Error instances) usefully without stringifying to [object Object]', async () => {

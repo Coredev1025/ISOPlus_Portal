@@ -258,6 +258,56 @@ describe('runTick', () => {
     expect(count).toBe(0);
   });
 
+  it('disables an at-most-once row whose cron cannot parse instead of reselecting it every tick', async () => {
+    register('demo', { handler: vi.fn(), policy: AT_MOST_ONCE });
+    // Written straight at the collection, bypassing upsertSchedule and the
+    // model validator — the only way such a row can exist.
+    await ScheduledJob.collection.insertOne({
+      kind: 'demo',
+      targetId: 'unparseable',
+      cron: 'not-a-cron',
+      timezone: 'Australia/Sydney',
+      enabled: true,
+      nextRunAt: new Date('2026-08-11T04:00:00Z'),
+      missedRuns: 0,
+      consecutiveFailures: 0,
+    });
+
+    const first = await runTick({ now: NOW });
+
+    // Its next slot is exactly what cannot be computed, so it can never run
+    // again. Leaving it enabled means re-reading and re-failing it forever.
+    expect(first.failed).toBe(1);
+    const fresh = await ScheduledJob.findOne({ targetId: 'unparseable' }).lean();
+    expect(fresh.enabled).toBe(false);
+    expect(fresh.lastError).toBeTruthy();
+    expect(fresh.consecutiveFailures).toBe(1);
+
+    const second = await runTick({ now: NOW });
+    expect(second).toMatchObject({ claimed: 0, dispatched: 0, failed: 0 });
+  });
+
+  it('still dispatches the other due schedules in a tick that quarantines one', async () => {
+    const handler = vi.fn();
+    register('demo', { handler, policy: AT_MOST_ONCE });
+    await ScheduledJob.collection.insertOne({
+      kind: 'demo',
+      targetId: 'unparseable-2',
+      cron: 'not-a-cron',
+      timezone: 'Australia/Sydney',
+      enabled: true,
+      nextRunAt: new Date('2026-08-11T03:00:00Z'), // sorts first
+      missedRuns: 0,
+      consecutiveFailures: 0,
+    });
+    await due('demo');
+
+    const summary = await runTick({ now: NOW });
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(summary).toMatchObject({ claimed: 1, dispatched: 1, failed: 1 });
+  });
+
   it('continues to the next candidate after losing a claim race', async () => {
     const handler = vi.fn();
     register('demo', { handler, policy: AT_MOST_ONCE });

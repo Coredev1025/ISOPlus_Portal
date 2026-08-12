@@ -16,6 +16,7 @@ in its errata table; these are the ones that change what this document says.
 |---|---|---|
 | The router is mounted in `src/app.js`. | Mounted in **both** `src/app.js` and `src/index.js`, with `registerSchedulerHandlers()` called at boot in `index.js`. | `index.js` is the production entry point and does not use `createApp()`; they are parallel express apps. Mounting only in `app.js` gave an endpoint that existed in tests and 404'd in production while the entire suite passed. |
 | `recordFailure` stores `String(err?.message ǀǀ err)`. | A `describeError` helper handling `Error`, string and other values, with a `try/catch` around `JSON.stringify` for circular structures. | The original stored `"[object Object]"` for a non-`Error` throw, making `lastError` useless to the operator it exists for. |
+| **No auto-disable** (see "Failure" below) — `enabled` is never flipped off by the scheduler itself. | Still true for a **failing handler**, which is what that rule is about. One narrower case does disable: a schedule whose own next slot cannot be computed, because its `cron`/`timezone` will not parse. | Raised in review on PR #855. That row is not "failing loudly forever", it is unselectable — advancing it requires parsing the very expression that does not parse, so it can never run again and is re-read and re-failed on every tick indefinitely. Disabling is non-destructive (`lastError`, `lastRunAt`, `missedRuns`, `consecutiveFailures` all survive) and `upsertSchedule` re-enables, so the loudness is preserved without the loop. Only reachable by writing to the collection directly, past both the model validators and `upsertSchedule`. |
 | "No migration and no backfill" — the collection is new, so Mongoose builds its indexes on connect. | Still no backfill, but a migration **is** included: `Backend/migrations/1786439847318-add-scheduled-job-indexes.js`. | Index creation was a side effect of application boot via `autoIndex`, which defaults to true. The unique constraint on `{ kind, targetId }` is what stops a toggle flipped twice creating two schedules for one board; leaving it dependent on a setting someone may disable for performance made it silently droppable. The migration is idempotent — `createIndex` no-ops when the index already matches. |
 
 Two claims in this document need qualifying:
@@ -221,7 +222,9 @@ A handler that throws gets `lastError` and `consecutiveFailures` recorded. That
 is all.
 
 - **No auto-disable.** On a monthly statement, five consecutive failures is five
-  months of silence. Failing loudly forever beats disabling quietly.
+  months of silence. Failing loudly forever beats disabling quietly. (One
+  narrower case does disable — a schedule whose next slot cannot be computed at
+  all. See "Changes since approval" above.)
 - **No immediate retry.** Retries belong to BullMQ, which already has
   `attempts: 3` with exponential backoff. A scheduler failure means "could not
   enqueue", which is a different and rarer problem than "the work failed".
