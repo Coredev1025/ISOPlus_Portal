@@ -1,6 +1,7 @@
 import ScheduledJob from '../../models/ScheduledJob.js';
 import { info, warn } from '../../utils/logger.js';
-import { computeNextRun, countMissedSlots } from './nextRun.js';
+import { countMissedSlots } from './nextRun.js';
+import { advanceSchedule } from './advance.js';
 import { resolve } from './registry.js';
 import { recordSuccess, recordFailure, quarantineSchedule } from './outcome.js';
 import { recordHeartbeat } from './heartbeat.js';
@@ -55,6 +56,26 @@ async function claimNext(now, excludeIds, stats) {
 }
 
 /**
+ * Slots skipped between the due slot and now.
+ *
+ * countMissedSlots is cron-only by construction — it walks a cron iterator —
+ * and there is deliberately no picker equivalent: counting skipped slots for
+ * an "every {n, unit}" cadence is a separate piece of arithmetic nobody has
+ * specified. Picker schedules therefore contribute 0, which costs nothing
+ * today: missedRuns is already permanently zero for AT_LEAST_ONCE schedules (a
+ * known, documented limitation — the claim does not advance them), and
+ * AT_LEAST_ONCE is the policy both automation kinds use.
+ *
+ * Passing a picker job's null cron to countMissedSlots is not a no-op:
+ * cron-parser reads a null expression as '* * * * *' and counts one missed
+ * slot per elapsed minute, up to the walk cap.
+ */
+function missedSlotsFor(candidate, now) {
+  if (!candidate.cron) return 0;
+  return countMissedSlots(candidate.cron, candidate.timezone, candidate.nextRunAt, now);
+}
+
+/**
  * The compare-and-swap for an at-most-once claim. A cron/timezone that no
  * longer parses — a row written directly against the collection, bypassing
  * both upsertSchedule and the model validator — must be recorded and skipped
@@ -67,22 +88,21 @@ async function claimNext(now, excludeIds, stats) {
  * after that. It is quarantined instead, and counted as a failure so that a
  * row which can never run is visible in the summary rather than silently
  * absent from it.
+ *
+ * advanceSchedule, not computeNextRun: a picker schedule carries no cron, and
+ * cron-parser reads that null as '* * * * *' rather than failing, so the row
+ * would advance by one minute per tick and fire ~1440 times a day.
  */
 async function claimAtMostOnce(candidate, now, excludeIds, stats) {
   let update;
   try {
     update = {
       $set: {
-        nextRunAt: computeNextRun(candidate.cron, candidate.timezone, now),
+        nextRunAt: advanceSchedule(candidate, now),
         lastRunAt: now,
       },
       $inc: {
-        missedRuns: countMissedSlots(
-          candidate.cron,
-          candidate.timezone,
-          candidate.nextRunAt,
-          now,
-        ),
+        missedRuns: missedSlotsFor(candidate, now),
       },
     };
   } catch (err) {
@@ -111,6 +131,11 @@ async function claimAtMostOnce(candidate, now, excludeIds, stats) {
  * `dueAt` is what must reach the handler as `scheduledFor`. Under at-least-once
  * the two happen to be equal (nextRunAt is not advanced until after dispatch),
  * but the handler should not have to know that.
+ *
+ * `timezone` travels with the slot because a handler that derives an
+ * idempotency key from it — the automation fan-out does — must format the
+ * instant in the schedule's own zone, not the server's, or two workspaces on
+ * different zones collide and every deployment region keys differently.
  */
 async function dispatch(job, now) {
   const { handler } = resolve(job.kind);
@@ -118,6 +143,7 @@ async function dispatch(job, now) {
     kind: job.kind,
     targetId: job.targetId,
     workspaceId: job.workspaceId,
+    timezone: job.timezone,
     scheduledFor: job.dueAt,
   });
   await recordSuccess(job, job.policy, now);

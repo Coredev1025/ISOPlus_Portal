@@ -1,6 +1,6 @@
 import ScheduledJob from '../../models/ScheduledJob.js';
 import { error as logError } from '../../utils/logger.js';
-import { computeNextRun } from './nextRun.js';
+import { advanceSchedule } from './advance.js';
 import {
   AT_LEAST_ONCE,
   AT_MOST_ONCE,
@@ -30,8 +30,13 @@ export async function recordSuccess(job, policy, now) {
 
   // Under at-most-once the claim already advanced nextRunAt. Advancing again
   // here would skip a slot.
+  //
+  // advanceSchedule, not computeNextRun: a picker schedule carries no cron,
+  // and cron-parser reads that null as '* * * * *' rather than failing — so
+  // this line used to move a picker job on by one minute, and the automation
+  // kinds that use it would have re-fired every 60 seconds.
   if (policy === AT_LEAST_ONCE) {
-    update.$set.nextRunAt = computeNextRun(job.cron, job.timezone, now);
+    update.$set.nextRunAt = advanceSchedule(job, now);
   }
 
   await ScheduledJob.updateOne({ _id: job._id }, update);
@@ -66,13 +71,20 @@ async function disableUnrunnable(job, err) {
  * failure itself is: a concurrent success may already have moved the schedule
  * on. cron/timezone come from the caller's copy rather than the re-read row,
  * because it is that copy the dispatch was made against.
+ *
+ * advanceSchedule, not computeNextRun: a picker schedule carries no cron, and
+ * cron-parser reads that null as '* * * * *' rather than failing — so this
+ * gave up on a slot by moving the schedule on by one minute, and the
+ * automation kinds that use it would then have re-fired every 60 seconds.
+ * advanceSchedule also throws for a row carrying neither or both schedule
+ * representations, which disableUnrunnable below is the right answer to.
  */
 async function advancePastFailureLimit(job, failures, policy, now) {
   if (policy !== AT_LEAST_ONCE || failures < MAX_CONSECUTIVE_FAILURES) return false;
 
   let nextRunAt;
   try {
-    nextRunAt = computeNextRun(job.cron, job.timezone, now);
+    nextRunAt = advanceSchedule(job, now);
   } catch (err) {
     await disableUnrunnable(job, err);
     return false;

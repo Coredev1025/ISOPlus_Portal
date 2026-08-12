@@ -31,6 +31,7 @@ import schedulerRoutes from './routes/scheduler.js';
 import session from 'express-session';
 import MongoStore from 'connect-mongo';
 import syncWorker, { checkAndRetryFailedJobs } from './workers/syncWorker.js'; // Initialize sync worker
+import { startAutomationWorker } from './workers/automationWorker.js';
 import { registerSchedulerHandlers } from './services/scheduler/handlers.js';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
@@ -46,6 +47,9 @@ dotenv.config();
 // Register scheduler job handlers alongside the other background wiring
 // (sync worker, queue) so the registry is populated before the first tick.
 registerSchedulerHandlers();
+
+// Drains the automation queue. Inert by design — see automationWorker.js.
+startAutomationWorker();
 
 axios.defaults.timeout = Math.max(parseInt(process.env.HTTP_CLIENT_TIMEOUT_MS || '30000', 10), 1000);
 axios.defaults.httpAgent = new http.Agent({ keepAlive: true, maxSockets: 100 });
