@@ -2,7 +2,12 @@ import express from 'express';
 import { authenticateToken } from '../middleware/auth.js';
 import Workspace from '../models/Workspace.js';
 import Board from '../models/Board.js';
+import AutomationSettings from '../models/AutomationSettings.js';
 import { info, error, warn } from '../utils/logger.js';
+import {
+  parseAutomationSettingsBody,
+  buildAutomationSettingsPayload,
+} from '../utils/automationSettingsHelpers.js';
 import { getWorkspace, getBoard, getWorkspacePage, getBoardPage, getMemberRole } from '../services/isoplus.js';
 import DynamicLinkingService from '../services/dynamicLinking.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
@@ -374,6 +379,56 @@ router.put('/:workspaceId/feature-toggles', authenticateToken, async (req, res) 
       req ?? null
     );
     return res.status(500).json({ message: 'Failed to update feature toggles' });
+  }
+});
+
+router.get('/:workspaceId/automation-settings', authenticateToken, async (req, res) => {
+  try {
+    const workspaceId = parseWorkspaceIdParam(req.params.workspaceId);
+    if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
+
+    const settings = await AutomationSettings.findOne({ workspaceId: { $eq: workspaceId } }).lean();
+    return res.status(200).json(buildAutomationSettingsPayload(settings, {}));
+  } catch (err) {
+    error(
+      'Workspace-Service',
+      'Failed to fetch automation settings',
+      sanitizeLogValue({ workspaceId: req.params.workspaceId, error: err.message }),
+      req ?? null
+    );
+    return res.status(500).json({ message: 'Failed to fetch automation settings' });
+  }
+});
+
+router.put('/:workspaceId/automation-settings', authenticateToken, async (req, res) => {
+  try {
+    const workspaceId = parseWorkspaceIdParam(req.params.workspaceId);
+    if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
+
+    const parsed = parseAutomationSettingsBody(req.body);
+    if (parsed.error) return res.status(400).json({ message: parsed.error });
+
+    const settings = await AutomationSettings.findOneAndUpdate(
+      { workspaceId: { $eq: workspaceId } },
+      { $set: { workspaceId, ...parsed.value } },
+      { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true }
+    ).lean();
+
+    info(
+      'Workspace-Service',
+      'Automation settings updated',
+      sanitizeLogValue({ workspaceId }),
+      req ?? null
+    );
+    return res.status(200).json(buildAutomationSettingsPayload(settings, {}));
+  } catch (err) {
+    error(
+      'Workspace-Service',
+      'Failed to update automation settings',
+      sanitizeLogValue({ workspaceId: req.params.workspaceId, error: err.message }),
+      req ?? null
+    );
+    return res.status(500).json({ message: 'Failed to update automation settings' });
   }
 });
 
