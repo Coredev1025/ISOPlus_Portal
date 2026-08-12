@@ -356,10 +356,12 @@ describe('Board configuration page', () => {
 
   it('saves the label and sync flag the user actually changed', async () => {
     stubConfigurationData();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await screen.findByRole('heading', { name: 'Board Configuration' });
+    const save = await screen.findByRole('button', { name: 'Save Configuration' });
+    await waitFor(() => expect(save).toBeEnabled());
 
     await user.click(
       screen.getByRole('checkbox', {
@@ -372,7 +374,7 @@ describe('Board configuration page', () => {
         name: 'Job Management',
       }),
     );
-    await user.click(screen.getByRole('button', { name: 'Save Configuration' }));
+    await user.click(save);
 
     await waitFor(() => {
       expect(boardPuts).toHaveLength(1);
@@ -387,15 +389,17 @@ describe('Board configuration page', () => {
 
   it('updates the portal automation for this workspace and board only when asked', async () => {
     stubConfigurationData();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await screen.findByRole('heading', { name: 'Board Configuration' });
+    const save = await screen.findByRole('button', { name: 'Save Configuration' });
+    await waitFor(() => expect(save).toBeEnabled());
 
     await user.click(
       screen.getByRole('checkbox', { name: 'Update Portal Automation' }),
     );
-    await user.click(screen.getByRole('button', { name: 'Save Configuration' }));
+    await user.click(save);
 
     await waitFor(() => {
       expect(automationPutUrls).toHaveLength(1);

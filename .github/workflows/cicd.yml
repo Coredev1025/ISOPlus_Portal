@@ -151,6 +151,7 @@ jobs:
           projectBaseDir: Backend
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_BACKEND }}
+          SONAR_SCANNER_OPTS: "-Xmx8192m"
 
   sonarqube-frontend:
     name: SonarQube - Frontend
@@ -178,6 +179,7 @@ jobs:
           projectBaseDir: Frontend
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN_FRONTEND }}
+          SONAR_SCANNER_OPTS: "-Xmx2048m"
 
   build-and-deploy:
     needs:

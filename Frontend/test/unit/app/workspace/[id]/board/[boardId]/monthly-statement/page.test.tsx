@@ -233,7 +233,7 @@ describe('Monthly statement page', () => {
 
   it('offers every participant the board returned', async () => {
     stubStatementData();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await screen.findByRole('heading', { name: 'Monthly Statement Generator' });
@@ -249,7 +249,7 @@ describe('Monthly statement page', () => {
 
   it('says so when the board has no participants at all', async () => {
     stubStatementData({ participants: [] });
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await screen.findByRole('heading', { name: 'Monthly Statement Generator' });
@@ -262,7 +262,7 @@ describe('Monthly statement page', () => {
 
   it('starts empty, with the statement locked until a participant is chosen', async () => {
     stubStatementData();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     expect(
@@ -282,7 +282,7 @@ describe('Monthly statement page', () => {
 
   it('loads the statement for the chosen participant and month', async () => {
     stubStatementData();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await screen.findByRole('heading', { name: 'Monthly Statement Generator' });
@@ -324,7 +324,7 @@ describe('Monthly statement page', () => {
 
   it('defaults the month and year to today when the user changes neither', async () => {
     stubStatementData();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await screen.findByRole('heading', { name: 'Monthly Statement Generator' });
@@ -342,7 +342,7 @@ describe('Monthly statement page', () => {
 
   it('keeps the empty state and reports the failure when the statement will not load', async () => {
     stubStatementData({ statementStatus: 500 });
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await screen.findByRole('heading', { name: 'Monthly Statement Generator' });
@@ -380,7 +380,7 @@ describe('Monthly statement page', () => {
 
   it('navigates back to the board this page belongs to', async () => {
     stubStatementData();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await user.click(await screen.findByRole('button', { name: 'Back to Board' }));

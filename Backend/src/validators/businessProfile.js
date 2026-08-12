@@ -1,17 +1,20 @@
-const DOC_NUMBERING_TYPES = ['invoice', 'purchaseOrder', 'quote'];
+const DOC_NUMBERING_TYPES = ['invoice', 'purchaseOrder', 'quote', 'statement'];
+
+function validateSequenceFields(type, sequence, errors) {
+  const prefix = sequence.prefix;
+  if (typeof prefix !== 'string' || prefix.length > 10) {
+    errors.push(`${type} prefix must be a string less than 10 characters`);
+  }
+  const nextNumber = sequence.nextNumber;
+  if (!Number.isInteger(nextNumber) || nextNumber < 1) {
+    errors.push(`${type} number must be a positive integer`);
+  }
+}
 
 function validateDocumentNumbering(numbering, errors) {
   DOC_NUMBERING_TYPES.forEach((type) => {
     if (!numbering[type]) return;
-
-    const prefix = numbering[type].prefix;
-    if (typeof prefix !== 'string' || prefix.length > 10) {
-      errors.push(`${type} prefix must be a string less than 10 characters`);
-    }
-    const nextNumber = numbering[type].nextNumber;
-    if (!Number.isInteger(nextNumber) || nextNumber < 1) {
-      errors.push(`${type} number must be a positive integer`);
-    }
+    validateSequenceFields(type, numbering[type], errors);
   });
 }
 

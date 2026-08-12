@@ -19,10 +19,13 @@ import { dismissAllToasts } from '@/lib/toast-utils';
  * logo down through the authenticated image route (never a presigned URL), and
  * saves everything back as one multipart PUT.
  *
+ * Bank details and document numbering UI live under Finance Settings; this page
+ * still loads and re-sends those sequences on save so a Basic Info save does
+ * not clear Financial Settings. Number-sequence dialog coverage belongs with
+ * the finance-settings panel tests.
+ *
  * It has no client-side validation at all: every field is submitted as typed
- * and the only errors shown are the ones the server sends back. These tests pin
- * that, the exact multipart body, the document-number guard dialog, and that a
- * rejected save keeps what the user typed.
+ * and the only errors shown are the ones the server sends back.
  */
 
 installBrowserStubs();
@@ -153,10 +156,13 @@ function renderPage() {
   );
 }
 
-/** Switch to the tab holding bank details and document numbering. */
-async function openAdditionalSettings(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('tab', { name: 'Additional Settings' }));
-  return screen.findByLabelText('Next Number', { selector: '#invoice-next' });
+/** Switch to the tab holding bank details and document numbering — removed;
+ * those controls now live under Finance Settings. Kept as a no-op guard so
+ * accidental reintroduction of the tab fails loudly here. */
+async function expectNoAdditionalSettingsTab() {
+  expect(
+    screen.queryByRole('tab', { name: 'Additional Settings' }),
+  ).not.toBeInTheDocument();
 }
 
 beforeEach(() => {
@@ -201,7 +207,6 @@ describe('configure business page', () => {
 
   it('fills every text field from the stored profile', async () => {
     stubBusiness();
-    const user = userEvent.setup();
     renderPage();
 
     await waitFor(() => {
@@ -224,19 +229,10 @@ describe('configure business page', () => {
       '004085616',
     );
 
-    await openAdditionalSettings(user);
-    expect(screen.getByLabelText('Bank Name')).toHaveValue('Westpac');
-    expect(screen.getByLabelText('Account Name')).toHaveValue(
-      'Hillsgrade Care Pty Ltd',
-    );
-    expect(screen.getByLabelText('BSB')).toHaveValue('032002');
-    expect(screen.getByLabelText('Account Number')).toHaveValue('123456');
-    // Document numbering comes from its own nested object.
-    expect(screen.getByText('Next invoice will be: HG-INV-2400')).toBeInTheDocument();
-    expect(
-      screen.getByText('Next purchase order will be: HG-PO-300'),
-    ).toBeInTheDocument();
-    expect(screen.getByText('Next quote will be: HG-QT-12')).toBeInTheDocument();
+    // Bank / document numbering UI moved to Finance Settings (Epic 1 / 3).
+    await expectNoAdditionalSettingsTab();
+    expect(screen.queryByLabelText('Bank Name')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Next invoice will be:/)).not.toBeInTheDocument();
   });
 
   it('pulls each stored logo through the authenticated image route and previews it', async () => {
@@ -293,7 +289,7 @@ describe('configure business page', () => {
 
   it('saves every field as one multipart body carrying the workspace id and the numbering', async () => {
     stubBusiness();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await waitFor(() => {
@@ -310,6 +306,8 @@ describe('configure business page', () => {
       invoice: { prefix: 'HG-INV-', nextNumber: 2400 },
       purchaseOrder: { prefix: 'HG-PO-', nextNumber: 300 },
       quote: { prefix: 'HG-QT-', nextNumber: 12 },
+      // Loaded default when the profile had no statement series yet.
+      statement: { prefix: 'STMT-', nextNumber: 1000 },
     });
     // Nothing was uploaded or removed, so no logo keys ride along.
     expect(Object.keys(savedForms[0])).not.toContain('defaultLogo');
@@ -325,7 +323,7 @@ describe('configure business page', () => {
       saveStatus: 400,
       saveBody: { errors: ['email must be a valid email address'] },
     });
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await waitFor(() => {
@@ -365,7 +363,7 @@ describe('configure business page', () => {
       saveStatus: 500,
       saveBody: { message: 'Storage is temporarily unavailable' },
     });
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const { container } = renderPage();
 
     await waitFor(() => {
@@ -390,56 +388,21 @@ describe('configure business page', () => {
     ).toBeEnabled();
   });
 
-  it('warns before lowering a document number and applies it only on Continue', async () => {
+  it('no longer hosts document-number controls (moved to Finance Settings)', async () => {
     stubBusiness();
-    const user = userEvent.setup();
     renderPage();
 
     await waitFor(() => {
       expect(screen.getByLabelText('Company Name')).toHaveValue('Hillsgrade Care');
     });
-    const nextNumber = await openAdditionalSettings(user);
-
-    fireEvent.change(nextNumber, { target: { value: '2300' } });
-
-    expect(
-      await screen.findByText('Warning: Reducing Number Sequence'),
-    ).toBeInTheDocument();
-    // Still the old value until the warning is accepted.
-    expect(screen.getByText('Next invoice will be: HG-INV-2400')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Continue' }));
-
-    await waitFor(() => {
-      expect(
-        screen.getByText('Next invoice will be: HG-INV-2300'),
-      ).toBeInTheDocument();
-    });
-  });
-
-  it('raises a document number straight away, with no warning', async () => {
-    stubBusiness();
-    const user = userEvent.setup();
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('Company Name')).toHaveValue('Hillsgrade Care');
-    });
-    const nextNumber = await openAdditionalSettings(user);
-
-    fireEvent.change(nextNumber, { target: { value: '2500' } });
-
-    expect(
-      await screen.findByText('Next invoice will be: HG-INV-2500'),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText('Warning: Reducing Number Sequence'),
-    ).not.toBeInTheDocument();
+    await expectNoAdditionalSettingsTab();
+    expect(screen.queryByLabelText('Next Number', { selector: '#invoice-next' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Warning: Reducing Number Sequence')).not.toBeInTheDocument();
   });
 
   it('marks a removed logo in the next save and drops its preview', async () => {
     stubBusiness();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await screen.findByAltText('Default Logo Preview');
@@ -459,7 +422,7 @@ describe('configure business page', () => {
 
   it('goes back to the workspace this profile belongs to', async () => {
     stubBusiness();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await user.click(await screen.findByRole('button', { name: /Back to Workspace/ }));

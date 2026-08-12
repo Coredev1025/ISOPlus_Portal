@@ -12,7 +12,9 @@ export async function downloadMonthlyStatementPdf(fileUrl: string, filename?: st
   link.click();
 
   setTimeout(() => {
-    document.body.removeChild(link);
+    if (typeof document !== 'undefined' && link.parentNode) {
+      link.remove();
+    }
     URL.revokeObjectURL(pdfObjectUrl);
   }, 100);
 }

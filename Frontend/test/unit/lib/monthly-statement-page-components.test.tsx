@@ -401,7 +401,7 @@ describe('MonthlyStatementStatementPanel generate action', () => {
   });
 
   it('generates when pressed', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = renderPanel();
 
     await user.click(screen.getByRole('button', { name: 'Generate Monthly Statement' }));
@@ -506,7 +506,7 @@ describe('MonthlyStatementStatementPanel individualised budgets', () => {
   });
 
   it('exports the stream that was asked for', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = renderPanel();
 
     const section = screen.getByRole('heading', { name: 'Home Modification Budget' })
@@ -601,7 +601,7 @@ describe('MonthlyStatementStatementPanel service records table', () => {
 
 describe('MonthlyStatementStatementPanel service record filters', () => {
   it('refetches from page one when the transaction status changes', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = renderPanel();
 
     await user.click(screen.getByLabelText('Transaction Status'));
@@ -619,7 +619,7 @@ describe('MonthlyStatementStatementPanel service record filters', () => {
   });
 
   it('refetches from page one when the funding source changes, keeping the status filter', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = renderPanel({ serviceTransactionStatusFilter: 'Service Delivered' });
 
     await user.click(screen.getByLabelText('Funding Source'));
@@ -644,7 +644,7 @@ describe('MonthlyStatementStatementPanel service record filters', () => {
   });
 
   it('exports the service records when asked', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = renderPanel();
 
     const section = screen.getByRole('heading', { name: 'Service Records' })
@@ -665,7 +665,7 @@ describe('MonthlyStatementStatementPanel service record filters', () => {
 
 describe('MonthlyStatementStatementPanel service record sorting', () => {
   it('sorts ascending when an inactive column is chosen', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = renderPanel({ serviceSortBy: 'scheduledServiceDate', serviceSortOrder: 'asc' });
 
     await user.click(screen.getByRole('button', { name: 'Service Delivery Date' }));
@@ -676,7 +676,7 @@ describe('MonthlyStatementStatementPanel service record sorting', () => {
   });
 
   it('flips to descending when the active ascending column is chosen again', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = renderPanel({ serviceSortBy: 'scheduledServiceDate', serviceSortOrder: 'asc' });
 
     await user.click(screen.getByRole('button', { name: 'Scheduled Service Date' }));
@@ -686,7 +686,7 @@ describe('MonthlyStatementStatementPanel service record sorting', () => {
   });
 
   it('returns to ascending when the active descending column is chosen again', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = renderPanel({ serviceSortBy: 'scheduledServiceDate', serviceSortOrder: 'desc' });
 
     await user.click(screen.getByRole('button', { name: 'Scheduled Service Date' }));
@@ -696,7 +696,7 @@ describe('MonthlyStatementStatementPanel service record sorting', () => {
   });
 
   it('asks for the page size it was given, not a hard-coded one', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = renderPanel({ servicePagination: { page: 2, limit: 50 } });
 
     await user.click(screen.getByRole('button', { name: 'Service Delivery Date' }));
@@ -723,7 +723,7 @@ describe('MonthlyStatementStatementPanel service record pagination', () => {
   });
 
   it('asks for the page that was clicked', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = renderPanel({ serviceTotalPages: 3, servicePagination: { page: 1, limit: 25 } });
 
     await user.click(within(pageNav()).getByText('3'));
@@ -732,7 +732,7 @@ describe('MonthlyStatementStatementPanel service record pagination', () => {
   });
 
   it('steps forward one page from Next', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = renderPanel({ serviceTotalPages: 3, servicePagination: { page: 2, limit: 25 } });
 
     await user.click(within(pageNav()).getByText('Next'));
@@ -741,7 +741,7 @@ describe('MonthlyStatementStatementPanel service record pagination', () => {
   });
 
   it('steps back one page from Previous', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = renderPanel({ serviceTotalPages: 3, servicePagination: { page: 2, limit: 25 } });
 
     await user.click(within(pageNav()).getByText('Previous'));

@@ -263,15 +263,15 @@ export default function WorkspaceDetail() {
                   <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
                     <FileSpreadsheet className="h-6 w-6 text-primary" />
                   </div>
-                  <h2 className="text-xl font-semibold">Xero Integration</h2>
+                  <h2 className="text-xl font-semibold">Finance Settings & Automation</h2>
                   <p className="mb-4 flex-1 text-sm text-muted-foreground">
-                    Connect and manage your Xero accounting integration
+                    Manage bank details, payment terms, document numbering, integrations, and billing automation.
                   </p>
                   <Button
-                    onClick={() => router.push(`/workspace/${workspace?.id}/xero-integration`)}
+                    onClick={() => router.push(`/workspace/${workspace?.id}/finance-settings`)}
                     className="mt-auto w-full"
                   >
-                    <span>Setup Xero</span>
+                    <span>Open</span>
                   </Button>
                 </Card>
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { server } from '../../msw/server';
 
@@ -161,9 +162,9 @@ describe('downloadMonthlyStatementPdf', () => {
     expect(document.querySelectorAll('a[download="x.pdf"]')).toHaveLength(1);
     expect(revokeObjectURL).not.toHaveBeenCalled();
 
-    await new Promise((resolve) => setTimeout(resolve, 160));
-
-    expect(document.querySelectorAll('a[download="x.pdf"]')).toHaveLength(0);
+    await waitFor(() => {
+      expect(document.querySelectorAll('a[download="x.pdf"]')).toHaveLength(0);
+    });
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:statement-1');
     clickSpy.mockRestore();
   });

@@ -23,14 +23,48 @@ export function mapBusinessProfileToFormData(data: Record<string, any>, workspac
   };
 }
 
-export function extractDocumentNumberingSequences(data: Record<string, any>) {
-  const numbering = data.documentNumbering;
-  if (!numbering) {
-    return { invoice: null, purchaseOrder: null, quote: null };
-  }
+export type NumberSequence = {
+  prefix: string;
+  nextNumber: number;
+};
+
+const DEFAULT_SEQUENCES: Record<
+  "invoice" | "purchaseOrder" | "quote" | "statement",
+  NumberSequence
+> = {
+  invoice: { prefix: "INV-", nextNumber: 1000 },
+  purchaseOrder: { prefix: "PO-", nextNumber: 1000 },
+  quote: { prefix: "QT-", nextNumber: 1000 },
+  statement: { prefix: "STMT-", nextNumber: 1000 },
+};
+
+function toSequence(
+  value: Partial<NumberSequence> | null | undefined,
+  fallback: NumberSequence
+): NumberSequence {
   return {
-    invoice: numbering.invoice || null,
-    purchaseOrder: numbering.purchaseOrder || null,
-    quote: numbering.quote || null,
+    prefix: typeof value?.prefix === "string" ? value.prefix : fallback.prefix,
+    nextNumber:
+      typeof value?.nextNumber === "number" && value.nextNumber >= 1
+        ? value.nextNumber
+        : fallback.nextNumber,
   };
 }
+
+export function extractDocumentNumberingSequences(data: Record<string, any>) {
+  const numbering = data.documentNumbering || {};
+  return {
+    invoice: toSequence(numbering.invoice, DEFAULT_SEQUENCES.invoice),
+    purchaseOrder: toSequence(
+      numbering.purchaseOrder,
+      DEFAULT_SEQUENCES.purchaseOrder
+    ),
+    quote: toSequence(numbering.quote, DEFAULT_SEQUENCES.quote),
+    statement: toSequence(numbering.statement, DEFAULT_SEQUENCES.statement),
+  };
+}
+
+export const CREDIT_NOTE_SEQUENCE_DISPLAY: NumberSequence = {
+  prefix: "CN-",
+  nextNumber: 1000,
+};

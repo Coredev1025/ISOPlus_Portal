@@ -19,6 +19,8 @@ vi.mock('../../../src/services/xero.js', () => ({
   getContactByEmail: vi.fn(),
   getContactByName: vi.fn(),
   getAccounts: vi.fn(),
+  getTaxRates: vi.fn(async () => []),
+  isAccountTaxRateMatched: vi.fn(async () => true),
   configure: vi.fn(async () => {}),
   ensureAuthenticated: vi.fn(async () => {}),
 }));
@@ -109,6 +111,7 @@ beforeEach(() => {
     { Type: 'EXPENSE', Code: '400' },
     { Type: 'REVENUE', Code: '210' },
   ]);
+  xero.isAccountTaxRateMatched.mockResolvedValue(true);
   xero.getContactByEmail.mockResolvedValue({ contactID: 'xc_1', updatedDateUTC: '2030-01-01T00:00:00Z' });
   xero.getContactByName.mockResolvedValue(null);
   xero.createOrUpdateContact.mockResolvedValue({ contactID: 'xc_created' });
@@ -203,6 +206,7 @@ describe('handleXeroInvoicendis', () => {
       type: 'ACCREC',
       contact: { contactID: 'xc_1' },
       reference: 'REF-9001',
+      lineAmountTypes: 'Exclusive',
       lineItems: [
         {
           // The service date is the actual shift start in the business
@@ -414,6 +418,7 @@ describe('handleXeroQuotendis', () => {
       quantity: 3,
       unitAmount: 60.5,
       taxType: 'EXEMPTOUTPUT',
+      accountCode: '210',
     }]);
     expect(payload.terms).toContain('Payment Terms: 14 days from invoice date');
     expect(isoplus.setIntegrationMessage).toHaveBeenCalledWith(
@@ -565,6 +570,7 @@ describe('handleXeroInvoicendisInvoiceGenerator', () => {
       type: 'ACCREC',
       contact: { contactID: 'xc_1' },
       reference: 'Jane Roe - 430123456',
+      lineAmountTypes: 'Exclusive',
       lineItems: [
         {
           // Completed rows date from the delivery date: 11/03/2025 in Sydney.
@@ -788,6 +794,7 @@ describe('handleXeroInvoiceParticipantTax', () => {
       type: 'ACCREC',
       contact: { contactID: 'xc_1' },
       reference: 'Participant Tax Invoice - Roe Family Trust',
+      lineAmountTypes: 'Exclusive',
       lineItems: [{
         description: 'Community access support - 11/03/2025',
         quantity: 2,

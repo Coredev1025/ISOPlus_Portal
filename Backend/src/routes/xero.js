@@ -31,10 +31,19 @@ import {
   getContactByEmail,
   getContactByName,
   findOrCreateItem,
-  getAccounts
 } from '../services/xero.js';
 import { Item as ItemPayloadDTO } from '../dto/itemsPayload.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
+import { resolveSalesLineMapping } from '../utils/xeroLineItemMapping.js';
+import {
+  loadXeroChartOptions,
+  rejectIfAccountTaxMismatch,
+} from '../utils/xeroAccountTaxHelpers.js';
+import {
+  buildUsedMaterialLineItem,
+  getPayableMaterialFeeAmount,
+  resolveMaterialSalesLine,
+} from '../utils/xeroMaterialLineHelpers.js';
 import {
   NDIS_MASTERPLAN_ATTR as NDIS_MASTERPLAN_ATTR_DB,
   buildNdisMasterPlanServiceRows,
@@ -380,19 +389,53 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
-    let gst = item.values["GST"] == "10%" ? "10%" : "0%";
+    const chart = await loadXeroChartOptions(workspaceId);
+    const gstValue = item.values["GST"];
+    const invoiceLineTax = resolveSalesLineMapping(
+      business,
+      'invoice',
+      gstValue,
+      chart.accounts
+    );
+    const salesAccountCode = invoiceLineTax.accountCode;
+    const materialFeeAmount = getPayableMaterialFeeAmount(item.values);
+    const materialLineTax = resolveMaterialSalesLine(
+      business,
+      'invoice',
+      gstValue,
+      chart.accounts
+    );
 
-    // Get valid account codes
-    const accounts = await getAccounts(workspaceId);
-    const salesAccountCode = accounts.find(acc =>
-      acc.Type === 'REVENUE'
-    )?.Code || '200'; // Default to '200' if no revenue account found
+    const mismatchResponse = await rejectIfAccountTaxMismatch({
+      workspaceId,
+      boardId,
+      itemId: item.id,
+      accountCode: salesAccountCode,
+      taxType: invoiceLineTax.taxType,
+      res,
+      chart,
+    });
+    if (mismatchResponse) return mismatchResponse;
+
+    if (materialFeeAmount > 0) {
+      const materialMismatch = await rejectIfAccountTaxMismatch({
+        workspaceId,
+        boardId,
+        itemId: item.id,
+        accountCode: materialLineTax.accountCode || salesAccountCode,
+        taxType: materialLineTax.taxType,
+        res,
+        chart,
+      });
+      if (materialMismatch) return materialMismatch;
+    }
 
     const invoice = {
       type: 'ACCREC',
       contact: { contactID: contact.contactID },
       reference: jobPlanningValues.jobNumber,
       lineItems: [],
+      lineAmountTypes: 'Exclusive',
       date: getDateOnlyIso(new Date(), business?.headOfficeTimezone || 'Australia/Sydney'),
       dueDate: (() => { const d = new Date(); d.setDate(d.getDate() + 30); return getDateOnlyIso(d, business?.headOfficeTimezone || 'Australia/Sydney'); })(),
       status: "DRAFT"
@@ -404,18 +447,14 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
       description: `${jobPlanningValues.jobTitle} - ${serviceFeeType} - ${item.values['Job Duration (Hrs.)']} Hrs.`,
       quantity: 1,
       unitAmount: item.values['Payable Service Fee($) - GST Excl.'],
-      taxType: gst == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
+      taxType: invoiceLineTax.taxType,
       accountCode: salesAccountCode
     });
 
-    if (item.values['Payable Material Fee($) - GST Excl.'] > 0) {
-      invoice.lineItems.push({
-        description: "Used Material/Part",
-        quantity: 1,
-        unitAmount: item.values['Payable Material Fee($) - GST Excl.'],
-        taxType: gst == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
-        accountCode: salesAccountCode
-      });
+    if (materialFeeAmount > 0) {
+      invoice.lineItems.push(
+        buildUsedMaterialLineItem(materialFeeAmount, materialLineTax, salesAccountCode)
+      );
     }
 
     if (item.values['Other Payable Fee($) - GST Excl.'] > 0) {
@@ -423,7 +462,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
         description: "Other Payable Fee",
         quantity: 1,
         unitAmount: item.values['Other Payable Fee($) - GST Excl.'],
-        taxType: gst == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
+        taxType: invoiceLineTax.taxType,
         accountCode: salesAccountCode
       });
     }
@@ -582,7 +621,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
   const { item } = await validatePayload(payload, req);
 
   try {
-    await initializeXeroOperation(workspaceId, boardId, item);
+    const business = await initializeXeroOperation(workspaceId, boardId, item);
     const quoteValues = item.values;
 
     const [contactValues, jobTypeValues] = await getQuoteReferencedItems(workspaceId, boardId, item.id);
@@ -652,6 +691,44 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
+    const chart = await loadXeroChartOptions(workspaceId);
+    const quoteGst = quoteValues['GST'];
+    const quoteLineTax = resolveSalesLineMapping(
+      business,
+      'quote',
+      quoteGst,
+      chart.accounts,
+      'quoteService'
+    );
+    const materialFeeAmount = getPayableMaterialFeeAmount(quoteValues);
+    const materialLineTax = resolveMaterialSalesLine(
+      business,
+      'quote',
+      quoteGst,
+      chart.accounts
+    );
+    const quoteMismatch = await rejectIfAccountTaxMismatch({
+      workspaceId,
+      boardId,
+      itemId: item.id,
+      accountCode: quoteLineTax.accountCode,
+      taxType: quoteLineTax.taxType,
+      res,
+      chart,
+    });
+    if (quoteMismatch) return quoteMismatch;
+    if (materialFeeAmount > 0) {
+      const materialMismatch = await rejectIfAccountTaxMismatch({
+        workspaceId,
+        boardId,
+        itemId: item.id,
+        accountCode: materialLineTax.accountCode || quoteLineTax.accountCode,
+        taxType: materialLineTax.taxType,
+        res,
+        chart,
+      });
+      if (materialMismatch) return materialMismatch;
+    }
     const jobDescription = quoteValues['Job Description']
       ? quoteValues['Job Description'].toString().replace(/<[^>]*>/g, '')
       : '';
@@ -661,9 +738,19 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
         description: `${quoteValues['Job Title']} - ${jobDescription}`,
         quantity: quoteValues.Quantity,
         unitAmount: quoteValues['Unit Price($) - GST Excl.'],
-        taxType: quoteValues['GST'] == "10%" ? "OUTPUT" : "EXEMPTOUTPUT",
+        taxType: quoteLineTax.taxType,
+        accountCode: quoteLineTax.accountCode,
       },
     ];
+    if (materialFeeAmount > 0) {
+      lineItems.push(
+        buildUsedMaterialLineItem(
+          materialFeeAmount,
+          materialLineTax,
+          quoteLineTax.accountCode
+        )
+      );
+    }
     const mappedQuote = {
       issueDate: quoteValues['Issue Date'],
       expiryDate: quoteValues['Expiry Date'],
@@ -728,7 +815,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
   const { item } = await validatePayload(payload, req);
 
   try {
-    await initializeXeroOperation(workspaceId, boardId, item);
+    const business = await initializeXeroOperation(workspaceId, boardId, item);
 
     const purchaseOrderValues = item.values;
 
@@ -799,6 +886,25 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     }
 
     const jobType = await findOrCreateItem(jobTypeValues.jobCode, jobTypeValues.jobType);
+    const chart = await loadXeroChartOptions(workspaceId);
+    const poLineTax = resolveSalesLineMapping(
+      business,
+      'purchaseOrder',
+      purchaseOrderValues['GST'],
+      chart.accounts,
+      undefined,
+      { fallbackAccountType: 'EXPENSE', defaultAccountCode: undefined }
+    );
+    const poMismatch = await rejectIfAccountTaxMismatch({
+      workspaceId,
+      boardId,
+      itemId: item.id,
+      accountCode: poLineTax.accountCode,
+      taxType: poLineTax.taxType,
+      res,
+      chart,
+    });
+    if (poMismatch) return poMismatch;
 
     const mappedPO = {
       clientsOrderNumber: purchaseOrderValues["Client's Order Number"],
@@ -823,7 +929,8 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
           description: `${purchaseOrderValues['Job Title']}${purchaseOrderValues['Job Description'] ? ` - ${purchaseOrderValues['Job Description'].replace(/<[^>]*>/g, '')}` : ''}`,
           quantity: purchaseOrderValues.Quantity,
           unitAmount: purchaseOrderValues['Unit Price($) - GST Excl.'],
-          taxType: purchaseOrderValues['GST'] == "10%" ? "INPUT" : "EXEMPTEXPENSES",
+          taxType: poLineTax.taxType,
+          accountCode: poLineTax.accountCode,
         }
       ]
     };

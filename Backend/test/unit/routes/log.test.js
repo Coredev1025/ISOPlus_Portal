@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll } from 'vitest';
 import mongoose from 'mongoose';
 import { createApp } from '../../../src/app.js';
 import { authenticatedAgent } from '../../helpers/auth.js';
@@ -93,17 +93,25 @@ describe('GET /api/log pagination', () => {
   // limit goes through `Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200)`.
   // Note '0' does not reach the Math.max clamp: parseInt('0') is 0, which is
   // falsy, so the `|| 50` default wins first.
-  it.each([
-    ['caps an oversized limit at 200', '5000', 200],
-    ['treats limit=0 as unset and falls back to 50', '0', 50],
-    ['raises a negative limit to 1', '-10', 1],
-    ['falls back to 50 for an unparseable limit', 'many', 50],
-  ])('%s', async (_label, limit, expected) => {
-    const { agent } = await authenticatedAgent(app);
+  // One shared session for the table — four logins here was a flake hotspot when
+  // Frontend and Backend suites contested the machine.
+  describe('limit clamping', () => {
+    let agent;
 
-    const res = await listLogs(agent, { limit });
+    beforeAll(async () => {
+      ({ agent } = await authenticatedAgent(app));
+    });
 
-    expect(res.body.limit).toBe(expected);
+    it.each([
+      ['caps an oversized limit at 200', '5000', 200],
+      ['treats limit=0 as unset and falls back to 50', '0', 50],
+      ['raises a negative limit to 1', '-10', 1],
+      ['falls back to 50 for an unparseable limit', 'many', 50],
+    ])('%s', async (_label, limit, expected) => {
+      const res = await listLogs(agent, { limit });
+
+      expect(res.body.limit).toBe(expected);
+    });
   });
 
   it('raises a page below 1 to 1', async () => {

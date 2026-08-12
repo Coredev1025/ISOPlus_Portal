@@ -306,7 +306,7 @@ describe('InvoiceGeneratorPageView masthead', () => {
   });
 
   it('returns to the board when Back is pressed', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     await renderView({ id: 'ws-9', boardId: 'b-7' });
 
     await user.click(screen.getByRole('button', { name: 'Back to Board' }));
@@ -332,7 +332,7 @@ describe('InvoiceGeneratorPageView last-refreshed line', () => {
 
 describe('InvoiceGeneratorPageView toolbar actions', () => {
   it('exports CSV when asked', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView();
 
     await user.click(screen.getByRole('button', { name: 'Export to CSV' }));
@@ -353,7 +353,7 @@ describe('InvoiceGeneratorPageView toolbar actions', () => {
   });
 
   it('opens the invoice modal when the invoice button is pressed', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView();
 
     await user.click(screen.getByRole('button', { name: 'Participant Tax Invoice' }));
@@ -362,7 +362,7 @@ describe('InvoiceGeneratorPageView toolbar actions', () => {
   });
 
   it('resyncs when asked', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView();
 
     await user.click(screen.getByRole('button', { name: /Resync Data/ }));
@@ -517,7 +517,7 @@ describe('InvoiceGeneratorPageView table body', () => {
   });
 
   it('downloads that record when the link is pressed', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView();
 
     await user.click(screen.getByRole('button', { name: 'Invoice #INV-0042' }));
@@ -586,7 +586,7 @@ describe('InvoiceGeneratorPageView column sorting', () => {
   });
 
   it('switches the sort column when an inactive sortable header is clicked', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView({ sortBy: 'scheduledServiceDate', sortOrder: 'desc' });
 
     await user.click(screen.getByRole('columnheader', { name: /Service Delivery Date/ }));
@@ -596,7 +596,7 @@ describe('InvoiceGeneratorPageView column sorting', () => {
   });
 
   it('flips the order when the active sortable header is clicked again', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView({ sortBy: 'scheduledServiceDate', sortOrder: 'asc' });
 
     await user.click(screen.getByRole('columnheader', { name: /Scheduled Service Date/ }));
@@ -608,7 +608,7 @@ describe('InvoiceGeneratorPageView column sorting', () => {
   });
 
   it('ignores clicks on a column that cannot be sorted', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView();
 
     await user.click(screen.getByRole('columnheader', { name: /^Participant$/ }));
@@ -634,7 +634,7 @@ describe('InvoiceGeneratorPageView horizontal scroll affordances', () => {
   });
 
   it('scrolls in the direction that was pressed', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView({ canScrollLeft: true, canScrollRight: true });
 
     await user.click(screen.getByRole('button', { name: 'Scroll table left' }));
@@ -664,7 +664,7 @@ describe('InvoiceGeneratorPageView pagination', () => {
   });
 
   it('asks for the page that was clicked', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView({ totalPages: 3, currentPage: 1 });
 
     await user.click(within(pageNav()).getByText('3'));
@@ -695,7 +695,7 @@ describe('InvoiceGeneratorPageView resync help dialog', () => {
   });
 
   it('closes on Got it', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView({ showHelpDialog: true });
 
     await user.click(screen.getByRole('button', { name: 'Got it' }));
@@ -774,7 +774,7 @@ describe('InvoiceGeneratorPageView invoice dialog', () => {
   });
 
   it('toggles a record when its checkbox is pressed', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView({ showInvoiceModal: true, eligibleRecords: ELIGIBLE });
 
     await user.click(screen.getAllByRole('checkbox')[1]);
@@ -806,7 +806,7 @@ describe('InvoiceGeneratorPageView invoice dialog', () => {
   });
 
   it('generates the PDF invoice when pressed', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView({
       showInvoiceModal: true,
       eligibleRecords: ELIGIBLE,
@@ -820,7 +820,7 @@ describe('InvoiceGeneratorPageView invoice dialog', () => {
   });
 
   it('generates the Xero invoice when pressed', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const props = await renderView({
       showInvoiceModal: true,
       eligibleRecords: ELIGIBLE,

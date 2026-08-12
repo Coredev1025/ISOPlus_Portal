@@ -168,21 +168,21 @@ describe('ensureAuthenticated', () => {
 });
 
 describe('getAccounts', () => {
-  it('wraps an invalid workspaceId in its own message', async () => {
-    await expect(getAccounts('')).rejects.toThrow('Error getting accounts: Invalid workspace Id');
+  it('rejects an invalid workspaceId with the raw validation message', async () => {
+    await expect(getAccounts('')).rejects.toThrow('Invalid workspace Id');
   });
 
-  it('wraps the missing-token failure rather than letting it through raw', async () => {
+  it('rejects a missing token with the raw createToken message', async () => {
     await expect(getAccounts(nextId('ws'))).rejects.toThrow(
-      'Error getting accounts: No Xero tokens found'
+      'No Xero tokens found'
     );
   });
 });
 
 describe('updateOrganizationInfo', () => {
-  it('wraps an invalid workspaceId in its own message', async () => {
+  it('rejects an invalid workspaceId with the raw validation message', async () => {
     await expect(updateOrganizationInfo('')).rejects.toThrow(
-      'Error updating organization info: Invalid workspace Id'
+      'Invalid workspace Id'
     );
   });
 });

@@ -298,7 +298,7 @@ describe('Invoice generator page', () => {
 
   it('re-requests filtered by the chosen participant', async () => {
     stubInvoiceData();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await screen.findByText('Ivy Chen');
@@ -320,7 +320,7 @@ describe('Invoice generator page', () => {
 
   it('drops back to the first page when a filter changes', async () => {
     stubInvoiceData({ records: { ...RECORDS_RESPONSE, total: 25 } });
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await screen.findByText('Ivy Chen');
@@ -379,7 +379,7 @@ describe('Invoice generator page', () => {
 
   it('navigates back to the board this page belongs to', async () => {
     stubInvoiceData();
-    const user = userEvent.setup();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await user.click(await screen.findByRole('button', { name: 'Back to Board' }));

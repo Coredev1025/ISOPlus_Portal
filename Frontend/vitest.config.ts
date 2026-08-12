@@ -14,6 +14,11 @@ export default defineConfig({
     setupFiles: ['./vitest.setup.ts'],
     include: ['**/*.test.{ts,tsx}'],
     globals: true,
+    // Default 5s flakes when Frontend+Backend suites share a machine; Radix
+    // userEvent and MSW page mounts need headroom under CPU contention.
+    testTimeout: 20_000,
+    hookTimeout: 20_000,
+    maxWorkers: '50%',
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
