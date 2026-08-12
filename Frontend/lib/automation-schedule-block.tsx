@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { format, isValid, parseISO } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -91,6 +92,29 @@ const UNIT_OPTIONS: readonly AutomationSelectOption[] = [
   { value: "quarter", label: "Quarter(s)" },
   { value: "year", label: "Year(s)" },
 ];
+
+const DATE_INPUT_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * startDate is a Date on the server, so a GET returns a full ISO instant, and
+ * <input type="date"> silently blanks anything that is not yyyy-mm-dd. The
+ * date portion is sliced rather than parsed on purpose: the stored value is
+ * midnight UTC, and parsing it into local time would roll the calendar day
+ * back for every user west of Greenwich. Mirror of the `|| null` on the way
+ * back out.
+ */
+function toDateInputValue(startDate: string | null): string {
+  if (!startDate) return "";
+  const datePart = startDate.slice(0, 10);
+  return DATE_INPUT_PATTERN.test(datePart) ? datePart : "";
+}
+
+/** nextRun is a real instant, so it is shown in the reader's local time. */
+function formatNextRun(nextRun: string | null | undefined): string {
+  if (!nextRun) return "—";
+  const parsed = parseISO(nextRun);
+  return isValid(parsed) ? format(parsed, "dd/MM/yyyy 'at' h:mm a") : "—";
+}
 
 type RunOn = AutomationBlock["runOn"];
 
@@ -260,7 +284,7 @@ export function AutomationScheduleBlock({
           <Input
             id={`${idPrefix}-start-date`}
             type="date"
-            value={value.startDate ?? ""}
+            value={toDateInputValue(value.startDate)}
             onChange={(event) => set({ startDate: event.target.value || null })}
           />
         </AutomationField>
@@ -273,7 +297,7 @@ export function AutomationScheduleBlock({
           <Input
             id={`${idPrefix}-next-run`}
             readOnly
-            value={value.nextRun ?? "—"}
+            value={formatNextRun(value.nextRun)}
             className="bg-muted"
           />
         </AutomationField>

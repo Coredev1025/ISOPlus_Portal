@@ -97,17 +97,53 @@ describe('InvoiceStatementAutomationPanel', () => {
 
   it('shows Next Run read-only, with an em dash when there is no next run', async () => {
     fetchMock.mockResolvedValue(
-      settings({ enabled: true, nextRun: '2026-09-01T09:00:00+10:00' })
+      settings({ enabled: true, nextRun: '2026-09-01T12:00:00.000Z' })
     );
     await renderPanel();
 
-    const invoiceNextRun = within(invoiceSection()).getByLabelText(/next run/i);
-    expect(invoiceNextRun).toHaveAttribute('readonly');
-    expect(invoiceNextRun).toHaveValue('2026-09-01T09:00:00+10:00');
+    expect(within(invoiceSection()).getByLabelText(/next run/i)).toHaveAttribute(
+      'readonly'
+    );
 
     const statementNextRun = within(statementSection()).getByLabelText(/next run/i);
     expect(statementNextRun).toHaveAttribute('readonly');
     expect(statementNextRun).toHaveValue('—');
+  });
+
+  it('renders a populated Next Run formatted, not as a raw ISO string', async () => {
+    fetchMock.mockResolvedValue(
+      settings({ enabled: true, nextRun: '2026-09-01T12:00:00.000Z' })
+    );
+    await renderPanel();
+
+    const nextRun = within(invoiceSection()).getByLabelText(
+      /next run/i
+    ) as HTMLInputElement;
+
+    // Asserted by shape, not by an exact string: date-fns formats in the
+    // runner's local zone and the value must not depend on it.
+    expect(nextRun.value).toMatch(
+      /^\d{2}\/\d{2}\/\d{4} at \d{1,2}:\d{2} (AM|PM)$/
+    );
+    expect(nextRun.value).not.toContain('T');
+    expect(nextRun.value).not.toContain('Z');
+  });
+
+  it('renders a server ISO startDate as a yyyy-mm-dd date input value', async () => {
+    // Mongoose stores startDate as a Date, so a GET returns a full ISO
+    // instant. <input type="date"> silently blanks anything but yyyy-mm-dd.
+    fetchMock.mockResolvedValue(settings({ startDate: '2026-03-01T00:00:00.000Z' }));
+    await renderPanel();
+
+    expect(within(invoiceSection()).getByLabelText(/start date/i)).toHaveValue(
+      '2026-03-01'
+    );
+  });
+
+  it('leaves the date input empty when there is no start date', async () => {
+    await renderPanel();
+
+    expect(within(invoiceSection()).getByLabelText(/start date/i)).toHaveValue('');
   });
 
   it('does not render the excluded fields', async () => {
