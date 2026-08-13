@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import axios from "@/app/utils/axiosConfig";
 import Spinner from "@/components/ui/spin";
 import {
+  DEFAULT_SEQUENCES,
   extractDocumentNumberingSequences,
   mapBusinessProfileToFormData,
 } from "@/lib/configure-business-helpers";
@@ -30,13 +31,6 @@ const EMPTY_BANK: BankDetailsForm = {
 };
 
 const EMPTY_BUSINESS_PROFILE: Record<string, never> = Object.freeze({});
-
-const DEFAULT_SEQUENCES: DocumentSequences = {
-  invoice: { prefix: "INV-", nextNumber: 1000 },
-  purchaseOrder: { prefix: "PO-", nextNumber: 1000 },
-  quote: { prefix: "QT-", nextNumber: 1000 },
-  statement: { prefix: "STM-", nextNumber: 1000 },
-};
 
 const MISSING_BUSINESS_NAME_HINT =
   "Set Company Name in Configure Business first, then save Financial Settings again.";

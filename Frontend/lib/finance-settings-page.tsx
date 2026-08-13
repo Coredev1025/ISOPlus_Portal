@@ -51,17 +51,15 @@ export function FinanceSettingsTabs({
       }
       className="w-full"
     >
-      <div className="mb-6 flex justify-start">
-        <TabsList className="w-fit">
-          <TabsTrigger value="financial">Financial Settings</TabsTrigger>
-          <TabsTrigger value="accounting">Accounting Integrations</TabsTrigger>
-          {automationEnabled ? (
-            <TabsTrigger value="automation">
-              Invoice & Statement Automation
-            </TabsTrigger>
-          ) : null}
-        </TabsList>
-      </div>
+      <TabsList className="mb-6">
+        <TabsTrigger value="financial">Financial Settings</TabsTrigger>
+        <TabsTrigger value="accounting">Accounting Integrations</TabsTrigger>
+        {automationEnabled ? (
+          <TabsTrigger value="automation">
+            Invoice & Statement Automation
+          </TabsTrigger>
+        ) : null}
+      </TabsList>
 
       <TabsContent value="financial" className="mt-0">
         <FinancialSettingsPanel workspaceId={workspaceId} />

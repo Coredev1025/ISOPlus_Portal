@@ -38,15 +38,6 @@ describe('FinanceSettingsTabs', () => {
     cleanup();
   });
 
-  it('keeps the tab bar compact and left-aligned instead of stretching across the page', () => {
-    renderTabs();
-
-    const tablist = screen.getByRole('tablist');
-    expect(tablist).toHaveClass('w-fit', 'bg-muted');
-    expect(tablist).not.toHaveClass('w-full');
-    expect(tablist.parentElement).toHaveClass('mb-6', 'flex', 'justify-start');
-  });
-
   it('hides the automation tab when the workspace flag is off', () => {
     renderTabs();
 

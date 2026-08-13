@@ -388,24 +388,6 @@ describe('configure business page', () => {
     ).toBeEnabled();
   });
 
-  it('keeps company logo tabs compact instead of stretching across the card', async () => {
-    stubBusiness();
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('Company Name')).toHaveValue('Hillsgrade Care');
-    });
-
-    const tablist = screen.getByRole('tablist');
-    expect(tablist).toHaveClass('w-fit', 'bg-muted');
-    expect(tablist).not.toHaveClass('w-full');
-    expect(tablist).not.toHaveClass('grid-cols-3');
-    expect(tablist.parentElement).toHaveClass('flex', 'justify-start');
-    expect(screen.getByRole('tab', { name: 'Default Logo' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Square Logo' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Wide Logo' })).toBeInTheDocument();
-  });
-
   it('no longer hosts document-number controls (moved to Finance Settings)', async () => {
     stubBusiness();
     renderPage();

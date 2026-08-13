@@ -25,6 +25,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { showSaveSuccessToast, showSaveErrorToast, showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
 import {
+  DEFAULT_SEQUENCES,
   extractDocumentNumberingSequences,
   mapBusinessProfileToFormData,
   type NumberSequence,
@@ -43,10 +44,18 @@ export default function ConfigureBusinessPage() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [showError, setShowError] = useState(false);
   // Document number sequences (passthrough so Basic save does not clear Financial Settings)
-  const [invoiceSequence, setInvoiceSequence] = useState<NumberSequence>({ prefix: "INV-", nextNumber: 1000 });
-  const [purchaseOrderSequence, setPurchaseOrderSequence] = useState<NumberSequence>({ prefix: "PO-", nextNumber: 1000 });
-  const [quoteSequence, setQuoteSequence] = useState<NumberSequence>({ prefix: "QT-", nextNumber: 1000 });
-  const [statementSequence, setStatementSequence] = useState<NumberSequence>({ prefix: "STM-", nextNumber: 1000 });
+  const [invoiceSequence, setInvoiceSequence] = useState<NumberSequence>({
+    ...DEFAULT_SEQUENCES.invoice,
+  });
+  const [purchaseOrderSequence, setPurchaseOrderSequence] = useState<NumberSequence>({
+    ...DEFAULT_SEQUENCES.purchaseOrder,
+  });
+  const [quoteSequence, setQuoteSequence] = useState<NumberSequence>({
+    ...DEFAULT_SEQUENCES.quote,
+  });
+  const [statementSequence, setStatementSequence] = useState<NumberSequence>({
+    ...DEFAULT_SEQUENCES.statement,
+  });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [apiError, setApiError] = useState<string>('');
@@ -525,13 +534,11 @@ export default function ConfigureBusinessPage() {
 
                   <div className="border rounded-lg p-4">
                     <Tabs defaultValue="default" className="space-y-4">
-                      <div className="flex justify-start">
-                        <TabsList className="w-fit">
-                          <TabsTrigger value="default">Default Logo</TabsTrigger>
-                          <TabsTrigger value="square">Square Logo</TabsTrigger>
-                          <TabsTrigger value="wide">Wide Logo</TabsTrigger>
-                        </TabsList>
-                      </div>
+                      <TabsList>
+                        <TabsTrigger value="default">Default Logo</TabsTrigger>
+                        <TabsTrigger value="square">Square Logo</TabsTrigger>
+                        <TabsTrigger value="wide">Wide Logo</TabsTrigger>
+                      </TabsList>
 
                       <TabsContent value="default" className="pt-4">
                         <div className="flex items-center gap-4">

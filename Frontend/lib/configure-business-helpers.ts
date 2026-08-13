@@ -28,7 +28,7 @@ export type NumberSequence = {
   nextNumber: number;
 };
 
-const DEFAULT_SEQUENCES: Record<
+export const DEFAULT_SEQUENCES: Record<
   "invoice" | "purchaseOrder" | "quote" | "statement",
   NumberSequence
 > = {
