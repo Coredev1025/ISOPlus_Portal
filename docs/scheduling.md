@@ -89,6 +89,49 @@ If `autoIndex` is ever disabled for performance, that check is what will catch
 the constraint going missing — and the fix at that point is a migration for
 every collection, not just this one.
 
+## Deploying: set `SCHEDULER_API_KEY` on the environment
+
+**Do this before creating the EventBridge rule.** The rule and the key are
+useless without each other, and neither is created by merging.
+
+Nothing in this repository sets Elastic Beanstalk environment variables. The
+deploy workflow (`.github/workflows/cicd.yml`) only builds a bundle, uploads it
+to S3, and calls `update-environment --version-label` — it passes no
+`--option-settings`, and the single file in `Backend/.ebextensions/` configures
+load balancer timeouts and nothing else. Environment properties live in the EB
+environment's own saved configuration, which is exactly why they survive every
+deploy: the workflow swaps the application version and leaves them alone.
+
+So this is a manual step, once per environment, the same way `Admin_API_Key`
+and `JWT_SECRET` got there. Either the console — Configuration → Updates,
+monitoring, and logging → Environment properties — or:
+
+```bash
+aws elasticbeanstalk update-environment \
+  --environment-name isoplus-be-dev-blue \
+  --option-settings \
+    Namespace=aws:elasticbeanstalk:application:environment,OptionName=SCHEDULER_API_KEY,Value=<secret>
+```
+
+Environments are `isoplus-be-dev-blue` and `isoplus-be-prod-blue`, region
+`ap-southeast-2`. **This triggers an environment update and a rolling restart**,
+so it is not a free operation against production — treat it as a deployment.
+
+**Forgetting it fails silently, which is the whole problem.** `SCHEDULER_API_KEY`
+is deliberately *not* in `index.js`'s `requiredEnvVars` — a scheduler credential
+must not be able to stop the entire API booting. The consequence is that without
+it the app boots healthy, every other route works, and only
+`POST /api/scheduler/tick` answers `500 Server configuration error`, on every
+EventBridge invocation, forever. No schedule ever runs and nothing says why.
+
+Two things catch it:
+
+- **At boot**, the app logs `Bootstrap: SCHEDULER_API_KEY is not set...` at warn
+  level. Check the deployment logs after the first deploy to a new environment.
+- **Afterwards**, `SchedulerHealth.lastTickAt` stops advancing — the same signal
+  as a missing EventBridge rule, so a stale `lastTickAt` means one of the two,
+  and the boot log tells you which. See "What to alert on".
+
 ## The AWS EventBridge rule
 
 One rule per environment, in `ap-southeast-2`. This is the one part of this

@@ -39,7 +39,7 @@ import { syncQueue } from './services/sync/queue.js';
 import { requestContextMiddleware } from './middleware/requestContext.js';
 import { auditHttpMiddleware } from './middleware/auditHttp.js';
 import { errorHandler } from './middleware/errorHandler.js';
-import { info, error as logError } from './utils/logger.js';
+import { info, warn, error as logError } from './utils/logger.js';
 
 dotenv.config();
 
@@ -58,6 +58,15 @@ if (missingEnvVars.length > 0) {
   logError('Bootstrap', 'Missing required environment variables', { missingEnvVars });
   logError('Bootstrap', 'Please check your .env file and ensure all required variables are set.');
   process.exit(1);
+}
+
+// Deliberately a warning, not a required variable: the scheduler must not be
+// able to stop the whole API booting. But a missing key is otherwise silent —
+// the app is healthy, every other route works, and only POST /api/scheduler/tick
+// answers 500, on every EventBridge invocation, forever, so no schedule ever
+// runs and nothing says why. See docs/scheduling.md.
+if (!process.env.SCHEDULER_API_KEY) {
+  warn('Bootstrap', 'SCHEDULER_API_KEY is not set: POST /api/scheduler/tick will reject every call with 500 and no schedule will run');
 }
 
 mongoose.set('strictQuery', true);

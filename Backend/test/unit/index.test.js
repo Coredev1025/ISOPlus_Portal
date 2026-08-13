@@ -22,6 +22,7 @@ function installBootDoubles() {
     sentryErrorHandlers: 0,
     errors: [],
     infos: [],
+    warns: [],
   };
 
   vi.doMock('./instrument.js', () => ({}));
@@ -95,6 +96,7 @@ function installBootDoubles() {
       ...actual,
       info: (...args) => record.infos.push(args),
       error: (...args) => record.errors.push(args),
+      warn: (...args) => record.warns.push(args),
     };
   });
 
@@ -175,6 +177,24 @@ describe('boot environment validation', () => {
 
     expect(record.exitCodes).toEqual([]);
     expect(record.listenCalls).toHaveLength(1);
+  });
+
+  it('warns, but still starts, when SCHEDULER_API_KEY is missing', async () => {
+    // Deliberately not in requiredEnvVars: a scheduler credential must not be
+    // able to stop the whole API booting. But its absence is otherwise
+    // completely invisible — every other route works and only the tick answers
+    // 500, on every EventBridge invocation, forever.
+    const record = await boot({ SCHEDULER_API_KEY: '' });
+
+    expect(record.exitCodes).toEqual([]);
+    expect(record.listenCalls).toHaveLength(1);
+    expect(JSON.stringify(record.warns)).toContain('SCHEDULER_API_KEY');
+  });
+
+  it('says nothing about SCHEDULER_API_KEY when it is set', async () => {
+    const record = await boot({ SCHEDULER_API_KEY: 'a-key' });
+
+    expect(JSON.stringify(record.warns)).not.toContain('SCHEDULER_API_KEY');
   });
 });
 
