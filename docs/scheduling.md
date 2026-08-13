@@ -70,47 +70,24 @@ The 401 above is `curl` sending no `Authorization` header at all — the point
 being that the route is live and the auth gate is doing its job, not that
 this particular call was a misconfiguration.
 
-## Deploying: run the index migration
+## Deploying: the indexes
 
-Migrations do **not** run on deploy in this repo — that is deliberate, so a bad
-one cannot become an outage with no decision point. Someone runs this by hand,
-once per environment:
+No migration. The two indexes on `scheduledjobs` are declared on the schema —
+`{ enabled: 1, nextRunAt: 1 }` (the only query the tick makes) and a **unique**
+`{ kind: 1, targetId: 1 }` — and Mongoose builds them on connect, which is how
+every other model in this codebase gets its indexes.
 
-```bash
-npm run migrate -- up add-scheduled-job-indexes
-```
-
-Against a non-local database the wrapper refuses unless you add
-`--allow-remote`. Check what is already applied with:
+The unique constraint is load-bearing: it is what stops a toggle flipped twice
+from creating two schedules for the same board, which would double-dispatch.
+Confirm it actually exists in an environment with:
 
 ```bash
-npm run migrate -- list
+npm run schema -- scheduledjobs
 ```
 
-It creates the two indexes on `scheduledjobs`: `{ enabled: 1, nextRunAt: 1 }`
-(the only query the tick makes) and a **unique** `{ kind: 1, targetId: 1 }`.
-
-**It is safe to run even if the indexes already exist.** They are also declared
-on the schema, and Mongoose builds them on connect because `autoIndex` defaults
-to true — so on most environments this migration will find its work already
-done and no-op. `createIndex` is a no-op when an index with the same keys,
-options and name is present.
-
-Which raises the obvious question: why run it at all? Because the unique
-constraint is load-bearing — it is what stops a toggle flipped twice from
-creating two schedules for the same board, which would double-dispatch. Leaving
-it to `autoIndex` makes it a side effect of application boot. If anyone disables
-`autoIndex` for performance, the constraint silently stops being created on
-fresh environments and nothing catches the duplicate.
-
-To roll back: `npm run migrate -- down add-scheduled-job-indexes`. Note this
-only removes them until the next application boot recreates them from the
-schema. The migration makes index creation deliberate; it cannot make it
-exclusive.
-
-If the migration has not been run and `autoIndex` is on, the scheduler still
-works — this is a durability measure, not a prerequisite. Check the indexes
-that actually exist with `npm run schema -- scheduledjobs`.
+If `autoIndex` is ever disabled for performance, that check is what will catch
+the constraint going missing — and the fix at that point is a migration for
+every collection, not just this one.
 
 ## The AWS EventBridge rule
 
@@ -321,63 +298,12 @@ Schedules themselves are only ever written through
 `Backend/src/services/scheduler/schedules.js` — `upsertSchedule` /
 `disableSchedule`. Nothing should write `ScheduledJob` documents directly.
 
-## The picker ↔ cron translation — `cadence.js`
-
-The Epic 5 UI (not yet built) exposes user-facing schedule fields — *Generate
-Invoices Every / Run On / Run At / Start Date / Next Run* — not a cron
-expression. An end user picks a frequency, and where relevant a day, from a
-constrained set; they never type cron syntax.
-`Backend/src/services/scheduler/cadence.js` is the translation layer between
-that picker and the `cron` string `upsertSchedule` actually stores, built with
-the scheduler from the start rather than bolted on once the UI exists. It is
-pure — no I/O, no database, no Express — and, as of this writing, not wired
-into any route: there is no consumer yet.
-
-**The picker vocabulary** is deliberately small:
-
-- `frequency`: `daily`, `weekly`, or `monthly`.
-- `dayOfWeek` (0 = Sunday .. 6 = Saturday): required for `weekly`, rejected
-  for `daily` and `monthly`.
-- `dayOfMonth`: required for `monthly`, rejected for `daily` and `weekly`.
-- `hour` (0–23) and `minute` (0–59): always required.
-
-`buildCron(picker)` validates every field and throws, naming the offending
-field and its allowed range, rather than coercing or ignoring anything —
-including a `dayOfWeek` passed alongside a `monthly` frequency, which is
-rejected rather than silently dropped, on the view that a caller passing a
-field the frequency does not use has a bug worth surfacing.
-
-**`dayOfMonth` is restricted to 1–28 — the single most valuable check in the
-module.** A monthly schedule on the 29th, 30th or 31st silently skips
-whichever months are too short for it: every February for 29 or 30, most of
-the year for 31. For invoice issuance that is not a cosmetic gap, it means a
-client simply does not get billed that month, discovered only when someone
-notices the missing invoice. `buildCron` rejects those three values outright,
-with a message that says so explicitly and points at raw cron as the
-sanctioned way to get a genuine end-of-month cadence — see below.
-
-**Raw cron remains a fully-supported escape hatch.** The `cron` field on a
-`ScheduledJob` accepts anything `isValidSchedule` (`nextRun.js`) accepts, not
-only what the picker can produce — "last business day of the month" and
-similar shapes the picker was never meant to express are configured by
-hand-editing the schedule record, no UI work required. `describeCron(cron)` is
-the inverse of `buildCron`: given a cron string, it returns the equivalent
-picker object, or **`null`** — never throws — when the expression is outside
-the picker's vocabulary (a step, a list, a range, a month restriction, or a
-`dayOfMonth` of 29–31 even though cron syntax itself permits it). An
-ops-authored cron in one of those shapes is a legitimate state, not an error;
-a `null` result is the signal for the Epic 5 UI to fall back to showing the
-raw expression read-only instead of trying to render it as a picker selection.
-
-`describeCron(buildCron(picker))` deep-equals `picker` for every valid picker
-— the round-trip is the module's core correctness property, covered for all
-three frequencies in `Backend/test/unit/services/scheduler.cadence.test.js`.
-That file also asserts, via `minIntervalMinutes`, that every cron `buildCron`
-can produce clears the 60-minute `AT_MOST_ONCE` floor (`intervalFloor.js`):
-daily, weekly and monthly cadences are all at least 24 hours apart, so this
-can never reject picker output — checked directly rather than reasoned about,
-so the guarantee is re-verified automatically if a sub-daily frequency is ever
-added to the picker without someone revisiting the floor.
+**Do not write a monthly cron on the 29th, 30th or 31st.** Cron does not clamp
+to the end of a short month — it simply does not fire. A `0 9 31 * *` schedule
+skips every month with fewer than 31 days, and `29`/`30` skip most Februaries.
+For invoice issuance that is not cosmetic: the client does not get billed that
+month, and nobody finds out until someone notices the missing invoice. Use 1–28,
+or an explicit last-day expression, and check `lastRunAt` after the first month.
 
 ## The two delivery policies
 
