@@ -606,19 +606,19 @@ Each task below is a candidate for its own expanded plan when picked up. Track A
 
 ### Task 11: Epic 4 — Accounting Integrations tab (Track A)
 
-**Files:** Create `Frontend/components/finance-settings/accounting-integrations-tab.tsx`; Modify `Backend/src/models/Business.js`
+**Files (as built):** `Frontend/lib/accounting-integrations-panel.tsx`, `Frontend/lib/xero-connect-section.tsx`, `Frontend/lib/xero-disabled-sync-toggles.tsx`, `Frontend/lib/xero-account-tax-mapping.tsx`, `Frontend/lib/xero-account-tax-mapping-options.ts`; Backend persists on `Business.xeroLineItemMapping` (not a renamed `accountingMapping`). Old `/xero-integration` redirects to finance-settings accounting tab.
 
-**Interfaces produced:** `Business.accountingMapping: { quote: {accountCode, taxRate}, purchaseOrder: {...}, invoice: {...}, quoteLineItemOverrides: [{ lineItemType, accountCode, taxRate }] }`
+**Interfaces produced:** `Business.xeroLineItemMapping: { quote, purchaseOrder, invoice, quoteOverrides: { quoteService, material } }` each `{ accountCode, taxType, taxRatePercent }`.
 
-- [ ] Tab shell with Xero / MYOB / QuickBooks sub-tabs, full page width (4.1).
-- [ ] Relocate Connect Xero / Test Connection with **no behaviour change** — Task 5's baseline is the proof (4.2).
-- [ ] Invoice/Customer/Payment/Contact Sync toggles, disabled/greyed (4.3).
-- [ ] MYOB and QuickBooks sub-tabs inactive (4.4).
-- [ ] Default Account + Tax Rate per document type, plus the Quote line-item override table (4.5). Tax-rate dropdowns are constrained: GST on Income / GST Free Income for Quote and Invoice; GST on Expenses / GST Free Expenses for Purchase Order.
+- [x] Tab shell with Xero / MYOB / QuickBooks sub-tabs, full page width (4.1).
+- [x] Relocate Connect Xero / Test Connection with **no behaviour change** — Task 5's baseline is the proof (4.2).
+- [x] Invoice/Customer/Payment/Contact Sync toggles, disabled/greyed (4.3).
+- [x] MYOB and QuickBooks sub-tabs inactive (4.4).
+- [x] Default Account + Tax Rate per document type, plus the Quote line-item override table (4.5). Tax rates filtered by Xero `canApplyToRevenue` / `canApplyToExpenses` for the selected account class; accounts prefer REVENUE for Quote/Invoice and EXPENSE for Purchase Order (AU mockup names are examples, not hard-coded).
 
-**Open question from the spec (doc 4, verbatim):** the line-item override table is Quote-only "for now" — confirm whether Purchase Order and Invoice need the same before building 4.5.
+**Open question from the spec (doc 4, verbatim):** the line-item override table is Quote-only "for now" — confirmed Quote-only for this ship (matches mockup).
 
-**Covers:** 4.1–4.5.
+**Covers:** 4.1–4.5. Status: gap-finished on `feature/KAN-9-epic-4-accounting-integrations-tab-track-a` (core UI already on develop).
 
 ---
 

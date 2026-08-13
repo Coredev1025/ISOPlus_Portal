@@ -90,6 +90,33 @@ export function taxRatesForAccount(
   );
 }
 
+export type XeroDocumentKind = "quote" | "purchaseOrder" | "invoice";
+
+/**
+ * Prefer REVENUE accounts for Quote/Invoice and EXPENSE for Purchase Order.
+ * If a saved code falls outside that class, keep it in the list so the UI can
+ * still display the current mapping.
+ *
+ * Touchpoints: xero-account-tax-mapping.tsx (AccountTaxPair, QuoteOverrideRow).
+ */
+export function accountsForDocumentKind(
+  accounts: readonly XeroAccountOption[],
+  kind: XeroDocumentKind,
+  selectedCode = ""
+): XeroAccountOption[] {
+  const preferred = kind === "purchaseOrder" ? "EXPENSE" : "REVENUE";
+  const filtered = accounts.filter(
+    (account) => accountClass(account) === preferred
+  );
+  if (!selectedCode) return filtered;
+
+  const alreadyIncluded = filtered.some((account) => account.code === selectedCode);
+  if (alreadyIncluded) return filtered;
+
+  const selected = accounts.find((account) => account.code === selectedCode);
+  return selected ? [...filtered, selected] : filtered;
+}
+
 export function prepareMappingForSave(
   mapping: XeroLineItemMapping
 ): XeroLineItemMapping {

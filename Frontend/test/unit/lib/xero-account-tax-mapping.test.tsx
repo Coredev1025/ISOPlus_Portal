@@ -155,4 +155,31 @@ describe('XeroAccountTaxMapping', () => {
       );
     });
   });
+
+  // Epic 4.5 — document-type defaults + Quote line-item override table.
+  it('renders Quote, Purchase Order, Invoice mapping and the Quote override table', async () => {
+    (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: OPTIONS });
+
+    render(
+      <XeroAccountTaxMapping
+        workspaceId="ws-1"
+        isConnected
+        initialMapping={EMPTY_LINE_ITEM_MAPPING}
+        onMappingSaved={vi.fn()}
+      />
+    );
+
+    expect(
+      screen.getByRole('heading', { name: /default account & tax mapping/i })
+    ).toBeInTheDocument();
+    expect(screen.getByText(/^new$/i)).toBeInTheDocument();
+    expect(screen.getByText(/^quote$/i)).toBeInTheDocument();
+    expect(screen.getByText(/^purchase order$/i)).toBeInTheDocument();
+    expect(screen.getByText(/^invoice$/i)).toBeInTheDocument();
+    expect(screen.getByText(/line-item type/i)).toBeInTheDocument();
+    expect(screen.getByText('Quote Service')).toBeInTheDocument();
+    expect(screen.getByText('Material')).toBeInTheDocument();
+
+    await waitFor(() => expect(axios.get).toHaveBeenCalled());
+  });
 });

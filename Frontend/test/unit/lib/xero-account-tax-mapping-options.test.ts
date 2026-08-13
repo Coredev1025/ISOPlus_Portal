@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   EMPTY_LINE_ITEM_MAPPING,
   accountClass,
+  accountsForDocumentKind,
   normalizeMapping,
   prepareMappingForSave,
   taxRatesForAccount,
@@ -76,6 +77,26 @@ describe('xero-account-tax-mapping-options', () => {
     expect(taxRatesForAccount(TAX_RATES, EXPENSE_ACCOUNT).map((r) => r.taxType)).toEqual([
       'INPUT',
     ]);
+  });
+
+  // Epic 4.5 — Quote/Invoice prefer REVENUE; Purchase Order prefers EXPENSE.
+  it('accountsForDocumentKind filters by document kind and keeps a saved outlier', () => {
+    const accounts = [REVENUE_ACCOUNT, EXPENSE_ACCOUNT];
+
+    expect(accountsForDocumentKind(accounts, 'quote').map((a) => a.code)).toEqual([
+      '200',
+    ]);
+    expect(accountsForDocumentKind(accounts, 'invoice').map((a) => a.code)).toEqual([
+      '200',
+    ]);
+    expect(
+      accountsForDocumentKind(accounts, 'purchaseOrder').map((a) => a.code)
+    ).toEqual(['400']);
+
+    // Saved expense code on a quote still appears so the dropdown can show it.
+    expect(
+      accountsForDocumentKind(accounts, 'quote', '400').map((a) => a.code)
+    ).toEqual(['200', '400']);
   });
 
   it('prepareMappingForSave round-trips through normalizeMapping', () => {

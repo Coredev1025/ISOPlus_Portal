@@ -177,12 +177,13 @@ export function AccountingIntegrationsPanel({
             <div className="mx-auto mb-2.5 flex h-14 w-14 items-center justify-center overflow-hidden rounded-full">
               <Image
                 src="/assets/xero-icon.png"
-                alt="Xero"
+                alt=""
                 width={56}
                 height={56}
                 className="h-14 w-14 object-cover"
               />
             </div>
+            <h5 className="mb-2 text-[13px] font-bold">Xero</h5>
             <ConnectionStatusDot
               connected={isConnected}
               needsReconnect={needsReconnect}
