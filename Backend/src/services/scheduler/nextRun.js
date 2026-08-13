@@ -44,16 +44,13 @@ export function countMissedSlots(cron, timezone, scheduledFor, now, max = 1000) 
  * its own DST handling on top of it.
  */
 export function minIntervalMinutes(cron, timezone, from, slotCount = 10) {
-  const slots = [];
-  let cursor = from;
-  for (let i = 0; i < slotCount; i += 1) {
-    cursor = computeNextRun(cron, timezone, cursor);
-    slots.push(cursor);
-  }
-
+  let previous = computeNextRun(cron, timezone, from);
   let minMs = Infinity;
-  for (let i = 1; i < slots.length; i += 1) {
-    minMs = Math.min(minMs, slots[i].getTime() - slots[i - 1].getTime());
+
+  for (let i = 1; i < slotCount; i += 1) {
+    const slot = computeNextRun(cron, timezone, previous);
+    minMs = Math.min(minMs, slot.getTime() - previous.getTime());
+    previous = slot;
   }
   return minMs / 60000;
 }

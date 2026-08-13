@@ -4,7 +4,6 @@ import {
   resolve,
   tryResolve,
   clearRegistry,
-  registeredKinds,
   AT_MOST_ONCE,
   AT_LEAST_ONCE,
 } from '../../../src/services/scheduler/registry.js';
@@ -67,11 +66,5 @@ describe('scheduler registry', () => {
 
   it('tryResolve returns null for an unregistered kind rather than throwing', () => {
     expect(tryResolve('nope')).toBeNull();
-  });
-
-  it('lists what is registered', () => {
-    register('a', { handler: () => {}, policy: AT_MOST_ONCE });
-    register('b', { handler: () => {}, policy: AT_LEAST_ONCE });
-    expect(registeredKinds().sort()).toEqual(['a', 'b']);
   });
 });

@@ -30,6 +30,9 @@ async function claimNext(now, excludeIds, stats) {
 
     if (!candidate) return null;
 
+    // Resolved once, here, and carried on the returned job. Dispatch and the
+    // failure path both need it, and re-resolving in each of them was three
+    // lookups per job behind two copies of this same default.
     let policy = AT_MOST_ONCE;
     try {
       ({ policy } = resolve(candidate.kind));
@@ -39,11 +42,11 @@ async function claimNext(now, excludeIds, stats) {
     }
 
     if (policy !== AT_MOST_ONCE) {
-      return { ...candidate, dueAt: candidate.nextRunAt };
+      return { ...candidate, dueAt: candidate.nextRunAt, policy };
     }
 
     const claimed = await claimAtMostOnce(candidate, now, excludeIds, stats);
-    if (claimed) return claimed;
+    if (claimed) return { ...claimed, policy };
     // claimAtMostOnce already excluded the candidate — either it lost the CAS
     // race to another instance, or its cron/timezone would not parse. Either
     // way, do NOT stop here: one bad row must not abandon every remaining due
@@ -110,14 +113,14 @@ async function claimAtMostOnce(candidate, now, excludeIds, stats) {
  * but the handler should not have to know that.
  */
 async function dispatch(job, now) {
-  const { handler, policy } = resolve(job.kind);
+  const { handler } = resolve(job.kind);
   await handler({
     kind: job.kind,
     targetId: job.targetId,
     workspaceId: job.workspaceId,
     scheduledFor: job.dueAt,
   });
-  await recordSuccess(job, policy, now);
+  await recordSuccess(job, job.policy, now);
 }
 
 /** Claim every due schedule, up to `limit`, and dispatch each one. */
@@ -142,13 +145,7 @@ export async function runTick({ now = new Date(), limit = BATCH_LIMIT } = {}) {
       stats.dispatched += 1;
     } catch (err) {
       stats.failed += 1;
-      let policy = AT_MOST_ONCE;
-      try {
-        ({ policy } = resolve(job.kind));
-      } catch {
-        // Unknown kind — recorded against the row below with the default policy.
-      }
-      await recordFailure(job, policy, err, now);
+      await recordFailure(job, job.policy, err, now);
     }
   }
 
@@ -164,6 +161,6 @@ export async function runTick({ now = new Date(), limit = BATCH_LIMIT } = {}) {
 
   const summary = { claimed: claimedIds.length, ...stats, capped };
   info('Scheduler', 'Tick complete', summary);
-  await recordHeartbeat(summary, now);
+  await recordHeartbeat(now);
   return summary;
 }

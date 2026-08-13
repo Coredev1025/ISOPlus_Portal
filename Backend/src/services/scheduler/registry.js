@@ -53,10 +53,6 @@ export function tryResolve(kind) {
   return handlers.get(kind) ?? null;
 }
 
-export function registeredKinds() {
-  return [...handlers.keys()];
-}
-
 /** Test seam. Never call this from application code. */
 export function clearRegistry() {
   handlers.clear();

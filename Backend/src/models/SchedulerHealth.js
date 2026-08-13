@@ -14,30 +14,13 @@ const schedulerHealthSchema = new mongoose.Schema(
       default: SCHEDULER_HEALTH_KEY,
     },
     // When the clock last fired, whether or not anything was due. This is the
-    // primary signal for a missing or misconfigured EventBridge rule — see
-    // docs/scheduling.md.
+    // whole point of the collection and the primary signal for a missing or
+    // misconfigured EventBridge rule — see docs/scheduling.md. The tick's
+    // counts are not mirrored here: they are already in the tick's log line
+    // and on the ScheduledJob rows themselves, and nothing reads a second copy.
     lastTickAt: {
       type: Date,
       default: null,
-    },
-    // The last tick's own summary, so a health screen can show context
-    // (how many were claimed/dispatched/failed, whether the batch cap was
-    // hit) rather than just a bare timestamp.
-    claimed: {
-      type: Number,
-      default: 0,
-    },
-    dispatched: {
-      type: Number,
-      default: 0,
-    },
-    failed: {
-      type: Number,
-      default: 0,
-    },
-    capped: {
-      type: Boolean,
-      default: false,
     },
   },
   { timestamps: true },

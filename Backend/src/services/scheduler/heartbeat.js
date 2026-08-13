@@ -14,11 +14,11 @@ import { warn } from '../../utils/logger.js';
  * A failure here is a monitoring gap, not a tick failure: it must never
  * surface to the caller, so it is caught and logged rather than thrown.
  */
-export async function recordHeartbeat(summary, now) {
+export async function recordHeartbeat(now) {
   try {
     await SchedulerHealth.findOneAndUpdate(
       { key: SCHEDULER_HEALTH_KEY },
-      { $set: { lastTickAt: now, ...summary } },
+      { $set: { lastTickAt: now } },
       { upsert: true },
     );
   } catch (err) {
