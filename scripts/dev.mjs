@@ -76,7 +76,17 @@ async function up(args) {
   // dependency would silently stay missing. Recreating the app project's
   // volumes is safe: since mongo and redis moved to the infra project, all
   // that lives here is node_modules and .next, both derived from the lockfile.
-  if (rebuild && (await docker.containerIds(appStack)).length) {
+  //
+  // Unconditional, deliberately. This was once gated on the project having
+  // running containers (`docker compose ps -q` returning something), which
+  // looked like a sensible "nothing to clean up" check and was not: volumes
+  // outlive containers. Rebuilding a *stopped* stack therefore skipped the
+  // discard and remounted the stale volume over the freshly built image —
+  // exactly the failure the discard exists to prevent, and it cost a
+  // reviewer an afternoon on KAN-15, the first branch in a while to add a
+  // backend dependency. `down -v` removes the volumes whether or not any
+  // container is running, and is a no-op when there is nothing to remove.
+  if (rebuild) {
     cyan('discarding this project\'s node_modules/.next volumes so the rebuild takes effect')
     await appStack.exec(['down', '-v'])
   }
@@ -92,6 +102,20 @@ async function up(args) {
   if (!appHealth.ok) {
     yellow(`not healthy: ${appHealth.report}`)
     await appStack.exec(['ps'])
+
+    // The overwhelmingly common cause is a node_modules volume older than the
+    // current package.json — the branch added a dependency and the volume was
+    // never discarded. Node's own error reads like an application bug, so name
+    // the real cause rather than leaving a 400-line log as the only clue.
+    for (const service of ['backend', 'frontend']) {
+      const hint = await docker.staleDependencyHint(appStack, service)
+      if (!hint) continue
+      yellow(`${service} cannot resolve a dependency: ${hint.trim().slice(0, 160)}`)
+      note('This is a node_modules volume older than the branch\'s package.json, not a code bug.')
+      note('Fix: npm run dev:build   (rebuilds the image AND discards the stale volume)')
+      note('`docker compose build` alone will not work — the volume masks the image.')
+    }
+
     fail('stack did not come up — inspect with: docker compose logs --tail 40')
   }
 

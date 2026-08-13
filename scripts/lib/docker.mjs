@@ -124,6 +124,43 @@ export async function waitHealthy(stack, timeoutMs) {
  * from the host. Only --force-recreate fixes it, so it is worth detecting
  * explicitly rather than leaving the user to wonder why curl refuses.
  */
+/**
+ * Signatures of a container running against a node_modules volume that predates
+ * the current package.json. Node reports a missing or wrong-version package
+ * three different ways depending on how it was imported, and none of them says
+ * "your Docker volume is stale" — they read like a bug in application code,
+ * which is how this cost a reviewer an afternoon on KAN-15.
+ */
+const STALE_DEPS_SIGNATURES = [
+  'ERR_MODULE_NOT_FOUND',
+  'Cannot find package',
+  'Cannot find module',
+  'does not provide an export named',
+]
+
+/**
+ * Whether a service's recent output looks like the stale-volume failure. Reads
+ * logs rather than exec-ing into the container, because a crash-looping
+ * container cannot be exec'd into reliably.
+ *
+ * Returns the matching line, or null. Never throws: this runs on the error
+ * path, where failing to produce a hint must not replace the real error.
+ */
+export async function staleDependencyHint(stack, service) {
+  try {
+    const { stdout, stderr } = await stack.exec(
+      ['logs', '--tail', '200', service],
+      { capture: true },
+    )
+    const lines = `${stdout}\n${stderr}`.split(/\r?\n/)
+    return (
+      lines.find((line) => STALE_DEPS_SIGNATURES.some((sig) => line.includes(sig))) ?? null
+    )
+  } catch {
+    return null
+  }
+}
+
 export async function unpublishedServices(stack) {
   const { code, stdout } = await stack.exec(
     ['ps', '--format', '{{.Service}}\t{{.Ports}}'],

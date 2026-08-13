@@ -292,6 +292,14 @@ Elastic Beanstalk always resolves the lockfile fresh, so the deployed
 environments are never affected — this is purely a stale local Docker image
 issue.
 
+**If `dev:build` did not fix it, check you have this branch's `scripts/dev.mjs`.**
+The discard step used to be skipped whenever the project had no *running*
+containers — and volumes outlive containers, so rebuilding a stopped stack
+remounted the stale volume over the newly built image. The giveaway is a
+`dev:build` whose output has no `==> discarding this project's
+node_modules/.next volumes` line. That is fixed here; on an older commit, run
+`docker compose down -v` first.
+
 ## Registering a handler
 
 Handlers live in `Backend/src/services/scheduler/handlers.js`, imported for
