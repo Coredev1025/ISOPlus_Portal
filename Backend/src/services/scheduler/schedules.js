@@ -3,6 +3,7 @@ import { info } from '../../utils/logger.js';
 import { isValidSchedule } from './nextRun.js';
 import { resolveTimezone } from './timezone.js';
 import { assertMinimumInterval } from './intervalFloor.js';
+import { pickerScheduleError } from './pickerValidation.js';
 import { advanceSchedule, canonicalStartDate } from './advance.js';
 import { DUPLICATE_KEY, UPSERT_OPTIONS, LOG_SCOPE } from '../../constants/scheduler.js';
 
@@ -65,6 +66,15 @@ export async function upsertSchedule({
     // 60 (AT_MOST_ONCE) and 5 (AT_LEAST_ONCE) minutes — skipping this check
     // for picker schedules is deliberate, not an oversight.
     assertMinimumInterval({ kind, cron, timezone: effectiveTimezone, now });
+  } else {
+    // The picker half of the same guarantee. Without this the branch trusted
+    // its caller completely, and the schema's enum/min/required rules do not
+    // run on findOneAndUpdate — so 'fortnight', n: 0 and runAt: '99:99' were
+    // all persisted, then silently advanced on a cadence nobody chose.
+    const invalid = pickerScheduleError(schedule);
+    if (invalid) {
+      throw new Error(`Scheduler: invalid schedule for "${kind}" — ${invalid}`);
+    }
   }
 
   // Normalise the startDate once, here, and then both compute and store that

@@ -311,6 +311,44 @@ describe('upsertSchedule', () => {
 
     expect(await ScheduledJob.countDocuments({ targetId: 'ws-bad-tz' })).toBe(0);
   });
+
+  // The ScheduledJob schema's enum / min / required rules for the picker
+  // shape run on document middleware only, and every write here is a
+  // findOneAndUpdate. Each of these was persisted before upsertSchedule
+  // validated the picker half the way it already validated cron.
+  //
+  // None is a liveness bug — advanceSchedule always moves forward, so a bad
+  // `n` behaves as 1 and a bad `runAt` resolves to some other time. That is
+  // the reason to reject them: a schedule quietly billing on a cadence nobody
+  // chose is harder to notice than one that refuses to save.
+  describe.each([
+    ['a unit outside the enum', { every: { n: 1, unit: 'fortnight' } }, /every\.unit/],
+    ['an every.n of zero', { every: { n: 0, unit: 'month' } }, /every\.n/],
+    ['a negative every.n', { every: { n: -3, unit: 'month' } }, /every\.n/],
+    ['a non-integer every.n', { every: { n: 1.5, unit: 'month' } }, /every\.n/],
+    ['a malformed runAt', { runAt: '99:99' }, /runAt/],
+    ['an unparseable startDate', { startDate: 'not-a-date' }, /startDate/],
+  ])('rejects %s before writing anything', (_label, override, expected) => {
+    it('throws and leaves the collection empty', async () => {
+      const targetId = `ws-invalid-${_label.replace(/\s+/g, '-')}`;
+
+      await expect(
+        upsertSchedule({
+          kind: 'invoice_automation',
+          targetId,
+          schedule: {
+            every: { n: 1, unit: 'month' },
+            runOn: 15,
+            runAt: '09:00',
+            ...override,
+          },
+          timezone: 'Australia/Sydney',
+        }),
+      ).rejects.toThrow(expected);
+
+      expect(await ScheduledJob.countDocuments({ targetId })).toBe(0);
+    });
+  });
 });
 
 describe('disableSchedule', () => {
