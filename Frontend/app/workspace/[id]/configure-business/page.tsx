@@ -525,11 +525,13 @@ export default function ConfigureBusinessPage() {
 
                   <div className="border rounded-lg p-4">
                     <Tabs defaultValue="default" className="space-y-4">
-                      <TabsList className="grid grid-cols-3 w-full">
-                        <TabsTrigger value="default">Default Logo</TabsTrigger>
-                        <TabsTrigger value="square">Square Logo</TabsTrigger>
-                        <TabsTrigger value="wide">Wide Logo</TabsTrigger>
-                      </TabsList>
+                      <div className="flex justify-start">
+                        <TabsList className="w-fit">
+                          <TabsTrigger value="default">Default Logo</TabsTrigger>
+                          <TabsTrigger value="square">Square Logo</TabsTrigger>
+                          <TabsTrigger value="wide">Wide Logo</TabsTrigger>
+                        </TabsList>
+                      </div>
 
                       <TabsContent value="default" className="pt-4">
                         <div className="flex items-center gap-4">

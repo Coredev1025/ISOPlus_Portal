@@ -30,9 +30,6 @@ function PlaceholderPanel({
   );
 }
 
-const FINANCE_TAB_TRIGGER_CLASS =
-  "rounded-none border-b-2 border-transparent bg-transparent px-1 py-2.5 text-[13.5px] font-semibold text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none";
-
 type FinanceSettingsTabsProps = Readonly<{
   workspaceId: string;
   activeTab: FinanceSettingsTab;
@@ -54,25 +51,17 @@ export function FinanceSettingsTabs({
       }
       className="w-full"
     >
-      <TabsList className="mb-6 h-auto w-full justify-start gap-0 rounded-none border-b bg-transparent p-0">
-        <TabsTrigger
-          value="financial"
-          className={`${FINANCE_TAB_TRIGGER_CLASS} mr-6`}
-        >
-          Financial Settings
-        </TabsTrigger>
-        <TabsTrigger
-          value="accounting"
-          className={`${FINANCE_TAB_TRIGGER_CLASS} mr-6`}
-        >
-          Accounting Integrations
-        </TabsTrigger>
-        {automationEnabled ? (
-          <TabsTrigger value="automation" className={FINANCE_TAB_TRIGGER_CLASS}>
-            Invoice & Statement Automation
-          </TabsTrigger>
-        ) : null}
-      </TabsList>
+      <div className="mb-6 flex justify-start">
+        <TabsList className="w-fit">
+          <TabsTrigger value="financial">Financial Settings</TabsTrigger>
+          <TabsTrigger value="accounting">Accounting Integrations</TabsTrigger>
+          {automationEnabled ? (
+            <TabsTrigger value="automation">
+              Invoice & Statement Automation
+            </TabsTrigger>
+          ) : null}
+        </TabsList>
+      </div>
 
       <TabsContent value="financial" className="mt-0">
         <FinancialSettingsPanel workspaceId={workspaceId} />
