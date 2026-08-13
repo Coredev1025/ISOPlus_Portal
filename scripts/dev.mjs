@@ -26,6 +26,7 @@ import * as docker from './lib/docker.mjs'
 import * as seed from './lib/seed.mjs'
 import * as wt from './lib/worktree.mjs'
 import * as branchLib from './lib/branch.mjs'
+import { tickConfig, tickOnce } from './lib/tick.mjs'
 import {
   copyAppEnvFiles, missingAppEnvFiles, readEnv, setBackendMongoUri, writeEnv, DEFAULTS,
 } from './lib/env.mjs'
@@ -75,7 +76,17 @@ async function up(args) {
   // dependency would silently stay missing. Recreating the app project's
   // volumes is safe: since mongo and redis moved to the infra project, all
   // that lives here is node_modules and .next, both derived from the lockfile.
-  if (rebuild && (await docker.containerIds(appStack)).length) {
+  //
+  // Unconditional, deliberately. This was once gated on the project having
+  // running containers (`docker compose ps -q` returning something), which
+  // looked like a sensible "nothing to clean up" check and was not: volumes
+  // outlive containers. Rebuilding a *stopped* stack therefore skipped the
+  // discard and remounted the stale volume over the freshly built image —
+  // exactly the failure the discard exists to prevent, and it cost a
+  // reviewer an afternoon on KAN-15, the first branch in a while to add a
+  // backend dependency. `down -v` removes the volumes whether or not any
+  // container is running, and is a no-op when there is nothing to remove.
+  if (rebuild) {
     cyan('discarding this project\'s node_modules/.next volumes so the rebuild takes effect')
     await appStack.exec(['down', '-v'])
   }
@@ -91,6 +102,20 @@ async function up(args) {
   if (!appHealth.ok) {
     yellow(`not healthy: ${appHealth.report}`)
     await appStack.exec(['ps'])
+
+    // The overwhelmingly common cause is a node_modules volume older than the
+    // current package.json — the branch added a dependency and the volume was
+    // never discarded. Node's own error reads like an application bug, so name
+    // the real cause rather than leaving a 400-line log as the only clue.
+    for (const service of ['backend', 'frontend']) {
+      const hint = await docker.staleDependencyHint(appStack, service)
+      if (!hint) continue
+      yellow(`${service} cannot resolve a dependency: ${hint.trim().slice(0, 160)}`)
+      note('This is a node_modules volume older than the branch\'s package.json, not a code bug.')
+      note('Fix: npm run dev:build   (rebuilds the image AND discards the stale volume)')
+      note('`docker compose build` alone will not work — the volume masks the image.')
+    }
+
     fail('stack did not come up — inspect with: docker compose logs --tail 40')
   }
 
@@ -339,7 +364,7 @@ function worktreeList() {
 // Flags that consume the following argument. Without this list, `--type
 // feature` leaves "feature" looking like a positional branch name, which
 // silently skips every prompt and every validation.
-const VALUE_FLAGS = new Set(['--type', '--ticket', '--desc', '--description', '--from'])
+const VALUE_FLAGS = new Set(['--type', '--ticket', '--desc', '--description', '--from', '--every', '--url'])
 
 function parseArgs(args) {
   const flags = {}
@@ -652,6 +677,46 @@ async function agents(args) {
   note('a skill installed by any tool lands in the canonical set automatically')
 }
 
+// --- tick ---------------------------------------------------------------------
+
+async function tick(args) {
+  const { flags } = parseArgs(args)
+
+  if (flags['--help']) {
+    console.log(`usage: node scripts/dev.mjs tick [options]
+
+Calls the scheduler endpoint on an interval — a local stand-in for the
+EventBridge rule. Reads the port from .env and SCHEDULER_API_KEY from Backend/.env.
+
+  --once            call once and exit
+  --every <secs>    interval between calls (default 60)
+  --url <url>       override the endpoint
+`)
+    return
+  }
+
+  const config = tickConfig(process.cwd(), { url: flags['--url'] })
+
+  if (!config.key) {
+    console.error('SCHEDULER_API_KEY is not set in Backend/.env — the endpoint will answer 401')
+  }
+
+  const run = async () => {
+    try {
+      console.log(`[${new Date().toISOString()}] ${await tickOnce(config)}`)
+    } catch (err) {
+      console.error(`[${new Date().toISOString()}] ${err.message}`)
+    }
+  }
+
+  await run()
+  if (flags['--once']) return
+
+  const seconds = Number(flags['--every'] || 60)
+  console.log(`ticking ${config.url} every ${seconds}s — Ctrl-C to stop`)
+  setInterval(run, seconds * 1000)
+}
+
 // --- doctor -----------------------------------------------------------------
 
 async function doctor() {
@@ -721,7 +786,7 @@ async function doctor() {
 
 // --- dispatch ---------------------------------------------------------------
 
-const COMMANDS = { up, down, status, seed: runSeed, fixture, migrate, schema, user, agents, worktree, doctor }
+const COMMANDS = { up, down, status, seed: runSeed, fixture, migrate, schema, user, agents, tick, worktree, doctor }
 
 const [command, ...rest] = process.argv.slice(2)
 const handler = COMMANDS[command]
@@ -739,6 +804,7 @@ if (!handler) {
   schema [collection] [--json]  declared vs actual schema, and the drift
   user [--list] [--create]     local support-admin login with a known password
   agents [--check]             unify AGENTS.md + skills across all assistants
+  tick [--once] [--every 60]                          drive the scheduler locally
   doctor                       check prerequisites
 
   worktree new [--type T --ticket ISO-1 --desc "..."]   (asks if omitted)

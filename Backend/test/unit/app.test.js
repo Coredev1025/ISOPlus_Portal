@@ -227,6 +227,7 @@ describe('createApp route mounting', () => {
       '/api/items',
       '/api/export',
       '/api/subscriptions',
+      '/api/scheduler',
     ]);
   });
 

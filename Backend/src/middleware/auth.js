@@ -9,9 +9,18 @@ import {
 
 dotenv.config();
 
-export const validateApiKey = (req, res, next) => {
+/**
+ * Both API-key gates run the same check against a different environment
+ * variable: the raw `Authorization` header must equal it exactly. One factory
+ * rather than two copies, so a change to the check — the eight-character
+ * redaction in the log line, say — cannot land on one gate and miss the other.
+ *
+ * The variable is read per request, not captured at module load, because the
+ * process environment is mutated by tests and by dotenv ordering.
+ */
+const apiKeyValidator = (envVar) => (req, res, next) => {
   const authHeader = req.headers.authorization;
-  
+
   if (!authHeader) {
     warn('Authentication-Service', 'No authorization header provided', {
       error: 'No authorization header provided',
@@ -19,15 +28,14 @@ export const validateApiKey = (req, res, next) => {
     return res.status(401).json({ message: 'Authorization header required' });
   }
 
-
-  if (!process.env.Admin_API_Key) {
-    warn('Authentication-Service', 'Admin_API_Key not configured', {
-      error: 'Admin_API_Key environment variable not set',
+  if (!process.env[envVar]) {
+    warn('Authentication-Service', `${envVar} not configured`, {
+      error: `${envVar} environment variable not set`,
     }, req);
     return res.status(500).json({ message: 'Server configuration error' });
   }
 
-  if (authHeader !== process.env.Admin_API_Key) {
+  if (authHeader !== process.env[envVar]) {
     warn('Authentication-Service', 'Invalid API key provided', {
       error: 'Invalid API key',
       providedKey: authHeader.substring(0, 8) + '...', // Log only first 8 characters for security
@@ -38,6 +46,16 @@ export const validateApiKey = (req, res, next) => {
   info('Authentication-Service', 'API key validation successful', {}, req ?? null);
   next();
 };
+
+/** Admin and webhook routes. */
+export const validateApiKey = apiKeyValidator('Admin_API_Key');
+
+/**
+ * The scheduler tick. A separate credential from Admin_API_Key deliberately:
+ * the key lives in an EventBridge rule, so it is rotated on a different
+ * schedule and leaks a strictly smaller capability than the admin key does.
+ */
+export const validateSchedulerApiKey = apiKeyValidator('SCHEDULER_API_KEY');
 
 export const authenticateToken = (req, res, next) => {
   const token = req.session.token;

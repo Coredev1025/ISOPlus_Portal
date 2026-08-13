@@ -19,6 +19,7 @@
     "migrate": "node scripts/dev.mjs migrate",
     "schema": "node scripts/dev.mjs schema",
     "dev:user": "node scripts/dev.mjs user",
-    "agents": "node scripts/dev.mjs agents"
+    "agents": "node scripts/dev.mjs agents",
+    "tick": "node scripts/dev.mjs tick"
   }
 }

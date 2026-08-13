@@ -55,7 +55,7 @@ Full detail in **`docs/local-development.md`**; worktrees in **`docs/worktrees.m
 | `docs/ongoing/` | Handover notes for work in flight — what is done, what is blocked, what local state a successor needs. One file per ticket, **deleted on merge**. | Days |
 | `docs/open/` | Documentation for readers **outside this repo** — chiefly the ISO+ teams, who integrate via webhooks and have no source access. Describes interfaces from the outside; never file paths or internals. | Ongoing |
 
-Reference material sits outside that progression and stays current: [`docs/full-stack-engineering.md`](docs/full-stack-engineering.md), `docs/local-development.md`, `docs/worktrees.md`, `docs/migrations.md`.
+Reference material sits outside that progression and stays current: [`docs/full-stack-engineering.md`](docs/full-stack-engineering.md), `docs/local-development.md`, `docs/worktrees.md`, `docs/migrations.md`, `docs/scheduling.md`.
 
 ## How to work here
 
@@ -188,6 +188,20 @@ PRs target `develop` except hotfixes, which target `main`.
 
 - **`scripts/` is deliberately dependency-free** and must stay that way — no lodash there. It runs on a fresh clone before any `npm install`, and there is no root `node_modules`. Pure functions still apply: see `scripts/lib/branch.mjs`, which is entirely pure and therefore trivially checkable.
 
+## Constants
+
+**A feature's fixed values live in one file: `Backend/src/constants/<feature>.js`,** or `Frontend/constants/<feature>.ts` (imported as `@/constants/<feature>`) for frontend ones. Not inline in a route, a service or a JSX attribute, and not re-declared per module. See `Backend/src/constants/scheduler.js` for the shape.
+
+Five rules make that file worth having rather than just another hop:
+
+- **Record each constant's touchpoints in a comment** — the modules that read it — so changing a value tells you what it reaches without a grep. Keep the list current when you add a consumer. A stale touchpoint comment is worse than none, because it will be believed.
+- **The constants file imports nothing.** That is what lets a model and a service both read it without a cycle: models already import from services here (`models/ScheduledJob.js` → `services/scheduler/nextRun.js`), so a constants file with its own imports can close the loop.
+- **One import path, so do not re-export.** When you move a constant out of a module, delete the original and repoint every consumer — including tests. Leaving a re-export behind means two valid ways to import the same value, which is the inconsistency the file exists to remove.
+- **Derived structures stay with their logic.** A `Set`/`Map` built *from* constants — `registry.js`'s `POLICIES` — is not itself a constant. Keeping it derived is what stops a new policy being added without the validator learning about it.
+- **Object constants are a shared mutable.** Nothing freezes them, and freezing one that a library may normalise (a Mongoose options object) is a behaviour change, not a refactor. Say in the comment that it is read-only by convention.
+
+**Do not add a 28th hardcoded `'Australia/Sydney'`.** It appears 27 times across 17 backend files, with four files each declaring their own private `SYDNEY_TIME_ZONE`/`DEFAULT_XERO_TIMEZONE` copy, and `'en-AU'` is inline 15 more times. These reach invoice dates, statement dates and Xero due dates, so a wrong default is a billing-correctness bug rather than a cosmetic one. Consolidating them is real work with real blast radius and wants its own ticket — but new code reads the constant, it does not add to the pile.
+
 ## Logging in locally
 
 The login screen's primary **Sign in with ISO+™** button starts an OAuth flow against the live `app.isoplus.online`, which cannot complete locally — the ISO+ credentials are blank in a local `Backend/.env`. Do not try to make that path work offline; use the credentials path the app already ships:
@@ -243,7 +257,7 @@ Entry point `src/index.js` wires everything: Sentry (`instrument.js`, imported f
 - **Models**: `src/models/*.js` are Mongoose schemas (User, Workspace, Board, Item, Business, SyncExecution, AuditTrail, OAuthTicket, PDFLink, Subscription, etc.).
 - **Auth** (`src/middleware/auth.js` + `authHelpers.js`):
   - `authenticateToken` reads a JWT from `req.session.token` (JWT lives in the session, not a bearer header), verifies it, and applies role scoping. Roles are `isoplus_user | support_admin | owner` (see `User.js`). `isoplus_user` is authorized per-workspace/board via `authorizeIsoplusUser`.
-  - `validateApiKey` guards admin/webhook routes with the `Admin_API_Key` env var (compared against the raw `Authorization` header).
+  - `validateApiKey` guards admin/webhook routes with the `Admin_API_Key` env var (compared against the raw `Authorization` header). `validateSchedulerApiKey` is the same check against `SCHEDULER_API_KEY` and guards only `POST /api/scheduler/tick` — a separate credential because it lives in an AWS EventBridge rule and rotates on its own schedule. Both come from one `apiKeyValidator(envVar)` factory; add a gate by calling it, not by copying it.
   - Login is an **ISO+ OAuth flow** (`routes/auth.js` → `services/isoplus.js`), using signed OAuth state and short-lived `OAuthTicket` records for the frontend handoff.
 - **Board sync (BullMQ + Redis)**: `services/sync/queue.js` defines the `board-sync` queue; `workers/syncWorker.js` is the worker (started on boot from `index.js`). Both build their own ioredis connection and support cluster mode via `REDIS_CLUSTER=true` (AWS ElastiCache Serverless, TLS, hash-tagged queue name `{board-sync}`). Failed jobs are retried on startup. Queue is monitored via Bull Board at `/api/queues`.
 - **PDF generation**: uses `@pdfme/*` with JSON templates in `src/assets/` (`NDISinvoice.json`, `quote.json`, `monthlyStatement.json`, etc.). Webhook-driven PDF generation lives in `utils/webhook*Helpers.js` and is exposed under `/api/pdf` and `/api/webhooks`.
@@ -272,4 +286,4 @@ Next.js App Router under `Frontend/app/`. Path alias `@/*` maps to the Frontend 
 
 ## Environment
 
-Copy `.env.example` in each app. Backend **requires** `MONGODB_URI`, `JWT_SECRET`, `SESSION_SECRET` (process exits on boot if missing). Other important backend vars: ISO+ OAuth (`CLIENT_ID`/`CLIENT_SECRET`/`PERSONAL_ACCESS_TOKEN`/`*_ENDPOINT`/`CALLBACK_URL`), Xero (`XERO_*`), AWS (`AWS_*`, `AWS_BUCKET*`), `Admin_API_Key`, `ALLOWED_ORIGINS`, and Redis (`REDIS_HOST`/`REDIS_PORT`/`REDIS_CLUSTER`/`REDIS_TLS`/`REDIS_PASSWORD`). Frontend needs `NEXT_PUBLIC_BACKEND_URL` (and optional `NEXT_PUBLIC_TRUSTED_ORIGINS`, `NEXT_PUBLIC_SENTRY_DSN`).
+Copy `.env.example` in each app. Backend **requires** `MONGODB_URI`, `JWT_SECRET`, `SESSION_SECRET` (process exits on boot if missing). Other important backend vars: ISO+ OAuth (`CLIENT_ID`/`CLIENT_SECRET`/`PERSONAL_ACCESS_TOKEN`/`*_ENDPOINT`/`CALLBACK_URL`), Xero (`XERO_*`), AWS (`AWS_*`, `AWS_BUCKET*`), `Admin_API_Key`, `SCHEDULER_API_KEY`, `ALLOWED_ORIGINS`, and Redis (`REDIS_HOST`/`REDIS_PORT`/`REDIS_CLUSTER`/`REDIS_TLS`/`REDIS_PASSWORD`). Frontend needs `NEXT_PUBLIC_BACKEND_URL` (and optional `NEXT_PUBLIC_TRUSTED_ORIGINS`, `NEXT_PUBLIC_SENTRY_DSN`).

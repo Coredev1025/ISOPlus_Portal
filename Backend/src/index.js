@@ -27,9 +27,11 @@ import syncRoutes from './routes/sync.js';
 import itemsRoutes from './routes/items.js';
 import exportOptimizedRoutes from './routes/exportOptimized.js';
 import subscriptionRoutes from './routes/subscription.js';
+import schedulerRoutes from './routes/scheduler.js';
 import session from 'express-session';
 import MongoStore from 'connect-mongo';
 import syncWorker, { checkAndRetryFailedJobs } from './workers/syncWorker.js'; // Initialize sync worker
+import { registerSchedulerHandlers } from './services/scheduler/handlers.js';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { ExpressAdapter } from '@bull-board/express';
@@ -37,9 +39,13 @@ import { syncQueue } from './services/sync/queue.js';
 import { requestContextMiddleware } from './middleware/requestContext.js';
 import { auditHttpMiddleware } from './middleware/auditHttp.js';
 import { errorHandler } from './middleware/errorHandler.js';
-import { info, error as logError } from './utils/logger.js';
+import { info, warn, error as logError } from './utils/logger.js';
 
 dotenv.config();
+
+// Register scheduler job handlers alongside the other background wiring
+// (sync worker, queue) so the registry is populated before the first tick.
+registerSchedulerHandlers();
 
 axios.defaults.timeout = Math.max(parseInt(process.env.HTTP_CLIENT_TIMEOUT_MS || '30000', 10), 1000);
 axios.defaults.httpAgent = new http.Agent({ keepAlive: true, maxSockets: 100 });
@@ -52,6 +58,15 @@ if (missingEnvVars.length > 0) {
   logError('Bootstrap', 'Missing required environment variables', { missingEnvVars });
   logError('Bootstrap', 'Please check your .env file and ensure all required variables are set.');
   process.exit(1);
+}
+
+// Deliberately a warning, not a required variable: the scheduler must not be
+// able to stop the whole API booting. But a missing key is otherwise silent —
+// the app is healthy, every other route works, and only POST /api/scheduler/tick
+// answers 500, on every EventBridge invocation, forever, so no schedule ever
+// runs and nothing says why. See docs/scheduling.md.
+if (!process.env.SCHEDULER_API_KEY) {
+  warn('Bootstrap', 'SCHEDULER_API_KEY is not set: POST /api/scheduler/tick will reject every call with 500 and no schedule will run');
 }
 
 mongoose.set('strictQuery', true);
@@ -146,6 +161,7 @@ app.use('/api/sync', syncRoutes);
 app.use('/api/items', itemsRoutes);
 app.use('/api/export', exportOptimizedRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/scheduler', schedulerRoutes);
 
 // Setup Bull Board for queue monitoring
 const serverAdapter = new ExpressAdapter();

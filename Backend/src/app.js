@@ -23,6 +23,7 @@ import syncRoutes from './routes/sync.js';
 import itemsRoutes from './routes/items.js';
 import exportOptimizedRoutes from './routes/exportOptimized.js';
 import subscriptionRoutes from './routes/subscription.js';
+import schedulerRoutes from './routes/scheduler.js';
 import { requestContextMiddleware } from './middleware/requestContext.js';
 import { auditHttpMiddleware } from './middleware/auditHttp.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -123,6 +124,7 @@ export function createApp({ mongoUri } = {}) {
   app.use('/api/items', itemsRoutes);
   app.use('/api/export', exportOptimizedRoutes);
   app.use('/api/subscriptions', subscriptionRoutes);
+  app.use('/api/scheduler', schedulerRoutes);
 
   app.use(errorHandler);
 
