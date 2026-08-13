@@ -223,5 +223,5 @@ The settings layer has no dependency on #855 — it needs only `computeNextRun`,
 1. **Mid-cycle schedule edits shift `periodKey`**, so a job could legitimately run twice across overlapping periods. Harmless while nothing sends; a real constraint on the delivery work.
 2. **Disable mid-tick** — an already-claimed job still dispatches. Accepted, not solved.
 3. **Boards in one workspace cannot bill on different cycles** — a consequence of decision 2.
-4. **`missedRuns` stays zero under `AT_LEAST_ONCE`** (inherited from #855), so `lastRunAt` staleness is the signal for these schedules.
+4. ~~**`missedRuns` stays zero under `AT_LEAST_ONCE`** (inherited from #855), so `lastRunAt` staleness is the signal for these schedules.~~ **Resolved 2026-08-13, on this branch.** `recordSuccess` now counts skipped slots for at-least-once schedules, and picker cadences are counted in their own steps via `services/scheduler/missedSlots.js`. See `docs/scheduling.md`.
 5. **`index.js` / `app.js` remain parallel apps.** Avoided here by using an already-mounted router, not fixed.

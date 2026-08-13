@@ -88,16 +88,24 @@ describe('the tick advance path', () => {
     expect(fresh.nextRunAt.toISOString()).toBe(CRON_NEXT);
   });
 
-  it('counts no missed slots for an overdue picker schedule instead of walking a null cron', async () => {
+  it('counts an overdue picker schedule in its own slots, not by walking a null cron', async () => {
     // countMissedSlots walks a cron iterator and is cron-only by construction.
     // Against a null cron it counted one skipped slot per minute — 1000, the
-    // walk cap — for a schedule that had missed at most a handful.
+    // walk cap — for a schedule that had missed at most a handful. That is
+    // what this test was originally written to prevent, and still is.
+    //
+    // It asserted 0 because picker schedules had no missed-slot arithmetic at
+    // all. They do now (services/scheduler/missedSlots.js), so the correct
+    // answer is the real count: due 1 Aug, ticked 11 Aug, fortnightly from
+    // Mon 3 Aug — only Mon 3 Aug went by, and Mon 17 Aug is still ahead.
     const job = await pickerJob({ nextRunAt: new Date('2026-08-01T00:00:00Z') });
 
     await runTick({ now: NOW });
 
     const fresh = await ScheduledJob.findById(job._id);
-    expect(fresh.missedRuns).toBe(0);
+    expect(fresh.missedRuns).toBe(1);
+    // The point of the original assertion, kept explicit: nowhere near the cap.
+    expect(fresh.missedRuns).toBeLessThan(10);
     expect(fresh.nextRunAt.toISOString()).toBe(PICKER_NEXT);
   });
 

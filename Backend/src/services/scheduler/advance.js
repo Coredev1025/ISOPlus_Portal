@@ -64,6 +64,23 @@ export function canonicalStartDate(startDate, timezone) {
  * orders. Absorbing that here is most of why this module exists — along with
  * the startDate type mismatch handled by normaliseStartDate above.
  */
+/**
+ * The schedule as a plain object.
+ *
+ * Spreading a Mongoose subdocument copies its internal properties, not its
+ * fields, so `{...job.schedule}` on a hydrated document loses `every`,
+ * `runOn` and `runAt` entirely and the picker arithmetic silently falls back
+ * to its defaults — a monthly schedule advancing roughly daily.
+ *
+ * Every production caller reads with .lean() (tick.js claims lean, and
+ * claimAtMostOnce passes lean: true), so this is not reachable today. It is
+ * guarded because nothing in the signature says "lean only", and the failure
+ * is silent: a wrong Date rather than a throw.
+ */
+function plainSchedule(schedule) {
+  return typeof schedule?.toObject === 'function' ? schedule.toObject() : schedule;
+}
+
 export function advanceSchedule(job, now) {
   const hasCron = Boolean(job?.cron);
   const hasPicker = Boolean(job?.schedule?.every?.unit);
@@ -76,9 +93,10 @@ export function advanceSchedule(job, now) {
     return cronNextRun(job.cron, job.timezone, now);
   }
 
+  const stored = plainSchedule(job.schedule);
   const schedule = {
-    ...job.schedule,
-    startDate: normaliseStartDate(job.schedule.startDate, job.timezone),
+    ...stored,
+    startDate: normaliseStartDate(stored.startDate, job.timezone),
   };
   return pickerNextRun(schedule, now, job.timezone);
 }

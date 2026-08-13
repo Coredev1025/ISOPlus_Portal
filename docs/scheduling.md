@@ -479,27 +479,44 @@ a race between two Elastic Beanstalk instances will double-dispatch it.
 Per `ScheduledJob` document (`Backend/src/models/ScheduledJob.js`), for the
 schedule-level detail `lastTickAt` cannot provide on its own:
 
-- **`missedRuns > 0`, but only for `AT_MOST_ONCE` schedules.** `claimNext`
-  (`Backend/src/services/scheduler/tick.js:40`) returns early for any policy
-  that is not `AT_MOST_ONCE`, so the `$inc` on `missedRuns` only ever runs on
-  the at-most-once claim path. For `AT_LEAST_ONCE` schedules — `board_sync` —
-  `missedRuns` is **permanently zero**, no matter how long the app was down;
-  do not build a per-`board_sync` alert on this field, it can never fire.
-  For `AT_MOST_ONCE` schedules (`invoice_issuance`), a missed slot really does
-  increment it, and a missed monthly statement or invoice run should not be
-  silent. The underlying asymmetry is worth knowing before you go looking for
-  a count that isn't there: an `AT_LEAST_ONCE` schedule that comes due after
-  downtime just runs once and advances to the next slot, with no record of
-  how many slots it skipped.
-- **`consecutiveFailures > 0`** — the handler is throwing. A failing handler is
-  never auto-disabled, so this counter is the main signal that a schedule is
-  failing every time it fires. For `AT_LEAST_ONCE` schedules it does not mean
-  "still retrying the same slot forever," though: once `consecutiveFailures`
-  reaches `MAX_CONSECUTIVE_FAILURES` (5,
-  `Backend/src/services/scheduler/outcome.js:12`), `recordFailure` advances
-  `nextRunAt` to the next cron slot instead of continuing to retry the failed
-  one — that slot is abandoned and the schedule degrades to at-most-once
-  behaviour from then on.
+- **`missedRuns > 0`, for every policy and both schedule shapes.** A slot that
+  came and went while the app was down increments it, whether the schedule is
+  `AT_MOST_ONCE` or `AT_LEAST_ONCE` and whether it is expressed as cron or as
+  an "every {n, unit}" picker cadence. Alert on it for any `kind`.
+
+  Counted in two places, because the two policies skip slots at different
+  moments: `AT_MOST_ONCE` counts on the claim
+  (`Backend/src/services/scheduler/tick.js`), which is where its `nextRunAt`
+  advances, and `AT_LEAST_ONCE` counts in `recordSuccess`
+  (`Backend/src/services/scheduler/outcome.js`), which is where its advance
+  actually happens. Both call the same `missedSlotsFor`
+  (`Backend/src/services/scheduler/missedSlots.js`), so the count cannot
+  disagree between them.
+
+  A picker cadence is counted in **its own steps**: an "every 3 months"
+  schedule that missed nine calendar months reports 3, not 9. The walk is
+  capped at 1000 slots — it is a health signal, not an accounting record, so
+  a very stale row reports "at least this many".
+
+  > **Changed 2026-08-13.** This field used to be permanently zero for every
+  > `AT_LEAST_ONCE` schedule — which is both automation kinds and
+  > `board_sync` — because only the at-most-once claim path incremented it.
+  > Any alert written against it before that date could never fire, and
+  > `lastRunAt` staleness was the documented substitute. Both now work.
+- **`consecutiveFailures > 0`** — the handler is throwing. Reaching this count
+  never disables a schedule, so it is the main signal that one is failing every
+  time it fires. For `AT_LEAST_ONCE` schedules it does not mean "still retrying
+  the same slot forever": once it reaches `MAX_CONSECUTIVE_FAILURES` (5, in
+  `Backend/src/constants/scheduler.js`), `advancePastFailureLimit` in
+  `outcome.js` moves `nextRunAt` on to the following slot rather than retrying
+  the failed one — that slot is abandoned and the schedule degrades to
+  at-most-once behaviour from then on.
+
+  A schedule *is* disabled in one other case, which is not this one: when its
+  own next slot cannot be computed at all, `disableUnrunnable` flips `enabled`
+  off. Such a row can never run again, so leaving it enabled would mean
+  re-reading and re-failing it on every tick forever. `lastRunAt`, `missedRuns`
+  and `lastError` all survive the disable for whoever investigates.
 
   `consecutiveFailures` is never reset except by success, so once it passes 5
   it keeps climbing on every subsequent slot the handler still fails on. It is
@@ -538,9 +555,11 @@ schedule-level detail `lastTickAt` cannot provide on its own:
   is not firing at all: a misconfigured or missing EventBridge rule, a
   disabled schedule, or a `kind` whose handler throws before recording
   anything. This is also the check to run after creating a new AWS rule
-  (see "Verifying a rule after creating it" above), and it is the correct
-  substitute for `missedRuns` when the schedule in question is
-  `AT_LEAST_ONCE`. Note this still requires at least one `ScheduledJob`
+  (see "Verifying a rule after creating it" above). It used to be the only
+  option for an `AT_LEAST_ONCE` schedule, since `missedRuns` could not count
+  for one; that is no longer true, and the two are now complementary —
+  `missedRuns` says how many slots were skipped, `lastRunAt` says whether the
+  schedule is firing at all. Note this still requires at least one `ScheduledJob`
   document to exist and be due before it says anything; `lastTickAt` above is
   what to watch when there may be none.
 

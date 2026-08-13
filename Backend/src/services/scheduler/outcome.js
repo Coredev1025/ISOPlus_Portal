@@ -1,6 +1,7 @@
 import ScheduledJob from '../../models/ScheduledJob.js';
 import { error as logError } from '../../utils/logger.js';
 import { advanceSchedule } from './advance.js';
+import { missedSlotsFor } from './missedSlots.js';
 import {
   AT_LEAST_ONCE,
   AT_MOST_ONCE,
@@ -37,6 +38,14 @@ export async function recordSuccess(job, policy, now) {
   // kinds that use it would have re-fired every 60 seconds.
   if (policy === AT_LEAST_ONCE) {
     update.$set.nextRunAt = advanceSchedule(job, now);
+
+    // That advance jumps straight past every slot between the due one and
+    // now, so this is the only place they can be counted. The claim counts
+    // them for at-most-once; nothing counted them here, which left missedRuns
+    // permanently zero for every at-least-once schedule — both automation
+    // kinds and board_sync — so anything alerting on it could never fire.
+    const missed = missedSlotsFor(job, now);
+    if (missed > 0) update.$inc = { missedRuns: missed };
   }
 
   await ScheduledJob.updateOne({ _id: job._id }, update);

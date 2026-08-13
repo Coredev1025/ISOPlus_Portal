@@ -1,7 +1,7 @@
 import ScheduledJob from '../../models/ScheduledJob.js';
 import { info, warn } from '../../utils/logger.js';
-import { countMissedSlots } from './nextRun.js';
 import { advanceSchedule } from './advance.js';
+import { missedSlotsFor } from './missedSlots.js';
 import { resolve } from './registry.js';
 import { recordSuccess, recordFailure, quarantineSchedule } from './outcome.js';
 import { recordHeartbeat } from './heartbeat.js';
@@ -53,26 +53,6 @@ async function claimNext(now, excludeIds, stats) {
     // way, do NOT stop here: one bad row must not abandon every remaining due
     // schedule, this tick or any future one.
   }
-}
-
-/**
- * Slots skipped between the due slot and now.
- *
- * countMissedSlots is cron-only by construction — it walks a cron iterator —
- * and there is deliberately no picker equivalent: counting skipped slots for
- * an "every {n, unit}" cadence is a separate piece of arithmetic nobody has
- * specified. Picker schedules therefore contribute 0, which costs nothing
- * today: missedRuns is already permanently zero for AT_LEAST_ONCE schedules (a
- * known, documented limitation — the claim does not advance them), and
- * AT_LEAST_ONCE is the policy both automation kinds use.
- *
- * Passing a picker job's null cron to countMissedSlots is not a no-op:
- * cron-parser reads a null expression as '* * * * *' and counts one missed
- * slot per elapsed minute, up to the walk cap.
- */
-function missedSlotsFor(candidate, now) {
-  if (!candidate.cron) return 0;
-  return countMissedSlots(candidate.cron, candidate.timezone, candidate.nextRunAt, now);
 }
 
 /**
