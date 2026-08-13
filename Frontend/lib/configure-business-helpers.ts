@@ -68,3 +68,12 @@ export const CREDIT_NOTE_SEQUENCE_DISPLAY: NumberSequence = {
   prefix: "CN-",
   nextNumber: 1000,
 };
+
+export function cloneDefaultSequences() {
+  return {
+    invoice: { ...DEFAULT_SEQUENCES.invoice },
+    purchaseOrder: { ...DEFAULT_SEQUENCES.purchaseOrder },
+    quote: { ...DEFAULT_SEQUENCES.quote },
+    statement: { ...DEFAULT_SEQUENCES.statement },
+  };
+}

@@ -25,7 +25,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { showSaveSuccessToast, showSaveErrorToast, showFetchSuccessToast, showFetchErrorToast } from "@/lib/toast-utils";
 import {
-  DEFAULT_SEQUENCES,
+  cloneDefaultSequences,
   extractDocumentNumberingSequences,
   mapBusinessProfileToFormData,
   type NumberSequence,
@@ -44,18 +44,17 @@ export default function ConfigureBusinessPage() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [showError, setShowError] = useState(false);
   // Document number sequences (passthrough so Basic save does not clear Financial Settings)
-  const [invoiceSequence, setInvoiceSequence] = useState<NumberSequence>({
-    ...DEFAULT_SEQUENCES.invoice,
-  });
-  const [purchaseOrderSequence, setPurchaseOrderSequence] = useState<NumberSequence>({
-    ...DEFAULT_SEQUENCES.purchaseOrder,
-  });
-  const [quoteSequence, setQuoteSequence] = useState<NumberSequence>({
-    ...DEFAULT_SEQUENCES.quote,
-  });
-  const [statementSequence, setStatementSequence] = useState<NumberSequence>({
-    ...DEFAULT_SEQUENCES.statement,
-  });
+  const [invoiceSequence, setInvoiceSequence] = useState<NumberSequence>(
+    () => cloneDefaultSequences().invoice
+  );
+  const [purchaseOrderSequence, setPurchaseOrderSequence] =
+    useState<NumberSequence>(() => cloneDefaultSequences().purchaseOrder);
+  const [quoteSequence, setQuoteSequence] = useState<NumberSequence>(
+    () => cloneDefaultSequences().quote
+  );
+  const [statementSequence, setStatementSequence] = useState<NumberSequence>(
+    () => cloneDefaultSequences().statement
+  );
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [apiError, setApiError] = useState<string>('');

@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 
 import {
+  cloneDefaultSequences,
+  DEFAULT_SEQUENCES,
   extractDocumentNumberingSequences,
   mapBusinessProfileToFormData,
 } from '@/lib/configure-business-helpers';
@@ -195,6 +197,19 @@ describe('mapBusinessProfileToFormData', () => {
     mapBusinessProfileToFormData(input, 'ws-4471');
 
     expect(input).toEqual(JSON.parse(JSON.stringify(PROFILE)));
+  });
+});
+
+describe('cloneDefaultSequences', () => {
+  it('returns STM- copies that callers can mutate without changing the shared defaults', () => {
+    const cloned = cloneDefaultSequences();
+
+    expect(cloned).toEqual(DEFAULT_SEQUENCES);
+    expect(cloned.statement.prefix).toBe('STM-');
+    expect(cloned.invoice).not.toBe(DEFAULT_SEQUENCES.invoice);
+
+    cloned.invoice.prefix = 'X-';
+    expect(DEFAULT_SEQUENCES.invoice.prefix).toBe('INV-');
   });
 });
 

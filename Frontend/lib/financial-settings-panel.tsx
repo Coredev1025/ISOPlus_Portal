@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import axios from "@/app/utils/axiosConfig";
 import Spinner from "@/components/ui/spin";
 import {
-  DEFAULT_SEQUENCES,
+  cloneDefaultSequences,
   extractDocumentNumberingSequences,
   mapBusinessProfileToFormData,
 } from "@/lib/configure-business-helpers";
@@ -68,7 +68,7 @@ export function FinancialSettingsPanel({
   );
   const [bankDetails, setBankDetails] = useState<BankDetailsForm>(EMPTY_BANK);
   const [sequences, setSequences] =
-    useState<DocumentSequences>(DEFAULT_SEQUENCES);
+    useState<DocumentSequences>(cloneDefaultSequences);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
@@ -143,12 +143,7 @@ export function FinancialSettingsPanel({
   };
 
   const handleRestoreDefaults = () => {
-    setSequences({
-      invoice: { ...DEFAULT_SEQUENCES.invoice },
-      purchaseOrder: { ...DEFAULT_SEQUENCES.purchaseOrder },
-      quote: { ...DEFAULT_SEQUENCES.quote },
-      statement: { ...DEFAULT_SEQUENCES.statement },
-    });
+    setSequences(cloneDefaultSequences());
   };
 
   const handleSave = async () => {
