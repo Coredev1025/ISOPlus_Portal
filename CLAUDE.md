@@ -188,6 +188,20 @@ PRs target `develop` except hotfixes, which target `main`.
 
 - **`scripts/` is deliberately dependency-free** and must stay that way — no lodash there. It runs on a fresh clone before any `npm install`, and there is no root `node_modules`. Pure functions still apply: see `scripts/lib/branch.mjs`, which is entirely pure and therefore trivially checkable.
 
+## Constants
+
+**A feature's fixed values live in one file: `Backend/src/constants/<feature>.js`,** or `Frontend/constants/<feature>.ts` (imported as `@/constants/<feature>`) for frontend ones. Not inline in a route, a service or a JSX attribute, and not re-declared per module. See `Backend/src/constants/scheduler.js` for the shape.
+
+Five rules make that file worth having rather than just another hop:
+
+- **Record each constant's touchpoints in a comment** — the modules that read it — so changing a value tells you what it reaches without a grep. Keep the list current when you add a consumer. A stale touchpoint comment is worse than none, because it will be believed.
+- **The constants file imports nothing.** That is what lets a model and a service both read it without a cycle: models already import from services here (`models/ScheduledJob.js` → `services/scheduler/nextRun.js`), so a constants file with its own imports can close the loop.
+- **One import path, so do not re-export.** When you move a constant out of a module, delete the original and repoint every consumer — including tests. Leaving a re-export behind means two valid ways to import the same value, which is the inconsistency the file exists to remove.
+- **Derived structures stay with their logic.** A `Set`/`Map` built *from* constants — `registry.js`'s `POLICIES` — is not itself a constant. Keeping it derived is what stops a new policy being added without the validator learning about it.
+- **Object constants are a shared mutable.** Nothing freezes them, and freezing one that a library may normalise (a Mongoose options object) is a behaviour change, not a refactor. Say in the comment that it is read-only by convention.
+
+**Do not add a 28th hardcoded `'Australia/Sydney'`.** It appears 27 times across 17 backend files, with four files each declaring their own private `SYDNEY_TIME_ZONE`/`DEFAULT_XERO_TIMEZONE` copy, and `'en-AU'` is inline 15 more times. These reach invoice dates, statement dates and Xero due dates, so a wrong default is a billing-correctness bug rather than a cosmetic one. Consolidating them is real work with real blast radius and wants its own ticket — but new code reads the constant, it does not add to the pile.
+
 ## Logging in locally
 
 The login screen's primary **Sign in with ISO+™** button starts an OAuth flow against the live `app.isoplus.online`, which cannot complete locally — the ISO+ credentials are blank in a local `Backend/.env`. Do not try to make that path work offline; use the credentials path the app already ships:
