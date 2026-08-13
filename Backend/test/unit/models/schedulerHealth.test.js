@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import SchedulerHealth, { SCHEDULER_HEALTH_KEY } from '../../../src/models/SchedulerHealth.js';
+import SchedulerHealth from '../../../src/models/SchedulerHealth.js';
+import { SCHEDULER_HEALTH_KEY } from '../../../src/constants/scheduler.js';
 
 describe('SchedulerHealth model', () => {
   it('applies defaults for a minimally specified document', async () => {

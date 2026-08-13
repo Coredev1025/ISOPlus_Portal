@@ -2,18 +2,7 @@ import Business from '../../models/Business.js';
 import { mongoEq } from '../../utils/securityHelpers.js';
 import { warn } from '../../utils/logger.js';
 import { isValidSchedule } from './nextRun.js';
-
-/**
- * Used whenever no timezone can be determined any other way: no timezone
- * argument, no workspaceId, no matching Business, no value on it, or an
- * inherited value that does not parse as an IANA zone.
- */
-export const DEFAULT_TIMEZONE = 'Australia/Sydney';
-
-// Trivially valid on its own, so passing it to isValidSchedule alongside a
-// candidate timezone isolates that function's timezone check from its
-// cron-parsing check — reused rather than duplicating the Intl validation.
-const PROBE_CRON = '* * * * *';
+import { DEFAULT_TIMEZONE, PROBE_CRON, LOG_SCOPE } from '../../constants/scheduler.js';
 
 /**
  * Business.headOfficeTimezone for a workspace, or null if there is no
@@ -51,7 +40,7 @@ export async function resolveTimezone({ workspaceId, timezone }) {
   if (!inherited) return DEFAULT_TIMEZONE;
   if (isValidSchedule(PROBE_CRON, inherited)) return inherited;
 
-  warn('Scheduler', 'Business headOfficeTimezone is not a valid IANA timezone; falling back', {
+  warn(LOG_SCOPE, 'Business headOfficeTimezone is not a valid IANA timezone; falling back', {
     workspaceId,
     timezone: inherited,
   });

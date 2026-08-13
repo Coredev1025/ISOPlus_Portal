@@ -1,19 +1,13 @@
 /**
- * Delivery policy is declared here, at registration, rather than stored on the
+ * Delivery policy is declared at registration rather than stored on the
  * schedule record — an operator editing a record must not be able to put a
- * handler under a guarantee it cannot survive.
- *
- * AT_MOST_ONCE  the schedule advances as part of the claim, before dispatch.
- *               A crash loses the slot. Correct where a duplicate is worse
- *               than a miss: issuing an invoice.
- * AT_LEAST_ONCE the schedule advances only after a successful enqueue. A crash
- *               retries the slot, and two instances may both dispatch.
- *               Correct where the handler is idempotent and a miss is worse
- *               than a repeat: board sync.
+ * handler under a guarantee it cannot survive. The two policy values live in
+ * constants/scheduler.js; what they mean is documented there.
  */
-export const AT_MOST_ONCE = 'at_most_once';
-export const AT_LEAST_ONCE = 'at_least_once';
+import { AT_MOST_ONCE, AT_LEAST_ONCE } from '../../constants/scheduler.js';
 
+// Derived from the two constants rather than a third list of policy names,
+// so adding a policy cannot leave the validator behind.
 const POLICIES = new Set([AT_MOST_ONCE, AT_LEAST_ONCE]);
 
 const handlers = new Map();

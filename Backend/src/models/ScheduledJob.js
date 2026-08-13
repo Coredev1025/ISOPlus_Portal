@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 
 import { isValidSchedule } from '../services/scheduler/nextRun.js';
+import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
 
 // A cron/timezone pair is only valid together — 'not-a-cron' is invalid on its
 // own, but so is a well-formed cron paired with a timezone Intl does not
@@ -46,7 +47,7 @@ const scheduledJobSchema = new mongoose.Schema(
     timezone: {
       type: String,
       required: true,
-      default: 'Australia/Sydney',
+      default: DEFAULT_TIMEZONE,
       validate: {
         validator: timezoneIsValid,
         message: (props) => `"${props.value}" is not a valid IANA timezone`,

@@ -1,9 +1,6 @@
 import mongoose from 'mongoose';
 
-// Singleton discriminator. There is exactly one scheduler, so exactly one
-// document should ever exist — the unique index on `key` is what enforces
-// that, not application logic.
-export const SCHEDULER_HEALTH_KEY = 'scheduler';
+import { SCHEDULER_HEALTH_KEY } from '../constants/scheduler.js';
 
 const schedulerHealthSchema = new mongoose.Schema(
   {

@@ -1,19 +1,13 @@
 import { minIntervalMinutes } from './nextRun.js';
-import { tryResolve, AT_MOST_ONCE, AT_LEAST_ONCE } from './registry.js';
+import { tryResolve } from './registry.js';
 import { warn } from '../../utils/logger.js';
-
-/**
- * Nothing that issues a document to an NDIS participant has any business
- * running more often than hourly. Used for AT_MOST_ONCE handlers.
- */
-export const AT_MOST_ONCE_MIN_INTERVAL_MINUTES = 60;
-
-/**
- * Sync is idempotent and cheap; half-hourly is a legitimate cadence. Used
- * for AT_LEAST_ONCE handlers, and for any kind whose policy cannot be
- * determined — see resolvePolicyForFloor below.
- */
-export const AT_LEAST_ONCE_MIN_INTERVAL_MINUTES = 5;
+import {
+  AT_MOST_ONCE,
+  AT_LEAST_ONCE,
+  AT_MOST_ONCE_MIN_INTERVAL_MINUTES,
+  AT_LEAST_ONCE_MIN_INTERVAL_MINUTES,
+  LOG_SCOPE,
+} from '../../constants/scheduler.js';
 
 function floorForPolicy(policy) {
   return policy === AT_MOST_ONCE
@@ -34,7 +28,7 @@ function resolvePolicyForFloor(kind) {
   if (entry) return entry.policy;
 
   warn(
-    'Scheduler',
+    LOG_SCOPE,
     'No registered handler for kind; applying the lenient minimum-interval floor',
     { kind },
   );

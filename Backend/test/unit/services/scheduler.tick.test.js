@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import ScheduledJob from '../../../src/models/ScheduledJob.js';
-import SchedulerHealth, { SCHEDULER_HEALTH_KEY } from '../../../src/models/SchedulerHealth.js';
+import SchedulerHealth from '../../../src/models/SchedulerHealth.js';
 import { runTick } from '../../../src/services/scheduler/tick.js';
+import { register, clearRegistry } from '../../../src/services/scheduler/registry.js';
 import {
-  register,
-  clearRegistry,
   AT_MOST_ONCE,
   AT_LEAST_ONCE,
-} from '../../../src/services/scheduler/registry.js';
+  SCHEDULER_HEALTH_KEY,
+} from '../../../src/constants/scheduler.js';
 
 const NOW = new Date('2026-08-11T04:05:00Z');
 

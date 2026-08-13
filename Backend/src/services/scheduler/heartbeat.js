@@ -1,5 +1,6 @@
-import SchedulerHealth, { SCHEDULER_HEALTH_KEY } from '../../models/SchedulerHealth.js';
+import SchedulerHealth from '../../models/SchedulerHealth.js';
 import { warn } from '../../utils/logger.js';
+import { SCHEDULER_HEALTH_KEY, LOG_SCOPE } from '../../constants/scheduler.js';
 
 /**
  * Records that the scheduler ticked. Called on every tick, including one
@@ -22,7 +23,7 @@ export async function recordHeartbeat(now) {
       { upsert: true },
     );
   } catch (err) {
-    warn('Scheduler', 'Failed to record scheduler heartbeat', {
+    warn(LOG_SCOPE, 'Failed to record scheduler heartbeat', {
       error: err instanceof Error ? err.message : String(err),
     });
   }

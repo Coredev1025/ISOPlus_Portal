@@ -3,10 +3,7 @@ import { info } from '../../utils/logger.js';
 import { computeNextRun, isValidSchedule } from './nextRun.js';
 import { resolveTimezone } from './timezone.js';
 import { assertMinimumInterval } from './intervalFloor.js';
-
-const DUPLICATE_KEY = 11000;
-
-const UPSERT_OPTIONS = { upsert: true, new: true, setDefaultsOnInsert: true };
+import { DUPLICATE_KEY, UPSERT_OPTIONS, LOG_SCOPE } from '../../constants/scheduler.js';
 
 /**
  * An upsert is not atomic against a unique index. Two callers for the same
@@ -67,7 +64,7 @@ export async function upsertSchedule({
     },
   );
 
-  info('Scheduler', 'Schedule upserted', {
+  info(LOG_SCOPE, 'Schedule upserted', {
     kind,
     targetId,
     cron,
@@ -87,7 +84,7 @@ export async function disableSchedule({ kind, targetId }) {
   );
 
   if (job) {
-    info('Scheduler', 'Schedule disabled', { kind, targetId });
+    info(LOG_SCOPE, 'Schedule disabled', { kind, targetId });
   }
 
   return job;

@@ -1,15 +1,12 @@
 import ScheduledJob from '../../models/ScheduledJob.js';
 import { error as logError } from '../../utils/logger.js';
 import { computeNextRun } from './nextRun.js';
-import { AT_LEAST_ONCE, AT_MOST_ONCE } from './registry.js';
-
-/**
- * How many consecutive failures an at-least-once schedule may accumulate
- * before it stops being retried on every tick and is advanced to its next slot
- * instead. Bounds a permanently broken handler without disabling a schedule
- * that may only be temporarily wrong.
- */
-export const MAX_CONSECUTIVE_FAILURES = 5;
+import {
+  AT_LEAST_ONCE,
+  AT_MOST_ONCE,
+  MAX_CONSECUTIVE_FAILURES,
+  LOG_SCOPE,
+} from '../../constants/scheduler.js';
 
 /**
  * Describes any thrown value usefully for logging and storage.
@@ -51,7 +48,7 @@ export async function recordSuccess(job, policy, now) {
 async function disableUnrunnable(job, err) {
   await ScheduledJob.updateOne({ _id: job._id }, { $set: { enabled: false } });
 
-  logError('Scheduler', 'Schedule disabled: its next run cannot be computed', {
+  logError(LOG_SCOPE, 'Schedule disabled: its next run cannot be computed', {
     kind: job.kind,
     targetId: job.targetId,
     cron: job.cron,
@@ -109,7 +106,7 @@ export async function recordFailure(job, policy, err, now) {
   );
 
   if (!applied) {
-    logError('Scheduler', 'Discarded a failure for a schedule that had already moved on', {
+    logError(LOG_SCOPE, 'Discarded a failure for a schedule that had already moved on', {
       kind: job.kind,
       targetId: job.targetId,
       policy,
@@ -125,7 +122,7 @@ export async function recordFailure(job, policy, err, now) {
     now,
   );
 
-  logError('Scheduler', 'Dispatch failed', {
+  logError(LOG_SCOPE, 'Dispatch failed', {
     kind: job.kind,
     targetId: job.targetId,
     policy,

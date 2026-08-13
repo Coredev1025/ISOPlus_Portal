@@ -2,11 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import ScheduledJob from '../../src/models/ScheduledJob.js';
-import {
-  register,
-  clearRegistry,
-  AT_MOST_ONCE,
-} from '../../src/services/scheduler/registry.js';
+import { register, clearRegistry } from '../../src/services/scheduler/registry.js';
+import { AT_MOST_ONCE } from '../../src/constants/scheduler.js';
 
 const app = createApp();
 

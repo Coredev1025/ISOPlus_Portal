@@ -4,9 +4,8 @@ import {
   resolve,
   tryResolve,
   clearRegistry,
-  AT_MOST_ONCE,
-  AT_LEAST_ONCE,
 } from '../../../src/services/scheduler/registry.js';
+import { AT_MOST_ONCE, AT_LEAST_ONCE } from '../../../src/constants/scheduler.js';
 
 describe('scheduler registry', () => {
   beforeEach(() => {

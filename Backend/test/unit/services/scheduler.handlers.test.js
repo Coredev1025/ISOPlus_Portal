@@ -1,11 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { triggerManualSync } from '../../../src/services/sync.js';
 import { registerSchedulerHandlers } from '../../../src/services/scheduler/handlers.js';
-import {
-  resolve,
-  clearRegistry,
-  AT_LEAST_ONCE,
-} from '../../../src/services/scheduler/registry.js';
+import { resolve, clearRegistry } from '../../../src/services/scheduler/registry.js';
+import { AT_LEAST_ONCE } from '../../../src/constants/scheduler.js';
 
 vi.mock('../../../src/services/sync.js', () => ({
   triggerManualSync: vi.fn(),

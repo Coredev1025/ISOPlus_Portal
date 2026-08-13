@@ -6,16 +6,13 @@ import {
   disableSchedule,
 } from '../../../src/services/scheduler/schedules.js';
 import { getSchedulerAuthorization } from '../../../src/services/scheduler/auth.js';
+import { register, clearRegistry } from '../../../src/services/scheduler/registry.js';
 import {
-  register,
-  clearRegistry,
   AT_MOST_ONCE,
   AT_LEAST_ONCE,
-} from '../../../src/services/scheduler/registry.js';
-import {
   AT_MOST_ONCE_MIN_INTERVAL_MINUTES,
   AT_LEAST_ONCE_MIN_INTERVAL_MINUTES,
-} from '../../../src/services/scheduler/intervalFloor.js';
+} from '../../../src/constants/scheduler.js';
 
 vi.mock('../../../src/utils/logger.js', () => ({
   info: vi.fn(),

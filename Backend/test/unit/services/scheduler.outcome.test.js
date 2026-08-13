@@ -3,12 +3,12 @@ import ScheduledJob from '../../../src/models/ScheduledJob.js';
 import {
   recordSuccess,
   recordFailure,
-  MAX_CONSECUTIVE_FAILURES,
 } from '../../../src/services/scheduler/outcome.js';
 import {
   AT_MOST_ONCE,
   AT_LEAST_ONCE,
-} from '../../../src/services/scheduler/registry.js';
+  MAX_CONSECUTIVE_FAILURES,
+} from '../../../src/constants/scheduler.js';
 
 const NOW = new Date('2026-08-11T04:05:00Z');
 

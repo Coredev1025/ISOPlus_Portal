@@ -1,11 +1,11 @@
 import ScheduledJob from '../../models/ScheduledJob.js';
 import { info, warn } from '../../utils/logger.js';
 import { computeNextRun, countMissedSlots } from './nextRun.js';
-import { resolve, AT_MOST_ONCE } from './registry.js';
+import { resolve } from './registry.js';
 import { recordSuccess, recordFailure, quarantineSchedule } from './outcome.js';
 import { recordHeartbeat } from './heartbeat.js';
+import { AT_MOST_ONCE, BATCH_LIMIT, LOG_SCOPE } from '../../constants/scheduler.js';
 
-export const BATCH_LIMIT = 100;
 
 /**
  * Take the next due schedule, if any.
@@ -154,13 +154,13 @@ export async function runTick({ now = new Date(), limit = BATCH_LIMIT } = {}) {
   // the silent truncation this design forbids.
   const capped = claimedIds.length >= limit;
   if (capped) {
-    warn('Scheduler', 'Batch cap reached; remaining schedules wait for the next tick', {
+    warn(LOG_SCOPE, 'Batch cap reached; remaining schedules wait for the next tick', {
       limit,
     });
   }
 
   const summary = { claimed: claimedIds.length, ...stats, capped };
-  info('Scheduler', 'Tick complete', summary);
+  info(LOG_SCOPE, 'Tick complete', summary);
   await recordHeartbeat(now);
   return summary;
 }

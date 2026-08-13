@@ -3,6 +3,7 @@ import express from 'express';
 import { validateSchedulerApiKey } from '../middleware/auth.js';
 import { error as logError } from '../utils/logger.js';
 import { runTick } from '../services/scheduler/tick.js';
+import { LOG_SCOPE } from '../constants/scheduler.js';
 
 const router = express.Router();
 
@@ -16,7 +17,7 @@ router.post('/tick', validateSchedulerApiKey, async (req, res) => {
     res.json(summary);
   } catch (err) {
     logError(
-      'Scheduler',
+      LOG_SCOPE,
       'Tick failed',
       { message: err.message, stack: err.stack },
       req ?? null,

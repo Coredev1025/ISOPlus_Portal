@@ -1,6 +1,7 @@
 import { triggerManualSync } from '../sync.js';
 import { getSchedulerAuthorization } from './auth.js';
-import { register, AT_LEAST_ONCE } from './registry.js';
+import { register } from './registry.js';
+import { AT_LEAST_ONCE } from '../../constants/scheduler.js';
 
 /**
  * triggerManualSync does not throw for every failure — two of its non-dispatch
