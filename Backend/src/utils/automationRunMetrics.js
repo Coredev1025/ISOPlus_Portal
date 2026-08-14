@@ -3,6 +3,8 @@ import {
   RUN_FAILED,
   ERROR_RATE_WINDOW_HOURS,
   TREND_BUCKETS,
+  TODAY_WINDOW_HOURS,
+  WEEK_WINDOW_HOURS,
 } from '../constants/systemHealth.js';
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -48,8 +50,8 @@ export function summariseRuns(rows, now = new Date()) {
   const nowMs = now.getTime();
   const windowMs = ERROR_RATE_WINDOW_HOURS * HOUR_MS;
 
-  const todayRows = since(rows, nowMs - 24 * HOUR_MS);
-  const weekRows = since(rows, nowMs - 7 * 24 * HOUR_MS);
+  const todayRows = since(rows, nowMs - TODAY_WINDOW_HOURS * HOUR_MS);
+  const weekRows = since(rows, nowMs - WEEK_WINDOW_HOURS * HOUR_MS);
   const windowRows = since(rows, nowMs - windowMs);
 
   const succeeded = windowRows.filter((r) => r.status === RUN_SUCCEEDED).length;

@@ -83,6 +83,15 @@ export const ERROR_RATE_WINDOW_HOURS = 24;
 export const TREND_BUCKETS = 12;
 
 /**
+ * Rolling windows measured back from now for counting recent runs.
+ * Not calendar day/week boundaries — these are elapsed-time windows.
+ *
+ * Touchpoints: utils/automationRunMetrics.js.
+ */
+export const TODAY_WINDOW_HOURS = 24;
+export const WEEK_WINDOW_HOURS = 7 * 24;
+
+/**
  * Rows per page in the drill-down history. The spec requires the history be
  * uncapped, so this paginates rather than truncates — the response carries a
  * total and the UI pages through it.
