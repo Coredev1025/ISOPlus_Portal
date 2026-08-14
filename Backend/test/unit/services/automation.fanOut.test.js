@@ -1,9 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import {
-  buildFanOutSpecs,
-  KIND_INVOICE,
-  KIND_STATEMENT,
-} from '../../../src/services/automation/fanOut.js';
+import { KIND_INVOICE, KIND_STATEMENT } from '../../../src/constants/automation.js';
+import { buildFanOutSpecs } from '../../../src/services/automation/fanOut.js';
 
 const TZ = 'Australia/Sydney';
 const slot = new Date('2026-08-11T23:00:00Z'); // 09:00 on the 12th, Sydney

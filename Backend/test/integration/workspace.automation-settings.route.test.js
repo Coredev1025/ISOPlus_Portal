@@ -3,7 +3,7 @@ import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import AutomationSettings from '../../src/models/AutomationSettings.js';
 import ScheduledJob from '../../src/models/ScheduledJob.js';
-import { KIND_INVOICE, KIND_STATEMENT } from '../../src/services/automation/fanOut.js';
+import { KIND_INVOICE, KIND_STATEMENT } from '../../src/constants/automation.js';
 import { authenticatedAgent } from '../helpers/auth.js';
 
 const WS = 'ws-automation-1';

@@ -5,7 +5,7 @@ import { createApp } from '../../src/app.js';
 import AutomationSettings from '../../src/models/AutomationSettings.js';
 import Board from '../../src/models/Board.js';
 import ScheduledJob from '../../src/models/ScheduledJob.js';
-import { KIND_INVOICE, KIND_STATEMENT } from '../../src/services/automation/fanOut.js';
+import { KIND_INVOICE, KIND_STATEMENT } from '../../src/constants/automation.js';
 import { registerSchedulerHandlers } from '../../src/services/scheduler/handlers.js';
 import { clearRegistry, resolve } from '../../src/services/scheduler/registry.js';
 import { AT_LEAST_ONCE } from '../../src/constants/scheduler.js';

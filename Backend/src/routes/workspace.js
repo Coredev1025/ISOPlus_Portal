@@ -12,7 +12,7 @@ import {
   isScheduleClientError,
 } from '../utils/automationSettingsHelpers.js';
 import { upsertSchedule, disableSchedule } from '../services/scheduler/schedules.js';
-import { KIND_INVOICE, KIND_STATEMENT } from '../services/automation/fanOut.js';
+import { KIND_INVOICE, KIND_STATEMENT } from '../constants/automation.js';
 import { getWorkspace, getBoard, getWorkspacePage, getBoardPage, getMemberRole } from '../services/isoplus.js';
 import DynamicLinkingService from '../services/dynamicLinking.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
