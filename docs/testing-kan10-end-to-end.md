@@ -14,22 +14,25 @@ description: >-
 
 ## The boundary — read this before promising anyone a result
 
-**KAN-10 stops at the queue. It does not generate a PDF, send an email, or
-touch Xero, and no amount of configuration will make it.**
+**KAN-10's scheduled pipeline sends nothing, to anyone, in any mode — and it
+never touches Xero.** SES delivery is Epic 5 part 4; only its first slice
+exists: offline, the worker composes the email its settings block describes and
+writes it to the **outbox**, a file a person can open and verify:
 
-`workers/automationWorker.js` is deliberately inert. Its own comment:
+```
+Backend/.local-s3/outbox/<workspaceId>/<kind>-<boardId>-<periodKey>.json
+```
 
-> INTENTIONALLY INERT. This worker generates nothing and sends nothing. …
-> PDF generation and SES delivery are Epic 5 parts 3-4 and replace the body of
-> this handler.
-
-The design doc says the same in its Goal: *"Nothing is generated and nothing is
-sent. The worker drains the queue and logs."* There is no Xero import anywhere
-under `services/automation/`, `services/scheduler/` or `workers/automationWorker.js`.
+One file per claimed slot, named like the queue jobId, so an at-least-once
+redelivery overwrites its own preview rather than duplicating it. Online there
+is still no transport — the worker completes with a warn, and calling the
+outbox directly online throws rather than silently dropping mail.
 
 So "did it reach Xero?" is the wrong success criterion for KAN-10. **The
-terminal observable is a log line and a completed queue job.** A run that ends
-there is a *passing* run.
+terminal observable offline is the outbox file (plus the completed queue job);
+online it is a warn that delivery is unimplemented.** A run that ends there is
+a *passing* run. Xero sync is a different, webhook-driven system — see the
+`xero-sync-local` skill.
 
 Xero *is* reachable in this repo — by a different, older system (Track B). Do
 not let the two blur together, and do not report a Track B success as evidence
@@ -256,17 +259,51 @@ Both hold. Note (a) can print `claimed=1` from *both* ticks — the count that
 matters is the job count, not the claim count. Two jobs for one board would be a
 duplicate-billing defect.
 
+### 9b. The quiet window — nothing fires between slots
+
+The inverse assertion, and the one that catches a scheduler that over-fires:
+after a slot is claimed, every tick until the next computed `nextRunAt` must
+claim **nothing**, and the next slot must mint a **new** periodKey.
+
+```bash
+npm run tick -- --once   # x3, all while nextRunAt is in the future
+# claimed=0 dispatched=0 failed=0     <- every time; the schedule is not due
+```
+
+Then simulate the next slot arriving (backdate again) and tick once:
+
+```
+bull:automation:inv:eNiJpH14PN3:20260814-1646   <- new slot, new key
+bull:automation:inv:eNiJpH14PN3:20260814-1509   <- previous slot, still held
+```
+
+Two distinct jobIds is correct: the dedupe window is the billing period, not
+the queue's lifetime. One id repeated would mean the periodKey failed to move
+with the slot; a fire while `claimed=0` was expected would mean the claim
+query's `nextRunAt <= now` guard is broken.
+
 ### 10. Confirm the terminal state, and stop
 
 ```bash
-docker compose logs backend --since 3m | grep -o "Received automation job[^\"]*"
-# Received automation job (stub — nothing generated or sent)
-docker exec -i isoplus-redis redis-cli --scan --pattern 'bull:automation:completed'
+find Backend/.local-s3/outbox -type f          # one file per claimed slot
+cat Backend/.local-s3/outbox/55369/invoice_automation-*.json
 ```
 
-**That log line is the end of KAN-10.** Jobs land in `completed`, not `waiting` —
-the stub completes them deliberately so BullMQ does not retry against a consumer
-that was never meant to act.
+Observed shape — subject/body/replyTo from the settings block, the slot's
+periodKey, and an explicit nothing-was-sent note:
+
+```json
+{ "kind": "invoice_automation", "periodKey": "20260814-1652",
+  "recipientType": "billing_contact", "replyTo": "billing@iso-plus.com.au",
+  "subject": "Your ISO+ invoice run",
+  "note": "Offline outbox preview — nothing was sent. SES delivery is Epic 5 part 4." }
+```
+
+**That file is the end of KAN-10 offline.** It is also served at
+`/api/local-files/outbox/…`. Jobs land in `completed`, not `waiting` — the
+worker completes them so BullMQ does not retry against a transport that does
+not exist. An empty outbox with completed jobs means the settings block is
+disabled, or the backend is not in offline mode.
 
 ### Track A quick reference
 
