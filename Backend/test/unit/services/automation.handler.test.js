@@ -14,11 +14,8 @@ import {
   registerAutomationHandlers,
 } from '../../../src/services/scheduler/handlers.js';
 import { KIND_INVOICE, KIND_STATEMENT } from '../../../src/services/automation/fanOut.js';
-import {
-  resolve,
-  clearRegistry,
-  AT_LEAST_ONCE,
-} from '../../../src/services/scheduler/registry.js';
+import { resolve, clearRegistry } from '../../../src/services/scheduler/registry.js';
+import { AT_LEAST_ONCE } from '../../../src/constants/scheduler.js';
 import { runTick } from '../../../src/services/scheduler/tick.js';
 
 const job = {

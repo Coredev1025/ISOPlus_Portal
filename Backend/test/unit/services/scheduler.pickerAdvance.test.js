@@ -5,14 +5,13 @@ import { runTick } from '../../../src/services/scheduler/tick.js';
 import {
   recordSuccess,
   recordFailure,
-  MAX_CONSECUTIVE_FAILURES,
 } from '../../../src/services/scheduler/outcome.js';
+import { register, clearRegistry } from '../../../src/services/scheduler/registry.js';
 import {
-  register,
-  clearRegistry,
   AT_MOST_ONCE,
   AT_LEAST_ONCE,
-} from '../../../src/services/scheduler/registry.js';
+  MAX_CONSECUTIVE_FAILURES,
+} from '../../../src/constants/scheduler.js';
 
 /**
  * The tick and outcome modules used to call the cron arithmetic directly with
