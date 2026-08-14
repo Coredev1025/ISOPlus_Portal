@@ -6,8 +6,10 @@ import AutomationRun from '../../src/models/AutomationRun.js';
 import AutomationSettings from '../../src/models/AutomationSettings.js';
 import Business from '../../src/models/Business.js';
 import SchedulerHealth from '../../src/models/SchedulerHealth.js';
+import Board from '../../src/models/Board.js';
 import { authenticatedAgent } from '../helpers/auth.js';
-import { RUN_FAILED, RUN_SUCCEEDED, HISTORY_PAGE_SIZE } from '../../src/constants/systemHealth.js';
+import { RUN_FAILED, RUN_SUCCEEDED, HISTORY_PAGE_SIZE, TRIGGER_MANUAL } from '../../src/constants/systemHealth.js';
+import { recordedJobIds, resetRecordedJobs } from '../helpers/queue.js';
 
 const WS = 'ws-health-1';
 
@@ -232,5 +234,126 @@ describe('GET /api/system-health/workspace/:workspaceId', () => {
     const { agent } = await authenticatedAgent(app);
     const res = await agent.get(`/api/system-health/workspace/${WS}?page=abc`);
     expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/system-health/workspace/:workspaceId/run', () => {
+  let app;
+
+  beforeEach(async () => {
+    await AutomationRun.deleteMany({});
+    await AutomationSettings.deleteMany({});
+    await Board.deleteMany({});
+    await Board.collection.insertMany([{ boardId: 'b1', workspaceId: WS, name: 'b1' }]);
+    await AutomationSettings.create({ workspaceId: WS, invoice: { enabled: true } });
+    resetRecordedJobs();
+    app = createApp();
+  });
+
+  it('refuses an isoplus_user', async () => {
+    const { agent } = await authenticatedAgent(app, { role: 'isoplus_user' });
+    // See the /verify note on the overview suite's equivalent test.
+    await agent.get('/api/auth/verify');
+    const res = await agent.post(`/api/system-health/workspace/${WS}/run`).send({ kind: 'invoice' });
+    expect(res.status).toBe(403);
+  });
+
+  it('rejects an unknown kind rather than guessing', async () => {
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent.post(`/api/system-health/workspace/${WS}/run`).send({ kind: 'payroll' });
+    expect(res.status).toBe(400);
+  });
+
+  it('enqueues a manual run and records it as manual', async () => {
+    const { agent } = await authenticatedAgent(app);
+
+    const res = await agent.post(`/api/system-health/workspace/${WS}/run`).send({ kind: 'invoice' });
+
+    expect(res.status).toBe(202);
+    expect(res.body.enqueued).toBe(1);
+    const run = await AutomationRun.findOne({ workspaceId: WS }).lean();
+    expect(run.trigger).toBe(TRIGGER_MANUAL);
+  });
+
+  it('refuses a second run for the same period, and says which', async () => {
+    const { agent } = await authenticatedAgent(app);
+    await agent.post(`/api/system-health/workspace/${WS}/run`).send({ kind: 'invoice' });
+
+    const res = await agent.post(`/api/system-health/workspace/${WS}/run`).send({ kind: 'invoice' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('already_run');
+    expect(res.body.periodKey).toBeTruthy();
+    expect(res.body.runs.length).toBeGreaterThan(0);
+  });
+
+  it('runs anyway with ?force=1, under a distinct jobId', async () => {
+    const { agent } = await authenticatedAgent(app);
+    await agent.post(`/api/system-health/workspace/${WS}/run`).send({ kind: 'invoice' });
+
+    const res = await agent
+      .post(`/api/system-health/workspace/${WS}/run?force=1`)
+      .send({ kind: 'invoice' });
+
+    expect(res.status).toBe(202);
+    const runs = await AutomationRun.find({ workspaceId: WS }).lean();
+    expect(runs).toHaveLength(2);
+    // The forced run must not collide with the original, or BullMQ drops it.
+    expect(new Set(runs.map((r) => r.jobId)).size).toBe(2);
+    expect(runs.some((r) => r.jobId.startsWith('manual:'))).toBe(true);
+  });
+
+  it('404s a workspace with no enabled block for that kind', async () => {
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent
+      .post(`/api/system-health/workspace/${WS}/run`)
+      .send({ kind: 'statement' });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /api/system-health/workspace/:workspaceId/runs/:runId/retry', () => {
+  let app;
+
+  beforeEach(async () => {
+    await AutomationRun.deleteMany({});
+    await Board.deleteMany({});
+    await Board.collection.insertMany([{ boardId: 'b1', workspaceId: WS, name: 'b1' }]);
+    resetRecordedJobs();
+    app = createApp();
+  });
+
+  async function makeRun(status) {
+    return AutomationRun.create({
+      workspaceId: WS, boardId: 'b1', kind: 'invoice_automation',
+      periodKey: '20260116-0900', jobId: `inv:b1:20260116-0900`, status,
+    });
+  }
+
+  it('re-enqueues a failed run', async () => {
+    const run = await makeRun(RUN_FAILED);
+    const { agent } = await authenticatedAgent(app);
+
+    const res = await agent.post(`/api/system-health/workspace/${WS}/runs/${run._id}/retry`);
+
+    expect(res.status).toBe(202);
+    expect(recordedJobIds().length).toBe(1);
+  });
+
+  it('refuses to retry a run that did not fail', async () => {
+    const run = await makeRun(RUN_SUCCEEDED);
+    const { agent } = await authenticatedAgent(app);
+
+    const res = await agent.post(`/api/system-health/workspace/${WS}/runs/${run._id}/retry`);
+
+    expect(res.status).toBe(409);
+  });
+
+  it('404s an unknown run id', async () => {
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent.post(
+      `/api/system-health/workspace/${WS}/runs/64b7f9c2e4b0f5a3d2c1a000/retry`,
+    );
+    expect(res.status).toBe(404);
   });
 });

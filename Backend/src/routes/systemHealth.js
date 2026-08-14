@@ -3,14 +3,30 @@ import express from 'express';
 import AutomationRun from '../models/AutomationRun.js';
 import AutomationSettings from '../models/AutomationSettings.js';
 import Business from '../models/Business.js';
+import Board from '../models/Board.js';
 import SchedulerHealth from '../models/SchedulerHealth.js';
 import ScheduledJob from '../models/ScheduledJob.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireOwnerOrSupport } from '../middleware/requireOwnerOrSupport.js';
 import { summariseRuns } from '../utils/automationRunMetrics.js';
 import { xeroConnectionStatus } from '../utils/automationConnectionStatus.js';
+import {
+  KIND_FOR_BODY,
+  buildManualDispatch,
+  withForceJobIds,
+  buildRetrySpec,
+} from '../utils/systemHealthRunHelpers.js';
 import { readQueueDepth } from '../services/automation/queueMetrics.js';
-import { ERROR_RATE_WINDOW_HOURS, WEEK_WINDOW_HOURS, HISTORY_PAGE_SIZE } from '../constants/systemHealth.js';
+import { getAutomationQueue } from '../services/automation/queue.js';
+import { KIND_INVOICE } from '../services/automation/fanOut.js';
+import { recordQueuedRuns } from '../services/automation/runs.js';
+import {
+  ERROR_RATE_WINDOW_HOURS,
+  WEEK_WINDOW_HOURS,
+  HISTORY_PAGE_SIZE,
+  TRIGGER_MANUAL,
+  RUN_FAILED,
+} from '../constants/systemHealth.js';
 import { mongoEq } from '../utils/securityHelpers.js';
 import { error as logError } from '../utils/logger.js';
 
@@ -139,6 +155,77 @@ router.get('/workspace/:workspaceId', async (req, res) => {
   } catch (err) {
     logError('SystemHealth', 'Drill-down failed', { message: err.message, stack: err.stack }, req);
     res.status(500).json({ message: 'Could not load client detail' });
+  }
+});
+
+router.post('/workspace/:workspaceId/run', async (req, res) => {
+  const kind = KIND_FOR_BODY[req.body?.kind];
+  if (!kind) {
+    res.status(400).json({ message: 'kind must be "invoice" or "statement"' });
+    return;
+  }
+
+  try {
+    const workspaceId = mongoEq(req.params.workspaceId);
+    const settings = await AutomationSettings.findOne({ workspaceId }).lean();
+    const block = kind === KIND_INVOICE ? settings?.invoice : settings?.statement;
+
+    if (!block?.enabled) {
+      res.status(404).json({ message: 'No enabled automation for that kind' });
+      return;
+    }
+
+    const boards = await Board.find({ workspaceId }).select('boardId').lean();
+    const { specs, periodKey, existing } = await buildManualDispatch({
+      kind,
+      workspaceId: req.params.workspaceId,
+      boards,
+    });
+
+    const force = req.query.force === '1';
+
+    if (existing > 0 && !force) {
+      const runs = await AutomationRun.find({ workspaceId, kind, periodKey }).lean();
+      res.status(409).json({ error: 'already_run', periodKey, runs });
+      return;
+    }
+
+    const toEnqueue = withForceJobIds({ specs, force, existing });
+    await getAutomationQueue().addBulk(toEnqueue);
+    await recordQueuedRuns({ specs: toEnqueue, trigger: TRIGGER_MANUAL });
+
+    res.status(202).json({ enqueued: toEnqueue.length, periodKey });
+  } catch (err) {
+    logError('SystemHealth', 'Manual run failed', { message: err.message, stack: err.stack }, req);
+    res.status(500).json({ message: 'Could not start the run' });
+  }
+});
+
+router.post('/workspace/:workspaceId/runs/:runId/retry', async (req, res) => {
+  try {
+    const run = await AutomationRun.findOne({
+      _id: mongoEq(req.params.runId),
+      workspaceId: mongoEq(req.params.workspaceId),
+    }).lean();
+
+    if (!run) {
+      res.status(404).json({ message: 'No such run' });
+      return;
+    }
+
+    // Retrying a success would bill twice; retrying a queued run would race
+    // the worker already holding it.
+    if (run.status !== RUN_FAILED) {
+      res.status(409).json({ error: 'not_failed', status: run.status });
+      return;
+    }
+
+    await getAutomationQueue().addBulk([buildRetrySpec(run)]);
+
+    res.status(202).json({ retried: String(run._id) });
+  } catch (err) {
+    logError('SystemHealth', 'Retry failed', { message: err.message, stack: err.stack }, req);
+    res.status(500).json({ message: 'Could not retry the run' });
   }
 });
 

@@ -90,3 +90,8 @@ export function markRunFailed({ jobId, error }) {
     set: { status: RUN_FAILED, error: String(error ?? 'unknown error') },
   });
 }
+
+/** How many runs already exist for one workspace/kind/period. */
+export function countRunsForPeriod({ workspaceId, kind, periodKey }) {
+  return AutomationRun.countDocuments({ workspaceId, kind, periodKey });
+}
