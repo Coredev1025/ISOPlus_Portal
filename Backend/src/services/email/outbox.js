@@ -37,7 +37,7 @@ export function outboxKeyFor({ kind, workspaceId, boardId, periodKey }) {
  * transport, so the preview records the type it would resolve.
  */
 export async function deliverEmail(message) {
-  const { kind, workspaceId, boardId, periodKey, block } = message;
+  const { kind, workspaceId, boardId, periodKey, block, attachments = [] } = message;
 
   if (!isOfflineMode()) {
     throw new Error(
@@ -59,6 +59,7 @@ export async function deliverEmail(message) {
     copyTo: block?.sendCopyTo || null,
     subject: block?.emailSubject || `${kind} for board ${boardId}`,
     body: block?.emailMessage || '',
+    attachments,
     composedAt: new Date().toISOString(),
     note: 'Offline outbox preview — nothing was sent. SES delivery is Epic 5 part 4.',
   };

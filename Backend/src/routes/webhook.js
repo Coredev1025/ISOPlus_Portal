@@ -63,7 +63,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const router = express.Router();
 
-function enableRepeatHeadOnTables(template) {
+// Exported for services/automation/generateDocuments.js, which renders the
+// same templates outside a request.
+export function enableRepeatHeadOnTables(template) {
     if (!template || !Array.isArray(template.schemas)) {
         return;
     }
@@ -624,7 +626,9 @@ async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, ty
     }
 }
 
-function formatValue(val) {
+// Exported for services/automation/generateDocuments.js, which renders the
+// same templates outside a request.
+export function formatValue(val) {
     const num = Number(val);
     if (!isNaN(num)) {
         const factor = Math.pow(10, 2);
@@ -692,7 +696,9 @@ function formatDateToAU(value, timezone) {
     return new Intl.DateTimeFormat('en-AU', options).format(date);
 }
 
-function formatDateNumericAU(value, timeZone) {
+// Exported for services/automation/generateDocuments.js, which renders the
+// same templates outside a request.
+export function formatDateNumericAU(value, timeZone) {
     if (!value) return new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric', timeZone: timeZone || 'Australia/Sydney' });
     const d = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(d.getTime())) return '';

@@ -34,6 +34,9 @@ import { join } from 'node:path';
 import { AUTOMATION_QUEUE_NAME } from '../../../src/services/automation/queue.js';
 import { startAutomationWorker } from '../../../src/workers/automationWorker.js';
 import AutomationSettings from '../../../src/models/AutomationSettings.js';
+import Business from '../../../src/models/Business.js';
+import Item from '../../../src/models/Item.js';
+import PDFLink from '../../../src/models/PDFLink.js';
 import { outboxKeyFor } from '../../../src/services/email/outbox.js';
 
 const JOB = {
@@ -41,6 +44,7 @@ const JOB = {
     kind: 'invoice_automation',
     workspaceId: 'ws-1',
     boardId: 'board-a',
+    slot: '2026-01-16T09:00:00.000Z',
     periodKey: '20260116-0900',
   },
 };
@@ -131,6 +135,40 @@ describe('startAutomationWorker', () => {
       await registeredHandler()(JOB);
 
       expect(existsSync(join(root, 'outbox'))).toBe(false);
+    });
+
+    it('offline: generates an invoice PDF per billable item and lists it in the outbox email', async () => {
+      process.env.ISOPLUS_OFFLINE = '1';
+      await AutomationSettings.create({
+        workspaceId: 'ws-1',
+        invoice: { enabled: true, emailSubject: 'Invoice run' },
+      });
+      await Business.deleteMany({ workspaceId: 'ws-1' });
+      await Item.deleteMany({ workspaceId: 'ws-1' });
+      await Business.create({
+        workspaceId: 'ws-1', name: 'Worker Gen Biz', abn: '11 111 111 111',
+        address: { street: '1 St', suburb: 'S', state: 'NSW', postcode: '2000', country: 'AU' },
+        bankDetails: { accountName: 'A', bankName: 'B', bsb: '123456', accountNumber: '1234567' },
+        documentNumbering: { invoice: { prefix: 'IN-', nextNumber: 900 }, quote: { prefix: 'QT-', nextNumber: 1 }, purchaseOrder: { prefix: 'PO-', nextNumber: 1 } },
+      });
+      await Item.create({
+        workspaceId: 'ws-1', boardId: 'board-a', folderId: 'f', itemId: 'wk-bill-1',
+        data: { 'Recipient of the Quote': 'W T', 'Quantity (Direct Support)': 1, 'Unit Price for Direct Support($)': 10, 'Unit (Direct Support)': 'Hour' },
+      });
+      startAutomationWorker();
+
+      await registeredHandler()(JOB);
+
+      const written = JSON.parse(readFileSync(join(root, outboxKeyFor(JOB.data)), 'utf8'));
+      expect(written.attachments).toHaveLength(1);
+      expect(written.attachments[0]).toContain('/api/local-files/');
+      // and the artifact itself is a stored PDF
+      const rel = decodeURIComponent(written.attachments[0].split('/api/local-files/')[1]);
+      expect(readFileSync(join(root, rel)).subarray(0, 5).toString()).toBe('%PDF-');
+
+      await Business.deleteMany({ workspaceId: 'ws-1' });
+      await Item.deleteMany({ workspaceId: 'ws-1' });
+      await PDFLink.deleteMany({ workspaceId: 'ws-1' });
     });
 
     // Online there is still no transport. The job must complete quietly —

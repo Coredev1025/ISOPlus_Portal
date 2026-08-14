@@ -1,8 +1,10 @@
 import { Worker } from 'bullmq';
 
 import { KIND_INVOICE, KIND_STATEMENT } from '../constants/automation.js';
+import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
 import { AUTOMATION_QUEUE_NAME } from '../services/automation/queue.js';
 import { deliverEmail } from '../services/email/outbox.js';
+import { generateInvoicesForBoard } from '../services/automation/generateDocuments.js';
 import { isOfflineMode } from '../services/offlineIsoplus.js';
 import { buildRedisConnection } from '../services/redisConnection.js';
 import AutomationSettings from '../models/AutomationSettings.js';
@@ -49,9 +51,25 @@ async function composeAndDeliver(job) {
     return;
   }
 
-  const { outboxKey } = await deliverEmail({ kind, workspaceId, boardId, periodKey, block });
+  // Part 3, invoice side: render the slot's documents before composing the
+  // email that would deliver them. Statement generation still needs the
+  // excluded ticket fields (Statement type / period) to define its content —
+  // see generateDocuments.js — so statement jobs compose without attachments.
+  let attachments = [];
+  if (kind === KIND_INVOICE) {
+    const generated = await generateInvoicesForBoard({
+      workspaceId,
+      boardId,
+      slot: new Date(job.data.slot),
+      timezone: DEFAULT_TIMEZONE,
+      periodKey,
+    });
+    attachments = generated.map((doc) => doc.pdfUrl);
+  }
+
+  const { outboxKey } = await deliverEmail({ kind, workspaceId, boardId, periodKey, block, attachments });
   info('Automation', 'Automation email composed to offline outbox', {
-    kind, workspaceId, boardId, periodKey, outboxKey,
+    kind, workspaceId, boardId, periodKey, outboxKey, attachments: attachments.length,
   });
 }
 
