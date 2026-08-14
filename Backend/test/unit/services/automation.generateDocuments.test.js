@@ -11,6 +11,7 @@ import {
   findBillableItems,
   generateInvoicesForBoard,
 } from '../../../src/services/automation/generateDocuments.js';
+import { automationPeriodKey } from '../../../src/utils/automationPeriodKey.js';
 
 // Epic 5 part 3, first slice: the scheduled engine renders real NDIS invoice
 // PDFs from the billable values already stored on board items. Which items
@@ -100,6 +101,9 @@ describe('generateDocuments', () => {
     const link = await PDFLink.findOne({ workspaceId: WS, itemId: 'gen-item-1' }).lean();
     expect(link).toBeTruthy();
     expect(link.type).toBe('NDIS Invoice');
+    expect(automationPeriodKey({ slot: SLOT, timezone: TZ })).toBe('20260814-1509');
+    expect(link.periodKey).toBe('20260814-1509');
+    expect(link.invoiceNumber).toBe('IN-500');
 
     const business = await Business.findOne({ workspaceId: WS }).lean();
     expect(business.documentNumbering.invoice.nextNumber).toBe(501);

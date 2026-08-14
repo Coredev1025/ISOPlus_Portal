@@ -170,6 +170,7 @@ export async function generateInvoicesForBoard({ workspaceId, boardId, slot, tim
 
     await PDFLink.insertOne({
       workspaceId, itemId: item.itemId, type: 'NDIS Invoice',
+      periodKey, invoiceNumber,
       pdfLink: pdfUrl, createdBy: '', isDeleted: false, SignatureStatus: 'Unsigned',
     });
 
