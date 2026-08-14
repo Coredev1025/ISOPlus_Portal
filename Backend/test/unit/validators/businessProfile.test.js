@@ -12,6 +12,24 @@ describe('collectBusinessProfileErrors', () => {
     expect(errors).toEqual([]);
   });
 
+  // The domain labels either side of a dot are never empty. Shares
+  // EMAIL_PATTERN with the automation settings, so both refuse the same typos.
+  it.each(['a@b..com', 'a@.example.com', 'a@example.com.'])(
+    'rejects the empty domain label in %s',
+    (email) => {
+      const errors = collectBusinessProfileErrors({ name: 'Acme', email });
+      expect(errors).toContain('Invalid email format');
+    },
+  );
+
+  it('accepts an ordinary address', () => {
+    const errors = collectBusinessProfileErrors({
+      name: 'Acme',
+      email: 'billing@iso-plus.com.au',
+    });
+    expect(errors).toEqual([]);
+  });
+
   it('validates phone, email, abn, acn, bsb formats', () => {
     const errors = collectBusinessProfileErrors({
       name: 'Acme',

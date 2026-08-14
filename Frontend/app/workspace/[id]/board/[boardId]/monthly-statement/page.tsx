@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import axios from "@/app/utils/axiosConfig";
+import { EMAIL_PATTERN } from "@/constants/validation";
 import { useAppContext } from "@/app/context";
 import { fetchMonthlyStatementItems } from "@/app/utils/items";
 import { format } from "date-fns";
@@ -1707,7 +1708,7 @@ export default function MonthlyStatement() {
 
     if (!businessDetails.businessEmail?.trim()) {
       errors.push('Business Email is required');
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(businessDetails.businessEmail)) {
+    } else if (!EMAIL_PATTERN.test(businessDetails.businessEmail)) {
       errors.push('Business Email must be a valid email address');
     }
 
