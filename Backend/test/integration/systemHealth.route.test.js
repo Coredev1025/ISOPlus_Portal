@@ -7,7 +7,7 @@ import AutomationSettings from '../../src/models/AutomationSettings.js';
 import Business from '../../src/models/Business.js';
 import SchedulerHealth from '../../src/models/SchedulerHealth.js';
 import { authenticatedAgent } from '../helpers/auth.js';
-import { RUN_FAILED, RUN_SUCCEEDED } from '../../src/constants/systemHealth.js';
+import { RUN_FAILED, RUN_SUCCEEDED, HISTORY_PAGE_SIZE } from '../../src/constants/systemHealth.js';
 
 const WS = 'ws-health-1';
 
@@ -148,5 +148,89 @@ describe('GET /api/system-health/clients', () => {
     const res = await agent.get('/api/system-health/clients');
 
     expect(res.body.clients[0].connection).toBe('disconnected');
+  });
+});
+
+describe('GET /api/system-health/workspace/:workspaceId', () => {
+  let app;
+
+  beforeEach(async () => {
+    await AutomationRun.deleteMany({});
+    app = createApp();
+  });
+
+  async function seedRuns(count) {
+    for (let i = 0; i < count; i += 1) {
+      await AutomationRun.create({
+        workspaceId: WS,
+        boardId: `b${i}`,
+        kind: 'invoice_automation',
+        periodKey: `p${i}`,
+        jobId: `j${i}`,
+        status: RUN_SUCCEEDED,
+        startedAt: new Date(Date.UTC(2026, 7, 1, 0, i)),
+      });
+    }
+  }
+
+  it('refuses an isoplus_user', async () => {
+    const { agent } = await authenticatedAgent(app, { role: 'isoplus_user' });
+    // See the /verify note on the overview suite's equivalent test.
+    await agent.get('/api/auth/verify');
+    expect((await agent.get(`/api/system-health/workspace/${WS}`)).status).toBe(403);
+  });
+
+  it('returns newest runs first with a total', async () => {
+    await seedRuns(3);
+    const { agent } = await authenticatedAgent(app);
+
+    const res = await agent.get(`/api/system-health/workspace/${WS}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(3);
+    expect(res.body.runs.map((r) => r.boardId)).toEqual(['b2', 'b1', 'b0']);
+  });
+
+  it('pages rather than truncating, so the history stays uncapped', async () => {
+    await seedRuns(HISTORY_PAGE_SIZE + 5);
+    const { agent } = await authenticatedAgent(app);
+
+    const first = await agent.get(`/api/system-health/workspace/${WS}`);
+    const second = await agent.get(`/api/system-health/workspace/${WS}?page=2`);
+
+    expect(first.body.runs).toHaveLength(HISTORY_PAGE_SIZE);
+    expect(second.body.runs).toHaveLength(5);
+    expect(first.body.total).toBe(HISTORY_PAGE_SIZE + 5);
+    // No overlap between pages.
+    const ids = new Set(first.body.runs.map((r) => r.jobId));
+    expect(second.body.runs.every((r) => !ids.has(r.jobId))).toBe(true);
+  });
+
+  it('does not leak another workspace\'s runs', async () => {
+    await seedRuns(2);
+    await AutomationRun.create({
+      workspaceId: 'someone-else', boardId: 'x', kind: 'invoice_automation',
+      periodKey: 'p', jobId: 'other', status: RUN_SUCCEEDED,
+    });
+
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent.get(`/api/system-health/workspace/${WS}`);
+
+    expect(res.body.total).toBe(2);
+  });
+
+  it('returns an empty history rather than 404 for an unknown workspace', async () => {
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent.get('/api/system-health/workspace/never-configured');
+
+    expect(res.status).toBe(200);
+    expect(res.body.runs).toEqual([]);
+    expect(res.body.total).toBe(0);
+  });
+
+  it('rejects a non-numeric page instead of returning NaN results', async () => {
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent.get(`/api/system-health/workspace/${WS}?page=abc`);
+    expect(res.status).toBe(400);
   });
 });

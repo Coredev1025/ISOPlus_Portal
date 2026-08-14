@@ -4,12 +4,14 @@ import AutomationRun from '../models/AutomationRun.js';
 import AutomationSettings from '../models/AutomationSettings.js';
 import Business from '../models/Business.js';
 import SchedulerHealth from '../models/SchedulerHealth.js';
+import ScheduledJob from '../models/ScheduledJob.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { requireOwnerOrSupport } from '../middleware/requireOwnerOrSupport.js';
 import { summariseRuns } from '../utils/automationRunMetrics.js';
 import { xeroConnectionStatus } from '../utils/automationConnectionStatus.js';
 import { readQueueDepth } from '../services/automation/queueMetrics.js';
-import { ERROR_RATE_WINDOW_HOURS, WEEK_WINDOW_HOURS } from '../constants/systemHealth.js';
+import { ERROR_RATE_WINDOW_HOURS, WEEK_WINDOW_HOURS, HISTORY_PAGE_SIZE } from '../constants/systemHealth.js';
+import { mongoEq } from '../utils/securityHelpers.js';
 import { error as logError } from '../utils/logger.js';
 
 const router = express.Router();
@@ -87,6 +89,56 @@ router.get('/clients', async (req, res) => {
   } catch (err) {
     logError('SystemHealth', 'Client list failed', { message: err.message, stack: err.stack }, req);
     res.status(500).json({ message: 'Could not load clients' });
+  }
+});
+
+/**
+ * A 1-based page number, or null when the query string is unusable.
+ *
+ * Rejected rather than defaulted: `Number('abc')` is NaN, and NaN reaching
+ * `.skip()` silently returns the first page, so a broken pager would look like
+ * a working one.
+ */
+function parsePage(raw) {
+  if (raw === undefined) return 1;
+  const page = Number(raw);
+  if (!Number.isInteger(page) || page < 1) return null;
+  return page;
+}
+
+router.get('/workspace/:workspaceId', async (req, res) => {
+  const page = parsePage(req.query.page);
+  if (page === null) {
+    res.status(400).json({ message: 'page must be a positive integer' });
+    return;
+  }
+
+  try {
+    const workspaceId = mongoEq(req.params.workspaceId);
+
+    const [runs, total, schedules] = await Promise.all([
+      AutomationRun.find({ workspaceId })
+        .sort({ startedAt: -1 })
+        .skip((page - 1) * HISTORY_PAGE_SIZE)
+        .limit(HISTORY_PAGE_SIZE)
+        .lean(),
+      AutomationRun.countDocuments({ workspaceId }),
+      ScheduledJob.find({ targetId: workspaceId })
+        .select('kind enabled nextRunAt lastRunAt lastError missedRuns consecutiveFailures timezone')
+        .lean(),
+    ]);
+
+    res.json({
+      workspaceId: req.params.workspaceId,
+      schedules,
+      runs,
+      total,
+      page,
+      pageSize: HISTORY_PAGE_SIZE,
+    });
+  } catch (err) {
+    logError('SystemHealth', 'Drill-down failed', { message: err.message, stack: err.stack }, req);
+    res.status(500).json({ message: 'Could not load client detail' });
   }
 });
 
