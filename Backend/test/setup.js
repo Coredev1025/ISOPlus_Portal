@@ -70,6 +70,9 @@ vi.mock('ioredis', () => {
 // this assignment, so the array is always there by the time addBulk fires.
 globalThis.__BULLMQ_BULK_JOBS__ = [];
 
+// Job counts for queue metrics testing.
+globalThis.__BULLMQ_JOB_COUNTS__ = null;
+
 vi.mock('bullmq', () => {
   class QueueMock {
     constructor(name) {
@@ -102,6 +105,11 @@ vi.mock('bullmq', () => {
     }
     getFailed() {
       return [];
+    }
+    getJobCounts() {
+      return globalThis.__BULLMQ_JOB_COUNTS__ ?? {
+        waiting: 0, active: 0, failed: 0, delayed: 0, completed: 0,
+      };
     }
   }
   class WorkerMock {
@@ -136,6 +144,8 @@ afterEach(async () => {
 
   // In place, not a reassignment: the mock factory captured this array.
   globalThis.__BULLMQ_BULK_JOBS__.length = 0;
+
+  globalThis.__BULLMQ_JOB_COUNTS__ = null;
 
   const collections = mongoose.connection.collections;
   for (const name of Object.keys(collections)) {
