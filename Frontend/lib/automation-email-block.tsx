@@ -2,46 +2,15 @@
 
 import { Input } from "@/components/ui/input";
 import {
-  AutomationField,
-  OptionSelect,
-  type AutomationSelectOption,
-} from "@/lib/automation-schedule-block";
+  EMAIL_TEXT_FIELDS,
+  RECIPIENT_OPTIONS,
+  SEND_METHOD_OPTIONS,
+} from "@/constants/automation";
+import { EMAIL_PATTERN } from "@/constants/validation";
+import { AutomationField, OptionSelect } from "@/lib/automation-schedule-block";
 import type { AutomationBlock } from "@/lib/automation-settings";
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-const RECIPIENT_OPTIONS: readonly AutomationSelectOption[] = [
-  { value: "billing_contact", label: "Billing Contact" },
-  { value: "client_participant", label: "Client / Participant" },
-];
-
-const SEND_METHOD_OPTIONS: readonly AutomationSelectOption[] = [
-  { value: "isoplus", label: "Send from ISO+" },
-  { value: "accounting", label: "Send from Accounting Platform" },
-];
-
-type TextFieldKey =
-  | "sendCopyTo"
-  | "replyTo"
-  | "emailFrom"
-  | "emailSubject"
-  | "emailMessage";
-
-type TextFieldSpec = Readonly<{
-  key: TextFieldKey;
-  id: string;
-  label: string;
-  /** Only address-valued fields are checked against EMAIL_PATTERN. */
-  isEmail: boolean;
-}>;
-
-const TEXT_FIELDS: readonly TextFieldSpec[] = [
-  { key: "sendCopyTo", id: "send-copy-to", label: "Send a Copy To", isEmail: true },
-  { key: "replyTo", id: "reply-to", label: "Reply-to Email", isEmail: true },
-  { key: "emailFrom", id: "email-from", label: "Email From", isEmail: true },
-  { key: "emailSubject", id: "email-subject", label: "Email Subject", isEmail: false },
-  { key: "emailMessage", id: "email-message", label: "Email Message", isEmail: false },
-];
+type TextFieldKey = (typeof EMAIL_TEXT_FIELDS)[number]["key"];
 
 type EmailTextFieldProps = Readonly<{
   id: string;
@@ -122,7 +91,7 @@ export function AutomationEmailBlock({
         />
       </AutomationField>
 
-      {TEXT_FIELDS.map((field) => (
+      {EMAIL_TEXT_FIELDS.map((field) => (
         <EmailTextField
           key={field.key}
           id={`${idPrefix}-${field.id}`}

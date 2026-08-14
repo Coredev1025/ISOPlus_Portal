@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { UNIT_OPTIONS } from "@/constants/automation";
 import {
   defaultRunOnForUnit,
   runOnOptionsForUnit,
@@ -84,14 +85,6 @@ export function OptionSelect({
     </Select>
   );
 }
-
-const UNIT_OPTIONS: readonly AutomationSelectOption[] = [
-  { value: "day", label: "Day(s)" },
-  { value: "week", label: "Week(s)" },
-  { value: "month", label: "Month(s)" },
-  { value: "quarter", label: "Quarter(s)" },
-  { value: "year", label: "Year(s)" },
-];
 
 const DATE_INPUT_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 

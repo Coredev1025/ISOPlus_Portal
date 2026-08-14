@@ -1,4 +1,6 @@
 // Backend/src/utils/automationSettingsHelpers.js
+import { RUN_AT_PATTERN, WEEKDAYS } from '../constants/automation.js';
+import { EMAIL_PATTERN } from '../constants/validation.js';
 import {
   AUTOMATION_UNITS,
   SEND_METHODS,
@@ -21,12 +23,6 @@ export const DEFAULT_AUTOMATION_BLOCK = {
   senderIdentityId: null,
 };
 
-const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-const RUN_AT = /^([01]\d|2[0-3]):([0-5]\d)$/;
-// Deliberately loose: a full RFC 5322 check rejects addresses that work. The
-// authoritative check is SES rejecting it at send time.
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 function validateRunOn(unit, runOn) {
   if (unit === 'day') return null;
   if (unit === 'week') {
@@ -48,7 +44,7 @@ function validateRunOn(unit, runOn) {
 function validateEmails(block) {
   for (const field of ['sendCopyTo', 'replyTo', 'emailFrom']) {
     const value = block[field];
-    if (value && !EMAIL.test(value)) return `${field} must be a valid email address`;
+    if (value && !EMAIL_PATTERN.test(value)) return `${field} must be a valid email address`;
   }
   return null;
 }
@@ -63,7 +59,7 @@ function validateBlock(name, block) {
     return `${name}: every.unit must be one of ${AUTOMATION_UNITS.join(', ')}`;
   }
   if (!Number.isInteger(n) || n < 1) return `${name}: every.n must be a positive integer`;
-  if (!RUN_AT.test(String(block.runAt ?? ''))) return `${name}: runAt must be HH:MM`;
+  if (!RUN_AT_PATTERN.test(String(block.runAt ?? ''))) return `${name}: runAt must be HH:MM`;
   if (!SEND_METHODS.includes(block.sendMethod)) return `${name}: invalid sendMethod`;
   if (!RECIPIENTS.includes(block.recipient)) return `${name}: invalid recipient`;
 
