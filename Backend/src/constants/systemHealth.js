@@ -33,12 +33,28 @@ export const RUN_SKIPPED = 'skipped';
 export const RUN_STATUSES = [RUN_QUEUED, RUN_RUNNING, RUN_SUCCEEDED, RUN_FAILED, RUN_SKIPPED];
 
 /**
- * Why a run was skipped. One value today.
+ * Why a run produced nothing. A skipped run is not a failure — the worker
+ * refused to generate rather than burn invoice numbers on documents it could
+ * not deliver — but it is not a success either, and the drill-down has to say
+ * which refusal it was.
  *
- * Touchpoints: workers/automationWorker.js (writes it),
- * lib/system-health-helpers.ts (renders it as "Pending setup").
+ * Every value here corresponds to an early return in
+ * workers/automationWorker.js that logs and resolves.
+ *
+ * Touchpoints: workers/automationWorker.js (writes them),
+ * models/AutomationRun.js (enum).
  */
-export const SKIP_DELIVERY_NOT_IMPLEMENTED = 'delivery_not_implemented';
+export const SKIP_SETTINGS_DISABLED = 'settings_disabled';
+export const SKIP_NO_EMAIL_BACKEND = 'no_email_backend';
+export const SKIP_NO_RECIPIENT = 'no_recipient';
+export const SKIP_ACCOUNTING_NOT_CONNECTED = 'accounting_not_connected';
+
+export const SKIP_REASONS = [
+  SKIP_SETTINGS_DISABLED,
+  SKIP_NO_EMAIL_BACKEND,
+  SKIP_NO_RECIPIENT,
+  SKIP_ACCOUNTING_NOT_CONNECTED,
+];
 
 /**
  * What caused a run. Manual runs are distinguished so a forced re-run does not

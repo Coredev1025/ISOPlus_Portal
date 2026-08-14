@@ -35,6 +35,13 @@ import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import AutomationRun from '../../../src/models/AutomationRun.js';
+import {
+  RUN_FAILED,
+  RUN_SKIPPED,
+  RUN_SUCCEEDED,
+  SKIP_SETTINGS_DISABLED,
+} from '../../../src/constants/systemHealth.js';
 import { AUTOMATION_QUEUE_NAME } from '../../../src/services/automation/queue.js';
 import { startAutomationWorker } from '../../../src/workers/automationWorker.js';
 import AutomationSettings from '../../../src/models/AutomationSettings.js';
@@ -180,6 +187,109 @@ describe('startAutomationWorker', () => {
     await registeredHandler()(JOB);
 
     expect(globalThis.__BULLMQ_BULK_JOBS__ ?? []).toHaveLength(0);
+  });
+
+  // Every run recorded at fan-out has to reach a terminal state. A run left
+  // `queued` shows on the System Health drill-down as a job still in flight,
+  // which is the one thing the screen exists to tell the truth about.
+  describe('closing the AutomationRun', () => {
+    const RUN_JOB = { ...JOB, id: 'inv:board-a:20260116-0900', opts: { attempts: 3 } };
+
+    async function seedRun() {
+      await AutomationRun.deleteMany({ jobId: RUN_JOB.id });
+      await AutomationRun.create({
+        workspaceId: 'ws-1',
+        boardId: 'board-a',
+        kind: 'invoice_automation',
+        periodKey: '20260116-0900',
+        jobId: RUN_JOB.id,
+      });
+    }
+
+    afterEach(async () => {
+      await AutomationRun.deleteMany({ jobId: RUN_JOB.id });
+      await AutomationSettings.deleteMany({ workspaceId: 'ws-1' });
+      vi.restoreAllMocks();
+    });
+
+    it('names the refusal when a run produces nothing, rather than closing it blank', async () => {
+      await seedRun();
+      startAutomationWorker();
+
+      await registeredHandler()({ ...RUN_JOB, attemptsMade: 0 });
+
+      const run = await AutomationRun.findOne({ jobId: RUN_JOB.id }).lean();
+      expect(run.status).toBe(RUN_SKIPPED);
+      expect(run.skipReason).toBe(SKIP_SETTINGS_DISABLED);
+      // Nothing ran, so no duration: "0ms" would read as an instant success.
+      expect(run.durationMs).toBeNull();
+    });
+
+    // closeRun refuses to overwrite a terminal row, so marking failed on an
+    // early attempt would LOCK the run as failed even when a later attempt
+    // delivers — the history would then contradict the mail the client got.
+    it('leaves the run open when an early attempt throws, so a later one can still succeed', async () => {
+      await seedRun();
+      vi.spyOn(AutomationSettings, 'findOne').mockImplementation(() => {
+        throw new Error('mongo is down');
+      });
+      startAutomationWorker();
+
+      await expect(
+        registeredHandler()({ ...RUN_JOB, attemptsMade: 0 }),
+      ).rejects.toThrow('mongo is down');
+
+      const run = await AutomationRun.findOne({ jobId: RUN_JOB.id }).lean();
+      expect(run.status).toBe('queued');
+      expect(run.finishedAt).toBeNull();
+    });
+
+    it('records the failure once the last attempt throws', async () => {
+      await seedRun();
+      vi.spyOn(AutomationSettings, 'findOne').mockImplementation(() => {
+        throw new Error('mongo is down');
+      });
+      startAutomationWorker();
+
+      await expect(
+        registeredHandler()({ ...RUN_JOB, attemptsMade: 2 }),
+      ).rejects.toThrow('mongo is down');
+
+      const run = await AutomationRun.findOne({ jobId: RUN_JOB.id }).lean();
+      expect(run.status).toBe(RUN_FAILED);
+      expect(run.error).toBe('mongo is down');
+    });
+
+    it('closes the run as succeeded when delivery actually happens', async () => {
+      const savedOffline = process.env.ISOPLUS_OFFLINE;
+      const savedRoot = process.env.LOCAL_FILE_ROOT;
+      const root = mkdtempSync(join(tmpdir(), 'worker-run-close-'));
+      process.env.ISOPLUS_OFFLINE = '1';
+      process.env.LOCAL_FILE_ROOT = root;
+      try {
+        await seedRun();
+        await AutomationSettings.create({
+          workspaceId: 'ws-1',
+          invoice: { enabled: true, emailSubject: 'Invoice run', emailMessage: 'Attached.', replyTo: 'a@b.com' },
+        });
+        startAutomationWorker();
+
+        await registeredHandler()({ ...RUN_JOB, attemptsMade: 0 });
+
+        const run = await AutomationRun.findOne({ jobId: RUN_JOB.id }).lean();
+        expect(run.status).toBe(RUN_SUCCEEDED);
+        expect(run.error).toBeNull();
+        // Measured, unlike a skip: something actually ran.
+        expect(run.durationMs).not.toBeNull();
+      } finally {
+        if (savedOffline === undefined) delete process.env.ISOPLUS_OFFLINE;
+        else process.env.ISOPLUS_OFFLINE = savedOffline;
+        if (savedRoot === undefined) delete process.env.LOCAL_FILE_ROOT;
+        else process.env.LOCAL_FILE_ROOT = savedRoot;
+        rmSync(root, { recursive: true, force: true });
+        await cleanupWorkerNdisBoard();
+      }
+    });
   });
 
   // The inert pin below this point was replaced deliberately — its own comment

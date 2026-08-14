@@ -5,6 +5,7 @@ import { info, warn } from '../../utils/logger.js';
 import { getAutomationQueue } from '../automation/queue.js';
 import { KIND_INVOICE, KIND_STATEMENT } from '../../constants/automation.js';
 import { buildFanOutSpecs } from '../automation/fanOut.js';
+import { recordQueuedRuns } from '../automation/runs.js';
 import { isOfflineMode } from '../offlineIsoplus.js';
 import { getSchedulerAuthorization } from './auth.js';
 import { register } from './registry.js';
@@ -16,6 +17,7 @@ import {
   DEFAULT_TIMEZONE,
   LOG_SCOPE,
 } from '../../constants/scheduler.js';
+import { TRIGGER_SCHEDULE } from '../../constants/systemHealth.js';
 import { buildScheduledSyncSpecs, buildScheduledSyncBoardWrites, resolveBoardSyncGapMs } from '../../utils/boardSyncSweepHelpers.js';
 import syncQueue from '../sync/queue.js';
 
@@ -141,7 +143,18 @@ export async function runAutomationKind(kind, job) {
   });
   await getAutomationQueue().addBulk(specs);
 
-  info('Automation', 'Enqueued automation jobs', { kind, targetId, count: specs.length });
+  // After the enqueue, not before: a run recorded for a job that never reached
+  // the queue would show as a permanently queued run nothing will ever close.
+  // recordQueuedRuns is keyed on the same jobId BullMQ dedupes on, so a
+  // redispatch of this slot updates nothing rather than duplicating.
+  const recorded = await recordQueuedRuns({ specs, trigger: TRIGGER_SCHEDULE });
+
+  info('Automation', 'Enqueued automation jobs', {
+    kind,
+    targetId,
+    count: specs.length,
+    runsRecorded: recorded,
+  });
 }
 
 export function registerAutomationHandlers() {
