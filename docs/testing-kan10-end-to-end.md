@@ -287,44 +287,39 @@ Not KAN-10. Pre-existing board automations, on the same board.
 successful delivery either way. Never judge a Track B run by the status code —
 read the body and the backend log.
 
-### The tenancy guard, and how far offline now gets
+### The offline providers, and how far they reach
 
-`validateItemBelongsToTenant()` calls `getItemValues()`, and a falsy return
-means "not this tenant's item". That used to make the whole inbound path
-unusable offline: the call 401s without a token, so every real webhook came back
+The inbound PDF path used to be unusable offline — every real webhook was
+refused as an intrusion attempt. Three layers of offline stand-ins fixed that,
+each gated on `isOfflineMode()` (hard false in production; see
+`services/offlineIsoplus.js`):
+
+| Live call | Offline stand-in | Backed by |
+|---|---|---|
+| `getItemValues` (tenancy guard) | `getItemValuesOffline` | Mongo `Item.data`, projected to `values[].attribute.name` |
+| `getReferences` / `getAttribute` | fixture `references` + `attributes` | `ndis-quote-board.json` |
+| `uploadFileToS3` / `getS3FileUrl` / `getS3File` | `utils/localFileStore.js` → `Backend/.local-s3/` | served by `GET /api/local-files` (404s entirely outside offline mode) |
+| `setIntegrationMessage` / `setPDFLinkAttribute` / `setGeneratedField` | skip + warn | the local items do not exist on live ISO+, so the PUTs could only 404 — and two of them rethrow |
+
+With those in place a `quotendis` fire completes the epic's actual purpose
+offline: **a real PDF, generated locally, at a URL that downloads** — through
+the ngrok tunnel if `BACKEND_URL` points at it, which is what makes the link
+work from a live board. Side effects to verify: a `PDFLink` row in Mongo, and
+`Business.documentNumbering.quote.nextNumber` incremented.
 
 ```
-{"message":"CRITICAL: Item does not exist. This may be a result of an
- intrusion attempt or misconfiguration of the tenant!"}
+{"pdfUrl":"https://<tunnel>/api/local-files/output/55369/eNiJpH14PN3/NDIS-quote/QT-1090-…pdf"}
 ```
 
-— misleading twice over, since it is not an intrusion and the item *is* in
-Mongo, which the guard never consulted.
+Two rules this taught, the hard way:
 
-`getItemValues()` now falls back to `getItemValuesOffline()` when
-`isOfflineMode()`, the same swap `routes/board.js` makes for board attributes.
-The guard passes offline and the handler runs, so the next error you see is a
-real one about the payload:
-
-```
-{"message":"Service Area value is required."}
-```
-
-That is as far as the committed fixture reaches — its quote items carry no
-Service Area, and `getReferences()` has no offline stand-in yet. **Offline gets
-you through the door, not through PDF generation.**
-
-Two things follow, and both matter:
-
-- **`isOfflineMode()` is implicitly true whenever `PERSONAL_ACCESS_TOKEN` is
-  blank outside production** — which is every test run. `test/setup.js` pins
-  `ISOPLUS_OFFLINE=0` for exactly that reason; without it, 34 tests that mock
-  ISO+ HTTP silently assert against Mongo instead. Adding an offline branch to
-  anything else in `services/isoplus.js` needs the same care.
-- **Production is unaffected**: `isOfflineMode()` hard-returns `false` under
-  `NODE_ENV=production` unless `ISOPLUS_OFFLINE=1` is set deliberately, which
-  `.env.example` warns against. A blank token in production must still fail
-  loudly rather than quietly serve stub data.
+- **`isOfflineMode()` is implicitly true in every test run** (blank token outside
+  production), so `test/setup.js` pins `ISOPLUS_OFFLINE=0` — without it, 34 tests
+  that mock ISO+ HTTP silently asserted against Mongo. Any new offline branch in
+  `services/isoplus.js` needs the same care, and `test/unit/app.test.js` keeps a
+  documented mount list that a new route must be added to.
+- **Tests must not share the real store**: point `LOCAL_FILE_ROOT` at a temp dir,
+  or a route test's cleanup deletes the PDFs you just generated (it did).
 
 ```bash
 npm run dev:fixture -- --replay quotendis --dry-run   # print the body

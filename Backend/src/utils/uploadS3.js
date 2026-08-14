@@ -2,6 +2,12 @@ import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import fs from 'fs';
 import dotenv from 'dotenv';
+// Offline the three functions the PDF pipeline needs — upload, URL, read —
+// swap to a local directory served by /api/local-files, so a generated PDF is
+// still downloadable with no AWS account. Same posture as
+// services/offlineIsoplus.js: isOfflineMode() is hard false in production.
+import { isOfflineMode } from '../services/offlineIsoplus.js';
+import { saveLocalFile, resolveLocalFilePath, buildLocalFileUrl } from './localFileStore.js';
 
 dotenv.config();
 
@@ -26,6 +32,11 @@ const s3Client = new S3Client({
 });
 
 export const uploadFileToS3 = async (fileBuffer, key, publicRead = false) => {
+    if (isOfflineMode()) {
+        await saveLocalFile(key, fileBuffer);
+        // The one field callers read; see webhookNdisPdfHandlers' status check.
+        return { '$metadata': { httpStatusCode: 200 } };
+    }
     checkS3ENV(publicRead);
     const params = {
         Bucket: publicRead ? process.env.AWS_BUCKET_PUBLIC : process.env.AWS_BUCKET,
@@ -75,6 +86,9 @@ export const downloadFileFromS3Stream = async (key, downloadPath) => {
 };
 
 export const getS3FileUrl = async (key, expiration = 3600, publicRead = false) => {
+    if (isOfflineMode()) {
+        return buildLocalFileUrl(key);
+    }
     checkS3ENV(publicRead);
     if (publicRead) {
         return 'https://' + process.env.AWS_BUCKET_PUBLIC + '.s3.' + process.env.AWS_REGION + '.amazonaws.com/' + key.replace(/\+/g, '%2B');
@@ -112,6 +126,9 @@ export const deleteFileFromS3 = async (key, publicRead = false) => {
 };
 
 export const getS3File = async (key, publicRead = false) => {
+    if (isOfflineMode()) {
+        return fs.readFileSync(resolveLocalFilePath(key));
+    }
     checkS3ENV(publicRead);
     const params = {
         Bucket: publicRead ? process.env.AWS_BUCKET_PUBLIC : process.env.AWS_BUCKET,

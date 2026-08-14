@@ -277,3 +277,44 @@ export async function getItemValuesOffline(_workspaceId, boardId, itemId) {
         return null;
     }
 }
+
+// --- references and attributes -----------------------------------------------
+
+/**
+ * Mirrors getReferences(workspaceId, boardId, itemId) — { data: [...] } where
+ * each entry is {attribute_id, to_item_id}.
+ *
+ * The PDF handlers walk references before generating: getReferences() lists
+ * them, getAttribute() names each one, and the handler map keys on the name,
+ * with 'Service Area' mandatory. All three are ISO+ calls, so offline the walk
+ * produced nothing and every PDF webhook failed with "Service Area value is
+ * required." even though the items were local. References come from the
+ * fixture, like board attributes do — the Portal has no Reference model, so
+ * the fixture is the only local record of them.
+ *
+ * An empty list (item has no recorded references) is `{ data: [] }`, not null:
+ * null means "the lookup itself failed", and fetchLegacyNdisReferencedItems
+ * treats it as such.
+ */
+export async function getReferencesOffline(_workspaceId, _boardId, itemId) {
+    const fixture = loadFixture();
+    const references = (fixture?.references ?? []).filter(
+        (r) => String(r.from_item_id) === String(itemId),
+    );
+    return {
+        data: references.map(({ attribute_id, to_item_id }) => ({ attribute_id, to_item_id })),
+        status: 200,
+    };
+}
+
+/**
+ * Mirrors getAttribute(workspaceId, boardId, attributeId) — the attribute
+ * object itself, with the `.name` the reference walk keys on. Null for an
+ * unknown id, matching the live function's null on any failure.
+ */
+export async function getAttributeOffline(_workspaceId, _boardId, attributeId) {
+    const fixture = loadFixture();
+    return (
+        (fixture?.attributes ?? []).find((a) => String(a.id) === String(attributeId)) ?? null
+    );
+}

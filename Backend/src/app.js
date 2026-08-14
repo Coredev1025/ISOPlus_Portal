@@ -24,6 +24,7 @@ import itemsRoutes from './routes/items.js';
 import exportOptimizedRoutes from './routes/exportOptimized.js';
 import subscriptionRoutes from './routes/subscription.js';
 import schedulerRoutes from './routes/scheduler.js';
+import localFilesRoutes from './routes/localFiles.js';
 import { requestContextMiddleware } from './middleware/requestContext.js';
 import { auditHttpMiddleware } from './middleware/auditHttp.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -125,6 +126,8 @@ export function createApp({ mongoUri } = {}) {
   app.use('/api/export', exportOptimizedRoutes);
   app.use('/api/subscriptions', subscriptionRoutes);
   app.use('/api/scheduler', schedulerRoutes);
+  // Offline-mode PDF store; 404s entirely outside offline mode.
+  app.use('/api/local-files', localFilesRoutes);
 
   app.use(errorHandler);
 

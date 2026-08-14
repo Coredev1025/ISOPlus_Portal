@@ -28,6 +28,7 @@ import itemsRoutes from './routes/items.js';
 import exportOptimizedRoutes from './routes/exportOptimized.js';
 import subscriptionRoutes from './routes/subscription.js';
 import schedulerRoutes from './routes/scheduler.js';
+import localFilesRoutes from './routes/localFiles.js';
 import session from 'express-session';
 import MongoStore from 'connect-mongo';
 import syncWorker, { checkAndRetryFailedJobs } from './workers/syncWorker.js'; // Initialize sync worker
@@ -166,6 +167,8 @@ app.use('/api/items', itemsRoutes);
 app.use('/api/export', exportOptimizedRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/scheduler', schedulerRoutes);
+// Offline-mode PDF store; 404s entirely outside offline mode.
+app.use('/api/local-files', localFilesRoutes);
 
 // Setup Bull Board for queue monitoring
 const serverAdapter = new ExpressAdapter();

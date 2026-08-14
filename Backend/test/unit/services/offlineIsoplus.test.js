@@ -10,6 +10,8 @@ import {
   getBoardAttributesOffline,
   getMemberRoleOffline,
   getItemValuesOffline,
+  getReferencesOffline,
+  getAttributeOffline,
 } from '../../../src/services/offlineIsoplus.js';
 
 // Offline mode decides whether the local stack serves ISO+ collections from
@@ -255,5 +257,42 @@ describe('getItemValuesOffline', () => {
   // stand in for it.
   it('returns null when the item belongs to a different board', async () => {
     expect(await getItemValuesOffline(WS, 'some-other-board', ITEM)).toBeNull();
+  });
+});
+
+// --- references and attributes ----------------------------------------------
+
+// The quote/invoice PDF handlers walk item references before generating:
+// getReferences() lists {attribute_id, to_item_id} pairs, getAttribute() names
+// each one, and the handler map keys on that name ('Service Area' first, which
+// is mandatory). Both are ISO+ calls with no local fallback, so offline the
+// walk returned nothing and every PDF webhook died on "Service Area value is
+// required." even with the fixture loaded. These serve the fixture's recorded
+// references instead.
+describe('getReferencesOffline', () => {
+  it('lists the fixture references for a quote item, in the live shape', async () => {
+    const result = await getReferencesOffline('55369', 'eNiJpH14PN3', 'fixture-quote-legacy-pricing');
+
+    expect(result).not.toBeNull();
+    expect(Array.isArray(result.data)).toBe(true);
+    const serviceArea = result.data.find((r) => r.attribute_id === 'fixture-attr-service-area');
+    expect(serviceArea).toBeDefined();
+    expect(serviceArea.to_item_id).toBe('fixture-ref-service-area');
+  });
+
+  it('returns an empty list, not null, for an item with no recorded references', async () => {
+    const result = await getReferencesOffline('55369', 'eNiJpH14PN3', 'no-such-item');
+    expect(result).toEqual({ data: [], status: 200 });
+  });
+});
+
+describe('getAttributeOffline', () => {
+  it('resolves a fixture attribute by id, carrying the name the handler map keys on', async () => {
+    const attr = await getAttributeOffline('55369', 'eNiJpH14PN3', 'fixture-attr-service-area');
+    expect(attr).toMatchObject({ id: 'fixture-attr-service-area', name: 'Service Area' });
+  });
+
+  it('returns null for an unknown attribute id', async () => {
+    expect(await getAttributeOffline('55369', 'eNiJpH14PN3', 'nope')).toBeNull();
   });
 });

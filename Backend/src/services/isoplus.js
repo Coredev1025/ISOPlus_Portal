@@ -8,7 +8,12 @@ import { buildJobPlanningValues, buildServiceFeeTypeValues } from '../utils/isop
 import { getErrorMessageFromUnknown } from '../utils/isoplusErrorHelpers.js';
 // Safe direction: offlineIsoplus.js imports models and the logger, never this
 // module, so there is no cycle.
-import { isOfflineMode, getItemValuesOffline } from './offlineIsoplus.js';
+import {
+    isOfflineMode,
+    getItemValuesOffline,
+    getReferencesOffline,
+    getAttributeOffline,
+} from './offlineIsoplus.js';
 import {
     secureRandomFloat,
     mongoEq,
@@ -647,6 +652,15 @@ export async function getViewsById(authorization, workspaceId, boardId, viewId) 
 
 
 export async function setIntegrationMessage(workspaceId, boardId, itemId, message) {
+    // Offline, this write-back can only 404: the local items are inventions the
+    // live platform has never heard of. Skip rather than throw — the local run
+    // has already done its work, and a skip is the same honest behaviour as the
+    // board_sync handler's offline skip.
+    if (isOfflineMode()) {
+        warn('ISO+™ Service', 'setIntegrationMessage skipped: backend is in offline mode', { workspaceId, boardId, itemId });
+        return false;
+    }
+
     try {
         const board = await Board.findOne({ boardId: mongoEq(boardId) })
             .select('attribute')
@@ -821,6 +835,13 @@ export async function validateItemBelongsToTenant(workspaceId, boardId, itemId) 
 }
 
 export async function getReferences(workspaceId, boardId, itemId) {
+    // Offline, references come from the committed fixture — the Portal has no
+    // Reference model, so the fixture is the only local record. Same guard as
+    // getItemValues above; see that comment for why production is unaffected.
+    if (isOfflineMode()) {
+        return getReferencesOffline(workspaceId, boardId, itemId);
+    }
+
     try {
         const url = buildIsoPlusV2BoardReferencesUrl(workspaceId, boardId, itemId);
         const headers = {
@@ -838,6 +859,11 @@ export async function getReferences(workspaceId, boardId, itemId) {
 }
 
 export async function getAttribute(workspaceId, boardId, attributeId) {
+    // Offline: resolved from the fixture's attribute list, same guard as above.
+    if (isOfflineMode()) {
+        return getAttributeOffline(workspaceId, boardId, attributeId);
+    }
+
     try {
         const url = buildIsoPlusV2BoardAttributeUrl(workspaceId, boardId, attributeId);
         const headers = {
@@ -1122,6 +1148,15 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
 }
 
 export async function setGeneratedField(workspaceId, boardId, itemId, message) {
+    // Offline, this write-back can only 404: the local items are inventions the
+    // live platform has never heard of. Skip rather than throw — the local run
+    // has already done its work, and a skip is the same honest behaviour as the
+    // board_sync handler's offline skip.
+    if (isOfflineMode()) {
+        warn('ISO+™ Service', 'setGeneratedField skipped: backend is in offline mode', { workspaceId, boardId, itemId });
+        return false;
+    }
+
     try {
         const itemValues = await getItemValues(workspaceId, boardId, itemId);
         if (!itemValues) {
@@ -1152,6 +1187,15 @@ export async function setGeneratedField(workspaceId, boardId, itemId, message) {
 }
 
 export async function setPDFLinkAttribute(workspaceId, boardId, itemId, pdfUrl, docType) {
+    // Offline, this write-back can only 404: the local items are inventions the
+    // live platform has never heard of. Skip rather than throw — the local run
+    // has already done its work, and a skip is the same honest behaviour as the
+    // board_sync handler's offline skip.
+    if (isOfflineMode()) {
+        warn('ISO+™ Service', 'setPDFLinkAttribute skipped: backend is in offline mode', { workspaceId, boardId, itemId });
+        return false;
+    }
+
     try {
         // Get the board to find the PDF attribute ID
         const board = await Board.findOne({ boardId: mongoEq(boardId) })
