@@ -65,4 +65,48 @@ describe("SystemHealthDrilldownView", () => {
       );
     });
   });
+
+  // Guards the behaviour the 409 duplicate-guard design depends on: a
+  // regression that always appended force=1 would make the 409 branch dead
+  // code while still passing every other test in this file.
+  it("does not send force=1 on the first run request", async () => {
+    post.mockRejectedValueOnce({
+      response: { status: 409, data: { error: "already_run", periodKey: "p", runs: [RUN] } },
+    });
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await userEvent.click(await screen.findByRole("button", { name: /run invoices now/i }));
+
+    await waitFor(() => expect(post).toHaveBeenCalled());
+    expect(post.mock.calls[0][0]).not.toContain("force=1");
+  });
+
+  it("shows an error when the initial load fails, rather than looking empty", async () => {
+    get.mockReset();
+    get.mockRejectedValue(new Error("network down"));
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+
+    expect(await screen.findByText(/could not load/i)).toBeInTheDocument();
+  });
+
+  it("surfaces a non-409 run failure instead of silently doing nothing", async () => {
+    post.mockRejectedValue(new Error("boom"));
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await userEvent.click(await screen.findByRole("button", { name: /run invoices now/i }));
+
+    expect(await screen.findByText(/could not start the run/i)).toBeInTheDocument();
+  });
+
+  it("shows explicit copy when a workspace genuinely has no runs", async () => {
+    get.mockReset();
+    get.mockResolvedValue({
+      data: { workspaceId: "ws-1", schedules: [], runs: [], total: 0, page: 1, pageSize: 50 },
+    });
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+
+    expect(await screen.findByText(/no runs yet/i)).toBeInTheDocument();
+  });
 });
