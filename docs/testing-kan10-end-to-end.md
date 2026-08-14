@@ -283,27 +283,48 @@ that was never meant to act.
 
 Not KAN-10. Pre-existing board automations, on the same board.
 
-**Track B cannot complete without live ISO+ credentials — not even the inbound
-leg, and not even with the fixture loaded.** This is the finding that costs the
-most time if you don't know it:
-
-`routes/webhook.js` → `validateItemBelongsToTenant()` → `getItemValues()` is an
-**ISO+ API call**, not a Mongo lookup. With `PERSONAL_ACCESS_TOKEN` blank it 401s,
-returns null, and the route answers:
-
-```
-{"message":"CRITICAL: Item does not exist. This may be a result of an
- intrusion attempt or misconfiguration of the tenant!"}     ← at HTTP 200
-```
-
-The item *is* in Mongo; the tenancy guard never consults Mongo. So the message
-is misleading twice over — it is not an intrusion, and the item does exist. The
-tell is `Error getting item values: Request failed with status code 401` in the
-backend log immediately above it.
-
 **Everything on this path answers HTTP 200, errors included**, so ISO+ records a
 successful delivery either way. Never judge a Track B run by the status code —
 read the body and the backend log.
+
+### The tenancy guard, and how far offline now gets
+
+`validateItemBelongsToTenant()` calls `getItemValues()`, and a falsy return
+means "not this tenant's item". That used to make the whole inbound path
+unusable offline: the call 401s without a token, so every real webhook came back
+
+```
+{"message":"CRITICAL: Item does not exist. This may be a result of an
+ intrusion attempt or misconfiguration of the tenant!"}
+```
+
+— misleading twice over, since it is not an intrusion and the item *is* in
+Mongo, which the guard never consulted.
+
+`getItemValues()` now falls back to `getItemValuesOffline()` when
+`isOfflineMode()`, the same swap `routes/board.js` makes for board attributes.
+The guard passes offline and the handler runs, so the next error you see is a
+real one about the payload:
+
+```
+{"message":"Service Area value is required."}
+```
+
+That is as far as the committed fixture reaches — its quote items carry no
+Service Area, and `getReferences()` has no offline stand-in yet. **Offline gets
+you through the door, not through PDF generation.**
+
+Two things follow, and both matter:
+
+- **`isOfflineMode()` is implicitly true whenever `PERSONAL_ACCESS_TOKEN` is
+  blank outside production** — which is every test run. `test/setup.js` pins
+  `ISOPLUS_OFFLINE=0` for exactly that reason; without it, 34 tests that mock
+  ISO+ HTTP silently assert against Mongo instead. Adding an offline branch to
+  anything else in `services/isoplus.js` needs the same care.
+- **Production is unaffected**: `isOfflineMode()` hard-returns `false` under
+  `NODE_ENV=production` unless `ISOPLUS_OFFLINE=1` is set deliberately, which
+  `.env.example` warns against. A blank token in production must still fail
+  loudly rather than quietly serve stub data.
 
 ```bash
 npm run dev:fixture -- --replay quotendis --dry-run   # print the body

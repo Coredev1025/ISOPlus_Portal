@@ -34,6 +34,18 @@ function resolveSystemMongod() {
 // documents into the developer's own business-dashboard.
 process.env.NODE_ENV = 'test';
 
+// Pin the suite to the real ISO+ providers, not the offline stand-ins.
+//
+// isOfflineMode() is implicitly true whenever PERSONAL_ACCESS_TOKEN is blank
+// outside production, which is every test run. Without this pin, the moment a
+// function in services/isoplus.js gained an offline branch, every test that
+// mocks its HTTP call would silently be served from Mongo instead and assert
+// against stub data — 34 of them did exactly that when getItemValues gained
+// one. Tests that want offline behaviour set the variable themselves and
+// restore it (see test/unit/services/offlineIsoplus.test.js); this is the
+// documented purpose of the '0' value.
+process.env.ISOPLUS_OFFLINE = process.env.ISOPLUS_OFFLINE ?? '0';
+
 vi.mock('ioredis', () => {
   class RedisMock {
     constructor() {}

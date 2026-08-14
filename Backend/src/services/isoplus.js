@@ -6,6 +6,9 @@ import https from 'https';
 import { info, warn, error, logAttributeError, logApiError, logOperationStart, logOperationEnd } from '../utils/logger.js';
 import { buildJobPlanningValues, buildServiceFeeTypeValues } from '../utils/isoplusJobReferenceHelpers.js';
 import { getErrorMessageFromUnknown } from '../utils/isoplusErrorHelpers.js';
+// Safe direction: offlineIsoplus.js imports models and the logger, never this
+// module, so there is no cycle.
+import { isOfflineMode, getItemValuesOffline } from './offlineIsoplus.js';
 import {
     secureRandomFloat,
     mongoEq,
@@ -727,6 +730,17 @@ export async function putTimeTracking(workspaceId, boardId, itemId, startTime, e
 export const ITEM_DELETED = Symbol('ITEM_DELETED');
 
 export async function getItemValues(workspaceId, boardId, itemId) {
+    // Offline, every call here 401s, and because validateItemBelongsToTenant
+    // reads a falsy return as "not this tenant's item", the whole inbound
+    // webhook path refuses real payloads as intrusion attempts. Serve them from
+    // Mongo instead, the same swap routes/board.js already makes for board
+    // attributes. isOfflineMode() cannot be true under NODE_ENV=production
+    // unless ISOPLUS_OFFLINE=1 is set deliberately, which .env.example warns
+    // against — a blank token in production must still fail loudly.
+    if (isOfflineMode()) {
+        return getItemValuesOffline(workspaceId, boardId, itemId);
+    }
+
     const maxRetries = 5; // Increased from 3 to handle rate limits better
     let lastError = null;
     let retryDelay = 2000; // Start with 2 seconds (increased from 1 second)

@@ -25,6 +25,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import Business from '../models/Business.js';
 import Board from '../models/Board.js';
+import Item from '../models/Item.js';
 import { warn } from '../utils/logger.js';
 
 let announced = false;
@@ -228,4 +229,51 @@ export async function getBoardAttributesOffline(_workspaceId, boardId) {
     }
 
     return { attribute: fixture.attributes ?? [], status: 200 };
+}
+
+// --- item values -------------------------------------------------------------
+
+/**
+ * Mirrors getItemValues(workspaceId, boardId, itemId) from services/isoplus.js.
+ *
+ * That function is the tenancy guard's only source of truth:
+ * validateItemBelongsToTenant() treats a falsy return as "this item does not
+ * belong to this tenant" and throws. Offline it always 401s, so every inbound
+ * webhook is refused as an intrusion attempt while the item sits in Mongo the
+ * whole time — the guard never consults the database.
+ *
+ * Stored items keep `data` as a flat map of attribute NAME to value, which is
+ * also how ISO+ keys webhook bodies. The live endpoint instead returns
+ * `values[]` with the attribute expanded, and consumers read
+ * `values[].attribute.name`, so the map is projected into that shape here.
+ * Attribute ids are not stored anywhere locally and are therefore null: code
+ * that keys on `attribute.id` will not work offline, and should not pretend to.
+ *
+ * Scoped by board as well as item, deliberately. Returning an item that belongs
+ * to another board would not stand in for the tenancy check — it would defeat
+ * it, which is worse than being offline.
+ */
+export async function getItemValuesOffline(_workspaceId, boardId, itemId) {
+    try {
+        const item = await Item.findOne({
+            itemId: String(itemId),
+            boardId: String(boardId),
+        }).lean();
+
+        if (!item) return null;
+
+        const values = Object.entries(item.data ?? {}).map(([name, data]) => ({
+            attribute: { id: null, name },
+            data,
+        }));
+
+        return { id: item.itemId, values };
+    } catch (err) {
+        warn('Offline-Mode', 'Offline item lookup failed', {
+            boardId,
+            itemId,
+            error: err.message,
+        });
+        return null;
+    }
 }
