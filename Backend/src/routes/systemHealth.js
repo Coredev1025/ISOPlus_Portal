@@ -9,10 +9,15 @@ import { requireOwnerOrSupport } from '../middleware/requireOwnerOrSupport.js';
 import { summariseRuns } from '../utils/automationRunMetrics.js';
 import { xeroConnectionStatus } from '../utils/automationConnectionStatus.js';
 import { readQueueDepth } from '../services/automation/queueMetrics.js';
-import { ERROR_RATE_WINDOW_HOURS } from '../constants/systemHealth.js';
+import { ERROR_RATE_WINDOW_HOURS, WEEK_WINDOW_HOURS } from '../constants/systemHealth.js';
 import { error as logError } from '../utils/logger.js';
 
 const router = express.Router();
+
+// Matches the local HOUR_MS in utils/automationRunMetrics.js, which is not
+// exported — declared here rather than imported so that module's public
+// surface stays untouched by this route's needs.
+const HOUR_MS = 60 * 60 * 1000;
 
 router.use(authenticateToken, requireOwnerOrSupport);
 
@@ -25,8 +30,11 @@ router.get('/overview', async (req, res) => {
   try {
     const now = new Date();
     // One week back covers every figure summariseRuns computes, so the route
-    // makes a single query rather than one per window.
-    const from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    // makes a single query rather than one per window. Must reach at least as
+    // far back as WEEK_WINDOW_HOURS, the widest window summariseRuns reads —
+    // otherwise runsThisWeek would silently truncate to whatever this query
+    // happened to return.
+    const from = new Date(now.getTime() - WEEK_WINDOW_HOURS * HOUR_MS);
 
     const [rows, activeAutomations, queue, health] = await Promise.all([
       AutomationRun.find({ startedAt: { $gte: from } }).select('status startedAt').lean(),

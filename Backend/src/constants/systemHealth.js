@@ -86,7 +86,10 @@ export const TREND_BUCKETS = 12;
  * Rolling windows measured back from now for counting recent runs.
  * Not calendar day/week boundaries — these are elapsed-time windows.
  *
- * Touchpoints: utils/automationRunMetrics.js.
+ * Touchpoints: utils/automationRunMetrics.js (both). WEEK_WINDOW_HOURS is
+ * also read by routes/systemHealth.js, which sizes its AutomationRun query
+ * window from it — that window has to reach at least as far back as
+ * summariseRuns' widest window or runsThisWeek silently truncates.
  */
 export const TODAY_WINDOW_HOURS = 24;
 export const WEEK_WINDOW_HOURS = 7 * 24;
