@@ -299,6 +299,17 @@ periodKey, and an explicit nothing-was-sent note:
   "note": "Offline outbox preview — nothing was sent. SES delivery is Epic 5 part 4." }
 ```
 
+Invoice slots now also carry **attachments**: the engine (Epic 5 part 3,
+`services/automation/generateDocuments.js`) renders one NDIS invoice PDF per
+billable item — v1 contract: any item whose stored data yields a quote-shaped
+quantity+price line — numbers it atomically from `documentNumbering.invoice`,
+stores it beside the webhook PDFs, records a `PDFLink`, and lists the URLs in
+the outbox email. Idempotent per slot by artifact key, so a redelivery consumes
+no second invoice number. Statement slots compose without attachments:
+statement *content* needs the ticket's excluded fields (Statement type/period)
+and master-plan shift data — see the module comment and the service-plan recon
+in the PR description.
+
 **That file is the end of KAN-10 offline.** It is also served at
 `/api/local-files/outbox/…`. Jobs land in `completed`, not `waiting` — the
 worker completes them so BullMQ does not retry against a transport that does
