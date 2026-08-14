@@ -229,6 +229,7 @@ describe('createApp route mounting', () => {
       '/api/subscriptions',
       '/api/scheduler',
       '/api/local-files',
+      '/api/system-health',
     ]);
   });
 

@@ -25,6 +25,7 @@ import exportOptimizedRoutes from './routes/exportOptimized.js';
 import subscriptionRoutes from './routes/subscription.js';
 import schedulerRoutes from './routes/scheduler.js';
 import localFilesRoutes from './routes/localFiles.js';
+import systemHealthRoutes from './routes/systemHealth.js';
 import { requestContextMiddleware } from './middleware/requestContext.js';
 import { auditHttpMiddleware } from './middleware/auditHttp.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -130,6 +131,7 @@ export function createApp({ mongoUri } = {}) {
 // nature — the router verifies the SNS signature itself.
   // Offline-mode PDF store; 404s entirely outside offline mode.
   app.use('/api/local-files', localFilesRoutes);
+  app.use('/api/system-health', systemHealthRoutes);
 
   app.use(errorHandler);
 
