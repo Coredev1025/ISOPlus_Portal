@@ -13,6 +13,15 @@ describe('buildFanOutSpecs', () => {
     expect(specs[0].data).toMatchObject({ workspaceId: 'ws-1', boardId: 'b1' });
   });
 
+  it('puts the claimed schedule timezone and picker on the job so the worker bills that period', () => {
+    const schedule = { every: { n: 2, unit: 'week' }, runOn: 'monday' };
+    const [first] = buildFanOutSpecs({
+      kind: KIND_INVOICE, workspaceId: 'ws-1', boards, slot, timezone: TZ, schedule,
+    });
+    expect(first.data.timezone).toBe(TZ);
+    expect(first.data.schedule).toEqual({ every: { n: 2, unit: 'week' }, runOn: 'monday' });
+  });
+
   it('keys each job on board and period', () => {
     const [first] = buildFanOutSpecs({ kind: KIND_INVOICE, workspaceId: 'ws-1', boards, slot, timezone: TZ });
     expect(first.opts.jobId).toBe('inv:b1:20260812-0900');

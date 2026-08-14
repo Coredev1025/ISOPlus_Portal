@@ -5,6 +5,7 @@ import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
 import { AUTOMATION_QUEUE_NAME } from '../services/automation/queue.js';
 import { deliverEmail } from '../services/email/outbox.js';
 import { generateInvoicesForBoard } from '../services/automation/generateDocuments.js';
+import { generateStatementsForBoard } from '../services/automation/generateStatements.js';
 import { isOfflineMode } from '../services/offlineIsoplus.js';
 import { buildRedisConnection } from '../services/redisConnection.js';
 import AutomationSettings from '../models/AutomationSettings.js';
@@ -13,58 +14,45 @@ import { info, warn } from '../utils/logger.js';
 
 const BLOCK_FOR_KIND = { [KIND_INVOICE]: 'invoice', [KIND_STATEMENT]: 'statement' };
 
-/**
- * The first slice of Epic 5 part 4, replacing the deliberately inert stub —
- * against its pinned test, which said that was the way to replace it.
- *
- * What it does now: for each fanned-out job, offline, it composes the email
- * the workspace's settings block describes and writes it to the offline
- * outbox (services/email/outbox.js), where a person can open and verify it.
- * **Nothing is sent anywhere, in any mode.** Online there is still no
- * transport, and the job completes with a warn rather than throwing — a throw
- * would put every automation job into BullMQ retry against a transport that
- * does not exist. PDF generation (part 3) and real SES delivery replace the
- * body of composeAndDeliver when they land.
- *
- * The queue name is imported rather than written out: it already carries the
- * Redis Cluster hash tag ('{automation}'), and a Worker listening on the wrong
- * name silently processes nothing while the queue grows.
- */
+async function generateAttachments(job) {
+  const { kind, workspaceId, boardId, periodKey, schedule } = job.data;
+  const slot = new Date(job.data.slot);
+  const timezone = job.data.timezone || DEFAULT_TIMEZONE;
+
+  if (kind === KIND_INVOICE) {
+    const generated = await generateInvoicesForBoard({
+      workspaceId, boardId, slot, timezone, periodKey, schedule,
+    });
+    return generated.map((doc) => doc.pdfUrl);
+  }
+  if (kind === KIND_STATEMENT) {
+    const generated = await generateStatementsForBoard({
+      workspaceId, boardId, slot, timezone, periodKey,
+    });
+    return generated.map((doc) => doc.pdfUrl);
+  }
+  return [];
+}
+
 async function composeAndDeliver(job) {
   const { kind, workspaceId, boardId, periodKey } = job.data;
 
   const settings = await AutomationSettings.findOne({ workspaceId: mongoEq(workspaceId) }).lean();
   const block = settings?.[BLOCK_FOR_KIND[kind]];
   if (!block?.enabled) {
-    // Same tolerance as the scheduler handler: a job whose settings vanished
-    // or were disabled mid-flight costs a log line, not a retry storm.
     warn('Automation', 'Job fired with no enabled settings block; nothing composed', {
       kind, workspaceId, boardId, periodKey,
     });
     return;
   }
 
+  const attachments = await generateAttachments(job);
+
   if (!isOfflineMode()) {
     warn('Automation', 'Email delivery not implemented (Epic 5 part 4); completing without sending', {
-      kind, workspaceId, boardId, periodKey,
+      kind, workspaceId, boardId, periodKey, attachments: attachments.length,
     });
     return;
-  }
-
-  // Part 3, invoice side: render the slot's documents before composing the
-  // email that would deliver them. Statement generation still needs the
-  // excluded ticket fields (Statement type / period) to define its content —
-  // see generateDocuments.js — so statement jobs compose without attachments.
-  let attachments = [];
-  if (kind === KIND_INVOICE) {
-    const generated = await generateInvoicesForBoard({
-      workspaceId,
-      boardId,
-      slot: new Date(job.data.slot),
-      timezone: DEFAULT_TIMEZONE,
-      periodKey,
-    });
-    attachments = generated.map((doc) => doc.pdfUrl);
   }
 
   const { outboxKey } = await deliverEmail({ kind, workspaceId, boardId, periodKey, block, attachments });

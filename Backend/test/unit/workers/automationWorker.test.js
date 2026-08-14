@@ -34,10 +34,14 @@ import { join } from 'node:path';
 import { AUTOMATION_QUEUE_NAME } from '../../../src/services/automation/queue.js';
 import { startAutomationWorker } from '../../../src/workers/automationWorker.js';
 import AutomationSettings from '../../../src/models/AutomationSettings.js';
+import Board from '../../../src/models/Board.js';
 import Business from '../../../src/models/Business.js';
 import Item from '../../../src/models/Item.js';
+import InvoiceNumber from '../../../src/models/InvoiceNumber.js';
 import PDFLink from '../../../src/models/PDFLink.js';
 import { outboxKeyFor } from '../../../src/services/email/outbox.js';
+
+import * as generateDocuments from '../../../src/services/automation/generateDocuments.js';
 
 const JOB = {
   data: {
@@ -46,8 +50,69 @@ const JOB = {
     boardId: 'board-a',
     slot: '2026-01-16T09:00:00.000Z',
     periodKey: '20260116-0900',
+    timezone: 'Australia/Sydney',
+    schedule: { every: { n: 1, unit: 'month' } },
   },
 };
+
+const WORKER_MASTER = 'mp-wk-1';
+const WORKER_SP = '11111111-cccc-4111-8111-111111111111';
+const WORKER_PP = '22222222-cccc-4111-8111-222222222222';
+const WORKER_CAT = '66666666-cccc-4111-8111-666666666666';
+
+async function seedWorkerNdisBoard() {
+  await cleanupWorkerNdisBoard();
+  await Business.create({
+    workspaceId: 'ws-1', name: 'Worker Gen Biz', abn: '11 111 111 111',
+    address: { street: '1 St', suburb: 'S', state: 'NSW', postcode: '2000', country: 'AU' },
+    bankDetails: { accountName: 'A', bankName: 'B', bsb: '123456', accountNumber: '1234567' },
+    documentNumbering: { invoice: { prefix: 'IN-', nextNumber: 900 }, quote: { prefix: 'QT-', nextNumber: 1 }, purchaseOrder: { prefix: 'PO-', nextNumber: 1 } },
+  });
+  await Board.create({
+    workspaceId: 'ws-1', boardId: 'board-a', name: 'NDIS Board', label: 'Care Management - NDIS',
+  });
+  await Item.create({
+    workspaceId: 'ws-1', boardId: 'cat-board', folderId: 'f-cat', itemId: WORKER_CAT,
+    data: { 'Support Item Number': '01_011_0107_1_1', 'Support Item Name': 'Assistance' },
+  });
+  await Item.create({
+    workspaceId: 'ws-1', boardId: 'cat-board', folderId: 'f-cat', itemId: WORKER_SP,
+    data: {
+      'Direct Support Item Number': [{ id: WORKER_CAT, name: 'Assistance' }],
+      'Unit (Direct Support)': 'Hour(H)',
+      'Agreed Unit Price for Direct Support ($)': '70.00',
+    },
+  });
+  await Item.create({
+    workspaceId: 'ws-1', boardId: 'cat-board', folderId: 'f-cat', itemId: WORKER_PP,
+    data: { 'Full Name/Preferred Name': 'Samuel Rivers', 'NDIS Number': '430123456' },
+  });
+  await Item.create({
+    workspaceId: 'ws-1', boardId: 'board-a', folderId: 'f-master', itemId: WORKER_MASTER,
+    data: {
+      'Timesheet Approval': 'Approved',
+      'Job Status': 'Completed',
+      'Payment Status': 'Unpaid',
+      'Service Plan': [{ id: WORKER_SP }],
+      'Participant Profile': [{ id: WORKER_PP }],
+      'Scheduled Shift Start Date & Time': '2025-12-16T21:00:00.000Z',
+      'Actual Shift Start Date and Time': '2025-12-16T22:00:00.000Z',
+      'Actual Shift End Date and Time': '2025-12-17T00:30:00.000Z',
+      'Actual Shift Duration(Hr.)': '2.5',
+      'Direct Support Value($) - Time Based Support': '175.00',
+    },
+  });
+}
+
+async function cleanupWorkerNdisBoard() {
+  await Promise.all([
+    Business.deleteMany({ workspaceId: 'ws-1' }),
+    Board.deleteMany({ boardId: 'board-a' }),
+    Item.deleteMany({ workspaceId: 'ws-1' }),
+    InvoiceNumber.deleteMany({ workspaceId: 'ws-1' }),
+    PDFLink.deleteMany({ workspaceId: 'ws-1' }),
+  ]);
+}
 
 /** The handler the worker registered, as BullMQ would call it. */
 function registeredHandler() {
@@ -111,6 +176,7 @@ describe('startAutomationWorker', () => {
       process.env.LOCAL_FILE_ROOT = saved.LOCAL_FILE_ROOT;
       rmSync(root, { recursive: true, force: true });
       await AutomationSettings.deleteMany({ workspaceId: 'ws-1' });
+      await cleanupWorkerNdisBoard();
     });
 
     it('offline, enabled block: writes the composed email to the outbox', async () => {
@@ -137,19 +203,46 @@ describe('startAutomationWorker', () => {
       expect(existsSync(join(root, 'outbox'))).toBe(false);
     });
 
-    it('offline: generates an invoice PDF per billable item and lists it in the outbox email', async () => {
+    it('offline: generates an Invoice Generator PDF and lists it in the outbox email', async () => {
+      process.env.ISOPLUS_OFFLINE = '1';
+      await AutomationSettings.create({
+        workspaceId: 'ws-1',
+        invoice: { enabled: true, emailSubject: 'Invoice run' },
+      });
+      await seedWorkerNdisBoard();
+      startAutomationWorker();
+
+      await registeredHandler()(JOB);
+
+      const written = JSON.parse(readFileSync(join(root, outboxKeyFor(JOB.data)), 'utf8'));
+      expect(written.attachments).toHaveLength(1);
+      expect(written.attachments[0]).toContain('/api/local-files/');
+      expect(written.attachments[0]).toContain('NDIS-invoices/');
+      expect(written.attachments[0]).not.toContain('/auto/');
+      const rel = decodeURIComponent(written.attachments[0].split('/api/local-files/')[1]);
+      expect(readFileSync(join(root, rel)).subarray(0, 5).toString()).toBe('%PDF-');
+      expect(await InvoiceNumber.findOne({ workspaceId: 'ws-1', itemId: WORKER_MASTER, type: 'PDF' })).toBeTruthy();
+
+      await cleanupWorkerNdisBoard();
+    });
+
+    it('offline: a quote-shaped item without an approved timesheet is not billed', async () => {
       process.env.ISOPLUS_OFFLINE = '1';
       await AutomationSettings.create({
         workspaceId: 'ws-1',
         invoice: { enabled: true, emailSubject: 'Invoice run' },
       });
       await Business.deleteMany({ workspaceId: 'ws-1' });
+      await Board.deleteMany({ boardId: 'board-a' });
       await Item.deleteMany({ workspaceId: 'ws-1' });
       await Business.create({
         workspaceId: 'ws-1', name: 'Worker Gen Biz', abn: '11 111 111 111',
         address: { street: '1 St', suburb: 'S', state: 'NSW', postcode: '2000', country: 'AU' },
         bankDetails: { accountName: 'A', bankName: 'B', bsb: '123456', accountNumber: '1234567' },
         documentNumbering: { invoice: { prefix: 'IN-', nextNumber: 900 }, quote: { prefix: 'QT-', nextNumber: 1 }, purchaseOrder: { prefix: 'PO-', nextNumber: 1 } },
+      });
+      await Board.create({
+        workspaceId: 'ws-1', boardId: 'board-a', name: 'NDIS Board', label: 'Care Management - NDIS',
       });
       await Item.create({
         workspaceId: 'ws-1', boardId: 'board-a', folderId: 'f', itemId: 'wk-bill-1',
@@ -160,30 +253,66 @@ describe('startAutomationWorker', () => {
       await registeredHandler()(JOB);
 
       const written = JSON.parse(readFileSync(join(root, outboxKeyFor(JOB.data)), 'utf8'));
-      expect(written.attachments).toHaveLength(1);
-      expect(written.attachments[0]).toContain('/api/local-files/');
-      // and the artifact itself is a stored PDF
-      const rel = decodeURIComponent(written.attachments[0].split('/api/local-files/')[1]);
-      expect(readFileSync(join(root, rel)).subarray(0, 5).toString()).toBe('%PDF-');
+      expect(written.attachments).toHaveLength(0);
+      expect(await InvoiceNumber.countDocuments({ workspaceId: 'ws-1' })).toBe(0);
 
-      await Business.deleteMany({ workspaceId: 'ws-1' });
-      await Item.deleteMany({ workspaceId: 'ws-1' });
-      await PDFLink.deleteMany({ workspaceId: 'ws-1' });
+      await cleanupWorkerNdisBoard();
     });
 
-    // Online there is still no transport. The job must complete quietly —
-    // a throw here would put every automation job into BullMQ retry against
-    // a transport that does not exist.
-    it('online: completes without writing or throwing', async () => {
+    it('offline: statement jobs attach Monthly Statement PDFs on Care Management boards', async () => {
+      process.env.ISOPLUS_OFFLINE = '1';
+      await AutomationSettings.create({
+        workspaceId: 'ws-1',
+        statement: { enabled: true, emailSubject: 'Statement run' },
+      });
+      await cleanupWorkerNdisBoard();
+      await Business.create({
+        workspaceId: 'ws-1', name: 'Worker Stmt Biz', abn: '11 111 111 111',
+        address: { street: '1 St', suburb: 'S', state: 'NSW', postcode: '2000', country: 'AU' },
+        bankDetails: { accountName: 'A', bankName: 'B', bsb: '123456', accountNumber: '1234567' },
+        documentNumbering: { invoice: { prefix: 'IN-', nextNumber: 1 }, quote: { prefix: 'QT-', nextNumber: 1 }, purchaseOrder: { prefix: 'PO-', nextNumber: 1 } },
+      });
+      await Board.create({
+        workspaceId: 'ws-1', boardId: 'board-a', name: 'CM Board', label: 'Care Management',
+      });
+      await Item.create({
+        workspaceId: 'ws-1', boardId: 'board-a', folderId: 'f-p', itemId: 'p-1',
+        data: { 'Full Name/Preferred Name': 'Alex Rivers' },
+      });
+      startAutomationWorker();
+
+      const statementJob = { data: { ...JOB.data, kind: 'statement_automation' } };
+      await registeredHandler()(statementJob);
+
+      const written = JSON.parse(readFileSync(join(root, outboxKeyFor(statementJob.data)), 'utf8'));
+      expect(written.attachments).toHaveLength(1);
+      expect(written.attachments[0]).toContain('monthly-statements/');
+
+      await cleanupWorkerNdisBoard();
+    });
+
+    // Online still calls the generator. There is no SES transport, so the job
+    // must complete without an outbox write or a throw that would retry.
+    // Upload goes to S3 when ISOPLUS_OFFLINE=0, so this spies the generator
+    // rather than hitting AWS.
+    it('online: still generates and writes no outbox', async () => {
       process.env.ISOPLUS_OFFLINE = '0';
       await AutomationSettings.create({
         workspaceId: 'ws-1',
         invoice: { enabled: true, emailSubject: 'Invoice run' },
       });
+      const spy = vi.spyOn(generateDocuments, 'generateInvoicesForBoard').mockResolvedValue([
+        { itemId: WORKER_MASTER, pdfUrl: 'https://example.test/invoice.pdf' },
+      ]);
       startAutomationWorker();
 
       await expect(registeredHandler()(JOB)).resolves.toBeUndefined();
+      expect(spy).toHaveBeenCalledWith(expect.objectContaining({
+        timezone: 'Australia/Sydney',
+        schedule: { every: { n: 1, unit: 'month' } },
+      }));
       expect(existsSync(join(root, 'outbox'))).toBe(false);
+      spy.mockRestore();
     });
   });
 });

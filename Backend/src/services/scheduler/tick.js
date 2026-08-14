@@ -112,10 +112,10 @@ async function claimAtMostOnce(candidate, now, excludeIds, stats) {
  * the two happen to be equal (nextRunAt is not advanced until after dispatch),
  * but the handler should not have to know that.
  *
- * `timezone` travels with the slot because a handler that derives an
- * idempotency key from it — the automation fan-out does — must format the
- * instant in the schedule's own zone, not the server's, or two workspaces on
- * different zones collide and every deployment region keys differently.
+ * `timezone` and `schedule` travel with the slot because a handler that
+ * derives an idempotency key or a billing window from them — the automation
+ * fan-out does — must use the claimed row, not leftover Invoice Generator
+ * filters and not the server's zone.
  */
 async function dispatch(job, now) {
   const { handler } = resolve(job.kind);
@@ -125,6 +125,7 @@ async function dispatch(job, now) {
     workspaceId: job.workspaceId,
     timezone: job.timezone,
     scheduledFor: job.dueAt,
+    schedule: job.schedule,
   });
   await recordSuccess(job, job.policy, now);
 }

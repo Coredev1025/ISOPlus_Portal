@@ -56,3 +56,37 @@ export const WEEKDAYS = [
   'friday',
   'saturday',
 ];
+
+/**
+ * Board labels the Invoice Generator page uses to pick NDIS vs Age Care.
+ * Touchpoints: utils/automationBoardFlags.js.
+ */
+export const CARE_MANAGEMENT_PREFIX = 'Care Management';
+export const LOW_CAT_BOARD_LABEL = 'Care Management - SaH - Low Cat';
+
+/**
+ * InvoiceNumber.type written by the generator PDF path (the page's "invoiced").
+ * Touchpoints: services/automation/generateDocuments.js.
+ */
+export const INVOICE_NUMBER_TYPE_PDF = 'PDF';
+
+/**
+ * PDFLink.type values for scheduled artifacts.
+ * Touchpoints: services/automation/generateDocuments.js, generateStatements.js.
+ */
+export const PDFLINK_TYPE_NDIS_INVOICE = 'NDIS Invoice';
+export const PDFLINK_TYPE_AGE_CARE_INVOICE = 'Participant Tax Invoice';
+export const PDFLINK_TYPE_MONTHLY_STATEMENT = 'Monthly Statement';
+
+/**
+ * Fallback due-date offset when accountsReceivableTerms has no number.
+ * Touchpoints: utils/automationInvoiceDates.js.
+ */
+export const DEFAULT_INVOICE_DUE_DAYS = 14;
+
+/**
+ * Same page/limit the Invoice Generator UI sends on GET .../invoice-generator.
+ * Touchpoints: services/automation/generateDocuments.js.
+ */
+export const GENERATOR_LIST_LIMIT = 1000;
+

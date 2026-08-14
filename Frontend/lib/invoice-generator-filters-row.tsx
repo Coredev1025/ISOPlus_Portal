@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
-import { TRANSACTION_STATUS_FILTERS } from "@/lib/invoice-generator-helpers";
+import { TRANSACTION_STATUS_FILTERS, applyExclusiveInvoiceDateRange } from "@/lib/invoice-generator-helpers";
 import type { DateRange } from "react-day-picker";
 
 
@@ -67,13 +67,27 @@ export function InvoiceGeneratorFiltersRow(props: {
       <DateRangePicker
         label="Scheduled Service Date"
         value={scheduledServiceDateRange}
-        onChange={setScheduledServiceDateRange}
+        onChange={(range) => {
+          const next = applyExclusiveInvoiceDateRange('scheduled', range, {
+            scheduledServiceDateRange,
+            serviceDeliveryDateRange,
+          });
+          setScheduledServiceDateRange(next.scheduledServiceDateRange);
+          setServiceDeliveryDateRange(next.serviceDeliveryDateRange);
+        }}
       />
 
       <DateRangePicker
         label="Service Delivery Date"
         value={serviceDeliveryDateRange}
-        onChange={setServiceDeliveryDateRange}
+        onChange={(range) => {
+          const next = applyExclusiveInvoiceDateRange('serviceDelivery', range, {
+            scheduledServiceDateRange,
+            serviceDeliveryDateRange,
+          });
+          setScheduledServiceDateRange(next.scheduledServiceDateRange);
+          setServiceDeliveryDateRange(next.serviceDeliveryDateRange);
+        }}
       />
 
       {!isNdisBoard && (

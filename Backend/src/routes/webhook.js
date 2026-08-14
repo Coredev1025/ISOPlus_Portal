@@ -16,6 +16,8 @@ import { applyTemplateTextDefaultsToPages } from '../utils/webhookTemplateHelper
 import { paginatePdfmeTemplateTableByRows } from '../utils/webhookPdfPaginationHelpers.js';
 import { processWebhookNdisQuotePdfItem, processWebhookNdisInvoicePdfItem } from '../utils/webhookNdisPdfHandlers.js';
 import { handleParticipantTaxInvoiceRoute } from '../utils/webhookParticipantTaxPdfHelpers.js';
+import { generateNdisInvoiceGeneratorPdf } from '../services/automation/ndisInvoiceGeneratorPdf.js';
+import { parseMasterItemIdsFromBody } from '../utils/ndisInvoiceGeneratorPdfHelpers.js';
 import { handleMonthlyStatementRoute, buildMonthlyStatementDeps } from '../utils/webhookMonthlyStatementPdfHelpers.js';
 import { mongoEq } from '../utils/securityHelpers.js';
 
@@ -38,26 +40,6 @@ import {
 } from '../services/isoplus.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
 import { fetchBudgetItems, fetchServiceItems } from '../services/monthlyStatementData.js';
-import {
-    NDIS_MASTERPLAN_ATTR as NDIS_MASTERPLAN_ATTR_DB,
-    buildNdisMasterPlanServiceRows,
-    buildNdisSupportCatalogueForServicePlan,
-    extractRefId as extractNdisRefId,
-    formatDdMmYyyy,
-    formatDateInValueZone,
-    formatDateTimeInValueZone,
-} from '../utils/ndisServiceRecords.js';
-import { resolveNdisPricingRuleForServicePlan } from '../utils/ndisPricingRules.js';
-import {
-    getNdisInvoiceGeneratorContextFromMasterItems,
-    fetchParticipantProfileItemForMasterPlan,
-    prepareParticipantForInvoiceGenerator,
-} from '../utils/ndisInvoiceGeneratorInvoicing.js';
-import {
-    buildMasterItemsMap,
-    buildNdisInvoicePdfClientDetails,
-    enrichNdisInvoiceGeneratorRows,
-} from '../utils/ndisInvoiceGeneratorOutput.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -134,7 +116,7 @@ async function handlePDFError(err, workspaceId, boardId, itemId, action, req, re
     return res.status(200).json({ message: errorMessage });
 }
 
-async function getLogoData(business, req = null) {
+export async function getLogoData(business, req = null) {
     const logoKey = business.defaultLogo;
     if (!logoKey) return '';
 
@@ -585,7 +567,7 @@ function formatLabelValue(value, labels = []) {
     return String(value);
 }
 
-async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, type, pdfLink = null) {
+export async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, type, pdfLink = null) {
     try {
         await InvoiceNumber.findOneAndUpdate(
             {
@@ -1732,208 +1714,25 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
     }
 });
 
-function parseMasterItemIdsFromBody(body) {
-    const raw = Array.isArray(body?.itemIds)
-        ? body.itemIds
-        : (Array.isArray(body?.items) ? body.items : []);
-
-    return [...new Set(raw.map((r) => {
-        if (!r) return null;
-        if (typeof r === 'string') return r;
-        if (typeof r === 'object') {
-            if (r.sourceItemId) return String(r.sourceItemId);
-            if (r.id && String(r.id).includes(':')) return String(r.id).split(':')[0];
-            if (r.id) return String(r.id);
-        }
-        return null;
-    }).filter((r) => Boolean(r)).map((r) => String(r)))];
-}
-
 router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, res) => {
     try {
         const { workspaceId, boardId } = validateRequestParams(req);
-        const business = await getValidatedBusiness(workspaceId);
-
-        const masterItemIds = parseMasterItemIdsFromBody(req.body);
-
-        const { masterItems, refItemsMap, participantProfileItem } =
-            await getNdisInvoiceGeneratorContextFromMasterItems({
-                workspaceId,
-                boardId,
-                masterItemIds,
-            });
-
-        const fallbackParticipantName =
-            String(req.body?.participantName || '').trim() ||
-            masterItems
-                .map((m) => formatLabelValue(m?.data?.['Participant Full Name']).trim())
-                .find(Boolean) ||
-            '';
-
-        const { participantProfile, participantProfileItem: profileItem, participantName } =
-            await prepareParticipantForInvoiceGenerator({
-                workspaceId,
-                boardId,
-                participantProfileItem,
-                fallbackParticipantName,
-            });
-
-        const clientDetails = buildNdisInvoicePdfClientDetails({
-            participantProfile,
-            participantProfileItem: profileItem,
-            fallbackParticipantName: participantName,
+        const result = await generateNdisInvoiceGeneratorPdf({
+            workspaceId,
+            boardId,
+            masterItemIds: parseMasterItemIdsFromBody(req.body),
+            participantName: req.body?.participantName,
+            invoiceDate: req.body?.invoiceDate,
+            dueDate: req.body?.dueDate,
         });
-
-        const invoiceDateRaw = req.body?.invoiceDate || new Date().toISOString();
-        const dueDateRaw = req.body?.dueDate || '';
-        const invoiceDate = invoiceDateRaw ? String(invoiceDateRaw).replace('Z', '') : '';
-        let dueDate = dueDateRaw ? String(dueDateRaw).replace('Z', '') : '';
-        if (!dueDate) {
-            const d = new Date(invoiceDateRaw);
-            d.setDate(d.getDate() + 14);
-            dueDate = d.toISOString();
-        }
-
-        const templatePath = path.join(__dirname, '..', 'assets', 'NDISinvoice.json');
-        const templateData = await fs.readFile(templatePath, 'utf8');
-        const template = JSON.parse(templateData);
-        enableRepeatHeadOnTables(template);
-
-        const logoBase64 = await getLogoData(business);
-
-        const invoiceNumberBase =
-            business.documentNumbering.invoice.prefix + business.documentNumbering.invoice.nextNumber;
-        const invoiceNumber = `${invoiceNumberBase} (ISO+™)`;
-
-        const allRows = [];
-        for (const masterPlanItem of masterItems) {
-            const spId = extractNdisRefId(masterPlanItem?.data?.[NDIS_MASTERPLAN_ATTR_DB.SERVICE_PLAN]);
-            const servicePlanItem = spId ? refItemsMap.get(spId) : null;
-            if (!servicePlanItem) {
-                throw new Error(
-                    'Master plan information is required. Master plan is missing a service plan reference.'
-                );
-            }
-
-            const ctId = extractNdisRefId(masterPlanItem?.data?.['Cancellation Type']);
-            const cancellationTypeItem = ctId ? refItemsMap.get(ctId) : null;
-
-            const pricingRule = await resolveNdisPricingRuleForServicePlan(workspaceId, servicePlanItem, boardId);
-            const supportCatalogue = buildNdisSupportCatalogueForServicePlan(servicePlanItem, refItemsMap, pricingRule);
-
-            allRows.push(...buildNdisMasterPlanServiceRows({
-                masterPlanItem,
-                participantName,
-                participantProfileItem: profileItem,
-                servicePlanItem,
-                supportCatalogue,
-                cancellationTypeItem,
-                invoiceNumber,
-                invoicePdfLink: null,
-                timeZone: business?.headOfficeTimezone || 'Australia/Sydney',
-                pricingRule,
-            }));
-        }
-
-        if (allRows.length === 0) {
+        if (result.empty) {
             return res.status(200).json({ message: 'There is nothing to invoice!' });
         }
-
-        const invoiceGenTz = business?.headOfficeTimezone || 'Australia/Sydney';
-        const enrichedRows = enrichNdisInvoiceGeneratorRows(
-            allRows,
-            buildMasterItemsMap(masterItems),
-            invoiceGenTz
-        );
-
-        const fmt2 = (val) => {
-            const n = Number(val);
-            if (!Number.isFinite(n)) return '0.00';
-            return (Math.round(n * 100) / 100).toFixed(2);
-        };
-
-        let subTotalNum = 0;
-        const gstLabel = 'GST Free';
-        const ordersArr = enrichedRows.map((r) => {
-            const jobStatus = (r.jobStatus || '').toString().trim().toLowerCase();
-            const dateIso = jobStatus === 'cancelled'
-                ? (r.scheduledServiceDate || r.serviceDeliveryDate || '')
-                : (r.serviceDeliveryDate || r.scheduledServiceDate || '');
-            const rowDate = formatDdMmYyyy(dateIso, invoiceGenTz) || ' ';
-
-            subTotalNum += Number(r.totalAmount || 0);
-            return [
-                rowDate,
-                (r.service || ' ').toString(),
-                (r.unit || ' ').toString(),
-                fmt2(r.quantity),
-                fmt2(r.unitPrice),
-                gstLabel,
-                fmt2(r.totalAmount),
-            ];
-        });
-
-        const subTotal = fmt2(subTotalNum);
-        const gst = '0%';
-        const gstTotal = fmt2((Number(subTotal) * parseFloat(gst)) / 100);
-        const total = fmt2(Number(subTotal) + Number(gstTotal));
-
-        const pdfBytes = await generate({
-            template,
-            inputs: [
-                {
-                    logo: logoBase64,
-                    subtotal: subTotal,
-                    totalGST: gstTotal,
-                    total: total,
-                    clientDetails: JSON.stringify(clientDetails),
-                    invoiceDetails: JSON.stringify({
-                        Date: formatDateNumericAU(invoiceDate || null, business?.headOfficeTimezone),
-                        'Invoice Number': invoiceNumberBase,
-                    }),
-                    companyName: JSON.stringify({ 'Company Name': business.name }),
-                    companyDetails: JSON.stringify({
-                        ABN: business.abn,
-                        'Street Address': business.address.street,
-                        Suburb: business.address.suburb,
-                        State: business.address.state,
-                        Postcode: business.address.postcode,
-                        Country: business.address.country,
-                    }),
-                    orders: JSON.stringify(ordersArr),
-                    dueDate: formatDateNumericAU(dueDate || null, business?.headOfficeTimezone),
-                    'Bank Details': JSON.stringify({
-                        'Account Name': business.bankDetails.accountName,
-                        'Bank Name': business.bankDetails.bankName,
-                        BSB: business.bankDetails.bsb,
-                        'Account Number': business.bankDetails.accountNumber,
-                        'invoice Number': invoiceNumberBase,
-                    }),
-                },
-            ],
-            plugins: { text, image, line, table, multiVariableText },
-        });
-
-        const safeSuffix = (participantName || participantProfile.displayName || 'Multiple').replace(/[^a-zA-Z0-9-_]+/g, '_').slice(0, 40);
-        const filename = `output/${workspaceId}/${boardId}/NDIS-invoices/${invoiceNumberBase + '-ISO+™-' + safeSuffix}.pdf`;
-        const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
-        if (uploadResult?.$metadata?.httpStatusCode !== 200) {
-            throw new Error('Upload of PDF failed, please provide correct information.');
-        }
-        const fileUrl = await getS3FileUrl(filename, 3600, true);
-
-        await Promise.all(masterItems.map(async (it) => {
-            await saveInvoiceNumber(workspaceId, boardId, it.itemId, invoiceNumber, 'PDF', fileUrl);
-        }));
-
-        business.documentNumbering.invoice.nextNumber += 1;
-        await business.save();
-
         return res.json({
-            invoiceNumber,
-            fileUrl,
-            itemCount: masterItems.length,
-            lineCount: ordersArr.length,
+            invoiceNumber: result.invoiceNumber,
+            fileUrl: result.fileUrl,
+            itemCount: result.itemCount,
+            lineCount: result.lineCount,
         });
     } catch (err) {
         error('Webhook-Service', 'Server error (NDIS invoice generator PDF)', { message: err.message, stack: err.stack }, req ?? null);
@@ -1943,75 +1742,83 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
 
 router.post('/:workspaceId/:boardId/invoiceparticipanttax', async (req, res) => {
     try {
-        return await handleParticipantTaxInvoiceRoute(req, res, {
-            validateRequestParams,
-            getValidatedBusiness,
-            getLogoData,
-            enableRepeatHeadOnTables,
-            bulkFetchReferenceItemsFromDB,
-            getValueFromFlatData,
-            attributeNames: ATTRIBUTE_NAMES,
-            refAttributeNames: REF_ATTRIBUTE_NAMES,
-            getParticipantNameFromProfile,
-            getServiceFromServicePlan,
-            formatLabelValue,
-            formatValue,
-            formatCurrencyValue,
-            uploadFileToS3,
-            getS3FileUrl,
-            saveInvoiceNumber,
-            info,
-            error,
-        });
+        return await handleParticipantTaxInvoiceRoute(req, res, liveParticipantTaxDeps());
     } catch (err) {
         error('Webhook-Service', 'Server error', { err }, req);
         return res.status(500).json({ message: err.message });
     }
 });
 
+export function liveParticipantTaxDeps() {
+    return {
+        validateRequestParams,
+        getValidatedBusiness,
+        getLogoData,
+        enableRepeatHeadOnTables,
+        bulkFetchReferenceItemsFromDB,
+        getValueFromFlatData,
+        attributeNames: ATTRIBUTE_NAMES,
+        refAttributeNames: REF_ATTRIBUTE_NAMES,
+        getParticipantNameFromProfile,
+        getServiceFromServicePlan,
+        formatLabelValue,
+        formatValue,
+        formatCurrencyValue,
+        uploadFileToS3,
+        getS3FileUrl,
+        saveInvoiceNumber,
+        info,
+        error,
+    };
+}
+
+export function liveMonthlyStatementDeps() {
+    return buildMonthlyStatementDeps({
+        getValidatedBusiness,
+        enableRepeatHeadOnTables,
+        ensureMonthlyStatementHeaderFromPage2,
+        getLogoData,
+        resolveTemplateImageUrls,
+        getTemplateImageContentByName,
+        applyTemplateTextDefaults,
+        calculateBudgetAggregates,
+        enrichAggregateFromCategory,
+        initializeBudgetAggregate,
+        getQuarterMetadata,
+        setMultiValueField,
+        setCurrencyField,
+        applyBudgetMapping,
+        safeString,
+        formatDateToAU,
+        createServiceBuckets,
+        determineFundingCode,
+        normalizeStatus,
+        buildServiceTableRows,
+        normalizeTableCell,
+        parseNumberValue,
+        uploadFileToS3,
+        getS3FileUrl,
+        info,
+        warn,
+        error,
+        fetchBudgetItems,
+        fetchServiceItems,
+        generate,
+        text,
+        image,
+        line,
+        table,
+        multiVariableText,
+        path,
+        fs,
+        fileURLToPath,
+        SERVICE_TABLE_CONFIG,
+    });
+}
+
 router.post('/:workspaceId/:boardId/monthly-statement', async (req, res) => {
     try {
-        return await handleMonthlyStatementRoute(req, res, buildMonthlyStatementDeps({
-            getValidatedBusiness,
-            enableRepeatHeadOnTables,
-            ensureMonthlyStatementHeaderFromPage2,
-            getLogoData,
-            resolveTemplateImageUrls,
-            getTemplateImageContentByName,
-            applyTemplateTextDefaults,
-            calculateBudgetAggregates,
-            enrichAggregateFromCategory,
-            initializeBudgetAggregate,
-            getQuarterMetadata,
-            setMultiValueField,
-            setCurrencyField,
-            applyBudgetMapping,
-            safeString,
-            formatDateToAU,
-            createServiceBuckets,
-            determineFundingCode,
-            normalizeStatus,
-            buildServiceTableRows,
-            normalizeTableCell,
-            parseNumberValue,
-            uploadFileToS3,
-            getS3FileUrl,
-            info,
-            warn,
-            error,
-            fetchBudgetItems,
-            fetchServiceItems,
-            generate,
-            text,
-            image,
-            line,
-            table,
-            multiVariableText,
-            path,
-            fs,
-            fileURLToPath,
-            SERVICE_TABLE_CONFIG,
-        }));
+        return await handleMonthlyStatementRoute(req, res, liveMonthlyStatementDeps());
     } catch (err) {
         error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
         return res.status(500).json({ message: err.message });

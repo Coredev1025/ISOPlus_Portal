@@ -2,8 +2,20 @@
 
 **Ticket:** KAN-10 (Epic 5 — Invoice & Statement Automation tab)
 **Date:** 2026-08-12
-**Status:** Approved
+**Status:** Implemented, with a later generation-contract change — see [Changes since approval](#changes-since-approval).
 **Branch:** `feature/KAN-10_invoice_statement_automation`
+
+## Changes since approval
+
+| Designed | Shipped later | Why |
+|---|---|---|
+| Worker is a stub: nothing is generated | Epic 5 part 3 rendered quote-line NDIS invoice PDFs from stored item data (`generateInvoicesForBoard`) | Needed a real PDF before the generator pipelines were bound |
+| Statement jobs compose with no attachments | Unchanged until 2026-08-14 | Ticket excluded Statement type / period |
+| Generation contract is quote-shaped quantity+price lines | **2026-08-14:** tick calls Invoice Generator and Monthly Statement pipelines | Same PDFs, numbering and invoiced status as the pages. See [2026-08-14-bind-generators-to-tick-design.md](./2026-08-14-bind-generators-to-tick-design.md). |
+
+The settings tab, `ScheduledJob` XOR, fan-out jobIds and offline outbox are
+unchanged. SES delivery and Xero remain out of scope.
+
 **Depends on:** [PR #855](https://github.com/ISO-Consulting-Services/isoplus-portal/pull/855) (scheduled job trigger, KAN-15) — must merge before this does
 **Supersedes:** Task 13 of [the finance-settings plan](../../plans/2026-08-06-finance-settings-automation-plan.md), which predates #855
 
@@ -11,7 +23,7 @@
 
 Let a client configure invoice and statement automation on the Finance Settings tab, and have a scheduler tick claim that schedule and enqueue work for every board in the workspace.
 
-**Nothing is generated and nothing is sent.** The worker drains the queue and logs. PDF generation and SES delivery are Epic 5 parts 3–4 and are deliberately out of scope.
+PDF generation is no longer out of scope — see [Changes since approval](#changes-since-approval). **Nothing is emailed and nothing is pushed to Xero.** SES delivery remains Epic 5 part 4.
 
 ## Scope
 

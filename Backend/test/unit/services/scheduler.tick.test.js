@@ -134,6 +134,29 @@ describe('runTick', () => {
     expect(seen.toISOString()).toBe('2026-08-11T04:00:00.000Z');
   });
 
+  it('passes the claimed schedule picker so the handler can bill that period', async () => {
+    let seen;
+    const schedule = {
+      every: { n: 2, unit: 'week' },
+      runOn: 'tuesday',
+      runAt: '09:00',
+      startDate: new Date('2026-07-14T00:00:00+10:00'),
+    };
+    register('demo', {
+      policy: AT_LEAST_ONCE,
+      handler: async (payload) => {
+        seen = payload;
+      },
+    });
+    await due('demo', { cron: null, schedule });
+
+    await runTick({ now: NOW });
+
+    expect(seen.schedule.every).toEqual({ n: 2, unit: 'week' });
+    expect(seen.schedule.runOn).toBe('tuesday');
+    expect(seen.timezone).toBe('Australia/Sydney');
+  });
+
   it('records missed slots when the schedule was due long ago', async () => {
     register('demo', { handler: vi.fn(), policy: AT_MOST_ONCE });
     const job = await due('demo', { nextRunAt: new Date('2026-08-11T01:00:00Z') });

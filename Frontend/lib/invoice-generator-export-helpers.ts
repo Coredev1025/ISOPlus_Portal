@@ -5,6 +5,7 @@ import {
   getTransactionStatusSearchValue,
   formatDateForCsvExport,
   formatNumberForCsvExport,
+  exclusiveInvoiceGeneratorDateRanges,
 } from '@/lib/invoice-generator-helpers';
 import { dateToStartOfDayISO, dateToEndOfDayISO } from '@/lib/timezone';
 import { randomAlphanumeric } from '@/lib/secure-random';
@@ -75,18 +76,22 @@ function appendDateRangeParams(
   serviceDeliveryDateRange: DateRange | undefined,
   businessTimezone: string,
 ) {
-  if (scheduledServiceDateRange?.from) {
-    params.append('startDate', dateToStartOfDayISO(new Date(scheduledServiceDateRange.from), businessTimezone));
+  const exclusive = exclusiveInvoiceGeneratorDateRanges(
+    scheduledServiceDateRange,
+    serviceDeliveryDateRange,
+  );
+  if (exclusive.scheduledServiceDateRange?.from) {
+    params.append('startDate', dateToStartOfDayISO(new Date(exclusive.scheduledServiceDateRange.from), businessTimezone));
   }
-  if (scheduledServiceDateRange?.to || scheduledServiceDateRange?.from) {
-    const toSource = scheduledServiceDateRange?.to || scheduledServiceDateRange?.from;
+  if (exclusive.scheduledServiceDateRange?.to || exclusive.scheduledServiceDateRange?.from) {
+    const toSource = exclusive.scheduledServiceDateRange?.to || exclusive.scheduledServiceDateRange?.from;
     params.append('endDate', dateToEndOfDayISO(new Date(toSource as Date), businessTimezone));
   }
-  if (serviceDeliveryDateRange?.from) {
-    params.append('serviceDeliveryStart', dateToStartOfDayISO(new Date(serviceDeliveryDateRange.from), businessTimezone));
+  if (exclusive.serviceDeliveryDateRange?.from) {
+    params.append('serviceDeliveryStart', dateToStartOfDayISO(new Date(exclusive.serviceDeliveryDateRange.from), businessTimezone));
   }
-  if (serviceDeliveryDateRange?.to || serviceDeliveryDateRange?.from) {
-    const toSource = serviceDeliveryDateRange?.to || serviceDeliveryDateRange?.from;
+  if (exclusive.serviceDeliveryDateRange?.to || exclusive.serviceDeliveryDateRange?.from) {
+    const toSource = exclusive.serviceDeliveryDateRange?.to || exclusive.serviceDeliveryDateRange?.from;
     params.append('serviceDeliveryEnd', dateToEndOfDayISO(new Date(toSource as Date), businessTimezone));
   }
 }

@@ -91,6 +91,78 @@ export type InvoiceGeneratorFilterParams = {
   dateToEndOfDayISO: (date: Date, timezone: string) => string;
 };
 
+export function exclusiveInvoiceGeneratorDateRanges(
+  scheduledServiceDateRange?: DateRange,
+  serviceDeliveryDateRange?: DateRange,
+) {
+  if (scheduledServiceDateRange?.from && serviceDeliveryDateRange?.from) {
+    return {
+      scheduledServiceDateRange: undefined,
+      serviceDeliveryDateRange,
+    };
+  }
+  return { scheduledServiceDateRange, serviceDeliveryDateRange };
+}
+
+export function applyExclusiveInvoiceDateRange(
+  field: 'scheduled' | 'serviceDelivery',
+  range: DateRange | undefined,
+  current: {
+    scheduledServiceDateRange?: DateRange;
+    serviceDeliveryDateRange?: DateRange;
+  },
+) {
+  if (!range?.from) {
+    return field === 'scheduled'
+      ? { scheduledServiceDateRange: range, serviceDeliveryDateRange: current.serviceDeliveryDateRange }
+      : { scheduledServiceDateRange: current.scheduledServiceDateRange, serviceDeliveryDateRange: range };
+  }
+  if (field === 'scheduled') {
+    return { scheduledServiceDateRange: range, serviceDeliveryDateRange: undefined };
+  }
+  return { scheduledServiceDateRange: undefined, serviceDeliveryDateRange: range };
+}
+
+function appendDateRangeParams(
+  params: URLSearchParams,
+  scheduledServiceDateRange: DateRange | undefined,
+  serviceDeliveryDateRange: DateRange | undefined,
+  dateToStartOfDayISO: (date: Date, timezone: string) => string,
+  dateToEndOfDayISO: (date: Date, timezone: string) => string,
+  businessTimezone: string,
+) {
+  const exclusive = exclusiveInvoiceGeneratorDateRanges(
+    scheduledServiceDateRange,
+    serviceDeliveryDateRange,
+  );
+  if (exclusive.scheduledServiceDateRange?.from) {
+    params.append(
+      'startDate',
+      dateToStartOfDayISO(new Date(exclusive.scheduledServiceDateRange.from), businessTimezone),
+    );
+  }
+  if (exclusive.scheduledServiceDateRange?.to || exclusive.scheduledServiceDateRange?.from) {
+    const toSource = exclusive.scheduledServiceDateRange?.to || exclusive.scheduledServiceDateRange?.from;
+    params.append(
+      'endDate',
+      dateToEndOfDayISO(new Date(toSource as Date), businessTimezone),
+    );
+  }
+  if (exclusive.serviceDeliveryDateRange?.from) {
+    params.append(
+      'serviceDeliveryStart',
+      dateToStartOfDayISO(new Date(exclusive.serviceDeliveryDateRange.from), businessTimezone),
+    );
+  }
+  if (exclusive.serviceDeliveryDateRange?.to || exclusive.serviceDeliveryDateRange?.from) {
+    const toSource = exclusive.serviceDeliveryDateRange?.to || exclusive.serviceDeliveryDateRange?.from;
+    params.append(
+      'serviceDeliveryEnd',
+      dateToEndOfDayISO(new Date(toSource as Date), businessTimezone),
+    );
+  }
+}
+
 export function buildInvoiceGeneratorSearchParams(filters: InvoiceGeneratorFilterParams): URLSearchParams {
   const params = new URLSearchParams();
 
@@ -113,33 +185,14 @@ export function buildInvoiceGeneratorSearchParams(filters: InvoiceGeneratorFilte
     params.append('jobStatus', filters.jobStatusFilter);
   }
 
-  if (filters.scheduledServiceDateRange?.from) {
-    params.append(
-      'startDate',
-      filters.dateToStartOfDayISO(new Date(filters.scheduledServiceDateRange.from), filters.businessTimezone),
-    );
-  }
-  if (filters.scheduledServiceDateRange?.to || filters.scheduledServiceDateRange?.from) {
-    const toSource = filters.scheduledServiceDateRange?.to || filters.scheduledServiceDateRange?.from;
-    params.append(
-      'endDate',
-      filters.dateToEndOfDayISO(new Date(toSource as Date), filters.businessTimezone),
-    );
-  }
-
-  if (filters.serviceDeliveryDateRange?.from) {
-    params.append(
-      'serviceDeliveryStart',
-      filters.dateToStartOfDayISO(new Date(filters.serviceDeliveryDateRange.from), filters.businessTimezone),
-    );
-  }
-  if (filters.serviceDeliveryDateRange?.to || filters.serviceDeliveryDateRange?.from) {
-    const toSource = filters.serviceDeliveryDateRange?.to || filters.serviceDeliveryDateRange?.from;
-    params.append(
-      'serviceDeliveryEnd',
-      filters.dateToEndOfDayISO(new Date(toSource as Date), filters.businessTimezone),
-    );
-  }
+  appendDateRangeParams(
+    params,
+    filters.scheduledServiceDateRange,
+    filters.serviceDeliveryDateRange,
+    filters.dateToStartOfDayISO,
+    filters.dateToEndOfDayISO,
+    filters.businessTimezone,
+  );
 
   params.append('sortBy', filters.sortBy);
   params.append('sortOrder', filters.sortOrder);

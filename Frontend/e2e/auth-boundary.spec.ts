@@ -13,6 +13,7 @@ test.describe('signed-out visitor', () => {
     // Epic 3 — Financial Settings lives here; signed-out visitors must not see
     // relocated bank / document-numbering values from the seed.
     '/workspace/55369/finance-settings',
+    '/workspace/55369/board/eNiJpH14PN3/invoice-generator',
     // Epic 4 — Accounting Integrations tab (Connect Xero / mapping) same shell.
     '/workspace/55369/finance-settings?tab=accounting',
   ];

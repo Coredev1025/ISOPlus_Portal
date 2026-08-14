@@ -299,16 +299,21 @@ periodKey, and an explicit nothing-was-sent note:
   "note": "Offline outbox preview — nothing was sent. SES delivery is Epic 5 part 4." }
 ```
 
-Invoice slots now also carry **attachments**: the engine (Epic 5 part 3,
-`services/automation/generateDocuments.js`) renders one NDIS invoice PDF per
-billable item — v1 contract: any item whose stored data yields a quote-shaped
-quantity+price line — numbers it atomically from `documentNumbering.invoice`,
-stores it beside the webhook PDFs, records a `PDFLink`, and lists the URLs in
-the outbox email. Idempotent per slot by artifact key, so a redelivery consumes
-no second invoice number. Statement slots compose without attachments:
-statement *content* needs the ticket's excluded fields (Statement type/period)
-and master-plan shift data — see the module comment and the service-plan recon
-in the PR description.
+Invoice slots carry **Invoice Generator** attachments: one NDIS (or Age Care)
+invoice PDF per participant, using the same pipeline as the Invoice Generator
+page, for rows whose **Service Delivery Date** falls in the **completed
+schedule period** ending at the claimed slot (`ScheduledJob.schedule.every`
+in the job timezone). Rows become **invoiced** (`InvoiceNumber` type PDF).
+Quote-shaped items without an approved timesheet are **not** billed.
+Idempotent per slot: redelivery reuses URLs and consumes no second invoice
+number.
+
+Statement slots carry **Monthly Statement** PDFs — one per participant for the
+**previous complete calendar month** of the claimed slot — on Care Management
+boards that are not Low Cat. NDIS-only boards no-op statements.
+
+Confirm Invoice Generator shows those rows as invoiced, not merely that an
+`auto/` quote-line PDF exists.
 
 **That file is the end of KAN-10 offline.** It is also served at
 `/api/local-files/outbox/…`. Jobs land in `completed`, not `waiting` — the

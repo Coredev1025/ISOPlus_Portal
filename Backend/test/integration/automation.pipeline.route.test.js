@@ -134,6 +134,8 @@ describe('automation pipeline: settings → tick → queue', () => {
         kind: KIND_INVOICE,
         workspaceId: WS,
         periodKey: DUE_PERIOD_KEY,
+        timezone: 'Australia/Sydney',
+        schedule: { every: { n: 1, unit: 'month' }, runOn: 15 },
       });
       expect(job.opts.jobId).toBe(`inv:${job.data.boardId}:${DUE_PERIOD_KEY}`);
     }

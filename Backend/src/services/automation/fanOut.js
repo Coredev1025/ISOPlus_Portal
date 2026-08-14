@@ -12,6 +12,14 @@ const KIND_PREFIX = {
   [KIND_STATEMENT]: 'stmt',
 };
 
+function pickerForJob(schedule) {
+  if (!schedule?.every) return undefined;
+  return {
+    every: { n: schedule.every.n, unit: schedule.every.unit },
+    runOn: schedule.runOn ?? null,
+  };
+}
+
 /**
  * One job spec per board in the workspace.
  *
@@ -21,13 +29,22 @@ const KIND_PREFIX = {
  * generation step's question. If a real eligibility rule ever appears, this
  * is the only place it goes.
  */
-export function buildFanOutSpecs({ kind, workspaceId, boards, slot, timezone }) {
+export function buildFanOutSpecs({ kind, workspaceId, boards, slot, timezone, schedule }) {
   const periodKey = automationPeriodKey({ slot, timezone });
   const prefix = KIND_PREFIX[kind];
+  const picker = pickerForJob(schedule);
 
   return boards.map((board) => ({
     name: kind,
-    data: { kind, workspaceId, boardId: board.boardId, slot, periodKey },
+    data: {
+      kind,
+      workspaceId,
+      boardId: board.boardId,
+      slot,
+      periodKey,
+      timezone,
+      ...(picker ? { schedule: picker } : {}),
+    },
     opts: { jobId: `${prefix}:${board.boardId}:${periodKey}` },
   }));
 }

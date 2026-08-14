@@ -601,8 +601,11 @@ async function uploadMonthlyStatementPdf({
   };
 }
 
-async function generateMonthlyStatementPdf(req, res, ctx) {
-  const { workspaceId, boardId, statementData, businessDetails, chartImage, clientTimezone, requestStartDate, requestEndDate, deps } = ctx;
+export async function renderMonthlyStatementPdf({
+  workspaceId, boardId, statementData, businessDetails, chartImage,
+  timezone: clientTimezone, startDate: requestStartDate, endDate: requestEndDate,
+  deps, req = null,
+}) {
   const {
     path, fs, getValidatedBusiness, enableRepeatHeadOnTables, ensureMonthlyStatementHeaderFromPage2,
     getLogoData, resolveTemplateImageUrls, getTemplateImageContentByName, applyTemplateTextDefaults,
@@ -673,7 +676,7 @@ async function generateMonthlyStatementPdf(req, res, ctx) {
     plugins: { text, image, line, table, multiVariableText },
   });
 
-  const upload = await uploadMonthlyStatementPdf({
+  return uploadMonthlyStatementPdf({
     pdfBytes,
     workspaceId,
     boardId,
@@ -687,7 +690,21 @@ async function generateMonthlyStatementPdf(req, res, ctx) {
     info,
     req,
   });
+}
 
+async function generateMonthlyStatementPdf(req, res, ctx) {
+  const upload = await renderMonthlyStatementPdf({
+    workspaceId: ctx.workspaceId,
+    boardId: ctx.boardId,
+    statementData: ctx.statementData,
+    businessDetails: ctx.businessDetails,
+    chartImage: ctx.chartImage,
+    timezone: ctx.clientTimezone,
+    startDate: ctx.requestStartDate,
+    endDate: ctx.requestEndDate,
+    deps: ctx.deps,
+    req,
+  });
   return res.status(200).json({
     message: 'Monthly statement PDF generated successfully',
     fileUrl: upload.fileUrl,

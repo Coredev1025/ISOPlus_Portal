@@ -137,5 +137,9 @@ describe('registerAutomationHandlers', () => {
     // not 14:05 (now).
     expect(addBulk).toHaveBeenCalledTimes(1);
     expect(addBulk.mock.calls[0][0][0].opts.jobId).toBe('inv:b1:20260811-1400');
+    expect(addBulk.mock.calls[0][0][0].data).toMatchObject({
+      timezone: 'Australia/Sydney',
+      schedule: { every: { n: 1, unit: 'month' }, runOn: 11 },
+    });
   });
 });

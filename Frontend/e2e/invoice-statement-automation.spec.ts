@@ -167,4 +167,13 @@ test.describe("Invoice & Statement Automation", () => {
       page.getByRole("tab", { name: /invoice & statement automation/i }),
     ).toHaveCount(0);
   });
+
+  test("Invoice Generator for the KAN-10 board is reachable after sign-in", async ({
+    page,
+  }) => {
+    const board = process.env.E2E_BOARD_ID ?? "eNiJpH14PN3";
+    await page.goto(`/workspace/${WORKSPACE}/board/${board}/invoice-generator`);
+    await expect(page).toHaveURL(new RegExp(`/workspace/${WORKSPACE}/board/${board}/invoice-generator`));
+    await expect(page.getByText(/invoice generator/i).first()).toBeVisible();
+  });
 });

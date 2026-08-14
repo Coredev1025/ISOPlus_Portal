@@ -55,7 +55,7 @@ function requireSlot({ scheduledFor, nextRunAt }) {
  * dead schedule would be retried on every tick, forever.
  */
 export async function runAutomationKind(kind, job) {
-  const { targetId, workspaceId, timezone } = job;
+  const { targetId, workspaceId, timezone, schedule } = job;
   const settings = await AutomationSettings.findOne({ workspaceId: mongoEq(targetId) }).lean();
   const block = settings?.[BLOCK_FOR_KIND[kind]];
 
@@ -80,6 +80,7 @@ export async function runAutomationKind(kind, job) {
     boards,
     slot: requireSlot(job),
     timezone,
+    schedule,
   });
   await getAutomationQueue().addBulk(specs);
 
