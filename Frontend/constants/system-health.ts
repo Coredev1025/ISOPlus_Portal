@@ -32,3 +32,16 @@ export const CONNECTION_LABELS = {
  * Touchpoints: lib/system-health-helpers.ts (sortClientsBySeverity).
  */
 export const CONNECTION_ORDER = ["needs_reauth", "disconnected", "connected"] as const;
+
+/**
+ * Copy for the scheduler heartbeat tile. A `null` `lastTickAt` means the
+ * scheduler has never ticked in this environment — usually a missing
+ * EventBridge rule (see docs/scheduling.md) — and every other figure on the
+ * screen is legitimately zero in that state, so this has to say something an
+ * operator can act on rather than showing a blank dash.
+ *
+ * Touchpoints: lib/system-health-page-view.tsx.
+ */
+export const SCHEDULER_HEARTBEAT_NEVER_TICKED =
+  "Scheduler has never ticked in this environment. This usually means a missing or " +
+  "misconfigured EventBridge rule — see docs/scheduling.md.";
