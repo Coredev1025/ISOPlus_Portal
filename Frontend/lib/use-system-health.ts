@@ -28,8 +28,8 @@ export function useSystemHealth() {
   const load = useCallback(async () => {
     try {
       const [overview, clients] = await Promise.all([
-        axios.get("/api/system-health/overview"),
-        axios.get("/api/system-health/clients"),
+        axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/system-health/overview`),
+        axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/system-health/clients`),
       ]);
       setState({
         overview: overview.data,
