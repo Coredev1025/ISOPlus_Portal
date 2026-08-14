@@ -1309,7 +1309,7 @@ export default function Dashboard() {
             </p>
           </div>
           {user.id &&
-            (user.role === "support_admin" || user.role === "owner") && (
+            isOwnerOrSupport(user) && (
             <Button
               type="button"
               variant="outline"
