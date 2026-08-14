@@ -338,6 +338,19 @@ describe('POST /api/system-health/workspace/:workspaceId/runs/:runId/retry', () 
 
     expect(res.status).toBe(202);
     expect(recordedJobIds().length).toBe(1);
+
+    // The retry must leave a trace: a distinct jobId from the original run,
+    // recorded under a row of its own, or the worker's markRun* calls have
+    // nothing to close and the retry is invisible on System Health.
+    const [jobId] = recordedJobIds();
+    expect(jobId).not.toBe(run.jobId);
+    const retryRow = await AutomationRun.findOne({ jobId }).lean();
+    expect(retryRow).not.toBeNull();
+    expect(retryRow.trigger).toBe(TRIGGER_MANUAL);
+    expect(retryRow.workspaceId).toBe(WS);
+    expect(retryRow.boardId).toBe(run.boardId);
+    expect(retryRow.kind).toBe(run.kind);
+    expect(retryRow.periodKey).toBe(run.periodKey);
   });
 
   it('refuses to retry a run that did not fail', async () => {

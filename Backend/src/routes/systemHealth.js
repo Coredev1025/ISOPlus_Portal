@@ -220,7 +220,12 @@ router.post('/workspace/:workspaceId/runs/:runId/retry', async (req, res) => {
       return;
     }
 
-    await getAutomationQueue().addBulk([buildRetrySpec(run)]);
+    const spec = buildRetrySpec(run);
+    // Enqueue first, then record: a run recorded for a job that never
+    // reached the queue would sit `queued` forever with nothing to close it
+    // (see services/scheduler/handlers.js for the same ordering).
+    await getAutomationQueue().addBulk([spec]);
+    await recordQueuedRuns({ specs: [spec], trigger: TRIGGER_MANUAL });
 
     res.status(202).json({ retried: String(run._id) });
   } catch (err) {
