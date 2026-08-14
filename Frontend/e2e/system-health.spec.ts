@@ -92,7 +92,20 @@ test.describe("System Health", () => {
     // this depends on real data existing locally — same dependency
     // invoice-statement-automation.spec.ts has on E2E_WORKSPACE_ID. Skip
     // rather than fail when nothing matches, and say why.
+    //
+    // The grid populates from an async fetch after the tab click above, so
+    // count() alone cannot tell "absent" from "not loaded yet" — it queries
+    // the DOM once, synchronously, with no retry. Wait for the grid to reach
+    // a settled state first: either our row appeared, or the grid rendered
+    // its empty state (the exact copy in
+    // Frontend/lib/system-health-connection-grid.tsx). Only once one of the
+    // two is actually visible do we know which case we're in.
     const clientRow = page.getByRole("button", { name: new RegExp(WORKSPACE) });
+    const emptyState = page.getByText(
+      /no workspace has invoice & statement automation enabled yet/i,
+    );
+    await expect(clientRow.or(emptyState)).toBeVisible();
+
     test.skip(
       (await clientRow.count()) === 0,
       `workspace ${WORKSPACE} is not in the connection grid — set E2E_SYSTEM_HEALTH_WORKSPACE_ID to one with Invoice & Statement Automation enabled`,
