@@ -780,8 +780,8 @@ Pure: takes rows and a clock, returns a value. No database access — the route 
 import { describe, it, expect } from 'vitest';
 
 import { summariseRuns } from '../../../src/utils/automationRunMetrics.js';
-import { TREND_BUCKETS } from '../../../src/constants/systemHealth.js';
 import {
+  TREND_BUCKETS,
   RUN_SUCCEEDED,
   RUN_FAILED,
   RUN_SKIPPED,
