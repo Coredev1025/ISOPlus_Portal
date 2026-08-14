@@ -12,11 +12,27 @@ import {
 
 let xeroClient = null;
 
+/**
+ * The OAuth scopes requested at consent.
+ *
+ * The default is the broad set the production app was registered with. Xero
+ * apps created after 2 March 2026 only receive the new granular scopes, so a
+ * consent request naming 'accounting.transactions' or 'accounting.reports.read'
+ * is refused for them — XERO_SCOPES (space-separated) lets such an environment
+ * name the scopes its app actually has without changing what production sends.
+ */
+function resolveXeroScopes() {
+    const configured = (process.env.XERO_SCOPES || '').trim();
+    const scopes = configured
+        || 'openid profile email accounting.settings accounting.contacts accounting.transactions accounting.reports.read accounting.attachments offline_access';
+    return scopes.split(/\s+/);
+}
+
 function buildXeroClient() {
     const config = {
         clientId: process.env.XERO_CLIENT_ID,
         clientSecret: process.env.XERO_CLIENT_SECRET,
-        scopes: 'openid profile email accounting.settings accounting.contacts accounting.transactions accounting.reports.read accounting.attachments offline_access'.split(" "),
+        scopes: resolveXeroScopes(),
     };
 
     if (process.env.XERO_REDIRECT_URL) {
