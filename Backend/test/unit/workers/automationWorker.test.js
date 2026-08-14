@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // A local mock, overriding the global one in test/setup.js, because this suite
 // asserts on the Worker's *constructor arguments* — the queue name it listens
@@ -27,8 +27,14 @@ vi.mock('bullmq', () => {
   return { Queue: QueueMock, Worker: WorkerMock };
 });
 
+import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { AUTOMATION_QUEUE_NAME } from '../../../src/services/automation/queue.js';
 import { startAutomationWorker } from '../../../src/workers/automationWorker.js';
+import AutomationSettings from '../../../src/models/AutomationSettings.js';
+import { outboxKeyFor } from '../../../src/services/email/outbox.js';
 
 const JOB = {
   data: {
@@ -72,17 +78,74 @@ describe('startAutomationWorker', () => {
     await expect(registeredHandler()(JOB)).resolves.toBeUndefined();
   });
 
-  it('is inert: generates nothing and sends nothing', async () => {
+  it('enqueues nothing of its own', async () => {
     startAutomationWorker();
     await registeredHandler()(JOB);
 
-    // The worker's documented contract while Epic 5 parts 3-4 are unbuilt. It
-    // drains the queue so jobs do not accumulate against a consumer that was
-    // never meant to act on them, and does no work of its own.
-    //
-    // This assertion is meant to fail when PDF generation and SES delivery
-    // land — that is the point. It makes replacing the stub a deliberate edit
-    // against a test rather than a silent change nobody reviews.
     expect(globalThis.__BULLMQ_BULK_JOBS__ ?? []).toHaveLength(0);
+  });
+
+  // The inert pin below this point was replaced deliberately — its own comment
+  // said it was meant to fail when delivery work landed. The first slice of
+  // Epic 5 part 4 is the offline outbox: the worker now composes the email its
+  // settings block describes and writes it where a person can verify it.
+  // Nothing is sent anywhere, in any mode.
+  describe('offline outbox delivery', () => {
+    const saved = {};
+    let root;
+
+    beforeEach(async () => {
+      saved.ISOPLUS_OFFLINE = process.env.ISOPLUS_OFFLINE;
+      saved.LOCAL_FILE_ROOT = process.env.LOCAL_FILE_ROOT;
+      root = mkdtempSync(join(tmpdir(), 'worker-outbox-'));
+      process.env.LOCAL_FILE_ROOT = root;
+      await AutomationSettings.deleteMany({ workspaceId: 'ws-1' });
+    });
+
+    afterEach(async () => {
+      process.env.ISOPLUS_OFFLINE = saved.ISOPLUS_OFFLINE;
+      process.env.LOCAL_FILE_ROOT = saved.LOCAL_FILE_ROOT;
+      rmSync(root, { recursive: true, force: true });
+      await AutomationSettings.deleteMany({ workspaceId: 'ws-1' });
+    });
+
+    it('offline, enabled block: writes the composed email to the outbox', async () => {
+      process.env.ISOPLUS_OFFLINE = '1';
+      await AutomationSettings.create({
+        workspaceId: 'ws-1',
+        invoice: { enabled: true, emailSubject: 'Invoice run', emailMessage: 'Attached.', replyTo: 'a@b.com' },
+      });
+      startAutomationWorker();
+
+      await registeredHandler()(JOB);
+
+      const path = join(root, outboxKeyFor(JOB.data));
+      expect(existsSync(path)).toBe(true);
+      expect(JSON.parse(readFileSync(path, 'utf8')).subject).toBe('Invoice run');
+    });
+
+    it('offline, block disabled or settings missing: writes nothing', async () => {
+      process.env.ISOPLUS_OFFLINE = '1';
+      startAutomationWorker();
+
+      await registeredHandler()(JOB);
+
+      expect(existsSync(join(root, 'outbox'))).toBe(false);
+    });
+
+    // Online there is still no transport. The job must complete quietly —
+    // a throw here would put every automation job into BullMQ retry against
+    // a transport that does not exist.
+    it('online: completes without writing or throwing', async () => {
+      process.env.ISOPLUS_OFFLINE = '0';
+      await AutomationSettings.create({
+        workspaceId: 'ws-1',
+        invoice: { enabled: true, emailSubject: 'Invoice run' },
+      });
+      startAutomationWorker();
+
+      await expect(registeredHandler()(JOB)).resolves.toBeUndefined();
+      expect(existsSync(join(root, 'outbox'))).toBe(false);
+    });
   });
 });
