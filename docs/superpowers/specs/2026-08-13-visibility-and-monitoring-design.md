@@ -89,8 +89,15 @@ Indexes:
 
 `jobId` carries the key `fanOut.js` already mints
 (`inv:<boardId>:<periodKey>`), which is what makes "Retry failed run" and the
-duplicate check well-defined rather than approximate. Needs a migration with a
-real `down`.
+duplicate check well-defined rather than approximate.
+
+**No migration.** This is a new collection with nothing stored in it, so there
+is nothing to backfill, and the three indexes are declared on the schema —
+`autoIndex` is not disabled anywhere in `Backend/src`, so Mongoose builds them
+on boot. develop deleted KAN-15's equivalent index-only migration for exactly
+this reason (`caea82bc`): `createIndex` no-opped wherever it could run, and its
+`down()` could not durably remove an index the next boot rebuilds. Confirm the
+indexes exist the way that commit says to — `npm run schema -- automationruns`.
 
 Two notes on the fields, so a reviewer does not have to infer them:
 
@@ -287,7 +294,8 @@ BullMQ mock records `addBulk` calls as of 2026-08-13.
 Two existing files change behaviour: `services/scheduler/handlers.js` gains a
 write after the fan-out, and `workers/automationWorker.js` gains a state
 transition. Neither changes what is enqueued, generated or sent. One new
-collection, one migration, one new router, one new dashboard tab. No existing
+collection (no migration, per decision 1), one new router, one new dashboard
+tab. No existing
 route, response shape or stored field changes.
 
 ## Follow-ups
