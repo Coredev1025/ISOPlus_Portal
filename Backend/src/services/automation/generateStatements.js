@@ -66,7 +66,7 @@ async function generateOneStatement({
   info('Automation', 'Scheduled monthly statement PDF written', {
     workspaceId, boardId, periodKey, participant,
   });
-  return { itemId, pdfUrl: upload.fileUrl };
+  return { itemId, participant, pdfUrl: upload.fileUrl };
 }
 
 export async function generateStatementsForBoard({
@@ -91,7 +91,7 @@ export async function generateStatementsForBoard({
     const itemId = statementItemId(boardId, participant);
     const existing = existingByItemId.get(itemId);
     if (existing) {
-      results.push({ itemId, pdfUrl: existing.pdfLink });
+      results.push({ itemId, participant, pdfUrl: existing.pdfLink });
       continue;
     }
     results.push(await generateOneStatement({

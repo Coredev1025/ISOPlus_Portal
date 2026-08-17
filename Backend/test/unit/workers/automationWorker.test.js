@@ -259,11 +259,54 @@ describe('startAutomationWorker', () => {
       await cleanupWorkerNdisBoard();
     });
 
+    it('offline: substitutes dynamic fields into subject and message; unknown tokens survive', async () => {
+      process.env.ISOPLUS_OFFLINE = '1';
+      await AutomationSettings.create({
+        workspaceId: 'ws-1',
+        invoice: {
+          enabled: true,
+          emailSubject: 'Invoices {{invoice_number}} for {{ client_name }} — {{business_name}} {{statement_number}}',
+          emailMessage: 'Dear {{client_name}}, invoices {{invoice_number}} attached. {{mystery_token}}',
+        },
+      });
+      await Business.create({
+        workspaceId: 'ws-1', name: 'Worker Gen Biz', abn: '11 111 111 111',
+        address: { street: '1 St', suburb: 'S', state: 'NSW', postcode: '2000', country: 'AU' },
+        bankDetails: { accountName: 'A', bankName: 'B', bsb: '123456', accountNumber: '1234567' },
+        documentNumbering: { invoice: { prefix: 'IN-', nextNumber: 900 }, quote: { prefix: 'QT-', nextNumber: 1 }, purchaseOrder: { prefix: 'PO-', nextNumber: 1 } },
+      });
+      // Duplicate invoice number and participant across rows: the vars join
+      // *distinct* values, in first-seen order.
+      const spy = vi.spyOn(generateDocuments, 'generateInvoicesForBoard').mockResolvedValue([
+        { itemId: 'i-1', invoiceNumber: 'IN-900', participant: 'Samuel Rivers', pdfUrl: '/api/local-files/a.pdf' },
+        { itemId: 'i-2', invoiceNumber: 'IN-901', participant: 'Alex Rivers', pdfUrl: '/api/local-files/b.pdf' },
+        { itemId: 'i-3', invoiceNumber: 'IN-900', participant: 'Samuel Rivers', pdfUrl: '/api/local-files/c.pdf' },
+      ]);
+      startAutomationWorker();
+
+      await registeredHandler()(JOB);
+
+      const written = JSON.parse(readFileSync(join(root, outboxKeyFor(JOB.data)), 'utf8'));
+      // {{statement_number}} has no data-model backing, and {{mystery_token}}
+      // is unknown — both must survive verbatim, never become 'undefined'.
+      expect(written.subject).toBe(
+        'Invoices IN-900, IN-901 for Samuel Rivers, Alex Rivers — Worker Gen Biz {{statement_number}}',
+      );
+      expect(written.body).toBe(
+        'Dear Samuel Rivers, Alex Rivers, invoices IN-900, IN-901 attached. {{mystery_token}}',
+      );
+      // The outbox attachments contract is unchanged: an array of pdfUrl strings.
+      expect(written.attachments).toEqual([
+        '/api/local-files/a.pdf', '/api/local-files/b.pdf', '/api/local-files/c.pdf',
+      ]);
+      spy.mockRestore();
+    });
+
     it('offline: statement jobs attach Monthly Statement PDFs on Care Management boards', async () => {
       process.env.ISOPLUS_OFFLINE = '1';
       await AutomationSettings.create({
         workspaceId: 'ws-1',
-        statement: { enabled: true, emailSubject: 'Statement run' },
+        statement: { enabled: true, emailSubject: 'Statement for {{client_name}} — {{business_name}}' },
       });
       await cleanupWorkerNdisBoard();
       await Business.create({
@@ -287,6 +330,8 @@ describe('startAutomationWorker', () => {
       const written = JSON.parse(readFileSync(join(root, outboxKeyFor(statementJob.data)), 'utf8'));
       expect(written.attachments).toHaveLength(1);
       expect(written.attachments[0]).toContain('monthly-statements/');
+      // Statement runs derive {{client_name}} from the participants generated.
+      expect(written.subject).toBe('Statement for Alex Rivers — Worker Stmt Biz');
 
       await cleanupWorkerNdisBoard();
     });
