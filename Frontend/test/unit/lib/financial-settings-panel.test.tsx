@@ -45,7 +45,7 @@ const PROFILE = {
     invoice: { prefix: 'INV-', nextNumber: 1042 },
     purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
     quote: { prefix: 'QT-', nextNumber: 1007 },
-    statement: { prefix: 'STMT-', nextNumber: 1000 },
+    statement: { prefix: 'STM-', nextNumber: 1000 },
   },
 };
 
@@ -103,6 +103,12 @@ describe('FinancialSettingsPanel', () => {
     await waitFor(() => expect(axios.put).toHaveBeenCalled());
     const [, body] = (axios.put as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(body).toBeInstanceOf(FormData);
+    expect(JSON.parse(String(body.get('documentNumbering')))).toEqual({
+      invoice: { prefix: 'INV-', nextNumber: 1042 },
+      purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
+      quote: { prefix: 'QT-', nextNumber: 1007 },
+      statement: { prefix: 'STM-', nextNumber: 1000 },
+    });
     expect(showSaveSuccessToast).toHaveBeenCalledWith('Financial settings');
   });
 
@@ -132,6 +138,7 @@ describe('FinancialSettingsPanel', () => {
     await screen.findByDisplayValue('CBA');
 
     await user.click(screen.getByRole('button', { name: /restore defaults/i }));
+    expect(await screen.findByDisplayValue('STM-')).toBeInTheDocument();
     expect(screen.getAllByDisplayValue('1000').length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole('button', { name: /save changes/i }));

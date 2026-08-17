@@ -27,6 +27,8 @@ export default defineConfig({
         'lib/**/*.{ts,tsx}',
         'hooks/**/*.{ts,tsx}',
         'app/utils/**/*.{ts,tsx}',
+        'app/workspace/[id]/configure-business/page.tsx',
+        'app/workspace/[id]/finance-settings/page.tsx',
         'components/theme-provider.tsx',
       ],
       exclude: ['**/*.d.ts', '**/*.test.{ts,tsx}', '**/types.ts'],

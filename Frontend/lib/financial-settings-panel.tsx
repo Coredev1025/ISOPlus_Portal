@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import axios from "@/app/utils/axiosConfig";
 import Spinner from "@/components/ui/spin";
 import {
+  cloneDefaultSequences,
   extractDocumentNumberingSequences,
   mapBusinessProfileToFormData,
 } from "@/lib/configure-business-helpers";
@@ -30,13 +31,6 @@ const EMPTY_BANK: BankDetailsForm = {
 };
 
 const EMPTY_BUSINESS_PROFILE: Record<string, never> = Object.freeze({});
-
-const DEFAULT_SEQUENCES: DocumentSequences = {
-  invoice: { prefix: "INV-", nextNumber: 1000 },
-  purchaseOrder: { prefix: "PO-", nextNumber: 1000 },
-  quote: { prefix: "QT-", nextNumber: 1000 },
-  statement: { prefix: "STMT-", nextNumber: 1000 },
-};
 
 const MISSING_BUSINESS_NAME_HINT =
   "Set Company Name in Configure Business first, then save Financial Settings again.";
@@ -74,7 +68,7 @@ export function FinancialSettingsPanel({
   );
   const [bankDetails, setBankDetails] = useState<BankDetailsForm>(EMPTY_BANK);
   const [sequences, setSequences] =
-    useState<DocumentSequences>(DEFAULT_SEQUENCES);
+    useState<DocumentSequences>(cloneDefaultSequences);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
@@ -149,12 +143,7 @@ export function FinancialSettingsPanel({
   };
 
   const handleRestoreDefaults = () => {
-    setSequences({
-      invoice: { ...DEFAULT_SEQUENCES.invoice },
-      purchaseOrder: { ...DEFAULT_SEQUENCES.purchaseOrder },
-      quote: { ...DEFAULT_SEQUENCES.quote },
-      statement: { ...DEFAULT_SEQUENCES.statement },
-    });
+    setSequences(cloneDefaultSequences());
   };
 
   const handleSave = async () => {

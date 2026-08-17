@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 
 import {
+  cloneDefaultSequences,
+  DEFAULT_SEQUENCES,
   extractDocumentNumberingSequences,
   mapBusinessProfileToFormData,
 } from '@/lib/configure-business-helpers';
@@ -198,13 +200,26 @@ describe('mapBusinessProfileToFormData', () => {
   });
 });
 
+describe('cloneDefaultSequences', () => {
+  it('returns STM- copies that callers can mutate without changing the shared defaults', () => {
+    const cloned = cloneDefaultSequences();
+
+    expect(cloned).toEqual(DEFAULT_SEQUENCES);
+    expect(cloned.statement.prefix).toBe('STM-');
+    expect(cloned.invoice).not.toBe(DEFAULT_SEQUENCES.invoice);
+
+    cloned.invoice.prefix = 'X-';
+    expect(DEFAULT_SEQUENCES.invoice.prefix).toBe('INV-');
+  });
+});
+
 describe('extractDocumentNumberingSequences', () => {
   it('returns all four sequences from a full record, defaulting any missing ones', () => {
     expect(extractDocumentNumberingSequences(PROFILE)).toEqual({
       invoice: { prefix: 'INV-', nextNumber: 1042 },
       purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
       quote: { prefix: 'QT-', nextNumber: 1007 },
-      statement: { prefix: 'STMT-', nextNumber: 1000 },
+      statement: { prefix: 'STM-', nextNumber: 1000 },
     });
   });
 
@@ -213,7 +228,7 @@ describe('extractDocumentNumberingSequences', () => {
       invoice: { prefix: 'INV-', nextNumber: 1000 },
       purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
       quote: { prefix: 'QT-', nextNumber: 1000 },
-      statement: { prefix: 'STMT-', nextNumber: 1000 },
+      statement: { prefix: 'STM-', nextNumber: 1000 },
     });
   });
 
@@ -222,7 +237,7 @@ describe('extractDocumentNumberingSequences', () => {
       invoice: { prefix: 'INV-', nextNumber: 1000 },
       purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
       quote: { prefix: 'QT-', nextNumber: 1000 },
-      statement: { prefix: 'STMT-', nextNumber: 1000 },
+      statement: { prefix: 'STM-', nextNumber: 1000 },
     });
   });
 
@@ -235,7 +250,7 @@ describe('extractDocumentNumberingSequences', () => {
       invoice: { prefix: 'INV-', nextNumber: 1042 },
       purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
       quote: { prefix: 'QT-', nextNumber: 1000 },
-      statement: { prefix: 'STMT-', nextNumber: 1000 },
+      statement: { prefix: 'STM-', nextNumber: 1000 },
     });
   });
 
@@ -252,7 +267,7 @@ describe('extractDocumentNumberingSequences', () => {
       invoice: { prefix: 'INV-', nextNumber: 1000 },
       purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
       quote: { prefix: 'QT-', nextNumber: 1000 },
-      statement: { prefix: 'STMT-', nextNumber: 1000 },
+      statement: { prefix: 'STM-', nextNumber: 1000 },
     });
   });
 });

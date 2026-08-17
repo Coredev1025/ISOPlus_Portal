@@ -325,14 +325,6 @@ export function FinancialSettingsForm({
               onPrefixChange={(v) => onSequencePrefixChange("statement", v)}
               onNextChange={(v) => handleNextNumberChange("statement", v)}
               hint={`Feeds Statement Automation → next: ${sequences.statement.prefix}${sequences.statement.nextNumber}`}
-              badge={
-                <Badge
-                  variant="secondary"
-                  className="bg-emerald-50 text-[10px] uppercase tracking-wide text-emerald-700"
-                >
-                  new
-                </Badge>
-              }
             />
             <SequenceField
               label="Credit Note Numbers"

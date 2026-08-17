@@ -21,7 +21,7 @@ const SEQUENCES: DocumentSequences = {
   invoice: { prefix: 'INV-', nextNumber: 1000 },
   purchaseOrder: { prefix: 'PO-', nextNumber: 2000 },
   quote: { prefix: 'QT-', nextNumber: 3000 },
-  statement: { prefix: 'STMT-', nextNumber: 4000 },
+  statement: { prefix: 'STM-', nextNumber: 4000 },
 };
 
 function renderForm(
@@ -48,6 +48,29 @@ function renderForm(
 describe('FinancialSettingsForm', () => {
   afterEach(() => {
     cleanup();
+  });
+
+  it('relocates bank details and document numbering with statement + disabled credit note (Epic 3)', () => {
+    const { container } = renderForm();
+
+    expect(screen.getByRole('heading', { name: 'Bank Details' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Document Number Configuration' })
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/payment reference/i)).not.toBeInTheDocument();
+
+    expect(screen.getByText('Statement Numbers')).toBeInTheDocument();
+    expect(screen.queryByText(/^new$/i)).not.toBeInTheDocument();
+    expect(container.querySelector('#statement-prefix')).not.toBeDisabled();
+    expect(container.querySelector('#statement-next')).not.toBeDisabled();
+    expect(
+      screen.getByText(/feeds statement automation/i)
+    ).toBeInTheDocument();
+
+    expect(screen.getByText('Credit Note Numbers')).toBeInTheDocument();
+    expect(screen.getByText(/later phase/i)).toBeInTheDocument();
+    expect(container.querySelector('#credit-note-prefix')).toBeDisabled();
+    expect(container.querySelector('#credit-note-next')).toBeDisabled();
   });
 
   it('wires bank field changes', async () => {

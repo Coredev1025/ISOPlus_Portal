@@ -12,20 +12,34 @@ vi.mock('@/lib/accounting-integrations-panel', () => ({
 
 import { FinanceSettingsTabs } from '@/lib/finance-settings-page';
 
+function renderTabs(
+  overrides: Partial<{
+    activeTab: 'financial' | 'accounting' | 'automation';
+    automationEnabled: boolean;
+    onTabChange: ReturnType<typeof vi.fn>;
+  }> = {}
+) {
+  const onTabChange = overrides.onTabChange ?? vi.fn();
+  return {
+    onTabChange,
+    ...render(
+      <FinanceSettingsTabs
+        workspaceId="ws-1"
+        activeTab={overrides.activeTab ?? 'financial'}
+        automationEnabled={overrides.automationEnabled ?? false}
+        onTabChange={onTabChange}
+      />
+    ),
+  };
+}
+
 describe('FinanceSettingsTabs', () => {
   afterEach(() => {
     cleanup();
   });
 
   it('hides the automation tab when the workspace flag is off', () => {
-    render(
-      <FinanceSettingsTabs
-        workspaceId="ws-1"
-        activeTab="financial"
-        automationEnabled={false}
-        onTabChange={vi.fn()}
-      />
-    );
+    renderTabs();
 
     expect(screen.getByRole('tab', { name: /financial settings/i })).toBeInTheDocument();
     expect(
@@ -38,15 +52,10 @@ describe('FinanceSettingsTabs', () => {
   });
 
   it('shows the automation placeholder when enabled and selected', async () => {
-    const onTabChange = vi.fn();
-    render(
-      <FinanceSettingsTabs
-        workspaceId="ws-1"
-        activeTab="automation"
-        automationEnabled
-        onTabChange={onTabChange}
-      />
-    );
+    const { onTabChange } = renderTabs({
+      activeTab: 'automation',
+      automationEnabled: true,
+    });
 
     expect(
       screen.getByRole('tab', { name: /invoice & statement automation/i })

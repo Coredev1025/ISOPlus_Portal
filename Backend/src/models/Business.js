@@ -159,7 +159,7 @@ const businessSchema = new mongoose.Schema({
     statement: {
       prefix: {
         type: String,
-        default: 'STMT-'
+        default: 'STM-'
       },
       nextNumber: {
         type: Number,

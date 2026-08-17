@@ -28,14 +28,14 @@ export type NumberSequence = {
   nextNumber: number;
 };
 
-const DEFAULT_SEQUENCES: Record<
+export const DEFAULT_SEQUENCES: Record<
   "invoice" | "purchaseOrder" | "quote" | "statement",
   NumberSequence
 > = {
   invoice: { prefix: "INV-", nextNumber: 1000 },
   purchaseOrder: { prefix: "PO-", nextNumber: 1000 },
   quote: { prefix: "QT-", nextNumber: 1000 },
-  statement: { prefix: "STMT-", nextNumber: 1000 },
+  statement: { prefix: "STM-", nextNumber: 1000 },
 };
 
 function toSequence(
@@ -68,3 +68,12 @@ export const CREDIT_NOTE_SEQUENCE_DISPLAY: NumberSequence = {
   prefix: "CN-",
   nextNumber: 1000,
 };
+
+export function cloneDefaultSequences() {
+  return {
+    invoice: { ...DEFAULT_SEQUENCES.invoice },
+    purchaseOrder: { ...DEFAULT_SEQUENCES.purchaseOrder },
+    quote: { ...DEFAULT_SEQUENCES.quote },
+    statement: { ...DEFAULT_SEQUENCES.statement },
+  };
+}
