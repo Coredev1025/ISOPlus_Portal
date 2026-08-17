@@ -219,6 +219,20 @@ describe('computeNextRun', () => {
       expect(wallClock(next)).toBe('2026-02-28 09:00');
     });
 
+    it('clamps to 29 February in a leap year', () => {
+      // 2028 is a leap year: "the 31st" must use the extra day, not stay on
+      // the 28th — and certainly not roll into 2 March.
+      const settings = { ...base, every: { n: 1, unit: 'month' }, runOn: 31 };
+      const next = computeNextRun(settings, new Date('2028-02-01T00:00:00Z'), TZ);
+      expect(wallClock(next)).toBe('2028-02-29 09:00');
+    });
+
+    it('clamps a year-unit {month, day} to 29 February in a leap year', () => {
+      const settings = { ...base, every: { n: 1, unit: 'year' }, runOn: { month: 2, day: 30 } };
+      const next = computeNextRun(settings, new Date('2028-01-15T00:00:00Z'), TZ);
+      expect(wallClock(next)).toBe('2028-02-29 09:00');
+    });
+
     it('never returns a time at or before `from`', () => {
       const settings = { ...base, every: { n: 1, unit: 'day' } };
       const from = new Date('2026-03-10T00:00:00Z'); // exactly 11:00 Sydney

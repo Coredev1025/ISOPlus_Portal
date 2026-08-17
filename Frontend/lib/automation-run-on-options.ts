@@ -14,9 +14,10 @@ const WEEKDAYS: RunOnOption[] = [
   { value: "sunday", label: "Sunday" },
 ];
 
-// 1-28 only. The 29th-31st silently skip months too short for them — every
-// February for 29/30 — which for invoicing means a client is not billed.
-const DAYS_OF_MONTH: RunOnOption[] = Array.from({ length: 28 }, (_, i) => ({
+// 1-31, per the spec's picker. Days 29-31 do not skip short months: the
+// scheduler clamps to the month's last day (Backend automationScheduleHelpers
+// addMonthsClamped), so "the 31st" fires on 30 Apr and 28/29 Feb.
+const DAYS_OF_MONTH: RunOnOption[] = Array.from({ length: 31 }, (_, i) => ({
   value: i + 1,
   label: String(i + 1),
 }));

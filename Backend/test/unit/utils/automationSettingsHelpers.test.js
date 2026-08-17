@@ -39,9 +39,18 @@ describe('parseAutomationSettingsBody', () => {
     expect(result.error).toMatch(/runOn/);
   });
 
-  it('rejects a month runOn above 28', () => {
+  it('accepts a month runOn of 31', () => {
+    // The spec offers 1st-31st; the scheduler clamps 29-31 to short months
+    // (automationScheduleHelpers.addMonthsClamped), so no month is skipped.
     const result = parseAutomationSettingsBody({
       invoice: { ...validBlock, every: { n: 1, unit: 'month' }, runOn: 31 },
+    });
+    expect(result.error).toBeUndefined();
+  });
+
+  it('rejects a month runOn above 31', () => {
+    const result = parseAutomationSettingsBody({
+      invoice: { ...validBlock, every: { n: 1, unit: 'month' }, runOn: 32 },
     });
     expect(result.error).toMatch(/runOn/);
   });
@@ -121,6 +130,20 @@ describe('parseAutomationSettingsBody', () => {
     expect(result.error).toMatch(/every\.n/);
   });
 
+  it('accepts an every.n of 365', () => {
+    const result = parseAutomationSettingsBody({
+      invoice: { ...validBlock, every: { n: 365, unit: 'day' } },
+    });
+    expect(result.error).toBeUndefined();
+  });
+
+  it('rejects an every.n above 365', () => {
+    const result = parseAutomationSettingsBody({
+      invoice: { ...validBlock, every: { n: 366, unit: 'day' } },
+    });
+    expect(result.error).toMatch(/every\.n/);
+  });
+
   it('rejects an invalid sendMethod', () => {
     const result = parseAutomationSettingsBody({
       invoice: { ...validBlock, sendMethod: 'paypal' },
@@ -167,4 +190,5 @@ describe('buildAutomationSettingsPayload', () => {
     expect(payload.invoice.nextRun).toEqual(when);
     expect(payload.statement.nextRun).toBeNull();
   });
+
 });

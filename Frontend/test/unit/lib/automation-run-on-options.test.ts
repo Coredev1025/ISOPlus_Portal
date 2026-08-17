@@ -17,11 +17,11 @@ describe("runOnOptionsForUnit", () => {
     expect(options[0].value).toBe("monday");
   });
 
-  it("caps month at 28 so short months are never skipped", () => {
+  it("offers days 1-31 for month; the scheduler clamps 29-31 in short months", () => {
     const { kind, options } = runOnOptionsForUnit("month");
     expect(kind).toBe("day-of-month");
-    expect(options).toHaveLength(28);
-    expect(options[27].value).toBe(28);
+    expect(options).toHaveLength(31);
+    expect(options[30].value).toBe(31);
   });
 
   it("uses month+day for quarter and year", () => {

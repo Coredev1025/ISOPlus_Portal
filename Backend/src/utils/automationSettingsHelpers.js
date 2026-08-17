@@ -31,11 +31,12 @@ function validateRunOn(unit, runOn) {
       : `runOn must be a weekday name when unit is "week"`;
   }
   if (unit === 'month') {
-    // 1-28 only: a schedule on the 29th-31st silently skips short months,
-    // which for invoicing means a client is simply not billed that month.
-    return Number.isInteger(runOn) && runOn >= 1 && runOn <= 28
+    // 1-31, per the spec's picker. Days 29-31 do not skip short months: the
+    // scheduler clamps to the month's last day (automationScheduleHelpers.js
+    // addMonthsClamped), so "the 31st" fires on 30 Apr and 28/29 Feb.
+    return Number.isInteger(runOn) && runOn >= 1 && runOn <= 31
       ? null
-      : `runOn must be an integer between 1 and 28 when unit is "month"`;
+      : `runOn must be an integer between 1 and 31 when unit is "month"`;
   }
   const ok = runOn && Number.isInteger(runOn.month) && Number.isInteger(runOn.day);
   return ok ? null : `runOn must be {month, day} when unit is "${unit}"`;
@@ -59,6 +60,7 @@ function validateBlock(name, block) {
     return `${name}: every.unit must be one of ${AUTOMATION_UNITS.join(', ')}`;
   }
   if (!Number.isInteger(n) || n < 1) return `${name}: every.n must be a positive integer`;
+  if (n > 365) return `${name}: every.n must be 365 or less`;
   if (!RUN_AT_PATTERN.test(String(block.runAt ?? ''))) return `${name}: runAt must be HH:MM`;
   if (!SEND_METHODS.includes(block.sendMethod)) return `${name}: invalid sendMethod`;
   if (!RECIPIENTS.includes(block.recipient)) return `${name}: invalid recipient`;
