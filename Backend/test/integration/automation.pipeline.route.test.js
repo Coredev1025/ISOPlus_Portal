@@ -4,6 +4,7 @@ import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import AutomationSettings from '../../src/models/AutomationSettings.js';
 import Board from '../../src/models/Board.js';
+import Business from '../../src/models/Business.js';
 import ScheduledJob from '../../src/models/ScheduledJob.js';
 import { KIND_INVOICE, KIND_STATEMENT } from '../../src/constants/automation.js';
 import { registerSchedulerHandlers } from '../../src/services/scheduler/handlers.js';
@@ -39,9 +40,9 @@ const SCHEDULER_KEY = 'test-scheduler-key';
 // assertions below name the key literally.
 const DUE = new Date('2026-01-15T22:00:00Z');
 
-// DUE in Australia/Sydney, the timezone a workspace with no Business falls
-// back to. January is AEDT (UTC+11), so 22:00Z is 09:00 the following day —
-// which is why the key reads 16 January and not 15.
+// DUE in Australia/Sydney, the timezone a Business with no headOfficeTimezone
+// falls back to. January is AEDT (UTC+11), so 22:00Z is 09:00 the following
+// day — which is why the key reads 16 January and not 15.
 const DUE_PERIOD_KEY = '20260116-0900';
 
 const MONTHLY_INVOICE = {
@@ -64,6 +65,12 @@ const MONTHLY_STATEMENT = {
 
 describe('automation pipeline: settings → tick → queue', () => {
   const originalSchedulerApiKey = process.env.SCHEDULER_API_KEY;
+  // The pipeline is gated on AUTOMATION_ENABLED, which defaults OFF so that
+  // merging cannot start generating real invoices for mail that has no
+  // transport yet (see .env.example and services/scheduler/handlers.js).
+  // Every assertion here is about the pipeline running, so the gate is opened.
+  // The gate's own behaviour lives in test/unit/services/scheduler.handlers.test.js.
+  const originalAutomationEnabled = process.env.AUTOMATION_ENABLED;
   let app;
   let agent;
 
@@ -80,9 +87,21 @@ describe('automation pipeline: settings → tick → queue', () => {
     await AutomationSettings.deleteMany({});
     await ScheduledJob.deleteMany({});
     await Board.deleteMany({});
+    await Business.deleteMany({});
     resetRecordedJobs();
 
     process.env.SCHEDULER_API_KEY = SCHEDULER_KEY;
+    // Both gates the pipeline now sits behind: the per-workspace feature flag
+    // (the settings route 403s without it) and the deployment-wide kill switch
+    // (the handler generates nothing when it is off). This suite exercises the
+    // pipeline running, so both are on for it and restored afterwards.
+    process.env.AUTOMATION_ENABLED = 'true';
+    await Business.create({
+      workspaceId: WS,
+      name: 'Pipeline Test Co',
+      featureToggles: { invoiceStatementAutomation: true },
+    });
+    process.env.AUTOMATION_ENABLED = 'true';
 
     // The boot path itself, not registerAutomationHandlers directly. A
     // regression that drops automation from this function leaves schedules
@@ -104,6 +123,11 @@ describe('automation pipeline: settings → tick → queue', () => {
       delete process.env.SCHEDULER_API_KEY;
     } else {
       process.env.SCHEDULER_API_KEY = originalSchedulerApiKey;
+    }
+    if (originalAutomationEnabled === undefined) {
+      delete process.env.AUTOMATION_ENABLED;
+    } else {
+      process.env.AUTOMATION_ENABLED = originalAutomationEnabled;
     }
     clearRegistry();
   });

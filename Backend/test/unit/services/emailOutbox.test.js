@@ -48,6 +48,35 @@ describe('emailOutbox', () => {
     );
   });
 
+  it('keys a per-participant message separately so previews cannot overwrite each other', () => {
+    // A client_participant run composes one message per participant for the
+    // same board and slot. Without a recipient component every one of them
+    // resolves to the same path and only the last survives — the preview would
+    // show one email where the run actually sent five.
+    const jane = outboxKeyFor({ ...MESSAGE, recipientKey: 'Jane Smith' });
+    const david = outboxKeyFor({ ...MESSAGE, recipientKey: 'David Brown' });
+
+    expect(jane).not.toBe(david);
+    expect(jane).toBe(
+      'outbox/55369/invoice_automation-eNiJpH14PN3-20260814-0900-jane-smith.json',
+    );
+    // A key that would escape the store or collide once slugified is refused
+    // by the resolver, so the slug must stay path-safe.
+    expect(outboxKeyFor({ ...MESSAGE, recipientKey: '../../etc/passwd' })).not.toContain('..');
+  });
+
+  it('offline: writes one file per participant rather than overwriting a shared path', async () => {
+    process.env.ISOPLUS_OFFLINE = '1';
+
+    await deliverEmail({ ...MESSAGE, recipientKey: 'Jane Smith' });
+    await deliverEmail({ ...MESSAGE, recipientKey: 'David Brown' });
+
+    expect(readdirSync(join(root, 'outbox/55369')).sort()).toEqual([
+      'invoice_automation-eNiJpH14PN3-20260814-0900-david-brown.json',
+      'invoice_automation-eNiJpH14PN3-20260814-0900-jane-smith.json',
+    ]);
+  });
+
   it('offline: writes the composed message where a person can read it', async () => {
     process.env.ISOPLUS_OFFLINE = '1';
 

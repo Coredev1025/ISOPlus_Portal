@@ -19,10 +19,14 @@ vi.mock('bullmq', () => {
   }
   class WorkerMock {
     constructor(name, handler, opts) {
-      workerCalls.push({ name, handler, opts });
+      this.events = [];
+      workerCalls.push({ name, handler, opts, worker: this });
       this.name = name;
     }
-    on() {}
+    on(event) {
+      this.events.push(event);
+      return this;
+    }
   }
   return { Queue: QueueMock, Worker: WorkerMock };
 });
@@ -42,6 +46,7 @@ import PDFLink from '../../../src/models/PDFLink.js';
 import { outboxKeyFor } from '../../../src/services/email/outbox.js';
 
 import * as generateDocuments from '../../../src/services/automation/generateDocuments.js';
+import * as outbox from '../../../src/services/email/outbox.js';
 
 const JOB = {
   data: {
@@ -139,6 +144,27 @@ describe('startAutomationWorker', () => {
     startAutomationWorker();
 
     expect(workerCalls[0].opts.connection).toBeDefined();
+  });
+
+  // A BullMQ Worker with no 'error' listener re-emits its connection's errors
+  // as an unhandled EventEmitter 'error', which terminates the Node process.
+  // The worker is started from src/index.js inside the API process, so a Redis
+  // blip would take the API down with it. syncWorker.js registers these
+  // deliberately; this is the same idiom.
+  it('registers error and failure listeners so a Redis blip cannot kill the API process', () => {
+    startAutomationWorker();
+
+    expect(workerCalls[0].worker.events).toContain('error');
+    expect(workerCalls[0].worker.events).toContain('failed');
+  });
+
+  // BullMQ's default is 1, but leaving it implicit means nobody chose it.
+  // syncWorker.js states its 2; this states its 1, and the reason lives in a
+  // comment beside it.
+  it('sets its concurrency explicitly rather than inheriting the BullMQ default', () => {
+    startAutomationWorker();
+
+    expect(workerCalls[0].opts.concurrency).toBe(1);
   });
 
   it('completes a job rather than leaving it to retry', async () => {
@@ -259,6 +285,11 @@ describe('startAutomationWorker', () => {
       await cleanupWorkerNdisBoard();
     });
 
+    // Driven by the real generator, not a mocked return value. The version this
+    // replaces mocked generateInvoicesForBoard into returning a `participant`
+    // field and then asserted that {{client_name}} substituted — proving only
+    // that the mock said what the assertion wanted. If the real generator ever
+    // stops carrying participant, this test is the one that notices.
     it('offline: substitutes dynamic fields into subject and message; unknown tokens survive', async () => {
       process.env.ISOPLUS_OFFLINE = '1';
       await AutomationSettings.create({
@@ -269,19 +300,7 @@ describe('startAutomationWorker', () => {
           emailMessage: 'Dear {{client_name}}, invoices {{invoice_number}} attached. {{mystery_token}}',
         },
       });
-      await Business.create({
-        workspaceId: 'ws-1', name: 'Worker Gen Biz', abn: '11 111 111 111',
-        address: { street: '1 St', suburb: 'S', state: 'NSW', postcode: '2000', country: 'AU' },
-        bankDetails: { accountName: 'A', bankName: 'B', bsb: '123456', accountNumber: '1234567' },
-        documentNumbering: { invoice: { prefix: 'IN-', nextNumber: 900 }, quote: { prefix: 'QT-', nextNumber: 1 }, purchaseOrder: { prefix: 'PO-', nextNumber: 1 } },
-      });
-      // Duplicate invoice number and participant across rows: the vars join
-      // *distinct* values, in first-seen order.
-      const spy = vi.spyOn(generateDocuments, 'generateInvoicesForBoard').mockResolvedValue([
-        { itemId: 'i-1', invoiceNumber: 'IN-900', participant: 'Samuel Rivers', pdfUrl: '/api/local-files/a.pdf' },
-        { itemId: 'i-2', invoiceNumber: 'IN-901', participant: 'Alex Rivers', pdfUrl: '/api/local-files/b.pdf' },
-        { itemId: 'i-3', invoiceNumber: 'IN-900', participant: 'Samuel Rivers', pdfUrl: '/api/local-files/c.pdf' },
-      ]);
+      await seedWorkerNdisBoard();
       startAutomationWorker();
 
       await registeredHandler()(JOB);
@@ -290,16 +309,151 @@ describe('startAutomationWorker', () => {
       // {{statement_number}} has no data-model backing, and {{mystery_token}}
       // is unknown — both must survive verbatim, never become 'undefined'.
       expect(written.subject).toBe(
-        'Invoices IN-900, IN-901 for Samuel Rivers, Alex Rivers — Worker Gen Biz {{statement_number}}',
+        'Invoices IN-900 (ISO+™) for Samuel Rivers — Worker Gen Biz {{statement_number}}',
       );
       expect(written.body).toBe(
-        'Dear Samuel Rivers, Alex Rivers, invoices IN-900, IN-901 attached. {{mystery_token}}',
+        'Dear Samuel Rivers, invoices IN-900 (ISO+™) attached. {{mystery_token}}',
       );
       // The outbox attachments contract is unchanged: an array of pdfUrl strings.
-      expect(written.attachments).toEqual([
-        '/api/local-files/a.pdf', '/api/local-files/b.pdf', '/api/local-files/c.pdf',
+      expect(written.attachments).toHaveLength(1);
+      expect(written.attachments[0]).toContain('NDIS-invoices/');
+
+      await cleanupWorkerNdisBoard();
+    });
+
+    // emailMessage is rich-text HTML from the Finance Settings automation tab
+    // and is emailed as HTML. A participant name is ISO+ board data, so it must
+    // be escaped on the way in. The subject is plain text and must not be.
+    it('offline: escapes substituted values in the HTML body but not in the subject', async () => {
+      process.env.ISOPLUS_OFFLINE = '1';
+      await AutomationSettings.create({
+        workspaceId: 'ws-1',
+        statement: {
+          enabled: true,
+          emailSubject: 'Statement for {{client_name}}',
+          emailMessage: '<p>Dear {{client_name}}, your statement is attached.</p>',
+        },
+      });
+      await cleanupWorkerNdisBoard();
+      await Business.create({
+        workspaceId: 'ws-1', name: 'Worker Stmt Biz', abn: '11 111 111 111',
+        address: { street: '1 St', suburb: 'S', state: 'NSW', postcode: '2000', country: 'AU' },
+        bankDetails: { accountName: 'A', bankName: 'B', bsb: '123456', accountNumber: '1234567' },
+        documentNumbering: { invoice: { prefix: 'IN-', nextNumber: 1 }, quote: { prefix: 'QT-', nextNumber: 1 }, purchaseOrder: { prefix: 'PO-', nextNumber: 1 } },
+      });
+      await Board.create({
+        workspaceId: 'ws-1', boardId: 'board-a', name: 'CM Board', label: 'Care Management',
+      });
+      await Item.create({
+        workspaceId: 'ws-1', boardId: 'board-a', folderId: 'f-p', itemId: 'p-amp',
+        data: { 'Full Name/Preferred Name': 'Tom & <b>Jerry</b>' },
+      });
+      startAutomationWorker();
+
+      const statementJob = { data: { ...JOB.data, kind: 'statement_automation' } };
+      await registeredHandler()(statementJob);
+
+      const written = JSON.parse(readFileSync(join(root, outboxKeyFor(statementJob.data)), 'utf8'));
+      expect(written.body).toBe('<p>Dear Tom &amp; &lt;b&gt;Jerry&lt;/b&gt;, your statement is attached.</p>');
+      expect(written.subject).toBe('Statement for Tom & <b>Jerry</b>');
+
+      await cleanupWorkerNdisBoard();
+    });
+
+    // AutomationSettings.recipient allows 'client_participant'. Flattening every
+    // participant's statement into one attachments array and sending one message
+    // per board means the first real per-participant delivery mails every
+    // participant everyone else's statement. Fix the shape while it is cheap:
+    // one composed message per participant, carrying only that participant's
+    // PDF and only that participant's {{client_name}}.
+    it('offline: composes one message per participant when the recipient is the participant', async () => {
+      process.env.ISOPLUS_OFFLINE = '1';
+      await AutomationSettings.create({
+        workspaceId: 'ws-1',
+        statement: {
+          enabled: true,
+          recipient: 'client_participant',
+          emailSubject: 'Statement for {{client_name}}',
+        },
+      });
+      await cleanupWorkerNdisBoard();
+      await Business.create({
+        workspaceId: 'ws-1', name: 'Worker Stmt Biz', abn: '11 111 111 111',
+        address: { street: '1 St', suburb: 'S', state: 'NSW', postcode: '2000', country: 'AU' },
+        bankDetails: { accountName: 'A', bankName: 'B', bsb: '123456', accountNumber: '1234567' },
+        documentNumbering: { invoice: { prefix: 'IN-', nextNumber: 1 }, quote: { prefix: 'QT-', nextNumber: 1 }, purchaseOrder: { prefix: 'PO-', nextNumber: 1 } },
+      });
+      await Board.create({
+        workspaceId: 'ws-1', boardId: 'board-a', name: 'CM Board', label: 'Care Management',
+      });
+      await Item.create({
+        workspaceId: 'ws-1', boardId: 'board-a', folderId: 'f-p', itemId: 'p-1',
+        data: { 'Full Name/Preferred Name': 'Alex Rivers' },
+      });
+      await Item.create({
+        workspaceId: 'ws-1', boardId: 'board-a', folderId: 'f-p', itemId: 'p-2',
+        data: { 'Full Name/Preferred Name': 'Sam Lee' },
+      });
+      // Spied rather than read back off disk: outboxKeyFor() has no recipient
+      // component yet, so two per-participant previews would land on one path.
+      // That is a required follow-up in services/email/outbox.js, which this
+      // agent does not own — see the report.
+      const spy = vi.spyOn(outbox, 'deliverEmail');
+      startAutomationWorker();
+
+      const statementJob = { data: { ...JOB.data, kind: 'statement_automation' } };
+      await registeredHandler()(statementJob);
+
+      expect(spy).toHaveBeenCalledTimes(2);
+      const bySubject = Object.fromEntries(
+        spy.mock.calls.map(([msg]) => [msg.block.emailSubject, msg.attachments]),
+      );
+      expect(Object.keys(bySubject).sort()).toEqual([
+        'Statement for Alex Rivers', 'Statement for Sam Lee',
       ]);
+      expect(bySubject['Statement for Alex Rivers']).toHaveLength(1);
+      expect(bySubject['Statement for Sam Lee']).toHaveLength(1);
+      expect(bySubject['Statement for Alex Rivers'][0])
+        .not.toBe(bySubject['Statement for Sam Lee'][0]);
+
       spy.mockRestore();
+      await cleanupWorkerNdisBoard();
+    });
+
+    it('offline: keeps one message per board when the recipient is the billing contact', async () => {
+      process.env.ISOPLUS_OFFLINE = '1';
+      await AutomationSettings.create({
+        workspaceId: 'ws-1',
+        statement: { enabled: true, recipient: 'billing_contact', emailSubject: 'Statements' },
+      });
+      await cleanupWorkerNdisBoard();
+      await Business.create({
+        workspaceId: 'ws-1', name: 'Worker Stmt Biz', abn: '11 111 111 111',
+        address: { street: '1 St', suburb: 'S', state: 'NSW', postcode: '2000', country: 'AU' },
+        bankDetails: { accountName: 'A', bankName: 'B', bsb: '123456', accountNumber: '1234567' },
+        documentNumbering: { invoice: { prefix: 'IN-', nextNumber: 1 }, quote: { prefix: 'QT-', nextNumber: 1 }, purchaseOrder: { prefix: 'PO-', nextNumber: 1 } },
+      });
+      await Board.create({
+        workspaceId: 'ws-1', boardId: 'board-a', name: 'CM Board', label: 'Care Management',
+      });
+      await Item.create({
+        workspaceId: 'ws-1', boardId: 'board-a', folderId: 'f-p', itemId: 'p-1',
+        data: { 'Full Name/Preferred Name': 'Alex Rivers' },
+      });
+      await Item.create({
+        workspaceId: 'ws-1', boardId: 'board-a', folderId: 'f-p', itemId: 'p-2',
+        data: { 'Full Name/Preferred Name': 'Sam Lee' },
+      });
+      const spy = vi.spyOn(outbox, 'deliverEmail');
+      startAutomationWorker();
+
+      await registeredHandler()({ data: { ...JOB.data, kind: 'statement_automation' } });
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy.mock.calls[0][0].attachments).toHaveLength(2);
+
+      spy.mockRestore();
+      await cleanupWorkerNdisBoard();
     });
 
     it('offline: statement jobs attach Monthly Statement PDFs on Care Management boards', async () => {
@@ -336,28 +490,49 @@ describe('startAutomationWorker', () => {
       await cleanupWorkerNdisBoard();
     });
 
-    // Online still calls the generator. There is no SES transport, so the job
-    // must complete without an outbox write or a throw that would retry.
-    // Upload goes to S3 when ISOPLUS_OFFLINE=0, so this spies the generator
-    // rather than hitting AWS.
-    it('online: still generates and writes no outbox', async () => {
+    // Order of operations, and the reason this test inverted.
+    //
+    // Generation is irreversible: it consumes invoice numbers off
+    // Business.documentNumbering, writes S3 objects and creates PDFLink rows
+    // keyed on periodKey. Delivery is the point of the run. Generating first
+    // and discovering afterwards that there is no transport burns numbers for
+    // PDFs nobody receives — and worse, the PDFLink rows it left behind make
+    // the re-run after SES lands return those same stale documents instead of
+    // regenerating. So deliverability is checked BEFORE anything is generated.
+    it('online with no transport: generates nothing rather than generating and discarding', async () => {
       process.env.ISOPLUS_OFFLINE = '0';
       await AutomationSettings.create({
         workspaceId: 'ws-1',
         invoice: { enabled: true, emailSubject: 'Invoice run' },
       });
-      const spy = vi.spyOn(generateDocuments, 'generateInvoicesForBoard').mockResolvedValue([
-        { itemId: WORKER_MASTER, pdfUrl: 'https://example.test/invoice.pdf' },
-      ]);
+      const spy = vi.spyOn(generateDocuments, 'generateInvoicesForBoard');
       startAutomationWorker();
 
+      // Resolves rather than throws: nothing irreversible happened, and three
+      // BullMQ retries per board would only repeat the same warn.
       await expect(registeredHandler()(JOB)).resolves.toBeUndefined();
-      expect(spy).toHaveBeenCalledWith(expect.objectContaining({
-        timezone: 'Australia/Sydney',
-        schedule: { every: { n: 1, unit: 'month' } },
-      }));
+
+      expect(spy).not.toHaveBeenCalled();
       expect(existsSync(join(root, 'outbox'))).toBe(false);
       spy.mockRestore();
+    });
+
+    it('online with no transport: consumes no invoice number', async () => {
+      process.env.ISOPLUS_OFFLINE = '0';
+      await AutomationSettings.create({
+        workspaceId: 'ws-1',
+        invoice: { enabled: true, emailSubject: 'Invoice run' },
+      });
+      await seedWorkerNdisBoard();
+      startAutomationWorker();
+
+      await registeredHandler()(JOB);
+
+      const business = await Business.findOne({ workspaceId: 'ws-1' }).lean();
+      expect(business.documentNumbering.invoice.nextNumber).toBe(900);
+      expect(await InvoiceNumber.countDocuments({ workspaceId: 'ws-1' })).toBe(0);
+
+      await cleanupWorkerNdisBoard();
     });
   });
 });

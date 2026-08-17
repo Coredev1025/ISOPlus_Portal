@@ -178,6 +178,46 @@ describe('pushDraftInvoicesToXero', () => {
     expect(createInvoice).not.toHaveBeenCalled();
   });
 
+  // The PDFLink fallback lookup interpolates an ISO+-sourced itemId straight
+  // into a $regex. ISO+ item ids are free text, so one containing a regex
+  // metacharacter is either a syntax error Mongo rejects outright — failing the
+  // whole board's Xero push — or, worse, a pattern that matches a different
+  // PDF and attaches the wrong participant's invoice to a Xero draft.
+  it('treats an itemId with regex metacharacters as a literal in the PDF fallback', async () => {
+    const oddId = 'auto[1';
+    await Item.create({
+      workspaceId: WS, boardId: BOARD, folderId: 'f', itemId: oddId,
+      data: {
+        'Recipient of the Quote': 'Bracket Fixture',
+        'Recipient Email': 'bracket@example.test',
+        'Recipient Address': '4 Sample Road',
+        Suburb: 'Testville', State: 'NSW', Postcode: '2000',
+        'Quantity (Direct Support)': 1,
+        'Unit Price for Direct Support($)': 10,
+        'Unit (Direct Support)': 'Hour',
+      },
+    });
+    await Item.deleteMany({ workspaceId: WS, itemId: 'auto-1' });
+    // No periodKey on the link, so the lookup must fall through to the regex.
+    await PDFLink.create({
+      workspaceId: WS,
+      itemId: oddId,
+      type: 'Participant Tax Invoice',
+      invoiceNumber: 'IN-702 (ISO+™)',
+      pdfLink: `https://example.test/${oddId}-${PERIOD}.pdf`,
+      createdBy: '',
+      isDeleted: false,
+      SignatureStatus: 'Unsigned',
+    });
+
+    const results = await pushDraftInvoicesToXero({
+      workspaceId: WS, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: PERIOD,
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ itemId: oddId, invoiceNumber: 'IN-702 (ISO+™)' });
+  });
+
   it('propagates createInvoice failure after persisting earlier items', async () => {
     await Item.create({
       workspaceId: WS, boardId: BOARD, folderId: 'f', itemId: 'auto-2',

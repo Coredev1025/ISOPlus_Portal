@@ -26,6 +26,24 @@ function assertXeroConnected(business, workspaceId) {
   }
 }
 
+/**
+ * Escape every regular-expression metacharacter so a value is matched as a
+ * literal.
+ *
+ * ISO+ item ids are free text. Interpolated raw into a `$regex`, one containing
+ * '[' or '(' is a syntax error Mongo rejects outright — failing the whole
+ * board's Xero push — and one containing '.' or '+' quietly becomes a pattern
+ * that can match a DIFFERENT PDF, attaching the wrong document to a Xero draft
+ * invoice. Neither is acceptable on a billing path.
+ *
+ * The fallback below is kept rather than deleted: PDFLink.periodKey is written
+ * only by the automation generators (the model's own comment says so), so a row
+ * created by the UI or webhook path has none and would otherwise never be found.
+ */
+function escapeRegExpLiteral(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 async function loadPdfLink({ workspaceId, itemId, periodKey }) {
   const baseQuery = {
     workspaceId: mongoEq(String(workspaceId)),
@@ -37,9 +55,10 @@ async function loadPdfLink({ workspaceId, itemId, periodKey }) {
   }).lean();
   if (current) return current;
 
+  const suffix = `${escapeRegExpLiteral(itemId)}-${escapeRegExpLiteral(periodKey)}\\.pdf$`;
   return PDFLink.findOne({
     ...baseQuery,
-    pdfLink: { $regex: `${itemId}-${periodKey}\\.pdf$` },
+    pdfLink: { $regex: suffix },
   }).lean();
 }
 

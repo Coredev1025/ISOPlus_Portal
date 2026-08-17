@@ -13,6 +13,24 @@ import { AT_LEAST_ONCE } from '../../constants/scheduler.js';
 
 const BLOCK_FOR_KIND = { [KIND_INVOICE]: 'invoice', [KIND_STATEMENT]: 'statement' };
 
+// Only these open the gate. Anything else — unset, '', 'false', 'no', a typo —
+// is off, because the failure mode of guessing wrong in the permissive
+// direction is a customer's invoice numbers being consumed for mail nobody can
+// send. An allow-list makes "did I spell it right?" a safe question.
+const AUTOMATION_ENABLED_VALUES = new Set(['true', '1', 'yes', 'on']);
+
+/**
+ * The master switch for the automation pipeline.
+ *
+ * Read at dispatch rather than at boot: registration happens once per process,
+ * and a value captured there would be invisible in logs and untestable without
+ * a restart. Reading it here also puts the decision next to the schedule it
+ * refuses, so the warning can name the kind and the workspace.
+ */
+function isAutomationEnabled() {
+  return AUTOMATION_ENABLED_VALUES.has(String(process.env.AUTOMATION_ENABLED ?? '').trim().toLowerCase());
+}
+
 /**
  * triggerManualSync does not throw for every failure — two of its non-dispatch
  * outcomes come back as `{ success: false, ... }`. `alreadyRunning` is
@@ -56,6 +74,34 @@ function requireSlot({ scheduledFor, nextRunAt }) {
  */
 export async function runAutomationKind(kind, job) {
   const { targetId, workspaceId, timezone, schedule } = job;
+
+  // The gate goes here — before the settings read, before the board fan-out —
+  // rather than in workers/automationWorker.js, because this is the earliest
+  // and the most honest place it can go.
+  //
+  // Earliest: refusing here means nothing is enqueued at all. Refusing in the
+  // worker means every board of every enabled workspace still mints a Redis
+  // job on every slot. Most honest: those jobs would complete successfully
+  // while doing nothing, and their records are retained (see queue.js) — so
+  // their jobIds are permanently taken, and the first real run after SES lands
+  // would be deduped away against the empty ones. The disabled period would
+  // silently become an unbillable hole.
+  //
+  // Not registering the handler at all was the third option and is wrong:
+  // registry.resolve() throws for an unknown kind, so every tick would record
+  // a handler failure and climb consecutiveFailures on a workspace that is
+  // merely switched off.
+  //
+  // There is no leftover-job hazard in the worker to cover as well: the
+  // automation queue is introduced by this branch, so nothing has ever been
+  // enqueued into it in production.
+  if (!isAutomationEnabled()) {
+    warn('Automation', 'Automation is configured but disabled (AUTOMATION_ENABLED); nothing generated or sent', {
+      kind, targetId, workspaceId,
+    });
+    return;
+  }
+
   const settings = await AutomationSettings.findOne({ workspaceId: mongoEq(targetId) }).lean();
   const block = settings?.[BLOCK_FOR_KIND[kind]];
 

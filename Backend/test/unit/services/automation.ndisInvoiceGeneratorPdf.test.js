@@ -14,6 +14,25 @@ const SP_ID = '11111111-aaaa-4111-8111-111111111111';
 const PP_ID = '22222222-aaaa-4111-8111-222222222222';
 const SUPPORT_CAT_ID = '66666666-aaaa-4111-8111-666666666666';
 const MASTER_ID = 'mp-ndis-1';
+const MASTER_ID_2 = 'mp-ndis-2';
+
+async function seedSecondMaster() {
+  await Item.create({
+    workspaceId: WS, boardId: BOARD, folderId: 'f-master', itemId: MASTER_ID_2,
+    data: {
+      'Timesheet Approval': 'Approved',
+      'Job Status': 'Completed',
+      'Payment Status': 'Unpaid',
+      'Service Plan': [{ id: SP_ID }],
+      'Participant Profile': [{ id: PP_ID }],
+      'Scheduled Shift Start Date & Time': '2026-01-16T21:00:00.000Z',
+      'Actual Shift Start Date and Time': '2026-01-16T22:00:00.000Z',
+      'Actual Shift End Date and Time': '2026-01-17T00:30:00.000Z',
+      'Actual Shift Duration(Hr.)': '2.5',
+      'Direct Support Value($) - Time Based Support': '175.00',
+    },
+  });
+}
 
 async function seedGeneratorItems() {
   await Item.create({
@@ -116,5 +135,33 @@ describe('generateNdisInvoiceGeneratorPdf', () => {
 
     const business = await Business.findOne({ workspaceId: WS }).lean();
     expect(business.documentNumbering.invoice.nextNumber).toBe(41);
+  });
+
+  // Production runs several Elastic Beanstalk instances pulling from one
+  // automation queue, so two boards in the same workspace are generated at the
+  // same moment routinely. Read nextNumber, render a PDF, then write
+  // nextNumber + 1 back is a lost update across two awaits: both runs read 40,
+  // both mint 'IN-40 (ISO+™)' for different participants, and the counter ends
+  // on 41 rather than 42. Two participants then hold the same invoice number,
+  // which Xero and the customer's ledger both treat as one invoice.
+  it('never mints the same invoice number for two concurrent generations', async () => {
+    await seedSecondMaster();
+
+    const [first, second] = await Promise.all([
+      generateNdisInvoiceGeneratorPdf({
+        workspaceId: WS, boardId: BOARD, masterItemIds: [MASTER_ID],
+        invoiceDate: '2026-08-14T09:00:00.000Z', dueDate: '2026-08-28T09:00:00.000Z',
+      }),
+      generateNdisInvoiceGeneratorPdf({
+        workspaceId: WS, boardId: BOARD, masterItemIds: [MASTER_ID_2],
+        invoiceDate: '2026-08-14T09:00:00.000Z', dueDate: '2026-08-28T09:00:00.000Z',
+      }),
+    ]);
+
+    expect([first.invoiceNumber, second.invoiceNumber].sort()).toEqual([
+      'IN-40 (ISO+™)', 'IN-41 (ISO+™)',
+    ]);
+    const business = await Business.findOne({ workspaceId: WS }).lean();
+    expect(business.documentNumbering.invoice.nextNumber).toBe(42);
   });
 });

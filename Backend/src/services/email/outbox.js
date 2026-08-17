@@ -18,13 +18,33 @@ import { saveLocalFile } from '../../utils/localFileStore.js';
 import { info } from '../../utils/logger.js';
 
 /**
+ * Path-safe, collision-resistant form of a recipient name. Anything that is
+ * not a letter, digit or dash becomes a dash, so a name can never introduce a
+ * separator or a traversal segment into the key.
+ */
+function recipientSlug(recipientKey) {
+  return String(recipientKey)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+}
+
+/**
  * One file per claimed slot, named like the queue jobId is keyed
  * (kind + board + periodKey). A redelivered at-least-once job overwrites its
  * own preview rather than accumulating duplicates, so the outbox mirrors the
  * pipeline's idempotency instead of muddying its evidence.
+ *
+ * A `client_participant` run composes one message per participant for the same
+ * board and slot, so `recipientKey` adds a final component: without it every
+ * one of those messages resolves to the same path and the preview shows one
+ * email where the run produced five. Absent for a billing-contact run, which
+ * keeps its historical key.
  */
-export function outboxKeyFor({ kind, workspaceId, boardId, periodKey }) {
-  return `outbox/${workspaceId}/${kind}-${boardId}-${periodKey}.json`;
+export function outboxKeyFor({ kind, workspaceId, boardId, periodKey, recipientKey = null }) {
+  const suffix = recipientKey ? `-${recipientSlug(recipientKey)}` : '';
+  return `outbox/${workspaceId}/${kind}-${boardId}-${periodKey}${suffix}.json`;
 }
 
 /**

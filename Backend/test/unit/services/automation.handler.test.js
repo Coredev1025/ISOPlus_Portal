@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const addBulk = vi.fn();
 vi.mock('../../../src/services/automation/queue.js', () => ({
@@ -24,6 +24,26 @@ const job = {
   timezone: 'Australia/Sydney',
   nextRunAt: new Date('2026-08-11T23:00:00Z'),
 };
+
+// The whole automation pipeline is now gated on AUTOMATION_ENABLED, which
+// defaults OFF so that merging this branch cannot start generating real
+// invoices for mail nobody can send (see .env.example and handlers.js). Every
+// assertion in this file is about what happens once the gate is open, so it is
+// opened here. The gate's own behaviour — that absent, blank and 'false' all
+// enqueue nothing — is covered in scheduler.handlers.test.js.
+const savedAutomationEnabled = process.env.AUTOMATION_ENABLED;
+
+beforeEach(() => {
+  process.env.AUTOMATION_ENABLED = 'true';
+});
+
+afterEach(() => {
+  if (savedAutomationEnabled === undefined) {
+    delete process.env.AUTOMATION_ENABLED;
+  } else {
+    process.env.AUTOMATION_ENABLED = savedAutomationEnabled;
+  }
+});
 
 describe('runAutomationKind', () => {
   beforeEach(async () => {
