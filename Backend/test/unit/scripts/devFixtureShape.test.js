@@ -8,7 +8,12 @@ import {
   normalizeFixture,
   stripDollarKeys,
   isLocalMongoUri,
+  isGeneratorFixturePath,
+  fixtureFromModule,
 } from '../../../scripts/devFixtureShape.mjs';
+import {
+  buildStatementPermutationsFixture,
+} from '../../fixtures/generators/statementPermutations.mjs';
 
 const backendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const ndisFixture = JSON.parse(
@@ -267,6 +272,50 @@ describe('isLocalMongoUri', () => {
     expect(isLocalMongoUri('not-a-uri')).toBe(false);
     expect(isLocalMongoUri('mongodb://')).toBe(false);
     expect(isLocalMongoUri(undefined)).toBe(false);
+  });
+});
+
+describe('generated fixtures', () => {
+  // --file takes either committed JSON or a module that builds the fixture.
+  // Extension is the whole decision, so it is worth pinning: a JSON path must
+  // never be dynamically imported, and a generator path must never be parsed.
+  it('treats .mjs and .js paths as generators and everything else as JSON', () => {
+    expect(isGeneratorFixturePath('test/fixtures/generators/statementPermutations.mjs')).toBe(true);
+    expect(isGeneratorFixturePath('/abs/path/gen.js')).toBe(true);
+    expect(isGeneratorFixturePath('test/fixtures/ndis-quote-board.json')).toBe(false);
+    expect(isGeneratorFixturePath('')).toBe(false);
+    expect(isGeneratorFixturePath(undefined)).toBe(false);
+  });
+
+  it('calls a default-exported function, and accepts a plain object too', () => {
+    const built = { boards: [{ boardId: 'b-1', workspaceId: 'ws-1' }] };
+    expect(fixtureFromModule({ default: () => built })).toBe(built);
+    expect(fixtureFromModule({ default: built })).toBe(built);
+  });
+
+  it('names the file rather than failing later inside normalizeFixture', () => {
+    expect(() => fixtureFromModule({}, 'gen.mjs')).toThrow(/gen\.mjs must default-export/);
+    expect(() => fixtureFromModule({ default: 'nope' }, 'gen.mjs')).toThrow(/default-export/);
+  });
+
+  it('normalizes the statement-permutation generator like any committed fixture', () => {
+    // The generator replaced a 38k-line JSON file; the loader must not have to
+    // know which of the two it is holding.
+    const shape = normalizeFixture(buildStatementPermutationsFixture({ years: [2025, 2026] }));
+
+    expect(shape.workspaceId).toBe('55390');
+    expect(shape.boards).toHaveLength(4);
+    // 10 references + 9 profiles + (9 participants x 2 years x 12 months)
+    // + (3 SaH participants x 6 streams x 2 years x 12 months).
+    expect(shape.items).toHaveLength(10 + 9 + 216 + 432);
+    for (const item of shape.items) {
+      expect(item.workspaceId).toBe('55390');
+      expect(item.isoPlusItemId).toBe(item.itemId);
+    }
+    // Data only — loading it can never arm a scheduler tick.
+    expect(shape.automationSettings).toBeNull();
+    expect(shape.scheduledJobs).toEqual([]);
+    expect(shape.invoiceNumbers).toEqual([]);
   });
 });
 

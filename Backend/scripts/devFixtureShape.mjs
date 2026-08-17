@@ -8,6 +8,12 @@
 // boards, items, automationSettings, scheduledJobs, invoiceNumbers } and
 // throws on anything ambiguous — no mongoose, no dotenv, no I/O, so it is
 // trivially unit-testable.
+//
+// A fixture may also be *generated* rather than committed: `--file` accepts an
+// ES module that default-exports the fixture object, or a function returning
+// one (test/fixtures/generators/statementPermutations.mjs). Same fixture shape
+// either way — only where the object comes from differs, which is why the
+// deciding is here and the dynamic import is in dev-fixture.mjs.
 
 // $-prefixed keys are documentation inside the fixture, not document fields.
 export const stripDollarKeys = (obj) =>
@@ -16,6 +22,32 @@ export const stripDollarKeys = (obj) =>
 const fail = (message) => {
   throw new Error(message);
 };
+
+// --- committed JSON vs generated module --------------------------------------
+
+/**
+ * Is this `--file` path a generator module rather than a committed JSON file?
+ * Extension only: a fixture that has to be built is an ES module, and anything
+ * else is parsed as JSON exactly as before.
+ */
+export const isGeneratorFixturePath = (path) => /\.(mjs|js)$/i.test(String(path ?? ''));
+
+/**
+ * The fixture object a generator module offers, from its module namespace.
+ *
+ * The default export may be the object itself or a zero-argument function
+ * returning it; a function is the useful case, since it lets the generator
+ * default its own parameters (the statement generator defaults its year range
+ * to the picker's current window, which is what retired the manual
+ * regeneration chore). Anything else is a mistake worth naming rather than
+ * failing later inside normalizeFixture with a confusing message.
+ */
+export function fixtureFromModule(namespace, path = 'the module') {
+  const exported = namespace?.default;
+  if (typeof exported === 'function') return exported();
+  if (exported && typeof exported === 'object') return exported;
+  return fail(`${path} must default-export a fixture object, or a function returning one`);
+}
 
 function normalizeBoards(fixture) {
   const boards = fixture.boards ?? (fixture.board ? [fixture.board] : []);

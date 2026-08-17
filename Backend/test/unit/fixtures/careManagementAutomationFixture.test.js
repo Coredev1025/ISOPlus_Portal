@@ -23,9 +23,6 @@ const fixturesDir = path.resolve(here, '../../fixtures');
 const fixture = JSON.parse(
   readFileSync(path.join(fixturesDir, 'care-management-automation.json'), 'utf8'),
 );
-const quoteFixture = JSON.parse(
-  readFileSync(path.join(fixturesDir, 'ndis-quote-board.json'), 'utf8'),
-);
 
 const WORKSPACE_ID = '55390';
 const SAH_BOARD = 'jpjztrn14pJ';
@@ -130,14 +127,8 @@ describe('care-management-automation fixture: item integrity', () => {
     }
   });
 
-  it('keeps itemIds unique here and disjoint from the quote fixture', () => {
-    const ids = fixture.items.map((item) => item.itemId);
-    expect(new Set(ids).size).toBe(ids.length);
-    const quoteIds = new Set(quoteFixture.items.map((item) => item.itemId));
-    for (const id of ids) {
-      expect(quoteIds.has(id), `${id} collides with ndis-quote-board.json`).toBe(false);
-    }
-  });
+  // itemId uniqueness and cross-fixture disjointness are checked once, for
+  // every fixture pair, in careManagementStatementPermutations.test.js.
 
   it('gives every board a participant the statement scan will find', () => {
     for (const boardId of [SAH_BOARD, NDIS_BOARD, NEW_BOARD]) {

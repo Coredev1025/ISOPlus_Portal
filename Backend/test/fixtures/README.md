@@ -15,6 +15,11 @@ For faking ISO+ *responses* rather than seeding Portal-side documents, prefer
 `test/msw/handlers.js` — it intercepts at the HTTP layer, which is the only
 practical way to drive both branches of the pricing dispatch.
 
+Some fixtures are **generated** rather than committed — see `generators/` below.
+A generator is an ES module that builds the same fixture object a `.json` file
+would hold; `npm run dev:fixture -- --file <path.mjs>` imports it and loads the
+result, and every other flag behaves identically.
+
 This is the counterpart to `seed/`. The dump in `seed/` is a real database with
 real customer records — gitignored, obtained by asking the team, and whatever
 board it happens to contain is not a stable thing to write code against.
@@ -208,17 +213,25 @@ Replication mechanics worth knowing:
 - Approved NDIS rows reference zero-priced plans, so a scheduler tick over
   this data lists rows but can never mint an invoice.
 
-## `care-management-statement-permutations.json`
+## `generators/statementPermutations.mjs`
 
-**Full Monthly-Statement-picker coverage for workspace `55390`**: one delivered
-service row per (board, participant, year 2022–2026, month), 540 rows total, so
-every Participant × Month × Year combination the picker offers loads a
-non-empty statement on all three Care Management boards. Amounts vary
-deterministically per permutation (90/10 gov/participant split).
+**Full Monthly-Statement-picker coverage for workspace `55390`**, generated:
 
-Also seeds one budget row per SaH participant × standard stream × month
-(6 streams × 60 months × 3 participants), so the Budget Mini Charts and every
-Individualised Budgets stream render with real numbers for any picked month.
+```bash
+npm run dev:fixture -- --file test/fixtures/generators/statementPermutations.mjs
+npm run dev:fixture -- --file test/fixtures/generators/statementPermutations.mjs --list
+npm run dev:fixture -- --file test/fixtures/generators/statementPermutations.mjs --remove
+```
+
+One delivered service row per (board, participant, picker year, month) — 540
+rows at the default five-year window — so every Participant × Month × Year
+combination the picker offers loads a non-empty statement on all three Care
+Management boards. Amounts vary deterministically per permutation (90/10
+gov/participant split). Plus one budget row per SaH participant × standard
+stream × month (6 streams × 60 months × 3 participants), so the Budget Mini
+Charts and every Individualised Budgets stream render with real numbers for any
+picked month. 1,639 items in all, including the profiles, service plans and
+funding sources they reference.
 
 Composable with either 55390 fixture — ids are disjoint (`55390e00-` prefix)
 and its profiles/plans/funding sources are self-contained. No row carries
@@ -226,5 +239,30 @@ and its profiles/plans/funding sources are self-contained. No row carries
 live in 'Shift Planning and Reporting' so they appear in the invoice lists
 like any live shift row would. The route only month-filters when the caller
 passes `startDate`/`endDate` — the UI always does; month/year alone returns
-the participant's full history. Years mirror the 2026 picker
-(`currentYear-4 … currentYear`); regenerate when 2022 falls off the dropdown.
+the participant's full history.
+
+### Why this one is a generator and the others are not
+
+The other fixtures record something that was read off a live system, so a diff
+in them means someone went and looked. This one recorded nothing: all 1,620
+service and budget rows were formula output — unit price `80 + 2·month +
+3·participant + 5·year`, subsidy `total × 0.9`, available fund `budget × 0.8` —
+from a loop run once and committed as 38,659 lines of JSON. Keeping the loop
+instead removes both the bulk and a standing chore: the committed range was
+hardcoded 2022–2026 and this file used to tell you to regenerate it by hand
+when 2022 fell off the dropdown. `buildStatementPermutations()` defaults its
+years to `pickerYears()` (`currentYear-4 … currentYear`), the picker's own
+window, so it cannot go stale.
+
+Everything else about the data is unchanged and must stay that way — ids,
+folder ids (which are real folder names, because `getFolderOffline` serves
+`name === id`) and attribute names are depended on by the offline folder
+resolution and by the other fixtures' id-disjointness.
+
+`buildStatementPermutations({ years, boardParticipants, budgetBoardId })` is
+pure and takes its whole matrix as arguments, so a test can ask for one year
+without paying for sixty months. `buildStatementPermutationsFixture()` wraps it
+with the business and board documents into the object the loader wants, and is
+the module's default export. Asserted by
+`test/unit/fixtures/careManagementStatementPermutations.test.js`, which also
+holds the one pairwise itemId-disjointness check covering every fixture here.

@@ -5,7 +5,7 @@
 //   npm run dev:fixture                     upsert Business, Board and Items
 //   npm run dev:fixture -- --list           show what is already there, change nothing
 //   npm run dev:fixture -- --remove         delete only the documents this script wrote
-//   npm run dev:fixture -- --file <path>    use a different fixture
+//   npm run dev:fixture -- --file <path>    use a different fixture (.json or a generator .mjs)
 //   npm run dev:fixture -- --replay <name>  POST a recorded webhook body at the local API
 //   npm run dev:fixture -- --replay <name> --dry-run   print the request, send nothing
 //
@@ -36,12 +36,29 @@
 // `invoiceNumbers` section (keyed on {itemId, workspaceId, boardId, type})
 // seeds already-invoiced rows. Shape rules are pure and unit-tested in
 // devFixtureShape.mjs.
+//
+// A fixture is either committed JSON or a generator module. `--file` decides on
+// the extension: a `.mjs`/`.js` path is imported and its default export (an
+// object, or a function returning one) is the fixture. That is how the
+// statement-picker permutations are produced —
+//
+//   npm run dev:fixture -- --file test/fixtures/generators/statementPermutations.mjs
+//
+// — 1,639 items that used to be a committed 38k-line JSON file, of which every
+// service and budget row was formula output. Every other flag behaves the same
+// either way, because both paths produce the same fixture object.
 
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { normalizeFixture, stripDollarKeys, isLocalMongoUri } from './devFixtureShape.mjs'
+import {
+  normalizeFixture,
+  stripDollarKeys,
+  isLocalMongoUri,
+  isGeneratorFixturePath,
+  fixtureFromModule,
+} from './devFixtureShape.mjs'
 
 const backendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const DEFAULT_FIXTURE = join(backendRoot, 'test', 'fixtures', 'ndis-quote-board.json')
@@ -77,11 +94,20 @@ if (!existsSync(fixturePath)) {
 }
 
 let fixture
-try {
-  fixture = JSON.parse(readFileSync(fixturePath, 'utf8'))
-} catch (err) {
-  console.error(`error: ${fixturePath} is not valid JSON — ${err.message}`)
-  process.exit(1)
+if (isGeneratorFixturePath(fixturePath)) {
+  try {
+    fixture = fixtureFromModule(await import(pathToFileURL(fixturePath).href), fixturePath)
+  } catch (err) {
+    console.error(`error: ${fixturePath} did not produce a fixture — ${err.message}`)
+    process.exit(1)
+  }
+} else {
+  try {
+    fixture = JSON.parse(readFileSync(fixturePath, 'utf8'))
+  } catch (err) {
+    console.error(`error: ${fixturePath} is not valid JSON — ${err.message}`)
+    process.exit(1)
+  }
 }
 
 // Shape rules (single `board` vs `boards`, per-item boardId, automation

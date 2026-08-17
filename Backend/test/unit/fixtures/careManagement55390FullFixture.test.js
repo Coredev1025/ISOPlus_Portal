@@ -16,12 +16,6 @@ const fixturesDir = path.resolve(here, '../../fixtures');
 const fixture = JSON.parse(
   readFileSync(path.join(fixturesDir, 'care-management-55390-full.json'), 'utf8'),
 );
-const leanFixture = JSON.parse(
-  readFileSync(path.join(fixturesDir, 'care-management-automation.json'), 'utf8'),
-);
-const quoteFixture = JSON.parse(
-  readFileSync(path.join(fixturesDir, 'ndis-quote-board.json'), 'utf8'),
-);
 
 const SAH_BOARD = 'jpjztrn14pJ';
 const NDIS_BOARD = 'o24sGM1FoST';
@@ -103,17 +97,8 @@ describe('care-management-55390-full fixture: pipeline safety', () => {
     }
   });
 
-  it('keeps itemIds unique and disjoint from the other fixtures', () => {
-    const ids = fixture.items.map((item) => item.itemId);
-    expect(new Set(ids).size).toBe(ids.length);
-    const other = new Set([
-      ...leanFixture.items.map((item) => item.itemId),
-      ...quoteFixture.items.map((item) => item.itemId),
-    ]);
-    for (const id of ids) {
-      expect(other.has(id), `${id} collides with another fixture`).toBe(false);
-    }
-  });
+  // itemId uniqueness and cross-fixture disjointness are checked once, for
+  // every fixture pair, in careManagementStatementPermutations.test.js.
 
   it('declares the three Care Management boards plus the reference carrier, and no schedules', () => {
     // t29GNU4nV2A is dev's real NDIS Library board; it houses the service-plan
