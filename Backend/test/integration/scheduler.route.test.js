@@ -4,6 +4,7 @@ import { createApp } from '../../src/app.js';
 import ScheduledJob from '../../src/models/ScheduledJob.js';
 import { register, clearRegistry } from '../../src/services/scheduler/registry.js';
 import { AT_MOST_ONCE } from '../../src/constants/scheduler.js';
+import { KIND_INVOICE, KIND_STATEMENT } from '../../src/constants/automation.js';
 
 const app = createApp();
 
@@ -14,6 +15,8 @@ describe('POST /api/scheduler/tick', () => {
   beforeEach(() => {
     clearRegistry();
     process.env.SCHEDULER_API_KEY = 'test-scheduler-key';
+    delete process.env.SCHEDULER_API_KEY_INVOICE;
+    delete process.env.SCHEDULER_API_KEY_STATEMENT;
   });
 
   afterEach(() => {
@@ -27,7 +30,20 @@ describe('POST /api/scheduler/tick', () => {
     } else {
       process.env.Admin_API_Key = originalAdminApiKey;
     }
+    delete process.env.SCHEDULER_API_KEY_INVOICE;
+    delete process.env.SCHEDULER_API_KEY_STATEMENT;
   });
+
+  /** One due automation job of `kind`, the way upsertSchedule writes them. */
+  async function dueAutomationJob(kind) {
+    return ScheduledJob.create({
+      kind,
+      targetId: `ws-${kind}`,
+      cron: '*/30 * * * *',
+      timezone: 'Australia/Sydney',
+      nextRunAt: new Date(Date.now() - 60_000),
+    });
+  }
 
   it('rejects a request with no credential', async () => {
     const res = await request(app).post('/api/scheduler/tick');
@@ -53,6 +69,58 @@ describe('POST /api/scheduler/tick', () => {
     const res = await request(app)
       .post('/api/scheduler/tick')
       .set('Authorization', 'test-admin-key');
+    expect(res.status).toBe(401);
+  });
+
+  it('a per-kind key ticks only its kind, leaving the other still due', async () => {
+    // One EventBridge rule per kind, each holding its own credential: the
+    // presented key IS the scope, so the invoice rule cannot fire statements.
+    process.env.SCHEDULER_API_KEY_INVOICE = 'test-invoice-key';
+    const handler = vi.fn().mockResolvedValue(undefined);
+    register(KIND_INVOICE, { handler, policy: AT_MOST_ONCE });
+    register(KIND_STATEMENT, { handler, policy: AT_MOST_ONCE });
+    await dueAutomationJob(KIND_INVOICE);
+    await dueAutomationJob(KIND_STATEMENT);
+
+    const res = await request(app)
+      .post('/api/scheduler/tick')
+      .set('Authorization', 'test-invoice-key');
+    expect(res.status).toBe(200);
+    expect(res.body.claimed).toBe(1);
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: KIND_INVOICE }),
+    );
+
+    // The statement job is untouched; the master key still claims it.
+    const master = await request(app)
+      .post('/api/scheduler/tick')
+      .set('Authorization', 'test-scheduler-key');
+    expect(master.body.claimed).toBe(1);
+  });
+
+  it('the statement key mirrors the invoice key for its own kind', async () => {
+    process.env.SCHEDULER_API_KEY_STATEMENT = 'test-statement-key';
+    const handler = vi.fn().mockResolvedValue(undefined);
+    register(KIND_INVOICE, { handler, policy: AT_MOST_ONCE });
+    register(KIND_STATEMENT, { handler, policy: AT_MOST_ONCE });
+    await dueAutomationJob(KIND_INVOICE);
+    await dueAutomationJob(KIND_STATEMENT);
+
+    const res = await request(app)
+      .post('/api/scheduler/tick')
+      .set('Authorization', 'test-statement-key');
+    expect(res.body.claimed).toBe(1);
+    expect(handler).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: KIND_STATEMENT }),
+    );
+  });
+
+  it('a per-kind key whose env var is unset cannot authorize', async () => {
+    // SCHEDULER_API_KEY_INVOICE deliberately not set.
+    const res = await request(app)
+      .post('/api/scheduler/tick')
+      .set('Authorization', 'test-invoice-key');
     expect(res.status).toBe(401);
   });
 

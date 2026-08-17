@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { warn, info } from '../utils/logger.js';
+import { KIND_INVOICE, KIND_STATEMENT } from '../constants/automation.js';
 import dotenv from 'dotenv';
 import {
   applyPrivilegedSessionAuth,
@@ -51,11 +52,56 @@ const apiKeyValidator = (envVar) => (req, res, next) => {
 export const validateApiKey = apiKeyValidator('Admin_API_Key');
 
 /**
- * The scheduler tick. A separate credential from Admin_API_Key deliberately:
- * the key lives in an EventBridge rule, so it is rotated on a different
- * schedule and leaks a strictly smaller capability than the admin key does.
+ * The scheduler tick's credentials, one per EventBridge rule. Separate from
+ * Admin_API_Key deliberately: they live in EventBridge rules, rotate on their
+ * own schedules, and leak a strictly smaller capability than the admin key.
+ *
+ * The presented key IS the scope: the master SCHEDULER_API_KEY (required
+ * configuration — the boot warning in index.js keys on it) ticks every kind
+ * and is what `npm run tick` sends; each per-kind key scopes its tick to its
+ * own kind, so the invoice rule cannot fire statement schedules by
+ * misconfiguration. An unset per-kind variable simply makes that key
+ * unavailable — the non-empty check below is what stops a blank env var
+ * matching anything.
  */
-export const validateSchedulerApiKey = apiKeyValidator('SCHEDULER_API_KEY');
+const SCHEDULER_KEY_SCOPES = [
+  { envVar: 'SCHEDULER_API_KEY', kinds: null },
+  { envVar: 'SCHEDULER_API_KEY_INVOICE', kinds: [KIND_INVOICE] },
+  { envVar: 'SCHEDULER_API_KEY_STATEMENT', kinds: [KIND_STATEMENT] },
+];
+
+export const validateSchedulerApiKey = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader) {
+    warn('Authentication-Service', 'No authorization header provided', {
+      error: 'No authorization header provided',
+    }, req);
+    return res.status(401).json({ message: 'Authorization header required' });
+  }
+
+  if (!process.env.SCHEDULER_API_KEY) {
+    warn('Authentication-Service', 'SCHEDULER_API_KEY not configured', {
+      error: 'SCHEDULER_API_KEY environment variable not set',
+    }, req);
+    return res.status(500).json({ message: 'Server configuration error' });
+  }
+
+  const scope = SCHEDULER_KEY_SCOPES.find(
+    ({ envVar }) => process.env[envVar] && authHeader === process.env[envVar],
+  );
+
+  if (!scope) {
+    warn('Authentication-Service', 'Invalid API key provided', {
+      error: 'Invalid API key',
+      providedKey: authHeader.substring(0, 8) + '...', // Log only first 8 characters for security
+    }, req);
+    return res.status(401).json({ message: 'Invalid API key' });
+  }
+
+  req.schedulerKinds = scope.kinds;
+  return next();
+};
 
 export const authenticateToken = (req, res, next) => {
   const token = req.session.token;

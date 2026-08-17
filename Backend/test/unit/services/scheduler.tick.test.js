@@ -49,6 +49,34 @@ describe('runTick', () => {
     );
   });
 
+  it('claims only the requested kinds when a scope is given', async () => {
+    // A per-kind EventBridge rule ticks with a per-kind credential; the
+    // scope it carries must leave every other kind untouched and still due.
+    const handler = vi.fn().mockResolvedValue(undefined);
+    register('inv-demo', { handler, policy: AT_MOST_ONCE });
+    register('stmt-demo', { handler, policy: AT_MOST_ONCE });
+    await due('inv-demo');
+    const statementJob = await due('stmt-demo');
+
+    const summary = await runTick({ now: NOW, kinds: ['inv-demo'] });
+
+    expect(summary.claimed).toBe(1);
+    expect(handler).toHaveBeenCalledTimes(1);
+    const untouched = await ScheduledJob.findById(statementJob._id).lean();
+    expect(untouched.nextRunAt).toEqual(statementJob.nextRunAt);
+  });
+
+  it('claims every kind when no scope is given', async () => {
+    const handler = vi.fn().mockResolvedValue(undefined);
+    register('inv-demo', { handler, policy: AT_MOST_ONCE });
+    register('stmt-demo', { handler, policy: AT_MOST_ONCE });
+    await due('inv-demo');
+    await due('stmt-demo');
+
+    const summary = await runTick({ now: NOW });
+    expect(summary.claimed).toBe(2);
+  });
+
   it('ignores schedules that are not yet due', async () => {
     register('demo', { handler: vi.fn(), policy: AT_MOST_ONCE });
     await due('demo', { nextRunAt: new Date('2026-08-11T09:00:00Z') });

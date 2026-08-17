@@ -19,12 +19,15 @@ import { AT_MOST_ONCE, BATCH_LIMIT, LOG_SCOPE } from '../../constants/scheduler.
  * Under at-least-once nextRunAt is deliberately left alone until the handler
  * succeeds, so the caller must exclude what it has already seen.
  */
-async function claimNext(now, excludeIds, stats) {
+async function claimNext(now, excludeIds, stats, kinds) {
   for (;;) {
     const candidate = await ScheduledJob.findOne({
       enabled: true,
       nextRunAt: { $lte: now },
       _id: { $nin: excludeIds },
+      // A scoped tick (a per-kind EventBridge rule's credential) claims only
+      // its own kinds; everything else stays due for its own rule.
+      ...(kinds ? { kind: { $in: kinds } } : {}),
     })
       .sort({ nextRunAt: 1 })
       .lean();
@@ -130,8 +133,11 @@ async function dispatch(job, now) {
   await recordSuccess(job, job.policy, now);
 }
 
-/** Claim every due schedule, up to `limit`, and dispatch each one. */
-export async function runTick({ now = new Date(), limit = BATCH_LIMIT } = {}) {
+/**
+ * Claim every due schedule, up to `limit`, and dispatch each one. `kinds`
+ * (an array, or null for all) scopes the claim to those kinds only.
+ */
+export async function runTick({ now = new Date(), limit = BATCH_LIMIT, kinds = null } = {}) {
   // Two lists, deliberately. `excludeIds` also collects rows we lost a race
   // for, which must not count towards the batch cap or the claimed total.
   const excludeIds = [];
@@ -141,7 +147,7 @@ export async function runTick({ now = new Date(), limit = BATCH_LIMIT } = {}) {
   const stats = { dispatched: 0, failed: 0 };
 
   while (claimedIds.length < limit) {
-    const job = await claimNext(now, excludeIds, stats);
+    const job = await claimNext(now, excludeIds, stats, kinds);
     if (!job) break;
 
     claimedIds.push(job._id);

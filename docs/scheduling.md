@@ -149,15 +149,25 @@ table, then confirm with the verification steps below.
 | Header name | `Authorization` |
 | Header value | the environment's `SCHEDULER_API_KEY`, **verbatim** |
 
+### One rule per kind, optionally
+
+The automation kinds can each get their own rule and their own credential:
+set `SCHEDULER_API_KEY_INVOICE` and/or `SCHEDULER_API_KEY_STATEMENT` on the
+environment and point one rule at each, same table as above but with the
+per-kind key as the header value. **The presented key is the scope** — a tick
+authenticated with the invoice key claims only `invoice_automation`
+schedules, the statement key only `statement_automation`, and the master
+`SCHEDULER_API_KEY` claims everything (including `board_sync`), so the two
+rules cannot fire each other's schedules however they are misconfigured. The
+master key remains required configuration either way: it is what
+`npm run tick` sends, and the boot warning keys on it. An unset per-kind
+variable simply makes that credential unavailable.
+
 **The header value must be the key exactly — no `Bearer ` prefix, no leading
 or trailing whitespace.** `validateSchedulerApiKey` compares the raw header
-against `process.env.SCHEDULER_API_KEY` with `!==`:
-
-```js
-if (authHeader !== process.env.SCHEDULER_API_KEY) {
-  // ... 401 Invalid API key
-}
-```
+against each configured key with strict equality (see
+`SCHEDULER_KEY_SCOPES` in `Backend/src/middleware/auth.js`); a non-empty
+match is required, so a blank env var can never authorize anything.
 
 Anything other than the bare key value — a `Bearer ` prefix, a stray space
 from copy-paste — fails that comparison and produces a 401. This is not a
