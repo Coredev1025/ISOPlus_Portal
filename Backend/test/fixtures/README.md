@@ -128,3 +128,44 @@ committed fixture for. See `docs/ongoing/webhooks-and-automation.md`.
 Change it by hand and say why in the commit. It is a contract: a diff here
 should mean someone deliberately re-read ISO+ and found it different, which is
 exactly the signal you want in review. Do not paste real participant data in.
+
+## `care-management-automation.json`
+
+**Source: workspace `55390` ("ISO+™ NDIS & SaH Demo") on portal-dev** — the
+three Care Management boards the KAN-10 scheduled invoice/statement automation
+fans out to, read live on 2026-08-17. Board ids, labels, participant names,
+funding sources, service codes and price points are captured; every person,
+address, bank and contact value is invented.
+
+One fixture, three generator branches — chosen because `Board.label` alone
+decides the branch (`utils/automationBoardFlags.js`):
+
+| boardId | label | invoice branch | statements |
+|---|---|---|---|
+| `jpjztrn14pJ` | `Care Management - SaH` | Age Care (`participantTaxInvoiceAG.json`) | yes |
+| `o24sGM1FoST` | `Care Management - NDIS - Certification` | NDIS, legacy pricing | yes |
+| `dwV23F5WcQL` | `Care Management - NDIS - Certification` | NDIS, 2026 pricing | yes |
+
+Unlike `ndis-quote-board.json` it also seeds `automationSettings` (both blocks
+enabled) and two due `scheduledJobs` rows (`nextRunAt` = 2025-02-01 09:00
+Sydney, periodKey `20250201-0900`, billing January 2025), so after loading it a
+single `npm run tick -- --once` drives the whole Track A chain offline.
+Re-loading the fixture resets `nextRunAt`, making tick runs repeatable.
+
+Details that are load-bearing, learned the hard way and asserted by
+`test/unit/fixtures/careManagementAutomationFixture.test.js` (which drives the
+items through the real invoice row builders):
+
+- NDIS `Participant Profile` / `Service Plan` references must be UUID-shaped
+  or the generator silently drops them and then throws. itemIds here are
+  synthetic UUIDs prefixed `55390000-`.
+- Service Plan items carry exactly one pricing sentinel —
+  `Direct Support Item Number` (legacy) or `Support Item Number` (2026) — which
+  is what keeps pricing resolution off the network in offline mode.
+- The NDIS master items date on `Actual Shift Start Date and Time` (the word
+  "and"); the SaH and statement paths read `Actual Shift End Date & Time`
+  (ampersand). Both spellings are real.
+- The legacy board carries one unapproved decoy master item that must never
+  bill (`Timesheet Approval: "Pending"`).
+- Mike Bird's captured rows were dated 2026-06-29 on dev; they are re-dated
+  into January 2025 here so one slot bills all three boards.

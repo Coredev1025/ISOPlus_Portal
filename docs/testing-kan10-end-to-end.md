@@ -110,6 +110,31 @@ the same board as
 `workspaceId: "55369"`.** Zero boards is a *successful* no-op that enqueues
 nothing — the most common reason this test looks broken when it isn't.
 
+**Prefer the multi-board fixture for generator testing.** Workspace `55390`
+(`Backend/test/fixtures/care-management-automation.json`, captured from
+portal-dev's "ISO+™ NDIS & SaH Demo") seeds three Care Management boards that
+exercise all three generator branches at once — `jpjztrn14pJ` (SaH → Age Care
+invoice), `o24sGM1FoST` (NDIS legacy pricing), `dwV23F5WcQL` (NDIS 2026
+pricing) — plus `automationSettings` (both blocks enabled) and two already-due
+`scheduledJobs` rows (slot 2025-02-01 09:00 Sydney, periodKey `20250201-0900`,
+billing January 2025). After loading it, steps 2–5 below are unnecessary — one
+`npm run tick -- --once` claims both kinds, generates 5 invoices + 6 statements,
+and writes 6 outbox files. Reloading the fixture resets `nextRunAt`, so tick
+runs are repeatable:
+
+```bash
+npm run dev:fixture -- --file test/fixtures/care-management-automation.json
+npm run tick -- --once     # claimed=2 dispatched=2
+find Backend/.local-s3/outbox/55390 -type f    # 6 files, all *-20250201-0900.json
+```
+
+Playwright covers this journey in `Frontend/e2e/care-management-automation.spec.ts`
+(needs `E2E_EMAIL`/`E2E_PASSWORD` from `npm run dev:user`, plus
+`E2E_SCHEDULER_API_KEY` for the tick test; `E2E_LOAD_FIXTURES=1` makes
+global-setup load the fixture). The fixture's pipeline invariants are pinned by
+`Backend/test/unit/fixtures/careManagementAutomationFixture.test.js`, which runs
+the items through the real NDIS row builders.
+
 ### 2. Turn the tab on
 
 The Automation tab is gated on `Business.featureToggles.invoiceStatementAutomation`.
