@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import path from 'path';
+import { inflateSync } from 'node:zlib';
 
 import {
   buildMonthlyStatementDeps,
@@ -201,7 +202,7 @@ const TEMPLATE_FIXTURE = {
 };
 
 const TRANSPARENT_PNG_DATA_URI =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=';
 
 function makeFs({ miniChart = null, footer = Buffer.from('FOOT') } = {}) {
   const readFile = vi.fn(async (filePath) => {
@@ -539,6 +540,24 @@ describe('handleMonthlyStatementRoute', () => {
     await handleMonthlyStatementRoute(req, makeRes(), deps);
 
     expect(inputsFrom(deps)['Summary Table']).toBe(TRANSPARENT_PNG_DATA_URI);
+  });
+
+  it('hides the chart area with a genuinely transparent pixel when there is no budget data', async () => {
+    const deps = makeDeps();
+    const req = makeReq();
+    req.body.statementData.budgetCategories = [];
+
+    await handleMonthlyStatementRoute(req, makeRes(), deps);
+
+    // The placeholder exists to make the chart area invisible, so its one
+    // pixel must carry alpha 0. A tinted pixel gets aspect-fit by pdfme into
+    // a large coloured square on every statement generated without a chart.
+    const dataUri = inputsFrom(deps)['Summary Table'];
+    const png = Buffer.from(dataUri.replace('data:image/png;base64,', ''), 'base64');
+    expect(png[25]).toBe(6); // IHDR colour type 6 = RGBA
+    const idat = png.indexOf('IDAT');
+    const raw = inflateSync(png.subarray(idat + 4, idat + 4 + png.readUInt32BE(idat - 4)));
+    expect(raw[4]).toBe(0); // [filter, R, G, B, alpha]
   });
 
   it('falls back to the packaged mini-chart when a category carries a non-zero amount', async () => {

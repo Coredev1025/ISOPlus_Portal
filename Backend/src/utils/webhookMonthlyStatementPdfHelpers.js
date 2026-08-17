@@ -269,7 +269,10 @@ function areAllBudgetCategoriesZero(chartBudgetCats) {
   });
 }
 
-const TRANSPARENT_PNG_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+// A 1x1 RGBA pixel with alpha 0. The previous value here decoded to red at
+// 50% alpha, which pdfme aspect-fit into a large pink square on every
+// statement rendered without a chart image.
+const TRANSPARENT_PNG_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=';
 
 async function resolveSummaryTableImage(chartImage, statementData, deps, req) {
   const { path, fs, info, warn } = deps;
