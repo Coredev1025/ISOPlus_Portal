@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { XERO_DEFAULT_ACCOUNT_CODES } from '../../../src/constants/xeroMapping.js';
 
 // External boundaries only: the ISO+ HTTP API, the Xero SDK, the audit
 // collection, and the two heavy builders that have their own tests. The invoice
@@ -215,14 +216,14 @@ describe('handleXeroInvoicendis', () => {
           quantity: '2.00',
           unitAmount: 67.56,
           taxType: 'EXEMPTOUTPUT',
-          accountCode: '210',
+          accountCode: XERO_DEFAULT_ACCOUNT_CODES.invoice,
         },
         {
           description: '02_051_0108_1_1 Provider travel - 11/03/2025',
           quantity: '1.50',
           unitAmount: 4.5,
           taxType: 'EXEMPTOUTPUT',
-          accountCode: '210',
+          accountCode: XERO_DEFAULT_ACCOUNT_CODES.invoice,
         },
       ],
       date: '2025-03-15',
@@ -418,7 +419,7 @@ describe('handleXeroQuotendis', () => {
       quantity: 3,
       unitAmount: 60.5,
       taxType: 'EXEMPTOUTPUT',
-      accountCode: '210',
+      accountCode: XERO_DEFAULT_ACCOUNT_CODES.invoice,
     }]);
     expect(payload.terms).toContain('Payment Terms: 14 days from invoice date');
     expect(isoplus.setIntegrationMessage).toHaveBeenCalledWith(
@@ -578,7 +579,7 @@ describe('handleXeroInvoicendisInvoiceGenerator', () => {
           quantity: 2,
           unitAmount: 67.56,
           taxType: 'EXEMPTOUTPUT',
-          accountCode: '210',
+          accountCode: XERO_DEFAULT_ACCOUNT_CODES.invoice,
         },
         {
           // Cancelled rows date from the scheduled date instead.
@@ -586,7 +587,7 @@ describe('handleXeroInvoicendisInvoiceGenerator', () => {
           quantity: 1,
           unitAmount: 60,
           taxType: 'EXEMPTOUTPUT',
-          accountCode: '210',
+          accountCode: XERO_DEFAULT_ACCOUNT_CODES.invoice,
         },
       ],
       date: '2025-03-15',
@@ -800,7 +801,7 @@ describe('handleXeroInvoiceParticipantTax', () => {
         quantity: 2,
         unitAmount: 15,
         lineAmount: 30,
-        accountCode: '210',
+        accountCode: XERO_DEFAULT_ACCOUNT_CODES.invoice,
         taxType: 'EXEMPTOUTPUT',
       }],
       date: '2025-03-15T00:00:00Z',
