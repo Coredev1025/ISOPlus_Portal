@@ -72,13 +72,17 @@ function AutomationSection({
           onChange={onChange}
         />
 
-        <div className="my-[18px] h-px bg-border" />
+        {value.enabled ? (
+          <>
+            <div className="my-[18px] h-px bg-border" />
 
-        <AutomationEmailBlock
-          idPrefix={idPrefix}
-          value={value}
-          onChange={onChange}
-        />
+            <AutomationEmailBlock
+              idPrefix={idPrefix}
+              value={value}
+              onChange={onChange}
+            />
+          </>
+        ) : null}
       </Card>
     </section>
   );

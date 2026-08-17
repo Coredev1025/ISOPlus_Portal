@@ -144,6 +144,8 @@ test.describe("Invoice & Statement Automation", () => {
     await page.goto(AUTOMATION_URL);
 
     const invoice = invoiceBlock(page);
+    // Fields only render while generation is enabled (beforeEach resets it off).
+    await invoice.getByRole("switch").click();
     await invoice.getByLabel(/send a copy to/i).fill("not-an-email");
 
     await expect(invoice.getByText(/valid email address/i)).toBeVisible();
@@ -152,6 +154,8 @@ test.describe("Invoice & Statement Automation", () => {
   test("Next Run is read-only — the scheduler owns it", async ({ page }) => {
     await page.goto(AUTOMATION_URL);
 
+    // Fields only render while generation is enabled (beforeEach resets it off).
+    await invoiceBlock(page).getByRole("switch").click();
     const nextRun = invoiceBlock(page).getByLabel(/next run/i);
     await expect(nextRun).toBeVisible();
     await expect(nextRun).toHaveAttribute("readonly", "");

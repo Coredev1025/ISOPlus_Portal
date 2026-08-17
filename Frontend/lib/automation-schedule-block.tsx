@@ -26,6 +26,7 @@ type AutomationFieldProps = Readonly<{
   label: string;
   children: ReactNode;
   hint?: string;
+  className?: string;
 }>;
 
 /** Shared by the schedule and email blocks so both tabs label fields alike. */
@@ -34,9 +35,10 @@ export function AutomationField({
   label,
   children,
   hint,
+  className,
 }: AutomationFieldProps) {
   return (
-    <div className="space-y-1.5">
+    <div className={className ? `space-y-1.5 ${className}` : "space-y-1.5"}>
       <Label
         htmlFor={id}
         className="text-xs font-semibold text-muted-foreground"
@@ -235,6 +237,9 @@ export function AutomationScheduleBlock({
         </Label>
       </div>
 
+      {/* A disabled block sends nothing, so its schedule is noise — the
+          fields only render while generation is on. */}
+      {value.enabled ? (
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <AutomationField id={`${idPrefix}-every-n`} label={label}>
           <div className="flex items-center gap-2">
@@ -295,6 +300,7 @@ export function AutomationScheduleBlock({
           />
         </AutomationField>
       </div>
+      ) : null}
     </div>
   );
 }

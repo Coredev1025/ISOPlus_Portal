@@ -97,7 +97,7 @@ describe('InvoiceStatementAutomationPanel', () => {
 
   it('shows Next Run read-only, with an em dash when there is no next run', async () => {
     fetchMock.mockResolvedValue(
-      settings({ enabled: true, nextRun: '2026-09-01T12:00:00.000Z' })
+      settings({ enabled: true, nextRun: '2026-09-01T12:00:00.000Z' }, { enabled: true })
     );
     await renderPanel();
 
@@ -132,7 +132,9 @@ describe('InvoiceStatementAutomationPanel', () => {
   it('renders a server ISO startDate as a yyyy-mm-dd date input value', async () => {
     // Mongoose stores startDate as a Date, so a GET returns a full ISO
     // instant. <input type="date"> silently blanks anything but yyyy-mm-dd.
-    fetchMock.mockResolvedValue(settings({ startDate: '2026-03-01T00:00:00.000Z' }));
+    fetchMock.mockResolvedValue(
+      settings({ enabled: true, startDate: '2026-03-01T00:00:00.000Z' })
+    );
     await renderPanel();
 
     expect(within(invoiceSection()).getByLabelText(/start date/i)).toHaveValue(
@@ -141,6 +143,7 @@ describe('InvoiceStatementAutomationPanel', () => {
   });
 
   it('leaves the date input empty when there is no start date', async () => {
+    fetchMock.mockResolvedValue(settings({ enabled: true }));
     await renderPanel();
 
     expect(within(invoiceSection()).getByLabelText(/start date/i)).toHaveValue('');
@@ -207,6 +210,7 @@ describe('InvoiceStatementAutomationPanel', () => {
 
   it('resets Run On to the new unit default when the unit changes', async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
+    fetchMock.mockResolvedValue(settings({ enabled: true }));
     await renderPanel();
 
     const invoice = within(invoiceSection());
@@ -224,6 +228,7 @@ describe('InvoiceStatementAutomationPanel', () => {
 
   it('hides Run On entirely for a daily schedule', async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
+    fetchMock.mockResolvedValue(settings({ enabled: true }));
     await renderPanel();
 
     await user.click(
@@ -238,6 +243,7 @@ describe('InvoiceStatementAutomationPanel', () => {
 
   it('offers a month and a day for a yearly schedule', async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
+    fetchMock.mockResolvedValue(settings({ enabled: true }));
     await renderPanel();
 
     await user.click(
@@ -256,6 +262,7 @@ describe('InvoiceStatementAutomationPanel', () => {
 
   it('flags an invalid email address inline and clears the flag when fixed', async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
+    fetchMock.mockResolvedValue(settings({ enabled: true }));
     await renderPanel();
 
     const replyTo = within(invoiceSection()).getByLabelText(/reply-to email/i);
@@ -302,5 +309,34 @@ describe('InvoiceStatementAutomationPanel', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Sender identity is not verified'
     );
+  });
+
+  it('renders Email Message as a full-width multiline textarea', async () => {
+    fetchMock.mockResolvedValue(settings({ enabled: true }, { enabled: true }));
+    await renderPanel();
+
+    for (const section of [invoiceSection(), statementSection()]) {
+      const message = within(section).getByLabelText(/email message/i);
+      // A one-line third-width input truncates any real message; the field is
+      // a textarea spanning the grid so the text stays readable while editing.
+      expect(message.tagName).toBe('TEXTAREA');
+      expect(message.closest('.md\\:col-span-3')).not.toBeNull();
+    }
+  });
+
+  it('hides the schedule and email fields until automatic generation is enabled', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    await renderPanel();
+
+    const section = invoiceSection();
+    expect(within(section).queryByLabelText(/run on/i)).not.toBeInTheDocument();
+    expect(
+      within(section).queryByLabelText(/reply-to email/i)
+    ).not.toBeInTheDocument();
+
+    await user.click(within(section).getByRole('switch'));
+
+    expect(within(section).getByLabelText(/run on/i)).toBeInTheDocument();
+    expect(within(section).getByLabelText(/reply-to email/i)).toBeInTheDocument();
   });
 });

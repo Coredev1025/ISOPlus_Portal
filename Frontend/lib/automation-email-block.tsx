@@ -1,6 +1,7 @@
 "use client";
 
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   EMAIL_TEXT_FIELDS,
   RECIPIENT_OPTIONS,
@@ -17,6 +18,7 @@ type EmailTextFieldProps = Readonly<{
   label: string;
   value: string;
   isEmail: boolean;
+  multiline: boolean;
   onChange: (next: string) => void;
 }>;
 
@@ -25,20 +27,38 @@ function EmailTextField({
   label,
   value,
   isEmail,
+  multiline,
   onChange,
 }: EmailTextFieldProps) {
   const invalid = isEmail && value !== "" && !EMAIL_PATTERN.test(value);
   const errorId = `${id}-error`;
+  const inputProps = {
+    id,
+    value,
+    "aria-invalid": invalid || undefined,
+    "aria-describedby": invalid ? errorId : undefined,
+  };
 
   return (
-    <AutomationField id={id} label={label}>
-      <Input
-        id={id}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        aria-invalid={invalid || undefined}
-        aria-describedby={invalid ? errorId : undefined}
-      />
+    // Body text truncates in a third-width one-liner, so a multiline field
+    // spans the grid and grows to a textarea.
+    <AutomationField
+      id={id}
+      label={label}
+      className={multiline ? "md:col-span-3" : undefined}
+    >
+      {multiline ? (
+        <Textarea
+          {...inputProps}
+          rows={3}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      ) : (
+        <Input
+          {...inputProps}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
       {invalid ? (
         <p id={errorId} className="text-[11px] text-destructive">
           Enter a valid email address.
@@ -98,6 +118,7 @@ export function AutomationEmailBlock({
           label={field.label}
           value={value[field.key]}
           isEmail={field.isEmail}
+          multiline={field.multiline}
           onChange={setText(field.key)}
         />
       ))}

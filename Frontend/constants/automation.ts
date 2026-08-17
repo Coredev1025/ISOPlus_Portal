@@ -65,14 +65,16 @@ export const UNIT_OPTIONS = [
  * The free-text fields of the email block, in render order. `isEmail` is what
  * selects a field for `EMAIL_PATTERN`; the three address-valued fields are the
  * same three the backend validates in `parseAutomationSettingsBody`.
+ * `multiline` renders the field as a grid-spanning textarea instead of a
+ * one-line input — body text truncates in a third-width input.
  *
  * Touchpoints: lib/automation-email-block.tsx (field list and validation). Keys
  * are `AutomationBlock` field names.
  */
 export const EMAIL_TEXT_FIELDS = [
-  { key: "sendCopyTo", id: "send-copy-to", label: "Send a Copy To", isEmail: true },
-  { key: "replyTo", id: "reply-to", label: "Reply-to Email", isEmail: true },
-  { key: "emailFrom", id: "email-from", label: "Email From", isEmail: true },
-  { key: "emailSubject", id: "email-subject", label: "Email Subject", isEmail: false },
-  { key: "emailMessage", id: "email-message", label: "Email Message", isEmail: false },
+  { key: "sendCopyTo", id: "send-copy-to", label: "Send a Copy To", isEmail: true, multiline: false },
+  { key: "replyTo", id: "reply-to", label: "Reply-to Email", isEmail: true, multiline: false },
+  { key: "emailFrom", id: "email-from", label: "Email From", isEmail: true, multiline: false },
+  { key: "emailSubject", id: "email-subject", label: "Email Subject", isEmail: false, multiline: false },
+  { key: "emailMessage", id: "email-message", label: "Email Message", isEmail: false, multiline: true },
 ] as const;
