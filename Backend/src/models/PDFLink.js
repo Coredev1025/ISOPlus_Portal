@@ -31,6 +31,14 @@ const PDFLinkSchema = new Schema({
         type: String,
         default: ""
     },
+    // Written by the automation generators only. Without it a slot lookup keyed
+    // on workspace + periodKey matches every board fanned out on that slot, and
+    // one board's invoices are returned (and emailed) as another's. Optional
+    // because the UI generators and webhook paths do not set it.
+    boardId: { type: String },
+    // The invoice's participant, kept so a re-run that reads this row instead of
+    // the generator list can still resolve the email's {{client_name}}.
+    participant: { type: String },
     periodKey: { type: String },
     invoiceNumber: { type: String },
     xeroInvoiceId: { type: String },

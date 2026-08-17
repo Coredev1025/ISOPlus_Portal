@@ -10,12 +10,15 @@ import Item from '../../models/Item.js';
 import PDFLink from '../../models/PDFLink.js';
 import {
   GENERATOR_LIST_LIMIT,
-  INVOICE_NUMBER_TYPE_PDF,
   PDFLINK_TYPE_AGE_CARE_INVOICE,
   PDFLINK_TYPE_NDIS_INVOICE,
 } from '../../constants/automation.js';
 import { automationPeriodKey } from '../../utils/automationPeriodKey.js';
-import { isNdisBoardLabel } from '../../utils/automationBoardFlags.js';
+import {
+  isCareManagementLabel,
+  isLowCatCareManagementLabel,
+  isNdisBoardLabel,
+} from '../../utils/automationBoardFlags.js';
 import { invoiceDatesFromSlot } from '../../utils/automationInvoiceDates.js';
 import { groupItemIdsByParticipant } from '../../utils/automationInvoiceGrouping.js';
 import { schedulePeriodServiceDeliveryWindow } from '../../utils/automationScheduleWindow.js';
@@ -58,18 +61,35 @@ function uniquePdfResults(links) {
   for (const link of links) {
     if (!link?.pdfLink || seen.has(link.pdfLink)) continue;
     seen.add(link.pdfLink);
-    results.push({
+    const row = {
       itemId: link.itemId,
       invoiceNumber: link.invoiceNumber,
       pdfUrl: link.pdfLink,
-    });
+    };
+    // Absent rather than empty when unknown: the worker only sets a template
+    // var for a value that exists, so {{client_name}} survives verbatim instead
+    // of rendering blank.
+    if (link.participant) row.participant = link.participant;
+    results.push(row);
   }
   return results;
 }
 
-async function existingSlotResults(workspaceId, periodKey, type) {
+/**
+ * The slot's already-generated PDFs for one board.
+ *
+ * `boardId` is matched exactly, which excludes rows written before the field
+ * existed. That is deliberate: a legacy row cannot say which board it came
+ * from, and a legacy row sharing this periodKey is precisely the cross-board
+ * bleed being removed here — treating it as "already generated" is how one
+ * board's invoices ended up attached to another board's email. The cost is that
+ * a slot generated before this change and re-run after it regenerates, which
+ * needs both a pre-change run and a replay of that same minute-resolution slot.
+ */
+async function existingSlotResults(workspaceId, boardId, periodKey, type) {
   const links = await PDFLink.find({
     workspaceId: mongoEq(String(workspaceId)),
+    boardId: mongoEq(String(boardId)),
     periodKey: mongoEq(String(periodKey)),
     type,
   }).lean();
@@ -77,14 +97,16 @@ async function existingSlotResults(workspaceId, periodKey, type) {
 }
 
 async function recordPdfLinks({
-  workspaceId, itemIds, periodKey, invoiceNumber, pdfUrl, type,
+  workspaceId, boardId, itemIds, periodKey, invoiceNumber, participant, pdfUrl, type,
 }) {
   await Promise.all(itemIds.map((itemId) => PDFLink.create({
     workspaceId,
+    boardId,
     itemId,
     type,
     periodKey,
     invoiceNumber,
+    participant,
     pdfLink: pdfUrl,
     createdBy: '',
     isDeleted: false,
@@ -112,6 +134,16 @@ export async function generateInvoicesForBoard({
       listQuery: invoiceGeneratorListQuery(slot, timezone, schedule),
     });
   }
+  // Fail closed, as generateStatements does. A renamed board, an unset label
+  // ('No Label' is the Board default) or a board deleted between fan-out and
+  // processing must not fall through into Age Care participant-tax generation —
+  // that is a different template, different pricing and different GST.
+  if (!isCareManagementLabel(label)) {
+    warn('Automation', 'Board label is not an invoiceable label; skipping', {
+      workspaceId, boardId, label,
+    });
+    return [];
+  }
   return generateAgeCareGeneratorInvoices({
     workspaceId, boardId, periodKey, dates, business, label,
     listQuery: invoiceGeneratorListQuery(slot, timezone, schedule, { status: 'all' }),
@@ -119,7 +151,9 @@ export async function generateInvoicesForBoard({
 }
 
 async function generateNdisGeneratorInvoices({ workspaceId, boardId, periodKey, dates, listQuery }) {
-  const existing = await existingSlotResults(workspaceId, periodKey, PDFLINK_TYPE_NDIS_INVOICE);
+  const existing = await existingSlotResults(
+    workspaceId, boardId, periodKey, PDFLINK_TYPE_NDIS_INVOICE,
+  );
   const listed = await getNdisInvoiceGeneratorData(
     { workspaceId, boardId, query: listQuery, req: null },
     ndisInvoiceGeneratorListDeps(),
@@ -143,9 +177,11 @@ async function generateNdisGeneratorInvoices({ workspaceId, boardId, periodKey, 
     if (generated.empty) continue;
     await recordPdfLinks({
       workspaceId,
+      boardId,
       itemIds: group.itemIds,
       periodKey,
       invoiceNumber: generated.invoiceNumber,
+      participant: group.participant,
       pdfUrl: generated.fileUrl,
       type: PDFLINK_TYPE_NDIS_INVOICE,
     });
@@ -155,14 +191,21 @@ async function generateNdisGeneratorInvoices({ workspaceId, boardId, periodKey, 
     results.push({
       itemId: group.itemIds[0],
       invoiceNumber: generated.invoiceNumber,
+      participant: group.participant,
       pdfUrl: generated.fileUrl,
     });
   }
-  return uniquePdfResults(results.map((row) => ({
+  return uniquePdfResults(toLinkShape(results));
+}
+
+/** Results back into the `{pdfLink}` shape uniquePdfResults reads. */
+function toLinkShape(results) {
+  return results.map((row) => ({
     itemId: row.itemId,
     invoiceNumber: row.invoiceNumber,
+    participant: row.participant,
     pdfLink: row.pdfUrl,
-  })));
+  }));
 }
 
 function captureRes() {
@@ -179,7 +222,9 @@ function captureRes() {
 async function generateAgeCareGeneratorInvoices({
   workspaceId, boardId, periodKey, dates, business, label, listQuery,
 }) {
-  const existing = await existingSlotResults(workspaceId, periodKey, PDFLINK_TYPE_AGE_CARE_INVOICE);
+  const existing = await existingSlotResults(
+    workspaceId, boardId, periodKey, PDFLINK_TYPE_AGE_CARE_INVOICE,
+  );
   const listed = await getInvoiceGeneratorData(
     {
       workspaceId,
@@ -200,7 +245,7 @@ async function generateAgeCareGeneratorInvoices({
   if (groups.length === 0) return existing;
 
   const results = [...existing];
-  const isLowCatBoard = label === 'Care Management - SaH - Low Cat';
+  const isLowCatBoard = isLowCatCareManagementLabel(label);
   for (const group of groups) {
     const dbItems = await Item.find({
       workspaceId: mongoEq(String(workspaceId)),
@@ -223,21 +268,20 @@ async function generateAgeCareGeneratorInvoices({
     if (!body?.fileUrl) continue;
     await recordPdfLinks({
       workspaceId,
+      boardId,
       itemIds: group.itemIds,
       periodKey,
       invoiceNumber: body.invoiceNumber,
+      participant: group.participant,
       pdfUrl: body.fileUrl,
       type: PDFLINK_TYPE_AGE_CARE_INVOICE,
     });
     results.push({
       itemId: group.itemIds[0],
       invoiceNumber: body.invoiceNumber,
+      participant: group.participant,
       pdfUrl: body.fileUrl,
     });
   }
-  return uniquePdfResults(results.map((row) => ({
-    itemId: row.itemId,
-    invoiceNumber: row.invoiceNumber,
-    pdfLink: row.pdfUrl,
-  })));
+  return uniquePdfResults(toLinkShape(results));
 }

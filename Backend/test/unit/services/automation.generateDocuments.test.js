@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import mongoose from 'mongoose';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import Board from '../../../src/models/Board.js';
@@ -14,6 +15,8 @@ import { ndisInvoiceGeneratorListDeps } from '../../../src/utils/automationInvoi
 
 const WS = 'ws-gen';
 const BOARD = 'board-gen';
+const BOARD_B = 'board-gen-b';
+const MASTER_ID_B = 'mp-gen-b-1';
 const SLOT = new Date('2026-08-14T05:09:00.000Z');
 const TZ = 'Australia/Sydney';
 const MONTHLY = { every: { n: 1, unit: 'month' } };
@@ -50,8 +53,12 @@ async function seedNdisGeneratorShift(shift = JULY_SHIFT) {
     workspaceId: WS, boardId: 'cat-board', folderId: 'f-cat', itemId: PP_ID,
     data: { 'Full Name/Preferred Name': 'Samuel Rivers', 'NDIS Number': '430123456' },
   });
+  await seedMasterShift(BOARD, MASTER_ID, shift);
+}
+
+async function seedMasterShift(boardId, itemId, shift = JULY_SHIFT) {
   await Item.create({
-    workspaceId: WS, boardId: BOARD, folderId: 'f-master', itemId: MASTER_ID,
+    workspaceId: WS, boardId, folderId: 'f-master', itemId,
     data: {
       'Timesheet Approval': 'Approved',
       'Job Status': 'Completed',
@@ -80,7 +87,7 @@ describe('generateInvoicesForBoard — Invoice Generator pipeline', () => {
 
     await Promise.all([
       Business.deleteMany({ workspaceId: WS }),
-      Board.deleteMany({ boardId: BOARD }),
+      Board.deleteMany({ workspaceId: WS }),
       Item.deleteMany({ workspaceId: WS }),
       InvoiceNumber.deleteMany({ workspaceId: WS }),
       PDFLink.deleteMany({ workspaceId: WS }),
@@ -111,7 +118,7 @@ describe('generateInvoicesForBoard — Invoice Generator pipeline', () => {
     rmSync(root, { recursive: true, force: true });
     await Promise.all([
       Business.deleteMany({ workspaceId: WS }),
-      Board.deleteMany({ boardId: BOARD }),
+      Board.deleteMany({ workspaceId: WS }),
       Item.deleteMany({ workspaceId: WS }),
       InvoiceNumber.deleteMany({ workspaceId: WS }),
       PDFLink.deleteMany({ workspaceId: WS }),
@@ -215,5 +222,156 @@ describe('generateInvoicesForBoard — Invoice Generator pipeline', () => {
     expect(await InvoiceNumber.countDocuments({ workspaceId: WS, type: 'PDF' })).toBe(1);
     const business = await Business.findOne({ workspaceId: WS }).lean();
     expect(business.documentNumbering.invoice.nextNumber).toBe(501);
+  });
+
+  it('carries the participant so the email can resolve {{client_name}}', async () => {
+    await seedNdisGeneratorShift();
+
+    const results = await generateInvoicesForBoard({
+      workspaceId: WS, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: '20260814-1509',
+      schedule: MONTHLY,
+    });
+
+    expect(results[0].participant).toBe('Samuel Rivers');
+
+    // The re-run reads PDFLink rather than the generator list, so the name has
+    // to be on the stored row too — otherwise a retry emails {{client_name}}.
+    const again = await generateInvoicesForBoard({
+      workspaceId: WS, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: '20260814-1509',
+      schedule: MONTHLY,
+    });
+    expect(again[0].participant).toBe('Samuel Rivers');
+  });
+
+  describe('per-board isolation at one periodKey', () => {
+    // Fan-out enqueues every board in the workspace against the same slot, so
+    // two boards reach this code with an identical workspaceId + periodKey.
+    beforeEach(async () => {
+      await Board.create({
+        workspaceId: WS, boardId: BOARD_B, name: 'NDIS Board B', label: 'Care Management - NDIS',
+      });
+      await seedNdisGeneratorShift();
+    });
+
+    it('does not return board A PDFs from board B on an ordinary first run', async () => {
+      await seedMasterShift(BOARD_B, MASTER_ID_B);
+
+      const a = await generateInvoicesForBoard({
+        workspaceId: WS, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: '20260814-1509',
+        schedule: MONTHLY,
+      });
+      const b = await generateInvoicesForBoard({
+        workspaceId: WS, boardId: BOARD_B, slot: SLOT, timezone: TZ, periodKey: '20260814-1509',
+        schedule: MONTHLY,
+      });
+
+      expect(a).toHaveLength(1);
+      expect(b).toHaveLength(1);
+      expect(b[0].itemId).toBe(MASTER_ID_B);
+      expect(b.map((row) => row.pdfUrl)).not.toContain(a[0].pdfUrl);
+
+      const link = await PDFLink.findOne({ workspaceId: WS, itemId: MASTER_ID_B }).lean();
+      expect(link.boardId).toBe(BOARD_B);
+    });
+
+    it('returns nothing for a board with nothing to bill, not the other board PDFs', async () => {
+      const a = await generateInvoicesForBoard({
+        workspaceId: WS, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: '20260814-1509',
+        schedule: MONTHLY,
+      });
+      expect(a).toHaveLength(1);
+
+      const b = await generateInvoicesForBoard({
+        workspaceId: WS, boardId: BOARD_B, slot: SLOT, timezone: TZ, periodKey: '20260814-1509',
+        schedule: MONTHLY,
+      });
+      expect(b).toEqual([]);
+    });
+  });
+
+  describe('board label routing', () => {
+    // A renamed board, an unset label, or a board deleted between fan-out and
+    // processing must not silently fall through into the other product's
+    // generator — different template, different pricing, different GST.
+    it.each(['No Label', '', 'Support Coordination'])(
+      'generates nothing for an unrecognised label %j',
+      async (label) => {
+        await Board.updateOne({ boardId: BOARD }, { $set: { label } });
+        await seedNdisGeneratorShift();
+
+        const results = await generateInvoicesForBoard({
+          workspaceId: WS, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: '20260814-1509',
+          schedule: MONTHLY,
+        });
+
+        expect(results).toEqual([]);
+        expect(await InvoiceNumber.countDocuments({ workspaceId: WS })).toBe(0);
+        expect(await PDFLink.countDocuments({ workspaceId: WS })).toBe(0);
+      },
+    );
+
+    it('generates nothing when the board no longer exists', async () => {
+      await Board.deleteMany({ boardId: BOARD });
+      await seedNdisGeneratorShift();
+
+      const results = await generateInvoicesForBoard({
+        workspaceId: WS, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: '20260814-1509',
+        schedule: MONTHLY,
+      });
+
+      expect(results).toEqual([]);
+      expect(await InvoiceNumber.countDocuments({ workspaceId: WS })).toBe(0);
+    });
+  });
+});
+
+describe('pdflink-scheduled-xero-ids migration', () => {
+  const INDEX_NAME = 'automation_slot_lookup';
+
+  async function loadMigration() {
+    return import('../../../migrations/1786697189409-pdflink-scheduled-xero-ids.js');
+  }
+
+  afterEach(async () => {
+    await mongoose.connection.collection('pdflinks').deleteMany({});
+  });
+
+  it('up creates the index the automation slot lookup depends on', async () => {
+    const { up } = await loadMigration();
+    await up(mongoose.connection);
+
+    const indexes = await mongoose.connection.collection('pdflinks').indexes();
+    expect(indexes.map((index) => index.name)).toContain(INDEX_NAME);
+  });
+
+  it('down drops that index and only unsets rows an automation run wrote', async () => {
+    const { up, down } = await loadMigration();
+    await up(mongoose.connection);
+
+    const collection = mongoose.connection.collection('pdflinks');
+    await collection.insertMany([
+      {
+        workspaceId: 'ws-mig', itemId: 'i-auto', type: 'NDIS Invoice',
+        pdfLink: 'https://x/auto.pdf', periodKey: '20260814-1509', invoiceNumber: 'IN-9',
+      },
+      {
+        workspaceId: 'ws-mig', itemId: 'i-manual', type: 'NDIS Invoice',
+        pdfLink: 'https://x/manual.pdf', invoiceNumber: 'IN-8',
+      },
+    ]);
+
+    await down(mongoose.connection);
+
+    const indexes = await collection.indexes();
+    expect(indexes.map((index) => index.name)).not.toContain(INDEX_NAME);
+
+    const auto = await collection.findOne({ itemId: 'i-auto' });
+    expect(auto.periodKey).toBeUndefined();
+    expect(auto.invoiceNumber).toBeUndefined();
+
+    // The UI generators write invoiceNumber with no periodKey. A blanket
+    // updateMany({}) would strip theirs too.
+    const manual = await collection.findOne({ itemId: 'i-manual' });
+    expect(manual.invoiceNumber).toBe('IN-8');
   });
 });
