@@ -6,6 +6,9 @@ description: >-
   tab, forcing a scheduler tick, checking a ScheduledJob is claimed and
   advanced, confirming per-board fan-out and idempotent jobIds in Bull Board,
   or when asked whether an automation run reached PDF, email or Xero. Also use
+  when asked to prove the generated invoices or statements are populated rather
+  than blank, to check an email is not carrying another board's documents, or
+  to export a run's PDFs and composed emails somewhere reviewable. Also use
   when driving board `eNiJpH14PN3` / workspace `55369` (Care Management NDIS
   2026 Pricing) locally, or replaying its ISO+ webhook bodies.
 ---
@@ -343,6 +346,46 @@ worker completes them so BullMQ does not retry against a transport that does
 not exist. An empty outbox with completed jobs means the settings block is
 disabled, or the backend is not in offline mode.
 
+### 11. Check what the run actually produced
+
+A green tick says a job was dispatched, not that anything usable came out of
+it. Two failures survive `claimed=2 dispatched=2 failed=0`: a PDF that
+rendered its template — every rule, heading and total line in place — with no
+values on it, and an email carrying a **different board's** documents. Neither
+is visible in file sizes; a blank statement still weighs ~230 kB.
+
+```bash
+cd Backend
+node scripts/verify-automation-output.mjs                       # check only
+node scripts/verify-automation-output.mjs --out ~/Desktop/run   # check + export
+```
+
+It reads the offline store the worker wrote to, and **exits non-zero** when a
+PDF carries no embedded text, when an email attaches another board's PDFs, or
+when the run produced nothing at all — that last one because "none of the zero
+PDFs were blank" passes every other check trivially.
+
+```
+workspace 55390: 16 PDFs (7 invoices, 9 statements), 8 emails
+PASS
+```
+
+`--workspace <id>` for anything other than 55390. `--out <dir>` also copies the
+PDFs and emails there with `verification.json`, a README table of per-file text
+volume, and **page 1 of every PDF as a PNG** so a blank page is visible without
+opening sixteen files (that step needs macOS `sips`; elsewhere it is skipped
+and said so, and the checks still run).
+
+The text-volume measure is the load-bearing part: it counts characters inside
+the PDF's text-showing operators, and it reads the **hex** strings pdfme emits
+for embedded subset fonts as well as literal ones — a checker that understood
+only literals would report every real invoice as blank. The pure half lives in
+`Backend/scripts/verifyAutomationShape.mjs` with unit tests, including one that
+pins a page of lines and boxes as zero.
+
+What a populated run looks like, for comparison: NDIS invoices ~2.6-3.1k text
+characters, Age Care ~3.6k, 14-page statements ~48k.
+
 ### Track A quick reference
 
 | Symptom | Cause |
@@ -353,6 +396,9 @@ disabled, or the backend is not in offline mode.
 | Schedule fires, warn "no enabled settings" | settings deleted/disabled; a no-op by design, never throws |
 | Two jobs per board | real defect — the periodKey is being derived from `now` |
 | Jobs pile up `waiting` | automation worker not started |
+| Tick green, nothing generated | `AUTOMATION_ENABLED` unset — the pipeline is gated off by default |
+| PDFs generated but blank | real defect — run step 11; the source rows resolved no values |
+| An email lists another board's PDFs | real defect — a PDF lookup lost its `boardId` scope |
 
 ## Track B — the path that does reach Xero
 
