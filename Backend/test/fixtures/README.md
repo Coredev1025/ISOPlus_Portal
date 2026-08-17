@@ -205,3 +205,20 @@ Replication mechanics worth knowing:
   which is why that attribute is deliberately absent.
 - Approved NDIS rows reference zero-priced plans, so a scheduler tick over
   this data lists rows but can never mint an invoice.
+
+## `care-management-statement-permutations.json`
+
+**Full Monthly-Statement-picker coverage for workspace `55390`**: one delivered
+service row per (board, participant, year 2022–2026, month), 540 rows total, so
+every Participant × Month × Year combination the picker offers loads a
+non-empty statement on all three Care Management boards. Amounts vary
+deterministically per permutation (90/10 gov/participant split).
+
+Composable with either 55390 fixture — ids are disjoint (`55390e00-` prefix)
+and its profiles/plans/funding sources are self-contained. No row carries
+`Timesheet Approval`, so no invoice path can ever bill them; they do appear in
+the offline invoice-generator lists (offline mode has no ISO+ folder filter).
+The route only month-filters when the caller passes `startDate`/`endDate` —
+the UI always does; month/year alone returns the participant's full history.
+Years mirror the 2026 picker (`currentYear-4 … currentYear`); regenerate the
+file when 2022 falls off the dropdown.
