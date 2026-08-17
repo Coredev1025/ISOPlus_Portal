@@ -64,7 +64,7 @@ describe('Business routes', () => {
       expect.arrayContaining([
         expect.objectContaining({
           action: 'Connected Xero',
-          category: 'xero',
+          category: 'Xero',
           success: true,
         }),
       ])

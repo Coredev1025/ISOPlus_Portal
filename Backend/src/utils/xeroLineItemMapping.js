@@ -1,3 +1,5 @@
+import { XERO_DEFAULT_ACCOUNT_CODES } from '../constants/xeroMapping.js';
+
 export const XERO_DOC_TYPES = ['quote', 'purchaseOrder', 'invoice'];
 
 export const XERO_QUOTE_OVERRIDE_KINDS = ['quoteService', 'material'];
@@ -114,7 +116,10 @@ export function resolveLineItemTax(business, docType, gstValue, lineKind, option
   const taxType = mappedTaxType || resolveUnmappedTaxType(docType, gstValue, options);
 
   return {
-    accountCode: cleanString(mapping.accountCode) || undefined,
+    accountCode:
+      cleanString(mapping.accountCode)
+      || XERO_DEFAULT_ACCOUNT_CODES[docType]
+      || undefined,
     taxType: taxType || undefined,
   };
 }
@@ -136,7 +141,7 @@ function resolveFallbackAccountCode(accounts, options = {}) {
   if (Object.hasOwn(options, 'defaultAccountCode')) {
     return options.defaultAccountCode || undefined;
   }
-  return '200';
+  return XERO_DEFAULT_ACCOUNT_CODES.invoice;
 }
 
 export function resolveSalesLineMapping(

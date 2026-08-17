@@ -8,6 +8,7 @@ import {
   processParallel,
   getFrontendBaseUrl,
   getOAuthStateExpiresIn,
+  getAllowedOrigins,
   signOAuthState,
   verifyOAuthState,
 } from '../../../src/utils/helpers.js';
@@ -104,6 +105,11 @@ describe('frontend url and oauth state', () => {
     delete process.env.FRONTEND_URL;
     process.env.ALLOWED_ORIGINS = 'https://a.com, https://b.com';
     expect(getFrontendBaseUrl()).toBe('https://a.com');
+  });
+
+  it('getAllowedOrigins strips trailing slashes', () => {
+    process.env.ALLOWED_ORIGINS = 'https://a.com/, http://b.com';
+    expect(getAllowedOrigins()).toEqual(['https://a.com', 'http://b.com']);
   });
 
   it('signs and verifies oauth state', () => {

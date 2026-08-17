@@ -1,3 +1,10 @@
+import {
+  XERO_DEFAULT_COGS_ACCOUNT_CODE,
+  XERO_DEFAULT_EXPENSE_TAX_TYPE,
+  XERO_DEFAULT_INCOME_TAX_TYPE,
+  XERO_DEFAULT_SALES_ACCOUNT_CODE,
+} from "@/constants/xeroMapping";
+
 export type XeroAccountOption = {
   code: string;
   name: string;
@@ -30,30 +37,43 @@ export type XeroLineItemMapping = {
   quoteOverrides: Record<XeroQuoteOverrideKind, XeroDocMapping>;
 };
 
-const EMPTY_DOC: XeroDocMapping = {
-  accountCode: "",
-  taxType: "",
-  taxRatePercent: null
+const DEFAULT_SALES_DOC: XeroDocMapping = {
+  accountCode: XERO_DEFAULT_SALES_ACCOUNT_CODE,
+  taxType: XERO_DEFAULT_INCOME_TAX_TYPE,
+  taxRatePercent: null,
+};
+
+const DEFAULT_EXPENSE_DOC: XeroDocMapping = {
+  accountCode: XERO_DEFAULT_COGS_ACCOUNT_CODE,
+  taxType: XERO_DEFAULT_EXPENSE_TAX_TYPE,
+  taxRatePercent: null,
 };
 
 export const EMPTY_LINE_ITEM_MAPPING: XeroLineItemMapping = {
-  quote: { ...EMPTY_DOC },
-  purchaseOrder: { ...EMPTY_DOC },
-  invoice: { ...EMPTY_DOC },
+  quote: { ...DEFAULT_SALES_DOC },
+  purchaseOrder: { ...DEFAULT_EXPENSE_DOC },
+  invoice: { ...DEFAULT_SALES_DOC },
   quoteOverrides: {
-    quoteService: { ...EMPTY_DOC },
-    material: { ...EMPTY_DOC },
+    quoteService: { ...DEFAULT_SALES_DOC },
+    material: { ...DEFAULT_SALES_DOC },
   },
 };
 
-function pickDoc(d?: Partial<XeroDocMapping>): XeroDocMapping {
+function selectedOrDefault(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function pickDoc(
+  d: Partial<XeroDocMapping> | undefined,
+  fallback: XeroDocMapping
+): XeroDocMapping {
   const rate =
     typeof d?.taxRatePercent === "number" && Number.isFinite(d.taxRatePercent)
       ? d.taxRatePercent
       : null;
   return {
-    accountCode: d?.accountCode ?? "",
-    taxType: d?.taxType ?? "",
+    accountCode: selectedOrDefault(d?.accountCode, fallback.accountCode),
+    taxType: selectedOrDefault(d?.taxType, fallback.taxType),
     taxRatePercent: rate,
   };
 }
@@ -65,12 +85,12 @@ export function normalizeMapping(raw: unknown): XeroLineItemMapping {
     quoteOverrides?: Partial<Record<XeroQuoteOverrideKind, Partial<XeroDocMapping>>>;
   };
   return {
-    quote: pickDoc(m.quote),
-    purchaseOrder: pickDoc(m.purchaseOrder),
-    invoice: pickDoc(m.invoice),
+    quote: pickDoc(m.quote, DEFAULT_SALES_DOC),
+    purchaseOrder: pickDoc(m.purchaseOrder, DEFAULT_EXPENSE_DOC),
+    invoice: pickDoc(m.invoice, DEFAULT_SALES_DOC),
     quoteOverrides: {
-      quoteService: pickDoc(m.quoteOverrides?.quoteService),
-      material: pickDoc(m.quoteOverrides?.material),
+      quoteService: pickDoc(m.quoteOverrides?.quoteService, DEFAULT_SALES_DOC),
+      material: pickDoc(m.quoteOverrides?.material, DEFAULT_SALES_DOC),
     },
   };
 }

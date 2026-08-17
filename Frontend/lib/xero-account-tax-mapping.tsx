@@ -19,6 +19,11 @@ import {
   showSaveSuccessToast,
 } from "@/lib/toast-utils";
 import {
+  isCanceledError,
+  isExpectedMissingIntegrationData,
+  xeroOptionsLoadDescription,
+} from "@/lib/xero-integration-errors";
+import {
   normalizeMapping,
   prepareMappingForSave,
   taxRatesForAccount,
@@ -291,13 +296,15 @@ export function XeroAccountTaxMapping({
         setTaxRates(response.data?.taxRates || []);
       } catch (error: unknown) {
         if (cancelled) return;
-        const err = error as { name?: string; response?: { data?: { message?: string } } };
-        if (err.name === "CanceledError" || err.name === "AbortError") return;
+        if (isCanceledError(error)) return;
+        if (isExpectedMissingIntegrationData(error)) {
+          setAccounts([]);
+          setTaxRates([]);
+          return;
+        }
         onOptionsLoadFailedRef.current?.();
         showErrorToast("Failed to load Xero accounts/tax rates", {
-          description:
-            err.response?.data?.message ||
-            "Disconnect and Connect Xero again, then select an organisation.",
+          description: xeroOptionsLoadDescription(error),
         });
       } finally {
         if (!cancelled) setIsLoadingOptions(false);

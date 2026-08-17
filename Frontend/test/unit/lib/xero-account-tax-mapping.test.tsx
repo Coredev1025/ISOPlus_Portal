@@ -129,6 +129,53 @@ describe('XeroAccountTaxMapping', () => {
     });
   });
 
+  it('does not toast Not Found when Xero chart data is missing', async () => {
+    const onOptionsLoadFailed = vi.fn();
+    (axios.get as ReturnType<typeof vi.fn>).mockRejectedValue({
+      name: 'Error',
+      response: { status: 400, data: { message: 'Xero integration not found' } },
+    });
+
+    render(
+      <XeroAccountTaxMapping
+        workspaceId="ws-1"
+        isConnected
+        initialMapping={EMPTY_LINE_ITEM_MAPPING}
+        onMappingSaved={vi.fn()}
+        onOptionsLoadFailed={onOptionsLoadFailed}
+      />
+    );
+
+    await waitFor(() => expect(axios.get).toHaveBeenCalled());
+    expect(showErrorToast).not.toHaveBeenCalled();
+    expect(onOptionsLoadFailed).not.toHaveBeenCalled();
+  });
+
+  it('toasts when loading Xero accounts times out', async () => {
+    (axios.get as ReturnType<typeof vi.fn>).mockRejectedValue({
+      code: 'ECONNABORTED',
+      message: 'timeout of 15000ms exceeded',
+    });
+
+    render(
+      <XeroAccountTaxMapping
+        workspaceId="ws-1"
+        isConnected
+        initialMapping={EMPTY_LINE_ITEM_MAPPING}
+        onMappingSaved={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(showErrorToast).toHaveBeenCalledWith(
+        'Failed to load Xero accounts/tax rates',
+        expect.objectContaining({
+          description: expect.stringMatching(/timed out/i),
+        })
+      );
+    });
+  });
+
   it('toasts when save mapping fails', async () => {
     const user = userEvent.setup();
     (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: OPTIONS });

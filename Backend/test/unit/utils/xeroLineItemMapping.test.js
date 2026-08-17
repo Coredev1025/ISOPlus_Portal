@@ -55,19 +55,19 @@ describe('xeroLineItemMapping', () => {
 
   it('resolveLineItemTax uses board GST when mapping taxType is unset', () => {
     expect(resolveLineItemTax({}, 'invoice', '10%')).toEqual({
-      accountCode: undefined,
+      accountCode: '200',
       taxType: 'OUTPUT',
     });
     expect(resolveLineItemTax({}, 'invoice', 'GST Free')).toEqual({
-      accountCode: undefined,
+      accountCode: '200',
       taxType: 'EXEMPTOUTPUT',
     });
     expect(resolveLineItemTax({}, 'invoice', '0%')).toEqual({
-      accountCode: undefined,
+      accountCode: '200',
       taxType: 'EXEMPTOUTPUT',
     });
     expect(resolveLineItemTax({}, 'purchaseOrder', 'GST Free')).toEqual({
-      accountCode: undefined,
+      accountCode: '310',
       taxType: 'EXEMPTEXPENSES',
     });
   });
@@ -141,10 +141,10 @@ describe('xeroLineItemMapping', () => {
 
     expect(
       resolveSalesLineMapping({}, 'invoice', 'GST Free', accounts)
-    ).toEqual({ accountCode: '210', taxType: 'EXEMPTOUTPUT' });
+    ).toEqual({ accountCode: '200', taxType: 'EXEMPTOUTPUT' });
   });
 
-  it('resolveSalesLineMapping does not invent revenue 200 for purchase orders', () => {
+  it('resolveSalesLineMapping uses COGS 310 for purchase orders when no mapping is selected', () => {
     expect(
       resolveSalesLineMapping(
         {},
@@ -154,18 +154,7 @@ describe('xeroLineItemMapping', () => {
         undefined,
         { fallbackAccountType: 'EXPENSE', defaultAccountCode: undefined }
       )
-    ).toEqual({ accountCode: undefined, taxType: 'INPUT' });
-
-    expect(
-      resolveSalesLineMapping(
-        {},
-        'purchaseOrder',
-        '10%',
-        [{ Type: 'EXPENSE', Code: '400' }],
-        undefined,
-        { fallbackAccountType: 'EXPENSE', defaultAccountCode: undefined }
-      )
-    ).toEqual({ accountCode: '400', taxType: 'INPUT' });
+    ).toEqual({ accountCode: '310', taxType: 'INPUT' });
   });
 
   it('exports tax-free defaults for invoice and purchaseOrder', () => {

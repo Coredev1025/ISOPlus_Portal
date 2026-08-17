@@ -17,6 +17,7 @@ import {
 } from '../services/xero.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
 import { logXeroAudit } from '../utils/xeroAuditHelpers.js';
+import { saveConnectedXeroBusiness, resolveConnectTenantId } from '../utils/xeroConnectHelpers.js';
 import { collectBusinessProfileErrors } from '../validators/businessProfile.js';
 import { toRequiredQueryString } from '../utils/securityHelpers.js';
 import {
@@ -324,70 +325,28 @@ router.get('/qr-logo', authenticateToken, async (req, res) => {
   }
 });
 
-function resolveConnectTenantId(body) {
-  const fromBody = typeof body?.tenantId === 'string' ? body.tenantId.trim() : '';
-  if (fromBody) return fromBody;
-  const fromOrg =
-    typeof body?.organization?.organisationId === 'string'
-      ? body.organization.organisationId.trim()
-      : '';
-  return fromOrg || null;
-}
-
 router.post('/xero/connect', authenticateToken, async (req, res) => {
   try {
     const workspaceId = toRequiredQueryString(req.body.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
     const { tokens, organization } = req.body;
-    if (!tokens?.access_token || !tokens?.refresh_token) {
+    const saved = await saveConnectedXeroBusiness({
+      workspaceId,
+      tokens,
+      organization,
+      tenantId: resolveConnectTenantId(req.body),
+      req,
+    });
+    if (saved.error === 'missing_tokens') {
       return res.status(400).json({ message: 'Xero tokens are required' });
     }
-    const xeroTenantId = resolveConnectTenantId(req.body);
-    if (!xeroTenantId) {
+    if (saved.error === 'no_organisation') {
       return res.status(400).json({
         message:
           'No Xero organisation was selected. Please connect again and choose an organisation.',
       });
     }
-
-    const now = new Date();
-    const tokenPayload = {
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresAt: tokens.expires_at,
-      refreshTokenExpiresAt: now.getTime() + 60 * 24 * 60 * 60 * 1000,
-    };
-
-    let business = await Business.findOne({ workspaceId: { $eq: String(workspaceId) } });
-    if (!business) {
-      business = new Business({
-        workspaceId,
-        xeroIntegrated: true,
-        xeroTenantId,
-        xeroTokens: tokenPayload,
-        xeroOrganization: organization || null,
-      });
-      await business.save();
-    } else {
-      business.xeroIntegrated = true;
-      business.xeroTenantId = xeroTenantId;
-      business.xeroTokens = tokenPayload;
-      if (organization) {
-        business.xeroOrganization = organization;
-      }
-      await business.save();
-    }
-
-    info('Business-Service', 'Xero integration connected', { businessId: business._id }, req ?? null);
-    await logXeroAudit({
-      workspaceId,
-      action: 'Connected Xero',
-      detail: 'Xero integration connected',
-      req,
-      entityType: 'Business',
-      entityId: business?._id?.toString(),
-      success: true,
-    });
+    info('Business-Service', 'Xero integration connected', { businessId: saved.business._id }, req ?? null);
     res.json({ success: true });
   } catch (err) {
     error('Business-Service', 'Server error during Xero connection', { message: err.message, stack: err.stack }, req ?? null);

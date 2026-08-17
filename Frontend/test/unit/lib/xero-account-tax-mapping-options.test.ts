@@ -55,11 +55,23 @@ describe('xero-account-tax-mapping-options', () => {
       })
     ).toEqual({
       quote: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: null },
-      purchaseOrder: { accountCode: '', taxType: '', taxRatePercent: null },
-      invoice: { accountCode: '', taxType: '', taxRatePercent: null },
+      purchaseOrder: { accountCode: '310', taxType: 'INPUT', taxRatePercent: null },
+      invoice: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: null },
       quoteOverrides: {
-        quoteService: { accountCode: '', taxType: '', taxRatePercent: null },
-        material: { accountCode: '400', taxType: '', taxRatePercent: null },
+        quoteService: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: null },
+        material: { accountCode: '400', taxType: 'OUTPUT', taxRatePercent: null },
+      },
+    });
+  });
+
+  it('uses Sales 200 / GST on Income and COGS 310 / GST on Expenses when nothing is selected', () => {
+    expect(EMPTY_LINE_ITEM_MAPPING).toEqual({
+      quote: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: null },
+      purchaseOrder: { accountCode: '310', taxType: 'INPUT', taxRatePercent: null },
+      invoice: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: null },
+      quoteOverrides: {
+        quoteService: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: null },
+        material: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: null },
       },
     });
   });

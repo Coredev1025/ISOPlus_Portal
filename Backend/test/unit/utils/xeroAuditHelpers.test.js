@@ -13,7 +13,7 @@ describe('logXeroAudit', () => {
     vi.mocked(logAuditTrail).mockClear();
   });
 
-  it('stamps category xero on every Xero audit event', async () => {
+  it('stamps category Xero on every Xero audit event', async () => {
     await logXeroAudit({
       workspaceId: 'ws-1',
       action: 'Connected Xero',

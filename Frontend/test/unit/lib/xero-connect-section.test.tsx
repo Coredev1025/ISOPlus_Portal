@@ -18,6 +18,15 @@ import axios from '@/app/utils/axiosConfig';
 import { XeroConnectSection } from '@/lib/xero-connect-section';
 import { showErrorToast, showSuccessToast } from '@/lib/toast-utils';
 
+function stubLocationHref() {
+  const location = { href: 'http://localhost/' };
+  Object.defineProperty(window, 'location', {
+    configurable: true,
+    value: location,
+  });
+  return location;
+}
+
 describe('XeroConnectSection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -29,15 +38,14 @@ describe('XeroConnectSection', () => {
     vi.restoreAllMocks();
   });
 
-  it('removes the window message listener on unmount', async () => {
-    const addSpy = vi.spyOn(window, 'addEventListener');
-    const removeSpy = vi.spyOn(window, 'removeEventListener');
-    vi.spyOn(window, 'open').mockReturnValue({ close: vi.fn() } as Window);
+  it('redirects the browser to Xero instead of opening a popup', async () => {
+    const location = stubLocationHref();
+    const openSpy = vi.spyOn(window, 'open');
     (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({
-      data: { url: 'https://xero.example/auth' },
+      data: { url: 'https://login.xero.com/identity/connect/authorize?state=abc' },
     });
 
-    const { unmount } = render(
+    render(
       <XeroConnectSection
         workspaceId="ws-1"
         isConnected={false}
@@ -47,65 +55,17 @@ describe('XeroConnectSection', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /connect xero/i }));
 
-    await vi.waitFor(() => {
-      expect(addSpy).toHaveBeenCalledWith('message', expect.any(Function));
-    });
-
-    const handleMessage = addSpy.mock.calls.find(
-      (call) => call[0] === 'message'
-    )?.[1] as EventListener;
-
-    unmount();
-
-    expect(removeSpy).toHaveBeenCalledWith('message', handleMessage);
-  });
-
-  it('completes OAuth when the popup posts a successful XERO_AUTH message', async () => {
-    const onConnectedChange = vi.fn();
-    const popup = { close: vi.fn() };
-    vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
-    (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({
-      data: { url: 'https://xero.example/auth' },
-    });
-    (axios.post as ReturnType<typeof vi.fn>).mockResolvedValue({ data: {} });
-
-    render(
-      <XeroConnectSection
-        workspaceId="ws-1"
-        isConnected={false}
-        onConnectedChange={onConnectedChange}
-      />
-    );
-
-    await userEvent.click(screen.getByRole('button', { name: /connect xero/i }));
-
-    await waitFor(() => expect(axios.get).toHaveBeenCalled());
-
-    window.dispatchEvent(
-      new MessageEvent('message', {
-        data: {
-          type: 'XERO_AUTH',
-          success: true,
-          tokenSet: { access_token: 't' },
-          organization: { organisationId: 'org-1' },
-          tenants: [{ tenantId: 'tenant-1' }],
-        },
-      })
-    );
-
     await waitFor(() => {
-      expect(axios.post).toHaveBeenCalledWith(
-        'http://localhost:3001/api/business/xero/connect',
-        expect.objectContaining({
-          workspaceId: 'ws-1',
-          tenantId: 'tenant-1',
-        }),
-        expect.any(Object)
+      expect(axios.get).toHaveBeenCalledWith(
+        'http://localhost:3001/api/xero/redirect',
+        expect.objectContaining({ params: { workspaceId: 'ws-1' } })
       );
-      expect(onConnectedChange).toHaveBeenCalledWith(true);
-      expect(showSuccessToast).toHaveBeenCalled();
-      expect(popup.close).toHaveBeenCalled();
     });
+    expect(location.href).toBe(
+      'https://login.xero.com/identity/connect/authorize?state=abc'
+    );
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
   });
 
   it('disconnects and clears connection state', async () => {
@@ -157,7 +117,7 @@ describe('XeroConnectSection', () => {
     });
   });
 
-  it('shows reconnect controls when needsReconnect is true', () => {
+  it('shows Disconnect without a Reconnect button when Xero is already integrated', () => {
     render(
       <XeroConnectSection
         workspaceId="ws-1"
@@ -167,8 +127,97 @@ describe('XeroConnectSection', () => {
       />
     );
 
-    expect(screen.getByText(/no organisation is available/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /reconnect xero/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /disconnect/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /reconnect xero/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /connect xero/i })).not.toBeInTheDocument();
+  });
+
+  it('shows Connect only when Xero is not integrated', () => {
+    render(
+      <XeroConnectSection
+        workspaceId="ws-1"
+        isConnected={false}
+        onConnectedChange={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: /connect xero/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /disconnect/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /reconnect xero/i })).not.toBeInTheDocument();
+  });
+
+  it('does not navigate to an untrusted consent URL', async () => {
+    const location = stubLocationHref();
+    (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { url: 'https://evil.example/phish' },
+    });
+
+    render(
+      <XeroConnectSection
+        workspaceId="ws-1"
+        isConnected={false}
+        onConnectedChange={vi.fn()}
+      />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /connect xero/i }));
+
+    await waitFor(() => {
+      expect(showErrorToast).toHaveBeenCalledWith(
+        'Failed to connect to Xero',
+        expect.objectContaining({ description: 'Invalid Xero redirect URL.' })
+      );
+    });
+    expect(location.href).toBe('http://localhost/');
+  });
+
+  it('toasts a network failure instead of navigating', async () => {
+    const location = stubLocationHref();
+    (axios.get as ReturnType<typeof vi.fn>).mockRejectedValue({
+      message: 'Network Error',
+      response: { data: { message: 'Authentication required' } },
+    });
+
+    render(
+      <XeroConnectSection
+        workspaceId="ws-1"
+        isConnected={false}
+        onConnectedChange={vi.fn()}
+      />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /connect xero/i }));
+
+    await waitFor(() => {
+      expect(showErrorToast).toHaveBeenCalledWith(
+        'Failed to connect to Xero',
+        expect.objectContaining({ description: 'Authentication required' })
+      );
+    });
+    expect(location.href).toBe('http://localhost/');
+  });
+
+  it('does not toast when the connect request is cancelled', async () => {
+    const location = stubLocationHref();
+    (axios.get as ReturnType<typeof vi.fn>).mockRejectedValue({
+      name: 'CanceledError',
+    });
+
+    render(
+      <XeroConnectSection
+        workspaceId="ws-1"
+        isConnected={false}
+        onConnectedChange={vi.fn()}
+      />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /connect xero/i }));
+
+    await waitFor(() => {
+      expect(axios.get).toHaveBeenCalled();
+    });
+    expect(showErrorToast).not.toHaveBeenCalled();
+    expect(location.href).toBe('http://localhost/');
   });
 
   it('toasts when redirect URL is missing', async () => {
@@ -190,91 +239,6 @@ describe('XeroConnectSection', () => {
       expect(showErrorToast).toHaveBeenCalledWith(
         'Failed to connect to Xero',
         expect.objectContaining({ description: 'no redirect' })
-      );
-    });
-  });
-
-  it('uses organisation id when tenants are absent and reports auth failure', async () => {
-    vi.spyOn(window, 'open').mockReturnValue({ close: vi.fn() } as unknown as Window);
-    (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({
-      data: { url: 'https://xero.example/auth' },
-    });
-    (axios.post as ReturnType<typeof vi.fn>).mockRejectedValue({
-      response: { data: { message: 'connect failed' } },
-    });
-
-    render(
-      <XeroConnectSection
-        workspaceId="ws-1"
-        isConnected={false}
-        onConnectedChange={vi.fn()}
-      />
-    );
-
-    await userEvent.click(screen.getByRole('button', { name: /connect xero/i }));
-    await waitFor(() => expect(axios.get).toHaveBeenCalled());
-
-    window.dispatchEvent(
-      new MessageEvent('message', {
-        data: {
-          type: 'XERO_AUTH',
-          success: true,
-          tokenSet: {},
-          organization: { organisationId: 'org-9' },
-        },
-      })
-    );
-
-    await waitFor(() => {
-      expect(axios.post).toHaveBeenCalledWith(
-        'http://localhost:3001/api/business/xero/connect',
-        expect.objectContaining({ tenantId: 'org-9' }),
-        expect.any(Object)
-      );
-      expect(showErrorToast).toHaveBeenCalled();
-    });
-  });
-
-  it('toasts unsuccessful OAuth popup messages and missing tenant', async () => {
-    vi.spyOn(window, 'open').mockReturnValue({ close: vi.fn() } as unknown as Window);
-    (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({
-      data: { url: 'https://xero.example/auth' },
-    });
-
-    render(
-      <XeroConnectSection
-        workspaceId="ws-1"
-        isConnected={false}
-        onConnectedChange={vi.fn()}
-      />
-    );
-
-    await userEvent.click(screen.getByRole('button', { name: /connect xero/i }));
-    await waitFor(() => expect(axios.get).toHaveBeenCalled());
-
-    window.dispatchEvent(
-      new MessageEvent('message', {
-        data: { type: 'XERO_AUTH', success: false },
-      })
-    );
-
-    await waitFor(() => expect(showErrorToast).toHaveBeenCalled());
-
-    await userEvent.click(screen.getByRole('button', { name: /connect xero/i }));
-    await waitFor(() => expect(axios.get).toHaveBeenCalledTimes(2));
-
-    window.dispatchEvent(
-      new MessageEvent('message', {
-        data: { type: 'XERO_AUTH', success: true, tenants: [], organization: {} },
-      })
-    );
-
-    await waitFor(() => {
-      expect(showErrorToast).toHaveBeenCalledWith(
-        'Failed to connect to Xero',
-        expect.objectContaining({
-          description: expect.stringMatching(/no xero organisation/i),
-        })
       );
     });
   });

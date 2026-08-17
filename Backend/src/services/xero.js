@@ -2,10 +2,13 @@ import { XeroClient } from 'xero-node';
 import Business from '../models/Business.js';
 import { error } from '../utils/logger.js';
 import { buildXeroContactErrorMessage } from '../utils/xeroContactErrorHelpers.js';
-import { randomAlphanumeric } from '../utils/securityHelpers.js';
 import {
     IsoPlusInvoiceValues
 } from '../dto/itemsPayload.js';
+import {
+    applyIncomingOAuthStateToXeroClient,
+    buildXeroConsentUrl,
+} from '../utils/xeroOAuthStateHelpers.js';
 
 let xeroClient = null;
 
@@ -32,34 +35,40 @@ export async function configure() {
     }
 }
 
-export async function getAuthUrl() {
+export async function getAuthUrl(workspaceId, frontendOrigin, userId) {
     if (!xeroClient) {
         throw new Error('Xero client is not configured.');
     }
 
-    const scopes = 'openid profile email accounting.settings accounting.contacts accounting.transactions accounting.reports.read accounting.attachments offline_access'.split(" ");
-    const state = randomAlphanumeric(16);
-    const url = await xeroClient.buildConsentUrl(scopes, state);
-    return url;
+    const consentUrl = await xeroClient.buildConsentUrl();
+    return buildXeroConsentUrl(consentUrl, workspaceId, frontendOrigin, userId);
 }
 
 export async function callback(code, url) {
     try {
+        applyIncomingOAuthStateToXeroClient(xeroClient, url);
+        const requestUrl = new URL(url || '', 'https://placeholder.local');
+        if (requestUrl.searchParams.get('error')) {
+            return {
+                success: false,
+                message: 'Xero authorization was denied or could not be completed. Please try again.',
+            };
+        }
         await xeroClient.apiCallback(url);
         const tokenSet = xeroClient.readTokenSet();
         const tenants = await xeroClient.updateTenants(false);
-        
-        // Get organization information
+
         let organizationInfo = null;
         if (tenants && tenants.length > 0) {
             organizationInfo = await getOrganizationInfo(tenants[0].tenantId);
         }
-        
+
         return {
             success: true,
             message: 'Successfully connected to Xero!',
             tokenSet,
             tenants,
+            tenantId: tenants?.[0]?.tenantId,
             organization: organizationInfo
         };
     } catch (err) {

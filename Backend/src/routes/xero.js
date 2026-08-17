@@ -4,6 +4,7 @@ import Business from '../models/Business.js';
 import InvoiceNumber from '../models/InvoiceNumber.js';
 import Board from '../models/Board.js';
 import Item from '../models/Item.js';
+import { authenticateToken } from '../middleware/auth.js';
 import { warn, error } from '../utils/logger.js';
 import { isEmpty } from '../utils/helpers.js';
 import { mongoEq } from '../utils/securityHelpers.js';
@@ -25,15 +26,17 @@ import {
   createOrUpdateContact,
   createQuote,
   createPurchaseOrder,
-  getAuthUrl,
   refreshTokenSet,
-  callback,
   getContactByEmail,
   getContactByName,
   findOrCreateItem,
 } from '../services/xero.js';
 import { Item as ItemPayloadDTO } from '../dto/itemsPayload.js';
 import { logXeroAudit } from '../utils/xeroAuditHelpers.js';
+import {
+  handleXeroOAuthCallback,
+  handleXeroOAuthRedirect,
+} from '../utils/xeroOAuthRouteHelpers.js';
 import { resolveSalesLineMapping } from '../utils/xeroLineItemMapping.js';
 import {
   loadXeroChartOptions,
@@ -959,45 +962,9 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
   }
 });
 
-router.get("/redirect", async (req, res) => {
-  try {
-    await configure();
-    const url = await getAuthUrl();
-    res.json({ url });
-  } catch (err) {
-    error('Xero-Service', 'Error generating redirect URL', err);
-    res.status(200).json({ message: 'Error generating redirect URL', error: err.message });
-  }
-});
+router.get("/redirect", authenticateToken, handleXeroOAuthRedirect);
 
-router.get('/callback', async (req, res) => {
-  try {
-    const { code } = req.query;
-    const result = await callback(code, req.url);
-    res.send(`
-            <html>
-                <body>
-                    <script>
-                        window.opener.postMessage(${JSON.stringify({ ...result, type: 'XERO_AUTH' })}, '*');
-                        window.close();
-                    </script>
-                </body>
-            </html>
-        `);
-  } catch (err) {
-    error('Xero-Service', 'Error in Xero callback', err);
-    res.status(200).send(`
-            <html>
-                <body>
-                    <script>
-                        window.opener.postMessage(${JSON.stringify({ success: false, message: 'Authentication failed', type: 'XERO_AUTH' })}, '*');
-                        window.close();
-                    </script>
-                </body>
-            </html>
-        `);
-  }
-});
+router.get('/callback', handleXeroOAuthCallback);
 
 router.post('/refresh', async (req, res) => {
   try {

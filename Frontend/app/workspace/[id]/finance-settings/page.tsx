@@ -14,6 +14,8 @@ import {
 } from "@/lib/finance-settings-page";
 import { fetchInvoiceStatementAutomationFlag } from "@/lib/workspace-feature-toggles";
 import Spinner from "@/components/ui/spin";
+import { showErrorToast, showSuccessToast } from "@/lib/toast-utils";
+import { applyXeroOAuthReturn } from "@/lib/xero-oauth-return";
 
 function FinanceSettingsLoading() {
   return (
@@ -61,6 +63,15 @@ function FinanceSettingsContent() {
       cancelled = true;
     };
   }, [workspaceId]);
+
+  useEffect(() => {
+    applyXeroOAuthReturn(searchParams, {
+      showSuccessToast,
+      showErrorToast,
+      replace: (href) => router.replace(href),
+      pathname,
+    });
+  }, [pathname, router, searchParams]);
 
   useEffect(() => {
     if (!flagLoaded) return;

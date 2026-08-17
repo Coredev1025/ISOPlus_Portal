@@ -139,14 +139,44 @@ describe('AccountingIntegrationsPanel', () => {
   it('toasts when profile load fails', async () => {
     (axios.get as ReturnType<typeof vi.fn>).mockRejectedValue({
       name: 'Error',
-      response: { data: { message: 'nope' } },
+      response: { status: 500, data: { message: 'nope' } },
     });
 
     render(<AccountingIntegrationsPanel workspaceId="ws-1" />);
 
     await waitFor(() => {
       expect(showFetchErrorToast).toHaveBeenCalledWith(
-        'accounting integration settings'
+        'accounting integration settings',
+        'nope'
+      );
+    });
+  });
+
+  it('does not toast Not Found when the business profile is missing', async () => {
+    (axios.get as ReturnType<typeof vi.fn>).mockRejectedValue({
+      name: 'Error',
+      response: { status: 404, data: { message: 'Business not found' } },
+    });
+
+    render(<AccountingIntegrationsPanel workspaceId="ws-1" />);
+
+    expect(await screen.findByText('Not connected')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /connect xero/i })).toBeInTheDocument();
+    expect(showFetchErrorToast).not.toHaveBeenCalled();
+  });
+
+  it('toasts when loading accounting settings times out', async () => {
+    (axios.get as ReturnType<typeof vi.fn>).mockRejectedValue({
+      code: 'ECONNABORTED',
+      message: 'timeout of 15000ms exceeded',
+    });
+
+    render(<AccountingIntegrationsPanel workspaceId="ws-1" />);
+
+    await waitFor(() => {
+      expect(showFetchErrorToast).toHaveBeenCalledWith(
+        'accounting integration settings',
+        expect.stringMatching(/timed out/i)
       );
     });
   });
@@ -157,7 +187,7 @@ describe('AccountingIntegrationsPanel', () => {
         expect(config?.params).toEqual(
           expect.objectContaining({
             workspaceId: 'ws-1',
-            category: 'xero',
+            category: 'Xero',
           })
         );
         return Promise.resolve({
@@ -169,7 +199,7 @@ describe('AccountingIntegrationsPanel', () => {
                 detail: 'Linked organisation Acme',
                 userEmail: 'owner@example.com',
                 success: true,
-                category: 'xero',
+                category: 'Xero',
               },
             ],
             total: 1,
@@ -185,5 +215,17 @@ describe('AccountingIntegrationsPanel', () => {
     expect(await screen.findByText('Connected Xero')).toBeInTheDocument();
     expect(screen.getByText('Linked organisation Acme')).toBeInTheDocument();
     expect(screen.getByText('owner@example.com')).toBeInTheDocument();
+
+    const activity = screen.getByRole('heading', { name: 'Connection activity' });
+    const mapping = screen.getByRole('heading', {
+      name: /default account & tax mapping/i,
+    });
+    const sync = screen.getByText('Invoice Sync Status');
+    expect(
+      mapping.compareDocumentPosition(activity) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      sync.compareDocumentPosition(activity) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
   });
 });

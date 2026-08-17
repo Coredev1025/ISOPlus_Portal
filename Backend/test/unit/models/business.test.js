@@ -16,5 +16,9 @@ describe('Business model', () => {
     expect(biz.headOfficeTimezone).toBe('Australia/Sydney');
     expect(biz.featureToggles.invoiceStatementAutomation).toBe(false);
   });
+
+  it('does not declare xeroConnectionLogs on the Business schema', () => {
+    expect(Business.schema.path('xeroConnectionLogs')).toBeUndefined();
+  });
 });
 

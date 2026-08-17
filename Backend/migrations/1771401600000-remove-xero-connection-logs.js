@@ -1,6 +1,6 @@
 /**
  * Drop historical Xero connection activity that was stored on businesses.
- * Those events now live in AuditTrail (category: xero).
+ * Those events now live in AuditTrail (category: Xero).
  *
  * This is not reversible: the log documents themselves are not copied out
  * before unset. `down` restores an empty array so the field exists again,

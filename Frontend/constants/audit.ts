@@ -3,5 +3,5 @@
  *
  * Touchpoints: lib/xero-connection-audit-logs.tsx
  */
-export const AUDIT_CATEGORY_XERO = 'xero';
+export const AUDIT_CATEGORY_XERO = 'Xero';
 
