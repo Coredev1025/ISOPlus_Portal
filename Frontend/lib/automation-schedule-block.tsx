@@ -28,11 +28,9 @@ type AutomationFieldProps = Readonly<{
   hint?: string;
   className?: string;
   /**
-   * The only accepted value is `false`, for a control that is not a labelable
-   * element — the rich text editor is a contenteditable div, which `htmlFor`
-   * cannot bind to, so it carries its own `role`/`aria-label` and the
-   * attribute is dropped rather than left pointing at nothing. Every other
-   * field is labelled by its own `id`.
+   * `false` only, for a control `htmlFor` cannot bind to — the rich text editor
+   * is a contenteditable div, so it names itself and the attribute is dropped
+   * rather than left pointing at nothing.
    */
   labelFor?: false;
 }>;

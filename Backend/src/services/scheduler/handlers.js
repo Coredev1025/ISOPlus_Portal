@@ -13,32 +13,25 @@ import { AT_LEAST_ONCE } from '../../constants/scheduler.js';
 
 const BLOCK_FOR_KIND = { [KIND_INVOICE]: 'invoice', [KIND_STATEMENT]: 'statement' };
 
-// Only these open the gate. Anything else — unset, '', 'false', 'no', a typo —
-// is off, because the failure mode of guessing wrong in the permissive
-// direction is a customer's invoice numbers being consumed for mail nobody can
-// send. An allow-list makes "did I spell it right?" a safe question.
+// An allow-list: anything else — unset, '', 'false', a typo — is off, because
+// guessing wrong in the permissive direction consumes a customer's invoice
+// numbers on mail nobody can send.
 const AUTOMATION_ENABLED_VALUES = new Set(['true', '1', 'yes', 'on']);
 
 /**
- * The master switch for the automation pipeline.
- *
- * Read at dispatch rather than at boot: registration happens once per process,
- * and a value captured there would be invisible in logs and untestable without
- * a restart. Reading it here also puts the decision next to the schedule it
- * refuses, so the warning can name the kind and the workspace.
+ * The master switch for the automation pipeline. Read at dispatch rather than
+ * at boot, so a change does not need a restart and the refusal can name the
+ * kind and the workspace.
  */
 function isAutomationEnabled() {
   return AUTOMATION_ENABLED_VALUES.has(String(process.env.AUTOMATION_ENABLED ?? '').trim().toLowerCase());
 }
 
 /**
- * triggerManualSync does not throw for every failure — two of its non-dispatch
- * outcomes come back as `{ success: false, ... }`. `alreadyRunning` is
- * idempotency doing its job (a duplicate at-least-once dispatch absorbed, as
- * intended) and must resolve normally. Anything else under `success: false` —
- * today, sync disabled on the board — must throw per handler rule 4, or the
- * tick records a clean success and the schedule goes quiet forever with no
- * signal for docs/scheduling.md's "what to alert on" to catch.
+ * triggerManualSync does not throw for every failure — some outcomes come back
+ * as `{ success: false }`. `alreadyRunning` is idempotency doing its job and
+ * must resolve normally; anything else must throw, or the tick records a clean
+ * success and the schedule goes quiet forever with no signal to alert on.
  */
 function assertSyncDispatched(result) {
   if (result.success === false && !result.alreadyRunning) {
@@ -48,16 +41,11 @@ function assertSyncDispatched(result) {
 
 /**
  * The instant the schedule came due, which the period key — and therefore the
- * whole idempotency guarantee — is derived from.
+ * idempotency guarantee — derives from. tick.js dispatches it as
+ * `scheduledFor`; `nextRunAt` is the same instant off a raw ScheduledJob row.
  *
- * tick.js dispatches it as `scheduledFor`; `nextRunAt` is the same instant as
- * read straight off a ScheduledJob row, and is accepted so a caller holding
- * the raw record produces the same key rather than a different one.
- *
- * The throw matters: automationPeriodKey formats whatever it is handed, and
- * Intl silently formats *now* for undefined. A missing slot would mint a fresh
- * jobId on every retry and duplicate-bill every board that already succeeded,
- * which is precisely what the key exists to prevent.
+ * The throw matters: Intl silently formats *now* for undefined, so a missing
+ * slot would mint a fresh jobId per retry and duplicate-bill every board.
  */
 function requireSlot({ scheduledFor, nextRunAt }) {
   const slot = scheduledFor ?? nextRunAt;
@@ -75,26 +63,15 @@ function requireSlot({ scheduledFor, nextRunAt }) {
 export async function runAutomationKind(kind, job) {
   const { targetId, workspaceId, timezone, schedule } = job;
 
-  // The gate goes here — before the settings read, before the board fan-out —
-  // rather than in workers/automationWorker.js, because this is the earliest
-  // and the most honest place it can go.
+  // The gate goes here rather than in workers/automationWorker.js: refusing in
+  // the worker would still mint a Redis job per board per slot, those jobs
+  // would complete successfully doing nothing, and their retained jobIds (see
+  // queue.js) would dedupe away the first real run after SES lands — turning
+  // the disabled period into an unbillable hole.
   //
-  // Earliest: refusing here means nothing is enqueued at all. Refusing in the
-  // worker means every board of every enabled workspace still mints a Redis
-  // job on every slot. Most honest: those jobs would complete successfully
-  // while doing nothing, and their records are retained (see queue.js) — so
-  // their jobIds are permanently taken, and the first real run after SES lands
-  // would be deduped away against the empty ones. The disabled period would
-  // silently become an unbillable hole.
-  //
-  // Not registering the handler at all was the third option and is wrong:
-  // registry.resolve() throws for an unknown kind, so every tick would record
-  // a handler failure and climb consecutiveFailures on a workspace that is
-  // merely switched off.
-  //
-  // There is no leftover-job hazard in the worker to cover as well: the
-  // automation queue is introduced by this branch, so nothing has ever been
-  // enqueued into it in production.
+  // Not registering the handler at all is also wrong: registry.resolve() throws
+  // for an unknown kind, so every tick would climb consecutiveFailures on a
+  // workspace that is merely switched off.
   if (!isAutomationEnabled()) {
     warn('Automation', 'Automation is configured but disabled (AUTOMATION_ENABLED); nothing generated or sent', {
       kind, targetId, workspaceId,
@@ -135,15 +112,11 @@ export async function runAutomationKind(kind, job) {
 
 export function registerAutomationHandlers() {
   for (const kind of [KIND_INVOICE, KIND_STATEMENT]) {
-    // AT_LEAST_ONCE, deliberately, even though a duplicate invoice is worse
-    // than a late one. Fan-out breaks both policies on their own: under
-    // at-most-once a crash mid-fan-out advances the schedule with some boards
-    // never enqueued — a silently skipped billing month — and under plain
-    // at-least-once a retry re-enqueues the boards already done. The safety
-    // comes from the per-board jobId built by buildFanOutSpecs, which collapses
-    // a repeat of the same slot into the job already queued, not from the
-    // policy. Given that key, missing a month is the only failure left worth
-    // designing against.
+    // AT_LEAST_ONCE even though a duplicate invoice is worse than a late one:
+    // under at-most-once a crash mid-fan-out advances the schedule with some
+    // boards never enqueued, a silently skipped billing month. The safety comes
+    // from the per-board jobId in buildFanOutSpecs, which collapses a repeat of
+    // the same slot, not from the policy.
     register(kind, { policy: AT_LEAST_ONCE, handler: (job) => runAutomationKind(kind, job) });
   }
 }
@@ -161,11 +134,9 @@ export function registerSchedulerHandlers() {
   register('board_sync', {
     policy: AT_LEAST_ONCE,
     handler: async ({ targetId, workspaceId }) => {
-      // Local dev has no ISO+ credentials by default, so isOfflineMode() is
-      // true there — a schedule dispatched by `npm run tick` must not reach
-      // the live platform. A skip is a success (see policy note above): under
-      // AT_LEAST_ONCE the schedule only advances after the handler resolves,
-      // so throwing here would retry the same row on every tick forever.
+      // Local dev has no ISO+ credentials, so a schedule dispatched by
+      // `npm run tick` must not reach the live platform. A skip, not a throw:
+      // under AT_LEAST_ONCE a throw retries the same row on every tick forever.
       if (isOfflineMode()) {
         warn('Scheduler', 'board_sync skipped: backend is in offline mode', {
           kind: 'board_sync',

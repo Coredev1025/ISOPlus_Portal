@@ -213,11 +213,19 @@ Test-first throughout: write it, watch it fail for the expected reason, then imp
 
 **Coverage** — new backend modules go into `vitest.config.js`'s `include` list. That file has already collided twice (Arnold's merge, then #855); expect to resolve it once more on the final rebase.
 
-## Open question to confirm before implementing
+## Resolved question — who may edit automation settings
 
-**Who may edit automation settings?** Arnold gated `/feature-toggles` behind `requirePortalOwnerOrSupport`, because *enabling* automation for a workspace is an admin decision (Epic 2.1). The automation *settings* are the client's own billing configuration, so this design assumes `authenticateToken` plus the existing workspace authorization — **not** owner-only.
+**Resolved as this design proposed, and shipped that way.** Both
+`/:workspaceId/automation-settings` handlers in `Backend/src/routes/workspace.js`
+are gated by `authenticateToken` alone, plus the existing per-workspace
+authorization — **not** `requirePortalOwnerOrSupport`.
 
-Wrong in either direction is bad: too tight and clients cannot configure their own billing; too loose and it is a tenancy issue. Confirm before the route is written.
+The reasoning: Arnold gated `/feature-toggles` behind owner-or-support because
+*enabling* automation for a workspace is an admin decision (Epic 2.1). The
+automation *settings* are the client's own billing configuration. Wrong in
+either direction is bad — too tight and clients cannot configure their own
+billing; too loose and it is a tenancy issue — which is why the two routes
+carry different gates rather than one gate copied across both.
 
 ## Sequencing
 

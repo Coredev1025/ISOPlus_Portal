@@ -57,9 +57,8 @@ function uniquePdfResults(links) {
       invoiceNumber: link.invoiceNumber,
       pdfUrl,
     };
-    // Absent rather than empty when unknown: the worker only sets a template
-    // var for a value that exists, so {{client_name}} survives verbatim instead
-    // of rendering blank.
+    // Absent rather than empty: the worker only sets a template var for a value
+    // that exists, so {{client_name}} survives verbatim instead of rendering blank.
     if (link.participant) row.participant = link.participant;
     results.push(row);
   }
@@ -70,12 +69,9 @@ function uniquePdfResults(links) {
  * The slot's already-generated PDFs for one board.
  *
  * `boardId` is matched exactly, which excludes rows written before the field
- * existed. That is deliberate: a legacy row cannot say which board it came
- * from, and a legacy row sharing this periodKey is precisely the cross-board
- * bleed being removed here — treating it as "already generated" is how one
- * board's invoices ended up attached to another board's email. The cost is that
- * a slot generated before this change and re-run after it regenerates, which
- * needs both a pre-change run and a replay of that same minute-resolution slot.
+ * existed: a legacy row sharing this periodKey is the cross-board bleed that
+ * attached one board's invoices to another board's email. The cost is that a
+ * slot generated before this change regenerates on a replay.
  */
 async function existingSlotResults(workspaceId, boardId, periodKey, type) {
   const links = await PDFLink.find({
@@ -125,10 +121,9 @@ export async function generateInvoicesForBoard({
       listQuery: invoiceGeneratorListQuery(slot, timezone, schedule),
     });
   }
-  // Fail closed, as generateStatements does. A renamed board, an unset label
-  // ('No Label' is the Board default) or a board deleted between fan-out and
-  // processing must not fall through into Age Care participant-tax generation —
-  // that is a different template, different pricing and different GST.
+  // Fail closed: a renamed board, an unset label or one deleted between fan-out
+  // and processing must not fall through into Age Care participant-tax
+  // generation — different template, different pricing, different GST.
   if (!isCareManagementLabel(label)) {
     warn('Automation', 'Board label is not an invoiceable label; skipping', {
       workspaceId, boardId, label,

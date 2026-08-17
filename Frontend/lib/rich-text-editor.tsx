@@ -17,14 +17,12 @@ function toStoredValue(html: string): string {
 }
 
 /**
- * StarterKit's default set is far wider than this field. Anything the four-button
- * toolbar does not expose is unreachable by mouse yet still reachable from the
- * keyboard — markdown input rules give headings (`# `), blockquotes (`> `) and
- * code blocks (` ``` `), and Ctrl+U gives underline — and none of it is styled by
- * the email template, so it would land in a customer's inbox as unstyled markup
- * nobody chose. Only the marks and nodes the toolbar drives are registered.
- * Undo/redo (`undoRedo`), hard breaks, cursors and the list keymap stay on:
- * they are editing behaviour, not output the reader sees.
+ * Only the marks and nodes the four-button toolbar drives. The rest of
+ * StarterKit stays reachable from the keyboard even with no button — markdown
+ * input rules give headings (`# `), blockquotes (`> `) and code blocks
+ * (` ``` `), Ctrl+U gives underline — and the email template styles none of it,
+ * so it reaches a customer's inbox as markup nobody chose. Undo/redo, hard
+ * breaks, cursors and the list keymap stay on: editing behaviour, not output.
  */
 const EMAIL_STARTER_KIT = StarterKit.configure({
   heading: false,
@@ -55,11 +53,10 @@ function ToolbarButton({
       type="button"
       aria-label={label}
       aria-pressed={active}
-      // Preventing mousedown's default is what keeps the editor selection
-      // alive through the press; it does not cancel the click that follows.
-      // The action hangs off onClick because a focused button activated by
-      // Enter or Space dispatches click and never mousedown — wiring the
-      // action to mousedown alone leaves every control tabbable and inert.
+      // preventDefault on mousedown keeps the editor selection alive through
+      // the press. The action stays on onClick: Enter/Space on a focused button
+      // dispatches click and never mousedown, so driving it from mousedown
+      // would leave every control tabbable and inert.
       onMouseDown={(event) => event.preventDefault()}
       onClick={onPress}
       className={cn(
@@ -144,15 +141,10 @@ export function RichTextEditor({
   // External value changes (the async settings load, Restore Defaults) must
   // reach the editor; its own keystrokes already arrived via onUpdate.
   //
-  // emitUpdate is explicit because @tiptap/core 3.30.1 defaults setContent to
-  // emitUpdate: true — it was silent in v2. Left to the default, this effect
-  // echoes straight back into the parent's state: the settings GET resolving
-  // would dirty the form before the user touched anything, and any stored
-  // value that does not round-trip through the ProseMirror schema (a legacy
-  // plain-text emailMessage, HTML with tags StarterKit drops) would be
-  // rewritten to its normalised form and persisted by the next Save with
-  // nothing shown to the user. Rewriting is what an edit is for, so the
-  // conversion happens when the user actually types, not on opening the tab.
+  // emitUpdate must be explicit: @tiptap/core 3.30.1 defaults setContent to
+  // emitUpdate: true, where v2 was silent. On the default this effect echoes
+  // into the parent's state, so the settings GET alone dirties the form and
+  // ProseMirror's normalisation of the stored HTML is saved unasked.
   useEffect(() => {
     if (editor && toStoredValue(editor.getHTML()) !== value) {
       editor.commands.setContent(value, { emitUpdate: false });

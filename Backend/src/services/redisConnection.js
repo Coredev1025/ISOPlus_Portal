@@ -3,18 +3,9 @@ import Redis from 'ioredis';
 import { info, error, warn } from '../utils/logger.js';
 
 /**
- * Attach the connection listeners sync/queue.js and syncWorker.js each attach
- * to their own client.
- *
- * The 'error' listener is not diagnostics — it is what keeps the process
- * alive. ioredis is an EventEmitter, and an EventEmitter that emits 'error'
- * with no listener registered throws the error out of the event loop, which
- * terminates Node. Both callers of this builder run inside the API process
- * (services/automation/queue.js is imported by the scheduler, and
- * workers/automationWorker.js is started from src/index.js), so a single
- * ElastiCache blip with no listener here takes the whole API down.
- *
- * Returns the client so the builder can `return withConnectionLogging(...)`.
+ * The 'error' listener is not diagnostics: ioredis is an EventEmitter, and one
+ * that emits 'error' with no listener terminates Node — here, the API process
+ * both callers of this builder run inside.
  */
 function withConnectionLogging(connection, label) {
   connection.on('connect', () => info(label, 'Redis connection established'));
@@ -34,14 +25,6 @@ function withConnectionLogging(connection, label) {
  *
  * A builder rather than a shared instance because BullMQ Workers issue
  * blocking commands and must not share a connection with a Queue.
- *
- * Deliberately not retrofitted onto the sync modules, which predate it and
- * construct their own — see the follow-ups in the PR body.
- *
- * TLS handling mirrors sync/queue.js exactly, including the asymmetry: in
- * cluster mode AWS ElastiCache Serverless requires TLS unconditionally, so
- * `tls: {}` is set regardless of REDIS_TLS. Outside cluster mode, TLS is
- * opt-in via REDIS_TLS.
  */
 export function buildRedisConnection(label = 'Automation') {
   const host = process.env.REDIS_HOST || 'localhost';

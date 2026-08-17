@@ -48,10 +48,9 @@ function distinctValues(values) {
 
 /**
  * Vars for the email spec's dynamic fields. A var is only present when the run
- * actually produced a value for it — substituteEmailTemplate leaves absent
- * tokens intact, so an unresolvable field survives verbatim instead of
- * rendering 'undefined'. {{statement_number}} is deliberately never provided:
- * statements have no number in the data model.
+ * produced a value — substituteEmailTemplate leaves absent tokens intact, so an
+ * unresolvable field survives verbatim instead of rendering 'undefined'.
+ * {{statement_number}} is never provided: statements have no number.
  */
 function buildTemplateVars({ businessName, results }) {
   const vars = {};
@@ -67,19 +66,11 @@ function buildTemplateVars({ businessName, results }) {
 }
 
 /**
- * How many messages one job produces, and what goes in each.
- *
- * The generators return one row per participant. Flattening all of them into a
- * single attachments array is correct for `billing_contact` — the provider's
- * own accounts inbox wants the whole board — and catastrophic for
- * `client_participant`, which is an address per person: every participant would
- * receive every other participant's statement, with everyone's names in
- * {{client_name}}. That recipient value is already in the model and the UI, so
- * the shape is fixed here now rather than after the first real send.
- *
- * Rows with no participant (an Age Care invoice group that could not be
- * attributed) collect under a single null key rather than being dropped: a
- * document that cannot be addressed to a person must still reach someone.
+ * How many messages one job produces. Flattening every participant's rows into
+ * one attachments array is correct for `billing_contact` and catastrophic for
+ * `client_participant`, where each person would receive everyone else's
+ * documents; a row with no participant collects under a null key rather than
+ * being dropped.
  */
 function deliveryGroups(block, results) {
   if (block?.recipient !== RECIPIENT_PER_PARTICIPANT) {
@@ -96,18 +87,13 @@ function deliveryGroups(block, results) {
 }
 
 /**
- * Substitute the dynamic fields at compose time.
+ * Substitute the dynamic fields at compose time. The subject is plain text; the
+ * message is author-written HTML, so its substituted values are escaped — a
+ * participant whose ISO+ record carries a stray '<' must not inject markup into
+ * mail sent from the provider's own domain. See utils/emailTemplateHelpers.js.
  *
- * The subject is plain text and is substituted raw. The message is the
- * rich-text HTML authored in the Finance Settings automation tab and is
- * emailed as HTML, so its substituted values are escaped — a participant
- * named 'Tom & Jerry' must not become a broken entity, and one whose ISO+
- * record carries a stray '<' must not be able to inject markup into mail sent
- * from the provider's own domain. Only the values are escaped, never the
- * author's markup; see utils/emailTemplateHelpers.js.
- *
- * An empty/absent emailSubject stays falsy through substitution, so the
- * outbox's subject fallback (`kind + ' for board ...'`) still applies.
+ * An empty emailSubject stays falsy through substitution, so the outbox's
+ * subject fallback still applies.
  */
 function composeBlock(block, vars) {
   return {
@@ -126,9 +112,6 @@ async function deliverGroup({ kind, workspaceId, boardId, periodKey, block, busi
     workspaceId,
     boardId,
     periodKey,
-    // Null for a billing-contact run, which is one message per board and keeps
-    // its historical key; set per participant so their previews cannot
-    // overwrite one another.
     recipientKey: group.participant,
     block: composeBlock(block, vars),
     attachments,
@@ -151,19 +134,11 @@ async function composeAndDeliver(job) {
     return;
   }
 
-  // Deliverability is checked BEFORE anything is generated, and this ordering
-  // is the whole point of the check.
-  //
-  // Generation is irreversible: it claims invoice numbers off
-  // Business.documentNumbering, writes S3 objects and creates PDFLink rows keyed
-  // on periodKey. Delivery is what the run is for. Generating first and only
-  // then discovering there is no transport — which is what this did — burns
-  // real invoice numbers on PDFs nobody receives, and leaves PDFLink rows that
-  // make the re-run after SES lands hand back those same stale documents
-  // instead of regenerating them.
-  //
-  // It resolves rather than throws: nothing irreversible happened, and three
-  // BullMQ retries per board would only repeat this warning.
+  // Checked BEFORE generation, which is irreversible: it claims invoice numbers
+  // and writes PDFLink rows keyed on periodKey, so discovering there is no
+  // transport afterwards burns real numbers on PDFs nobody receives and leaves
+  // rows that make the re-run hand back those stale documents. Resolves rather
+  // than throws — nothing irreversible happened.
   if (!isOfflineMode()) {
     warn('Automation', 'No email transport (SES is Epic 5 part 4); generated nothing rather than discarding it', {
       kind, workspaceId, boardId, periodKey,
@@ -187,21 +162,16 @@ export function startAutomationWorker() {
     (job) => composeAndDeliver(job),
     {
       connection: buildRedisConnection(LOG_LABEL),
-      // Chosen, not inherited. syncWorker.js runs 2; this runs 1 because one
-      // automation job renders every PDF for a whole board — an unbounded
-      // number of participants — and holds each rendered document in memory as
-      // a Buffer before upload. Two of those in parallel on one Elastic
-      // Beanstalk instance is how a large workspace exhausts the heap mid-run,
-      // and a run that dies after claiming invoice numbers leaves gaps. Cross-
-      // board parallelism already comes free from running several instances.
+      // 1, not syncWorker.js's 2: one job renders every PDF for a whole board
+      // and holds each as a Buffer before upload, so two in parallel exhaust the
+      // heap on a large workspace — and a run that dies mid-way leaves number gaps.
       concurrency: 1,
     },
   );
 
   // Required, not diagnostic: BullMQ re-emits connection failures as a Worker
-  // 'error', and an EventEmitter 'error' with no listener terminates the
-  // process — here, the API process src/index.js starts this worker in. Same
-  // idiom as syncWorker.js.
+  // 'error', and an unlistened EventEmitter 'error' terminates the API process
+  // this worker runs in. Same idiom as syncWorker.js.
   worker.on('error', (err) => error(LOG_LABEL, 'Worker error', {
     error: err.message, stack: err.stack,
   }));

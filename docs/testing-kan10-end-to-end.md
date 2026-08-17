@@ -31,18 +31,15 @@ outbox directly online throws rather than silently dropping mail.
 So "did it reach Xero?" is the wrong success criterion for KAN-10. **The
 terminal observable offline is the outbox file (plus the completed queue job);
 online it is a warn that delivery is unimplemented.** A run that ends there is
-a *passing* run. Xero sync is a different, webhook-driven system — see the
-`xero-sync-local` skill.
-
-Xero *is* reachable in this repo — by a different, older system (Track B). Do
-not let the two blur together, and do not report a Track B success as evidence
-KAN-10 works.
+a *passing* run. Xero *is* reachable in this repo, but only by a different,
+older, webhook-driven system (Track B, and the `xero-sync-local` skill) — do
+not report a Track B success as evidence KAN-10 works.
 
 | | Track A — KAN-10 | Track B — board automations |
 |---|---|---|
 | Trigger | `POST /api/scheduler/tick` (EventBridge in prod, `npm run tick` locally) | ISO+ `ButtonTrigger`/`ValueChange` node → `TriggerWebhook` |
 | Config lives in | Finance Settings → Automation tab | the ISO+ board itself |
-| Ends at | stub worker log line | `/api/pdf`, `/api/xero`, `/api/care-management-ndis-pricing` |
+| Ends at | generated PDFs + an outbox file per claimed slot | `/api/pdf`, `/api/xero`, `/api/care-management-ndis-pricing` |
 | Reaches Xero | **no, by design** | yes (2 ButtonTrigger automations) |
 | Needs ngrok | **no** | yes, for a live board |
 
@@ -462,13 +459,10 @@ the payload itself.
 to its original. Leaving an active automation pointed at a dead tunnel is a
 booby-trap for the next person.
 
-- **Port 4001, not 80.** Webhooks hit the *backend*; `BACKEND_PORT` defaults to
-  4001. `ngrok http --url=saleably-obconical-percy.ngrok-free.dev 4001`.
-  Port 80 serves nothing on this stack.
-- **`PUT /api/automation/:ws/:board` rewrites `Portal - ` URLs to `BACKEND_URL`
-  and that mutates the live board.** Capture the current URLs first and restore
-  them when done. 26 of the board's 41 automations point at
-  `portal-backend.isoplus.online`.
+- **Tunnel setup, port choice and teardown are the `activate-ngrok` skill's** —
+  follow it rather than improvising. What it cannot know: 26 of this board's 41
+  automations point at `portal-backend.isoplus.online`, so capture those URLs
+  before anything rewrites them.
 - The Xero leg needs `XERO_CLIENT_ID` / `XERO_CLIENT_SECRET` in `Backend/.env`
   plus a completed OAuth callback. Blank credentials mean the `/api/xero`
   automations cannot succeed regardless of tunnelling.
@@ -481,19 +475,6 @@ because the 2026 pricing migration renamed `Direct Support Item Number` to
 `OLD …` and the board now resolves to the *new* pricing path. ISO+ records a
 successful delivery either way. Do not spend an afternoon on it — see
 `docs/ongoing/webhooks-and-automation.md`.
-
-## Common mistakes
-
-- **Reporting "KAN-10 works end to end, invoice in Xero."** Impossible. Either
-  Track B did it, or nothing did.
-- **Deriving `periodKey` from `now`** when writing a new handler — duplicate-bills
-  every board on retry.
-- **Waiting for the schedule instead of backdating `nextRunAt`.**
-- **Running `npm run seed` mid-test** — destructive, and it clears the dev
-  password; re-run `npm run dev:user`.
-- **Adding an in-process timer** to "make it fire". Elastic Beanstalk runs more
-  than one instance; a timer double-bills. The tick is external on purpose.
-- **Leaving the live board pointed at the tunnel** after the session.
 
 ## Related
 

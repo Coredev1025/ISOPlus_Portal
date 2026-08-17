@@ -308,8 +308,6 @@ describe('InvoiceStatementAutomationPanel', () => {
   });
 
   it('offers no Save when the settings could not be loaded', async () => {
-    // The server state is unknown, so there is nothing safe to write on top of
-    // it — the form stays off the page rather than inviting a blind overwrite.
     fetchMock.mockRejectedValue(new Error('boom'));
     render(<InvoiceStatementAutomationPanel workspaceId="ws-1" />);
 

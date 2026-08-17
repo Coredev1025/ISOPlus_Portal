@@ -57,22 +57,13 @@ Ticket: KAN-15.
   from the summary entirely. See "`enabled: false` on a schedule nobody
   disabled" below.
 
-Verified against the local stack:
+Verified against the local stack — the route is live and the gate is closed to
+a call with no `Authorization` header at all:
 
 ```
-$ curl -s localhost:4001/api/healthcheck
-{"status":"OK"}
-
-$ npm run tick -- --once
-[2026-08-11T08:14:40.871Z] claimed=0 dispatched=0 failed=0 (81ms)
-
 $ curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:4001/api/scheduler/tick
 401
 ```
-
-The 401 above is `curl` sending no `Authorization` header at all — the point
-being that the route is live and the auth gate is doing its job, not that
-this particular call was a misconfiguration.
 
 ## Deploying: the indexes
 
@@ -176,11 +167,17 @@ tick claims only that kind — and `validateSchedulerApiKey` logs
 the master scope: a credential that leaked a narrow capability must not
 silently acquire a wide one. Give each rule its own secret.
 
+`validateSchedulerApiKey` and `validateApiKey` are both built by the one
+`apiKeyValidator({ scopes, requiredEnvVar, requiredMessage, onMatch })` factory
+in `Backend/src/middleware/auth.js` — add a gate by calling it, not by copying
+it. A gate that accepts several credentials passes several `scopes` and reads
+the matched one in `onMatch`, which is how the tick learns its scope.
+
 **The header value must be the key exactly — no `Bearer ` prefix, no leading
-or trailing whitespace.** `validateSchedulerApiKey` compares the raw header
-against each configured key with strict equality (see
-`SCHEDULER_KEY_SCOPES` in `Backend/src/middleware/auth.js`); a non-empty
-match is required, so a blank env var can never authorize anything.
+or trailing whitespace.** The factory compares the raw header against each
+configured key with strict equality (see `SCHEDULER_KEY_SCOPES` in the same
+file); a non-empty match is required, so a blank env var can never authorize
+anything.
 
 Anything other than the bare key value — a `Bearer ` prefix, a stray space
 from copy-paste — fails that comparison and produces a 401. This is not a
@@ -206,8 +203,8 @@ you set up first.
 
 Once the rule exists, confirm on the target environment (not locally):
 
-1. Create or leave enabled a test schedule (or wait for a real `board_sync` /
-   `invoice_issuance` one already registered).
+1. Create or leave enabled a test schedule (or wait for a real `board_sync`,
+   `invoice_automation` or `statement_automation` one already registered).
 2. Watch that record's `lastRunAt` advance on its own, with nobody calling the
    endpoint by hand, and `missedRuns` staying at `0`.
 3. If `lastRunAt` is not moving, the rule is either missing, disabled, pointed
@@ -263,14 +260,12 @@ not something to route around here.
 `Backend/src/index.js` is the production entry point. It does **not** call
 `createApp()` from `Backend/src/app.js` — they are two parallel Express apps
 that happen to wire up nearly the same routes. `Backend/test/` builds its app
-via `createApp()` (see `Backend/test/integration/scheduler.route.test.js:11`),
-so a route mounted only in `app.js` is fully covered by the test suite and
+via `createApp()` (`Backend/test/integration/scheduler.route.test.js`), so a
+route mounted only in `app.js` is fully covered by the test suite and
 **404s in production**, because `index.js` never mounted it.
 
-The scheduler route is correctly mounted in both places:
-
-- `Backend/src/app.js:127` — `app.use('/api/scheduler', schedulerRoutes);`
-- `Backend/src/index.js:155` — `app.use('/api/scheduler', schedulerRoutes);`
+The scheduler route is correctly mounted in both places — search each file for
+`app.use('/api/scheduler', schedulerRoutes)`.
 
 During this work the route was initially added only to `app.js`. Every test
 passed — the integration suite exercises `createApp()` — and the endpoint
@@ -283,11 +278,10 @@ green test suite does not prove `index.js` was touched. This is the single
 most important thing to remember from this document if you are adding routes
 rather than working with the scheduler specifically.
 
-Also note `index.js` calls `registerSchedulerHandlers()` once at module load
-(`Backend/src/index.js:48`) so the registry is populated before the first
-tick can arrive. `createApp()` in `app.js` does not call it — tests register
-their own handlers per-case via `register()` /
-`clearRegistry()` (see `scheduler.route.test.js`).
+Also note `index.js` calls `registerSchedulerHandlers()` once at module load,
+so the registry is populated before the first tick can arrive. `createApp()`
+in `app.js` does not call it — tests register their own handlers per-case via
+`register()` / `clearRegistry()` (see `scheduler.route.test.js`).
 
 ## Trap: adding `cron-parser` needs a container rebuild, not just a restart
 
@@ -315,13 +309,11 @@ Elastic Beanstalk always resolves the lockfile fresh, so the deployed
 environments are never affected — this is purely a stale local Docker image
 issue.
 
-**If `dev:build` did not fix it, check you have this branch's `scripts/dev.mjs`.**
-The discard step used to be skipped whenever the project had no *running*
-containers — and volumes outlive containers, so rebuilding a stopped stack
-remounted the stale volume over the newly built image. The giveaway is a
-`dev:build` whose output has no `==> discarding this project's
-node_modules/.next volumes` line. That is fixed here; on an older commit, run
-`docker compose down -v` first.
+The giveaway that the discard did not happen is a `dev:build` whose output has
+no `==> discarding this project's node_modules/.next volumes` line. It is now
+unconditional in `scripts/dev.mjs`; it used to be gated on the project having
+*running* containers, which skipped it for a stopped stack and remounted the
+stale volume over the newly built image, because volumes outlive containers.
 
 ## Registering a handler
 
@@ -439,10 +431,8 @@ narrowed to 1–28 at one point and widened again deliberately (commit
 the month can have them.
 
 This is the picker's advantage over cron, not a shared weakness — see "Do not
-write a monthly cron on the 29th, 30th or 31st" above. Cron does not clamp: a
-`0 9 31 * *` schedule simply does not fire in a short month, the client is not
-billed, and nobody finds out until someone notices the missing invoice. The
-same day expressed through the picker fires every month.
+write a monthly cron on the 29th, 30th or 31st" above for what raw cron does
+with the same day.
 
 **All picker arithmetic is wall-clock in the job's timezone**, so "09:00" stays
 09:00 across a daylight-saving transition. That makes `startDate` a *calendar
@@ -487,8 +477,8 @@ cannot survive.
 
 | Policy | `nextRunAt` advances | Used by | Why |
 |---|---|---|---|
-| `AT_MOST_ONCE` | At claim, before the handler runs | `invoice_issuance` | A duplicated invoice sent to an NDIS participant is a client-facing incident. A lost run is a different kind of problem: it shows up in `missedRuns` and is recoverable by hand. |
-| `AT_LEAST_ONCE` | Only after the handler's enqueue succeeds | `board_sync` | Board sync is idempotent and cheap to repeat. A silent skip just makes data staler — worse than an occasional duplicate that the idempotency guard absorbs anyway. |
+| `AT_MOST_ONCE` | At claim, before the handler runs | Nothing registered today | For work where a duplicate is the worse failure — a duplicated invoice sent to an NDIS participant is a client-facing incident, while a lost run shows up in `missedRuns` and is recoverable by hand. |
+| `AT_LEAST_ONCE` | Only after the handler's enqueue succeeds | `board_sync`, `invoice_automation`, `statement_automation` | Board sync is idempotent and cheap to repeat. The automation kinds fan out per board, which breaks both policies on its own; their safety comes from the per-board `jobId` (`buildFanOutSpecs`), so missing a month is the failure left worth designing against. See the comment in `registerAutomationHandlers`. |
 
 Choose `AT_MOST_ONCE` when a duplicate is the worse failure mode. Choose
 `AT_LEAST_ONCE` only when the handler is genuinely idempotent — if it is not,
@@ -606,9 +596,8 @@ schedule-level detail `lastTickAt` cannot provide on its own:
   is not firing at all: a misconfigured or missing EventBridge rule, a
   disabled schedule, or a `kind` whose handler throws before recording
   anything. This is also the check to run after creating a new AWS rule
-  (see "Verifying a rule after creating it" above). It used to be the only
-  option for an `AT_LEAST_ONCE` schedule, since `missedRuns` could not count
-  for one; that is no longer true, and the two are now complementary —
+  (see "Verifying a rule after creating it" above). It complements `missedRuns`
+  rather than substituting for it, as it had to before 2026-08-13 —
   `missedRuns` says how many slots were skipped, `lastRunAt` says whether the
   schedule is firing at all. Note this still requires at least one `ScheduledJob`
   document to exist and be due before it says anything; `lastTickAt` above is

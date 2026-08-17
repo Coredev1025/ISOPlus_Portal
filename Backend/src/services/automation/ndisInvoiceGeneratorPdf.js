@@ -38,30 +38,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /**
  * Claim the next invoice number for this workspace, atomically.
  *
- * What this replaces: read `documentNumbering.invoice.nextNumber`, render a
- * PDF, then write `nextNumber + 1` back. That is a read-modify-write straddling
- * several awaits, and production runs multiple Elastic Beanstalk instances all
- * pulling from one automation queue — so two boards generated at the same
- * moment both read 40, both mint 'IN-40 (ISO+™)' for different participants,
- * and the counter lands on 41 instead of 42. Two participants then hold one
- * invoice number, which the customer's ledger and Xero both read as a single
- * invoice.
+ * `$inc` inside findOneAndUpdate is what stops two Elastic Beanstalk instances
+ * pulling one automation queue from minting the same number for different
+ * participants. `new: true` returns the counter after the increment, so the
+ * number this run owns is one below.
  *
- * `$inc` inside findOneAndUpdate is a single atomic document operation, so
- * concurrent callers serialize on the server. `new: true` returns the document
- * as it now stands, which makes the claimed value unambiguous: the counter has
- * already moved past it, so the number this run owns is one below.
- *
- * Prefix and format are untouched — `prefix + number`, then ' (ISO+™)' at the
- * call site — because the characterization test pins both.
- *
- * The deliberate trade-off: the number is claimed BEFORE the rows are
- * collected, because collectNdisInvoiceRows stamps it onto every row it
- * builds. So a run that turns out to have no billable rows, or that fails
- * during render or upload, leaves a gap in the sequence. A gap is a cosmetic
- * accounting question; a duplicate is a billing-correctness bug. Rolling the
- * counter back would reintroduce the duplicate, since a concurrent run may
- * already hold the number below.
+ * The number is claimed before the rows are collected, so a run that fails
+ * leaves a gap in the sequence. A gap is cosmetic; a duplicate is a billing bug.
  */
 async function allocateInvoiceNumberBase(workspaceId, business) {
   const claimed = await Business.findOneAndUpdate(
@@ -208,8 +191,6 @@ async function renderAndUploadNdisInvoice({
   return getS3FileUrl(filename, 3600, true);
 }
 
-// No counter write here any more: the number was claimed atomically up front
-// by allocateInvoiceNumberBase. Incrementing again would double-advance it.
 async function persistGeneratedInvoice({
   workspaceId, boardId, masterItems, invoiceNumber, fileUrl,
 }) {

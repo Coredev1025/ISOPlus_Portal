@@ -748,13 +748,9 @@ export async function putTimeTracking(workspaceId, boardId, itemId, startTime, e
 export const ITEM_DELETED = Symbol('ITEM_DELETED');
 
 export async function getItemValues(workspaceId, boardId, itemId) {
-    // Offline, every call here 401s, and because validateItemBelongsToTenant
-    // reads a falsy return as "not this tenant's item", the whole inbound
-    // webhook path refuses real payloads as intrusion attempts. Serve them from
-    // Mongo instead, the same swap routes/board.js already makes for board
-    // attributes. isOfflineMode() cannot be true under NODE_ENV=production
-    // unless ISOPLUS_OFFLINE=1 is set deliberately, which .env.example warns
-    // against — a blank token in production must still fail loudly.
+    // Offline, this 401s and the whole inbound webhook path then refuses real
+    // payloads as intrusion attempts. Served from Mongo instead — see
+    // getItemValuesOffline, and isOfflineMode for why production is unaffected.
     if (isOfflineMode()) {
         return getItemValuesOffline(workspaceId, boardId, itemId);
     }
@@ -839,9 +835,8 @@ export async function validateItemBelongsToTenant(workspaceId, boardId, itemId) 
 }
 
 export async function getReferences(workspaceId, boardId, itemId) {
-    // Offline, references come from the committed fixture — the Portal has no
-    // Reference model, so the fixture is the only local record. Same guard as
-    // getItemValues above; see that comment for why production is unaffected.
+    // Offline, references come from the committed fixture — see
+    // getReferencesOffline.
     if (isOfflineMode()) {
         return getReferencesOffline(workspaceId, boardId, itemId);
     }
@@ -1152,10 +1147,7 @@ export async function setLogo(authorization, workspaceId, logo, type, req) {
 }
 
 export async function setGeneratedField(workspaceId, boardId, itemId, message) {
-    // Offline, this write-back can only 404: the local items are inventions the
-    // live platform has never heard of. Skip rather than throw — the local run
-    // has already done its work, and a skip is the same honest behaviour as the
-    // board_sync handler's offline skip.
+    // Offline skip, same reason as setIntegrationMessage above.
     if (isOfflineMode()) {
         warn('ISO+™ Service', 'setGeneratedField skipped: backend is in offline mode', { workspaceId, boardId, itemId });
         return false;
@@ -1191,10 +1183,7 @@ export async function setGeneratedField(workspaceId, boardId, itemId, message) {
 }
 
 export async function setPDFLinkAttribute(workspaceId, boardId, itemId, pdfUrl, docType) {
-    // Offline, this write-back can only 404: the local items are inventions the
-    // live platform has never heard of. Skip rather than throw — the local run
-    // has already done its work, and a skip is the same honest behaviour as the
-    // board_sync handler's offline skip.
+    // Offline skip, same reason as setIntegrationMessage above.
     if (isOfflineMode()) {
         warn('ISO+™ Service', 'setPDFLinkAttribute skipped: backend is in offline mode', { workspaceId, boardId, itemId });
         return false;

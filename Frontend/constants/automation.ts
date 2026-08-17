@@ -1,33 +1,15 @@
 /**
- * Every fixed value the invoice/statement automation panel depends on, in one
- * place. Each entry records its touchpoints — the modules that read it — so
- * changing one here tells you what it reaches without a grep. Keep those lists
- * current: a stale touchpoint comment is worse than none, because it will be
- * believed.
+ * Fixed values for the invoice/statement automation panel. Each entry records
+ * its touchpoints — the modules that read it — so changing one tells you what it
+ * reaches without a grep. A stale touchpoint comment is worse than none.
  *
- * This file imports nothing, deliberately, so a component and a helper can both
- * read it without risking a cycle. The option lists are therefore typed
- * structurally rather than against `AutomationSelectOption`, which they stay
- * assignable to.
- *
- * Two automation values are deliberately not here. `DEFAULT_BLOCK` stays in
- * `lib/automation-settings.ts` beside the `AutomationBlock` type it instantiates
- * — moving it would need a type import back, which is the cycle this file
- * avoids. The weekday/day-of-month/month lists in `lib/automation-run-on-options.ts`
- * stay with `runOnOptionsForUnit`, which derives from them; a derived structure
- * belongs with its logic.
+ * Two automation values are deliberately elsewhere: `DEFAULT_BLOCK` in
+ * `lib/automation-settings.ts`, because moving it would need a type import back
+ * and this file imports nothing; and the weekday/day-of-month/month lists in
+ * `lib/automation-run-on-options.ts`, which `runOnOptionsForUnit` derives from.
  */
 
 /**
- * The email address fields are validated against `EMAIL_PATTERN` in
- * `constants/validation.ts`, not here: the monthly statement's business details
- * form validates the same field, and two copies of that pattern is how the two
- * come to disagree.
- */
-
-/**
- * Who the generated invoice or statement is addressed to.
- *
  * Touchpoints: lib/automation-email-block.tsx (Recipient select). Values are
  * the wire values of `AutomationBlock["recipient"]`.
  */
@@ -37,8 +19,6 @@ export const RECIPIENT_OPTIONS = [
 ] as const;
 
 /**
- * Which system performs the send.
- *
  * Touchpoints: lib/automation-email-block.tsx (Send Method select). Values are
  * the wire values of `AutomationBlock["sendMethod"]`.
  */
@@ -48,8 +28,6 @@ export const SEND_METHOD_OPTIONS = [
 ] as const;
 
 /**
- * The interval unit a schedule repeats on.
- *
  * Touchpoints: lib/automation-schedule-block.tsx (Every select). Values are the
  * wire values of `AutomationUnit`.
  */
@@ -62,10 +40,8 @@ export const UNIT_OPTIONS = [
 ] as const;
 
 /**
- * The `AutomationBlock` fields the server owns and the client must never send
- * back: the scheduler computes them from ScheduledJob. Listed here rather than
- * spelled inline so a new read-only field is stripped by the one place that
- * strips.
+ * `AutomationBlock` fields the scheduler computes from ScheduledJob, so a Save
+ * must never send them back and overwrite run state no user typed.
  *
  * Touchpoints: lib/automation-settings.ts (`toAutomationSavePayload`, and the
  * `AutomationSavePayload` type derived from this list).
@@ -83,8 +59,9 @@ export const READ_ONLY_BLOCK_FIELDS = [
  * is what selects a field for `EMAIL_PATTERN`; the three address-valued fields
  * are the same three the backend validates in `parseAutomationSettingsBody`.
  *
- * Touchpoints: lib/automation-email-block.tsx (field list and validation). Keys
- * are `AutomationBlock` field names.
+ * Touchpoints: lib/automation-email-block.tsx (renders the fields and validates
+ * per keystroke), lib/automation-helpers.ts (derives the Save gate's key list).
+ * Keys are `AutomationBlock` field names.
  */
 export const EMAIL_TEXT_FIELDS = [
   { key: "sendCopyTo", id: "send-copy-to", label: "Send a Copy To", isEmail: true },
@@ -94,10 +71,9 @@ export const EMAIL_TEXT_FIELDS = [
 ] as const;
 
 /**
- * Email Message is not one of the above: it is a rich text editor, not an
- * input, and it spans the grid because body text truncates in a third-width
- * one-liner. It is listed separately so the four one-liners stay a plain map
- * with no per-field escape hatches.
+ * Separate from the four above because it renders as a grid-spanning rich text
+ * editor, not an input — keeping it out leaves that list a plain map with no
+ * per-field escape hatches.
  *
  * Touchpoints: lib/automation-email-block.tsx (the explicit Email Message field).
  */

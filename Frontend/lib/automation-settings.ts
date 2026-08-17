@@ -57,10 +57,7 @@ export type AutomationSettings = {
   recentDocuments?: AutomationRecentDocument[];
 };
 
-/**
- * Frozen to prevent mutation of the module singleton.
- * Consumers must copy deeply (not spread) to avoid aliasing the nested `every` object.
- */
+/** Frozen: consumers must deep-copy, not spread, or they alias `every`. */
 export const DEFAULT_BLOCK: AutomationBlock = Object.freeze({
   enabled: false,
   every: Object.freeze({ n: 1, unit: "month" }),
@@ -88,10 +85,9 @@ export async function fetchAutomationSettings(
 }
 
 /**
- * What the client is allowed to write. The scheduler owns the run fields and
- * PDFLink owns the document list; Mongoose drops them today, so sending them
- * is harmless — but a schema that later accepts them would let a Save
- * overwrite state no user typed. Pure, and copies rather than mutating.
+ * What the client is allowed to write. Mongoose drops the read-only fields
+ * today, so sending them is harmless — but a schema that later accepted them
+ * would let a Save overwrite scheduler state no user typed.
  */
 export type AutomationSavePayload = {
   invoice: Omit<AutomationBlock, (typeof READ_ONLY_BLOCK_FIELDS)[number]>;

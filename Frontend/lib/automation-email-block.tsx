@@ -13,11 +13,10 @@ import { AutomationField, OptionSelect } from "@/lib/automation-schedule-block";
 import type { AutomationBlock } from "@/lib/automation-settings";
 
 /**
- * TipTap is ~100-130KB gzipped and only one field in one tab of Finance
- * Settings uses it. Loaded statically it sits in the page's import graph, so
- * every visitor downloads it to reach a tab most never open; loaded here it
- * arrives when a block is enabled and the editor actually renders. ssr: false
- * because TipTap has to wait for the client anyway (`immediatelyRender: false`).
+ * TipTap is ~100-130KB gzipped for one field in one tab of Finance Settings.
+ * Loaded statically every visitor downloads it to reach a tab most never open;
+ * here it arrives only once a block is enabled. ssr: false because TipTap has
+ * to wait for the client anyway (`immediatelyRender: false`).
  */
 const RichTextEditor = dynamic(
   () => import("@/lib/rich-text-editor").then((mod) => mod.RichTextEditor),
@@ -119,15 +118,10 @@ export function AutomationEmailBlock({
         />
       ))}
 
-      {/* Body text truncates in a third-width one-liner, so Email Message
-          spans the grid and is a rich text editor — the spec calls it a
-          rich-text field, and the composed email sends its HTML. */}
       <AutomationField
         id={`${idPrefix}-${EMAIL_MESSAGE_FIELD.id}`}
         label={EMAIL_MESSAGE_FIELD.label}
         className="md:col-span-3"
-        // The editor is a contenteditable div, which htmlFor cannot bind to;
-        // it names itself instead.
         labelFor={false}
       >
         <RichTextEditor

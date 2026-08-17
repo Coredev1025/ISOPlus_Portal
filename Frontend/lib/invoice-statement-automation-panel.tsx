@@ -22,9 +22,8 @@ import {
 } from "@/lib/automation-settings";
 
 /**
- * DEFAULT_BLOCK is deep-frozen, including its nested `every`. A shallow spread
- * would leave invoice and statement aliasing the same frozen object, so each
- * block gets its own deep copy every time.
+ * DEFAULT_BLOCK is deep-frozen: a shallow spread would leave invoice and
+ * statement aliasing the same frozen `every`, so each block is deep-copied.
  */
 function defaultSettings(): AutomationSettings {
   return {
@@ -95,11 +94,10 @@ function AutomationSection({
 }
 
 /**
- * Until the GET resolves the panel knows nothing about what is stored, and the
- * defaults it holds meanwhile say "both automations off, no email settings" —
- * a Save from this state disables both live schedules and erases their email
- * configuration, from a form that never showed the user what it was replacing.
- * So the form does not exist yet: there is a skeleton in its place.
+ * No form until the GET resolves, and none at all if it fails. The defaults the
+ * panel holds meanwhile say "both automations off, no email settings", so a
+ * Save over unknown server state disables both live schedules and erases their
+ * email configuration, from a form that never showed what it was replacing.
  */
 function AutomationLoadingSkeleton() {
   return (
@@ -112,11 +110,6 @@ function AutomationLoadingSkeleton() {
   );
 }
 
-/**
- * A failed load is the same hazard permanently: the server state is unknown,
- * so there is nothing safe to write on top of it. The form stays off the page
- * rather than inviting a blind overwrite.
- */
 function AutomationLoadFailed() {
   return (
     <Alert variant="destructive">

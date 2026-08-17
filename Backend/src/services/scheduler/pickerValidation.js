@@ -8,37 +8,19 @@ import {
  * Validates the picker half of a schedule, the way isValidSchedule validates
  * the cron half.
  *
- * This exists because the ScheduledJob schema does not protect the real write
- * path. Its enum, `min`, and `required` rules live on document middleware,
- * and every production write goes through findOneAndUpdate/updateOne, which
- * runs query middleware and passes no runValidators. upsertSchedule already
- * knew this for cron — it calls isValidSchedule explicitly — but trusted its
- * caller entirely for picker schedules.
+ * The ScheduledJob schema does not protect the real write path: its enum,
+ * `min` and `required` rules live on document middleware, and every production
+ * write goes through findOneAndUpdate/updateOne with no runValidators. Observed
+ * persisting against the live write path: `unit: 'fortnight'`, `n: 0`, `n: -3`
+ * and `runAt: '99:99'`, each then billing on a cadence nobody chose.
  *
- * What got through, observed against the live write path: `unit: 'fortnight'`,
- * `n: 0`, `n: -3`, and `runAt: '99:99'` were all persisted. None of them is a
- * liveness bug — advanceSchedule always moves forward, so a bad `n` behaves as
- * 1 and a bad `runAt` resolves to some other time — which is precisely what
- * makes them worth rejecting. A schedule that quietly bills on a cadence
- * nobody chose is harder to notice than one that refuses to save.
+ * Returns a message naming the offending field, or null. A string rather than a
+ * throw so the caller decides the error type.
  *
- * Returns a message naming the offending field, or null when the schedule is
- * fine. A string rather than a throw so the caller decides the error type,
- * matching isValidSchedule's boolean-return shape.
- *
- * `runOn` is deliberately NOT checked here, and that is a decision rather than
- * an omission. Its rules change with the unit — a weekday name for `week`, a
- * day number for `month`, `{month, day}` for `quarter`/`year` — and
- * `utils/automationSettingsHelpers.js` (`validateRunOn`) already encodes all
- * of them for the one write path that exists. Re-encoding them here would put
- * a second copy of unit-dependent rules in the module whose whole purpose is
- * to stop two validators disagreeing.
- *
- * The cost is real and worth naming: an unreadable `runOn` does not fail the
- * save, it falls back to the startDate's own weekday or day-of-month — a
- * cadence nobody chose. The fix is to extract `validateRunOn` into a helper
- * both validators call, which is an edit to `automationSettingsHelpers.js`
- * and is recorded as a follow-up rather than duplicated here.
+ * `runOn` is deliberately NOT checked here: its rules change with the unit, and
+ * `utils/automationSettingsHelpers.js` (`validateRunOn`) already encodes all of
+ * them for the one write path that exists. Extracting a helper both validators
+ * call is a recorded follow-up.
  */
 
 function everyError(every) {
@@ -49,9 +31,7 @@ function everyError(every) {
   if (!Number.isInteger(every.n) || every.n < 1) {
     return 'schedule.every.n must be a positive integer';
   }
-  // The same ceiling validateBlock applies at the route. Two write-path
-  // validators disagreeing on the bounds of one field is precisely what this
-  // module exists to prevent, so it cannot be the thing that introduces one.
+  // The same ceiling validateBlock applies at the route.
   if (every.n > MAX_EVERY_N) {
     return `schedule.every.n must be ${MAX_EVERY_N} or less`;
   }
@@ -59,9 +39,8 @@ function everyError(every) {
 }
 
 /**
- * Absent is fine — upsertSchedule anchors an absent startDate on the current
- * date. An unparseable one is not: canonicalStartDate would carry the
- * Invalid Date straight into the arithmetic.
+ * Absent is fine — upsertSchedule anchors on the current date. An unparseable
+ * one is not: canonicalStartDate would carry Invalid Date into the arithmetic.
  */
 function startDateError(startDate) {
   if (startDate === null || startDate === undefined) return null;

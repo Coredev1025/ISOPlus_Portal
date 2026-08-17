@@ -1,16 +1,12 @@
 // Scheduling arithmetic for Invoice & Statement Automation (Epic 5).
 //
 // Pure and clock-free: `from` is always supplied by the caller, never read from
-// the system clock, so this is testable without freezing time. The scheduler
-// tick selects work with `nextRun <= now()`, and the client sees `Next Run` as a
-// read-only field, so a wrong answer here either bills a participant twice or
-// never bills them.
+// the system clock. A wrong answer here bills a participant twice or never.
 //
 // Everything is computed in **wall-clock** terms in the business's timezone.
 // "Run At 09:00" means 09:00 to the person who typed it, on both sides of a
 // daylight-saving transition — which naive UTC arithmetic gets wrong by an hour
-// twice a year. No new dependency: `moment` in this repo has no timezone data,
-// and the codebase already does timezone work with Intl.
+// twice a year. Done with Intl: `moment` in this repo has no timezone data.
 
 import { MONTHS_PER_UNIT, WEEKDAYS } from '../constants/automation.js';
 
@@ -38,10 +34,9 @@ function offsetMs(date, tz) {
  * The instant at which the wall clock in `tz` reads the given date and time.
  *
  * Two passes: the first guess uses the offset at the equivalent UTC instant,
- * which is wrong near a transition; re-reading the offset at that corrected
- * instant fixes it. When the wall time does not exist (the hour skipped by a
- * spring-forward), this lands on a real instant just after the gap rather than
- * returning an Invalid Date — the schedule still fires, which is what matters.
+ * which is wrong near a transition; re-reading the offset there fixes it. A
+ * wall time that does not exist (the hour a spring-forward skips) lands just
+ * after the gap rather than returning an Invalid Date.
  */
 function wallTimeToInstant({ year, month, day, hour, minute }, tz) {
     const naive = Date.UTC(year, month - 1, day, hour, minute);
@@ -83,13 +78,9 @@ function parseRunAt(runAt) {
 }
 
 /**
- * Calendar date `offset` days after `fields`, ignoring time.
- *
- * A negative `offset` steps backwards, which is how
- * utils/automationScheduleWindow.js walks a billing window back from the
- * claimed slot. There is deliberately no `subtractDays` counterpart: two
- * functions differing only in sign drift apart, and this one already carries
- * the Date.UTC normalisation both directions depend on.
+ * Calendar date `offset` days after `fields`, ignoring time. A negative offset
+ * steps backwards — deliberately no `subtractDays` counterpart, since two
+ * functions differing only in sign drift apart.
  */
 export function addDays({ year, month, day }, offset) {
     const shifted = new Date(Date.UTC(year, month - 1, day + offset));
@@ -102,14 +93,9 @@ export function addDays({ year, month, day }, offset) {
 
 /**
  * Calendar date `offset` months after `fields`, with the day-of-month clamped
- * to the target month's length.
- *
- * The clamp is the point: "the 31st" in a 30-day month must be the 30th, not
- * the 1st of the next month. Rolling over shifts every subsequent run and can
- * fire twice in one calendar month.
- *
- * A negative `offset` steps backwards — see addDays above for why the backward
- * direction is this function with a sign rather than a second function.
+ * to the target month's length. The clamp is the point: "the 31st" in a 30-day
+ * month must be the 30th — rolling over shifts every subsequent run and can
+ * fire twice in one calendar month. A negative offset steps backwards.
  */
 export function addMonthsClamped({ year, month }, offset, desiredDay) {
     const zeroBased = (month - 1) + offset;
@@ -126,8 +112,7 @@ export function addMonthsClamped({ year, month }, offset, desiredDay) {
  * A day-of-month, clamped to 1-31, falling back when the input is not a number.
  *
  * The empty string is treated as absent rather than coerced: `'' ?? fallback`
- * is `''`, and `Number('')` is 0, so an empty runOn clamped to the 1st instead
- * of falling back to the startDate's own day.
+ * is `''` and `Number('')` is 0, so an empty runOn clamped to the 1st.
  */
 function clampDay(value, fallback) {
     const absent = value === '' || value === null || value === undefined;
@@ -140,19 +125,12 @@ function clampDay(value, fallback) {
  * it lands in the month the client picked.
  *
  * `cycleMonths` is the FULL step — `n * MONTHS_PER_UNIT[unit]`, i.e. 6 for
- * "every 2 quarters", not 3. It must match the step `nextByMonths` takes, or
- * the series is aligned on one modulus and sampled on another, and the chosen
- * month only appears by parity luck: aligning mod 3 while stepping 6 months
- * turned "every 2 quarters in June" into September and March forever, with
- * June never occurring at all.
+ * "every 2 quarters", not 3. It must match the step `nextByMonths` takes:
+ * aligning mod 3 while stepping 6 months turned "every 2 quarters in June" into
+ * September and March forever, with June never occurring at all.
  *
- * The deliberate cost, for `year` with n >= 2: the first run can be pushed out
- * by a whole cycle. A March schedule starting Aug 2026 lands on Mar 2028
- * rather than Mar 2027, because Mar 2027 is not phase-aligned to a two-year
- * step from the anchor. That trade is accepted on purpose — the client picked
- * March and still gets March, just one cycle later. Silently billing them in a
- * month they did not choose, every cycle, forever, is the worse failure. Do
- * not "simplify" this back to MONTHS_PER_UNIT.
+ * The cost, for `year` with n >= 2: the first run can be pushed out by a whole
+ * cycle — a March schedule starting Aug 2026 lands on Mar 2028, not Mar 2027.
  */
 function monthShift(runOnMonth, startMonth, cycleMonths) {
     const month = Number(runOnMonth);
@@ -164,16 +142,13 @@ function monthShift(runOnMonth, startMonth, cycleMonths) {
 /**
  * The anchor and target day-of-month for a month/quarter/year series.
  *
- * `runOn` carries two shapes, matching exactly what the API accepts
- * (utils/automationSettingsHelpers.js `validateRunOn`) and what the picker
- * sends (Frontend/lib/automation-run-on-options.ts): an integer day-of-month
+ * `runOn` carries two shapes, matching what the API accepts
+ * (utils/automationSettingsHelpers.js `validateRunOn`): an integer day-of-month
  * for `month`, and `{month, day}` for `quarter` and `year`. Reading the object
- * shape as a number is what produced `day: NaN` and an Invalid Date, and
- * ignoring its `month` made "yearly on 15 March" inexpressible.
+ * shape as a number produced `day: NaN` and an Invalid Date, and ignoring its
+ * `month` made "yearly on 15 March" inexpressible.
  *
- * The anchor's own day is irrelevant — nextByMonths re-clamps with
- * `desiredDay` — so only its year and month are used. `stepMonths` is the same
- * step nextByMonths will take; see monthShift for why the two must agree.
+ * `stepMonths` must be the same step nextByMonths takes — see monthShift.
  */
 function monthlySeries(runOn, start, stepMonths) {
     const isMonthDay = runOn !== null && typeof runOn === 'object';
@@ -191,16 +166,12 @@ function parseStartDate(startDate) {
 /**
  * The instant at which the calendar day `YYYY-MM-DD` begins in `tz`.
  *
- * A startDate is a calendar date, but `ScheduledJob.schedule.startDate` is a
- * Mongoose `Date`, so something has to choose which instant represents that
- * day. Anchoring on local midnight is the choice that survives the round trip:
- * reading the stored instant back in the same timezone yields the same
- * calendar date, which is what the arithmetic here needs. Casting the bare
- * string instead anchors on UTC midnight, which reads back as the *previous*
- * day anywhere west of Greenwich.
+ * Anchoring on local midnight is what survives the round trip through the
+ * stored Mongoose `Date`: casting the bare string anchors on UTC midnight,
+ * which reads back as the *previous* day anywhere west of Greenwich.
  *
  * Anything that is not a parseable calendar date is returned untouched, so a
- * client's `"not-a-date"` still reaches the schema and is still rejected as a
+ * client's `"not-a-date"` still reaches the schema and is rejected as a
  * CastError rather than being silently turned into null.
  */
 export function startOfDayInstant(startDate, tz) {
@@ -227,11 +198,7 @@ function nextByDays(anchor, stepDays, time, from, tz) {
     return candidate;
 }
 
-/**
- * How many iterations `nextByMonths` may take after its opening jump. The jump
- * lands within one step of the answer, so this is slack, not a working budget —
- * it exists so a pathological input cannot spin, not to bound normal use.
- */
+/** Slack after nextByMonths' opening jump, so a pathological input cannot spin. */
 const MAX_MONTH_STEPS = 16;
 
 /** Step a month/quarter/year schedule forward until it passes `from`. */
@@ -243,13 +210,11 @@ function nextByMonths(anchor, stepMonths, desiredDay, time, from, tz) {
     let candidate = at(0);
     if (candidate > from) return candidate;
 
-    // Jump most of the way in one calculation, the way nextByDays does. The
-    // previous version bounded the loop by the month *offset* (`offset < 400`)
-    // rather than by iterations, so a startDate more than ~33 years back
-    // exhausted the cap while the candidate was still behind `from` — and the
-    // stale candidate was returned anyway. That stored a nextRunAt in the past
-    // which was also a fixed point, so the tick claimed it, advanced it to
-    // itself, and re-fired it every minute forever.
+    // Jump most of the way in one calculation, the way nextByDays does. Bounding
+    // the loop by the month *offset* instead of by iterations meant a startDate
+    // ~33 years back exhausted the cap with the candidate still behind `from`,
+    // and the stale candidate was returned — a past nextRunAt that was also a
+    // fixed point, so the tick re-fired it every minute forever.
     const fromFields = wallFieldsOf(from, tz);
     const monthsApart = (fromFields.year - anchor.year) * 12 + (fromFields.month - anchor.month);
     let offset = Math.max(0, Math.floor(monthsApart / stepMonths) * stepMonths);
@@ -272,19 +237,12 @@ function weekdayAnchor(startFields, runOn, tz, time) {
 }
 
 /**
- * The contract below, asserted rather than assumed.
+ * A candidate at or before `from` is a fixed point: the tick claims it,
+ * `advanceSchedule` answers the same instant, and it re-fires forever.
  *
- * A candidate at or before `from` is the one failure nothing downstream can
- * catch: `upsertSchedule` stores it, every tick claims it, `advanceSchedule`
- * answers the same instant so the claim's compare-and-swap succeeds, and
- * `missedSlotsFor` returns 0 because its own `next <= cursor` guard fires — so
- * the schedule re-fires forever with `missedRuns` still at zero.
- *
- * Throwing is strictly better than that. The `Scheduler: ` prefix is what
- * `isScheduleClientError` (utils/automationSettingsHelpers.js) keys on, so a
- * save carrying such settings is answered 400 rather than 500, and a row that
- * somehow reaches the tick is quarantined by `claimAtMostOnce` instead of
- * being retried every minute.
+ * The `Scheduler: ` prefix is what `isScheduleClientError`
+ * (utils/automationSettingsHelpers.js) keys on, so a save carrying such
+ * settings is answered 400 rather than 500.
  */
 function assertStrictlyAfter(candidate, from) {
     if (candidate > from) return candidate;

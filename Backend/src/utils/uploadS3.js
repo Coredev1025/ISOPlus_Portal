@@ -4,11 +4,8 @@ import fs from 'fs';
 import dotenv from 'dotenv';
 // Offline, every function here swaps to a local directory served by
 // /api/local-files, so a generated PDF is still downloadable with no AWS
-// account. Same posture as services/offlineIsoplus.js — but note that
-// isOfflineMode() is NOT hard false in production: ISOPLUS_OFFLINE=1 forces it
-// on there too, which is why routes/localFiles.js gates on NODE_ENV as well.
-// Nothing here serves a request, so the equivalent risk is only that a
-// production host set to offline writes PDFs to disk instead of S3.
+// account. Nothing here serves a request; see routes/localFiles.js for the
+// ISOPLUS_OFFLINE-in-production hazard on the read side.
 import { isOfflineMode } from '../services/offlineIsoplus.js';
 import { saveLocalFile, resolveLocalFilePath, buildLocalFileUrl } from './localFileStore.js';
 
@@ -60,9 +57,8 @@ export const uploadFileToS3 = async (fileBuffer, key, publicRead = false) => {
 
 export const downloadFileFromS3Stream = async (key, downloadPath) => {
     if (isOfflineMode()) {
-        // Copy rather than stream: the local store is a plain directory, so
-        // the whole point of streaming — not holding an S3 object in memory —
-        // does not apply, and the caller only needs the file at downloadPath.
+        // Copy rather than stream: the local store is a plain directory, so the
+        // point of streaming does not apply.
         fs.copyFileSync(resolveLocalFilePath(key), downloadPath);
         return downloadPath;
     }

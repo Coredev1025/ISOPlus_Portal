@@ -1,17 +1,11 @@
 /**
  * Optional PDFLink fields for scheduled automation runs, plus the index the
- * per-slot lookups need.
- *
- * The fields themselves (`boardId`, `participant`, `periodKey`,
- * `invoiceNumber`) need no backfill: they are optional, new writes from
- * generateDocuments / generateStatements populate them, and existing URL-only
- * rows stay as they are. What does need creating is the index, because PDFLink
- * declared none — so every automation job full-scanned every PDF the workspace
- * has ever generated.
+ * per-slot lookups need. The fields need no backfill; the index does, because
+ * PDFLink declared none.
  *
  * Key order is `workspaceId, periodKey, type, boardId` rather than putting
- * boardId third, so that one index serves both automation slot lookups. All four
- * predicates are equality, so Mongo needs only a prefix match:
+ * boardId third, so that one index serves both automation slot lookups. All
+ * four predicates are equality, so Mongo needs only a prefix match:
  *   - generateDocuments' existingSlotResults queries all four — full match.
  *   - generateStatements' existingStatementLinks queries the first three
  *     (statements carry no boardId; they fold it into a synthetic itemId) —
@@ -45,14 +39,10 @@ export async function down(connection) {
 
   await collection.dropIndex(INDEX_NAME);
 
-  // Scoped to rows an automation run wrote. `periodKey` is what distinguishes
-  // them: the UI generators and the webhook PDF path also set `invoiceNumber`,
-  // so an unbounded updateMany({}) would strip numbers this migration never
-  // added.
-  //
-  // `boardId` and `participant` are deliberately left in place: once the index
-  // above is dropped they are inert metadata, and clearing them would cost a
-  // second full-collection write for no benefit.
+  // Scoped to rows an automation run wrote: `periodKey` is what distinguishes
+  // them, so an unbounded updateMany({}) would strip the `invoiceNumber` the UI
+  // generators and the webhook PDF path set. `boardId` and `participant` are
+  // left in place — inert metadata once the index is dropped.
   await collection.updateMany(
     { periodKey: { $exists: true } },
     { $unset: {
