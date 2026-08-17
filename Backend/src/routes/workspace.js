@@ -3,6 +3,7 @@ import { authenticateToken } from '../middleware/auth.js';
 import Workspace from '../models/Workspace.js';
 import Board from '../models/Board.js';
 import AutomationSettings from '../models/AutomationSettings.js';
+import PDFLink from '../models/PDFLink.js';
 import ScheduledJob from '../models/ScheduledJob.js';
 import { info, error, warn } from '../utils/logger.js';
 import {
@@ -399,15 +400,54 @@ router.put('/:workspaceId/feature-toggles', authenticateToken, async (req, res) 
  * nextRunAt — a disabled job will not fire, so it has no next run.
  */
 async function loadAutomationJobs(workspaceId) {
+  // Disabled rows are loaded too: buildAutomationSettingsPayload hides their
+  // nextRun but still surfaces lastRunAt/lastError, so a paused block's
+  // status panel can show when it last ran.
   const jobs = await ScheduledJob.find({
     kind: { $in: [KIND_INVOICE, KIND_STATEMENT] },
     targetId: { $eq: workspaceId },
-    enabled: true,
   })
-    .select('kind nextRunAt')
+    .select('kind enabled nextRunAt lastRunAt lastError consecutiveFailures')
     .lean();
 
   return Object.fromEntries(jobs.map((job) => [job.kind, job]));
+}
+
+/**
+ * The last automation-generated documents, for the client-facing status
+ * panel. `periodKey` is what distinguishes an automation run's PDFLink rows
+ * from the UI generators' (only recordPdfLinks and the statement generator
+ * set it), and a multi-item invoice records one row per item, so rows dedupe
+ * by pdfLink before the cap. The oversampled limit leaves room for that
+ * dedupe without reading the whole collection.
+ */
+const RECENT_DOCUMENTS_LIMIT = 10;
+
+async function loadRecentAutomationDocuments(workspaceId) {
+  const rows = await PDFLink.find({
+    workspaceId: { $eq: workspaceId },
+    periodKey: { $nin: [null, ''] },
+  })
+    .sort({ createdAt: -1 })
+    .limit(RECENT_DOCUMENTS_LIMIT * 5)
+    .select('type invoiceNumber periodKey pdfLink createdAt')
+    .lean();
+
+  const seen = new Set();
+  const documents = [];
+  for (const row of rows) {
+    if (documents.length >= RECENT_DOCUMENTS_LIMIT) break;
+    if (seen.has(row.pdfLink)) continue;
+    seen.add(row.pdfLink);
+    documents.push({
+      type: row.type,
+      invoiceNumber: row.invoiceNumber ?? null,
+      periodKey: row.periodKey,
+      pdfUrl: row.pdfLink,
+      createdAt: row.createdAt,
+    });
+  }
+  return documents;
 }
 
 /**
@@ -444,7 +484,11 @@ router.get('/:workspaceId/automation-settings', authenticateToken, async (req, r
 
     const settings = await AutomationSettings.findOne({ workspaceId: { $eq: workspaceId } }).lean();
     const jobs = await loadAutomationJobs(workspaceId);
-    return res.status(200).json(buildAutomationSettingsPayload(settings, jobs));
+    const recentDocuments = await loadRecentAutomationDocuments(workspaceId);
+    return res.status(200).json({
+      ...buildAutomationSettingsPayload(settings, jobs),
+      recentDocuments,
+    });
   } catch (err) {
     error(
       'Workspace-Service',

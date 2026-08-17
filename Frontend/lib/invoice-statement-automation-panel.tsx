@@ -7,11 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { AutomationEmailBlock } from "@/lib/automation-email-block";
 import { AutomationScheduleBlock } from "@/lib/automation-schedule-block";
+import { AutomationStatusPanel } from "@/lib/automation-status-panel";
 import {
   DEFAULT_BLOCK,
   fetchAutomationSettings,
   saveAutomationSettings,
   type AutomationBlock,
+  type AutomationRecentDocument,
   type AutomationSettings,
 } from "@/lib/automation-settings";
 
@@ -96,6 +98,11 @@ export function InvoiceStatementAutomationPanel({
   workspaceId,
 }: InvoiceStatementAutomationPanelProps) {
   const [settings, setSettings] = useState<AutomationSettings>(defaultSettings);
+  // Held apart from settings because the PUT echo does not carry it — a save
+  // must not blank the recent-documents list.
+  const [recentDocuments, setRecentDocuments] = useState<
+    AutomationRecentDocument[]
+  >([]);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [showSuccess, setShowSuccess] = useState(false);
@@ -104,7 +111,10 @@ export function InvoiceStatementAutomationPanel({
     let cancelled = false;
     fetchAutomationSettings(workspaceId)
       .then((loaded) => {
-        if (!cancelled) setSettings(loaded);
+        if (!cancelled) {
+          setSettings(loaded);
+          setRecentDocuments(loaded.recentDocuments ?? []);
+        }
       })
       .catch(() => {
         if (!cancelled) setErrorMessage("Could not load automation settings.");
@@ -137,6 +147,12 @@ export function InvoiceStatementAutomationPanel({
 
   return (
     <div className="space-y-[18px]">
+      <AutomationStatusPanel
+        invoice={settings.invoice}
+        statement={settings.statement}
+        recentDocuments={recentDocuments}
+      />
+
       <AutomationSection
         idPrefix="invoice"
         icon={Receipt}

@@ -135,11 +135,19 @@ export function isScheduleClientError(err) {
  * This merges it in for display only.
  */
 export function buildAutomationSettingsPayload(settings, jobs = {}) {
-  const shape = (block, kind) => ({
-    ...DEFAULT_AUTOMATION_BLOCK,
-    ...(block ?? {}),
-    nextRun: jobs[kind]?.nextRunAt ?? null,
-  });
+  const shape = (block, kind) => {
+    const job = jobs[kind];
+    return {
+      ...DEFAULT_AUTOMATION_BLOCK,
+      ...(block ?? {}),
+      // A paused schedule keeps its row (and history), but must not advertise
+      // a next run that will never fire — hence the enabled check. Jobs from
+      // callers that never select `enabled` are treated as enabled.
+      nextRun: job && job.enabled !== false ? (job.nextRunAt ?? null) : null,
+      lastRunAt: job?.lastRunAt ?? null,
+      lastRunError: job?.lastError ?? null,
+    };
+  };
 
   return {
     invoice: shape(settings?.invoice, 'invoice_automation'),

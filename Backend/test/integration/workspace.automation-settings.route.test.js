@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import AutomationSettings from '../../src/models/AutomationSettings.js';
+import PDFLink from '../../src/models/PDFLink.js';
 import ScheduledJob from '../../src/models/ScheduledJob.js';
 import { KIND_INVOICE, KIND_STATEMENT } from '../../src/constants/automation.js';
 import { authenticatedAgent } from '../helpers/auth.js';
@@ -72,10 +73,26 @@ describe('GET/PUT /api/workspaces/:workspaceId/automation-settings', () => {
 
   beforeEach(async () => {
     await AutomationSettings.deleteMany({});
+    await PDFLink.deleteMany({});
     await ScheduledJob.deleteMany({});
     app = createApp();
     ({ agent } = await authenticatedAgent(app));
   });
+
+  /** A PDFLink row the way the automation generators record one. */
+  function automationPdfLink(overrides) {
+    return PDFLink.create({
+      workspaceId: WS,
+      itemId: 'item-1',
+      type: 'NDIS Invoice',
+      invoiceNumber: null,
+      pdfLink: 'https://example.test/doc.pdf',
+      createdBy: '',
+      isDeleted: false,
+      SignatureStatus: 'Unsigned',
+      ...overrides,
+    });
+  }
 
   it('returns defaults when no document exists', async () => {
     const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
@@ -216,6 +233,75 @@ describe('GET/PUT /api/workspaces/:workspaceId/automation-settings', () => {
 
     const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
     expect(res.body.invoice.nextRun).toBeNull();
+  });
+
+  it('keeps reporting lastRunAt for a disabled block', async () => {
+    // disableSchedule preserves the row, so the status panel can show when a
+    // paused automation last ran.
+    await agent.put(`/api/workspaces/${WS}/automation-settings`).send({ invoice: MONTHLY_INVOICE });
+    const ranAt = new Date('2026-08-01T23:00:00.000Z');
+    await ScheduledJob.updateOne(
+      { kind: KIND_INVOICE, targetId: WS },
+      { $set: { lastRunAt: ranAt, lastError: 'boom' } },
+    );
+    await agent
+      .put(`/api/workspaces/${WS}/automation-settings`)
+      .send({ invoice: { ...MONTHLY_INVOICE, enabled: false } });
+
+    const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
+    expect(res.body.invoice.nextRun).toBeNull();
+    expect(res.body.invoice.lastRunAt).toBe(ranAt.toISOString());
+    expect(res.body.invoice.lastRunError).toBe('boom');
+  });
+
+  it('lists recent automation documents on GET, newest first and deduped', async () => {
+    await automationPdfLink({
+      pdfLink: 'https://example.test/inv-1.pdf',
+      invoiceNumber: 'INV-1004 (ISO+™)',
+      periodKey: '20250201-0900',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    // A second row for the same PDF (multi-item invoices record one row per
+    // item) must not appear twice.
+    await automationPdfLink({
+      itemId: 'item-2',
+      pdfLink: 'https://example.test/inv-1.pdf',
+      invoiceNumber: 'INV-1004 (ISO+™)',
+      periodKey: '20250201-0900',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    await automationPdfLink({
+      pdfLink: 'https://example.test/stmt-1.pdf',
+      type: 'Monthly Statement',
+      periodKey: '20250201-0900',
+      createdAt: new Date('2026-02-01T00:00:00.000Z'),
+    });
+    // No periodKey — a UI-generated PDF, not the automation's; excluded.
+    await automationPdfLink({ pdfLink: 'https://example.test/manual.pdf' });
+
+    const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
+    expect(res.status).toBe(200);
+    expect(res.body.recentDocuments.map((d) => d.pdfUrl)).toEqual([
+      'https://example.test/stmt-1.pdf',
+      'https://example.test/inv-1.pdf',
+    ]);
+    expect(res.body.recentDocuments[0].type).toBe('Monthly Statement');
+    expect(res.body.recentDocuments[1].invoiceNumber).toBe('INV-1004 (ISO+™)');
+    expect(res.body.recentDocuments[1].periodKey).toBe('20250201-0900');
+  });
+
+  it('caps recent automation documents at ten', async () => {
+    for (let i = 0; i < 12; i++) {
+      await automationPdfLink({
+        pdfLink: `https://example.test/doc-${i}.pdf`,
+        periodKey: '20250201-0900',
+        createdAt: new Date(Date.UTC(2026, 0, i + 1)),
+      });
+    }
+
+    const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
+    expect(res.body.recentDocuments).toHaveLength(10);
+    expect(res.body.recentDocuments[0].pdfUrl).toBe('https://example.test/doc-11.pdf');
   });
 
   it('returns 400 and leaves the settings unwritten when the schedule write fails', async () => {

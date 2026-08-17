@@ -191,4 +191,46 @@ describe('buildAutomationSettingsPayload', () => {
     expect(payload.statement.nextRun).toBeNull();
   });
 
+  it('surfaces the last run and its outcome per block', () => {
+    const ranAt = new Date('2026-08-01T23:00:00.000Z');
+    const payload = buildAutomationSettingsPayload(
+      { invoice: { enabled: true }, statement: { enabled: true } },
+      {
+        invoice_automation: {
+          nextRunAt: new Date('2026-09-01T23:00:00.000Z'),
+          lastRunAt: ranAt,
+          lastError: null,
+          consecutiveFailures: 0,
+        },
+        statement_automation: {
+          lastRunAt: ranAt,
+          lastError: 'generator exploded',
+          consecutiveFailures: 2,
+        },
+      },
+    );
+    expect(payload.invoice.lastRunAt).toEqual(ranAt);
+    expect(payload.invoice.lastRunError).toBeNull();
+    expect(payload.statement.lastRunAt).toEqual(ranAt);
+    expect(payload.statement.lastRunError).toBe('generator exploded');
+  });
+
+  it('keeps lastRunAt visible for a disabled job while hiding its nextRun', () => {
+    // disableSchedule keeps the row (and its history) with enabled: false; a
+    // paused block still shows when it last ran, but must not advertise a
+    // next run that will never fire.
+    const ranAt = new Date('2026-07-01T23:00:00.000Z');
+    const payload = buildAutomationSettingsPayload(
+      { invoice: { enabled: false } },
+      {
+        invoice_automation: {
+          enabled: false,
+          nextRunAt: new Date('2026-08-01T23:00:00.000Z'),
+          lastRunAt: ranAt,
+        },
+      },
+    );
+    expect(payload.invoice.nextRun).toBeNull();
+    expect(payload.invoice.lastRunAt).toEqual(ranAt);
+  });
 });

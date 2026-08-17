@@ -30,7 +30,8 @@ import {
   type AutomationSettings,
 } from '@/lib/automation-settings';
 
-// jsdom ships none of these, and Radix's Select calls all of them while opening.
+// jsdom ships none of these, and Radix's Select calls all of them while
+// opening; ProseMirror (TipTap's engine) needs the Range geometry stubs.
 beforeAll(() => {
   globalThis.ResizeObserver ??= class {
     observe() {}
@@ -41,6 +42,12 @@ beforeAll(() => {
   Element.prototype.hasPointerCapture ??= () => false;
   Element.prototype.setPointerCapture ??= () => {};
   Element.prototype.releasePointerCapture ??= () => {};
+  const emptyRect = () =>
+    ({ top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0, x: 0, y: 0 }) as DOMRect;
+  Range.prototype.getBoundingClientRect ??= emptyRect;
+  Range.prototype.getClientRects ??= () =>
+    ({ length: 0, item: () => null, [Symbol.iterator]: [][Symbol.iterator] }) as unknown as DOMRectList;
+  document.elementFromPoint ??= () => null;
 });
 
 const fetchMock = vi.mocked(fetchAutomationSettings);
@@ -311,17 +318,29 @@ describe('InvoiceStatementAutomationPanel', () => {
     );
   });
 
-  it('renders Email Message as a full-width multiline textarea', async () => {
-    fetchMock.mockResolvedValue(settings({ enabled: true }, { enabled: true }));
+  it('renders Email Message as a rich text editor with formatting controls', async () => {
+    // The spec calls Email Message a rich-text field; a plain textarea cannot
+    // carry the formatting the composed email will send. This supersedes the
+    // earlier textarea expectation.
+    fetchMock.mockResolvedValue(
+      settings({ enabled: true, emailMessage: '<p>Hello <strong>world</strong></p>' })
+    );
     await renderPanel();
 
-    for (const section of [invoiceSection(), statementSection()]) {
-      const message = within(section).getByLabelText(/email message/i);
-      // A one-line third-width input truncates any real message; the field is
-      // a textarea spanning the grid so the text stays readable while editing.
-      expect(message.tagName).toBe('TEXTAREA');
-      expect(message.closest('.md\\:col-span-3')).not.toBeNull();
+    const invoice = within(invoiceSection());
+    const editor = await waitFor(() => {
+      const el = invoice.getByLabelText(/email message/i);
+      expect(el).toHaveAttribute('contenteditable', 'true');
+      return el;
+    });
+    // Stored HTML renders as formatting, not as escaped markup.
+    expect(editor.innerHTML).toContain('<strong>world</strong>');
+    expect(editor.closest('.md\\:col-span-3')).not.toBeNull();
+    for (const name of [/^bold$/i, /^italic$/i, /bullet list/i, /numbered list/i]) {
+      expect(invoice.getByRole('button', { name })).toBeInTheDocument();
     }
+    // The other email fields stay plain inputs.
+    expect(invoice.getByLabelText(/email subject/i).tagName).toBe('INPUT');
   });
 
   it('renders the address-valued fields as type=email inputs', async () => {
@@ -337,6 +356,72 @@ describe('InvoiceStatementAutomationPanel', () => {
       'type',
       'email'
     );
+  });
+
+  it('shows the status panel with badges, runs, and recent documents', async () => {
+    fetchMock.mockResolvedValue({
+      ...settings(
+        {
+          enabled: true,
+          nextRun: '2026-09-01T12:00:00.000Z',
+          lastRunAt: '2026-08-01T12:00:00.000Z',
+        },
+        { enabled: false }
+      ),
+      recentDocuments: [
+        {
+          type: 'NDIS Invoice',
+          invoiceNumber: 'INV-1004 (ISO+™)',
+          periodKey: '20250201-0900',
+          pdfUrl: 'https://files.test/inv-1004.pdf',
+          createdAt: '2026-08-01T12:00:00.000Z',
+        },
+        {
+          type: 'Monthly Statement',
+          invoiceNumber: null,
+          periodKey: '20250201-0900',
+          pdfUrl:
+            'https://files.test/Jane-Smith_January_2025_Statement.pdf',
+          createdAt: '2026-08-01T12:00:00.000Z',
+        },
+      ],
+    });
+    await renderPanel();
+
+    const status = within(
+      screen.getByRole('region', { name: /automation status/i })
+    );
+    // Badges mirror the enable switches: enabled and clean → On track;
+    // disabled → Paused.
+    expect(status.getByText(/on track/i)).toBeInTheDocument();
+    expect(status.getByText(/paused/i)).toBeInTheDocument();
+    // The recent document links to its PDF.
+    expect(status.getByRole('link', { name: /INV-1004/i })).toHaveAttribute(
+      'href',
+      'https://files.test/inv-1004.pdf'
+    );
+    // A statement has no number, so its label comes from the file name —
+    // which carries the participant and period — not a repeat of the type.
+    expect(
+      status.getByRole('link', { name: 'Jane-Smith_January_2025_Statement' })
+    ).toBeInTheDocument();
+  });
+
+  it('flags a block whose last run failed as needing attention', async () => {
+    fetchMock.mockResolvedValue(
+      settings({
+        enabled: true,
+        lastRunAt: '2026-08-01T12:00:00.000Z',
+        lastRunError: 'generator exploded',
+      })
+    );
+    await renderPanel();
+
+    const status = within(
+      screen.getByRole('region', { name: /automation status/i })
+    );
+    expect(status.getByText(/attention needed/i)).toBeInTheDocument();
+    expect(status.getByText(/failed/i)).toBeInTheDocument();
   });
 
   it('hides the schedule and email fields until automatic generation is enabled', async () => {

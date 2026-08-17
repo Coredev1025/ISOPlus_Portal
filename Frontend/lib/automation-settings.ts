@@ -17,11 +17,26 @@ export type AutomationBlock = {
   senderIdentityId: string | null;
   /** Read-only. Computed from ScheduledJob.nextRunAt; never sent on save. */
   nextRun?: string | null;
+  /** Read-only. From ScheduledJob.lastRunAt; survives a pause. */
+  lastRunAt?: string | null;
+  /** Read-only. ScheduledJob.lastError from the most recent run, or null. */
+  lastRunError?: string | null;
+};
+
+/** One automation-generated PDF, newest first, as GET returns them. */
+export type AutomationRecentDocument = {
+  type: string;
+  invoiceNumber: string | null;
+  periodKey: string;
+  pdfUrl: string;
+  createdAt: string;
 };
 
 export type AutomationSettings = {
   invoice: AutomationBlock;
   statement: AutomationBlock;
+  /** GET only — the PUT echo does not carry it. */
+  recentDocuments?: AutomationRecentDocument[];
 };
 
 /**

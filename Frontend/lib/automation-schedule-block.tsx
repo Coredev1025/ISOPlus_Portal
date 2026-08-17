@@ -104,8 +104,11 @@ function toDateInputValue(startDate: string | null): string {
   return DATE_INPUT_PATTERN.test(datePart) ? datePart : "";
 }
 
-/** nextRun is a real instant, so it is shown in the reader's local time. */
-function formatNextRun(nextRun: string | null | undefined): string {
+/**
+ * nextRun is a real instant, so it is shown in the reader's local time.
+ * Exported for the status panel, which shows last/next runs the same way.
+ */
+export function formatNextRun(nextRun: string | null | undefined): string {
   if (!nextRun) return "—";
   const parsed = parseISO(nextRun);
   return isValid(parsed) ? format(parsed, "dd/MM/yyyy 'at' h:mm a") : "—";
