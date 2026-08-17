@@ -107,12 +107,6 @@ export const CARE_MANAGEMENT_PREFIX = 'Care Management';
 export const LOW_CAT_BOARD_LABEL = 'Care Management - SaH - Low Cat';
 
 /**
- * InvoiceNumber.type written by the generator PDF path (the page's "invoiced").
- * Touchpoints: services/automation/generateDocuments.js.
- */
-export const INVOICE_NUMBER_TYPE_PDF = 'PDF';
-
-/**
  * PDFLink.type values for scheduled artifacts.
  * Touchpoints: services/automation/generateDocuments.js, generateStatements.js.
  */

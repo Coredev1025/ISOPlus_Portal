@@ -85,13 +85,6 @@ describe('generateInvoicesForBoard — Invoice Generator pipeline', () => {
     root = mkdtempSync(join(tmpdir(), 'gen-docs-'));
     process.env.LOCAL_FILE_ROOT = root;
 
-    await Promise.all([
-      Business.deleteMany({ workspaceId: WS }),
-      Board.deleteMany({ workspaceId: WS }),
-      Item.deleteMany({ workspaceId: WS }),
-      InvoiceNumber.deleteMany({ workspaceId: WS }),
-      PDFLink.deleteMany({ workspaceId: WS }),
-    ]);
     await Business.create({
       workspaceId: WS,
       name: 'Gen Test Business',
@@ -116,13 +109,6 @@ describe('generateInvoicesForBoard — Invoice Generator pipeline', () => {
     process.env.ISOPLUS_OFFLINE = saved.ISOPLUS_OFFLINE;
     process.env.LOCAL_FILE_ROOT = saved.LOCAL_FILE_ROOT;
     rmSync(root, { recursive: true, force: true });
-    await Promise.all([
-      Business.deleteMany({ workspaceId: WS }),
-      Board.deleteMany({ workspaceId: WS }),
-      Item.deleteMany({ workspaceId: WS }),
-      InvoiceNumber.deleteMany({ workspaceId: WS }),
-      PDFLink.deleteMany({ workspaceId: WS }),
-    ]);
   });
 
   it('does not invoice a quote-shaped item without an approved timesheet', async () => {

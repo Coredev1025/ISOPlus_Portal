@@ -65,11 +65,8 @@ const MONTHLY_STATEMENT = {
 
 describe('automation pipeline: settings → tick → queue', () => {
   const originalSchedulerApiKey = process.env.SCHEDULER_API_KEY;
-  // The pipeline is gated on AUTOMATION_ENABLED, which defaults OFF so that
-  // merging cannot start generating real invoices for mail that has no
-  // transport yet (see .env.example and services/scheduler/handlers.js).
-  // Every assertion here is about the pipeline running, so the gate is opened.
-  // The gate's own behaviour lives in test/unit/services/scheduler.handlers.test.js.
+  // AUTOMATION_ENABLED defaults OFF; this suite is about the pipeline running,
+  // so it opens the gate. The gate itself: scheduler.handlers.test.js.
   const originalAutomationEnabled = process.env.AUTOMATION_ENABLED;
   let app;
   let agent;
@@ -84,24 +81,16 @@ describe('automation pipeline: settings → tick → queue', () => {
   }
 
   beforeEach(async () => {
-    await AutomationSettings.deleteMany({});
-    await ScheduledJob.deleteMany({});
-    await Board.deleteMany({});
-    await Business.deleteMany({});
     resetRecordedJobs();
 
     process.env.SCHEDULER_API_KEY = SCHEDULER_KEY;
-    // Both gates the pipeline now sits behind: the per-workspace feature flag
-    // (the settings route 403s without it) and the deployment-wide kill switch
-    // (the handler generates nothing when it is off). This suite exercises the
-    // pipeline running, so both are on for it and restored afterwards.
     process.env.AUTOMATION_ENABLED = 'true';
+    // The settings route 403s without the per-workspace feature flag.
     await Business.create({
       workspaceId: WS,
       name: 'Pipeline Test Co',
       featureToggles: { invoiceStatementAutomation: true },
     });
-    process.env.AUTOMATION_ENABLED = 'true';
 
     // The boot path itself, not registerAutomationHandlers directly. A
     // regression that drops automation from this function leaves schedules

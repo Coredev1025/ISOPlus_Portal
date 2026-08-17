@@ -91,10 +91,6 @@ describe('GET/PUT /api/workspaces/:workspaceId/automation-settings', () => {
   let agent;
 
   beforeEach(async () => {
-    await AutomationSettings.deleteMany({});
-    await PDFLink.deleteMany({});
-    await ScheduledJob.deleteMany({});
-    await Business.deleteMany({});
     failing.kind = null;
     // Automation is gated on the workspace's feature toggle, so every test
     // that saves settings needs the Business row carrying it. No

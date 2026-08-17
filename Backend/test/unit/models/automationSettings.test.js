@@ -8,7 +8,6 @@ describe('AutomationSettings', () => {
     expect(doc.statement.enabled).toBe(false);
     expect(doc.invoice.every.n).toBe(1);
     expect(doc.invoice.every.unit).toBe('month');
-    expect(doc.invoice.senderIdentityId).toBeNull();
   });
 
   it('rejects a unit outside the five allowed values', async () => {

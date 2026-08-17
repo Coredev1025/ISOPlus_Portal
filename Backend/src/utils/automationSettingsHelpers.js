@@ -24,7 +24,6 @@ export const DEFAULT_AUTOMATION_BLOCK = {
   emailFrom: '',
   emailSubject: '',
   emailMessage: '',
-  senderIdentityId: null,
 };
 
 /**

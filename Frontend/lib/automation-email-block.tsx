@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { Input } from "@/components/ui/input";
 import {
+  EMAIL_MESSAGE_FIELD,
   EMAIL_TEXT_FIELDS,
   RECIPIENT_OPTIONS,
   SEND_METHOD_OPTIONS,
@@ -23,14 +24,15 @@ const RichTextEditor = dynamic(
   { ssr: false },
 );
 
-type TextFieldKey = (typeof EMAIL_TEXT_FIELDS)[number]["key"];
+type TextFieldKey =
+  | (typeof EMAIL_TEXT_FIELDS)[number]["key"]
+  | typeof EMAIL_MESSAGE_FIELD.key;
 
 type EmailTextFieldProps = Readonly<{
   id: string;
   label: string;
   value: string;
   isEmail: boolean;
-  multiline: boolean;
   onChange: (next: string) => void;
 }>;
 
@@ -39,44 +41,21 @@ function EmailTextField({
   label,
   value,
   isEmail,
-  multiline,
   onChange,
 }: EmailTextFieldProps) {
   const invalid = isEmail && value !== "" && !EMAIL_PATTERN.test(value);
   const errorId = `${id}-error`;
-  const inputProps = {
-    id,
-    value,
-    "aria-invalid": invalid || undefined,
-    "aria-describedby": invalid ? errorId : undefined,
-  };
 
   return (
-    // Body text truncates in a third-width one-liner, so a multiline field
-    // spans the grid and grows to a rich text editor — the spec calls Email
-    // Message a rich-text field, and the composed email sends its HTML.
-    <AutomationField
-      id={id}
-      label={label}
-      className={multiline ? "md:col-span-3" : undefined}
-      // The rich text editor is a contenteditable div, which htmlFor cannot
-      // bind to; it names itself instead.
-      labelFor={multiline ? false : undefined}
-    >
-      {multiline ? (
-        <RichTextEditor
-          id={id}
-          ariaLabel={label}
-          value={value}
-          onChange={onChange}
-        />
-      ) : (
-        <Input
-          {...inputProps}
-          type={isEmail ? "email" : undefined}
-          onChange={(event) => onChange(event.target.value)}
-        />
-      )}
+    <AutomationField id={id} label={label}>
+      <Input
+        id={id}
+        value={value}
+        aria-invalid={invalid || undefined}
+        aria-describedby={invalid ? errorId : undefined}
+        type={isEmail ? "email" : undefined}
+        onChange={(event) => onChange(event.target.value)}
+      />
       {invalid ? (
         <p id={errorId} className="text-[11px] text-destructive">
           Enter a valid email address.
@@ -136,10 +115,28 @@ export function AutomationEmailBlock({
           label={field.label}
           value={value[field.key]}
           isEmail={field.isEmail}
-          multiline={field.multiline}
           onChange={setText(field.key)}
         />
       ))}
+
+      {/* Body text truncates in a third-width one-liner, so Email Message
+          spans the grid and is a rich text editor — the spec calls it a
+          rich-text field, and the composed email sends its HTML. */}
+      <AutomationField
+        id={`${idPrefix}-${EMAIL_MESSAGE_FIELD.id}`}
+        label={EMAIL_MESSAGE_FIELD.label}
+        className="md:col-span-3"
+        // The editor is a contenteditable div, which htmlFor cannot bind to;
+        // it names itself instead.
+        labelFor={false}
+      >
+        <RichTextEditor
+          id={`${idPrefix}-${EMAIL_MESSAGE_FIELD.id}`}
+          ariaLabel={EMAIL_MESSAGE_FIELD.label}
+          value={value[EMAIL_MESSAGE_FIELD.key]}
+          onChange={setText(EMAIL_MESSAGE_FIELD.key)}
+        />
+      </AutomationField>
     </div>
   );
 }

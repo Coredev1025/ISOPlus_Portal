@@ -8,16 +8,21 @@ import { fileURLToPath } from 'url';
 import Business from '../models/Business.js';
 import PDFLink from '../models/PDFLink.js';
 import Item from '../models/Item.js';
-import InvoiceNumber from '../models/InvoiceNumber.js';
 import Board from '../models/Board.js';
-import { getS3File, uploadFileToS3, getS3FileUrl } from '../utils/uploadS3.js';
+import { uploadFileToS3, getS3FileUrl } from '../utils/uploadS3.js';
 import { isEmpty } from '../utils/helpers.js';
 import { applyTemplateTextDefaultsToPages } from '../utils/webhookTemplateHelpers.js';
 import { paginatePdfmeTemplateTableByRows } from '../utils/webhookPdfPaginationHelpers.js';
 import { processWebhookNdisQuotePdfItem, processWebhookNdisInvoicePdfItem } from '../utils/webhookNdisPdfHandlers.js';
 import { handleParticipantTaxInvoiceRoute } from '../utils/webhookParticipantTaxPdfHelpers.js';
 import { generateNdisInvoiceGeneratorPdf } from '../services/automation/ndisInvoiceGeneratorPdf.js';
-import { parseMasterItemIdsFromBody } from '../utils/ndisInvoiceGeneratorPdfHelpers.js';
+import { parseInvoiceGeneratorMasterItemIds } from '../utils/xeroNdisRouteHandlers.js';
+import {
+    enableRepeatHeadOnTables,
+    formatDateNumericAU,
+    getLogoData,
+    saveInvoiceNumber,
+} from '../utils/invoicePdfSupport.js';
 import { handleMonthlyStatementRoute, buildMonthlyStatementDeps } from '../utils/webhookMonthlyStatementPdfHelpers.js';
 import { mongoEq } from '../utils/securityHelpers.js';
 
@@ -44,24 +49,6 @@ import { fetchBudgetItems, fetchServiceItems } from '../services/monthlyStatemen
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const router = express.Router();
-
-// Exported for services/automation/generateDocuments.js, which renders the
-// same templates outside a request.
-export function enableRepeatHeadOnTables(template) {
-    if (!template || !Array.isArray(template.schemas)) {
-        return;
-    }
-    for (const pageSchemas of template.schemas) {
-        if (!Array.isArray(pageSchemas)) {
-            continue;
-        }
-        for (const schema of pageSchemas) {
-            if (schema && schema.type === 'table') {
-                schema.repeatHead = true;
-            }
-        }
-    }
-}
 
 // Attribute names constants (matching items.js)
 const ATTRIBUTE_NAMES = {
@@ -114,21 +101,6 @@ async function handlePDFError(err, workspaceId, boardId, itemId, action, req, re
         req
     });
     return res.status(200).json({ message: errorMessage });
-}
-
-export async function getLogoData(business, req = null) {
-    const logoKey = business.defaultLogo;
-    if (!logoKey) return '';
-
-    const buffer = await getS3File(logoKey, false);
-    if (!buffer) throw new Error('Failed to retrieve logo from S3');
-
-    info('Webhook-Service', 'Embedding default logo for PDF generation', {
-      workspaceId: business?.workspaceId,
-      hasDefaultLogo: !!business?.defaultLogo
-    }, req ?? null);
-    const type = logoKey.split('.').pop();
-    return `data:image/${type};base64,${buffer.toString('base64')}`;
 }
 
 async function fetchImageUrlAsBase64(url) {
@@ -567,47 +539,6 @@ function formatLabelValue(value, labels = []) {
     return String(value);
 }
 
-export async function saveInvoiceNumber(workspaceId, boardId, itemId, invoiceNumber, type, pdfLink = null) {
-    try {
-        await InvoiceNumber.findOneAndUpdate(
-            {
-                itemId: itemId,
-                workspaceId: workspaceId,
-                boardId: boardId,
-                type: type
-            },
-            {
-                $set: {
-                    itemId: itemId,
-                    workspaceId: workspaceId,
-                    boardId: boardId,
-                    invoiceNumber: invoiceNumber,
-                    type: type,
-                    pdfLink: pdfLink,
-                    updatedAt: new Date()
-                },
-                $setOnInsert: {
-                    createdAt: new Date()
-                }
-            },
-            {
-                upsert: true,
-                new: true
-            }
-        );
-    } catch (err) {
-        // Log error but don't fail the invoice generation if saving fails
-        warn('Webhook-Service', 'Failed to save invoice number to database', {
-            workspaceId,
-            boardId,
-            itemId,
-            invoiceNumber,
-            type,
-            error: err.message
-        }, {});
-    }
-}
-
 // Exported for services/automation/generateDocuments.js, which renders the
 // same templates outside a request.
 export function formatValue(val) {
@@ -676,15 +607,6 @@ function formatDateToAU(value, timezone) {
         timeZone: effectiveTimezone
     };
     return new Intl.DateTimeFormat('en-AU', options).format(date);
-}
-
-// Exported for services/automation/generateDocuments.js, which renders the
-// same templates outside a request.
-export function formatDateNumericAU(value, timeZone) {
-    if (!value) return new Date().toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric', timeZone: timeZone || 'Australia/Sydney' });
-    const d = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(d.getTime())) return '';
-    return d.toLocaleString('en-AU', { month: 'numeric', day: 'numeric', year: 'numeric', timeZone: timeZone || 'Australia/Sydney' });
 }
 
 function safeString(value) {
@@ -1720,7 +1642,7 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
         const result = await generateNdisInvoiceGeneratorPdf({
             workspaceId,
             boardId,
-            masterItemIds: parseMasterItemIdsFromBody(req.body),
+            masterItemIds: parseInvoiceGeneratorMasterItemIds(req.body),
             participantName: req.body?.participantName,
             invoiceDate: req.body?.invoiceDate,
             dueDate: req.body?.dueDate,

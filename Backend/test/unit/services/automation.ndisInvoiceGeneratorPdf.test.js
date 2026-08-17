@@ -79,11 +79,6 @@ describe('generateNdisInvoiceGeneratorPdf', () => {
     root = mkdtempSync(join(tmpdir(), 'ndis-inv-pdf-'));
     process.env.LOCAL_FILE_ROOT = root;
 
-    await Promise.all([
-      Business.deleteMany({ workspaceId: WS }),
-      Item.deleteMany({ workspaceId: WS }),
-      InvoiceNumber.deleteMany({ workspaceId: WS }),
-    ]);
     await Business.create({
       workspaceId: WS,
       name: 'NDIS Pdf Biz',
@@ -103,11 +98,6 @@ describe('generateNdisInvoiceGeneratorPdf', () => {
     process.env.ISOPLUS_OFFLINE = saved.ISOPLUS_OFFLINE;
     process.env.LOCAL_FILE_ROOT = saved.LOCAL_FILE_ROOT;
     rmSync(root, { recursive: true, force: true });
-    await Promise.all([
-      Business.deleteMany({ workspaceId: WS }),
-      Item.deleteMany({ workspaceId: WS }),
-      InvoiceNumber.deleteMany({ workspaceId: WS }),
-    ]);
   });
 
   it('renders an Invoice Generator PDF, numbers it, and marks the master item invoiced', async () => {

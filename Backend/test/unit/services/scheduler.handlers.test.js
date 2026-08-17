@@ -176,10 +176,6 @@ describe('AUTOMATION_ENABLED gate', () => {
     vi.clearAllMocks();
     isOfflineMode.mockReturnValue(false);
     delete process.env.AUTOMATION_ENABLED;
-    await Promise.all([
-      AutomationSettings.deleteMany({ workspaceId: 'ws-gate' }),
-      Board.deleteMany({ workspaceId: 'ws-gate' }),
-    ]);
   });
 
   afterEach(async () => {
@@ -188,10 +184,6 @@ describe('AUTOMATION_ENABLED gate', () => {
     } else {
       process.env.AUTOMATION_ENABLED = savedFlag;
     }
-    await Promise.all([
-      AutomationSettings.deleteMany({ workspaceId: 'ws-gate' }),
-      Board.deleteMany({ workspaceId: 'ws-gate' }),
-    ]);
   });
 
   it('defaults OFF: an absent flag enqueues nothing even with settings enabled', async () => {

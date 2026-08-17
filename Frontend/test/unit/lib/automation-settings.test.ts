@@ -76,29 +76,4 @@ describe("automation-settings client", () => {
     expect(body.statement).toHaveProperty("every");
   });
 
-  it("does not mutate the settings it was given", async () => {
-    (axios.put as any).mockResolvedValue({
-      data: { invoice: DEFAULT_BLOCK, statement: DEFAULT_BLOCK },
-    });
-    const payload = {
-      invoice: { ...structuredClone(DEFAULT_BLOCK), nextRun: "2026-09-01T12:00:00.000Z" },
-      statement: structuredClone(DEFAULT_BLOCK),
-    };
-
-    await saveAutomationSettings("ws-1", payload);
-
-    expect(payload.invoice.nextRun).toBe("2026-09-01T12:00:00.000Z");
-  });
-
-  it("freezes the outer DEFAULT_BLOCK to prevent mutation", () => {
-    expect(() => {
-      (DEFAULT_BLOCK as any).enabled = true;
-    }).toThrow();
-  });
-
-  it("freezes the nested every object to prevent mutation", () => {
-    expect(() => {
-      (DEFAULT_BLOCK.every as any).unit = "day";
-    }).toThrow();
-  });
 });

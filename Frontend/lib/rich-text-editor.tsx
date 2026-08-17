@@ -16,6 +16,27 @@ function toStoredValue(html: string): string {
   return html === "<p></p>" ? "" : html;
 }
 
+/**
+ * StarterKit's default set is far wider than this field. Anything the four-button
+ * toolbar does not expose is unreachable by mouse yet still reachable from the
+ * keyboard — markdown input rules give headings (`# `), blockquotes (`> `) and
+ * code blocks (` ``` `), and Ctrl+U gives underline — and none of it is styled by
+ * the email template, so it would land in a customer's inbox as unstyled markup
+ * nobody chose. Only the marks and nodes the toolbar drives are registered.
+ * Undo/redo (`undoRedo`), hard breaks, cursors and the list keymap stay on:
+ * they are editing behaviour, not output the reader sees.
+ */
+const EMAIL_STARTER_KIT = StarterKit.configure({
+  heading: false,
+  blockquote: false,
+  codeBlock: false,
+  code: false,
+  horizontalRule: false,
+  strike: false,
+  link: false,
+  underline: false,
+});
+
 type ToolbarButtonProps = Readonly<{
   label: string;
   icon: LucideIcon;
@@ -97,7 +118,7 @@ export function RichTextEditor({
   onChange,
 }: RichTextEditorProps) {
   const editor = useEditor({
-    extensions: [StarterKit],
+    extensions: [EMAIL_STARTER_KIT],
     content: value,
     // Next.js renders on the server first; TipTap must wait for the client.
     immediatelyRender: false,

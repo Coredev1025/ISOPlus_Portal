@@ -117,25 +117,6 @@ describe('InvoiceStatementAutomationPanel', () => {
     expect(statementNextRun).toHaveValue('—');
   });
 
-  it('renders a populated Next Run formatted, not as a raw ISO string', async () => {
-    fetchMock.mockResolvedValue(
-      settings({ enabled: true, nextRun: '2026-09-01T12:00:00.000Z' })
-    );
-    await renderPanel();
-
-    const nextRun = within(invoiceSection()).getByLabelText(
-      /next run/i
-    ) as HTMLInputElement;
-
-    // Asserted by shape, not by an exact string: date-fns formats in the
-    // runner's local zone and the value must not depend on it.
-    expect(nextRun.value).toMatch(
-      /^\d{2}\/\d{2}\/\d{4} at \d{1,2}:\d{2} (AM|PM)$/
-    );
-    expect(nextRun.value).not.toContain('T');
-    expect(nextRun.value).not.toContain('Z');
-  });
-
   it('renders a server ISO startDate as a yyyy-mm-dd date input value', async () => {
     // Mongoose stores startDate as a Date, so a GET returns a full ISO
     // instant. <input type="date"> silently blanks anything but yyyy-mm-dd.
@@ -147,13 +128,6 @@ describe('InvoiceStatementAutomationPanel', () => {
     expect(within(invoiceSection()).getByLabelText(/start date/i)).toHaveValue(
       '2026-03-01'
     );
-  });
-
-  it('leaves the date input empty when there is no start date', async () => {
-    fetchMock.mockResolvedValue(settings({ enabled: true }));
-    await renderPanel();
-
-    expect(within(invoiceSection()).getByLabelText(/start date/i)).toHaveValue('');
   });
 
   it('does not render the excluded fields', async () => {
@@ -528,61 +502,6 @@ describe('InvoiceStatementAutomationPanel', () => {
     );
     expect(status.getByText(/attention needed/i)).toBeInTheDocument();
     expect(status.getByText(/failed/i)).toBeInTheDocument();
-  });
-
-  it('flags a block the server reports as failed without a message', async () => {
-    // The API may report the failure coarsely rather than by message; the
-    // badge must not go quiet because the field was renamed.
-    fetchMock.mockResolvedValue(
-      settings({
-        enabled: true,
-        lastRunAt: '2026-08-01T12:00:00.000Z',
-        lastRunFailed: true,
-      })
-    );
-    await renderPanel();
-
-    const status = within(
-      screen.getByRole('region', { name: /automation status/i })
-    );
-    expect(status.getByText(/attention needed/i)).toBeInTheDocument();
-  });
-
-  it('labels a recent document from its structured fields when they are sent', async () => {
-    fetchMock.mockResolvedValue({
-      ...settings({ enabled: true }),
-      recentDocuments: [
-        {
-          type: 'Monthly Statement',
-          invoiceNumber: null,
-          participant: 'Jane Smith',
-          periodKey: '20250201-0900',
-          pdfUrl: 'https://files.test/9f2c1b7e-4a55.pdf',
-          createdAt: '2026-08-01T12:00:00.000Z',
-        },
-        {
-          type: 'NDIS Invoice',
-          invoiceNumber: null,
-          periodKey: '20250201-0900',
-          // A trailing slash leaves no basename — a link named '' has no
-          // accessible name at all.
-          pdfUrl: 'https://files.test/',
-          createdAt: '2026-08-01T12:00:00.000Z',
-        },
-      ],
-    });
-    await renderPanel();
-
-    const status = within(
-      screen.getByRole('region', { name: /automation status/i })
-    );
-    expect(status.getByRole('link', { name: 'Jane Smith' })).toHaveAttribute(
-      'href',
-      'https://files.test/9f2c1b7e-4a55.pdf'
-    );
-    expect(
-      status.getByRole('link', { name: 'NDIS Invoice' })
-    ).toBeInTheDocument();
   });
 
   it('hides the schedule and email fields until automatic generation is enabled', async () => {

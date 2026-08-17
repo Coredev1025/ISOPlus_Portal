@@ -11,13 +11,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 import { UNIT_OPTIONS } from "@/constants/automation";
 import { formatNextRun, toDateInputValue } from "@/lib/automation-helpers";
 import {
   defaultRunOnForUnit,
   runOnOptionsForUnit,
   type AutomationUnit,
-  type RunOnOption,
 } from "@/lib/automation-run-on-options";
 import type { AutomationBlock } from "@/lib/automation-settings";
 
@@ -28,12 +28,13 @@ type AutomationFieldProps = Readonly<{
   hint?: string;
   className?: string;
   /**
-   * `false` when the control this labels is not a labelable element — the
-   * rich text editor is a contenteditable div, which `htmlFor` cannot bind to,
-   * so it carries its own `role`/`aria-label` and the attribute is dropped
-   * rather than left pointing at nothing.
+   * The only accepted value is `false`, for a control that is not a labelable
+   * element — the rich text editor is a contenteditable div, which `htmlFor`
+   * cannot bind to, so it carries its own `role`/`aria-label` and the
+   * attribute is dropped rather than left pointing at nothing. Every other
+   * field is labelled by its own `id`.
    */
-  labelFor?: string | false;
+  labelFor?: false;
 }>;
 
 /** Shared by the schedule and email blocks so both tabs label fields alike. */
@@ -46,9 +47,9 @@ export function AutomationField({
   labelFor,
 }: AutomationFieldProps) {
   return (
-    <div className={className ? `space-y-1.5 ${className}` : "space-y-1.5"}>
+    <div className={cn("space-y-1.5", className)}>
       <Label
-        htmlFor={labelFor === false ? undefined : (labelFor ?? id)}
+        htmlFor={labelFor === false ? undefined : id}
         className="text-xs font-semibold text-muted-foreground"
       >
         {label}
@@ -60,7 +61,7 @@ export function AutomationField({
 }
 
 /** Structurally compatible with RunOnOption, so both blocks feed one select. */
-export type AutomationSelectOption = { value: string | number; label: string };
+type AutomationSelectOption = { value: string | number; label: string };
 
 type OptionSelectProps = Readonly<{
   id: string;
@@ -111,56 +112,38 @@ type RunOnFieldsProps = Readonly<{
   onChange: (runOn: RunOn) => void;
 }>;
 
-function MonthDayRunOn({ idPrefix, runOn, onChange, months, days }: Readonly<{
-  idPrefix: string;
-  runOn: RunOn;
-  onChange: (runOn: RunOn) => void;
-  months: readonly RunOnOption[];
-  days: readonly RunOnOption[];
-}>) {
-  const current = monthDayOf(runOn);
-  return (
-    <AutomationField id={`${idPrefix}-run-on-month`} label="Run On">
-      <div className="flex items-center gap-2">
-        <OptionSelect
-          id={`${idPrefix}-run-on-month`}
-          ariaLabel="Run On Month"
-          value={String(current.month)}
-          options={months}
-          className="min-w-0 flex-1"
-          onValueChange={(next) =>
-            onChange({ month: Number(next), day: current.day })
-          }
-        />
-        <OptionSelect
-          id={`${idPrefix}-run-on-day`}
-          ariaLabel="Run On Day"
-          value={String(current.day)}
-          options={days}
-          className="min-w-0 flex-1"
-          onValueChange={(next) =>
-            onChange({ month: current.month, day: Number(next) })
-          }
-        />
-      </div>
-    </AutomationField>
-  );
-}
-
 function RunOnFields({ idPrefix, unit, runOn, onChange }: RunOnFieldsProps) {
   const { kind, options, months } = runOnOptionsForUnit(unit);
 
   if (kind === "none") return null;
 
   if (kind === "month-day") {
+    const current = monthDayOf(runOn);
     return (
-      <MonthDayRunOn
-        idPrefix={idPrefix}
-        runOn={runOn}
-        onChange={onChange}
-        months={months ?? []}
-        days={options}
-      />
+      <AutomationField id={`${idPrefix}-run-on-month`} label="Run On">
+        <div className="flex items-center gap-2">
+          <OptionSelect
+            id={`${idPrefix}-run-on-month`}
+            ariaLabel="Run On Month"
+            value={String(current.month)}
+            options={months ?? []}
+            className="min-w-0 flex-1"
+            onValueChange={(next) =>
+              onChange({ month: Number(next), day: current.day })
+            }
+          />
+          <OptionSelect
+            id={`${idPrefix}-run-on-day`}
+            ariaLabel="Run On Day"
+            value={String(current.day)}
+            options={options}
+            className="min-w-0 flex-1"
+            onValueChange={(next) =>
+              onChange({ month: current.month, day: Number(next) })
+            }
+          />
+        </div>
+      </AutomationField>
     );
   }
 

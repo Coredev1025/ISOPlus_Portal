@@ -49,8 +49,6 @@ describe('runAutomationKind', () => {
   beforeEach(async () => {
     addBulk.mockReset();
     clearRegistry();
-    await Board.deleteMany({});
-    await AutomationSettings.deleteMany({});
   });
 
   it('enqueues one job per board', async () => {
@@ -113,9 +111,6 @@ describe('registerAutomationHandlers', () => {
   beforeEach(async () => {
     addBulk.mockReset();
     clearRegistry();
-    await Board.deleteMany({});
-    await AutomationSettings.deleteMany({});
-    await ScheduledJob.deleteMany({});
   });
 
   it('registers both kinds under AT_LEAST_ONCE', () => {

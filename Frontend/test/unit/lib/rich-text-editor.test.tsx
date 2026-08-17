@@ -113,6 +113,22 @@ describe('RichTextEditor', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
+  it('does not turn a markdown shortcut into a heading', async () => {
+    // StarterKit ships heading, blockquote, code and code block, none of which
+    // the toolbar exposes and none of which the email template styles — but
+    // all of which markdown input rules reach from the keyboard. Typing '# '
+    // must stay literal, or the user silently sends unstyled markup.
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    const { onChange } = await renderEditor('');
+
+    await user.click(editorEl());
+    await user.keyboard('# Heading');
+
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    expect(editorEl().querySelector('h1')).toBeNull();
+    expect(onChange).toHaveBeenLastCalledWith('<p># Heading</p>');
+  });
+
   describe.each([
     ['Bold', /^bold$/i],
     ['Italic', /^italic$/i],

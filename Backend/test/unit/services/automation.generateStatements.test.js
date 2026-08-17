@@ -48,24 +48,12 @@ describe('generateStatementsForBoard', () => {
     process.env.ISOPLUS_OFFLINE = '1';
     root = mkdtempSync(join(tmpdir(), 'gen-stmt-'));
     process.env.LOCAL_FILE_ROOT = root;
-    await Promise.all([
-      Business.deleteMany({ workspaceId: WS }),
-      Board.deleteMany({ boardId: BOARD }),
-      Item.deleteMany({ workspaceId: WS }),
-      PDFLink.deleteMany({ workspaceId: WS }),
-    ]);
   });
 
   afterEach(async () => {
     process.env.ISOPLUS_OFFLINE = saved.ISOPLUS_OFFLINE;
     process.env.LOCAL_FILE_ROOT = saved.LOCAL_FILE_ROOT;
     rmSync(root, { recursive: true, force: true });
-    await Promise.all([
-      Business.deleteMany({ workspaceId: WS }),
-      Board.deleteMany({ boardId: BOARD }),
-      Item.deleteMany({ workspaceId: WS }),
-      PDFLink.deleteMany({ workspaceId: WS }),
-    ]);
   });
 
   it('no-ops on an NDIS-only board that is not Care Management', async () => {

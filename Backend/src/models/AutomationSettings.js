@@ -26,8 +26,6 @@ const blockSchema = new mongoose.Schema(
     emailFrom: { type: String, default: '' },
     emailSubject: { type: String, default: '' },
     emailMessage: { type: String, default: '' },
-    // Nullable now, per doc 2's phased sender plan, so phase 2 needs no migration.
-    senderIdentityId: { type: String, default: null },
   },
   { _id: false },
 );

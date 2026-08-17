@@ -123,7 +123,14 @@ export function applyExclusiveInvoiceDateRange(
   return { scheduledServiceDateRange: undefined, serviceDeliveryDateRange: range };
 }
 
-function appendDateRangeParams(
+/**
+ * Appends the four date-range params both the search and the CSV export send.
+ * The date functions are arguments rather than imports because
+ * `buildInvoiceGeneratorSearchParams` receives them on `InvoiceGeneratorFilterParams`
+ * and its callers substitute them; `invoice-generator-export-helpers.ts` passes
+ * the real ones from `@/lib/timezone`.
+ */
+export function appendDateRangeParams(
   params: URLSearchParams,
   scheduledServiceDateRange: DateRange | undefined,
   serviceDeliveryDateRange: DateRange | undefined,

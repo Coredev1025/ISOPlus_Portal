@@ -16,7 +16,6 @@ export type AutomationBlock = {
   emailFrom: string;
   emailSubject: string;
   emailMessage: string;
-  senderIdentityId: string | null;
   /**
    * Read-only. Computed from ScheduledJob.nextRunAt. Stripped from the save
    * payload by `saveAutomationSettings` — see READ_ONLY_BLOCK_FIELDS.
@@ -75,7 +74,6 @@ export const DEFAULT_BLOCK: AutomationBlock = Object.freeze({
   emailFrom: "",
   emailSubject: "",
   emailMessage: "",
-  senderIdentityId: null,
   nextRun: null,
 }) as AutomationBlock;
 

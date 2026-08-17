@@ -62,16 +62,6 @@ export const UNIT_OPTIONS = [
 ] as const;
 
 /**
- * The free-text fields of the email block, in render order. `isEmail` is what
- * selects a field for `EMAIL_PATTERN`; the three address-valued fields are the
- * same three the backend validates in `parseAutomationSettingsBody`.
- * `multiline` renders the field as a grid-spanning textarea instead of a
- * one-line input — body text truncates in a third-width input.
- *
- * Touchpoints: lib/automation-email-block.tsx (field list and validation). Keys
- * are `AutomationBlock` field names.
- */
-/**
  * The `AutomationBlock` fields the server owns and the client must never send
  * back: the scheduler computes them from ScheduledJob. Listed here rather than
  * spelled inline so a new read-only field is stripped by the one place that
@@ -88,10 +78,31 @@ export const READ_ONLY_BLOCK_FIELDS = [
   "consecutiveFailures",
 ] as const;
 
+/**
+ * The one-line free-text fields of the email block, in render order. `isEmail`
+ * is what selects a field for `EMAIL_PATTERN`; the three address-valued fields
+ * are the same three the backend validates in `parseAutomationSettingsBody`.
+ *
+ * Touchpoints: lib/automation-email-block.tsx (field list and validation). Keys
+ * are `AutomationBlock` field names.
+ */
 export const EMAIL_TEXT_FIELDS = [
-  { key: "sendCopyTo", id: "send-copy-to", label: "Send a Copy To", isEmail: true, multiline: false },
-  { key: "replyTo", id: "reply-to", label: "Reply-to Email", isEmail: true, multiline: false },
-  { key: "emailFrom", id: "email-from", label: "Email From", isEmail: true, multiline: false },
-  { key: "emailSubject", id: "email-subject", label: "Email Subject", isEmail: false, multiline: false },
-  { key: "emailMessage", id: "email-message", label: "Email Message", isEmail: false, multiline: true },
+  { key: "sendCopyTo", id: "send-copy-to", label: "Send a Copy To", isEmail: true },
+  { key: "replyTo", id: "reply-to", label: "Reply-to Email", isEmail: true },
+  { key: "emailFrom", id: "email-from", label: "Email From", isEmail: true },
+  { key: "emailSubject", id: "email-subject", label: "Email Subject", isEmail: false },
 ] as const;
+
+/**
+ * Email Message is not one of the above: it is a rich text editor, not an
+ * input, and it spans the grid because body text truncates in a third-width
+ * one-liner. It is listed separately so the four one-liners stay a plain map
+ * with no per-field escape hatches.
+ *
+ * Touchpoints: lib/automation-email-block.tsx (the explicit Email Message field).
+ */
+export const EMAIL_MESSAGE_FIELD = {
+  key: "emailMessage",
+  id: "email-message",
+  label: "Email Message",
+} as const;

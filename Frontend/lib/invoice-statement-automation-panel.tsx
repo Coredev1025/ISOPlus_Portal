@@ -3,8 +3,11 @@
 import { useEffect, useState } from "react";
 import { CalendarClock, Receipt } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AutomationEmailBlock } from "@/lib/automation-email-block";
 import { AutomationScheduleBlock } from "@/lib/automation-schedule-block";
 import { AutomationStatusPanel } from "@/lib/automation-status-panel";
@@ -77,7 +80,7 @@ function AutomationSection({
 
         {value.enabled ? (
           <>
-            <div className="my-[18px] h-px bg-border" />
+            <Separator className="my-[18px]" />
 
             <AutomationEmailBlock
               idPrefix={idPrefix}
@@ -103,10 +106,7 @@ function AutomationLoadingSkeleton() {
     <div role="status" aria-busy="true" className="space-y-[18px]">
       <span className="sr-only">Loading automation settings…</span>
       {[0, 1, 2].map((index) => (
-        <div
-          key={index}
-          className="h-32 animate-pulse rounded-lg border bg-muted/40 shadow-sm"
-        />
+        <Skeleton key={index} className="h-32 rounded-lg" />
       ))}
     </div>
   );
@@ -119,15 +119,12 @@ function AutomationLoadingSkeleton() {
  */
 function AutomationLoadFailed() {
   return (
-    <div
-      role="alert"
-      className="rounded-md border border-destructive bg-destructive/10 p-4"
-    >
-      <p className="text-sm text-destructive">
+    <Alert variant="destructive">
+      <AlertDescription>
         Could not load automation settings. Nothing has been changed — reload
         the page to try again.
-      </p>
-    </div>
+      </AlertDescription>
+    </Alert>
   );
 }
 
@@ -234,23 +231,19 @@ export function InvoiceStatementAutomationPanel({
       />
 
       {errorMessage ? (
-        <div
-          role="alert"
-          className="rounded-md border border-destructive bg-destructive/10 p-4"
-        >
-          <p className="text-sm text-destructive">{errorMessage}</p>
-        </div>
+        <Alert variant="destructive">
+          <AlertDescription>{errorMessage}</AlertDescription>
+        </Alert>
       ) : null}
 
+      {/* role overrides Alert's own role="alert": a save confirmation is a
+          polite status, not an assertive interruption. */}
       {showSuccess ? (
-        <div
-          role="status"
-          className="rounded-md border border-green-500 bg-green-100 p-4"
-        >
-          <p className="text-sm text-green-700">
+        <Alert role="status">
+          <AlertDescription>
             Automation settings saved successfully!
-          </p>
-        </div>
+          </AlertDescription>
+        </Alert>
       ) : null}
 
       <div className="flex justify-end gap-2.5">

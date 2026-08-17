@@ -2,12 +2,12 @@
  * Optional PDFLink fields for scheduled automation runs, plus the index the
  * per-slot lookups need.
  *
- * The fields themselves (`boardId`, `participant`, `periodKey`, `invoiceNumber`,
- * `xeroInvoiceId`, `xeroInvoiceNumber`) need no backfill: they are optional,
- * new writes from generateDocuments / generateStatements /
- * pushDraftInvoicesToXero populate them, and existing URL-only rows stay as they
- * are. What does need creating is the index, because PDFLink declared none — so
- * every automation job full-scanned every PDF the workspace has ever generated.
+ * The fields themselves (`boardId`, `participant`, `periodKey`,
+ * `invoiceNumber`) need no backfill: they are optional, new writes from
+ * generateDocuments / generateStatements populate them, and existing URL-only
+ * rows stay as they are. What does need creating is the index, because PDFLink
+ * declared none — so every automation job full-scanned every PDF the workspace
+ * has ever generated.
  *
  * Key order is `workspaceId, periodKey, type, boardId` rather than putting
  * boardId third, so that one index serves both automation slot lookups. All four
@@ -16,9 +16,6 @@
  *   - generateStatements' existingStatementLinks queries the first three
  *     (statements carry no boardId; they fold it into a synthetic itemId) —
  *     a prefix match.
- * Not covered: pushDraftInvoicesToXero's {workspaceId, itemId, periodKey}
- * lookup, which still scans within the workspace. That wants its own index and
- * its own ticket.
  */
 
 const INDEX_NAME = 'automation_slot_lookup';
@@ -53,12 +50,6 @@ export async function down(connection) {
   // so an unbounded updateMany({}) would strip numbers this migration never
   // added.
   //
-  // WARNING: unsetting `xeroInvoiceId` removes the guard in
-  // pushDraftInvoicesToXero that makes the Xero push idempotent — it returns
-  // early when the link already carries an id. After this rollback, a later run
-  // over the same period will create a second draft invoice in Xero for every
-  // invoice already pushed. Reconcile Xero before re-running the automation.
-  //
   // `boardId` and `participant` are deliberately left in place: once the index
   // above is dropped they are inert metadata, and clearing them would cost a
   // second full-collection write for no benefit.
@@ -67,8 +58,6 @@ export async function down(connection) {
     { $unset: {
       periodKey: '',
       invoiceNumber: '',
-      xeroInvoiceId: '',
-      xeroInvoiceNumber: '',
     } },
   );
 }

@@ -1,11 +1,11 @@
 import type { AxiosInstance } from 'axios';
 import type { DateRange } from 'react-day-picker';
 import {
+  appendDateRangeParams,
   getFundingSourceCode,
   getTransactionStatusSearchValue,
   formatDateForCsvExport,
   formatNumberForCsvExport,
-  exclusiveInvoiceGeneratorDateRanges,
 } from '@/lib/invoice-generator-helpers';
 import { dateToStartOfDayISO, dateToEndOfDayISO } from '@/lib/timezone';
 import { randomAlphanumeric } from '@/lib/secure-random';
@@ -70,32 +70,6 @@ function buildTimestampedFileName(prefix: string, participantFilter: string) {
   return `${prefix}~${timestamp}~${participantName}~${uniqueCode}.csv`;
 }
 
-function appendDateRangeParams(
-  params: URLSearchParams,
-  scheduledServiceDateRange: DateRange | undefined,
-  serviceDeliveryDateRange: DateRange | undefined,
-  businessTimezone: string,
-) {
-  const exclusive = exclusiveInvoiceGeneratorDateRanges(
-    scheduledServiceDateRange,
-    serviceDeliveryDateRange,
-  );
-  if (exclusive.scheduledServiceDateRange?.from) {
-    params.append('startDate', dateToStartOfDayISO(new Date(exclusive.scheduledServiceDateRange.from), businessTimezone));
-  }
-  if (exclusive.scheduledServiceDateRange?.to || exclusive.scheduledServiceDateRange?.from) {
-    const toSource = exclusive.scheduledServiceDateRange?.to || exclusive.scheduledServiceDateRange?.from;
-    params.append('endDate', dateToEndOfDayISO(new Date(toSource as Date), businessTimezone));
-  }
-  if (exclusive.serviceDeliveryDateRange?.from) {
-    params.append('serviceDeliveryStart', dateToStartOfDayISO(new Date(exclusive.serviceDeliveryDateRange.from), businessTimezone));
-  }
-  if (exclusive.serviceDeliveryDateRange?.to || exclusive.serviceDeliveryDateRange?.from) {
-    const toSource = exclusive.serviceDeliveryDateRange?.to || exclusive.serviceDeliveryDateRange?.from;
-    params.append('serviceDeliveryEnd', dateToEndOfDayISO(new Date(toSource as Date), businessTimezone));
-  }
-}
-
 async function exportNdisCsv(options: {
   axios: AxiosInstance;
   id: string;
@@ -116,7 +90,7 @@ async function exportNdisCsv(options: {
   if (options.participantFilter && options.participantFilter !== 'all') {
     params.append('participant', options.participantFilter);
   }
-  appendDateRangeParams(params, options.scheduledServiceDateRange, options.serviceDeliveryDateRange, options.businessTimezone);
+  appendDateRangeParams(params, options.scheduledServiceDateRange, options.serviceDeliveryDateRange, dateToStartOfDayISO, dateToEndOfDayISO, options.businessTimezone);
 
   if (options.paymentStatusFilter !== 'all') {
     params.append('paymentStatus', options.paymentStatusFilter);
@@ -255,7 +229,7 @@ async function exportStandardCsv(options: {
   if (options.participantFilter && options.participantFilter !== 'all') {
     params.append('participant', options.participantFilter);
   }
-  appendDateRangeParams(params, options.scheduledServiceDateRange, options.serviceDeliveryDateRange, options.businessTimezone);
+  appendDateRangeParams(params, options.scheduledServiceDateRange, options.serviceDeliveryDateRange, dateToStartOfDayISO, dateToEndOfDayISO, options.businessTimezone);
 
   const transactionStatusParam = getTransactionStatusSearchValue(options.transactionStatusFilter);
   if (transactionStatusParam) {

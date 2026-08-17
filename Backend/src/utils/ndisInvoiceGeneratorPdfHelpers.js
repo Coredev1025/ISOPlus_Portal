@@ -6,29 +6,6 @@ import {
   formatDdMmYyyy,
 } from './ndisServiceRecords.js';
 import { resolveNdisPricingRuleForServicePlan } from './ndisPricingRules.js';
-import {
-  buildMasterItemsMap,
-  enrichNdisInvoiceGeneratorRows,
-} from './ndisInvoiceGeneratorOutput.js';
-import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
-
-export function parseMasterItemIdsFromBody(body) {
-  const raw = Array.isArray(body?.itemIds)
-    ? body.itemIds
-    : (Array.isArray(body?.items) ? body.items : []);
-
-  return [...new Set(raw.map((entry) => masterItemIdFromEntry(entry)).filter(Boolean))];
-}
-
-function masterItemIdFromEntry(entry) {
-  if (!entry) return null;
-  if (typeof entry === 'string') return entry;
-  if (typeof entry !== 'object') return null;
-  if (entry.sourceItemId) return String(entry.sourceItemId);
-  if (entry.id && String(entry.id).includes(':')) return String(entry.id).split(':')[0];
-  if (entry.id) return String(entry.id);
-  return null;
-}
 
 export function formatInvoiceMoney(val) {
   const n = Number(val);
@@ -107,23 +84,11 @@ export function buildNdisInvoiceOrders(enrichedRows, timezone) {
   return { ordersArr, subTotal: formatInvoiceMoney(subTotalNum) };
 }
 
-export function enrichInvoiceRows(allRows, masterItems, timezone) {
-  return enrichNdisInvoiceGeneratorRows(
-    allRows,
-    buildMasterItemsMap(masterItems),
-    timezone,
-  );
-}
-
 export function ndisInvoicePdfFilename(workspaceId, boardId, invoiceNumberBase, participantName) {
   const safeSuffix = (participantName || 'Multiple')
     .replace(/[^a-zA-Z0-9-_]+/g, '_')
     .slice(0, 40);
   return `output/${workspaceId}/${boardId}/NDIS-invoices/${invoiceNumberBase}-ISO+™-${safeSuffix}.pdf`;
-}
-
-export function resolveInvoiceTimezone(business) {
-  return business?.headOfficeTimezone || DEFAULT_TIMEZONE;
 }
 
 export function resolveDueDate(invoiceDateRaw, dueDateRaw) {

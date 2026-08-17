@@ -74,7 +74,7 @@ function daysInMonth(year, month) {
 }
 
 /** "09:00" -> { hour: 9, minute: 0 }. Invalid input falls back to midnight. */
-export function parseRunAt(runAt) {
+function parseRunAt(runAt) {
     const match = /^(\d{1,2}):(\d{2})$/.exec(String(runAt ?? '').trim());
     if (!match) return { hour: 0, minute: 0 };
     const hour = Math.min(23, Math.max(0, Number(match[1])));
@@ -82,8 +82,16 @@ export function parseRunAt(runAt) {
     return { hour, minute };
 }
 
-/** Calendar date `offset` days after `fields`, ignoring time. */
-function addDays({ year, month, day }, offset) {
+/**
+ * Calendar date `offset` days after `fields`, ignoring time.
+ *
+ * A negative `offset` steps backwards, which is how
+ * utils/automationScheduleWindow.js walks a billing window back from the
+ * claimed slot. There is deliberately no `subtractDays` counterpart: two
+ * functions differing only in sign drift apart, and this one already carries
+ * the Date.UTC normalisation both directions depend on.
+ */
+export function addDays({ year, month, day }, offset) {
     const shifted = new Date(Date.UTC(year, month - 1, day + offset));
     return {
         year: shifted.getUTCFullYear(),
@@ -99,8 +107,11 @@ function addDays({ year, month, day }, offset) {
  * The clamp is the point: "the 31st" in a 30-day month must be the 30th, not
  * the 1st of the next month. Rolling over shifts every subsequent run and can
  * fire twice in one calendar month.
+ *
+ * A negative `offset` steps backwards — see addDays above for why the backward
+ * direction is this function with a sign rather than a second function.
  */
-function addMonthsClamped({ year, month }, offset, desiredDay) {
+export function addMonthsClamped({ year, month }, offset, desiredDay) {
     const zeroBased = (month - 1) + offset;
     const targetYear = year + Math.floor(zeroBased / 12);
     const targetMonth = ((zeroBased % 12) + 12) % 12 + 1;

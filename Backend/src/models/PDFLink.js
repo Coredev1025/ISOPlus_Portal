@@ -41,8 +41,6 @@ const PDFLinkSchema = new Schema({
     participant: { type: String },
     periodKey: { type: String },
     invoiceNumber: { type: String },
-    xeroInvoiceId: { type: String },
-    xeroInvoiceNumber: { type: String },
     createdAt: {
         type: Date,
         default: Date.now

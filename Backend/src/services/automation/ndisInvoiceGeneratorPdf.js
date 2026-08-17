@@ -12,13 +12,15 @@ import {
   getNdisInvoiceGeneratorContextFromMasterItems,
   prepareParticipantForInvoiceGenerator,
 } from '../../utils/ndisInvoiceGeneratorInvoicing.js';
-import { buildNdisInvoicePdfClientDetails } from '../../utils/ndisInvoiceGeneratorOutput.js';
+import {
+  buildMasterItemsMap,
+  buildNdisInvoicePdfClientDetails,
+  enrichNdisInvoiceGeneratorRows,
+} from '../../utils/ndisInvoiceGeneratorOutput.js';
 import {
   collectNdisInvoiceRows,
   buildNdisInvoiceOrders,
-  enrichInvoiceRows,
   ndisInvoicePdfFilename,
-  resolveInvoiceTimezone,
   resolveDueDate,
   formatInvoiceMoney,
 } from '../../utils/ndisInvoiceGeneratorPdfHelpers.js';
@@ -29,6 +31,7 @@ import {
   getLogoData,
   saveInvoiceNumber,
 } from '../../utils/invoicePdfSupport.js';
+import { DEFAULT_TIMEZONE } from '../../constants/scheduler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -98,7 +101,7 @@ export async function generateNdisInvoiceGeneratorPdf({
   });
   const { participantProfile, participantName } = prepared;
   const profileItem = prepared.participantProfileItem;
-  const timezone = resolveInvoiceTimezone(business);
+  const timezone = business?.headOfficeTimezone || DEFAULT_TIMEZONE;
   const invoiceNumberBase = await allocateInvoiceNumberBase(workspaceId, business);
   const invoiceNumber = `${invoiceNumberBase} (ISO+™)`;
 
@@ -133,7 +136,9 @@ export async function generateNdisInvoiceGeneratorPdf({
     invoiceDate,
     dueDate,
     timezone,
-    enrichedRows: enrichInvoiceRows(allRows, masterItems, timezone),
+    enrichedRows: enrichNdisInvoiceGeneratorRows(
+      allRows, buildMasterItemsMap(masterItems), timezone,
+    ),
   });
 
   await persistGeneratedInvoice({

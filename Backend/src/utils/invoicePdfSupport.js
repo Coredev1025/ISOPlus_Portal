@@ -1,3 +1,11 @@
+// The one home for the four helpers every invoice/quote PDF path needs. Each
+// of these existed twice — here and again in routes/webhook.js — with the
+// webhook copy hardcoding 'Australia/Sydney' where this one reads
+// DEFAULT_TIMEZONE. Import from here; do not re-declare.
+//
+// Readers: routes/webhook.js, services/automation/ndisInvoiceGeneratorPdf.js,
+// and (via injected deps built in routes/webhook.js) utils/webhookNdisPdfHandlers.js,
+// utils/webhookParticipantTaxPdfHelpers.js, utils/webhookMonthlyStatementPdfHelpers.js.
 import InvoiceNumber from '../models/InvoiceNumber.js';
 import { getS3File } from './uploadS3.js';
 import { info, warn } from './logger.js';

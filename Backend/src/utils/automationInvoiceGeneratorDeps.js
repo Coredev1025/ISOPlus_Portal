@@ -2,7 +2,7 @@ import Item from '../models/Item.js';
 import InvoiceNumber from '../models/InvoiceNumber.js';
 import Business from '../models/Business.js';
 import { bulkFetchReferenceItemsFromDB } from './ndisInvoiceGeneratorInvoicing.js';
-import { isUuidLike } from './ndisServiceRecords.js';
+import { isUuidLike, extractRefId, extractAllRefIds } from './ndisServiceRecords.js';
 import {
   ATTRIBUTE_NAMES,
   REF_ATTRIBUTE_NAMES,
@@ -16,33 +16,6 @@ export function getValueFromFlatData(item, attributeName) {
     if (item.data[attrName] !== undefined && item.data[attrName] !== null) return item.data[attrName];
   }
   return null;
-}
-
-export function extractRefId(value) {
-  if (!value) return null;
-  if (Array.isArray(value) && value.length > 0) {
-    const first = value[0];
-    if (typeof first === 'object' && first.id) return first.id.toString();
-    if (typeof first === 'string') return first;
-    return first?.toString();
-  }
-  if (typeof value === 'object' && value.id) return value.id.toString();
-  if (typeof value === 'string') return value;
-  return value?.toString();
-}
-
-export function extractAllRefIds(value) {
-  if (!value) return [];
-  if (Array.isArray(value)) {
-    return value.map((entry) => {
-      if (typeof entry === 'object' && entry.id) return entry.id.toString();
-      if (typeof entry === 'string') return entry;
-      return entry?.toString();
-    }).filter(Boolean);
-  }
-  if (typeof value === 'object' && value.id) return [value.id.toString()];
-  if (typeof value === 'string') return [value];
-  return value ? [value.toString()] : [];
 }
 
 async function noFolderIds() {

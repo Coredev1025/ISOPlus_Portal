@@ -2,7 +2,7 @@
 // portal uses. The list window comes from the claimed ScheduledJob picker
 // (service delivery dates for the completed schedule period), not leftover
 // Invoice Generator UI filters. Quote-shaped items without an approved
-// timesheet are not billed. findBillableItems stays for the Xero draft path.
+// timesheet are not billed.
 
 import Board from '../../models/Board.js';
 import Business from '../../models/Business.js';
@@ -33,8 +33,6 @@ import { generateParticipantTaxInvoicePdf } from '../../utils/webhookParticipant
 import { liveParticipantTaxDeps } from '../../routes/webhook.js';
 import { mongoEq } from '../../utils/securityHelpers.js';
 import { info, warn } from '../../utils/logger.js';
-import { formatValue } from '../../routes/webhook.js';
-import { buildNdisQuotePdfOrders } from '../../utils/ndisQuoteLineHelpers.js';
 
 function invoiceGeneratorListQuery(slot, timezone, schedule, { status = 'pending' } = {}) {
   return {
@@ -47,24 +45,17 @@ function invoiceGeneratorListQuery(slot, timezone, schedule, { status = 'pending
   };
 }
 
-export async function findBillableItems(boardId) {
-  const items = await Item.find({ boardId: mongoEq(String(boardId)) }).lean();
-  return items.filter((item) => {
-    const { ordersArr } = buildNdisQuotePdfOrders(item.data ?? {}, [], formatValue);
-    return ordersArr.length > 0;
-  });
-}
-
 function uniquePdfResults(links) {
   const seen = new Set();
   const results = [];
   for (const link of links) {
-    if (!link?.pdfLink || seen.has(link.pdfLink)) continue;
-    seen.add(link.pdfLink);
+    const pdfUrl = link?.pdfUrl ?? link?.pdfLink;
+    if (!pdfUrl || seen.has(pdfUrl)) continue;
+    seen.add(pdfUrl);
     const row = {
       itemId: link.itemId,
       invoiceNumber: link.invoiceNumber,
-      pdfUrl: link.pdfLink,
+      pdfUrl,
     };
     // Absent rather than empty when unknown: the worker only sets a template
     // var for a value that exists, so {{client_name}} survives verbatim instead
@@ -195,17 +186,7 @@ async function generateNdisGeneratorInvoices({ workspaceId, boardId, periodKey, 
       pdfUrl: generated.fileUrl,
     });
   }
-  return uniquePdfResults(toLinkShape(results));
-}
-
-/** Results back into the `{pdfLink}` shape uniquePdfResults reads. */
-function toLinkShape(results) {
-  return results.map((row) => ({
-    itemId: row.itemId,
-    invoiceNumber: row.invoiceNumber,
-    participant: row.participant,
-    pdfLink: row.pdfUrl,
-  }));
+  return uniquePdfResults(results);
 }
 
 function captureRes() {
@@ -283,5 +264,5 @@ async function generateAgeCareGeneratorInvoices({
       pdfUrl: body.fileUrl,
     });
   }
-  return uniquePdfResults(toLinkShape(results));
+  return uniquePdfResults(results);
 }
