@@ -1,7 +1,7 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { Input } from "@/components/ui/input";
-import { RichTextEditor } from "@/lib/rich-text-editor";
 import {
   EMAIL_TEXT_FIELDS,
   RECIPIENT_OPTIONS,
@@ -10,6 +10,18 @@ import {
 import { EMAIL_PATTERN } from "@/constants/validation";
 import { AutomationField, OptionSelect } from "@/lib/automation-schedule-block";
 import type { AutomationBlock } from "@/lib/automation-settings";
+
+/**
+ * TipTap is ~100-130KB gzipped and only one field in one tab of Finance
+ * Settings uses it. Loaded statically it sits in the page's import graph, so
+ * every visitor downloads it to reach a tab most never open; loaded here it
+ * arrives when a block is enabled and the editor actually renders. ssr: false
+ * because TipTap has to wait for the client anyway (`immediatelyRender: false`).
+ */
+const RichTextEditor = dynamic(
+  () => import("@/lib/rich-text-editor").then((mod) => mod.RichTextEditor),
+  { ssr: false },
+);
 
 type TextFieldKey = (typeof EMAIL_TEXT_FIELDS)[number]["key"];
 
@@ -47,6 +59,9 @@ function EmailTextField({
       id={id}
       label={label}
       className={multiline ? "md:col-span-3" : undefined}
+      // The rich text editor is a contenteditable div, which htmlFor cannot
+      // bind to; it names itself instead.
+      labelFor={multiline ? false : undefined}
     >
       {multiline ? (
         <RichTextEditor

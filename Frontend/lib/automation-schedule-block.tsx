@@ -1,7 +1,6 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { format, isValid, parseISO } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -13,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { UNIT_OPTIONS } from "@/constants/automation";
+import { formatNextRun, toDateInputValue } from "@/lib/automation-helpers";
 import {
   defaultRunOnForUnit,
   runOnOptionsForUnit,
@@ -27,6 +27,13 @@ type AutomationFieldProps = Readonly<{
   children: ReactNode;
   hint?: string;
   className?: string;
+  /**
+   * `false` when the control this labels is not a labelable element — the
+   * rich text editor is a contenteditable div, which `htmlFor` cannot bind to,
+   * so it carries its own `role`/`aria-label` and the attribute is dropped
+   * rather than left pointing at nothing.
+   */
+  labelFor?: string | false;
 }>;
 
 /** Shared by the schedule and email blocks so both tabs label fields alike. */
@@ -36,11 +43,12 @@ export function AutomationField({
   children,
   hint,
   className,
+  labelFor,
 }: AutomationFieldProps) {
   return (
     <div className={className ? `space-y-1.5 ${className}` : "space-y-1.5"}>
       <Label
-        htmlFor={id}
+        htmlFor={labelFor === false ? undefined : (labelFor ?? id)}
         className="text-xs font-semibold text-muted-foreground"
       >
         {label}
@@ -86,32 +94,6 @@ export function OptionSelect({
       </SelectContent>
     </Select>
   );
-}
-
-const DATE_INPUT_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
-/**
- * startDate is a Date on the server, so a GET returns a full ISO instant, and
- * <input type="date"> silently blanks anything that is not yyyy-mm-dd. The
- * date portion is sliced rather than parsed on purpose: the stored value is
- * midnight UTC, and parsing it into local time would roll the calendar day
- * back for every user west of Greenwich. Mirror of the `|| null` on the way
- * back out.
- */
-function toDateInputValue(startDate: string | null): string {
-  if (!startDate) return "";
-  const datePart = startDate.slice(0, 10);
-  return DATE_INPUT_PATTERN.test(datePart) ? datePart : "";
-}
-
-/**
- * nextRun is a real instant, so it is shown in the reader's local time.
- * Exported for the status panel, which shows last/next runs the same way.
- */
-export function formatNextRun(nextRun: string | null | undefined): string {
-  if (!nextRun) return "—";
-  const parsed = parseISO(nextRun);
-  return isValid(parsed) ? format(parsed, "dd/MM/yyyy 'at' h:mm a") : "—";
 }
 
 type RunOn = AutomationBlock["runOn"];

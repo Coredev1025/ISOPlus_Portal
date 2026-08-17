@@ -147,7 +147,7 @@ test.describe("Invoice & Statement Automation", () => {
     ).toHaveText("Please find attached");
   });
 
-  test("flags a malformed email inline without blocking the form", async ({
+  test("flags a malformed email inline and holds Save until it is fixed", async ({
     page,
   }) => {
     await page.goto(AUTOMATION_URL);
@@ -158,6 +158,32 @@ test.describe("Invoice & Statement Automation", () => {
     await invoice.getByLabel(/send a copy to/i).fill("not-an-email");
 
     await expect(invoice.getByText(/valid email address/i)).toBeVisible();
+    // The API rejects the whole PUT with one message that does not name the
+    // offending field, so the form refuses first.
+    await expect(page.getByRole("button", { name: /save changes/i })).toBeDisabled();
+
+    await invoice.getByLabel(/send a copy to/i).fill("billing@example.com");
+
+    await expect(page.getByRole("button", { name: /save changes/i })).toBeEnabled();
+  });
+
+  test("the editor toolbar is operable by keyboard, not only by mouse", async ({
+    page,
+  }) => {
+    // A focused button activated by Enter dispatches click and never
+    // mousedown; a toolbar wired to mousedown alone is tabbable and inert,
+    // which reads as broken rather than as unavailable.
+    await page.goto(AUTOMATION_URL);
+
+    const invoice = invoiceBlock(page);
+    await invoice.getByRole("switch").click();
+
+    await invoice.getByLabel(/email message/i).click();
+    await invoice.getByRole("button", { name: /bullet list/i }).press("Enter");
+
+    await expect(
+      invoice.getByLabel(/email message/i).locator("ul"),
+    ).toHaveCount(1);
   });
 
   test("Next Run is read-only — the scheduler owns it", async ({ page }) => {

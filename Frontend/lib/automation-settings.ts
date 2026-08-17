@@ -1,4 +1,6 @@
+import { omit } from "lodash-es";
 import axios from "@/app/utils/axiosConfig";
+import { READ_ONLY_BLOCK_FIELDS } from "@/constants/automation";
 import type { AutomationUnit } from "@/lib/automation-run-on-options";
 
 export type AutomationBlock = {
@@ -15,12 +17,23 @@ export type AutomationBlock = {
   emailSubject: string;
   emailMessage: string;
   senderIdentityId: string | null;
-  /** Read-only. Computed from ScheduledJob.nextRunAt; never sent on save. */
+  /**
+   * Read-only. Computed from ScheduledJob.nextRunAt. Stripped from the save
+   * payload by `saveAutomationSettings` — see READ_ONLY_BLOCK_FIELDS.
+   */
   nextRun?: string | null;
   /** Read-only. From ScheduledJob.lastRunAt; survives a pause. */
   lastRunAt?: string | null;
   /** Read-only. ScheduledJob.lastError from the most recent run, or null. */
   lastRunError?: string | null;
+  /**
+   * Read-only, optional. A coarser statement of the same fact as
+   * `lastRunError`, for a response shape that reports the failure without its
+   * message. `blockNeedsAttention` reads all three.
+   */
+  lastRunFailed?: boolean;
+  /** Read-only, optional. ScheduledJob.consecutiveFailures, when sent. */
+  consecutiveFailures?: number;
 };
 
 /** One automation-generated PDF, newest first, as GET returns them. */
@@ -30,6 +43,12 @@ export type AutomationRecentDocument = {
   periodKey: string;
   pdfUrl: string;
   createdAt: string;
+  /**
+   * Optional. PDFLink.participant, when the API sends it — a real label for a
+   * statement, which carries no invoice number. Absent responses fall back to
+   * the file name; see `recentDocumentLabel`.
+   */
+  participant?: string | null;
 };
 
 export type AutomationSettings = {
@@ -70,10 +89,33 @@ export async function fetchAutomationSettings(
   return response.data;
 }
 
+/**
+ * What the client is allowed to write. The scheduler owns the run fields and
+ * PDFLink owns the document list; Mongoose drops them today, so sending them
+ * is harmless — but a schema that later accepts them would let a Save
+ * overwrite state no user typed. Pure, and copies rather than mutating.
+ */
+export type AutomationSavePayload = {
+  invoice: Omit<AutomationBlock, (typeof READ_ONLY_BLOCK_FIELDS)[number]>;
+  statement: Omit<AutomationBlock, (typeof READ_ONLY_BLOCK_FIELDS)[number]>;
+};
+
+export function toAutomationSavePayload(
+  settings: AutomationSettings,
+): AutomationSavePayload {
+  return {
+    invoice: omit(settings.invoice, READ_ONLY_BLOCK_FIELDS),
+    statement: omit(settings.statement, READ_ONLY_BLOCK_FIELDS),
+  };
+}
+
 export async function saveAutomationSettings(
   workspaceId: string,
   settings: AutomationSettings,
 ): Promise<AutomationSettings> {
-  const response = await axios.put(path(workspaceId), settings);
+  const response = await axios.put(
+    path(workspaceId),
+    toAutomationSavePayload(settings),
+  );
   return response.data;
 }

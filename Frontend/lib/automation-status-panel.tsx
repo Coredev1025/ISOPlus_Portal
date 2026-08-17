@@ -3,7 +3,11 @@
 import { Activity } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { formatNextRun } from "@/lib/automation-schedule-block";
+import {
+  blockNeedsAttention,
+  formatNextRun,
+  recentDocumentLabel,
+} from "@/lib/automation-helpers";
 import type {
   AutomationBlock,
   AutomationRecentDocument,
@@ -18,7 +22,7 @@ type StatusTone = "ok" | "warn" | "muted";
  */
 function blockStatus(block: AutomationBlock): { label: string; tone: StatusTone } {
   if (!block.enabled) return { label: "Paused", tone: "muted" };
-  if (block.lastRunError) return { label: "Attention needed", tone: "warn" };
+  if (blockNeedsAttention(block)) return { label: "Attention needed", tone: "warn" };
   return { label: "On track", tone: "ok" };
 }
 
@@ -34,7 +38,7 @@ function StatusRow({
 }: Readonly<{ title: string; block: AutomationBlock }>) {
   const status = blockStatus(block);
   const lastOutcome = block.lastRunAt
-    ? `${formatNextRun(block.lastRunAt)} — ${block.lastRunError ? "Failed" : "Succeeded"}`
+    ? `${formatNextRun(block.lastRunAt)} — ${blockNeedsAttention(block) ? "Failed" : "Succeeded"}`
     : "—";
 
   return (
@@ -58,36 +62,22 @@ function StatusRow({
   );
 }
 
-/**
- * Statements carry no number, but their file name carries the participant and
- * period — a far better label than repeating the type.
- */
-function documentLabel(document: AutomationRecentDocument): string {
-  if (document.invoiceNumber) return document.invoiceNumber;
-  const basename = document.pdfUrl.split("/").pop() ?? document.type;
-  try {
-    return decodeURIComponent(basename).replace(/\.pdf$/i, "");
-  } catch {
-    return document.type;
-  }
-}
-
-function RecentDocumentRow({
-  document,
-}: Readonly<{ document: AutomationRecentDocument }>) {
+// Named `doc`, not `document`: this module's tests stub `document.elementFromPoint`,
+// and a prop that shadows the global is one rename away from a confusing failure.
+function RecentDocumentRow({ doc }: Readonly<{ doc: AutomationRecentDocument }>) {
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px]">
       <a
-        href={document.pdfUrl}
+        href={doc.pdfUrl}
         target="_blank"
         rel="noreferrer"
         className="font-medium text-primary hover:underline"
       >
-        {documentLabel(document)}
+        {recentDocumentLabel(doc)}
       </a>
-      <span className="text-muted-foreground">{document.type}</span>
+      <span className="text-muted-foreground">{doc.type}</span>
       <span className="text-muted-foreground">
-        {formatNextRun(document.createdAt)}
+        {formatNextRun(doc.createdAt)}
       </span>
       <span className="rounded-full border border-border px-2 py-0.5 text-[10.5px] text-muted-foreground">
         Generated
@@ -139,8 +129,8 @@ export function AutomationStatusPanel({
               Recent documents
             </h4>
             <ul className="space-y-1">
-              {recentDocuments.map((document) => (
-                <RecentDocumentRow key={document.pdfUrl} document={document} />
+              {recentDocuments.map((doc) => (
+                <RecentDocumentRow key={doc.pdfUrl} doc={doc} />
               ))}
             </ul>
           </div>

@@ -71,6 +71,23 @@ export const UNIT_OPTIONS = [
  * Touchpoints: lib/automation-email-block.tsx (field list and validation). Keys
  * are `AutomationBlock` field names.
  */
+/**
+ * The `AutomationBlock` fields the server owns and the client must never send
+ * back: the scheduler computes them from ScheduledJob. Listed here rather than
+ * spelled inline so a new read-only field is stripped by the one place that
+ * strips.
+ *
+ * Touchpoints: lib/automation-settings.ts (`toAutomationSavePayload`, and the
+ * `AutomationSavePayload` type derived from this list).
+ */
+export const READ_ONLY_BLOCK_FIELDS = [
+  "nextRun",
+  "lastRunAt",
+  "lastRunError",
+  "lastRunFailed",
+  "consecutiveFailures",
+] as const;
+
 export const EMAIL_TEXT_FIELDS = [
   { key: "sendCopyTo", id: "send-copy-to", label: "Send a Copy To", isEmail: true, multiline: false },
   { key: "replyTo", id: "reply-to", label: "Reply-to Email", isEmail: true, multiline: false },

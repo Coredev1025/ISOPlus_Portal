@@ -304,6 +304,112 @@ describe('InvoiceStatementAutomationPanel', () => {
     );
   });
 
+  it('offers no Save while the settings are still loading', async () => {
+    // Saving the defaults over live configuration disables both schedules and
+    // erases their email settings, from a form that never showed the user what
+    // it was replacing. Nothing is safe to save until the GET has resolved.
+    let resolveFetch: (value: AutomationSettings) => void = () => {};
+    fetchMock.mockReturnValue(
+      new Promise<AutomationSettings>((resolve) => {
+        resolveFetch = resolve;
+      })
+    );
+    render(<InvoiceStatementAutomationPanel workspaceId="ws-1" />);
+
+    expect(
+      screen.queryByRole('button', { name: /save changes/i })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Invoice Automation' })
+    ).not.toBeInTheDocument();
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      /loading automation settings/i
+    );
+
+    resolveFetch(settings({ enabled: true }));
+
+    expect(
+      await screen.findByRole('button', { name: /save changes/i })
+    ).toBeEnabled();
+  });
+
+  it('offers no Save when the settings could not be loaded', async () => {
+    // The server state is unknown, so there is nothing safe to write on top of
+    // it — the form stays off the page rather than inviting a blind overwrite.
+    fetchMock.mockRejectedValue(new Error('boom'));
+    render(<InvoiceStatementAutomationPanel workspaceId="ws-1" />);
+
+    await screen.findByRole('alert');
+
+    expect(
+      screen.queryByRole('button', { name: /save changes/i })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Invoice Automation' })
+    ).not.toBeInTheDocument();
+    expect(saveMock).not.toHaveBeenCalled();
+  });
+
+  it('saves a legacy plain-text message exactly as it was stored', async () => {
+    // Email Message was a textarea two commits ago. Opening the tab must not
+    // normalise a stored plain-text value into <p>…</p> and persist that on the
+    // next Save — the user never asked for it and never saw it happen.
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    fetchMock.mockResolvedValue(
+      settings({ enabled: true, emailMessage: 'Hello plain text' })
+    );
+    await renderPanel();
+
+    await waitFor(() =>
+      expect(within(invoiceSection()).getByLabelText(/email message/i)).toHaveTextContent(
+        'Hello plain text'
+      )
+    );
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() =>
+      expect(saveMock).toHaveBeenCalledWith(
+        'ws-1',
+        expect.objectContaining({
+          invoice: expect.objectContaining({ emailMessage: 'Hello plain text' }),
+        })
+      )
+    );
+  });
+
+  it('announces a successful save and clears it on the next change', async () => {
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    await renderPanel();
+
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    const success = await screen.findByRole('status');
+    expect(success).toHaveTextContent(/saved successfully/i);
+
+    // A stale "saved" banner sitting above unsaved edits is a lie.
+    await user.click(within(invoiceSection()).getByRole('switch'));
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('blocks Save while an email field is flagged as malformed', async () => {
+    // The backend rejects the whole PUT with one message that does not say
+    // which of six fields is wrong, so the form has to say it first.
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    fetchMock.mockResolvedValue(settings({ enabled: true }));
+    await renderPanel();
+
+    const replyTo = within(invoiceSection()).getByLabelText(/reply-to email/i);
+    await user.type(replyTo, 'not-an-email');
+
+    expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled();
+
+    await user.clear(replyTo);
+    await user.type(replyTo, 'billing@example.com');
+
+    expect(screen.getByRole('button', { name: /save changes/i })).toBeEnabled();
+  });
+
   it('reports the server message when saving fails', async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     saveMock.mockRejectedValue({
@@ -422,6 +528,61 @@ describe('InvoiceStatementAutomationPanel', () => {
     );
     expect(status.getByText(/attention needed/i)).toBeInTheDocument();
     expect(status.getByText(/failed/i)).toBeInTheDocument();
+  });
+
+  it('flags a block the server reports as failed without a message', async () => {
+    // The API may report the failure coarsely rather than by message; the
+    // badge must not go quiet because the field was renamed.
+    fetchMock.mockResolvedValue(
+      settings({
+        enabled: true,
+        lastRunAt: '2026-08-01T12:00:00.000Z',
+        lastRunFailed: true,
+      })
+    );
+    await renderPanel();
+
+    const status = within(
+      screen.getByRole('region', { name: /automation status/i })
+    );
+    expect(status.getByText(/attention needed/i)).toBeInTheDocument();
+  });
+
+  it('labels a recent document from its structured fields when they are sent', async () => {
+    fetchMock.mockResolvedValue({
+      ...settings({ enabled: true }),
+      recentDocuments: [
+        {
+          type: 'Monthly Statement',
+          invoiceNumber: null,
+          participant: 'Jane Smith',
+          periodKey: '20250201-0900',
+          pdfUrl: 'https://files.test/9f2c1b7e-4a55.pdf',
+          createdAt: '2026-08-01T12:00:00.000Z',
+        },
+        {
+          type: 'NDIS Invoice',
+          invoiceNumber: null,
+          periodKey: '20250201-0900',
+          // A trailing slash leaves no basename — a link named '' has no
+          // accessible name at all.
+          pdfUrl: 'https://files.test/',
+          createdAt: '2026-08-01T12:00:00.000Z',
+        },
+      ],
+    });
+    await renderPanel();
+
+    const status = within(
+      screen.getByRole('region', { name: /automation status/i })
+    );
+    expect(status.getByRole('link', { name: 'Jane Smith' })).toHaveAttribute(
+      'href',
+      'https://files.test/9f2c1b7e-4a55.pdf'
+    );
+    expect(
+      status.getByRole('link', { name: 'NDIS Invoice' })
+    ).toBeInTheDocument();
   });
 
   it('hides the schedule and email fields until automatic generation is enabled', async () => {

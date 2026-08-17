@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { AutomationEmailBlock } from "@/lib/automation-email-block";
 import { AutomationScheduleBlock } from "@/lib/automation-schedule-block";
 import { AutomationStatusPanel } from "@/lib/automation-status-panel";
+import { hasInvalidEmail } from "@/lib/automation-helpers";
 import {
   DEFAULT_BLOCK,
   fetchAutomationSettings,
@@ -90,6 +91,48 @@ function AutomationSection({
   );
 }
 
+/**
+ * Until the GET resolves the panel knows nothing about what is stored, and the
+ * defaults it holds meanwhile say "both automations off, no email settings" —
+ * a Save from this state disables both live schedules and erases their email
+ * configuration, from a form that never showed the user what it was replacing.
+ * So the form does not exist yet: there is a skeleton in its place.
+ */
+function AutomationLoadingSkeleton() {
+  return (
+    <div role="status" aria-busy="true" className="space-y-[18px]">
+      <span className="sr-only">Loading automation settings…</span>
+      {[0, 1, 2].map((index) => (
+        <div
+          key={index}
+          className="h-32 animate-pulse rounded-lg border bg-muted/40 shadow-sm"
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * A failed load is the same hazard permanently: the server state is unknown,
+ * so there is nothing safe to write on top of it. The form stays off the page
+ * rather than inviting a blind overwrite.
+ */
+function AutomationLoadFailed() {
+  return (
+    <div
+      role="alert"
+      className="rounded-md border border-destructive bg-destructive/10 p-4"
+    >
+      <p className="text-sm text-destructive">
+        Could not load automation settings. Nothing has been changed — reload
+        the page to try again.
+      </p>
+    </div>
+  );
+}
+
+type LoadState = "loading" | "loaded" | "failed";
+
 type InvoiceStatementAutomationPanelProps = Readonly<{
   workspaceId: string;
 }>;
@@ -103,6 +146,7 @@ export function InvoiceStatementAutomationPanel({
   const [recentDocuments, setRecentDocuments] = useState<
     AutomationRecentDocument[]
   >([]);
+  const [loadState, setLoadState] = useState<LoadState>("loading");
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [showSuccess, setShowSuccess] = useState(false);
@@ -114,19 +158,28 @@ export function InvoiceStatementAutomationPanel({
         if (!cancelled) {
           setSettings(loaded);
           setRecentDocuments(loaded.recentDocuments ?? []);
+          setLoadState("loaded");
         }
       })
       .catch(() => {
-        if (!cancelled) setErrorMessage("Could not load automation settings.");
+        if (!cancelled) setLoadState("failed");
       });
     return () => {
       cancelled = true;
     };
   }, [workspaceId]);
 
-  const update =
-    (key: keyof AutomationSettings) => (next: AutomationBlock) =>
-      setSettings((current) => ({ ...current, [key]: next }));
+  // A "saved" banner sitting above unsaved edits is a lie, so any change to
+  // the form retires it.
+  const update = (key: keyof AutomationSettings) => (next: AutomationBlock) => {
+    setShowSuccess(false);
+    setSettings((current) => ({ ...current, [key]: next }));
+  };
+
+  const restoreDefaults = () => {
+    setShowSuccess(false);
+    setSettings(defaultSettings());
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -144,6 +197,13 @@ export function InvoiceStatementAutomationPanel({
       setSaving(false);
     }
   };
+
+  if (loadState === "loading") return <AutomationLoadingSkeleton />;
+  if (loadState === "failed") return <AutomationLoadFailed />;
+
+  // The API rejects the whole PUT with one message that does not say which of
+  // six address fields is wrong, so the form has to say it first.
+  const emailInvalid = hasInvalidEmail(settings);
 
   return (
     <div className="space-y-[18px]">
@@ -183,7 +243,10 @@ export function InvoiceStatementAutomationPanel({
       ) : null}
 
       {showSuccess ? (
-        <div className="rounded-md border border-green-500 bg-green-100 p-4">
+        <div
+          role="status"
+          className="rounded-md border border-green-500 bg-green-100 p-4"
+        >
           <p className="text-sm text-green-700">
             Automation settings saved successfully!
           </p>
@@ -194,12 +257,16 @@ export function InvoiceStatementAutomationPanel({
         <Button
           type="button"
           variant="outline"
-          onClick={() => setSettings(defaultSettings())}
+          onClick={restoreDefaults}
           disabled={saving}
         >
           Restore Defaults
         </Button>
-        <Button type="button" onClick={handleSave} disabled={saving}>
+        <Button
+          type="button"
+          onClick={handleSave}
+          disabled={saving || emailInvalid}
+        >
           {saving ? "Saving..." : "Save Changes"}
         </Button>
       </div>
