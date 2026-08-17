@@ -1,8 +1,8 @@
 import mongoose from 'mongoose';
 
 import { isValidSchedule } from '../services/scheduler/nextRun.js';
-import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
-import { AUTOMATION_UNITS } from './AutomationSettings.js';
+import { DEFAULT_TIMEZONE, PROBE_CRON } from '../constants/scheduler.js';
+import { AUTOMATION_UNITS } from '../constants/automation.js';
 
 // A cron/timezone pair is only valid together — 'not-a-cron' is invalid on its
 // own, but so is a well-formed cron paired with a timezone Intl does not
@@ -17,9 +17,9 @@ function cronIsValid(value) {
 }
 
 // A picker schedule still needs a real IANA zone, but isValidSchedule needs a
-// cron to parse. Probe with a trivially valid expression so the timezone is
-// checked in isolation.
-const PROBE_CRON = '* * * * *';
+// cron to parse. Probe with a trivially valid expression (PROBE_CRON, shared
+// with timezone.js via constants/scheduler.js) so the timezone is checked in
+// isolation.
 function timezoneIsValid(value) {
   return isValidSchedule(this.cron ?? PROBE_CRON, value);
 }

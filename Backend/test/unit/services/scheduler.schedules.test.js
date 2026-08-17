@@ -186,6 +186,136 @@ describe('upsertSchedule', () => {
     expect(await ScheduledJob.countDocuments({ targetId: 'board-tz' })).toBe(0);
   });
 
+  // CHARACTERIZATION — pins the behaviour before it is changed.
+  // routes/workspace.js calls upsertSchedule on every automation-settings PUT,
+  // including a save that only touches emailFrom: toScheduleInput carries the
+  // cadence fields alone, so such a save re-upserts a byte-identical schedule.
+  // upsertSchedule recomputed nextRunAt unconditionally, so if the row was
+  // already due (tick backed up, admin edits the reply-to address) the save
+  // pushed it to the following slot. That month is never billed, missedRuns is
+  // not incremented, and nothing logs an anomaly.
+  it('leaves a due nextRunAt alone when the save changed nothing about the cadence', async () => {
+    const schedule = {
+      every: { n: 1, unit: 'month' },
+      runOn: 15,
+      runAt: '09:00',
+      startDate: '2026-01-15',
+    };
+    const created = await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-unrelated-save',
+      workspaceId: 'ws-unrelated-save',
+      schedule,
+      timezone: 'Australia/Sydney',
+      now: NOW, // 2026-08-11
+    });
+    // 15 Aug 2026 09:00 Sydney (AEST, UTC+10).
+    expect(created.nextRunAt.toISOString()).toBe('2026-08-14T23:00:00.000Z');
+
+    // The slot has come due and the tick has not claimed it yet.
+    const resaved = await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-unrelated-save',
+      workspaceId: 'ws-unrelated-save',
+      schedule,
+      timezone: 'Australia/Sydney',
+      now: new Date('2026-08-16T00:00:00Z'),
+    });
+
+    expect(resaved.nextRunAt.toISOString()).toBe('2026-08-14T23:00:00.000Z');
+  });
+
+  it('still recomputes nextRunAt when the cadence itself changes', async () => {
+    const base = {
+      every: { n: 1, unit: 'month' },
+      runOn: 15,
+      runAt: '09:00',
+      startDate: '2026-01-15',
+    };
+    await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-cadence-change',
+      workspaceId: 'ws-cadence-change',
+      schedule: base,
+      timezone: 'Australia/Sydney',
+      now: NOW,
+    });
+
+    const moved = await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-cadence-change',
+      workspaceId: 'ws-cadence-change',
+      schedule: { ...base, runOn: 20 },
+      timezone: 'Australia/Sydney',
+      now: new Date('2026-08-16T00:00:00Z'),
+    });
+
+    // 20 Aug 2026 09:00 Sydney — recomputed, not the preserved 15 Aug slot.
+    expect(moved.nextRunAt.toISOString()).toBe('2026-08-19T23:00:00.000Z');
+  });
+
+  it('recomputes nextRunAt when a disabled schedule is re-enabled', async () => {
+    // A paused schedule's stored nextRunAt is stale by definition — it is the
+    // slot that was due when it was paused. Re-enabling must move it forward,
+    // or the schedule fires the moment it is switched back on.
+    const schedule = {
+      every: { n: 1, unit: 'month' },
+      runOn: 15,
+      runAt: '09:00',
+      startDate: '2026-01-15',
+    };
+    await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-reenable',
+      workspaceId: 'ws-reenable',
+      schedule,
+      timezone: 'Australia/Sydney',
+      now: NOW,
+    });
+    await disableSchedule({ kind: 'invoice_automation', targetId: 'ws-reenable' });
+
+    const job = await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-reenable',
+      workspaceId: 'ws-reenable',
+      schedule,
+      timezone: 'Australia/Sydney',
+      now: new Date('2026-08-16T00:00:00Z'),
+    });
+
+    expect(job.enabled).toBe(true);
+    expect(job.nextRunAt.toISOString()).toBe('2026-09-14T23:00:00.000Z');
+  });
+
+  it('still recomputes nextRunAt when only the timezone changes', async () => {
+    const schedule = {
+      every: { n: 1, unit: 'month' },
+      runOn: 15,
+      runAt: '09:00',
+      startDate: '2026-01-15',
+    };
+    await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-tz-change',
+      workspaceId: 'ws-tz-change',
+      schedule,
+      timezone: 'Australia/Sydney',
+      now: NOW,
+    });
+
+    const job = await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-tz-change',
+      workspaceId: 'ws-tz-change',
+      schedule,
+      timezone: 'Australia/Perth',
+      now: NOW,
+    });
+
+    // 15 Aug 2026 09:00 Perth (AWST, UTC+8).
+    expect(job.nextRunAt.toISOString()).toBe('2026-08-15T01:00:00.000Z');
+  });
+
   it('upserts a picker schedule and computes nextRunAt from it', async () => {
     const job = await upsertSchedule({
       kind: 'invoice_automation',

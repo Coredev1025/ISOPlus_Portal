@@ -26,7 +26,9 @@
  *
  * Touchpoints: registry.js (validates against POLICIES), tick.js (claim
  * strategy), outcome.js (success/failure recording), intervalFloor.js
- * (which floor applies), handlers.js (board_sync registration).
+ * (which floor applies), handlers.js (which registers board_sync AND both
+ * automation kinds under AT_LEAST_ONCE — see the comment there for why the
+ * invoice kind is not AT_MOST_ONCE despite the guidance above).
  */
 export const AT_MOST_ONCE = 'at_most_once';
 export const AT_LEAST_ONCE = 'at_least_once';
@@ -76,7 +78,8 @@ export const DEFAULT_TIMEZONE = 'Australia/Sydney';
  * timezone check from its cron-parsing check. Reuses the existing validation
  * rather than duplicating the `Intl` probe.
  *
- * Touchpoints: timezone.js (resolveTimezone).
+ * Touchpoints: timezone.js (resolveTimezone), models/ScheduledJob.js
+ * (timezoneIsValid, for a picker schedule that carries no cron).
  */
 export const PROBE_CRON = '* * * * *';
 

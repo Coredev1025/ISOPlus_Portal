@@ -31,8 +31,12 @@ Ticket: KAN-15.
 `POST /api/scheduler/tick`
 
 - **Auth**: `validateSchedulerApiKey` (`Backend/src/middleware/auth.js`) — the
-  raw `Authorization` header must equal `process.env.SCHEDULER_API_KEY`
-  exactly. No session, no JWT. Missing header → 401. Wrong value → 401.
+  raw `Authorization` header must equal one of the configured scheduler keys
+  exactly: the master `SCHEDULER_API_KEY`, or either optional per-kind key,
+  which scopes the tick to its own kind. See
+  ["One rule per kind, optionally"](#one-rule-per-kind-optionally) for the
+  scope table. No session, no JWT. Missing header → 401. Wrong value → 401.
+  `SCHEDULER_API_KEY` unset → 500, whatever else is configured.
 - **Body**: none required.
 - **Response** (200):
 
@@ -160,8 +164,17 @@ schedules, the statement key only `statement_automation`, and the master
 `SCHEDULER_API_KEY` claims everything (including `board_sync`), so the two
 rules cannot fire each other's schedules however they are misconfigured. The
 master key remains required configuration either way: it is what
-`npm run tick` sends, and the boot warning keys on it. An unset per-kind
-variable simply makes that credential unavailable.
+`npm run tick` sends, and the boot warning keys on it. An unset — or blank —
+per-kind variable simply makes that credential unavailable. Configuring only
+the per-kind keys gets every tick a **500**, not a 401; the log line names
+`SCHEDULER_API_KEY` explicitly for exactly that case.
+
+**Do not paste the same secret into two of these variables.** If a per-kind
+key is set to the master key's value, the narrowest matching scope wins — the
+tick claims only that kind — and `validateSchedulerApiKey` logs
+`API key matches more than one configured credential`. It is deliberately not
+the master scope: a credential that leaked a narrow capability must not
+silently acquire a wide one. Give each rule its own secret.
 
 **The header value must be the key exactly — no `Bearer ` prefix, no leading
 or trailing whitespace.** `validateSchedulerApiKey` compares the raw header
@@ -359,6 +372,17 @@ Schedules themselves are only ever written through
 `Backend/src/services/scheduler/schedules.js` — `upsertSchedule` /
 `disableSchedule`. Nothing should write `ScheduledJob` documents directly.
 
+**`upsertSchedule` recomputes `nextRunAt` only when the cadence actually
+changed.** If the stored `cron`/`schedule`/`timezone` are identical and the row
+is already enabled, the existing `nextRunAt` is kept. That matters because
+`routes/workspace.js` calls `upsertSchedule` on every automation-settings PUT,
+including a save that only edits an email address: recomputing there would push
+a slot that was already due into the next cycle, and that cycle would never be
+billed — with `missedRuns` still reading zero, because nothing was skipped as
+far as the tick could tell. A disabled row is excluded deliberately, so
+re-enabling a paused schedule moves it forward rather than firing it
+immediately.
+
 **Do not write a monthly cron on the 29th, 30th or 31st.** Cron does not clamp
 to the end of a short month — it simply does not fire. A `0 9 31 * *` schedule
 skips every month with fewer than 31 days, and `29`/`30` skip most Februaries.
@@ -389,13 +413,13 @@ model's `pre('validate')` hook:
   ```
 
   `unit` is one of `day | week | month | quarter | year` (`AUTOMATION_UNITS` in
-  `models/AutomationSettings.js`), and `runOn` changes shape with it:
+  `constants/automation.js`), and `runOn` changes shape with it:
 
   | `unit` | `runOn` |
   |---|---|
   | `day` | ignored |
   | `week` | a weekday name, `'monday'` … `'sunday'` |
-  | `month` | an integer day-of-month, **1–28** |
+  | `month` | an integer day-of-month, **1–31** (29–31 clamp in short months) |
   | `quarter` | `{ month, day }` — `month` selects the month within the quarter cycle |
   | `year` | `{ month, day }` — month-of-year and day-of-month |
 
@@ -404,15 +428,21 @@ model's `pre('validate')` hook:
   reads exactly the same ones. They have to agree: a shape one accepts and the
   other cannot read is a save that throws, or a run at the wrong time.
 
-**`runOn` is restricted to 1–28 for `month` — the single most valuable check
-in the validator.** A monthly schedule on the 29th, 30th or 31st silently
-skips whichever months are too short for it: every February for 29 or 30, most
-of the year for 31. For invoice issuance that is not a cosmetic gap, it means a
-client simply does not get billed that month, discovered only when someone
-notices the missing invoice. The arithmetic clamps rather than rolling over if
-such a value reaches it anyway (a `{month, day}` of 31 in February becomes the
-28th, never 3 March), because rolling over shifts every subsequent run and can
-fire twice in one calendar month.
+**The clamp is what makes 29–31 safe for `month`, and it is the guarantee to
+rely on.** A picker schedule on the 31st fires on 30 April and on 28 or 29
+February — `addMonthsClamped` in `automationScheduleHelpers.js` shortens the
+day to the target month's length. It never rolls over into the next month,
+because rolling over shifts every subsequent run and can fire twice in one
+calendar month. `validateRunOn` therefore accepts the full 1–31 range; it was
+narrowed to 1–28 at one point and widened again deliberately (commit
+`ceaefe3`) once the clamp existed, so a client who wants the last few days of
+the month can have them.
+
+This is the picker's advantage over cron, not a shared weakness — see "Do not
+write a monthly cron on the 29th, 30th or 31st" above. Cron does not clamp: a
+`0 9 31 * *` schedule simply does not fire in a short month, the client is not
+billed, and nobody finds out until someone notices the missing invoice. The
+same day expressed through the picker fires every month.
 
 **All picker arithmetic is wall-clock in the job's timezone**, so "09:00" stays
 09:00 across a daylight-saving transition. That makes `startDate` a *calendar
@@ -424,6 +454,17 @@ the same way. They only stay correct as a pair — anchoring the write on the ra
 client string and the read on the timezone-formatted Date puts the series a
 calendar day, and therefore a whole cadence, off phase for any zone west of
 Greenwich.
+
+**`computeNextRun` guarantees an instant strictly after the `from` it was
+given, and asserts it.** A candidate at or before `from` is the one failure
+nothing downstream catches: `upsertSchedule` stores it, every tick claims it,
+`advanceSchedule` returns the same instant so the claim's compare-and-swap
+succeeds, and `missedSlotsFor` reports `0` because its own "did not move
+forward" guard fires — a schedule that re-runs every minute forever with
+`missedRuns` still at zero. If the arithmetic ever produces one, it throws with
+a `Scheduler: ` prefix instead, which `isScheduleClientError` turns into a 400
+on the save path and `claimAtMostOnce` turns into a quarantined row on the tick
+path.
 
 **Raw cron remains a fully-supported escape hatch.** The `cron` field accepts
 anything `isValidSchedule` (`nextRun.js`) accepts, not only what the picker can

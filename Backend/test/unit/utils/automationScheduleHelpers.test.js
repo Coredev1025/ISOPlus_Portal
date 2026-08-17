@@ -247,6 +247,64 @@ describe('computeNextRun', () => {
     });
   });
 
+  // The worst failure this module can produce, because nothing downstream
+  // catches it: a nextRunAt in the past that is also a fixed point. The tick
+  // claims it, advanceSchedule answers the same instant, the claim CAS
+  // succeeds, and the schedule fires on every tick forever. missedSlots.js
+  // cannot see it either — its `next <= cursor` guard returns 0, so
+  // `missedRuns` stays at zero and nothing alerts.
+  //
+  // The cause was a loop bounded by a month *offset* (`offset < 400`) rather
+  // than by iterations: a startDate more than ~33 years back exhausted the cap
+  // while the candidate was still behind `from`, and the last candidate was
+  // returned anyway.
+  describe('a startDate decades in the past', () => {
+    const settings = {
+      every: { n: 1, unit: 'month' },
+      runOn: 15,
+      runAt: '09:00',
+      startDate: '1990-01-01',
+    };
+    const from = new Date('2026-08-17T00:00:00Z');
+
+    it('still returns a run strictly after `from`, as the contract promises', () => {
+      const next = computeNextRun(settings, from, TZ);
+      expect(next.getTime()).toBeGreaterThan(from.getTime());
+      expect(wallClock(next)).toBe('2026-09-15 09:00');
+    });
+
+    it('is not a fixed point: advancing from its own answer moves forward', () => {
+      const next = computeNextRun(settings, from, TZ);
+      const after = computeNextRun(settings, next, TZ);
+      expect(after.getTime()).toBeGreaterThan(next.getTime());
+    });
+
+    it.each([
+      ['quarter', { month: 3, day: 20 }],
+      ['year', { month: 3, day: 20 }],
+    ])('holds for the %s unit too', (unit, runOn) => {
+      const next = computeNextRun(
+        { every: { n: 1, unit }, runOn, runAt: '09:00', startDate: '1900-01-01' },
+        from,
+        TZ,
+      );
+      expect(next.getTime()).toBeGreaterThan(from.getTime());
+    });
+  });
+
+  describe('runOn that is present but empty', () => {
+    it('falls back to the startDate day rather than the 1st', () => {
+      // `Number('' ?? fallback)` is 0, not the fallback — `??` only catches
+      // null/undefined — so an empty runOn clamped to 1 and moved a monthly
+      // schedule off its start day. Unreachable through the route today
+      // (validateRunOn rejects it), which is exactly why it would not be
+      // noticed if it became reachable.
+      const settings = { ...base, every: { n: 1, unit: 'month' }, runOn: '', startDate: '2026-01-20' };
+      const next = computeNextRun(settings, new Date('2026-03-01T00:00:00Z'), TZ);
+      expect(wallClock(next)).toBe('2026-03-20 09:00');
+    });
+  });
+
   describe('daylight saving in Australia/Sydney', () => {
     it('keeps the wall-clock time across the April transition', () => {
       // 05 Apr 2026: clocks go back 03:00 -> 02:00, AEDT (+11) to AEST (+10).

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { pickerScheduleError } from '../../../src/services/scheduler/pickerValidation.js';
+import { computeNextRun } from '../../../src/utils/automationScheduleHelpers.js';
 
 const VALID = { every: { n: 1, unit: 'month' }, runOn: 15, runAt: '09:00' };
 
@@ -25,6 +26,18 @@ describe('pickerScheduleError', () => {
 
   it.each([0, -3, 1.5, '2', null, undefined, NaN])('rejects every.n of %s', (n) => {
     expect(pickerScheduleError({ ...VALID, every: { n, unit: 'month' } })).toMatch(/every\.n/);
+  });
+
+  // The API validator (utils/automationSettingsHelpers.js validateBlock) has
+  // applied this ceiling since the field existed; this module did not, so the
+  // two write-path validators for the same field disagreed — which is the
+  // thing this module exists to prevent, not to add another instance of.
+  it.each([366, 1000, 100000])('rejects an every.n of %s, above the ceiling', (n) => {
+    expect(pickerScheduleError({ ...VALID, every: { n, unit: 'day' } })).toMatch(/every\.n/);
+  });
+
+  it('accepts an every.n exactly at the ceiling', () => {
+    expect(pickerScheduleError({ ...VALID, every: { n: 365, unit: 'day' } })).toBeNull();
   });
 
   it('rejects a missing every block', () => {
@@ -60,12 +73,28 @@ describe('pickerScheduleError', () => {
     expect(pickerScheduleError('monthly')).toMatch(/schedule/);
   });
 
-  // runOn is deliberately not checked here. It decides which day within the
-  // cadence, not whether the schedule can be advanced at all, and its rules
-  // are unit-dependent and already enforced at the route layer by
-  // utils/automationSettingsHelpers.js. Duplicating them would give two
-  // copies to keep in step.
-  it('does not reject on runOn, which the route layer owns', () => {
-    expect(pickerScheduleError({ ...VALID, runOn: 'whenever' })).toBeNull();
+  // runOn is deliberately not checked here, and this is the decision rather
+  // than an oversight — see the comment on `pickerScheduleError` for the full
+  // reasoning and the follow-up that would close it.
+  //
+  // The consequence is real and worth pinning: an unreadable runOn does not
+  // fail the save, it falls back to the startDate's own weekday/day. The
+  // schedule below runs on Thursdays because 2026-01-01 was a Thursday, not
+  // because anyone chose Thursday.
+  it('accepts an unreadable runOn, falling back to the startDate weekday', () => {
+    const schedule = {
+      every: { n: 1, unit: 'week' },
+      runOn: 'whenever',
+      runAt: '09:00',
+      startDate: '2026-01-01',
+    };
+    expect(pickerScheduleError(schedule)).toBeNull();
+
+    const next = computeNextRun(schedule, new Date('2026-03-10T00:00:00Z'), 'Australia/Sydney');
+    const weekday = new Intl.DateTimeFormat('en-AU', {
+      timeZone: 'Australia/Sydney',
+      weekday: 'long',
+    }).format(next);
+    expect(weekday).toBe('Thursday');
   });
 });

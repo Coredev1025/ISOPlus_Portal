@@ -1,3 +1,5 @@
+import { isEqual } from 'lodash-es';
+
 import ScheduledJob from '../../models/ScheduledJob.js';
 import { info } from '../../utils/logger.js';
 import { isValidSchedule } from './nextRun.js';
@@ -27,6 +29,45 @@ async function upsertConverging(filter, update) {
 }
 
 /**
+ * The cadence fields alone, flattened so two schedules can be compared for
+ * equality without tripping over Mongoose subdocument internals or Date
+ * identity. `startDate` is compared as an epoch because the stored value is a
+ * `Date` and the incoming one may be either.
+ */
+function comparableSchedule(schedule) {
+  if (!schedule) return null;
+  return {
+    n: schedule.every?.n ?? null,
+    unit: schedule.every?.unit ?? null,
+    runOn: schedule.runOn ?? null,
+    runAt: schedule.runAt ?? null,
+    startDate: schedule.startDate ? new Date(schedule.startDate).getTime() : null,
+  };
+}
+
+/**
+ * Does this write leave the cadence exactly as it already is?
+ *
+ * `routes/workspace.js` calls upsertSchedule on every automation-settings PUT,
+ * including a save that only changes `emailFrom` — `toScheduleInput` carries
+ * the cadence fields alone, so such a save re-upserts a byte-identical
+ * schedule. Recomputing `nextRunAt` there is not harmless: if the row was
+ * already due (the tick is backed up and an admin edits the reply-to address),
+ * the recompute pushes the slot to the next cycle. That cycle is never billed,
+ * `missedRuns` is not incremented, and nothing logs an anomaly.
+ *
+ * A disabled row is deliberately excluded: its stored `nextRunAt` is the slot
+ * that was due when it was paused, so re-enabling must move it forward or the
+ * schedule fires the instant it is switched back on.
+ */
+function cadenceUnchanged(existing, { cron, schedule, timezone }) {
+  if (!existing?.enabled || !existing.nextRunAt) return false;
+  if ((existing.cron ?? null) !== (cron ?? null)) return false;
+  if (existing.timezone !== timezone) return false;
+  return isEqual(comparableSchedule(existing.schedule), comparableSchedule(schedule));
+}
+
+/**
  * The only sanctioned way to create or change a schedule. Features call this
  * from their toggle; nothing writes ScheduledJob directly.
  *
@@ -48,11 +89,13 @@ export async function upsertSchedule({
   timezone,
   now = new Date(),
 }) {
-  const effectiveTimezone = await resolveTimezone({ workspaceId, timezone });
-
+  // Ahead of resolveTimezone, which is a database read: a call this check
+  // rejects outright has no business hitting Mongo first.
   if (Boolean(cron) === Boolean(schedule?.every?.unit)) {
     throw new Error(`Scheduler: exactly one of cron or schedule is required for "${kind}"`);
   }
+
+  const effectiveTimezone = await resolveTimezone({ workspaceId, timezone });
 
   if (cron) {
     if (!isValidSchedule(cron, effectiveTimezone)) {
@@ -85,10 +128,11 @@ export async function upsertSchedule({
     ? { ...schedule, startDate: canonicalStartDate(schedule.startDate, effectiveTimezone) }
     : schedule;
 
-  const nextRunAt = advanceSchedule(
-    { cron, schedule: anchoredSchedule, timezone: effectiveTimezone },
-    now,
-  );
+  const candidate = { cron, schedule: anchoredSchedule, timezone: effectiveTimezone };
+  const existing = await ScheduledJob.findOne({ kind, targetId }).lean();
+  const nextRunAt = cadenceUnchanged(existing, candidate)
+    ? existing.nextRunAt
+    : advanceSchedule(candidate, now);
 
   const job = await upsertConverging(
     { kind, targetId },

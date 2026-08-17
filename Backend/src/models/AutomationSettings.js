@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 
-export const AUTOMATION_UNITS = ['day', 'week', 'month', 'quarter', 'year'];
+import { AUTOMATION_UNITS } from '../constants/automation.js';
+
 export const SEND_METHODS = ['isoplus', 'accounting'];
 export const RECIPIENTS = ['billing_contact', 'client_participant'];
 

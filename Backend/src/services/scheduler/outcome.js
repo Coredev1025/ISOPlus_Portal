@@ -48,6 +48,20 @@ export async function recordSuccess(job, policy, now) {
     if (missed > 0) update.$inc = { missedRuns: missed };
   }
 
+  // Deliberately NOT compare-and-swapped on `job.nextRunAt`, unlike
+  // recordFailure below. Under at-least-once two instances may dispatch the
+  // same slot and both succeed, so both reach this line with the same
+  // `nextRunAt` and the `$inc` above applies twice.
+  //
+  // That is accepted rather than overlooked. Everything in `$set` is
+  // idempotent — the second write stores the same cleared error, the same zero
+  // failure count and a marginally later lastRunAt — and both instances
+  // compute the same `nextRunAt`, so the schedule lands on the same slot
+  // either way. Only `missedRuns` double-counts, and it is a health signal
+  // ("at least this many slots were skipped"), not an accounting record; the
+  // alert fires on non-zero, which an over-count cannot suppress. A CAS here
+  // would instead drop the loser's clearing of `lastError`, which is the one
+  // field an operator reads to decide whether a schedule is healthy.
   await ScheduledJob.updateOne({ _id: job._id }, update);
 }
 

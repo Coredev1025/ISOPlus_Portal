@@ -6,6 +6,15 @@ import { register, clearRegistry } from '../../src/services/scheduler/registry.j
 import { AT_MOST_ONCE } from '../../src/constants/scheduler.js';
 import { KIND_INVOICE, KIND_STATEMENT } from '../../src/constants/automation.js';
 
+// Only `info` and `warn` are replaced; everything else stays real, so the
+// audit middleware and error handler behave exactly as they do in production.
+vi.mock('../../src/utils/logger.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, info: vi.fn(), warn: vi.fn() };
+});
+
+const { info, warn } = await import('../../src/utils/logger.js');
+
 const app = createApp();
 
 describe('POST /api/scheduler/tick', () => {
@@ -14,6 +23,7 @@ describe('POST /api/scheduler/tick', () => {
 
   beforeEach(() => {
     clearRegistry();
+    vi.clearAllMocks();
     process.env.SCHEDULER_API_KEY = 'test-scheduler-key';
     delete process.env.SCHEDULER_API_KEY_INVOICE;
     delete process.env.SCHEDULER_API_KEY_STATEMENT;
@@ -122,6 +132,90 @@ describe('POST /api/scheduler/tick', () => {
       .post('/api/scheduler/tick')
       .set('Authorization', 'test-invoice-key');
     expect(res.status).toBe(401);
+  });
+
+  it('a per-kind key whose env var is blank cannot authorize, even against a blank header', async () => {
+    // docs/scheduling.md claims "a blank env var can never authorize
+    // anything", but the test above only ever covered an *unset* variable —
+    // which is a different value. An empty string is what a Terraform
+    // variable with no default, or an EB option with an empty Value, actually
+    // produces.
+    process.env.SCHEDULER_API_KEY_INVOICE = '';
+
+    const blank = await request(app)
+      .post('/api/scheduler/tick')
+      .set('Authorization', ' ');
+    expect(blank.status).toBe(401);
+
+    const empty = await request(app)
+      .post('/api/scheduler/tick')
+      .set('Authorization', '');
+    expect(empty.status).toBe(401);
+  });
+
+  it('a per-kind key set to the master key value does not silently grant full scope', async () => {
+    // Copy-paste is the likely path here: the same secret pasted into both the
+    // master and the invoice EventBridge connection. The list is searched in
+    // declaration order, so the master entry matched first and the invoice
+    // rule quietly gained the ability to fire statement and board_sync
+    // schedules. The narrowest matching scope must win instead.
+    process.env.SCHEDULER_API_KEY_INVOICE = 'test-scheduler-key';
+    const handler = vi.fn().mockResolvedValue(undefined);
+    register(KIND_INVOICE, { handler, policy: AT_MOST_ONCE });
+    register(KIND_STATEMENT, { handler, policy: AT_MOST_ONCE });
+    await dueAutomationJob(KIND_INVOICE);
+    await dueAutomationJob(KIND_STATEMENT);
+
+    const res = await request(app)
+      .post('/api/scheduler/tick')
+      .set('Authorization', 'test-scheduler-key');
+
+    expect(res.status).toBe(200);
+    expect(res.body.claimed).toBe(1);
+    expect(handler).toHaveBeenCalledWith(expect.objectContaining({ kind: KIND_INVOICE }));
+    expect(warn).toHaveBeenCalledWith(
+      'Authentication-Service',
+      expect.stringMatching(/more than one/i),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it('logs the auth-success line for a scheduler tick', async () => {
+    // The forked validator returned next() directly, so every successful tick
+    // lost the line the shared factory emits — on the one route whose entire
+    // failure mode is "it silently is not firing".
+    const res = await request(app)
+      .post('/api/scheduler/tick')
+      .set('Authorization', 'test-scheduler-key');
+
+    expect(res.status).toBe(200);
+    expect(info).toHaveBeenCalledWith(
+      'Authentication-Service',
+      'API key validation successful',
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it('names the master key when it is the only thing missing', async () => {
+    // An operator who configured only the per-kind rules gets a bare 500 and
+    // "Server configuration error". The log line has to say which variable,
+    // and that the per-kind keys do not substitute for it.
+    delete process.env.SCHEDULER_API_KEY;
+    process.env.SCHEDULER_API_KEY_INVOICE = 'test-invoice-key';
+
+    const res = await request(app)
+      .post('/api/scheduler/tick')
+      .set('Authorization', 'test-invoice-key');
+
+    expect(res.status).toBe(500);
+    expect(warn).toHaveBeenCalledWith(
+      'Authentication-Service',
+      'SCHEDULER_API_KEY not configured',
+      { error: expect.stringMatching(/SCHEDULER_API_KEY is required even when per-kind/i) },
+      expect.anything(),
+    );
   });
 
   it('dispatches due schedules and returns a summary', async () => {

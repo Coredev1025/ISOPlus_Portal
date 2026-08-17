@@ -34,10 +34,17 @@
 export const KIND_INVOICE = 'invoice_automation';
 export const KIND_STATEMENT = 'statement_automation';
 
+// ── Schedule shape ──────────────────────────────────────────────────────────
+
 /**
- * The 24-hour local time a schedule fires at, as stored.
+ * The 24-hour local time a schedule fires at, as stored. Anchored at both
+ * ends, so `'09:00 '` and `'0900'` are both rejected.
  *
- * Touchpoints: utils/automationSettingsHelpers.js (validateBlock).
+ * No `g` flag, deliberately: a global regex carries `lastIndex` between calls,
+ * and this one is shared by two validators on the same request.
+ *
+ * Touchpoints: utils/automationSettingsHelpers.js (validateBlock),
+ * services/scheduler/pickerValidation.js (pickerScheduleError).
  */
 export const RUN_AT_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -45,7 +52,8 @@ export const RUN_AT_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
  * The weekday names `runOn` accepts when the unit is "week", lowercased —
  * comparison lowercases the incoming value rather than the list.
  *
- * Touchpoints: utils/automationSettingsHelpers.js (validateRunOn).
+ * Touchpoints: utils/automationSettingsHelpers.js (validateRunOn),
+ * utils/automationScheduleHelpers.js (weekdayAnchor).
  */
 export const WEEKDAYS = [
   'sunday',
@@ -56,6 +64,40 @@ export const WEEKDAYS = [
   'friday',
   'saturday',
 ];
+
+/**
+ * The intervals `every.unit` accepts, and the enum both schemas declare.
+ *
+ * Touchpoints: models/AutomationSettings.js (every.unit enum),
+ * models/ScheduledJob.js (schedule.every.unit enum),
+ * services/scheduler/pickerValidation.js (everyError),
+ * utils/automationSettingsHelpers.js (validateBlock).
+ */
+export const AUTOMATION_UNITS = ['day', 'week', 'month', 'quarter', 'year'];
+
+/**
+ * The upper bound on `every.n`. A year of daily runs is already far beyond any
+ * real billing cadence, and an unbounded `n` turns the schedule arithmetic's
+ * forward walk into an open-ended one.
+ *
+ * Touchpoints: services/scheduler/pickerValidation.js (everyError),
+ * utils/automationSettingsHelpers.js (validateBlock).
+ */
+export const MAX_EVERY_N = 365;
+
+/**
+ * How many calendar months one unit of each month-based interval spans.
+ *
+ * Callers branch on `MONTHS_PER_UNIT[unit]` being truthy to decide whether a
+ * unit is month-based at all, so `day` and `week` are absent rather than zero.
+ *
+ * An object, therefore a shared mutable — read-only by convention; nothing
+ * freezes it.
+ *
+ * Touchpoints: utils/automationScheduleHelpers.js (computeNextRun),
+ * utils/automationScheduleWindow.js (previousPeriodStartYmd).
+ */
+export const MONTHS_PER_UNIT = { month: 1, quarter: 3, year: 12 };
 
 /**
  * Board labels the Invoice Generator page uses to pick NDIS vs Age Care.

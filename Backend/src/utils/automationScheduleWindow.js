@@ -1,7 +1,6 @@
 import { startOfDayInstant } from './automationScheduleHelpers.js';
 import { previousMonthServiceDeliveryWindow } from './automationPreviousMonth.js';
-
-const MONTHS_PER_UNIT = { month: 1, quarter: 3, year: 12 };
+import { MONTHS_PER_UNIT } from '../constants/automation.js';
 
 function pad2(value) {
   return String(value).padStart(2, '0');

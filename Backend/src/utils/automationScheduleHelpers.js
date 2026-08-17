@@ -12,11 +12,9 @@
 // twice a year. No new dependency: `moment` in this repo has no timezone data,
 // and the codebase already does timezone work with Intl.
 
+import { MONTHS_PER_UNIT, WEEKDAYS } from '../constants/automation.js';
+
 const MS_PER_DAY = 86_400_000;
-
-const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-
-const MONTHS_PER_UNIT = { month: 1, quarter: 3, year: 12 };
 
 /** The offset, in ms, between UTC and `tz` at the instant `date`. */
 function offsetMs(date, tz) {
@@ -113,9 +111,16 @@ function addMonthsClamped({ year, month }, offset, desiredDay) {
     };
 }
 
-/** A day-of-month, clamped to 1-31, falling back when the input is not a number. */
+/**
+ * A day-of-month, clamped to 1-31, falling back when the input is not a number.
+ *
+ * The empty string is treated as absent rather than coerced: `'' ?? fallback`
+ * is `''`, and `Number('')` is 0, so an empty runOn clamped to the 1st instead
+ * of falling back to the startDate's own day.
+ */
 function clampDay(value, fallback) {
-    const day = Number(value ?? fallback);
+    const absent = value === '' || value === null || value === undefined;
+    const day = Number(absent ? fallback : value);
     return Number.isFinite(day) ? Math.min(31, Math.max(1, Math.trunc(day))) : fallback;
 }
 
@@ -211,21 +216,37 @@ function nextByDays(anchor, stepDays, time, from, tz) {
     return candidate;
 }
 
+/**
+ * How many iterations `nextByMonths` may take after its opening jump. The jump
+ * lands within one step of the answer, so this is slack, not a working budget —
+ * it exists so a pathological input cannot spin, not to bound normal use.
+ */
+const MAX_MONTH_STEPS = 16;
+
 /** Step a month/quarter/year schedule forward until it passes `from`. */
 function nextByMonths(anchor, stepMonths, desiredDay, time, from, tz) {
-    let offset = 0;
-    let candidate = wallTimeToInstant(
-        { ...addMonthsClamped(anchor, 0, desiredDay), ...time }, tz,
+    const at = (offset) => wallTimeToInstant(
+        { ...addMonthsClamped(anchor, offset, desiredDay), ...time }, tz,
     );
 
-    // Bounded rather than while(true): 400 steps is over 30 years at the
-    // coarsest interval, so exceeding it means the inputs are nonsense and
-    // looping forever would be worse than returning the last candidate.
-    while (candidate <= from && offset < 400) {
+    let candidate = at(0);
+    if (candidate > from) return candidate;
+
+    // Jump most of the way in one calculation, the way nextByDays does. The
+    // previous version bounded the loop by the month *offset* (`offset < 400`)
+    // rather than by iterations, so a startDate more than ~33 years back
+    // exhausted the cap while the candidate was still behind `from` — and the
+    // stale candidate was returned anyway. That stored a nextRunAt in the past
+    // which was also a fixed point, so the tick claimed it, advanced it to
+    // itself, and re-fired it every minute forever.
+    const fromFields = wallFieldsOf(from, tz);
+    const monthsApart = (fromFields.year - anchor.year) * 12 + (fromFields.month - anchor.month);
+    let offset = Math.max(0, Math.floor(monthsApart / stepMonths) * stepMonths);
+    candidate = at(offset);
+
+    for (let step = 0; candidate <= from && step < MAX_MONTH_STEPS; step += 1) {
         offset += stepMonths;
-        candidate = wallTimeToInstant(
-            { ...addMonthsClamped(anchor, offset, desiredDay), ...time }, tz,
-        );
+        candidate = at(offset);
     }
     return candidate;
 }
@@ -240,23 +261,33 @@ function weekdayAnchor(startFields, runOn, tz, time) {
 }
 
 /**
- * When this automation should next run.
+ * The contract below, asserted rather than assumed.
  *
- * @param {object} settings              `{ every: {n, unit}, runOn, runAt, startDate }`
- * @param {Date}   from                  compute the next run strictly after this instant
- * @param {string} timezone              IANA zone, e.g. 'Australia/Sydney'
- * @returns {Date} always strictly after `from`, and never before `startDate`
+ * A candidate at or before `from` is the one failure nothing downstream can
+ * catch: `upsertSchedule` stores it, every tick claims it, `advanceSchedule`
+ * answers the same instant so the claim's compare-and-swap succeeds, and
+ * `missedSlotsFor` returns 0 because its own `next <= cursor` guard fires — so
+ * the schedule re-fires forever with `missedRuns` still at zero.
+ *
+ * Throwing is strictly better than that. The `Scheduler: ` prefix is what
+ * `isScheduleClientError` (utils/automationSettingsHelpers.js) keys on, so a
+ * save carrying such settings is answered 400 rather than 500, and a row that
+ * somehow reaches the tick is quarantined by `claimAtMostOnce` instead of
+ * being retried every minute.
  */
-export function computeNextRun(settings, from, timezone = 'Australia/Sydney') {
+function assertStrictlyAfter(candidate, from) {
+    if (candidate > from) return candidate;
+    throw new Error(
+        `Scheduler: computed next run ${String(candidate)} is not after ${String(from)}`,
+    );
+}
+
+function nextRunFor(settings, from, timezone) {
     const n = Math.max(1, Number(settings?.every?.n ?? 1));
     const unit = String(settings?.every?.unit ?? 'day').toLowerCase();
     const time = parseRunAt(settings?.runAt);
 
     const start = parseStartDate(settings?.startDate) ?? wallFieldsOf(from, timezone);
-
-    if (unit === 'day') {
-        return nextByDays(start, n, time, from, timezone);
-    }
 
     if (unit === 'week') {
         return nextByDays(weekdayAnchor(start, settings?.runOn, timezone, time), n * 7, time, from, timezone);
@@ -269,7 +300,20 @@ export function computeNextRun(settings, from, timezone = 'Australia/Sydney') {
         return nextByMonths(anchor, stepMonths, desiredDay, time, from, timezone);
     }
 
-    // Unknown unit: treat as daily rather than throwing. A scheduler that stops
-    // dead on one bad settings document stops for every client.
+    // 'day', and any unknown unit: treated as daily rather than throwing. A
+    // scheduler that stops dead on one bad settings document stops for every
+    // client.
     return nextByDays(start, n, time, from, timezone);
+}
+
+/**
+ * When this automation should next run.
+ *
+ * @param {object} settings              `{ every: {n, unit}, runOn, runAt, startDate }`
+ * @param {Date}   from                  compute the next run strictly after this instant
+ * @param {string} timezone              IANA zone, e.g. 'Australia/Sydney'
+ * @returns {Date} always strictly after `from`, and never before `startDate`
+ */
+export function computeNextRun(settings, from, timezone = 'Australia/Sydney') {
+    return assertStrictlyAfter(nextRunFor(settings, from, timezone), from);
 }

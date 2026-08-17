@@ -1,4 +1,8 @@
-import { AUTOMATION_UNITS } from '../../models/AutomationSettings.js';
+import {
+  AUTOMATION_UNITS,
+  MAX_EVERY_N,
+  RUN_AT_PATTERN,
+} from '../../constants/automation.js';
 
 /**
  * Validates the picker half of a schedule, the way isValidSchedule validates
@@ -21,10 +25,21 @@ import { AUTOMATION_UNITS } from '../../models/AutomationSettings.js';
  * Returns a message naming the offending field, or null when the schedule is
  * fine. A string rather than a throw so the caller decides the error type,
  * matching isValidSchedule's boolean-return shape.
+ *
+ * `runOn` is deliberately NOT checked here, and that is a decision rather than
+ * an omission. Its rules change with the unit — a weekday name for `week`, a
+ * day number for `month`, `{month, day}` for `quarter`/`year` — and
+ * `utils/automationSettingsHelpers.js` (`validateRunOn`) already encodes all
+ * of them for the one write path that exists. Re-encoding them here would put
+ * a second copy of unit-dependent rules in the module whose whole purpose is
+ * to stop two validators disagreeing.
+ *
+ * The cost is real and worth naming: an unreadable `runOn` does not fail the
+ * save, it falls back to the startDate's own weekday or day-of-month — a
+ * cadence nobody chose. The fix is to extract `validateRunOn` into a helper
+ * both validators call, which is an edit to `automationSettingsHelpers.js`
+ * and is recorded as a follow-up rather than duplicated here.
  */
-
-// 24-hour HH:MM. Anchored, so '09:00 ' and '0900' are both rejected.
-const RUN_AT = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function everyError(every) {
   if (!every || typeof every !== 'object') return 'schedule.every is required';
@@ -33,6 +48,12 @@ function everyError(every) {
   }
   if (!Number.isInteger(every.n) || every.n < 1) {
     return 'schedule.every.n must be a positive integer';
+  }
+  // The same ceiling validateBlock applies at the route. Two write-path
+  // validators disagreeing on the bounds of one field is precisely what this
+  // module exists to prevent, so it cannot be the thing that introduces one.
+  if (every.n > MAX_EVERY_N) {
+    return `schedule.every.n must be ${MAX_EVERY_N} or less`;
   }
   return null;
 }
@@ -56,7 +77,7 @@ export function pickerScheduleError(schedule) {
   const failure = everyError(schedule.every);
   if (failure) return failure;
 
-  if (!RUN_AT.test(String(schedule.runAt ?? ''))) {
+  if (!RUN_AT_PATTERN.test(String(schedule.runAt ?? ''))) {
     return 'schedule.runAt must be HH:MM in 24-hour form';
   }
 
