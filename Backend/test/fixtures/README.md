@@ -169,3 +169,39 @@ items through the real invoice row builders):
   bill (`Timesheet Approval: "Pending"`).
 - Mike Bird's captured rows were dated 2026-06-29 on dev; they are re-dated
   into January 2025 here so one slot bills all three boards.
+
+## `care-management-55390-full.json`
+
+**The full local replica of workspace `55390`** — every invoice-generator row
+of the three Care Management boards as portal-dev served them on 2026-08-17
+(65 SaH + 43 NDIS + 3 NEW rows, verbatim ids, dates, statuses, service codes),
+plus the `invoiceNumbers` entries that mark dev's already-issued INV-1002 and
+INV-1003. Person, bank and billing-contact values are invented; the SaH money
+columns reproduce dev's computed totals **to the cent**
+(24587.50 / 22319.70 / 1216.50), and Jane Smith's January 2025 monthly
+statement summary matches dev's exactly (47 services, 286.25 h).
+
+Division of labour between the two 55390 fixtures:
+
+| | `care-management-automation.json` | `care-management-55390-full.json` |
+|---|---|---|
+| Purpose | armed, billable KAN-10 slot for e2e | portal-dev look-alike for manual/dev use |
+| Rows | 22 invented, all billable in Jan 2025 | 160 captured, deliberately **not** billable |
+| Schedules | automationSettings + 2 due scheduledJobs | none — data only |
+
+Both write the same Business/Board docs, so loading both is safe but the lists
+then show the union of rows; `--remove` one before loading the other when you
+want exact dev parity.
+
+Replication mechanics worth knowing:
+
+- Reference items (service plans, funding sources) live on dev's real NDIS
+  Library board `t29GNU4nV2A`, because offline mode has no ISO+ folder filter
+  and anything on a CM board appears as a list row. Residual count delta vs
+  dev: the on-board participant profiles (+3/+5/+1 rows), which must stay on
+  their boards for the participants scans.
+- SaH service plans carry `Service` (the label) and `Service ID/Item ID`
+  (`SERV-00xx`) — the route prefers `Service Plan ID` and strips its prefix,
+  which is why that attribute is deliberately absent.
+- Approved NDIS rows reference zero-priced plans, so a scheduler tick over
+  this data lists rows but can never mint an invoice.

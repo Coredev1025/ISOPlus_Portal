@@ -142,6 +142,68 @@ describe('normalizeFixture', () => {
     });
   });
 
+  describe('invoiceNumbers', () => {
+    it('defaults workspaceId to the fixture workspaceId and type to PDF', () => {
+      const shape = normalizeFixture({
+        ...twoBoards(),
+        invoiceNumbers: [
+          { itemId: 'i-1', boardId: 'board-a', invoiceNumber: 'INV-0001' },
+        ],
+      });
+      expect(shape.invoiceNumbers).toEqual([
+        { itemId: 'i-1', boardId: 'board-a', invoiceNumber: 'INV-0001', workspaceId: 'ws-1', type: 'PDF' },
+      ]);
+    });
+
+    it('keeps a declared type and passes pdfLink through', () => {
+      const [entry] = normalizeFixture({
+        ...twoBoards(),
+        invoiceNumbers: [
+          {
+            itemId: 'i-1',
+            boardId: 'board-b',
+            invoiceNumber: 'INV-0002',
+            type: 'Xero',
+            pdfLink: 'https://example.com/inv.pdf',
+          },
+        ],
+      }).invoiceNumbers;
+      expect(entry.type).toBe('Xero');
+      expect(entry.pdfLink).toBe('https://example.com/inv.pdf');
+    });
+
+    it('rejects an entry missing itemId, boardId or invoiceNumber', () => {
+      expect(() => normalizeFixture({
+        ...twoBoards(),
+        invoiceNumbers: [{ itemId: 'i-1', boardId: 'board-a' }],
+      })).toThrow(/invoiceNumbers.*itemId.*boardId.*invoiceNumber/);
+    });
+
+    it('rejects an entry whose boardId matches none of the fixture boards', () => {
+      expect(() => normalizeFixture({
+        ...twoBoards(),
+        invoiceNumbers: [
+          { itemId: 'i-1', boardId: 'board-nope', invoiceNumber: 'INV-0003' },
+        ],
+      })).toThrow(/invoiceNumbers.*"i-1".*"board-nope"/);
+    });
+
+    it('normalizes an absent section to an empty array', () => {
+      const shape = normalizeFixture(twoBoards());
+      expect(shape.invoiceNumbers).toEqual([]);
+    });
+
+    it('leaves existing fixtures without the section otherwise unchanged (back-compat)', () => {
+      const shape = normalizeFixture(ndisFixture);
+      expect(shape.invoiceNumbers).toEqual([]);
+      expect(shape.workspaceId).toBe('55369');
+      expect(shape.boards).toHaveLength(1);
+      expect(shape.items).toHaveLength(ndisFixture.items.length);
+      expect(shape.automationSettings).toBeNull();
+      expect(shape.scheduledJobs).toEqual([]);
+    });
+  });
+
   describe('automationSettings', () => {
     it('passes the section through when declared', () => {
       const shape = normalizeFixture({

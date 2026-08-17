@@ -2,10 +2,11 @@
 //
 // A fixture may declare a single `board` (the original shape, e.g.
 // ndis-quote-board.json) or a `boards` array, plus optional
-// `automationSettings` and `scheduledJobs` sections. This module turns either
-// shape into one canonical { workspaceId, business, boards, items,
-// automationSettings, scheduledJobs } and throws on anything ambiguous —
-// no mongoose, no dotenv, no I/O, so it is trivially unit-testable.
+// `automationSettings`, `scheduledJobs` and `invoiceNumbers` sections. This
+// module turns either shape into one canonical { workspaceId, business,
+// boards, items, automationSettings, scheduledJobs, invoiceNumbers } and
+// throws on anything ambiguous — no mongoose, no dotenv, no I/O, so it is
+// trivially unit-testable.
 
 // $-prefixed keys are documentation inside the fixture, not document fields.
 export const stripDollarKeys = (obj) =>
@@ -60,10 +61,23 @@ function normalizeScheduledJob(job) {
   return normalized;
 }
 
+// Already-invoiced rows (InvoiceNumber model). type defaults to 'PDF'
+// (the model's enum is PDF|Xero); workspaceId defaults to the fixture's.
+function normalizeInvoiceNumber(entry, boardIds, workspaceId) {
+  if (!entry.itemId || !entry.boardId || !entry.invoiceNumber) {
+    fail('every invoiceNumbers entry needs itemId, boardId and invoiceNumber');
+  }
+  if (!boardIds.has(entry.boardId)) {
+    fail(`invoiceNumbers entry "${entry.itemId}" names boardId "${entry.boardId}", which is not one of the fixture's boards`);
+  }
+  return { workspaceId, type: 'PDF', ...entry };
+}
+
 export function normalizeFixture(fixture) {
   const boards = normalizeBoards(fixture);
   const workspaceId = fixture.business?.workspaceId ?? boards[0].workspaceId;
   if (!workspaceId) fail('fixture needs business.workspaceId or boards[0].workspaceId');
+  const boardIds = new Set(boards.map((b) => b.boardId));
 
   return {
     workspaceId,
@@ -72,5 +86,7 @@ export function normalizeFixture(fixture) {
     items: normalizeItems(fixture.items ?? [], boards, workspaceId),
     automationSettings: fixture.automationSettings ?? null,
     scheduledJobs: (fixture.scheduledJobs ?? []).map(normalizeScheduledJob),
+    invoiceNumbers: (fixture.invoiceNumbers ?? [])
+      .map((entry) => normalizeInvoiceNumber(entry, boardIds, workspaceId)),
   };
 }

@@ -32,8 +32,10 @@
 // A fixture may declare a single `board` (the original shape) or a `boards`
 // array; with multiple boards every item must name its `boardId`. Optional
 // `automationSettings` (one doc per workspace) and `scheduledJobs` (keyed on
-// {kind, targetId}) sections seed the KAN-10 automation rows. Shape rules are
-// pure and unit-tested in devFixtureShape.mjs.
+// {kind, targetId}) sections seed the KAN-10 automation rows; an optional
+// `invoiceNumbers` section (keyed on {itemId, workspaceId, boardId, type})
+// seeds already-invoiced rows. Shape rules are pure and unit-tested in
+// devFixtureShape.mjs.
 
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -92,7 +94,7 @@ try {
   console.error(`error: ${err.message}`)
   process.exit(1)
 }
-const { workspaceId, business, boards, items, automationSettings, scheduledJobs } = shape
+const { workspaceId, business, boards, items, automationSettings, scheduledJobs, invoiceNumbers } = shape
 
 // --- replay ------------------------------------------------------------------
 //
@@ -197,6 +199,7 @@ const Board = await model('Board')
 const Item = await model('Item')
 const AutomationSettings = await model('AutomationSettings')
 const ScheduledJob = await model('ScheduledJob')
+const InvoiceNumber = await model('InvoiceNumber')
 
 const done = async (code) => {
   await mongoose.disconnect()
@@ -208,6 +211,9 @@ const boardIds = boards.map((b) => b.boardId)
 // The exact upsert/delete keys for the fixture's ScheduledJob rows — the
 // {kind, targetId} pair carries the collection's unique index.
 const jobKeys = scheduledJobs.map((j) => ({ kind: j.kind, targetId: j.targetId }))
+// InvoiceNumber rows are removed by {itemId, type}, always scoped to the
+// fixture's workspaceId — a seeded database can hold real invoice numbers.
+const invoiceKeys = invoiceNumbers.map((n) => ({ itemId: n.itemId, type: n.type }))
 const dbName = mongoose.connection.db.databaseName
 
 const pricingRule = (keys) => (keys.includes('Support Item Number') ? 'new'
@@ -242,6 +248,18 @@ const listAutomationSections = async () => {
   }
 }
 
+const listInvoiceNumbers = async () => {
+  if (invoiceKeys.length === 0) return
+  const found = await InvoiceNumber.find(
+    { workspaceId, $or: invoiceKeys }, 'itemId type invoiceNumber',
+  ).lean()
+  console.log(`  invoiceNumbers           ${found.length}/${invoiceKeys.length} present`)
+  for (const n of invoiceNumbers) {
+    const hit = found.find((f) => f.itemId === n.itemId && f.type === n.type)
+    console.log(`    ${hit ? '✓' : '✗'} ${n.itemId} [${n.type}] ${n.invoiceNumber}`)
+  }
+}
+
 if (flags['--list']) {
   const [biz, foundBoards, found] = await Promise.all([
     Business.findOne({ workspaceId }).lean(),
@@ -260,6 +278,7 @@ if (flags['--list']) {
     listBoardItems(boardItems, found)
   }
   await listAutomationSections()
+  await listInvoiceNumbers()
   console.log('')
   await done(0)
 }
@@ -291,6 +310,10 @@ if (flags['--remove']) {
   if (jobKeys.length > 0) {
     const removed = await ScheduledJob.deleteMany({ $or: jobKeys })
     console.log(`  scheduledJobs       ${removed.deletedCount}  (matched on the fixture's kind/targetId pairs only)`)
+  }
+  if (invoiceKeys.length > 0) {
+    const removed = await InvoiceNumber.deleteMany({ workspaceId, $or: invoiceKeys })
+    console.log(`  invoiceNumbers      ${removed.deletedCount}  (matched on the fixture's itemId/type pairs only)`)
   }
   console.log('')
   await done(0)
@@ -372,6 +395,18 @@ for (const job of scheduledJobs) {
     { upsert: true, new: true, setDefaultsOnInsert: true },
   )
   console.log(`  scheduledJob        ${job.kind} → ${job.targetId}`)
+}
+
+for (const n of invoiceNumbers) {
+  // Keyed the way the UI reads these rows: one row per item/type within a
+  // workspace+board. findOneAndUpdate skips the schema's pre('save') hook, so
+  // updatedAt keeps whatever the fixture (or the insert default) set.
+  await InvoiceNumber.findOneAndUpdate(
+    { itemId: n.itemId, workspaceId: n.workspaceId, boardId: n.boardId, type: n.type },
+    { $set: stripDollarKeys(n) },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  )
+  console.log(`  invoiceNumber       ${n.itemId} [${n.type}] ${n.invoiceNumber}`)
 }
 
 console.log(`\n  ${items.length} item(s) loaded. Inspect with: npm run dev:fixture -- --list`)
