@@ -44,6 +44,26 @@ describe('localFileStore', () => {
     },
   );
 
+  // Express percent-decodes the captured path param before the route sees it,
+  // so a key reaching the resolver is already decoded. A literal '%' in a
+  // document name ("100% Funded") is then not a valid escape sequence, and
+  // decoding it a second time threw — killing the offline PDF pipeline at the
+  // last step, on both the write and the read.
+  it('round-trips a key containing a literal percent sign', async () => {
+    const key = 'output/55369/board/NDIS-invoice/INV-1 100% funded.pdf';
+
+    await saveLocalFile(key, Buffer.from('%PDF-percent'), root);
+
+    const resolved = resolveLocalFilePath(key, root);
+    expect(resolved.endsWith('INV-1 100% funded.pdf')).toBe(true);
+    expect(readFileSync(resolved).toString()).toBe('%PDF-percent');
+  });
+
+  it('still refuses a traversal attempt that arrives percent-encoded', () => {
+    // The fallback must not become a way past the containment check.
+    expect(() => resolveLocalFilePath('..%2f..%2fpackage.json', root)).toThrow(/outside/);
+  });
+
   it('builds a URL under /api/local-files with the key percent-encoded', () => {
     const url = buildLocalFileUrl('output/a b/QT-1+™.pdf', 'https://example.test');
 

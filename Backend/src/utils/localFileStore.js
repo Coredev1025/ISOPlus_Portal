@@ -38,13 +38,22 @@ export function localFileRoot() {
  * this resolver is the only thing between a crafted key and an arbitrary file
  * access. Percent-decode first — '..%2f' arrives encoded — then require the
  * resolved path to stay strictly inside the root.
+ *
+ * A key that is not a valid escape sequence falls back to itself rather than
+ * throwing. Express already percent-decodes the captured path param before the
+ * route calls this, so by then a document named "100% Funded" carries a literal
+ * '%' that decodeURIComponent cannot parse — and refusing it killed the offline
+ * PDF pipeline at the last step, on the write as well as the read. The
+ * containment check below still runs on whichever string won, and that same
+ * string is the one returned and served.
  */
 export function resolveLocalFilePath(key, root = localFileRoot()) {
+  const raw = String(key);
   let decoded;
   try {
-    decoded = decodeURIComponent(String(key));
+    decoded = decodeURIComponent(raw);
   } catch {
-    throw new Error(`invalid local file key: ${key}`);
+    decoded = raw;
   }
 
   const resolved = resolve(root, decoded);

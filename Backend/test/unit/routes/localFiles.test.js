@@ -27,6 +27,7 @@ describe('GET /api/local-files', () => {
   beforeEach(async () => {
     saved.ISOPLUS_OFFLINE = process.env.ISOPLUS_OFFLINE;
     saved.LOCAL_FILE_ROOT = process.env.LOCAL_FILE_ROOT;
+    saved.NODE_ENV = process.env.NODE_ENV;
     // A temp root, NOT the real store: this suite once rm -rf'd the
     // developer's freshly generated PDFs through the default path.
     root = mkdtempSync(join(tmpdir(), 'local-files-route-'));
@@ -37,6 +38,7 @@ describe('GET /api/local-files', () => {
   afterEach(() => {
     process.env.ISOPLUS_OFFLINE = saved.ISOPLUS_OFFLINE;
     process.env.LOCAL_FILE_ROOT = saved.LOCAL_FILE_ROOT;
+    process.env.NODE_ENV = saved.NODE_ENV;
     rmSync(root, { recursive: true, force: true });
   });
 
@@ -59,6 +61,19 @@ describe('GET /api/local-files', () => {
 
   it('404s everywhere outside offline mode, even for a stored file', async () => {
     process.env.ISOPLUS_OFFLINE = '0';
+
+    const res = await request(app).get(`/api/local-files/${KEY}`);
+    expect(res.status).toBe(404);
+  });
+
+  it('404s in production even when ISOPLUS_OFFLINE=1 says otherwise', async () => {
+    // isOfflineMode() checks ISOPLUS_OFFLINE before NODE_ENV, so this env
+    // combination — what someone reaches for to debug a credentials problem on
+    // a deployed host — used to turn this mount into an unauthenticated read of
+    // Backend/.local-s3, which holds generated invoice PDFs and the composed
+    // email outbox. The route refuses in production unconditionally.
+    process.env.ISOPLUS_OFFLINE = '1';
+    process.env.NODE_ENV = 'production';
 
     const res = await request(app).get(`/api/local-files/${KEY}`);
     expect(res.status).toBe(404);

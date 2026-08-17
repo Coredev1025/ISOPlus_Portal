@@ -1,11 +1,30 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import AutomationSettings from '../../src/models/AutomationSettings.js';
+import Business from '../../src/models/Business.js';
 import PDFLink from '../../src/models/PDFLink.js';
 import ScheduledJob from '../../src/models/ScheduledJob.js';
 import { KIND_INVOICE, KIND_STATEMENT } from '../../src/constants/automation.js';
 import { authenticatedAgent } from '../helpers/auth.js';
+
+/**
+ * Lets one test make a single schedule write fail the way infrastructure does
+ * — after the block before it has already been written. Everything else calls
+ * through to the real implementation.
+ */
+const failing = vi.hoisted(() => ({ kind: null }));
+
+vi.mock('../../src/services/scheduler/schedules.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    upsertSchedule: async (args) => {
+      if (args?.kind === failing.kind) throw new Error('connect ECONNREFUSED 10.0.0.5:27017');
+      return actual.upsertSchedule(args);
+    },
+  };
+});
 
 const WS = 'ws-automation-1';
 
@@ -75,6 +94,16 @@ describe('GET/PUT /api/workspaces/:workspaceId/automation-settings', () => {
     await AutomationSettings.deleteMany({});
     await PDFLink.deleteMany({});
     await ScheduledJob.deleteMany({});
+    await Business.deleteMany({});
+    failing.kind = null;
+    // Automation is gated on the workspace's feature toggle, so every test
+    // that saves settings needs the Business row carrying it. No
+    // headOfficeTimezone, so resolveTimezone still falls back to TZ below.
+    await Business.create({
+      workspaceId: WS,
+      name: 'Automation Test Co',
+      featureToggles: { invoiceStatementAutomation: true },
+    });
     app = createApp();
     ({ agent } = await authenticatedAgent(app));
   });
@@ -251,7 +280,29 @@ describe('GET/PUT /api/workspaces/:workspaceId/automation-settings', () => {
     const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
     expect(res.body.invoice.nextRun).toBeNull();
     expect(res.body.invoice.lastRunAt).toBe(ranAt.toISOString());
-    expect(res.body.invoice.lastRunError).toBe('boom');
+    expect(res.body.invoice.lastRunFailed).toBe(true);
+  });
+
+  it('does not return the stored lastError text to the client', async () => {
+    // The expectation this replaces asserted the raw string came back. It is
+    // whatever the run threw, stringified — E11000 messages naming the
+    // database and index, ECONNREFUSED with internal addresses, S3 bucket
+    // names. The client gets the fact; the logs keep the detail.
+    await agent.put(`/api/workspaces/${WS}/automation-settings`).send({ invoice: MONTHLY_INVOICE });
+    await ScheduledJob.updateOne(
+      { kind: KIND_INVOICE, targetId: WS },
+      {
+        $set: {
+          lastRunAt: new Date('2026-08-01T23:00:00.000Z'),
+          lastError:
+            'E11000 duplicate key error collection: business-dashboard.pdflinks index: pdfLink_1',
+        },
+      },
+    );
+
+    const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
+    expect(res.body.invoice.lastRunFailed).toBe(true);
+    expect(res.body.invoice.lastRunError).not.toMatch(/E11000|business-dashboard|pdflinks/);
   });
 
   it('lists recent automation documents on GET, newest first and deduped', async () => {
@@ -304,6 +355,33 @@ describe('GET/PUT /api/workspaces/:workspaceId/automation-settings', () => {
     expect(res.body.recentDocuments[0].pdfUrl).toBe('https://example.test/doc-11.pdf');
   });
 
+  it('still returns ten documents when one run wrote fifty rows for a single PDF', async () => {
+    // A 50-item invoice writes 50 PDFLink rows sharing one pdfLink. The old
+    // newest-50 → dedupe → cap-10 pipeline read exactly those 50 rows, deduped
+    // them to one, and reported a single document while nine older ones sat
+    // just outside the window.
+    for (let i = 0; i < 50; i++) {
+      await automationPdfLink({
+        itemId: `bulk-item-${i}`,
+        pdfLink: 'https://example.test/bulk-invoice.pdf',
+        periodKey: '20260301-0900',
+        createdAt: new Date(Date.UTC(2026, 2, 1)),
+      });
+    }
+    for (let i = 0; i < 9; i++) {
+      await automationPdfLink({
+        pdfLink: `https://example.test/older-${i}.pdf`,
+        periodKey: '20260201-0900',
+        createdAt: new Date(Date.UTC(2026, 1, i + 1)),
+      });
+    }
+
+    const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
+    expect(res.body.recentDocuments).toHaveLength(10);
+    expect(res.body.recentDocuments[0].pdfUrl).toBe('https://example.test/bulk-invoice.pdf');
+    expect(new Set(res.body.recentDocuments.map((d) => d.pdfUrl)).size).toBe(10);
+  });
+
   it('returns 400 and leaves the settings unwritten when the schedule write fails', async () => {
     const res = await agent
       .put(`/api/workspaces/${WS}/automation-settings`)
@@ -315,6 +393,145 @@ describe('GET/PUT /api/workspaces/:workspaceId/automation-settings', () => {
     // cannot fire.
     expect(await AutomationSettings.countDocuments({})).toBe(0);
     expect(await ScheduledJob.countDocuments({})).toBe(0);
+  });
+
+  describe('the invoiceStatementAutomation feature flag', () => {
+    it('refuses to save settings for a workspace the flag is off for', async () => {
+      // Without this the flag gated nothing: any admitted session could PUT
+      // settings for a workspace not on the feature and create an ENABLED
+      // ScheduledJob that the next tick runs the full billing pipeline for.
+      await Business.updateOne(
+        { workspaceId: WS },
+        { $set: { 'featureToggles.invoiceStatementAutomation': false } },
+      );
+
+      const res = await agent
+        .put(`/api/workspaces/${WS}/automation-settings`)
+        .send({ invoice: MONTHLY_INVOICE });
+
+      expect(res.status).toBe(403);
+      expect(res.body.message).toMatch(/automation/i);
+      expect(await ScheduledJob.countDocuments({})).toBe(0);
+      expect(await AutomationSettings.countDocuments({})).toBe(0);
+    });
+
+    it('refuses to save settings for a workspace with no business profile', async () => {
+      await Business.deleteMany({});
+
+      const res = await agent
+        .put(`/api/workspaces/${WS}/automation-settings`)
+        .send({ invoice: MONTHLY_INVOICE });
+
+      expect(res.status).toBe(403);
+      expect(await ScheduledJob.countDocuments({})).toBe(0);
+    });
+
+    it('still serves GET when the flag is off, so the UI can explain itself', async () => {
+      await Business.updateOne(
+        { workspaceId: WS },
+        { $set: { 'featureToggles.invoiceStatementAutomation': false } },
+      );
+
+      const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
+      expect(res.status).toBe(200);
+      expect(res.body.invoice.enabled).toBe(false);
+    });
+
+    it('disables both automation schedules when the toggle is turned off', async () => {
+      // The flag was not a kill switch: disableSchedule was only ever called
+      // from the settings PUT, so an existing row kept enabled: true and kept
+      // billing after the feature was withdrawn.
+      await agent
+        .put(`/api/workspaces/${WS}/automation-settings`)
+        .send({ invoice: MONTHLY_INVOICE, statement: WEEKLY_STATEMENT });
+
+      const off = await agent
+        .put(`/api/workspaces/${WS}/feature-toggles`)
+        .send({ invoiceStatementAutomation: false });
+      expect(off.status).toBe(200);
+
+      const jobs = await ScheduledJob.find({ targetId: WS });
+      expect(jobs).toHaveLength(2);
+      expect(jobs.every((job) => job.enabled === false)).toBe(true);
+      // Disabled, not deleted: the history survives so turning the feature
+      // back on shows when each block last ran.
+      expect(jobs.every((job) => job.schedule?.every?.unit)).toBe(true);
+    });
+
+    it('leaves the schedules alone when the toggle is turned on', async () => {
+      await agent
+        .put(`/api/workspaces/${WS}/automation-settings`)
+        .send({ invoice: MONTHLY_INVOICE });
+
+      const on = await agent
+        .put(`/api/workspaces/${WS}/feature-toggles`)
+        .send({ invoiceStatementAutomation: true });
+      expect(on.status).toBe(200);
+
+      const job = await ScheduledJob.findOne({ kind: KIND_INVOICE, targetId: WS });
+      expect(job.enabled).toBe(true);
+    });
+  });
+
+  it('writes no schedule at all when only the second block is invalid', async () => {
+    // The partial-write this exists for: writeAutomationSchedules awaited
+    // invoice then statement, so an invalid statement left a live invoice
+    // schedule on the new cadence, AutomationSettings holding the old values,
+    // and the client told 400 — "looks fine while automation runs", inverted.
+    const res = await agent.put(`/api/workspaces/${WS}/automation-settings`).send({
+      invoice: MONTHLY_INVOICE,
+      statement: { ...WEEKLY_STATEMENT, startDate: 'not-a-date' },
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/startDate/);
+    expect(await ScheduledJob.countDocuments({})).toBe(0);
+    expect(await AutomationSettings.countDocuments({})).toBe(0);
+  });
+
+  it('reports a mid-sequence infrastructure failure as a 500 and writes no settings', async () => {
+    // Body-driven partial writes are gone (both blocks are validated before
+    // either is written). What remains is the database failing between the two
+    // upserts, which is a 500, not the client's fault. The residual state is
+    // real and deliberately not "fixed" by a compensating write: that write
+    // needs the same connection that just failed. The invoice schedule is left
+    // on the cadence the client asked for, and the settings document is not
+    // written, so a retry converges.
+    failing.kind = KIND_STATEMENT;
+
+    const res = await agent
+      .put(`/api/workspaces/${WS}/automation-settings`)
+      .send({ invoice: MONTHLY_INVOICE, statement: WEEKLY_STATEMENT });
+
+    expect(res.status).toBe(500);
+    expect(res.body.message).not.toMatch(/ECONNREFUSED|10\.0\.0\.5/);
+    expect(await AutomationSettings.countDocuments({})).toBe(0);
+    expect(await ScheduledJob.countDocuments({ kind: KIND_STATEMENT, targetId: WS })).toBe(0);
+  });
+
+  it('treats PUT as a full replace: an omitted block is reset and its schedule disabled', async () => {
+    // Documented rather than changed: the only client PUTs the whole settings
+    // object it just fetched (Frontend/lib/automation-settings.ts), and this
+    // is what the route already did. An API caller sending one block must know
+    // it turns the other one off.
+    await agent
+      .put(`/api/workspaces/${WS}/automation-settings`)
+      .send({ invoice: MONTHLY_INVOICE, statement: WEEKLY_STATEMENT });
+
+    const res = await agent
+      .put(`/api/workspaces/${WS}/automation-settings`)
+      .send({ invoice: MONTHLY_INVOICE });
+
+    expect(res.status).toBe(200);
+    expect(res.body.statement.enabled).toBe(false);
+    expect(res.body.statement.nextRun).toBeNull();
+
+    const statementJob = await ScheduledJob.findOne({ kind: KIND_STATEMENT, targetId: WS });
+    expect(statementJob.enabled).toBe(false);
+
+    const stored = await AutomationSettings.findOne({ workspaceId: WS });
+    expect(stored.statement.enabled).toBe(false);
+    expect(stored.statement.runAt).toBe('09:00');
   });
 
   it('enables both blocks independently', async () => {

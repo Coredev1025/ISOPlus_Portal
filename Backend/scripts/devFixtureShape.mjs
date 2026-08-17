@@ -1,4 +1,5 @@
-// Pure normalization/validation for dev-fixture.mjs fixture files.
+// Pure normalization/validation for dev-fixture.mjs — its fixture files, and
+// the local-only database guard it refuses to run without.
 //
 // A fixture may declare a single `board` (the original shape, e.g.
 // ndis-quote-board.json) or a `boards` array, plus optional
@@ -62,7 +63,12 @@ function normalizeScheduledJob(job) {
 }
 
 // Already-invoiced rows (InvoiceNumber model). type defaults to 'PDF'
-// (the model's enum is PDF|Xero); workspaceId defaults to the fixture's.
+// (the model's enum is PDF|Xero); workspaceId is the fixture's, always.
+//
+// It is pinned after the spread, not before: an entry declaring its own
+// workspaceId used to win here, so the row was written under that workspace
+// while --remove deleted by the fixture's — the row survived every cleanup.
+// Nothing needs a per-entry workspace, so this is a pin rather than a default.
 function normalizeInvoiceNumber(entry, boardIds, workspaceId) {
   if (!entry.itemId || !entry.boardId || !entry.invoiceNumber) {
     fail('every invoiceNumbers entry needs itemId, boardId and invoiceNumber');
@@ -70,7 +76,58 @@ function normalizeInvoiceNumber(entry, boardIds, workspaceId) {
   if (!boardIds.has(entry.boardId)) {
     fail(`invoiceNumbers entry "${entry.itemId}" names boardId "${entry.boardId}", which is not one of the fixture's boards`);
   }
-  return { workspaceId, type: 'PDF', ...entry };
+  return { type: 'PDF', ...entry, workspaceId };
+}
+
+// --- the local-only guard ----------------------------------------------------
+
+// 'mongo' is the compose service name — inside the dev network that is the
+// local database. URL keeps the brackets on an IPv6 hostname, hence '[::1]'.
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', 'mongo']);
+
+/**
+ * The hostname of one `host[:port]` from a Mongo connection string, or null if
+ * it will not parse. `new URL` does the work — bracketed IPv6, ports, defaults
+ * — on one host at a time, because a multi-host authority is not a URL.
+ */
+function hostnameOf(host) {
+  try {
+    const { hostname } = new URL(`mongodb://${host}`);
+    return hostname || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Does this URI point at a database on this machine, and only at databases on
+ * this machine?
+ *
+ * dev-fixture writes invented business and participant records and tells the
+ * operator there is no override flag, so this has to be worth that promise.
+ * The check it replaces was an unanchored substring match, which meant
+ * `mongodb://mongo:27017,prod.example.com:27017/db` (a replica-set list whose
+ * first host is local) and `mongodb://localhost:pw@prod.example.com/` (a
+ * username that happens to read as a hostname) both passed while writing to a
+ * remote host. Every host in the authority must be local; anything that will
+ * not parse is refused rather than assumed.
+ *
+ * What no string check can see: an SSH tunnel or port-forward on localhost:27017
+ * that terminates in production. This narrows the accident, it does not make
+ * the operation safe by itself.
+ */
+export function isLocalMongoUri(uri) {
+  const match = /^mongodb(\+srv)?:\/\/([^/?#]*)/i.exec(String(uri ?? ''));
+  if (!match) return false;
+  // +srv resolves its hosts from DNS, so the string names nothing local.
+  if (match[1]) return false;
+
+  const authority = match[2];
+  const at = authority.lastIndexOf('@');
+  const hosts = authority.slice(at + 1).split(',').filter(Boolean);
+  if (hosts.length === 0) return false;
+
+  return hosts.every((host) => LOCAL_HOSTNAMES.has(hostnameOf(host)));
 }
 
 export function normalizeFixture(fixture) {

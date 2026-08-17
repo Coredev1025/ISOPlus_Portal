@@ -11,6 +11,8 @@ import {
   buildAutomationSettingsPayload,
   toScheduleInput,
   isScheduleClientError,
+  automationScheduleBlocks,
+  automationScheduleRejection,
 } from '../utils/automationSettingsHelpers.js';
 import { upsertSchedule, disableSchedule } from '../services/scheduler/schedules.js';
 import { KIND_INVOICE, KIND_STATEMENT } from '../constants/automation.js';
@@ -41,6 +43,7 @@ import {
   findBusinessByWorkspaceId,
   upsertInvoiceStatementAutomation,
   getInvoiceStatementAutomationFlag,
+  isInvoiceStatementAutomationEnabled,
   auditFeatureToggleUpdate,
 } from '../utils/workspaceFeatureToggleHelpers.js';
 
@@ -359,6 +362,15 @@ router.put('/:workspaceId/feature-toggles', authenticateToken, async (req, res) 
     }
     const payload = buildFeatureTogglesPayload(business);
 
+    // Withdrawing the feature has to stop what it started. disableSchedule was
+    // only ever called from the settings PUT, so a workspace whose toggle went
+    // off kept its enabled ScheduledJob rows, and the next tick kept billing
+    // for a feature the workspace was no longer on. Disabled, not deleted, so
+    // turning the toggle back on still shows each block's history.
+    if (parsed.value === false) {
+      await disableAutomationSchedules(workspaceId);
+    }
+
     await auditFeatureToggleUpdate({
       workspaceId,
       enabled: parsed.value,
@@ -424,30 +436,36 @@ async function loadAutomationJobs(workspaceId) {
 const RECENT_DOCUMENTS_LIMIT = 10;
 
 async function loadRecentAutomationDocuments(workspaceId) {
-  const rows = await PDFLink.find({
-    workspaceId: { $eq: workspaceId },
-    periodKey: { $nin: [null, ''] },
-  })
-    .sort({ createdAt: -1 })
-    .limit(RECENT_DOCUMENTS_LIMIT * 5)
-    .select('type invoiceNumber periodKey pdfLink createdAt')
-    .lean();
+  // Dedupe in the database, not after a truncated read. The previous pipeline
+  // took the newest 50 rows and deduped those, so a single 50-item invoice —
+  // 50 rows sharing one pdfLink — collapsed to one document and hid the nine
+  // older ones that should have filled the list. Grouping first makes the
+  // limit a limit on documents rather than on rows.
+  const rows = await PDFLink.aggregate([
+    { $match: { workspaceId: { $eq: workspaceId }, periodKey: { $nin: [null, ''] } } },
+    { $sort: { createdAt: -1 } },
+    {
+      $group: {
+        _id: '$pdfLink',
+        type: { $first: '$type' },
+        invoiceNumber: { $first: '$invoiceNumber' },
+        periodKey: { $first: '$periodKey' },
+        createdAt: { $first: '$createdAt' },
+      },
+    },
+    // $group does not preserve the sort, so order the surviving documents
+    // again before the cap.
+    { $sort: { createdAt: -1 } },
+    { $limit: RECENT_DOCUMENTS_LIMIT },
+  ]);
 
-  const seen = new Set();
-  const documents = [];
-  for (const row of rows) {
-    if (documents.length >= RECENT_DOCUMENTS_LIMIT) break;
-    if (seen.has(row.pdfLink)) continue;
-    seen.add(row.pdfLink);
-    documents.push({
-      type: row.type,
-      invoiceNumber: row.invoiceNumber ?? null,
-      periodKey: row.periodKey,
-      pdfUrl: row.pdfLink,
-      createdAt: row.createdAt,
-    });
-  }
-  return documents;
+  return rows.map((row) => ({
+    type: row.type,
+    invoiceNumber: row.invoiceNumber ?? null,
+    periodKey: row.periodKey,
+    pdfUrl: row._id,
+    createdAt: row.createdAt,
+  }));
 }
 
 /**
@@ -458,12 +476,7 @@ async function loadRecentAutomationDocuments(workspaceId) {
  * matches nothing and is a harmless no-op.
  */
 async function writeAutomationSchedules(workspaceId, value) {
-  const blocks = [
-    { kind: KIND_INVOICE, block: value.invoice },
-    { kind: KIND_STATEMENT, block: value.statement },
-  ];
-
-  for (const { kind, block } of blocks) {
+  for (const { kind, block } of automationScheduleBlocks(value)) {
     if (block.enabled) {
       await upsertSchedule({
         kind,
@@ -475,6 +488,12 @@ async function writeAutomationSchedules(workspaceId, value) {
       await disableSchedule({ kind, targetId: workspaceId });
     }
   }
+}
+
+/** Both automation schedules off, for a workspace losing the feature. */
+async function disableAutomationSchedules(workspaceId) {
+  await disableSchedule({ kind: KIND_INVOICE, targetId: workspaceId });
+  await disableSchedule({ kind: KIND_STATEMENT, targetId: workspaceId });
 }
 
 router.get('/:workspaceId/automation-settings', authenticateToken, async (req, res) => {
@@ -505,8 +524,25 @@ router.put('/:workspaceId/automation-settings', authenticateToken, async (req, r
     const workspaceId = parseWorkspaceIdParam(req.params.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
 
+    // The feature flag, read on the write path so it is a gate and not a
+    // label. GET stays open: a workspace that has lost the feature still needs
+    // to see what it had.
+    if (!(await isInvoiceStatementAutomationEnabled(workspaceId))) {
+      return res.status(403).json({
+        message: 'Invoice & Statement Automation is not enabled for this workspace.',
+      });
+    }
+
     const parsed = parseAutomationSettingsBody(req.body);
     if (parsed.error) return res.status(400).json({ message: parsed.error });
+
+    // Both schedules are validated before either is written. writeAutomationSchedules
+    // writes the invoice one and then the statement one, so without this a
+    // rejected statement block left a live invoice schedule on the new cadence
+    // while AutomationSettings still held the old values — the client sees a
+    // 400 and the automation runs anyway.
+    const scheduleRejection = automationScheduleRejection(parsed.value);
+    if (scheduleRejection) return res.status(400).json({ message: scheduleRejection });
 
     // Schedules first, settings second, and the order is the whole safety
     // mechanism: Mongo transactions need a replica set and local dev runs a
@@ -515,6 +551,13 @@ router.put('/:workspaceId/automation-settings', authenticateToken, async (req, r
     // exactly as it was, and the UI keeps telling the truth. The other order
     // would leave it reading "enabled" for automation that can never fire —
     // the worst outcome available, because it looks fine.
+    //
+    // What survives that argument, honestly: if the database fails between the
+    // two schedule writes, the first block is left on its new cadence with the
+    // settings document unwritten. That is a 500, not a 400, and no
+    // compensating write is attempted here — it would need the connection that
+    // just failed. A retry converges, and the residual schedule is one the
+    // client asked for.
     await writeAutomationSchedules(workspaceId, parsed.value);
 
     const settings = await AutomationSettings.findOneAndUpdate(
@@ -544,10 +587,19 @@ router.put('/:workspaceId/automation-settings', authenticateToken, async (req, r
       return res.status(400).json({ message: err.message });
     }
 
+    // Every 500 out of this handler is by construction a partial write: the
+    // schedules are written before the settings, so reaching here means the
+    // schedules may already be on the new cadence while AutomationSettings
+    // still holds the old values. Say so in the log — it is the only place
+    // that state is visible.
     error(
       'Workspace-Service',
       'Failed to update automation settings',
-      sanitizeLogValue({ workspaceId: req.params.workspaceId, error: err.message }),
+      sanitizeLogValue({
+        workspaceId: req.params.workspaceId,
+        error: err.message,
+        schedulesMayBePartiallyWritten: true,
+      }),
       req ?? null
     );
     return res.status(500).json({ message: 'Failed to update automation settings' });

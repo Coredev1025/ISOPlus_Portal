@@ -4,7 +4,11 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, it, expect } from 'vitest';
 
-import { normalizeFixture, stripDollarKeys } from '../../../scripts/devFixtureShape.mjs';
+import {
+  normalizeFixture,
+  stripDollarKeys,
+  isLocalMongoUri,
+} from '../../../scripts/devFixtureShape.mjs';
 
 const backendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const ndisFixture = JSON.parse(
@@ -172,6 +176,24 @@ describe('normalizeFixture', () => {
       expect(entry.pdfLink).toBe('https://example.com/inv.pdf');
     });
 
+    it('pins workspaceId to the fixture, ignoring one declared on the entry', () => {
+      // The entry used to be spread last, so its own workspaceId won on the
+      // write while --remove still deleted by the fixture's — the row was
+      // written into another workspace and then never cleaned up.
+      const [entry] = normalizeFixture({
+        ...twoBoards(),
+        invoiceNumbers: [
+          {
+            itemId: 'i-1',
+            boardId: 'board-a',
+            invoiceNumber: 'INV-0004',
+            workspaceId: 'ws-somewhere-else',
+          },
+        ],
+      }).invoiceNumbers;
+      expect(entry.workspaceId).toBe('ws-1');
+    });
+
     it('rejects an entry missing itemId, boardId or invoiceNumber', () => {
       expect(() => normalizeFixture({
         ...twoBoards(),
@@ -212,6 +234,39 @@ describe('normalizeFixture', () => {
       });
       expect(shape.automationSettings).toEqual({ workspaceId: 'ws-1', invoice: { enabled: true } });
     });
+  });
+});
+
+describe('isLocalMongoUri', () => {
+  // The loader writes invented business and participant records, so it refuses
+  // any non-local database and promises there is no override flag. The guard
+  // that promise rested on was an unanchored substring match, which two
+  // ordinary-looking URIs walked straight past.
+  it('accepts the local hosts the dev stack uses', () => {
+    expect(isLocalMongoUri('mongodb://localhost:27017/business-dashboard')).toBe(true);
+    expect(isLocalMongoUri('mongodb://127.0.0.1:27017/business-dashboard')).toBe(true);
+    expect(isLocalMongoUri('mongodb://mongo:27017/business-dashboard')).toBe(true);
+    expect(isLocalMongoUri('mongodb://user:pw@localhost:27017/db?replicaSet=rs0')).toBe(true);
+    expect(isLocalMongoUri('mongodb://[::1]:27017/db')).toBe(true);
+  });
+
+  it('rejects a multi-host URI where only the first host is local', () => {
+    expect(isLocalMongoUri('mongodb://mongo:27017,prod.example.com:27017/db')).toBe(false);
+  });
+
+  it('rejects a remote host wearing a local-looking username', () => {
+    expect(isLocalMongoUri('mongodb://localhost:pw@prod.example.com/')).toBe(false);
+  });
+
+  it('rejects an Atlas SRV URI', () => {
+    expect(isLocalMongoUri('mongodb+srv://user:pw@cluster0.abc.mongodb.net/db')).toBe(false);
+  });
+
+  it('rejects anything it cannot parse rather than assuming it is local', () => {
+    expect(isLocalMongoUri('')).toBe(false);
+    expect(isLocalMongoUri('not-a-uri')).toBe(false);
+    expect(isLocalMongoUri('mongodb://')).toBe(false);
+    expect(isLocalMongoUri(undefined)).toBe(false);
   });
 });
 

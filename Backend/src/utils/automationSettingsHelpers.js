@@ -1,11 +1,15 @@
 // Backend/src/utils/automationSettingsHelpers.js
-import { RUN_AT_PATTERN, WEEKDAYS } from '../constants/automation.js';
-import { EMAIL_PATTERN } from '../constants/validation.js';
 import {
   AUTOMATION_UNITS,
-  SEND_METHODS,
-  RECIPIENTS,
-} from '../models/AutomationSettings.js';
+  KIND_INVOICE,
+  KIND_STATEMENT,
+  MAX_EVERY_N,
+  RUN_AT_PATTERN,
+  WEEKDAYS,
+} from '../constants/automation.js';
+import { EMAIL_PATTERN } from '../constants/validation.js';
+import { pickerScheduleError } from '../services/scheduler/pickerValidation.js';
+import { SEND_METHODS, RECIPIENTS } from '../models/AutomationSettings.js';
 
 export const DEFAULT_AUTOMATION_BLOCK = {
   enabled: false,
@@ -23,6 +27,29 @@ export const DEFAULT_AUTOMATION_BLOCK = {
   senderIdentityId: null,
 };
 
+/**
+ * The `emailMessage` ceiling, in characters.
+ *
+ * It is rich-text HTML that gets emailed to clients, and before this it was
+ * validated by nothing at all: an unbounded string went into Mongo, back out
+ * on every GET, and into an outgoing email. 20k characters is far more than
+ * any covering note needs and far less than a document that would break the
+ * mail path.
+ *
+ * Read by validateBlock below and by the tests. CLAUDE.md wants it in
+ * constants/automation.js — see the follow-up note in the PR; that file is
+ * owned elsewhere on this branch.
+ */
+export const MAX_EMAIL_MESSAGE_LENGTH = 20000;
+
+/**
+ * What the client is told when the last run failed. Deliberately says nothing
+ * about the failure: see buildAutomationSettingsPayload.
+ */
+const LAST_RUN_FAILED_MESSAGE = 'The last run failed. Check the automation logs for details.';
+
+const inRange = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
+
 function validateRunOn(unit, runOn) {
   if (unit === 'day') return null;
   if (unit === 'week') {
@@ -34,12 +61,18 @@ function validateRunOn(unit, runOn) {
     // 1-31, per the spec's picker. Days 29-31 do not skip short months: the
     // scheduler clamps to the month's last day (automationScheduleHelpers.js
     // addMonthsClamped), so "the 31st" fires on 30 Apr and 28/29 Feb.
-    return Number.isInteger(runOn) && runOn >= 1 && runOn <= 31
+    return inRange(runOn, 1, 31)
       ? null
       : `runOn must be an integer between 1 and 31 when unit is "month"`;
   }
-  const ok = runOn && Number.isInteger(runOn.month) && Number.isInteger(runOn.day);
-  return ok ? null : `runOn must be {month, day} when unit is "${unit}"`;
+  // Same bounds as the month branch, for the same reason: an out-of-range
+  // {month: 99, day: -3} is not rejected by the arithmetic, it is silently
+  // clamped to some other date — so the picker would keep displaying a value
+  // the schedule does not use.
+  const ok = runOn && inRange(runOn.month, 1, 12) && inRange(runOn.day, 1, 31);
+  return ok
+    ? null
+    : `runOn must be {month, day} with month 1-12 and day 1-31 when unit is "${unit}"`;
 }
 
 function validateEmails(block) {
@@ -50,26 +83,45 @@ function validateEmails(block) {
   return null;
 }
 
-function validateBlock(name, block) {
-  // A disabled block is not validated: a client who turns automation off
-  // should not be blocked by a field they are no longer using.
-  if (!block.enabled) return null;
+/**
+ * The fields checked whatever `enabled` says. They are stored exactly as sent
+ * and used the moment somebody re-enables the block, so accepting a malformed
+ * address here only defers the failure to the first send — and no client has
+ * a reason to send one.
+ */
+function validateContent(block) {
+  const emailError = validateEmails(block);
+  if (emailError) return emailError;
+  if (String(block.emailMessage ?? '').length > MAX_EMAIL_MESSAGE_LENGTH) {
+    return `emailMessage must be ${MAX_EMAIL_MESSAGE_LENGTH} characters or fewer`;
+  }
+  return null;
+}
 
+/** The cadence fields, which only have to make sense for a block that runs. */
+function validateSchedule(block) {
   const { unit, n } = block.every ?? {};
   if (!AUTOMATION_UNITS.includes(unit)) {
-    return `${name}: every.unit must be one of ${AUTOMATION_UNITS.join(', ')}`;
+    return `every.unit must be one of ${AUTOMATION_UNITS.join(', ')}`;
   }
-  if (!Number.isInteger(n) || n < 1) return `${name}: every.n must be a positive integer`;
-  if (n > 365) return `${name}: every.n must be 365 or less`;
-  if (!RUN_AT_PATTERN.test(String(block.runAt ?? ''))) return `${name}: runAt must be HH:MM`;
-  if (!SEND_METHODS.includes(block.sendMethod)) return `${name}: invalid sendMethod`;
-  if (!RECIPIENTS.includes(block.recipient)) return `${name}: invalid recipient`;
+  if (!Number.isInteger(n) || n < 1) return 'every.n must be a positive integer';
+  if (n > MAX_EVERY_N) return `every.n must be ${MAX_EVERY_N} or less`;
+  if (!RUN_AT_PATTERN.test(String(block.runAt ?? ''))) return 'runAt must be HH:MM';
+  if (!SEND_METHODS.includes(block.sendMethod)) return 'invalid sendMethod';
+  if (!RECIPIENTS.includes(block.recipient)) return 'invalid recipient';
+  return validateRunOn(unit, block.runOn);
+}
 
-  const runOnError = validateRunOn(unit, block.runOn);
-  if (runOnError) return `${name}: ${runOnError}`;
+function validateBlock(name, block) {
+  const contentError = validateContent(block);
+  if (contentError) return `${name}: ${contentError}`;
 
-  const emailError = validateEmails(block);
-  return emailError ? `${name}: ${emailError}` : null;
+  // A disabled block's cadence is not validated: a client who turns automation
+  // off should not be blocked by a field they are no longer using.
+  if (!block.enabled) return null;
+
+  const scheduleError = validateSchedule(block);
+  return scheduleError ? `${name}: ${scheduleError}` : null;
 }
 
 function mergeBlock(input) {
@@ -81,6 +133,25 @@ function mergeBlock(input) {
   };
 }
 
+/**
+ * Weekday names are stored lowercase, because that is the only case the rest
+ * of the system uses: the scheduler lowercases before comparing, so "Friday"
+ * fired correctly but round-tripped to the UI in a case nothing else matches.
+ * Normalising on the write path keeps one spelling in the database.
+ */
+function normalizeBlock(block) {
+  if (block.every?.unit !== 'week' || typeof block.runOn !== 'string') return block;
+  return { ...block, runOn: block.runOn.toLowerCase() };
+}
+
+/**
+ * PUT is a full replace: an absent `invoice` or `statement` is read as the
+ * default block, not as "leave the stored one alone". That is what the only
+ * client sends (Frontend/lib/automation-settings.ts PUTs the whole settings
+ * object it just fetched), and it is what the route's disable-on-absent
+ * behaviour already did — so it is documented and tested rather than changed.
+ * A partial PUT therefore resets the omitted block and disables its schedule.
+ */
 export function parseAutomationSettingsBody(body) {
   const invoice = mergeBlock(body?.invoice);
   const statement = mergeBlock(body?.statement);
@@ -88,7 +159,7 @@ export function parseAutomationSettingsBody(body) {
   const error = validateBlock('invoice', invoice) ?? validateBlock('statement', statement);
   if (error) return { error };
 
-  return { value: { invoice, statement } };
+  return { value: { invoice: normalizeBlock(invoice), statement: normalizeBlock(statement) } };
 }
 
 /**
@@ -106,6 +177,41 @@ export function toScheduleInput(block) {
     runAt: block.runAt,
     startDate: block.startDate,
   };
+}
+
+/**
+ * The two blocks in the order the route writes them, paired with the
+ * `ScheduledJob.kind` each becomes.
+ */
+export function automationScheduleBlocks(value) {
+  return [
+    { kind: KIND_INVOICE, block: value.invoice },
+    { kind: KIND_STATEMENT, block: value.statement },
+  ];
+}
+
+/**
+ * Every enabled block's schedule, checked against the same validator
+ * `upsertSchedule` applies — before any of them is written.
+ *
+ * The route writes the invoice schedule and then the statement one, so a body
+ * whose second block was rejected used to leave the first live on its new
+ * cadence, `AutomationSettings` holding the old values, and the client told
+ * 400. Nothing about that state announces itself: the schedule fires, and the
+ * page shows the settings it did not save. Validating both up front removes
+ * the only body-driven route to it. (A database failure between the two
+ * writes can still produce it, and that is a 500 — see the route.)
+ *
+ * The message is the one upsertSchedule would have thrown, prefix included,
+ * so the client sees the same text whichever check catches the body.
+ */
+export function automationScheduleRejection(value) {
+  for (const { kind, block } of automationScheduleBlocks(value)) {
+    if (!block.enabled) continue;
+    const invalid = pickerScheduleError(toScheduleInput(block));
+    if (invalid) return `Scheduler: invalid schedule for "${kind}" — ${invalid}`;
+  }
+  return null;
 }
 
 /**
@@ -145,7 +251,20 @@ export function buildAutomationSettingsPayload(settings, jobs = {}) {
       // callers that never select `enabled` are treated as enabled.
       nextRun: job && job.enabled !== false ? (job.nextRunAt ?? null) : null,
       lastRunAt: job?.lastRunAt ?? null,
-      lastRunError: job?.lastError ?? null,
+      // Never the stored string. ScheduledJob.lastError stringifies whatever
+      // the run threw, so it carries database and index names (E11000 ...
+      // business-dashboard.pdflinks index), internal addressing (connect
+      // ECONNREFUSED 10.x.x.x:6379), bucket names, and — for a non-Error throw
+      // — a JSON.stringify of the whole object, which for anything
+      // config-shaped is credential-shaped. The client gets the fact of the
+      // failure; the detail stays in the logs.
+      //
+      // `lastRunError` keeps its name and stays a non-empty string on failure
+      // because the status panel reads it as the "attention needed" signal
+      // (Frontend/lib/automation-status-panel.tsx never renders the text).
+      // `lastRunFailed` is the same signal, said plainly, for new callers.
+      lastRunFailed: Boolean(job?.lastError),
+      lastRunError: job?.lastError ? LAST_RUN_FAILED_MESSAGE : null,
     };
   };
 

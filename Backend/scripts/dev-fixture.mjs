@@ -41,7 +41,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { normalizeFixture, stripDollarKeys } from './devFixtureShape.mjs'
+import { normalizeFixture, stripDollarKeys, isLocalMongoUri } from './devFixtureShape.mjs'
 
 const backendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const DEFAULT_FIXTURE = join(backendRoot, 'test', 'fixtures', 'ndis-quote-board.json')
@@ -178,7 +178,12 @@ if (!uri) {
 // dev-user.mjs has none: this writes invented business and participant records.
 // Landing those in a real database would be a data-integrity incident, not a
 // risky-but-sometimes-justified change.
-if (!/(?:@|\/\/)(?:localhost|127\.0\.0\.1|mongo)[:/]/.test(uri)) {
+//
+// isLocalMongoUri parses the authority and requires EVERY host in it to be
+// local — see devFixtureShape.mjs for what the substring match this replaces
+// let through, and for the one thing no string check can see (a tunnel on
+// localhost:27017 that ends in production).
+if (!isLocalMongoUri(uri)) {
   console.error(`error: refusing to run — MONGODB_URI is not local: ${mask(uri)}`)
   console.error('  This writes invented fixture data, so it is restricted to local databases.')
   console.error('  There is no override flag. Point MONGODB_URI at your local Mongo.')
@@ -211,9 +216,16 @@ const boardIds = boards.map((b) => b.boardId)
 // The exact upsert/delete keys for the fixture's ScheduledJob rows — the
 // {kind, targetId} pair carries the collection's unique index.
 const jobKeys = scheduledJobs.map((j) => ({ kind: j.kind, targetId: j.targetId }))
-// InvoiceNumber rows are removed by {itemId, type}, always scoped to the
-// fixture's workspaceId — a seeded database can hold real invoice numbers.
-const invoiceKeys = invoiceNumbers.map((n) => ({ itemId: n.itemId, type: n.type }))
+// InvoiceNumber rows are removed by exactly the key they are written under —
+// {itemId, boardId, type} within the fixture's workspaceId. The two used to
+// disagree (the write included boardId, the delete did not), which both left
+// rows behind and risked taking a real row for the same item on another board.
+// normalizeInvoiceNumber pins workspaceId, so n.workspaceId is the fixture's.
+const invoiceKeys = invoiceNumbers.map((n) => ({
+  itemId: n.itemId,
+  boardId: n.boardId,
+  type: n.type,
+}))
 const dbName = mongoose.connection.db.databaseName
 
 const pricingRule = (keys) => (keys.includes('Support Item Number') ? 'new'
@@ -251,11 +263,13 @@ const listAutomationSections = async () => {
 const listInvoiceNumbers = async () => {
   if (invoiceKeys.length === 0) return
   const found = await InvoiceNumber.find(
-    { workspaceId, $or: invoiceKeys }, 'itemId type invoiceNumber',
+    { workspaceId, $or: invoiceKeys }, 'itemId boardId type invoiceNumber',
   ).lean()
   console.log(`  invoiceNumbers           ${found.length}/${invoiceKeys.length} present`)
   for (const n of invoiceNumbers) {
-    const hit = found.find((f) => f.itemId === n.itemId && f.type === n.type)
+    const hit = found.find(
+      (f) => f.itemId === n.itemId && f.boardId === n.boardId && f.type === n.type,
+    )
     console.log(`    ${hit ? '✓' : '✗'} ${n.itemId} [${n.type}] ${n.invoiceNumber}`)
   }
 }
