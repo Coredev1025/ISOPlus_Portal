@@ -118,6 +118,12 @@ test.describe("Invoice & Statement Automation", () => {
     await invoice.getByLabel(/start date/i).fill("2026-03-02");
     await invoice.getByLabel(/send a copy to/i).fill("billing@example.com");
 
+    // Email Message is a rich text editor; bold typed here must survive the
+    // save/reload round trip as markup, not as escaped text.
+    await invoice.getByLabel(/email message/i).click();
+    await invoice.getByRole("button", { name: /^bold$/i }).click();
+    await page.keyboard.type("Please find attached");
+
     await page.getByRole("button", { name: /save changes/i }).click();
     await expect(page.getByText(/saved successfully/i)).toBeVisible();
 
@@ -136,6 +142,9 @@ test.describe("Invoice & Statement Automation", () => {
     await expect(reloaded.getByLabel(/send a copy to/i)).toHaveValue(
       "billing@example.com",
     );
+    await expect(
+      reloaded.getByLabel(/email message/i).locator("strong"),
+    ).toHaveText("Please find attached");
   });
 
   test("flags a malformed email inline without blocking the form", async ({

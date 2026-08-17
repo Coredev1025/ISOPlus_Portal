@@ -1,7 +1,7 @@
 "use client";
 
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/lib/rich-text-editor";
 import {
   EMAIL_TEXT_FIELDS,
   RECIPIENT_OPTIONS,
@@ -41,17 +41,19 @@ function EmailTextField({
 
   return (
     // Body text truncates in a third-width one-liner, so a multiline field
-    // spans the grid and grows to a textarea.
+    // spans the grid and grows to a rich text editor — the spec calls Email
+    // Message a rich-text field, and the composed email sends its HTML.
     <AutomationField
       id={id}
       label={label}
       className={multiline ? "md:col-span-3" : undefined}
     >
       {multiline ? (
-        <Textarea
-          {...inputProps}
-          rows={3}
-          onChange={(event) => onChange(event.target.value)}
+        <RichTextEditor
+          id={id}
+          ariaLabel={label}
+          value={value}
+          onChange={onChange}
         />
       ) : (
         <Input
