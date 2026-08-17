@@ -67,6 +67,46 @@ describe('care-management-statement-permutations fixture', () => {
     }
   });
 
+  it('covers every SaH participant x picker-year x month with all six budget streams', () => {
+    const STREAMS = [
+      'Home Support Quarterly Budget',
+      'Assistive Technology - Short-term Budget',
+      'Assistive Technology - Ongoing Budget',
+      'Home Modification Budget',
+      'Restorative Care Pathway Budget',
+      'End-of-Life Pathway Budget',
+    ];
+    const budgetRows = fixture.items.filter((item) => STREAMS.includes(item.folderId));
+    for (const participant of BOARD_PARTICIPANTS.jpjztrn14pJ) {
+      for (const year of YEARS) {
+        for (const month of MONTHS) {
+          const monthLabel = new Date(Date.UTC(year, month - 1, 1))
+            .toLocaleString('en-AU', { month: 'long', timeZone: 'UTC' });
+          const streams = new Set(
+            budgetRows
+              .filter((item) => nameOf(item) === participant
+                && item.data.Year === String(year)
+                && item.data.Month === monthLabel)
+              .map((item) => item.folderId),
+          );
+          expect(streams.size, `${participant} ${monthLabel} ${year}`).toBe(STREAMS.length);
+        }
+      }
+    }
+  });
+
+  it('uses real folder names as folderIds so the offline folder filters engage', () => {
+    // getFolderOffline serves name === folderId; these are the names the
+    // statement and invoice-generator routes filter on.
+    for (const item of fixture.items) {
+      if (ATTRIBUTE_NAMES.SCHEDULED_START in item.data) {
+        expect(item.folderId, item.itemId).toBe('Shift Planning and Reporting');
+      } else if (item.data[REF_ATTRIBUTE_NAMES.PROFILE_FULL_NAME]) {
+        expect(item.folderId, item.itemId).toBe('📋 Participants Intake');
+      }
+    }
+  });
+
   it('never approves a timesheet, so no invoice path can ever bill these rows', () => {
     for (const item of fixture.items) {
       expect('Timesheet Approval' in item.data, item.itemId).toBe(false);

@@ -13,6 +13,7 @@ import {
     getItemValuesOffline,
     getReferencesOffline,
     getAttributeOffline,
+    getFolderOffline,
 } from './offlineIsoplus.js';
 import {
     secureRandomFloat,
@@ -557,6 +558,9 @@ export async function getBoard(authorization, workspaceId) {
 }
 
 export async function getFolder(workspaceId, boardId) {
+    if (isOfflineMode()) {
+        return getFolderOffline(workspaceId, boardId);
+    }
     try {
         const folders = await collectPaginated(iterateFolders(workspaceId, boardId));
         return { folder: folders, status: 200 };

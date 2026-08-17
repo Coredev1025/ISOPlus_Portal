@@ -195,11 +195,13 @@ want exact dev parity.
 
 Replication mechanics worth knowing:
 
+- Offline mode now serves board folders derived from item folderIds
+  (`getFolderOffline`, name === id), so fixtures use real folder names as
+  folderIds: service rows in 'Shift Planning and Reporting', profiles in
+  '📋 Participants Intake'. The folder-filtered routes therefore behave like
+  live ISO+ and the invoice-generator lists show exactly dev's 65/43/3 rows.
 - Reference items (service plans, funding sources) live on dev's real NDIS
-  Library board `t29GNU4nV2A`, because offline mode has no ISO+ folder filter
-  and anything on a CM board appears as a list row. Residual count delta vs
-  dev: the on-board participant profiles (+3/+5/+1 rows), which must stay on
-  their boards for the participants scans.
+  Library board `t29GNU4nV2A` in a folder no list filter matches.
 - SaH service plans carry `Service` (the label) and `Service ID/Item ID`
   (`SERV-00xx`) — the route prefers `Service Plan ID` and strips its prefix,
   which is why that attribute is deliberately absent.
@@ -214,11 +216,15 @@ every Participant × Month × Year combination the picker offers loads a
 non-empty statement on all three Care Management boards. Amounts vary
 deterministically per permutation (90/10 gov/participant split).
 
+Also seeds one budget row per SaH participant × standard stream × month
+(6 streams × 60 months × 3 participants), so the Budget Mini Charts and every
+Individualised Budgets stream render with real numbers for any picked month.
+
 Composable with either 55390 fixture — ids are disjoint (`55390e00-` prefix)
 and its profiles/plans/funding sources are self-contained. No row carries
-`Timesheet Approval`, so no invoice path can ever bill them; they do appear in
-the offline invoice-generator lists (offline mode has no ISO+ folder filter).
-The route only month-filters when the caller passes `startDate`/`endDate` —
-the UI always does; month/year alone returns the participant's full history.
-Years mirror the 2026 picker (`currentYear-4 … currentYear`); regenerate the
-file when 2022 falls off the dropdown.
+`Timesheet Approval`, so no invoice path can ever bill them; the service rows
+live in 'Shift Planning and Reporting' so they appear in the invoice lists
+like any live shift row would. The route only month-filters when the caller
+passes `startDate`/`endDate` — the UI always does; month/year alone returns
+the participant's full history. Years mirror the 2026 picker
+(`currentYear-4 … currentYear`); regenerate when 2022 falls off the dropdown.

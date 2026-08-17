@@ -278,6 +278,41 @@ export async function getItemValuesOffline(_workspaceId, boardId, itemId) {
     }
 }
 
+// --- folders ------------------------------------------------------------------
+
+/**
+ * Mirrors getFolder(workspaceId, boardId) — { folder: [{id, name}], status }.
+ *
+ * There is no Folder model; the only folder knowledge Mongo holds is the
+ * folderId already stamped on each Item. Offline, each distinct folderId
+ * becomes a folder whose name IS the id, so fixtures that use real folder
+ * names as folderIds ('Shift Planning and Reporting', '📋 Participants
+ * Intake', the budget stream names) light up every name-matched folder
+ * filter: the statement budget classifier, the invoice-generator list
+ * scopes, and the participants scans. A folderId that matches no filter
+ * (e.g. a fixture's reference-item folder) is silently excluded, exactly
+ * as an unrelated live folder would be.
+ */
+export async function getFolderOffline(workspaceId, boardId) {
+    try {
+        const ids = await Item.distinct('folderId', {
+            workspaceId: String(workspaceId),
+            boardId: String(boardId),
+        });
+        const folder = ids
+            .filter((id) => typeof id === 'string' && id.trim())
+            .map((id) => ({ id, name: id }));
+        return { folder, status: 200 };
+    } catch (err) {
+        warn('Offline-Mode', 'Offline folder lookup failed', {
+            workspaceId,
+            boardId,
+            error: err.message,
+        });
+        return { folder: [], status: 200 };
+    }
+}
+
 // --- references and attributes -----------------------------------------------
 
 /**

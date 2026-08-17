@@ -16,9 +16,21 @@
     "workspaceId": "55390",
     "workspaceName": "ISO+™ NDIS & SaH Demo",
     "boards": [
-      { "boardId": "jpjztrn14pJ", "boardName": "🧑‍⚕️ Care Management", "label": "Care Management - SaH" },
-      { "boardId": "o24sGM1FoST", "boardName": "🧑‍⚕️ Care Management", "label": "Care Management - NDIS - Certification" },
-      { "boardId": "dwV23F5WcQL", "boardName": "🧑‍⚕️ Care Management (NEW)", "label": "Care Management - NDIS - Certification" }
+      {
+        "boardId": "jpjztrn14pJ",
+        "boardName": "🧑‍⚕️ Care Management",
+        "label": "Care Management - SaH"
+      },
+      {
+        "boardId": "o24sGM1FoST",
+        "boardName": "🧑‍⚕️ Care Management",
+        "label": "Care Management - NDIS - Certification"
+      },
+      {
+        "boardId": "dwV23F5WcQL",
+        "boardName": "🧑‍⚕️ Care Management (NEW)",
+        "label": "Care Management - NDIS - Certification"
+      }
     ],
     "readOn": "2026-08-17",
     "via": "portal-be-dev.isoplus.online /api/boards, /api/business/profile, /api/items/*/invoice-generator, /api/items/*/monthly-statement"
@@ -43,9 +55,18 @@
       "accountsReceivableTerms": "Payment due within 14 days of invoice date."
     },
     "documentNumbering": {
-      "quote": { "prefix": "QT-", "nextNumber": 1000 },
-      "invoice": { "prefix": "INV-", "nextNumber": 1004 },
-      "purchaseOrder": { "prefix": "PO-", "nextNumber": 1000 }
+      "quote": {
+        "prefix": "QT-",
+        "nextNumber": 1000
+      },
+      "invoice": {
+        "prefix": "INV-",
+        "nextNumber": 1004
+      },
+      "purchaseOrder": {
+        "prefix": "PO-",
+        "nextNumber": 1000
+      }
     },
     "featureToggles": {
       "invoiceStatementAutomation": true
@@ -59,8 +80,13 @@
       "label": "Care Management - SaH",
       "syncData": true,
       "syncStatus": "realtime_sync",
-      "attribute": { "id": "24682234-d689-4504-879b-5bd0ae89b031", "name": "Integration Message" },
-      "pdfAttribute": { "id": "" }
+      "attribute": {
+        "id": "24682234-d689-4504-879b-5bd0ae89b031",
+        "name": "Integration Message"
+      },
+      "pdfAttribute": {
+        "id": ""
+      }
     },
     {
       "boardId": "o24sGM1FoST",
@@ -69,8 +95,12 @@
       "label": "Care Management - NDIS - Certification",
       "syncData": true,
       "syncStatus": "realtime_sync",
-      "attribute": { "id": "" },
-      "pdfAttribute": { "id": "" }
+      "attribute": {
+        "id": ""
+      },
+      "pdfAttribute": {
+        "id": ""
+      }
     },
     {
       "boardId": "dwV23F5WcQL",
@@ -79,15 +109,23 @@
       "label": "Care Management - NDIS - Certification",
       "syncData": true,
       "syncStatus": "realtime_sync",
-      "attribute": { "id": "5f6ce8ae-ea66-49d0-92fb-ed67af9086e2", "name": "Integration Message" },
-      "pdfAttribute": { "id": "" }
+      "attribute": {
+        "id": "5f6ce8ae-ea66-49d0-92fb-ed67af9086e2",
+        "name": "Integration Message"
+      },
+      "pdfAttribute": {
+        "id": ""
+      }
     }
   ],
   "automationSettings": {
     "workspaceId": "55390",
     "invoice": {
       "enabled": true,
-      "every": { "n": 1, "unit": "month" },
+      "every": {
+        "n": 1,
+        "unit": "month"
+      },
       "runOn": 1,
       "runAt": "09:00",
       "startDate": "2025-01-01T00:00:00.000Z",
@@ -101,7 +139,10 @@
     },
     "statement": {
       "enabled": true,
-      "every": { "n": 1, "unit": "month" },
+      "every": {
+        "n": 1,
+        "unit": "month"
+      },
       "runOn": 1,
       "runAt": "09:00",
       "startDate": "2025-01-01T00:00:00.000Z",
@@ -130,7 +171,10 @@
       "cron": null,
       "timezone": "Australia/Sydney",
       "schedule": {
-        "every": { "n": 1, "unit": "month" },
+        "every": {
+          "n": 1,
+          "unit": "month"
+        },
         "runOn": 1,
         "runAt": "09:00",
         "startDate": "2025-01-01T00:00:00.000Z"
@@ -145,7 +189,10 @@
       "cron": null,
       "timezone": "Australia/Sydney",
       "schedule": {
-        "every": { "n": 1, "unit": "month" },
+        "every": {
+          "n": 1,
+          "unit": "month"
+        },
         "runOn": 1,
         "runAt": "09:00",
         "startDate": "2025-01-01T00:00:00.000Z"
@@ -167,7 +214,7 @@
       "$case": "SaH participant profile — Jane Smith (careRecipientIdentifier AC12345 on dev)",
       "itemId": "55390000-aaaa-4001-8001-000000000001",
       "boardId": "jpjztrn14pJ",
-      "folderId": "fixture-cm-sah-folder",
+      "folderId": "📋 Participants Intake",
       "data": {
         "Full Name/Preferred Name": "Jane Smith",
         "My Aged Care ID Number": "AC12345",
@@ -184,7 +231,7 @@
       "$case": "SaH participant profile — David Brown",
       "itemId": "55390000-aaaa-4001-8001-000000000002",
       "boardId": "jpjztrn14pJ",
-      "folderId": "fixture-cm-sah-folder",
+      "folderId": "📋 Participants Intake",
       "data": {
         "Full Name/Preferred Name": "David Brown",
         "My Aged Care ID Number": "AC12346",
@@ -201,7 +248,7 @@
       "$case": "SaH participant profile — Lisa Morphy (statement participant with no billables)",
       "itemId": "55390000-aaaa-4001-8001-000000000003",
       "boardId": "jpjztrn14pJ",
-      "folderId": "fixture-cm-sah-folder",
+      "folderId": "📋 Participants Intake",
       "data": {
         "Full Name/Preferred Name": "Lisa Morphy",
         "My Aged Care ID Number": "AC12347",
@@ -214,9 +261,11 @@
       "$case": "SaH service — medication assistance, HSQ funding, gov/participant split",
       "itemId": "55390000-aaaa-4003-8003-000000000001",
       "boardId": "jpjztrn14pJ",
-      "folderId": "fixture-cm-sah-folder",
+      "folderId": "Shift Planning and Reporting",
       "data": {
-        "Participant Profile": ["55390000-aaaa-4001-8001-000000000001"],
+        "Participant Profile": [
+          "55390000-aaaa-4001-8001-000000000001"
+        ],
         "Task Name": "Assistance with the self-administration of medication",
         "Transaction Status": "Delivered - To be claimed and invoiced.",
         "Funding Source": "Home Support(HS) Quarterly",
@@ -234,9 +283,11 @@
       "$case": "SaH service — flexible respite, third-party delivered",
       "itemId": "55390000-aaaa-4003-8003-000000000002",
       "boardId": "jpjztrn14pJ",
-      "folderId": "fixture-cm-sah-folder",
+      "folderId": "Shift Planning and Reporting",
       "data": {
-        "Participant Profile": ["55390000-aaaa-4001-8001-000000000001"],
+        "Participant Profile": [
+          "55390000-aaaa-4001-8001-000000000001"
+        ],
         "Task Name": "Flexible respite",
         "Transaction Status": "Delivered - To be claimed and invoiced.",
         "Funding Source": "Home Support(HS) Quarterly",
@@ -254,9 +305,11 @@
       "$case": "SaH service — physiotherapy, Restorative Care Pathway, fully subsidised",
       "itemId": "55390000-aaaa-4003-8003-000000000003",
       "boardId": "jpjztrn14pJ",
-      "folderId": "fixture-cm-sah-folder",
+      "folderId": "Shift Planning and Reporting",
       "data": {
-        "Participant Profile": ["55390000-aaaa-4001-8001-000000000001"],
+        "Participant Profile": [
+          "55390000-aaaa-4001-8001-000000000001"
+        ],
         "Task Name": "Physiotherapy",
         "Transaction Status": "Delivered - To be claimed and invoiced.",
         "Funding Source": "Restorative Care Pathway",
@@ -274,9 +327,11 @@
       "$case": "SaH item purchase — assistive technology bed, high-value single item",
       "itemId": "55390000-aaaa-4003-8003-000000000004",
       "boardId": "jpjztrn14pJ",
-      "folderId": "fixture-cm-sah-folder",
+      "folderId": "Shift Planning and Reporting",
       "data": {
-        "Participant Profile": ["55390000-aaaa-4001-8001-000000000001"],
+        "Participant Profile": [
+          "55390000-aaaa-4001-8001-000000000001"
+        ],
         "Task Name": "Beds and detachable bed boards/mattress support platforms, non-adjustable",
         "Transaction Status": "Delivered - To be claimed and invoiced.",
         "Funding Source": "Assistive Technology - Short-term",
@@ -294,9 +349,11 @@
       "$case": "SaH adjustment — refund row with negative total (captured shape)",
       "itemId": "55390000-aaaa-4003-8003-000000000005",
       "boardId": "jpjztrn14pJ",
-      "folderId": "fixture-cm-sah-folder",
+      "folderId": "Shift Planning and Reporting",
       "data": {
-        "Participant Profile": ["55390000-aaaa-4001-8001-000000000001"],
+        "Participant Profile": [
+          "55390000-aaaa-4001-8001-000000000001"
+        ],
         "Task Name": "Assistive technology hire adjustment",
         "Transaction Status": "Adjustment (Refund) - To be claimed and invoiced.",
         "Funding Source": "Assistive Technology - Short-term",
@@ -315,9 +372,11 @@
       "$case": "SaH service — David Brown house cleaning",
       "itemId": "55390000-aaaa-4003-8003-000000000006",
       "boardId": "jpjztrn14pJ",
-      "folderId": "fixture-cm-sah-folder",
+      "folderId": "Shift Planning and Reporting",
       "data": {
-        "Participant Profile": ["55390000-aaaa-4001-8001-000000000002"],
+        "Participant Profile": [
+          "55390000-aaaa-4001-8001-000000000002"
+        ],
         "Task Name": "General house cleaning",
         "Transaction Status": "Delivered - To be claimed and invoiced.",
         "Funding Source": "Home Support(HS) Quarterly",
@@ -335,7 +394,7 @@
       "$case": "NDIS (legacy) participant profile — David Smith",
       "itemId": "55390000-bbbb-4001-8001-000000000001",
       "boardId": "o24sGM1FoST",
-      "folderId": "fixture-cm-ndis-folder",
+      "folderId": "📋 Participants Intake",
       "data": {
         "Full Name/Preferred Name": "David Smith",
         "NDIS Number": "430111222",
@@ -347,7 +406,7 @@
       "$case": "NDIS (legacy) participant profile — Martin Space",
       "itemId": "55390000-bbbb-4001-8001-000000000002",
       "boardId": "o24sGM1FoST",
-      "folderId": "fixture-cm-ndis-folder",
+      "folderId": "📋 Participants Intake",
       "data": {
         "Full Name/Preferred Name": "Martin Space",
         "NDIS Number": "430333444",
@@ -381,11 +440,15 @@
       "$case": "NDIS (legacy) master — David Smith 2h shift, approved, in the Jan 2025 window",
       "itemId": "55390000-bbbb-4003-8003-000000000001",
       "boardId": "o24sGM1FoST",
-      "folderId": "fixture-cm-ndis-folder",
+      "folderId": "Shift Planning and Reporting",
       "data": {
         "Timesheet Approval": "Approved",
-        "Participant Profile": ["55390000-bbbb-4001-8001-000000000001"],
-        "Service Plan": ["55390000-bbbb-4002-8002-000000000001"],
+        "Participant Profile": [
+          "55390000-bbbb-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390000-bbbb-4002-8002-000000000001"
+        ],
         "Job Status": "Completed",
         "Payment Status": "Awaiting Payment",
         "Scheduled Shift Start Date & Time": "2025-01-10T09:00:00+11:00",
@@ -399,11 +462,15 @@
       "$case": "NDIS (legacy) master — David Smith 1.5h shift",
       "itemId": "55390000-bbbb-4003-8003-000000000002",
       "boardId": "o24sGM1FoST",
-      "folderId": "fixture-cm-ndis-folder",
+      "folderId": "Shift Planning and Reporting",
       "data": {
         "Timesheet Approval": "Approved",
-        "Participant Profile": ["55390000-bbbb-4001-8001-000000000001"],
-        "Service Plan": ["55390000-bbbb-4002-8002-000000000001"],
+        "Participant Profile": [
+          "55390000-bbbb-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390000-bbbb-4002-8002-000000000001"
+        ],
         "Job Status": "Completed",
         "Payment Status": "Awaiting Payment",
         "Scheduled Shift Start Date & Time": "2025-01-13T13:00:00+11:00",
@@ -417,11 +484,15 @@
       "$case": "NDIS (legacy) master — Martin Space 2h shift",
       "itemId": "55390000-bbbb-4003-8003-000000000003",
       "boardId": "o24sGM1FoST",
-      "folderId": "fixture-cm-ndis-folder",
+      "folderId": "Shift Planning and Reporting",
       "data": {
         "Timesheet Approval": "Approved",
-        "Participant Profile": ["55390000-bbbb-4001-8001-000000000002"],
-        "Service Plan": ["55390000-bbbb-4002-8002-000000000002"],
+        "Participant Profile": [
+          "55390000-bbbb-4001-8001-000000000002"
+        ],
+        "Service Plan": [
+          "55390000-bbbb-4002-8002-000000000002"
+        ],
         "Job Status": "Completed",
         "Payment Status": "Awaiting Payment",
         "Scheduled Shift Start Date & Time": "2025-01-28T09:00:00+11:00",
@@ -435,11 +506,15 @@
       "$case": "NDIS (legacy) master — DECOY, timesheet not approved, must never bill",
       "itemId": "55390000-bbbb-4003-8003-000000000004",
       "boardId": "o24sGM1FoST",
-      "folderId": "fixture-cm-ndis-folder",
+      "folderId": "Shift Planning and Reporting",
       "data": {
         "Timesheet Approval": "Pending",
-        "Participant Profile": ["55390000-bbbb-4001-8001-000000000001"],
-        "Service Plan": ["55390000-bbbb-4002-8002-000000000001"],
+        "Participant Profile": [
+          "55390000-bbbb-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390000-bbbb-4002-8002-000000000001"
+        ],
         "Job Status": "Completed",
         "Payment Status": "Awaiting Payment",
         "Scheduled Shift Start Date & Time": "2025-01-15T09:00:00+11:00",
@@ -453,7 +528,7 @@
       "$case": "NDIS (2026 pricing) participant profile — Mike Bird",
       "itemId": "55390000-cccc-4001-8001-000000000001",
       "boardId": "dwV23F5WcQL",
-      "folderId": "fixture-cm-new-folder",
+      "folderId": "📋 Participants Intake",
       "data": {
         "Full Name/Preferred Name": "Mike Bird",
         "NDIS Number": "430555666",
@@ -487,11 +562,15 @@
       "$case": "NDIS (2026 pricing) master — Mike Bird 2h shift (dev rows were 2026-06-29; re-dated into the fixture window)",
       "itemId": "55390000-cccc-4003-8003-000000000001",
       "boardId": "dwV23F5WcQL",
-      "folderId": "fixture-cm-new-folder",
+      "folderId": "Shift Planning and Reporting",
       "data": {
         "Timesheet Approval": "Approved",
-        "Participant Profile": ["55390000-cccc-4001-8001-000000000001"],
-        "Service Plan": ["55390000-cccc-4002-8002-000000000001"],
+        "Participant Profile": [
+          "55390000-cccc-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390000-cccc-4002-8002-000000000001"
+        ],
         "Job Status": "Completed",
         "Payment Status": "Awaiting Payment",
         "Scheduled Shift Start Date & Time": "2025-01-08T06:30:00+11:00",
@@ -505,11 +584,15 @@
       "$case": "NDIS (2026 pricing) master — Mike Bird 3h shift on the second plan",
       "itemId": "55390000-cccc-4003-8003-000000000002",
       "boardId": "dwV23F5WcQL",
-      "folderId": "fixture-cm-new-folder",
+      "folderId": "Shift Planning and Reporting",
       "data": {
         "Timesheet Approval": "Approved",
-        "Participant Profile": ["55390000-cccc-4001-8001-000000000001"],
-        "Service Plan": ["55390000-cccc-4002-8002-000000000002"],
+        "Participant Profile": [
+          "55390000-cccc-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390000-cccc-4002-8002-000000000002"
+        ],
         "Job Status": "Completed",
         "Payment Status": "Awaiting Payment",
         "Scheduled Shift Start Date & Time": "2025-01-22T06:30:00+11:00",

@@ -149,7 +149,9 @@ test.describe("Care Management automation (KAN-10 fixture)", () => {
     // The run must also have written invoice numbers back to the board rows —
     // read them through the authenticated session, like the UI does.
     const listed = await page.request.get(
-      `${BACKEND}/api/items/${WORKSPACE}/${NDIS_BOARD_ID}/invoice-generator?page=1&limit=100`,
+      // limit must cover every fixture's rows on this board: the full replica
+      // and statement-permutation fixtures may be loaded alongside the lean one.
+      `${BACKEND}/api/items/${WORKSPACE}/${NDIS_BOARD_ID}/invoice-generator?page=1&limit=500`,
     );
     expect(listed.ok(), `invoice-generator list failed (${listed.status()})`).toBeTruthy();
 
