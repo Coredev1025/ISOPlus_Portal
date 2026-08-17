@@ -3,14 +3,15 @@ import { authenticateToken } from '../middleware/auth.js';
 import AuditTrail from '../models/AuditTrail.js';
 import { info, error } from '../utils/logger.js';
 import { pickAllowedSortField, toRequiredQueryString } from '../utils/securityHelpers.js';
+import { buildAuditListFilter } from '../utils/auditTrailQueryHelpers.js';
 
 const router = express.Router();
 
 // GET all audit trails
 router.get('/', authenticateToken, async (req, res) => {
     try {
-        const workspaceId = toRequiredQueryString(req.query.workspaceId);
-        if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
+        const { filter, error: filterError } = buildAuditListFilter(req.query);
+        if (!filter) return res.status(400).json({ message: filterError });
         
         // Add pagination to reduce memory usage
         const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
@@ -23,8 +24,8 @@ router.get('/', authenticateToken, async (req, res) => {
         const sort = { [sortBy]: sortOrder };
         
         const [total, auditTrails] = await Promise.all([
-            AuditTrail.countDocuments({ workspaceId }),
-            AuditTrail.find({ workspaceId })
+            AuditTrail.countDocuments(filter),
+            AuditTrail.find(filter)
                 .sort(sort)
                 .skip(skip)
                 .limit(limit)

@@ -25,6 +25,7 @@ export async function buildLogoUrls(business) {
 export async function formatBusinessProfileResponse(business) {
   const plain = business?.toObject ? business.toObject() : { ...business };
   plain.logoUrls = await buildLogoUrls(plain);
+  delete plain.xeroConnectionLogs;
   return normalizeFeatureTogglesForProfile(plain);
 }
 

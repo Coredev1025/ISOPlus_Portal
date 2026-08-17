@@ -16,6 +16,7 @@ import {
   updateOrganizationInfo,
 } from '../services/xero.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
+import { logXeroAudit } from '../utils/xeroAuditHelpers.js';
 import { collectBusinessProfileErrors } from '../validators/businessProfile.js';
 import { toRequiredQueryString } from '../utils/securityHelpers.js';
 import {
@@ -378,6 +379,15 @@ router.post('/xero/connect', authenticateToken, async (req, res) => {
     }
 
     info('Business-Service', 'Xero integration connected', { businessId: business._id }, req ?? null);
+    await logXeroAudit({
+      workspaceId,
+      action: 'Connected Xero',
+      detail: 'Xero integration connected',
+      req,
+      entityType: 'Business',
+      entityId: business?._id?.toString(),
+      success: true,
+    });
     res.json({ success: true });
   } catch (err) {
     error('Business-Service', 'Server error during Xero connection', { message: err.message, stack: err.stack }, req ?? null);
@@ -408,6 +418,15 @@ router.post('/xero/disconnect', authenticateToken, async (req, res) => {
 
     await business.save();
     info('Business-Service', 'Xero integration disconnected', { businessId: business._id }, req ?? null);
+    await logXeroAudit({
+      workspaceId,
+      action: 'Disconnected Xero',
+      detail: 'Xero integration disconnected',
+      req,
+      entityType: 'Business',
+      entityId: business?._id?.toString(),
+      success: true,
+    });
     res.json({ success: true });
   } catch (err) {
     error('Business-Service', 'Server error during Xero disconnection', { message: err.message, stack: err.stack }, req ?? null);
@@ -451,12 +470,11 @@ router.post('/xero/update-organization', authenticateToken, async (req, res) => 
       }
       await business.save();
       info('Business-Service', 'Xero organization info updated', { businessId: business._id }, req ?? null);
-      await logAuditTrail({
+      await logXeroAudit({
         workspaceId,
         action: 'Updated Xero organization info',
         detail: 'Updated Xero organization info',
         req,
-        category: 'Xero',
         entityType: 'Business',
         entityId: business?._id?.toString(),
         after: updatedOrganization,
@@ -533,12 +551,11 @@ router.put('/xero/line-item-mapping', authenticateToken, async (req, res) => {
     if (!business) return res.status(404).json({ message: 'Business not found' });
 
     info('Business-Service', 'Saved Xero line-item mapping', { workspaceId }, req ?? null);
-    await logAuditTrail({
+    await logXeroAudit({
       workspaceId,
       action: 'Updated Xero line-item mapping',
       detail: 'Updated Xero account/tax line-item mapping',
       req,
-      category: 'Xero',
       entityType: 'Business',
       entityId: business?._id?.toString(),
       after: mapping,

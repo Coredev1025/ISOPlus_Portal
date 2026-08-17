@@ -6,8 +6,8 @@ function validateSequenceFields(type, sequence, errors) {
     errors.push(`${type} prefix must be a string less than 10 characters`);
   }
   const nextNumber = sequence.nextNumber;
-  if (!Number.isInteger(nextNumber) || nextNumber < 1) {
-    errors.push(`${type} number must be a positive integer`);
+  if (!Number.isInteger(nextNumber) || nextNumber < 0) {
+    errors.push(`${type} number must be a non-negative integer`);
   }
 }
 

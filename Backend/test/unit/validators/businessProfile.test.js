@@ -45,11 +45,24 @@ describe('collectBusinessProfileErrors', () => {
     const errors = collectBusinessProfileErrors({
       name: 'Acme',
       documentNumbering: JSON.stringify({
-        statement: { prefix: 'STATEMENT-TOOLONG', nextNumber: 0 },
+        statement: { prefix: 'STATEMENT-TOOLONG', nextNumber: -1 },
       }),
     });
     expect(errors.some((e) => /statement prefix/i.test(e))).toBe(true);
     expect(errors.some((e) => /statement number/i.test(e))).toBe(true);
+  });
+
+  it('accepts a nextNumber of 0 for invoice, PO, quote and statement', () => {
+    const errors = collectBusinessProfileErrors({
+      name: 'Acme',
+      documentNumbering: JSON.stringify({
+        invoice: { prefix: 'INV-', nextNumber: 0 },
+        purchaseOrder: { prefix: 'PO-', nextNumber: 0 },
+        quote: { prefix: 'QT-', nextNumber: 0 },
+        statement: { prefix: 'STM-', nextNumber: 0 },
+      }),
+    });
+    expect(errors).toEqual([]);
   });
 
   it('accepts a valid statement numbering sequence', () => {

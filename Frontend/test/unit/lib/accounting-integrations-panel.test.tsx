@@ -150,4 +150,40 @@ describe('AccountingIntegrationsPanel', () => {
       );
     });
   });
+
+  it('loads Xero connection activity from audit logs filtered by workspace and category', async () => {
+    (axios.get as ReturnType<typeof vi.fn>).mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+      if (String(url).includes('/api/audit')) {
+        expect(config?.params).toEqual(
+          expect.objectContaining({
+            workspaceId: 'ws-1',
+            category: 'xero',
+          })
+        );
+        return Promise.resolve({
+          data: {
+            items: [
+              {
+                createdAt: '2026-08-01T00:00:00.000Z',
+                action: 'Connected Xero',
+                detail: 'Linked organisation Acme',
+                userEmail: 'owner@example.com',
+                success: true,
+                category: 'xero',
+              },
+            ],
+            total: 1,
+          },
+        });
+      }
+      return Promise.resolve({ data: { xeroIntegrated: false } });
+    });
+
+    render(<AccountingIntegrationsPanel workspaceId="ws-1" />);
+
+    expect(await screen.findByText('Connection activity')).toBeInTheDocument();
+    expect(await screen.findByText('Connected Xero')).toBeInTheDocument();
+    expect(screen.getByText('Linked organisation Acme')).toBeInTheDocument();
+    expect(screen.getByText('owner@example.com')).toBeInTheDocument();
+  });
 });

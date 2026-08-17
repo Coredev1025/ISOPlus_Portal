@@ -219,25 +219,25 @@ describe('extractDocumentNumberingSequences', () => {
       invoice: { prefix: 'INV-', nextNumber: 1042 },
       purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
       quote: { prefix: 'QT-', nextNumber: 1007 },
-      statement: { prefix: 'STM-', nextNumber: 1000 },
+      statement: { prefix: 'STM-', nextNumber: 0 },
     });
   });
 
   it('returns schema defaults when documentNumbering is absent', () => {
     expect(extractDocumentNumberingSequences({ name: 'Hillsgrade Care' })).toEqual({
-      invoice: { prefix: 'INV-', nextNumber: 1000 },
-      purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
-      quote: { prefix: 'QT-', nextNumber: 1000 },
-      statement: { prefix: 'STM-', nextNumber: 1000 },
+      invoice: { prefix: 'INV-', nextNumber: 0 },
+      purchaseOrder: { prefix: 'PO-', nextNumber: 0 },
+      quote: { prefix: 'QT-', nextNumber: 0 },
+      statement: { prefix: 'STM-', nextNumber: 0 },
     });
   });
 
   it('returns schema defaults when documentNumbering is present but empty', () => {
     expect(extractDocumentNumberingSequences({ documentNumbering: {} })).toEqual({
-      invoice: { prefix: 'INV-', nextNumber: 1000 },
-      purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
-      quote: { prefix: 'QT-', nextNumber: 1000 },
-      statement: { prefix: 'STM-', nextNumber: 1000 },
+      invoice: { prefix: 'INV-', nextNumber: 0 },
+      purchaseOrder: { prefix: 'PO-', nextNumber: 0 },
+      quote: { prefix: 'QT-', nextNumber: 0 },
+      statement: { prefix: 'STM-', nextNumber: 0 },
     });
   });
 
@@ -248,9 +248,9 @@ describe('extractDocumentNumberingSequences', () => {
       }),
     ).toEqual({
       invoice: { prefix: 'INV-', nextNumber: 1042 },
-      purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
-      quote: { prefix: 'QT-', nextNumber: 1000 },
-      statement: { prefix: 'STM-', nextNumber: 1000 },
+      purchaseOrder: { prefix: 'PO-', nextNumber: 0 },
+      quote: { prefix: 'QT-', nextNumber: 0 },
+      statement: { prefix: 'STM-', nextNumber: 0 },
     });
   });
 
@@ -264,10 +264,27 @@ describe('extractDocumentNumberingSequences', () => {
 
   it('normalises a null documentNumbering to schema defaults rather than throwing', () => {
     expect(extractDocumentNumberingSequences({ documentNumbering: null })).toEqual({
-      invoice: { prefix: 'INV-', nextNumber: 1000 },
-      purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
-      quote: { prefix: 'QT-', nextNumber: 1000 },
-      statement: { prefix: 'STM-', nextNumber: 1000 },
+      invoice: { prefix: 'INV-', nextNumber: 0 },
+      purchaseOrder: { prefix: 'PO-', nextNumber: 0 },
+      quote: { prefix: 'QT-', nextNumber: 0 },
+      statement: { prefix: 'STM-', nextNumber: 0 },
+    });
+  });
+
+  it('keeps a stored nextNumber of 0 instead of substituting the default', () => {
+    expect(
+      extractDocumentNumberingSequences({
+        documentNumbering: { invoice: { prefix: 'INV-', nextNumber: 0 } },
+      }).invoice.nextNumber,
+    ).toBe(0);
+  });
+
+  it('ships invoice, PO, quote and statement defaults at nextNumber 0', () => {
+    expect(DEFAULT_SEQUENCES).toEqual({
+      invoice: { prefix: 'INV-', nextNumber: 0 },
+      purchaseOrder: { prefix: 'PO-', nextNumber: 0 },
+      quote: { prefix: 'QT-', nextNumber: 0 },
+      statement: { prefix: 'STM-', nextNumber: 0 },
     });
   });
 });

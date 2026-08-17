@@ -33,7 +33,7 @@ import {
   findOrCreateItem,
 } from '../services/xero.js';
 import { Item as ItemPayloadDTO } from '../dto/itemsPayload.js';
-import { logAuditTrail } from '../utils/auditLogger.js';
+import { logXeroAudit } from '../utils/xeroAuditHelpers.js';
 import { resolveSalesLineMapping } from '../utils/xeroLineItemMapping.js';
 import {
   loadXeroChartOptions,
@@ -234,11 +234,12 @@ async function handleError(err, workspaceId, boardId, item, req, entityType = 'i
     );
   }
 
-  logAuditTrail({
+  logXeroAudit({
     workspaceId,
     action: `Process Xero ${entityType}`,
     detail: `Error processing ${entityType}: ${err.message}`,
-    req
+    req,
+    success: false
   });
 
   return {
@@ -470,7 +471,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
     const createdInvoice = await createInvoice(invoice);
     await setIntegrationMessage(workspaceId, boardId, item.id, "Your invoice has been created successfully in Xero.");
 
-    logAuditTrail({
+    logXeroAudit({
       workspaceId,
       action: "Create Xero Invoice",
       detail: `Invoice created successfully, invoice number: ${createdInvoice.invoiceNumber}`,
@@ -778,7 +779,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
     const createdQuote = await createQuote(xeroQuote);
     await setIntegrationMessage(workspaceId, boardId, item.id, "Your quote has been created successfully in Xero.");
 
-    logAuditTrail({
+    logXeroAudit({
       workspaceId,
       action: "Create Xero Quote",
       detail: `Quote created successfully, quote number: ${createdQuote.quoteNumber}`,
@@ -944,7 +945,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
     const createdPurchaseOrder = await createPurchaseOrder(purchaseOrder);
     await setIntegrationMessage(workspaceId, boardId, item.id, "Your purchase order has been created successfully in Xero.");
 
-    logAuditTrail({
+    logXeroAudit({
       workspaceId,
       action: "Create Xero Purchase Order",
       detail: `Purchase order created successfully, PO number: ${createdPurchaseOrder.purchaseOrderNumber}`,

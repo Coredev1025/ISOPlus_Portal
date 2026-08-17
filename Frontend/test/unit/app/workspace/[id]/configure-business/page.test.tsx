@@ -307,7 +307,7 @@ describe('configure business page', () => {
       purchaseOrder: { prefix: 'HG-PO-', nextNumber: 300 },
       quote: { prefix: 'HG-QT-', nextNumber: 12 },
       // Loaded default when the profile had no statement series yet.
-      statement: { prefix: 'STM-', nextNumber: 1000 },
+      statement: { prefix: 'STM-', nextNumber: 0 },
     });
     // Nothing was uploaded or removed, so no logo keys ride along.
     expect(Object.keys(savedForms[0])).not.toContain('defaultLogo');

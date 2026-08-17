@@ -16,6 +16,7 @@ import {
 } from "@/lib/xero-account-tax-mapping";
 import type { XeroLineItemMapping } from "@/lib/xero-account-tax-mapping-options";
 import { XeroDisabledSyncToggles } from "@/lib/xero-disabled-sync-toggles";
+import { XeroConnectionAuditLogs } from "@/lib/xero-connection-audit-logs";
 import { showFetchErrorToast } from "@/lib/toast-utils";
 
 type ProviderTab = "xero" | "myob" | "quickbooks";
@@ -106,6 +107,7 @@ export function AccountingIntegrationsPanel({
   const [isConnected, setIsConnected] = useState(false);
   const [needsReconnect, setNeedsReconnect] = useState(false);
   const [mapping, setMapping] = useState<XeroLineItemMapping>(EMPTY_LINE_ITEM_MAPPING);
+  const [timezone, setTimezone] = useState("Australia/Sydney");
 
   const loadProfile = useCallback(
     async (signal?: AbortSignal) => {
@@ -115,6 +117,9 @@ export function AccountingIntegrationsPanel({
       );
       setIsConnected(Boolean(response.data?.xeroIntegrated));
       setMapping(normalizeMapping(response.data?.xeroLineItemMapping));
+      if (response.data?.headOfficeTimezone) {
+        setTimezone(String(response.data.headOfficeTimezone));
+      }
     },
     [workspaceId]
   );
@@ -198,6 +203,12 @@ export function AccountingIntegrationsPanel({
               onConnectedChange={setIsConnected}
               onConnectionCleared={handleConnectionCleared}
               onNeedsReconnectChange={setNeedsReconnect}
+            />
+            <div className="border-t" />
+            <XeroConnectionAuditLogs
+              workspaceId={workspaceId}
+              timezone={timezone}
+              reloadKey={`${isConnected}:${needsReconnect}`}
             />
             <div className="border-t" />
             <XeroAccountTaxMapping

@@ -32,10 +32,10 @@ export const DEFAULT_SEQUENCES: Record<
   "invoice" | "purchaseOrder" | "quote" | "statement",
   NumberSequence
 > = {
-  invoice: { prefix: "INV-", nextNumber: 1000 },
-  purchaseOrder: { prefix: "PO-", nextNumber: 1000 },
-  quote: { prefix: "QT-", nextNumber: 1000 },
-  statement: { prefix: "STM-", nextNumber: 1000 },
+  invoice: { prefix: "INV-", nextNumber: 0 },
+  purchaseOrder: { prefix: "PO-", nextNumber: 0 },
+  quote: { prefix: "QT-", nextNumber: 0 },
+  statement: { prefix: "STM-", nextNumber: 0 },
 };
 
 function toSequence(
@@ -45,7 +45,9 @@ function toSequence(
   return {
     prefix: typeof value?.prefix === "string" ? value.prefix : fallback.prefix,
     nextNumber:
-      typeof value?.nextNumber === "number" && value.nextNumber >= 1
+      typeof value?.nextNumber === "number" &&
+      Number.isInteger(value.nextNumber) &&
+      value.nextNumber >= 0
         ? value.nextNumber
         : fallback.nextNumber,
   };
