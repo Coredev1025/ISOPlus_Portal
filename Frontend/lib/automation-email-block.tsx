@@ -56,6 +56,7 @@ function EmailTextField({
       ) : (
         <Input
           {...inputProps}
+          type={isEmail ? "email" : undefined}
           onChange={(event) => onChange(event.target.value)}
         />
       )}

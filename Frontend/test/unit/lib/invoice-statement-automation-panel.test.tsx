@@ -324,6 +324,21 @@ describe('InvoiceStatementAutomationPanel', () => {
     }
   });
 
+  it('renders the address-valued fields as type=email inputs', async () => {
+    fetchMock.mockResolvedValue(settings({ enabled: true }));
+    await renderPanel();
+
+    const invoice = within(invoiceSection());
+    for (const label of [/send a copy to/i, /reply-to email/i, /email from/i]) {
+      expect(invoice.getByLabelText(label)).toHaveAttribute('type', 'email');
+    }
+    // The non-address fields stay plain text.
+    expect(invoice.getByLabelText(/email subject/i)).not.toHaveAttribute(
+      'type',
+      'email'
+    );
+  });
+
   it('hides the schedule and email fields until automatic generation is enabled', async () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 });
     await renderPanel();
