@@ -9,6 +9,9 @@ const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://localhost:${port}`;
 
 export default defineConfig({
   testDir: './e2e',
+  // Opt-in fixture seeding (E2E_LOAD_FIXTURES=1) — a no-op when the env is
+  // unset, so existing workflows are untouched. See e2e/global-setup.ts.
+  globalSetup: './e2e/global-setup.ts',
   timeout: 30_000,
   expect: { timeout: 10_000 },
   fullyParallel: true,
