@@ -39,7 +39,11 @@ describe('parseSesEventMessage', () => {
     expect(parsed.detail).toMatchObject({ bounceType: 'Permanent', bounceSubType: 'General' });
   });
 
-  it('unwraps an SNS notification envelope when the subscription is not raw', () => {
+  it('reports a raw body as not envelope-wrapped', () => {
+    expect(parseSesEventMessage(JSON.stringify(BOUNCE_EVENT)).envelopeWrapped).toBe(false);
+  });
+
+  it('unwraps an SNS notification envelope, and says so — raw delivery is on, so a wrapper is news', () => {
     const wrapped = JSON.stringify({
       Type: 'Notification',
       MessageId: 'sns-envelope-id',
@@ -49,6 +53,7 @@ describe('parseSesEventMessage', () => {
     expect(parseSesEventMessage(wrapped)).toMatchObject({
       eventType: 'Bounce',
       sesMessageId: '0100018f-example-message-id',
+      envelopeWrapped: true,
     });
   });
 

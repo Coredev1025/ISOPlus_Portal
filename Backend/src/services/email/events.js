@@ -23,26 +23,27 @@ const DETAIL_KEY_FOR_TYPE = {
 };
 
 /**
- * The SNS envelope, unwrapped. A subscription without raw message delivery
- * wraps the SES event as {Type: "Notification", Message: "<json>"}; with it,
- * the body IS the event. Accept both so a console-side toggle cannot silently
- * stop ingestion.
+ * The SNS envelope, unwrapped. RawMessageDelivery is ON for this queue's
+ * subscription, so the body should be the SES event directly; an envelope
+ * ({Type: "Notification", Message: "<json>"}) means someone changed the
+ * infrastructure. It is still accepted — losing the event would compound the
+ * problem — but `wrapped` is reported so the consumer can flag it.
  */
 function unwrapEnvelope(parsed) {
   if (parsed?.Type === 'Notification' && typeof parsed.Message === 'string') {
-    return JSON.parse(parsed.Message);
+    return { event: JSON.parse(parsed.Message), wrapped: true };
   }
-  return parsed;
+  return { event: parsed, wrapped: false };
 }
 
 /**
  * One queue message body → one normalised event record.
  *
  * @param {string} body The raw SQS message body.
- * @returns {{eventType: string, sesMessageId: string, eventAt: Date, recipients: string[], subject: string|null, detail: object|null}}
+ * @returns {{eventType: string, sesMessageId: string, eventAt: Date, recipients: string[], subject: string|null, detail: object|null, envelopeWrapped: boolean}}
  */
 export function parseSesEventMessage(body) {
-  const event = unwrapEnvelope(JSON.parse(body));
+  const { event, wrapped } = unwrapEnvelope(JSON.parse(body));
 
   const eventType = event?.eventType;
   if (!eventType) {
@@ -63,6 +64,7 @@ export function parseSesEventMessage(body) {
     recipients: event.mail?.destination ?? [],
     subject: event.mail?.commonHeaders?.subject ?? null,
     detail,
+    envelopeWrapped: wrapped,
   };
 }
 

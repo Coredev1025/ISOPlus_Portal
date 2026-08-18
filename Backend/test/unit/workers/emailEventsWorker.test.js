@@ -6,7 +6,7 @@
 // not Amazon's long polling.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-const consumerInstance = { start: vi.fn(), on: vi.fn() };
+const consumerInstance = { start: vi.fn(), stop: vi.fn(), on: vi.fn() };
 
 vi.mock('sqs-consumer', () => ({
   Consumer: { create: vi.fn(() => consumerInstance) },
@@ -21,7 +21,13 @@ vi.mock('@aws-sdk/client-sqs', () => {
   return { SQSClient };
 });
 
+vi.mock('../../../src/utils/logger.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+});
+
 const { Consumer } = await import('sqs-consumer');
+const { warn, error } = await import('../../../src/utils/logger.js');
 const EmailEvent = (await import('../../../src/models/EmailEvent.js')).default;
 const {
   isEmailEventsConfigured,
@@ -97,11 +103,68 @@ describe('emailEventsWorker', () => {
       expect(typeof options.handleMessage).toBe('function');
     });
 
+    it('long-polls in batches with a heartbeat, per the queue owner’s tuning', () => {
+      startEmailEventsWorker();
+
+      const [options] = Consumer.create.mock.calls[0];
+      expect(options).toMatchObject({
+        batchSize: 10,
+        waitTimeSeconds: 20,
+        visibilityTimeout: 30,
+        heartbeatInterval: 10,
+      });
+    });
+
     it('listens for consumer errors so a poll failure cannot kill the process silently', () => {
       startEmailEventsWorker();
 
       const listened = consumerInstance.on.mock.calls.map(([event]) => event);
-      expect(listened).toEqual(expect.arrayContaining(['error', 'processing_error']));
+      expect(listened).toEqual(expect.arrayContaining(['error', 'processing_error', 'timeout_error']));
+    });
+
+    it('stops itself after 10 consecutive processing failures, keeping messages on the main queue', () => {
+      // A handler bug that throws on EVERY message would otherwise march the
+      // whole queue into the DLQ, five failures at a time. Stopped, the
+      // messages wait on the main queue while someone investigates.
+      startEmailEventsWorker();
+      const handlers = Object.fromEntries(consumerInstance.on.mock.calls);
+
+      for (let i = 0; i < 9; i += 1) handlers.processing_error(new Error('boom'));
+      expect(consumerInstance.stop).not.toHaveBeenCalled();
+
+      handlers.processing_error(new Error('boom'));
+      expect(consumerInstance.stop).toHaveBeenCalledTimes(1);
+      expect(error).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringMatching(/consecutive failures/i),
+        expect.anything(),
+      );
+    });
+
+    it('a processed message resets the failure count', () => {
+      startEmailEventsWorker();
+      const handlers = Object.fromEntries(consumerInstance.on.mock.calls);
+
+      for (let i = 0; i < 9; i += 1) handlers.processing_error(new Error('boom'));
+      handlers.message_processed();
+      for (let i = 0; i < 9; i += 1) handlers.processing_error(new Error('boom'));
+
+      expect(consumerInstance.stop).not.toHaveBeenCalled();
+    });
+
+    it('stops on SIGTERM so in-flight messages finish instead of being killed mid-write', () => {
+      const processOn = vi.spyOn(process, 'on').mockImplementation(() => process);
+
+      try {
+        startEmailEventsWorker();
+        const sigterm = processOn.mock.calls.find(([signal]) => signal === 'SIGTERM');
+        expect(sigterm).toBeDefined();
+
+        sigterm[1]();
+        expect(consumerInstance.stop).toHaveBeenCalledTimes(1);
+      } finally {
+        processOn.mockRestore();
+      }
     });
   });
 
@@ -121,6 +184,21 @@ describe('emailEventsWorker', () => {
     it('lets a malformed body throw, so SQS redelivers instead of deleting the event', async () => {
       await expect(handleEmailEventMessage({ Body: 'not json' })).rejects.toThrow();
       expect(await EmailEvent.countDocuments({})).toBe(0);
+    });
+
+    it('flags an SNS-enveloped body: raw delivery is on, so a wrapper means the infrastructure changed', async () => {
+      const wrapped = JSON.stringify({ Type: 'Notification', MessageId: 'sns-id', Message: DELIVERY_BODY });
+
+      await handleEmailEventMessage({ Body: wrapped });
+
+      // Still recorded — losing the event would compound the problem — but
+      // loudly, because RawMessageDelivery being off is an infra regression.
+      expect(await EmailEvent.countDocuments({})).toBe(1);
+      expect(warn).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.stringMatching(/envelope|raw/i),
+        expect.anything(),
+      );
     });
   });
 });

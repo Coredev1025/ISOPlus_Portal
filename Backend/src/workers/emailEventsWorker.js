@@ -11,8 +11,9 @@
 import { Consumer } from 'sqs-consumer';
 import { SQSClient } from '@aws-sdk/client-sqs';
 
+import { EMAIL_EVENTS_FAILURE_LIMIT, EMAIL_EVENTS_POLLING } from '../constants/email.js';
 import { parseSesEventMessage, recordEmailEvent } from '../services/email/events.js';
-import { info, error } from '../utils/logger.js';
+import { info, warn, error } from '../utils/logger.js';
 
 const LOG_LABEL = 'Email-Events';
 
@@ -38,6 +39,14 @@ export function isEmailEventsConfigured() {
  */
 export async function handleEmailEventMessage(message) {
   const parsed = parseSesEventMessage(message.Body);
+  if (parsed.envelopeWrapped) {
+    // RawMessageDelivery is ON for this subscription, so an SNS envelope
+    // means the infrastructure changed. Recorded anyway, flagged loudly.
+    warn(LOG_LABEL, 'Event arrived SNS-enveloped; raw delivery should be on — the SNS→SQS subscription changed', {
+      eventType: parsed.eventType,
+      sesMessageId: parsed.sesMessageId,
+    });
+  }
   const { recorded } = await recordEmailEvent(parsed);
   // Type and id only — recipients are addresses and stay out of the logs.
   info(LOG_LABEL, 'SES event received', {
@@ -66,6 +75,7 @@ export function startEmailEventsWorker() {
         secretAccessKey: envValue('AWS_SECRET_ACCESS_KEY'),
       },
     }),
+    ...EMAIL_EVENTS_POLLING,
     handleMessage: handleEmailEventMessage,
   });
 
@@ -73,9 +83,30 @@ export function startEmailEventsWorker() {
   // 'processing_error' is handleEmailEventMessage throwing. Both are logged,
   // neither kills the process — the message outlives the failure either way.
   consumer.on('error', (err) => error(LOG_LABEL, 'SQS consumer error', { error: err.message }));
-  consumer.on('processing_error', (err) => error(LOG_LABEL, 'SES event processing failed; message returns to the queue', {
+  consumer.on('timeout_error', (err) => error(LOG_LABEL, 'SES event handler exceeded its time budget', {
     error: err.message,
   }));
+
+  // The circuit breaker: a handler bug that throws on EVERY message would
+  // otherwise march the whole queue into the DLQ, five failures at a time.
+  // Stopping keeps the messages on the main queue and trips the stalled-queue
+  // alarm, which is the intended way for a human to find out.
+  let consecutiveFailures = 0;
+  consumer.on('processing_error', (err) => {
+    error(LOG_LABEL, 'SES event processing failed; message returns to the queue', { error: err.message });
+    consecutiveFailures += 1;
+    if (consecutiveFailures >= EMAIL_EVENTS_FAILURE_LIMIT) {
+      error(LOG_LABEL, `${consecutiveFailures} consecutive failures; stopping the consumer so messages stay on the main queue`, {});
+      consumer.stop();
+    }
+  });
+  consumer.on('message_processed', () => {
+    consecutiveFailures = 0;
+  });
+
+  // Finish the in-flight batch instead of dying mid-write; SQS redelivers
+  // whatever was not completed either way.
+  process.on('SIGTERM', () => consumer.stop());
 
   consumer.start();
   info(LOG_LABEL, 'SES events consumer started');
