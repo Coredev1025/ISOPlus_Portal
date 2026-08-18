@@ -1,5 +1,8 @@
 // The online half of the delivery seam. outbox.js writes a composed message to
-// a file when offline; this module hands the same message to AWS SES over SMTP.
+// a file when offline; this module hands the same message to AWS SES through
+// the SESv2 SDK. Sending is the SDK, not SMTP — no SMTP credential exists for
+// this account and none is needed. nodemailer stays for what the SDK does not
+// do: composing the MIME message that carries the PDF attachments.
 //
 // Two deliberate constraints:
 //   * The transporter is built on first send, not at import. Reading env at
@@ -9,12 +12,16 @@
 //     isEmailTransportConfigured() to decide whether to generate invoices at
 //     all, and those claim real invoice numbers off Business.documentNumbering.
 //     "Probably sendable" is not good enough to burn one.
+//
+// EMAIL_FROM is both the default From and the deliberate opt-in: the AWS
+// credential is shared with S3, so its presence alone must not turn on
+// customer email. Only the sending identity's domain is verified in SES
+// (dev.isoplus.online in dev), so a user-configured From on another domain
+// will be rejected by SES — the error names the address.
 
 import nodemailer from 'nodemailer';
+import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { info, error } from '../../utils/logger.js';
-
-const DEFAULT_SMTP_PORT = 587;
-const IMPLICIT_TLS_PORT = 465;
 
 let transporter = null;
 
@@ -23,30 +30,42 @@ function envValue(name) {
   return String(process.env[name] ?? '').trim();
 }
 
-function smtpPort() {
-  const parsed = Number.parseInt(envValue('SES_SMTP_PORT'), 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SMTP_PORT;
-}
-
 /**
- * True only when host, user AND password are all present. Any one missing means
- * delivery is off, rather than half on.
+ * True only when the AWS credential, region and default From are all present.
+ * Any one missing means delivery is off, rather than half on.
  */
 export function isEmailTransportConfigured() {
-  return Boolean(envValue('SES_SMTP_HOST') && envValue('SES_SMTP_USER') && envValue('SES_SMTP_PASSWORD'));
+  return Boolean(
+    envValue('AWS_ACCESS_KEY_ID')
+    && envValue('AWS_SECRET_ACCESS_KEY')
+    && envValue('AWS_REGION')
+    && envValue('EMAIL_FROM'),
+  );
 }
 
 /**
- * The transport settings, safe to log — host, port and user only. The password
- * is never part of this shape, so a diagnostic line cannot leak it by accident.
+ * The transport settings, safe to log — region and default From only. The
+ * secret key is never part of this shape, so a diagnostic line cannot leak it
+ * by accident.
  */
 export function emailTransportConfig() {
   return {
-    host: envValue('SES_SMTP_HOST') || null,
-    port: smtpPort(),
-    user: envValue('SES_SMTP_USER') || null,
+    region: envValue('AWS_REGION') || null,
+    from: envValue('EMAIL_FROM') || null,
     configured: isEmailTransportConfigured(),
   };
+}
+
+/**
+ * An IAM refusal of the send itself. In dev this is the recipient-domain
+ * guardrail on the access key doing its job — the key may only send to
+ * allowlisted domains — so callers treat it as a recorded refusal rather than
+ * a retryable failure: retrying can never succeed.
+ */
+export function isAccessDeniedError(err) {
+  return err?.name === 'AccessDeniedException'
+    || err?.name === 'AccessDenied'
+    || err?.$metadata?.httpStatusCode === 403;
 }
 
 /** Drop the memoised transporter — for tests, and for a credential rotation. */
@@ -54,19 +73,18 @@ export function resetEmailTransport() {
   transporter = null;
 }
 
-/**
- * Port 587 is STARTTLS: the connection opens in the clear and is upgraded.
- * `requireTLS` makes that upgrade mandatory, so a server that will not negotiate
- * TLS fails the send instead of receiving the credential in plaintext.
- */
 function buildTransport() {
-  const port = smtpPort();
   return nodemailer.createTransport({
-    host: envValue('SES_SMTP_HOST'),
-    port,
-    secure: port === IMPLICIT_TLS_PORT,
-    requireTLS: true,
-    auth: { user: envValue('SES_SMTP_USER'), pass: envValue('SES_SMTP_PASSWORD') },
+    SES: {
+      sesClient: new SESv2Client({
+        region: envValue('AWS_REGION'),
+        credentials: {
+          accessKeyId: envValue('AWS_ACCESS_KEY_ID'),
+          secretAccessKey: envValue('AWS_SECRET_ACCESS_KEY'),
+        },
+      }),
+      SendEmailCommand,
+    },
   });
 }
 
@@ -88,7 +106,7 @@ function toAddressList(value) {
  * Send one composed message through SES.
  *
  * @param {object} message
- * @param {string} message.from
+ * @param {string} [message.from] Defaults to EMAIL_FROM when the settings block has none.
  * @param {string|string[]} message.to
  * @param {string|string[]} [message.cc]
  * @param {string} [message.replyTo]
@@ -105,12 +123,13 @@ export async function sendEmail({ from, to, cc, replyTo, subject, html, text, at
   }
   if (!isEmailTransportConfigured()) {
     throw new Error(
-      'Email transport is not configured: SES_SMTP_HOST, SES_SMTP_USER and SES_SMTP_PASSWORD must all be set.',
+      'Email transport is not configured: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, '
+      + 'AWS_REGION and EMAIL_FROM must all be set.',
     );
   }
 
   const envelope = {
-    from,
+    from: from || envValue('EMAIL_FROM'),
     to: recipients,
     cc: toAddressList(cc),
     replyTo,
@@ -122,23 +141,25 @@ export async function sendEmail({ from, to, cc, replyTo, subject, html, text, at
 
   try {
     const result = await getTransport().sendMail(envelope);
+    // The SES transport reports { envelope, messageId }, not the SMTP
+    // accepted/rejected split — SES takes the whole message or none of it.
+    const accepted = result?.envelope?.to ?? recipients;
     info('SES-Transport', 'Email sent', {
       messageId: result?.messageId ?? null,
       recipientCount: recipients.length,
-      acceptedCount: toAddressList(result?.accepted).length,
-      rejectedCount: toAddressList(result?.rejected).length,
+      acceptedCount: accepted.length,
       attachmentCount: attachments.length,
     });
     return {
       messageId: result?.messageId ?? null,
-      accepted: result?.accepted ?? [],
-      rejected: result?.rejected ?? [],
+      accepted,
+      rejected: [],
     };
   } catch (err) {
-    // Host and recipient COUNT only: no addresses, no body, no credential.
+    // Region and recipient COUNT only: no addresses, no body, no credential.
     error('SES-Transport', 'Email send failed', {
       message: err?.message,
-      host: envValue('SES_SMTP_HOST'),
+      region: envValue('AWS_REGION'),
       recipientCount: recipients.length,
       attachmentCount: attachments.length,
     });

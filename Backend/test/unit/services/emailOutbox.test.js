@@ -109,17 +109,17 @@ describe('emailOutbox', () => {
   it('online with no transport configured: refuses loudly rather than pretending to send', async () => {
     // Delivery exists now, so the old "not implemented" wording is gone — but
     // the property it protected has to hold: an environment that is online
-    // with no SMTP credentials must not quietly write a preview nobody reads
-    // while a client waits for an invoice.
+    // with no sending configuration must not quietly write a preview nobody
+    // reads while a client waits for an invoice.
     process.env.ISOPLUS_OFFLINE = '0';
-    const savedHost = process.env.SES_SMTP_HOST;
-    delete process.env.SES_SMTP_HOST;
+    const savedFrom = process.env.EMAIL_FROM;
+    delete process.env.EMAIL_FROM;
 
     try {
       await expect(deliverEmail(MESSAGE)).rejects.toThrow(/not configured/i);
     } finally {
-      if (savedHost === undefined) delete process.env.SES_SMTP_HOST;
-      else process.env.SES_SMTP_HOST = savedHost;
+      if (savedFrom === undefined) delete process.env.EMAIL_FROM;
+      else process.env.EMAIL_FROM = savedFrom;
     }
   });
 });

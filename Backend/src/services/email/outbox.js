@@ -70,8 +70,8 @@ export async function deliverEmail(message) {
     // Louder than a silent skip: an environment that is online with no
     // transport can neither send nor usefully pretend to.
     throw new Error(
-      'Email delivery is not configured: set SES_SMTP_HOST, SES_SMTP_USER and ' +
-      'SES_SMTP_PASSWORD, or run offline to write outbox previews instead.',
+      'Email delivery is not configured: set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, ' +
+      'AWS_REGION and EMAIL_FROM, or run offline to write outbox previews instead.',
     );
   }
 

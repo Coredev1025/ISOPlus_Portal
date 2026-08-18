@@ -192,6 +192,7 @@ describe('startAutomationWorker', () => {
     beforeEach(async () => {
       saved.ISOPLUS_OFFLINE = process.env.ISOPLUS_OFFLINE;
       saved.LOCAL_FILE_ROOT = process.env.LOCAL_FILE_ROOT;
+      saved.EMAIL_FROM = process.env.EMAIL_FROM;
       root = mkdtempSync(join(tmpdir(), 'worker-outbox-'));
       process.env.LOCAL_FILE_ROOT = root;
       await AutomationSettings.deleteMany({ workspaceId: 'ws-1' });
@@ -200,6 +201,8 @@ describe('startAutomationWorker', () => {
     afterEach(async () => {
       process.env.ISOPLUS_OFFLINE = saved.ISOPLUS_OFFLINE;
       process.env.LOCAL_FILE_ROOT = saved.LOCAL_FILE_ROOT;
+      if (saved.EMAIL_FROM === undefined) delete process.env.EMAIL_FROM;
+      else process.env.EMAIL_FROM = saved.EMAIL_FROM;
       rmSync(root, { recursive: true, force: true });
       await AutomationSettings.deleteMany({ workspaceId: 'ws-1' });
       await cleanupWorkerNdisBoard();
@@ -501,6 +504,9 @@ describe('startAutomationWorker', () => {
     // regenerating. So deliverability is checked BEFORE anything is generated.
     it('online with no transport: generates nothing rather than generating and discarding', async () => {
       process.env.ISOPLUS_OFFLINE = '0';
+      // "No transport" must be this test's doing, not the ambient env's:
+      // a developer .env with EMAIL_FROM set would otherwise flip it online.
+      delete process.env.EMAIL_FROM;
       await AutomationSettings.create({
         workspaceId: 'ws-1',
         invoice: { enabled: true, emailSubject: 'Invoice run' },
@@ -519,6 +525,7 @@ describe('startAutomationWorker', () => {
 
     it('online with no transport: consumes no invoice number', async () => {
       process.env.ISOPLUS_OFFLINE = '0';
+      delete process.env.EMAIL_FROM;
       await AutomationSettings.create({
         workspaceId: 'ws-1',
         invoice: { enabled: true, emailSubject: 'Invoice run' },

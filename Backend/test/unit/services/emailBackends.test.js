@@ -3,11 +3,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-vi.mock('../../../src/services/email/sesTransport.js', () => ({
-  isEmailTransportConfigured: vi.fn(() => true),
-  sendEmail: vi.fn(async () => ({ messageId: '<msg-1@ses>', accepted: ['to@x.test'], rejected: [] })),
-  emailTransportConfig: vi.fn(() => ({ host: 'smtp.test', port: 587, user: 'u', configured: true })),
-}));
+// `isAccessDeniedError` stays real: the access-denied tests below assert
+// against the actual predicate, not a copy of it living in this mock.
+vi.mock('../../../src/services/email/sesTransport.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    isEmailTransportConfigured: vi.fn(() => true),
+    sendEmail: vi.fn(async () => ({ messageId: '<msg-1@ses>', accepted: ['to@x.test'], rejected: [] })),
+    emailTransportConfig: vi.fn(() => ({ region: 'ap-southeast-2', from: 'noreply@test', configured: true })),
+  };
+});
 
 vi.mock('../../../src/services/email/recipients.js', () => ({
   resolveRecipient: vi.fn(async () => ({ address: 'jane@example.test', source: 'profile_email' })),
@@ -126,6 +132,26 @@ describe('sesBackend', () => {
     expect(sendEmail).not.toHaveBeenCalled();
     expect(result.delivered).toBe(false);
     expect(result.reason).toBe('profile_not_found');
+  });
+
+  it('treats an IAM access-denied send as a recorded refusal, not a retryable failure', async () => {
+    // Dev sends to recipients outside the allowlisted domains return
+    // AccessDenied by design (the IAM guardrail). Retrying can never succeed,
+    // so the backend reports it instead of throwing it back to BullMQ.
+    sendEmail.mockRejectedValueOnce(
+      Object.assign(new Error('not authorized to perform ses:SendEmail'), { name: 'AccessDeniedException' }),
+    );
+
+    const result = await sesBackend.deliver(MESSAGE);
+
+    expect(result.delivered).toBe(false);
+    expect(result.reason).toBe('access_denied');
+  });
+
+  it('still throws non-policy send failures so the job retries', async () => {
+    sendEmail.mockRejectedValueOnce(new Error('Throttling: Maximum sending rate exceeded'));
+
+    await expect(sesBackend.deliver(MESSAGE)).rejects.toThrow(/sending rate/);
   });
 
   it('does not let one unreadable attachment silence the whole send', async () => {

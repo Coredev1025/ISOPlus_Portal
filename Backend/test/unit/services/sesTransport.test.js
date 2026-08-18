@@ -1,13 +1,24 @@
 // Backend/test/unit/services/sesTransport.test.js
 //
-// The online half of the delivery seam (Epic 5 part 4). Nothing in this file may
-// open a socket: nodemailer is mocked wholesale, so `createTransport` and
-// `sendMail` are assertions about what WOULD have gone to SES, never a send.
+// The online half of the delivery seam (Epic 5 part 4). Sending is the AWS SDK
+// (SESv2), not SMTP — no SMTP credential exists for this account. Nothing in
+// this file may open a socket: nodemailer and the SES client are mocked
+// wholesale, so every assertion is about what WOULD have gone to SES.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 vi.mock('nodemailer', () => ({
   default: { createTransport: vi.fn() },
 }));
+
+vi.mock('@aws-sdk/client-sesv2', () => {
+  class SESv2Client {
+    constructor(config) {
+      this.config = config;
+    }
+  }
+  class SendEmailCommand {}
+  return { SESv2Client, SendEmailCommand };
+});
 
 vi.mock('../../../src/utils/logger.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -15,15 +26,18 @@ vi.mock('../../../src/utils/logger.js', async (importOriginal) => {
 });
 
 const nodemailer = (await import('nodemailer')).default;
+const { SESv2Client, SendEmailCommand } = await import('@aws-sdk/client-sesv2');
 const { info, error } = await import('../../../src/utils/logger.js');
 const {
   isEmailTransportConfigured,
   emailTransportConfig,
+  isAccessDeniedError,
   sendEmail,
   resetEmailTransport,
 } = await import('../../../src/services/email/sesTransport.js');
 
-const PASSWORD = 'BNotARealSesSmtpSecret1234567890';
+const SECRET = 'NotARealAwsSecretAccessKey1234567890abcd';
+const CONFIG_KEYS = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION', 'EMAIL_FROM'];
 
 /** Every argument every logger mock was called with, flattened to one string. */
 function allLoggedText() {
@@ -37,20 +51,20 @@ describe('sesTransport', () => {
   let sendMail;
 
   beforeEach(() => {
-    for (const key of ['SES_SMTP_HOST', 'SES_SMTP_PORT', 'SES_SMTP_USER', 'SES_SMTP_PASSWORD']) {
+    for (const key of CONFIG_KEYS) {
       saved[key] = process.env[key];
     }
-    process.env.SES_SMTP_HOST = 'email-smtp.ap-southeast-2.amazonaws.com';
-    process.env.SES_SMTP_PORT = '587';
-    process.env.SES_SMTP_USER = 'AKIAEXAMPLESMTPUSER';
-    process.env.SES_SMTP_PASSWORD = PASSWORD;
+    process.env.AWS_ACCESS_KEY_ID = 'AKIAEXAMPLEACCESSKEY';
+    process.env.AWS_SECRET_ACCESS_KEY = SECRET;
+    process.env.AWS_REGION = 'ap-southeast-2';
+    process.env.EMAIL_FROM = 'noreply@dev.isoplus.online';
 
     vi.clearAllMocks();
     resetEmailTransport();
     sendMail = vi.fn().mockResolvedValue({
-      messageId: '<abc@example.com>',
-      accepted: ['client@example.com'],
-      rejected: [],
+      messageId: '<abc@ap-southeast-2.amazonses.com>',
+      envelope: { from: 'noreply@dev.isoplus.online', to: ['client@example.com'] },
+      response: 'abc',
     });
     nodemailer.createTransport.mockReturnValue({ sendMail });
   });
@@ -64,57 +78,68 @@ describe('sesTransport', () => {
   });
 
   describe('isEmailTransportConfigured', () => {
-    it('is true only when host, user and password are all present', () => {
+    it('is true only when the AWS credential, region and default From are all present', () => {
       expect(isEmailTransportConfigured()).toBe(true);
     });
 
-    it.each(['SES_SMTP_HOST', 'SES_SMTP_USER', 'SES_SMTP_PASSWORD'])(
-      'reads as NOT configured when %s is missing', (key) => {
-        delete process.env[key];
-        expect(isEmailTransportConfigured()).toBe(false);
-      },
-    );
+    it.each(CONFIG_KEYS)('reads as NOT configured when %s is missing', (key) => {
+      delete process.env[key];
+      expect(isEmailTransportConfigured()).toBe(false);
+    });
 
-    it.each(['SES_SMTP_HOST', 'SES_SMTP_USER', 'SES_SMTP_PASSWORD'])(
-      'reads as NOT configured when %s is blank', (key) => {
-        process.env[key] = '   ';
-        expect(isEmailTransportConfigured()).toBe(false);
-      },
-    );
+    it.each(CONFIG_KEYS)('reads as NOT configured when %s is blank', (key) => {
+      process.env[key] = '   ';
+      expect(isEmailTransportConfigured()).toBe(false);
+    });
   });
 
   describe('emailTransportConfig', () => {
-    it('reports host, port and user for diagnostics but never the password', () => {
+    it('reports region and default From for diagnostics but never the secret key', () => {
       const config = emailTransportConfig();
       expect(config).toEqual({
-        host: 'email-smtp.ap-southeast-2.amazonaws.com',
-        port: 587,
-        user: 'AKIAEXAMPLESMTPUSER',
+        region: 'ap-southeast-2',
+        from: 'noreply@dev.isoplus.online',
         configured: true,
       });
-      expect(JSON.stringify(config)).not.toContain(PASSWORD);
+      expect(JSON.stringify(config)).not.toContain(SECRET);
+    });
+  });
+
+  describe('isAccessDeniedError', () => {
+    it('recognises the SDK access-denied shapes', () => {
+      expect(isAccessDeniedError(Object.assign(new Error('denied'), { name: 'AccessDeniedException' }))).toBe(true);
+      expect(isAccessDeniedError(Object.assign(new Error('denied'), { name: 'AccessDenied' }))).toBe(true);
+      expect(isAccessDeniedError(Object.assign(new Error('denied'), { $metadata: { httpStatusCode: 403 } }))).toBe(true);
+    });
+
+    it('does not classify ordinary failures as access denied', () => {
+      expect(isAccessDeniedError(new Error('Throttling'))).toBe(false);
+      expect(isAccessDeniedError(undefined)).toBe(false);
     });
   });
 
   describe('sendEmail', () => {
     const MESSAGE = {
-      from: 'accounts@iso-plus.com.au',
+      from: 'accounts@dev.isoplus.online',
       to: 'client@example.com',
       subject: 'Your invoice',
       text: 'Please find your invoice attached.',
     };
 
-    it('builds a STARTTLS transport for the 587 SES endpoint and passes the credential', async () => {
+    it('builds a nodemailer SES transport over the SESv2 SDK client, not SMTP', async () => {
       await sendEmail(MESSAGE);
 
       expect(nodemailer.createTransport).toHaveBeenCalledTimes(1);
-      expect(nodemailer.createTransport).toHaveBeenCalledWith(expect.objectContaining({
-        host: 'email-smtp.ap-southeast-2.amazonaws.com',
-        port: 587,
-        secure: false,
-        requireTLS: true,
-        auth: { user: 'AKIAEXAMPLESMTPUSER', pass: PASSWORD },
-      }));
+      const [options] = nodemailer.createTransport.mock.calls[0];
+      expect(options.SES.SendEmailCommand).toBe(SendEmailCommand);
+      expect(options.SES.sesClient).toBeInstanceOf(SESv2Client);
+      expect(options.SES.sesClient.config).toEqual({
+        region: 'ap-southeast-2',
+        credentials: {
+          accessKeyId: 'AKIAEXAMPLEACCESSKEY',
+          secretAccessKey: SECRET,
+        },
+      });
     });
 
     it('memoises the transport across sends and rebuilds it after a reset', async () => {
@@ -125,6 +150,16 @@ describe('sesTransport', () => {
       resetEmailTransport();
       await sendEmail(MESSAGE);
       expect(nodemailer.createTransport).toHaveBeenCalledTimes(2);
+    });
+
+    it('falls back to EMAIL_FROM when the message has no From of its own', async () => {
+      await sendEmail({ ...MESSAGE, from: undefined });
+      expect(sendMail.mock.calls[0][0].from).toBe('noreply@dev.isoplus.online');
+    });
+
+    it('keeps an explicit From when the settings block provides one', async () => {
+      await sendEmail(MESSAGE);
+      expect(sendMail.mock.calls[0][0].from).toBe('accounts@dev.isoplus.online');
     });
 
     it('normalises a string recipient to an array', async () => {
@@ -144,7 +179,7 @@ describe('sesTransport', () => {
     });
 
     it('refuses to send when the transport is not configured', async () => {
-      delete process.env.SES_SMTP_PASSWORD;
+      delete process.env.EMAIL_FROM;
       await expect(sendEmail(MESSAGE)).rejects.toThrow(/not configured/i);
       expect(nodemailer.createTransport).not.toHaveBeenCalled();
     });
@@ -154,33 +189,33 @@ describe('sesTransport', () => {
       await sendEmail({
         ...MESSAGE,
         cc: 'copy@example.com',
-        replyTo: 'billing@iso-plus.com.au',
+        replyTo: 'billing@dev.isoplus.online',
         html: '<p>Please find your invoice attached.</p>',
         attachments,
       });
 
       const sent = sendMail.mock.calls[0][0];
       expect(sent.cc).toEqual(['copy@example.com']);
-      expect(sent.replyTo).toBe('billing@iso-plus.com.au');
+      expect(sent.replyTo).toBe('billing@dev.isoplus.online');
       expect(sent.html).toBe('<p>Please find your invoice attached.</p>');
       expect(sent.attachments).toBe(attachments);
     });
 
-    it('resolves to the message id and the accepted/rejected split', async () => {
+    it('resolves to the message id and the envelope recipients as accepted', async () => {
       sendMail.mockResolvedValueOnce({
-        messageId: '<id-1@ses>',
-        accepted: ['a@example.com'],
-        rejected: ['b@example.com'],
+        messageId: '<id-1@ap-southeast-2.amazonses.com>',
+        envelope: { from: 'noreply@dev.isoplus.online', to: ['a@example.com', 'b@example.com'] },
+        response: 'id-1',
       });
 
       await expect(sendEmail({ ...MESSAGE, to: ['a@example.com', 'b@example.com'] })).resolves.toEqual({
-        messageId: '<id-1@ses>',
-        accepted: ['a@example.com'],
-        rejected: ['b@example.com'],
+        messageId: '<id-1@ap-southeast-2.amazonses.com>',
+        accepted: ['a@example.com', 'b@example.com'],
+        rejected: [],
       });
     });
 
-    it('logs one success line with counts, and never the credential, recipients or body', async () => {
+    it('logs one success line with counts, and never the secret, recipients or body', async () => {
       await sendEmail({
         ...MESSAGE,
         attachments: [{ filename: 'invoice.pdf', content: Buffer.from('%PDF-1.4') }],
@@ -189,23 +224,23 @@ describe('sesTransport', () => {
       expect(info).toHaveBeenCalledTimes(1);
       const [, , meta] = info.mock.calls[0];
       expect(meta).toEqual(expect.objectContaining({
-        messageId: '<abc@example.com>',
+        messageId: '<abc@ap-southeast-2.amazonses.com>',
         recipientCount: 1,
         attachmentCount: 1,
       }));
 
       const logged = allLoggedText();
-      expect(logged).not.toContain(PASSWORD);
+      expect(logged).not.toContain(SECRET);
       expect(logged).not.toContain('client@example.com');
       expect(logged).not.toContain('Please find your invoice attached.');
     });
 
-    it('rejects and logs when the transport fails, without leaking the credential', async () => {
-      sendMail.mockRejectedValueOnce(new Error('535 Authentication Credentials Invalid'));
+    it('rejects and logs when the send fails, without leaking the secret', async () => {
+      sendMail.mockRejectedValueOnce(new Error('Email address is not verified'));
 
-      await expect(sendEmail(MESSAGE)).rejects.toThrow('535 Authentication Credentials Invalid');
+      await expect(sendEmail(MESSAGE)).rejects.toThrow('Email address is not verified');
       expect(error).toHaveBeenCalledTimes(1);
-      expect(allLoggedText()).not.toContain(PASSWORD);
+      expect(allLoggedText()).not.toContain(SECRET);
     });
   });
 });

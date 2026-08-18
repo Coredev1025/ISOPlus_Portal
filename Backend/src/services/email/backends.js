@@ -13,7 +13,7 @@ import { saveLocalFile } from '../../utils/localFileStore.js';
 import { getS3File } from '../../utils/uploadS3.js';
 import { info, warn } from '../../utils/logger.js';
 import { resolveRecipient } from './recipients.js';
-import { isEmailTransportConfigured, sendEmail } from './sesTransport.js';
+import { isAccessDeniedError, isEmailTransportConfigured, sendEmail } from './sesTransport.js';
 
 const LOG_SCOPE = 'Email-Delivery';
 
@@ -136,15 +136,27 @@ export const sesBackend = {
     }
 
     const { attachments, skipped } = await loadAttachments(record.attachments);
-    const sent = await sendEmail({
-      from: record.from,
-      to: recipient.address,
-      cc: record.copyTo,
-      replyTo: record.replyTo,
-      subject: record.subject,
-      html: record.body,
-      attachments,
-    });
+    let sent;
+    try {
+      sent = await sendEmail({
+        from: record.from,
+        to: recipient.address,
+        cc: record.copyTo,
+        replyTo: record.replyTo,
+        subject: record.subject,
+        html: record.body,
+        attachments,
+      });
+    } catch (err) {
+      // The IAM guardrail on the dev key denies sends to domains outside its
+      // allowlist. Retrying that can never succeed, so it is a recorded
+      // refusal, not a thrown one — anything else stays thrown for BullMQ.
+      if (!isAccessDeniedError(err)) throw err;
+      warn(LOG_SCOPE, 'SES refused the send (access denied); recipient is outside the allowed domains', {
+        kind, workspaceId, boardId, periodKey, recipientSource: recipient.source,
+      });
+      return { delivered: false, backend: this.name, reason: 'access_denied' };
+    }
 
     info(LOG_SCOPE, 'Automation email sent', {
       kind, workspaceId, boardId, periodKey,
