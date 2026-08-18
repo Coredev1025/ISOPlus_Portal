@@ -25,7 +25,11 @@ describe('ScheduledJob model', () => {
       cron: '*/30 * * * *',
       nextRunAt: new Date('2026-08-11T00:00:00Z'),
     });
-    await ScheduledJob.syncIndexes();
+    // init(), not syncIndexes(): syncIndexes diffs against listIndexes, which
+    // already shows autoIndex's in-flight build of this same index — so under
+    // load it returned before the build committed and a duplicate insert
+    // slipped through. init() awaits the schema's own index builds.
+    await ScheduledJob.init();
 
     await expect(
       ScheduledJob.create({
@@ -44,7 +48,11 @@ describe('ScheduledJob model', () => {
       cron: '*/30 * * * *',
       nextRunAt: new Date('2026-08-11T00:00:00Z'),
     });
-    await ScheduledJob.syncIndexes();
+    // init(), not syncIndexes(): syncIndexes diffs against listIndexes, which
+    // already shows autoIndex's in-flight build of this same index — so under
+    // load it returned before the build committed and a duplicate insert
+    // slipped through. init() awaits the schema's own index builds.
+    await ScheduledJob.init();
 
     const other = await ScheduledJob.create({
       kind: 'invoice_issuance',
