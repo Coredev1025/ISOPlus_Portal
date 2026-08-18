@@ -12,6 +12,7 @@ import { Consumer } from 'sqs-consumer';
 import { SQSClient } from '@aws-sdk/client-sqs';
 
 import { EMAIL_EVENTS_FAILURE_LIMIT, EMAIL_EVENTS_POLLING } from '../constants/email.js';
+import { applyDeliveryEvent } from '../services/email/deliveryEvents.js';
 import { parseSesEventMessage, recordEmailEvent } from '../services/email/events.js';
 import { info, warn, error } from '../utils/logger.js';
 
@@ -48,6 +49,9 @@ export async function handleEmailEventMessage(message) {
     });
   }
   const { recorded } = await recordEmailEvent(parsed);
+  // After the audit row: the panel state is derived, the EmailEvent row is
+  // the record. applyDeliveryEvent is idempotent, so redelivery is safe.
+  await applyDeliveryEvent(parsed.raw);
   // Type and id only — recipients are addresses and stay out of the logs.
   info(LOG_LABEL, 'SES event received', {
     eventType: parsed.eventType,

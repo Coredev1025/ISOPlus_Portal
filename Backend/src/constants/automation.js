@@ -126,3 +126,77 @@ export const DEFAULT_INVOICE_DUE_DAYS = 14;
  */
 export const GENERATOR_LIST_LIMIT = 1000;
 
+// ── Email delivery state ────────────────────────────────────────────────────
+
+/**
+ * What has happened to the email that carried a generated document, as stored
+ * on `PDFLink.deliveryState`.
+ *
+ * `generated` is the default and is NOT a failure: it means the document
+ * exists and no send has been recorded against it yet — a UI-generated PDF,
+ * or an automation run whose backend was the offline outbox. The client-facing
+ * panel must render it as "Generated", not as an error.
+ *
+ * Touchpoints: models/PDFLink.js (deliveryState enum and default),
+ * services/email/deliveryEvents.js (event mapping and the transition guard),
+ * services/email/backends.js (the sesBackend send stamps SENT),
+ * workers/emailEventsWorker.js (via deliveryEvents), routes/workspace.js
+ * (loadRecentAutomationDocuments projects it). The frontend mirrors these
+ * wire values in `Frontend/constants/automation.ts` (DELIVERY_STATE_BADGES).
+ */
+export const DELIVERY_STATE_GENERATED = 'generated';
+export const DELIVERY_STATE_SENT = 'sent';
+export const DELIVERY_STATE_DELAYED = 'delayed';
+export const DELIVERY_STATE_DELIVERED = 'delivered';
+export const DELIVERY_STATE_COMPLAINED = 'complained';
+export const DELIVERY_STATE_FAILED = 'failed';
+export const DELIVERY_STATE_BOUNCED = 'bounced';
+
+/**
+ * The enum `PDFLink.deliveryState` declares. Order is the natural progression,
+ * not significant to the schema.
+ *
+ * Touchpoints: models/PDFLink.js (enum).
+ */
+export const DELIVERY_STATES = [
+  DELIVERY_STATE_GENERATED,
+  DELIVERY_STATE_SENT,
+  DELIVERY_STATE_DELAYED,
+  DELIVERY_STATE_DELIVERED,
+  DELIVERY_STATE_COMPLAINED,
+  DELIVERY_STATE_FAILED,
+  DELIVERY_STATE_BOUNCED,
+];
+
+/**
+ * How final each state is. An event only overwrites a state of strictly lower
+ * rank, which is what makes the endpoint idempotent and stops a late
+ * `Delivery` — SES does not order its notifications — from erasing a `Bounce`.
+ *
+ * `bounced` outranks `complained` and `failed` deliberately: it is the one
+ * outcome the client can fix, by correcting the Recipient / Send a Copy To
+ * address, so it is the one that must survive. The cost is that a complaint
+ * arriving after a bounce is dropped; the bounce is the more actionable of the
+ * two, and both are visible in SES itself.
+ *
+ * An object, therefore a shared mutable — read-only by convention; nothing
+ * freezes it.
+ *
+ * Touchpoints: services/email/deliveryEvents.js (applyDeliveryEvent's guard).
+ */
+export const DELIVERY_STATE_RANK = {
+  [DELIVERY_STATE_GENERATED]: 0,
+  [DELIVERY_STATE_SENT]: 1,
+  [DELIVERY_STATE_DELAYED]: 2,
+  [DELIVERY_STATE_DELIVERED]: 3,
+  [DELIVERY_STATE_COMPLAINED]: 4,
+  [DELIVERY_STATE_FAILED]: 5,
+  [DELIVERY_STATE_BOUNCED]: 6,
+};
+
+/**
+ * The SES event vocabulary is mapped to the states above in
+ * `services/email/deliveryEvents.js` rather than here, and the plain-English
+ * bounce sentences live beside the function that composes them: both are
+ * read by exactly one module, and one of them is client-facing copy.
+ */

@@ -82,3 +82,41 @@ export const EMAIL_MESSAGE_FIELD = {
   id: "email-message",
   label: "Email Message",
 } as const;
+
+/**
+ * How each `PDFLink.deliveryState` reads on the status panel.
+ *
+ * The wire values mirror `Backend/src/constants/automation.js`
+ * (DELIVERY_STATES) — this is a second copy across a network boundary, not a
+ * second source of truth; the backend's enum is what validates.
+ *
+ * `generated` is the default and is NOT a failure: it means the document
+ * exists and no send has been recorded against it — a document produced by the
+ * UI generators, or by an automation run whose backend was the offline outbox.
+ * It renders muted, never as an error.
+ *
+ * `showsDetail` is what stops a stale `deliveryDetail` from an earlier state
+ * being rendered beside a state that is fine. Only the states a client can
+ * act on carry their sentence.
+ *
+ * Touchpoints: lib/automation-helpers.ts (`deliveryStatus`, which is the only
+ * reader), lib/automation-status-panel.tsx (renders the result).
+ */
+export const DELIVERY_STATE_BADGES = {
+  generated: { label: "Generated", tone: "muted", showsDetail: false },
+  sent: { label: "Sent", tone: "muted", showsDetail: false },
+  delayed: { label: "Delayed", tone: "warn", showsDetail: true },
+  delivered: { label: "Delivered", tone: "ok", showsDetail: false },
+  complained: { label: "Marked as spam", tone: "warn", showsDetail: true },
+  failed: { label: "Failed to send", tone: "bad", showsDetail: true },
+  bounced: { label: "Bounced", tone: "bad", showsDetail: true },
+} as const;
+
+/**
+ * What an unknown or absent state falls back to. A build that has not caught
+ * up with a new backend state shows the document as generated rather than
+ * inventing a failure.
+ *
+ * Touchpoints: lib/automation-helpers.ts (`deliveryStatus`).
+ */
+export const DEFAULT_DELIVERY_STATE = "generated";

@@ -337,6 +337,44 @@ describe('GET/PUT /api/workspaces/:workspaceId/automation-settings', () => {
     expect(res.body.recentDocuments[1].periodKey).toBe('20250201-0900');
   });
 
+  it('carries each document\'s delivery state and, for a bounce, its plain-English reason', async () => {
+    await automationPdfLink({
+      pdfLink: 'https://example.test/delivered.pdf',
+      periodKey: '20250201-0900',
+      createdAt: new Date('2026-03-01T00:00:00.000Z'),
+      deliveryState: 'delivered',
+      deliveryMessageId: 'msg-a@provider.test',
+    });
+    await automationPdfLink({
+      itemId: 'item-2',
+      pdfLink: 'https://example.test/bounced.pdf',
+      periodKey: '20250201-0900',
+      createdAt: new Date('2026-02-01T00:00:00.000Z'),
+      deliveryState: 'bounced',
+      deliveryDetail: "Email address doesn't exist.",
+    });
+    // No email has gone out for this one yet — legitimately still "generated",
+    // and the panel must not read that as a failure.
+    await automationPdfLink({
+      itemId: 'item-3',
+      pdfLink: 'https://example.test/fresh.pdf',
+      periodKey: '20250201-0900',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+
+    const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
+    expect(res.status).toBe(200);
+    expect(
+      res.body.recentDocuments.map((d) => [d.deliveryState, d.deliveryDetail])
+    ).toEqual([
+      ['delivered', null],
+      ['bounced', "Email address doesn't exist."],
+      ['generated', null],
+    ]);
+    // The message id is internal plumbing, not something a client page needs.
+    expect(res.body.recentDocuments[0]).not.toHaveProperty('deliveryMessageId');
+  });
+
   it('caps recent automation documents at ten', async () => {
     for (let i = 0; i < 12; i++) {
       await automationPdfLink({

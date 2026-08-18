@@ -15,7 +15,7 @@ import {
   automationScheduleRejection,
 } from '../utils/automationSettingsHelpers.js';
 import { upsertSchedule, disableSchedule } from '../services/scheduler/schedules.js';
-import { KIND_INVOICE, KIND_STATEMENT } from '../constants/automation.js';
+import { DELIVERY_STATE_GENERATED, KIND_INVOICE, KIND_STATEMENT } from '../constants/automation.js';
 import { getWorkspace, getBoard, getWorkspacePage, getBoardPage, getMemberRole } from '../services/isoplus.js';
 import DynamicLinkingService from '../services/dynamicLinking.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
@@ -451,6 +451,12 @@ async function loadRecentAutomationDocuments(workspaceId) {
         invoiceNumber: { $first: '$invoiceNumber' },
         periodKey: { $first: '$periodKey' },
         createdAt: { $first: '$createdAt' },
+        // What became of the email that carried this document. `$ifNull`
+        // rather than a backfill migration: rows written before delivery
+        // tracking existed have no `deliveryState`, and "generated" is exactly
+        // what they are — the field is absent, not wrong.
+        deliveryState: { $first: { $ifNull: ['$deliveryState', DELIVERY_STATE_GENERATED] } },
+        deliveryDetail: { $first: { $ifNull: ['$deliveryDetail', null] } },
       },
     },
     // $group does not preserve the sort, so order the surviving documents
@@ -465,6 +471,11 @@ async function loadRecentAutomationDocuments(workspaceId) {
     periodKey: row.periodKey,
     pdfUrl: row._id,
     createdAt: row.createdAt,
+    deliveryState: row.deliveryState,
+    // A sentence the client can act on, and only for the states that have
+    // one. `deliveryMessageId` is deliberately not projected: it is internal
+    // plumbing for the SES event lookup, not something a page needs.
+    deliveryDetail: row.deliveryDetail ?? null,
   }));
 }
 

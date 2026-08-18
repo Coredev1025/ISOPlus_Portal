@@ -47,6 +47,7 @@ import { outboxKeyFor } from '../../../src/services/email/outbox.js';
 
 import * as generateDocuments from '../../../src/services/automation/generateDocuments.js';
 import * as outbox from '../../../src/services/email/outbox.js';
+import * as pushXero from '../../../src/services/automation/pushDraftInvoicesToXero.js';
 
 const JOB = {
   data: {
@@ -363,6 +364,53 @@ describe('startAutomationWorker', () => {
       await cleanupWorkerNdisBoard();
     });
 
+    // {{statement_number}} used to render literally in a customer's inbox: the
+    // email spec offered the field and nothing allocated one. Statements now
+    // claim from Business.documentNumbering.statement, the counter the model
+    // has declared unused since it was added.
+    it('offline: substitutes {{statement_number}} for a statement run', async () => {
+      process.env.ISOPLUS_OFFLINE = '1';
+      await AutomationSettings.create({
+        workspaceId: 'ws-1',
+        statement: {
+          enabled: true,
+          emailSubject: 'Statement {{statement_number}} for {{client_name}}',
+          emailMessage: 'Statement {{statement_number}} attached. {{mystery_token}}',
+        },
+      });
+      await cleanupWorkerNdisBoard();
+      await Business.create({
+        workspaceId: 'ws-1', name: 'Worker Stmt Biz', abn: '11 111 111 111',
+        address: { street: '1 St', suburb: 'S', state: 'NSW', postcode: '2000', country: 'AU' },
+        bankDetails: { accountName: 'A', bankName: 'B', bsb: '123456', accountNumber: '1234567' },
+        documentNumbering: {
+          invoice: { prefix: 'IN-', nextNumber: 1 },
+          quote: { prefix: 'QT-', nextNumber: 1 },
+          purchaseOrder: { prefix: 'PO-', nextNumber: 1 },
+          statement: { prefix: 'STM-', nextNumber: 500 },
+        },
+      });
+      await Board.create({
+        workspaceId: 'ws-1', boardId: 'board-a', name: 'CM Board', label: 'Care Management',
+      });
+      await Item.create({
+        workspaceId: 'ws-1', boardId: 'board-a', folderId: 'f-p', itemId: 'p-1',
+        data: { 'Full Name/Preferred Name': 'Alex Rivers' },
+      });
+      startAutomationWorker();
+
+      const statementJob = { data: { ...JOB.data, kind: 'statement_automation' } };
+      await registeredHandler()(statementJob);
+
+      const written = JSON.parse(readFileSync(join(root, outboxKeyFor(statementJob.data)), 'utf8'));
+      expect(written.subject).toBe('Statement STM-500 for Alex Rivers');
+      // Still only substituted for a value the run produced: an unknown token
+      // survives verbatim rather than rendering 'undefined'.
+      expect(written.body).toBe('Statement STM-500 attached. {{mystery_token}}');
+
+      await cleanupWorkerNdisBoard();
+    });
+
     // AutomationSettings.recipient allows 'client_participant'. Flattening every
     // participant's statement into one attachments array and sending one message
     // per board means the first real per-participant delivery mails every
@@ -540,6 +588,138 @@ describe('startAutomationWorker', () => {
       expect(await InvoiceNumber.countDocuments({ workspaceId: 'ws-1' })).toBe(0);
 
       await cleanupWorkerNdisBoard();
+    });
+  });
+
+  // AutomationSettings.sendMethod has been stored, validated and displayed
+  // since the settings tab shipped, and nothing branched on it: a workspace
+  // that chose "Send from Accounting Platform" got the ISO+ email anyway.
+  describe('sendMethod routing', () => {
+    const saved = {};
+    let root;
+
+    async function connectXero() {
+      await Business.updateOne(
+        { workspaceId: 'ws-1' },
+        { $set: { xeroIntegrated: true, xeroTokens: { accessToken: 'a', refreshToken: 'r' } } },
+      );
+    }
+
+    beforeEach(async () => {
+      saved.ISOPLUS_OFFLINE = process.env.ISOPLUS_OFFLINE;
+      saved.LOCAL_FILE_ROOT = process.env.LOCAL_FILE_ROOT;
+      process.env.ISOPLUS_OFFLINE = '1';
+      root = mkdtempSync(join(tmpdir(), 'worker-sendmethod-'));
+      process.env.LOCAL_FILE_ROOT = root;
+      await AutomationSettings.deleteMany({ workspaceId: 'ws-1' });
+    });
+
+    afterEach(async () => {
+      process.env.ISOPLUS_OFFLINE = saved.ISOPLUS_OFFLINE;
+      process.env.LOCAL_FILE_ROOT = saved.LOCAL_FILE_ROOT;
+      rmSync(root, { recursive: true, force: true });
+      vi.restoreAllMocks();
+      await AutomationSettings.deleteMany({ workspaceId: 'ws-1' });
+      await cleanupWorkerNdisBoard();
+    });
+
+    it("sendMethod 'isoplus' still emails and never touches Xero", async () => {
+      await AutomationSettings.create({
+        workspaceId: 'ws-1',
+        invoice: { enabled: true, sendMethod: 'isoplus', emailSubject: 'Invoice run' },
+      });
+      await seedWorkerNdisBoard();
+      await connectXero();
+      const pushSpy = vi.spyOn(pushXero, 'pushDraftInvoicesToXero');
+      startAutomationWorker();
+
+      await registeredHandler()(JOB);
+
+      expect(pushSpy).not.toHaveBeenCalled();
+      expect(existsSync(join(root, outboxKeyFor(JOB.data)))).toBe(true);
+    });
+
+    it("sendMethod 'accounting' pushes the generated invoices as drafts and sends no email", async () => {
+      await AutomationSettings.create({
+        workspaceId: 'ws-1',
+        invoice: { enabled: true, sendMethod: 'accounting', emailSubject: 'Invoice run' },
+      });
+      await seedWorkerNdisBoard();
+      await connectXero();
+      const pushSpy = vi.spyOn(pushXero, 'pushDraftInvoicesToXero').mockResolvedValue([]);
+      const deliverSpy = vi.spyOn(outbox, 'deliverEmail');
+      startAutomationWorker();
+
+      await registeredHandler()(JOB);
+
+      expect(deliverSpy).not.toHaveBeenCalled();
+      expect(existsSync(join(root, outboxKeyFor(JOB.data)))).toBe(false);
+      expect(pushSpy).toHaveBeenCalledTimes(1);
+      const args = pushSpy.mock.calls[0][0];
+      expect(args).toMatchObject({ workspaceId: 'ws-1', boardId: 'board-a', periodKey: '20260116-0900' });
+      // The documents the run actually generated, not a re-derivation.
+      expect(args.documents).toHaveLength(1);
+      expect(args.documents[0].invoiceNumber).toBe('IN-900 (ISO+™)');
+    });
+
+    // Same guarantee composeAndDeliver already makes for email: deliverability
+    // is settled before anything irreversible happens, so a workspace that
+    // picked "accounting" without connecting Xero does not mint invoice
+    // numbers for PDFs nobody will ever receive.
+    it('accounting with Xero not connected: generates nothing, sends nothing, pushes nothing', async () => {
+      await AutomationSettings.create({
+        workspaceId: 'ws-1',
+        invoice: { enabled: true, sendMethod: 'accounting', emailSubject: 'Invoice run' },
+      });
+      await seedWorkerNdisBoard();
+      const genSpy = vi.spyOn(generateDocuments, 'generateInvoicesForBoard');
+      const pushSpy = vi.spyOn(pushXero, 'pushDraftInvoicesToXero');
+      const deliverSpy = vi.spyOn(outbox, 'deliverEmail');
+      startAutomationWorker();
+
+      // Resolves rather than throws: only a human can connect Xero, so three
+      // BullMQ attempts would just repeat the same log.
+      await expect(registeredHandler()(JOB)).resolves.toBeUndefined();
+
+      expect(genSpy).not.toHaveBeenCalled();
+      expect(pushSpy).not.toHaveBeenCalled();
+      expect(deliverSpy).not.toHaveBeenCalled();
+      const business = await Business.findOne({ workspaceId: 'ws-1' }).lean();
+      expect(business.documentNumbering.invoice.nextNumber).toBe(900);
+      expect(await InvoiceNumber.countDocuments({ workspaceId: 'ws-1' })).toBe(0);
+    });
+
+    // Xero has no statement to create here, and the Send Method select is
+    // rendered from one shared component for both blocks. A statement run
+    // emails whatever the block says.
+    it('a statement block set to accounting still emails', async () => {
+      await AutomationSettings.create({
+        workspaceId: 'ws-1',
+        statement: { enabled: true, sendMethod: 'accounting', emailSubject: 'Statements' },
+      });
+      await cleanupWorkerNdisBoard();
+      await Business.create({
+        workspaceId: 'ws-1', name: 'Worker Stmt Biz', abn: '11 111 111 111',
+        address: { street: '1 St', suburb: 'S', state: 'NSW', postcode: '2000', country: 'AU' },
+        bankDetails: { accountName: 'A', bankName: 'B', bsb: '123456', accountNumber: '1234567' },
+        documentNumbering: { invoice: { prefix: 'IN-', nextNumber: 1 }, quote: { prefix: 'QT-', nextNumber: 1 }, purchaseOrder: { prefix: 'PO-', nextNumber: 1 } },
+      });
+      await Board.create({
+        workspaceId: 'ws-1', boardId: 'board-a', name: 'CM Board', label: 'Care Management',
+      });
+      await Item.create({
+        workspaceId: 'ws-1', boardId: 'board-a', folderId: 'f-p', itemId: 'p-1',
+        data: { 'Full Name/Preferred Name': 'Alex Rivers' },
+      });
+      const pushSpy = vi.spyOn(pushXero, 'pushDraftInvoicesToXero');
+      startAutomationWorker();
+
+      const statementJob = { data: { ...JOB.data, kind: 'statement_automation' } };
+      await registeredHandler()(statementJob);
+
+      expect(pushSpy).not.toHaveBeenCalled();
+      const written = JSON.parse(readFileSync(join(root, outboxKeyFor(statementJob.data)), 'utf8'));
+      expect(written.attachments).toHaveLength(1);
     });
   });
 });

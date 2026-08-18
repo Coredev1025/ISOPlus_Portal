@@ -163,4 +163,32 @@ test.describe("Care Management automation (KAN-10 fixture)", () => {
       "at least one row should carry a generated invoiceNumber",
     ).toBeTruthy();
   });
+
+  test("the status panel reports what the run produced, with a delivery state", async ({
+    page,
+  }) => {
+    // The spec's Visibility section: a client checks whether automation is
+    // healthy without contacting support. This asserts the panel against a
+    // workspace whose documents were produced by a real tick, so the list and
+    // its states come from PDFLink rows rather than a fixture of the view.
+    await page.goto("/dashboard");
+    await page.goto(AUTOMATION_URL);
+
+    const status = page.getByRole("region", { name: /automation status/i });
+    await expect(status).toBeVisible();
+
+    // Recent documents only render once a run has produced some. The tick test
+    // above is the one that produces them, and the suite runs serially.
+    const documents = status.getByRole("link");
+    await expect(documents.first()).toBeVisible();
+
+    // Every listed document carries a delivery state. Offline runs never send,
+    // so the honest state here is "Generated" — the point of the assertion is
+    // that a state is rendered per document at all, which is what replaced the
+    // hardcoded badge. Delivered / Bounced / Failed rendering, and the inline
+    // bounce reason, are covered by the panel unit tests: reaching them here
+    // would mean forging an SNS notification, and the endpoint verifies
+    // signatures precisely so that cannot be done.
+    await expect(status.getByText(/generated/i).first()).toBeVisible();
+  });
 });

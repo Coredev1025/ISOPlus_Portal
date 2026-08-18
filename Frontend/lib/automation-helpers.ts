@@ -1,5 +1,9 @@
 import { format, isValid, parseISO } from "date-fns";
-import { EMAIL_TEXT_FIELDS } from "@/constants/automation";
+import {
+  DEFAULT_DELIVERY_STATE,
+  DELIVERY_STATE_BADGES,
+  EMAIL_TEXT_FIELDS,
+} from "@/constants/automation";
 import { EMAIL_PATTERN } from "@/constants/validation";
 import type {
   AutomationBlock,
@@ -48,6 +52,36 @@ function basenameLabel(pdfUrl: string): string {
 
 export function recentDocumentLabel(doc: AutomationRecentDocument): string {
   return doc.invoiceNumber || doc.participant || basenameLabel(doc.pdfUrl) || doc.type;
+}
+
+export type DeliveryStatus = {
+  label: string;
+  tone: (typeof DELIVERY_STATE_BADGES)[keyof typeof DELIVERY_STATE_BADGES]["tone"];
+  /** The sentence to render beside the badge, or null when there is nothing to act on. */
+  detail: string | null;
+};
+
+/**
+ * How one recent document's send reads on the panel.
+ *
+ * Two rules the table alone would not give:
+ *   - An unknown state — a backend ahead of this build — falls back to
+ *     "Generated" rather than rendering a word nobody has designed for. A
+ *     document existing is never itself a failure.
+ *   - The detail is only carried for states that are actually a problem, so a
+ *     `deliveryDetail` left over from an earlier bounce cannot appear beside
+ *     "Delivered" and read as a live one.
+ */
+export function deliveryStatus(doc: AutomationRecentDocument): DeliveryStatus {
+  const badge =
+    DELIVERY_STATE_BADGES[doc.deliveryState as keyof typeof DELIVERY_STATE_BADGES] ??
+    DELIVERY_STATE_BADGES[DEFAULT_DELIVERY_STATE];
+
+  return {
+    label: badge.label,
+    tone: badge.tone,
+    detail: badge.showsDetail ? (doc.deliveryDetail ?? null) : null,
+  };
 }
 
 /**

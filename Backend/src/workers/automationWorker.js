@@ -6,6 +6,10 @@ import { AUTOMATION_QUEUE_NAME } from '../services/automation/queue.js';
 import { activeEmailBackendName, deliverEmail } from '../services/email/outbox.js';
 import { generateInvoicesForBoard } from '../services/automation/generateDocuments.js';
 import { generateStatementsForBoard } from '../services/automation/generateStatements.js';
+import {
+  pushDraftInvoicesToXero,
+  xeroDeliveryPreflight,
+} from '../services/automation/pushDraftInvoicesToXero.js';
 import { buildRedisConnection } from '../services/redisConnection.js';
 import AutomationSettings from '../models/AutomationSettings.js';
 import Business from '../models/Business.js';
@@ -19,6 +23,11 @@ const BLOCK_FOR_KIND = { [KIND_INVOICE]: 'invoice', [KIND_STATEMENT]: 'statement
 // AutomationSettings.recipient. 'billing_contact' is one message for the whole
 // board; this one is one message per participant.
 const RECIPIENT_PER_PARTICIPANT = 'client_participant';
+
+// AutomationSettings.sendMethod. 'isoplus' composes and emails; this one hands
+// the run's invoices to the workspace's accounting platform instead, and sends
+// no email for that run.
+const SEND_METHOD_ACCOUNTING = 'accounting';
 
 /** Full generator results ({itemId, pdfUrl, invoiceNumber?, participant?}) —
  * the pdfUrls become the attachments, the rest feeds the template vars. */
@@ -48,8 +57,9 @@ function distinctValues(values) {
 /**
  * Vars for the email spec's dynamic fields. A var is only present when the run
  * produced a value — substituteEmailTemplate leaves absent tokens intact, so an
- * unresolvable field survives verbatim instead of rendering 'undefined'.
- * {{statement_number}} is never provided: statements have no number.
+ * unresolvable field survives verbatim instead of rendering 'undefined'. An
+ * invoice run has no statement number and a statement run has no invoice
+ * number, so each token resolves only for the kind that produced it.
  */
 function buildTemplateVars({ businessName, results }) {
   const vars = {};
@@ -57,6 +67,9 @@ function buildTemplateVars({ businessName, results }) {
 
   const invoiceNumbers = distinctValues(results.map((doc) => doc.invoiceNumber));
   if (invoiceNumbers.length > 0) vars.invoice_number = invoiceNumbers.join(', ');
+
+  const statementNumbers = distinctValues(results.map((doc) => doc.statementNumber));
+  if (statementNumbers.length > 0) vars.statement_number = statementNumbers.join(', ');
 
   const clientNames = distinctValues(results.map((doc) => doc.participant));
   if (clientNames.length > 0) vars.client_name = clientNames.join(', ');
@@ -128,6 +141,55 @@ async function deliverGroup({ kind, workspaceId, boardId, periodKey, block, busi
   });
 }
 
+/**
+ * Which delivery route this job takes.
+ *
+ * Only invoices. Xero has no statement to create here, and the settings tab
+ * renders one shared email block for both kinds, so a statement schedule can
+ * carry sendMethod 'accounting' without it meaning anything — those runs email,
+ * and say so once in the log rather than silently ignoring the setting.
+ */
+function isAccountingDelivery(kind, block) {
+  return kind === KIND_INVOICE && block?.sendMethod === SEND_METHOD_ACCOUNTING;
+}
+
+/**
+ * Generate the slot's invoices and push them to Xero as DRAFTs; send no email.
+ *
+ * Deliverability is settled BEFORE generation, exactly as the email route
+ * settles activeEmailBackendName(), because generation is irreversible: it
+ * claims invoice numbers and writes PDFLink rows keyed on periodKey. A
+ * workspace that chose "accounting" without connecting Xero therefore
+ * generates nothing rather than burning numbers on drafts it cannot create.
+ */
+async function deliverToAccountingPlatform(job) {
+  const { kind, workspaceId, boardId, periodKey } = job.data;
+
+  const preflight = await xeroDeliveryPreflight({ workspaceId, boardId });
+  if (!preflight.ok) {
+    // error, not warn: the client explicitly chose this route, so the run
+    // producing nothing is a failure an operator has to see and fix. It still
+    // resolves — only a human can connect Xero, so retrying would only repeat
+    // this line three times.
+    error('Automation', 'Accounting delivery is not possible; generated nothing', {
+      kind, workspaceId, boardId, periodKey, reason: preflight.reason,
+    });
+    return;
+  }
+
+  const results = await generateDocumentResults(job);
+  const pushed = await pushDraftInvoicesToXero({
+    workspaceId,
+    boardId,
+    slot: new Date(job.data.slot),
+    periodKey,
+    documents: results,
+  });
+  info('Automation', 'Automation invoices pushed to the accounting platform as drafts', {
+    kind, workspaceId, boardId, periodKey, documents: results.length, drafts: pushed.length,
+  });
+}
+
 async function composeAndDeliver(job) {
   const { kind, workspaceId, boardId, periodKey } = job.data;
 
@@ -138,6 +200,13 @@ async function composeAndDeliver(job) {
       kind, workspaceId, boardId, periodKey,
     });
     return;
+  }
+
+  if (isAccountingDelivery(kind, block)) return deliverToAccountingPlatform(job);
+  if (block.sendMethod === SEND_METHOD_ACCOUNTING) {
+    warn('Automation', 'Statements are always emailed; sendMethod accounting does not apply', {
+      kind, workspaceId, boardId, periodKey,
+    });
   }
 
   // Checked BEFORE generation, which is irreversible: it claims invoice numbers

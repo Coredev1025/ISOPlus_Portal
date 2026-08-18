@@ -65,6 +65,10 @@ export function parseSesEventMessage(body) {
     subject: event.mail?.commonHeaders?.subject ?? null,
     detail,
     envelopeWrapped: wrapped,
+    // The unreduced event, for consumers with their own reading of it —
+    // the PDFLink delivery-state machine reads bounce sub-types this
+    // summary deliberately drops.
+    raw: event,
   };
 }
 

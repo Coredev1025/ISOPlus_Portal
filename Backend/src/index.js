@@ -171,6 +171,8 @@ app.use('/api/items', itemsRoutes);
 app.use('/api/export', exportOptimizedRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/scheduler', schedulerRoutes);
+// SES delivery notifications, delivered by SNS. Unauthenticated by
+// nature — the router verifies the SNS signature itself.
 // Offline-mode PDF store; 404s entirely outside offline mode.
 app.use('/api/local-files', localFilesRoutes);
 

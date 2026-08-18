@@ -29,6 +29,7 @@ vi.mock('../../../src/utils/logger.js', async (importOriginal) => {
 const { Consumer } = await import('sqs-consumer');
 const { warn, error } = await import('../../../src/utils/logger.js');
 const EmailEvent = (await import('../../../src/models/EmailEvent.js')).default;
+const PDFLink = (await import('../../../src/models/PDFLink.js')).default;
 const {
   isEmailEventsConfigured,
   startEmailEventsWorker,
@@ -171,6 +172,7 @@ describe('emailEventsWorker', () => {
   describe('handleEmailEventMessage', () => {
     beforeEach(async () => {
       await EmailEvent.deleteMany({});
+      await PDFLink.deleteMany({});
     });
 
     it('records the parsed event', async () => {
@@ -179,6 +181,27 @@ describe('emailEventsWorker', () => {
       const rows = await EmailEvent.find({}).lean();
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ eventType: 'Delivery', sesMessageId: 'delivery-message-id' });
+    });
+
+    it('advances the delivery state of the documents that email carried', async () => {
+      // The status panel reads PDFLink.deliveryState; the queue is where the
+      // Delivered/Bounced truth arrives. This is the join the whole feature
+      // exists for: event → messageId → the stamped rows.
+      await PDFLink.create({
+        workspaceId: '55390',
+        boardId: 'board-a',
+        itemId: 'item-1',
+        type: 'NDIS Invoice',
+        periodKey: '20250201-0900',
+        pdfLink: 'https://files.test/INV-1.pdf',
+        deliveryMessageId: 'delivery-message-id',
+        deliveryState: 'sent',
+      });
+
+      await handleEmailEventMessage({ Body: DELIVERY_BODY });
+
+      const row = await PDFLink.findOne({ workspaceId: '55390' }).lean();
+      expect(row.deliveryState).toBe('delivered');
     });
 
     it('lets a malformed body throw, so SQS redelivers instead of deleting the event', async () => {

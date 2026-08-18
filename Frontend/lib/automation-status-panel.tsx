@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import {
   blockNeedsAttention,
+  deliveryStatus,
   formatNextRun,
   recentDocumentLabel,
 } from "@/lib/automation-helpers";
@@ -13,7 +14,7 @@ import type {
   AutomationRecentDocument,
 } from "@/lib/automation-settings";
 
-type StatusTone = "ok" | "warn" | "muted";
+type StatusTone = "ok" | "warn" | "bad" | "muted";
 
 /**
  * The badge mirrors the enable switch and the last run's outcome — the spec's
@@ -22,13 +23,14 @@ type StatusTone = "ok" | "warn" | "muted";
  */
 function blockStatus(block: AutomationBlock): { label: string; tone: StatusTone } {
   if (!block.enabled) return { label: "Paused", tone: "muted" };
-  if (blockNeedsAttention(block)) return { label: "Attention needed", tone: "warn" };
+  if (blockNeedsAttention(block)) return { label: "Attention needed", tone: "bad" };
   return { label: "On track", tone: "ok" };
 }
 
 const TONE_CLASS: Record<StatusTone, string> = {
   ok: "border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400",
-  warn: "border-destructive/40 bg-destructive/10 text-destructive",
+  warn: "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  bad: "border-destructive/40 bg-destructive/10 text-destructive",
   muted: "border-border bg-muted text-muted-foreground",
 };
 
@@ -65,6 +67,8 @@ function StatusRow({
 // Named `doc`, not `document`: this module's tests stub `document.elementFromPoint`,
 // and a prop that shadows the global is one rename away from a confusing failure.
 function RecentDocumentRow({ doc }: Readonly<{ doc: AutomationRecentDocument }>) {
+  const delivery = deliveryStatus(doc);
+
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px]">
       <a
@@ -79,9 +83,26 @@ function RecentDocumentRow({ doc }: Readonly<{ doc: AutomationRecentDocument }>)
       <span className="text-muted-foreground">
         {formatNextRun(doc.createdAt)}
       </span>
-      <span className="rounded-full border border-border px-2 py-0.5 text-[10.5px] text-muted-foreground">
-        Generated
+      {/* Labelled rather than left as a bare word: out of context "Bounced"
+          tells a screen-reader user nothing about what it describes. */}
+      <span
+        aria-label={`Delivery status: ${delivery.label}`}
+        className={cn(
+          "rounded-full border px-2 py-0.5 text-[10.5px] font-medium",
+          TONE_CLASS[delivery.tone]
+        )}
+      >
+        {delivery.label}
       </span>
+      {delivery.detail ? (
+        // role="status" so the reason is announced when a poll turns a
+        // "Sent" row into a bounce, rather than changing silently. It sits on
+        // the same row as the document it explains — the client has to know
+        // WHICH send to chase, and which address to correct.
+        <span role="status" className="w-full text-[11.5px] text-destructive">
+          {delivery.detail}
+        </span>
+      ) : null}
     </li>
   );
 }

@@ -13,6 +13,7 @@ import EmailSend from '../../models/EmailSend.js';
 import { saveLocalFile } from '../../utils/localFileStore.js';
 import { getS3File } from '../../utils/uploadS3.js';
 import { error as logError, info, warn } from '../../utils/logger.js';
+import { recordEmailSend } from './deliveryEvents.js';
 import { resolveRecipient } from './recipients.js';
 import { isAccessDeniedError, isEmailTransportConfigured, sendEmail } from './sesTransport.js';
 
@@ -181,11 +182,23 @@ export const sesBackend = {
 
     await recordSend({ messageId: sent.messageId, kind, workspaceId, boardId, periodKey, recipientKey, block });
 
+    // The message id is the only handle a Delivery/Bounce event arriving
+    // minutes from now has on the documents this email carried, so it is
+    // stamped on their PDFLink rows before anything else can lose it.
+    // recordEmailSend never throws: the mail has already gone, and a retried
+    // job would send it a second time.
+    const tracked = await recordEmailSend({
+      messageId: sent.messageId,
+      workspaceId,
+      documentUrls: record.attachments,
+    });
+
     info(LOG_SCOPE, 'Automation email sent', {
       kind, workspaceId, boardId, periodKey,
       messageId: sent.messageId,
       attachments: attachments.length,
       skippedAttachments: skipped,
+      trackedDocuments: tracked,
       recipientSource: recipient.source,
     });
 

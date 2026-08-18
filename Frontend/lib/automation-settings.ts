@@ -1,7 +1,13 @@
 import { omit } from "lodash-es";
 import axios from "@/app/utils/axiosConfig";
-import { READ_ONLY_BLOCK_FIELDS } from "@/constants/automation";
+import {
+  DELIVERY_STATE_BADGES,
+  READ_ONLY_BLOCK_FIELDS,
+} from "@/constants/automation";
 import type { AutomationUnit } from "@/lib/automation-run-on-options";
+
+/** The delivery states the backend stores, derived so the two cannot drift. */
+export type DeliveryState = keyof typeof DELIVERY_STATE_BADGES;
 
 export type AutomationBlock = {
   enabled: boolean;
@@ -48,6 +54,19 @@ export type AutomationRecentDocument = {
    * the file name; see `recentDocumentLabel`.
    */
   participant?: string | null;
+  /**
+   * Read-only. What became of the email that carried this document — one of
+   * the wire values in DELIVERY_STATE_BADGES. Absent on a response from a
+   * backend that predates delivery tracking, which `deliveryStatus` reads as
+   * "generated": the document exists and nothing has been sent yet.
+   */
+  deliveryState?: DeliveryState | null;
+  /**
+   * Read-only, optional. One sentence the client can act on ("Email address
+   * doesn't exist."), composed by the backend from the SES bounce type. Only
+   * meaningful for the states DELIVERY_STATE_BADGES marks `showsDetail`.
+   */
+  deliveryDetail?: string | null;
 };
 
 export type AutomationSettings = {

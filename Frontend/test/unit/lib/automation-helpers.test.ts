@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   blockNeedsAttention,
+  deliveryStatus,
   formatNextRun,
   hasInvalidEmail,
   recentDocumentLabel,
@@ -155,5 +156,67 @@ describe('hasInvalidEmail', () => {
     expect(
       hasInvalidEmail(settings({ enabled: true, emailSubject: 'not-an-email' }))
     ).toBe(false);
+  });
+});
+
+describe('deliveryStatus', () => {
+  it('reads a delivered send as delivered, with no inline detail to show', () => {
+    expect(deliveryStatus(document({ deliveryState: 'delivered' }))).toEqual({
+      label: 'Delivered',
+      tone: 'ok',
+      detail: null,
+    });
+  });
+
+  it('surfaces a bounce with the plain-English reason the client must act on', () => {
+    expect(
+      deliveryStatus(
+        document({
+          deliveryState: 'bounced',
+          deliveryDetail: "Email address doesn't exist.",
+        })
+      )
+    ).toEqual({
+      label: 'Bounced',
+      tone: 'bad',
+      detail: "Email address doesn't exist.",
+    });
+  });
+
+  it('calls a rejected send "Failed to send", the spec\'s wording', () => {
+    expect(deliveryStatus(document({ deliveryState: 'failed' })).label).toBe(
+      'Failed to send'
+    );
+  });
+
+  it('treats a document with no event yet as Generated, not as a failure', () => {
+    expect(deliveryStatus(document())).toEqual({
+      label: 'Generated',
+      tone: 'muted',
+      detail: null,
+    });
+    expect(deliveryStatus(document({ deliveryState: 'generated' })).tone).toBe(
+      'muted'
+    );
+  });
+
+  it('reports a sent-but-unconfirmed document as Sent', () => {
+    expect(deliveryStatus(document({ deliveryState: 'sent' })).label).toBe('Sent');
+  });
+
+  it('falls back to Generated for a state this build does not know', () => {
+    expect(
+      deliveryStatus(document({ deliveryState: 'teleported' as never })).label
+    ).toBe('Generated');
+  });
+
+  it('never shows a detail line against a state that is not a problem', () => {
+    // A stale detail left over from an earlier state must not be rendered
+    // beside "Delivered", where it would read as a live failure.
+    expect(
+      deliveryStatus(
+        document({ deliveryState: 'delivered', deliveryDetail: 'Mailbox full.' })
+      ).detail
+    ).toBeNull();
   });
 });

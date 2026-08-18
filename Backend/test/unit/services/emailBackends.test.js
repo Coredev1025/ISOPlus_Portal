@@ -28,6 +28,7 @@ import { sendEmail } from '../../../src/services/email/sesTransport.js';
 import { resolveRecipient } from '../../../src/services/email/recipients.js';
 import { getS3File } from '../../../src/utils/uploadS3.js';
 import EmailSend from '../../../src/models/EmailSend.js';
+import PDFLink from '../../../src/models/PDFLink.js';
 
 const MESSAGE = {
   kind: 'invoice_automation',
@@ -195,5 +196,60 @@ describe('sesBackend', () => {
     const [{ attachments }] = sendEmail.mock.calls[0];
     expect(attachments).toHaveLength(1);
     expect(result.skippedAttachments).toBe(1);
+  });
+});
+
+/**
+ * The message id is the only handle a later SES event has on the documents an
+ * email carried, so the send has to record it against those PDFLink rows.
+ */
+describe('sesBackend delivery tracking', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    await PDFLink.deleteMany({});
+  });
+
+  /** The PDFLink row the automation generator wrote for MESSAGE's attachment. */
+  function generatedRow(overrides = {}) {
+    return PDFLink.create({
+      workspaceId: '55390',
+      boardId: 'board-a',
+      itemId: 'item-1',
+      type: 'NDIS Invoice',
+      periodKey: '20250201-0900',
+      pdfLink: MESSAGE.attachments[0],
+      ...overrides,
+    });
+  }
+
+  it('stamps the sent state and the message id on the documents it just emailed', async () => {
+    await generatedRow();
+
+    await sesBackend.deliver(MESSAGE);
+
+    const row = await PDFLink.findOne({ workspaceId: '55390' }).lean();
+    expect(row.deliveryMessageId).toBe('msg-1');
+    expect(row.deliveryState).toBe('sent');
+  });
+
+  it('leaves another workspace\'s row alone even when the URL matches', async () => {
+    await generatedRow({ workspaceId: '99999' });
+
+    await sesBackend.deliver(MESSAGE);
+
+    const row = await PDFLink.findOne({ workspaceId: '99999' }).lean();
+    expect(row.deliveryState).toBe('generated');
+    expect(row.deliveryMessageId).toBeUndefined();
+  });
+
+  it('still reports the send as delivered when the tracking write fails', async () => {
+    // The email has already left; throwing here would make the worker retry
+    // and send it twice.
+    const spy = vi.spyOn(PDFLink, 'updateMany').mockRejectedValueOnce(new Error('mongo down'));
+
+    const result = await sesBackend.deliver(MESSAGE);
+
+    expect(result.delivered).toBe(true);
+    spy.mockRestore();
   });
 });
