@@ -10,7 +10,7 @@ vi.mock('../../../src/services/email/sesTransport.js', async (importOriginal) =>
   return {
     ...actual,
     isEmailTransportConfigured: vi.fn(() => true),
-    sendEmail: vi.fn(async () => ({ messageId: '<msg-1@ses>', accepted: ['to@x.test'], rejected: [] })),
+    sendEmail: vi.fn(async () => ({ messageId: 'msg-1', accepted: ['to@x.test'], rejected: [] })),
     emailTransportConfig: vi.fn(() => ({ region: 'ap-southeast-2', from: 'noreply@test', configured: true })),
   };
 });
@@ -27,6 +27,7 @@ import { localOutboxBackend, sesBackend } from '../../../src/services/email/back
 import { sendEmail } from '../../../src/services/email/sesTransport.js';
 import { resolveRecipient } from '../../../src/services/email/recipients.js';
 import { getS3File } from '../../../src/utils/uploadS3.js';
+import EmailSend from '../../../src/models/EmailSend.js';
 
 const MESSAGE = {
   kind: 'invoice_automation',
@@ -94,7 +95,33 @@ describe('localOutboxBackend', () => {
 });
 
 describe('sesBackend', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    await EmailSend.deleteMany({});
+  });
+
+  it('persists the send keyed by message id, so a queue event can be traced to its invoice run', async () => {
+    await sesBackend.deliver(MESSAGE);
+
+    const rows = await EmailSend.find({}).lean();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      messageId: 'msg-1',
+      kind: 'invoice_automation',
+      workspaceId: '55390',
+      boardId: 'board-a',
+      periodKey: '20250201-0900',
+      recipientType: 'billing_contact',
+    });
+  });
+
+  it('persists nothing when the send was refused', async () => {
+    resolveRecipient.mockResolvedValueOnce({ address: null, reason: 'profile_not_found' });
+
+    await sesBackend.deliver(MESSAGE);
+
+    expect(await EmailSend.countDocuments({})).toBe(0);
+  });
 
   it('resolves the recipient type to a real address and sends', async () => {
     const result = await sesBackend.deliver(MESSAGE);

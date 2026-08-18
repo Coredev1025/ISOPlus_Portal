@@ -9,9 +9,10 @@
 
 import { basename } from 'node:path';
 
+import EmailSend from '../../models/EmailSend.js';
 import { saveLocalFile } from '../../utils/localFileStore.js';
 import { getS3File } from '../../utils/uploadS3.js';
-import { info, warn } from '../../utils/logger.js';
+import { error as logError, info, warn } from '../../utils/logger.js';
 import { resolveRecipient } from './recipients.js';
 import { isAccessDeniedError, isEmailTransportConfigured, sendEmail } from './sesTransport.js';
 
@@ -110,6 +111,26 @@ async function loadAttachments(urls) {
 }
 
 /**
+ * The messageId is the ONLY key that joins a Delivery/Bounce event from the
+ * SQS queue back to the invoice run that sent the mail, so it is persisted at
+ * send time. A failed write must not throw: the email is already sent, and a
+ * thrown error here would make BullMQ retry the job and send it again.
+ */
+async function recordSend({ messageId, kind, workspaceId, boardId, periodKey, recipientKey, block }) {
+  if (!messageId) return;
+  try {
+    await EmailSend.create({
+      messageId, kind, workspaceId, boardId, periodKey, recipientKey,
+      recipientType: block?.recipient ?? null,
+    });
+  } catch (err) {
+    logError(LOG_SCOPE, 'Sent email could not be recorded; its delivery events will be unattributable', {
+      messageId, kind, workspaceId, boardId, periodKey, error: err.message,
+    });
+  }
+}
+
+/**
  * The real backend. The stored `recipient` is a TYPE, so the address is
  * resolved here; an unresolvable one refuses the send rather than guessing at
  * an address, because the wrong recipient for an invoice is worse than a
@@ -157,6 +178,8 @@ export const sesBackend = {
       });
       return { delivered: false, backend: this.name, reason: 'access_denied' };
     }
+
+    await recordSend({ messageId: sent.messageId, kind, workspaceId, boardId, periodKey, recipientKey, block });
 
     info(LOG_SCOPE, 'Automation email sent', {
       kind, workspaceId, boardId, periodKey,

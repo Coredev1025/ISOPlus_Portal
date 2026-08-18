@@ -201,7 +201,10 @@ describe('sesTransport', () => {
       expect(sent.attachments).toBe(attachments);
     });
 
-    it('resolves to the message id and the envelope recipients as accepted', async () => {
+    it('resolves to the BARE SES message id — the key every queue event carries', async () => {
+      // nodemailer decorates the id as '<id@region.amazonses.com>'; the events
+      // arriving from SQS carry the bare id. Returning the bare form here is
+      // what lets an EmailEvent row join back to the send that caused it.
       sendMail.mockResolvedValueOnce({
         messageId: '<id-1@ap-southeast-2.amazonses.com>',
         envelope: { from: 'noreply@dev.isoplus.online', to: ['a@example.com', 'b@example.com'] },
@@ -209,7 +212,7 @@ describe('sesTransport', () => {
       });
 
       await expect(sendEmail({ ...MESSAGE, to: ['a@example.com', 'b@example.com'] })).resolves.toEqual({
-        messageId: '<id-1@ap-southeast-2.amazonses.com>',
+        messageId: 'id-1',
         accepted: ['a@example.com', 'b@example.com'],
         rejected: [],
       });
@@ -224,7 +227,7 @@ describe('sesTransport', () => {
       expect(info).toHaveBeenCalledTimes(1);
       const [, , meta] = info.mock.calls[0];
       expect(meta).toEqual(expect.objectContaining({
-        messageId: '<abc@ap-southeast-2.amazonses.com>',
+        messageId: 'abc',
         recipientCount: 1,
         attachmentCount: 1,
       }));

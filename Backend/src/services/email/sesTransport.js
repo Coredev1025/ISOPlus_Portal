@@ -93,6 +93,12 @@ function getTransport() {
   return transporter;
 }
 
+/** '<id@region.amazonses.com>' (or already-bare) → 'id'; null stays null. */
+function bareMessageId(decorated) {
+  if (!decorated) return null;
+  return String(decorated).replace(/^</, '').replace(/>$/, '').split('@')[0] || null;
+}
+
 /** A string, an array or nothing, reduced to a list of non-blank addresses. */
 function toAddressList(value) {
   const candidates = Array.isArray(value) ? value : [value];
@@ -143,18 +149,18 @@ export async function sendEmail({ from, to, cc, replyTo, subject, html, text, at
     const result = await getTransport().sendMail(envelope);
     // The SES transport reports { envelope, messageId }, not the SMTP
     // accepted/rejected split — SES takes the whole message or none of it.
+    // The id is returned BARE: nodemailer decorates it as
+    // '<id@region.amazonses.com>', but every event on the SQS queue carries
+    // the bare id, and it is the only key that joins an event to its send.
     const accepted = result?.envelope?.to ?? recipients;
+    const messageId = bareMessageId(result?.messageId);
     info('SES-Transport', 'Email sent', {
-      messageId: result?.messageId ?? null,
+      messageId,
       recipientCount: recipients.length,
       acceptedCount: accepted.length,
       attachmentCount: attachments.length,
     });
-    return {
-      messageId: result?.messageId ?? null,
-      accepted,
-      rejected: [],
-    };
+    return { messageId, accepted, rejected: [] };
   } catch (err) {
     // Region and recipient COUNT only: no addresses, no body, no credential.
     error('SES-Transport', 'Email send failed', {
