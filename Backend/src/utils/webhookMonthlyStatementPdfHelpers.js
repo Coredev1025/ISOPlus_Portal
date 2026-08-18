@@ -1,5 +1,11 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  GENERATED_DOCUMENT_PUBLIC_READ,
+  GENERATED_PDF_URL_EXPIRY_SECONDS,
+  OUTPUT_TYPE,
+} from '../constants/storage.js';
+import { buildOutputKey } from './s3OutputKey.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -581,14 +587,19 @@ async function uploadMonthlyStatementPdf({
 }) {
   const participantSlug = participantName.replace(/[^a-zA-Z0-9]/g, '-');
   const monthYear = `${statementData.month || 'Month'}_${yearValue || 'Year'}`.replace(/\s+/g, '_');
-  const filename = `output/${workspaceId}/${boardId}/monthly-statements/${participantSlug}_${monthYear}_Statement.pdf`;
-  const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
+  const filename = buildOutputKey({
+    workspaceId,
+    boardId,
+    type: OUTPUT_TYPE.MONTHLY_STATEMENT,
+    name: `${participantSlug}_${monthYear}_Statement.pdf`,
+  });
+  const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, GENERATED_DOCUMENT_PUBLIC_READ);
 
   if (uploadResult['$metadata'].httpStatusCode !== 200) {
     throw new Error('Upload of PDF failed, please provide correct information.');
   }
 
-  const fileUrl = await getS3FileUrl(filename, 3600, true);
+  const fileUrl = await getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
   info('Webhook-Service', 'Monthly statement PDF generated successfully', {
     participant: participantName,
     month: statementData.month,

@@ -707,10 +707,10 @@ describe('generateParticipantTaxInvoicePdf', () => {
     expect(deps.uploadFileToS3).toHaveBeenCalledWith(
       Buffer.from(new Uint8Array([37, 80, 68, 70])),
       'output/ws_1/b_1/Participant-invoices/INV-1001-ISO+™-Jane-Citizen.pdf',
-      true,
+      false,
     );
     expect(deps.getS3FileUrl).toHaveBeenCalledWith(
-      'output/ws_1/b_1/Participant-invoices/INV-1001-ISO+™-Jane-Citizen.pdf', 3600, true,
+      'output/ws_1/b_1/Participant-invoices/INV-1001-ISO+™-Jane-Citizen.pdf', 604800, false,
     );
 
     expect(isoplus.setGeneratedField.mock.calls).toEqual([
@@ -731,6 +731,41 @@ describe('generateParticipantTaxInvoicePdf', () => {
     }));
   });
 
+  // KAN-10: a participant tax invoice names the participant and their billing
+  // address, and its key is a sequential invoice number, so it must land in the
+  // non-public bucket behind an expiring presigned URL rather than at a
+  // permanent guessable public-bucket address.
+  it('uploads to the non-public bucket and signs the same bucket for seven days', async () => {
+    const { deps } = await run();
+
+    const [, uploadKey, uploadPublicRead] = deps.uploadFileToS3.mock.calls[0];
+    const [urlKey, urlExpiry, urlPublicRead] = deps.getS3FileUrl.mock.calls[0];
+
+    expect(uploadPublicRead).toBe(false);
+    expect(urlPublicRead).toBe(false);
+    expect(urlPublicRead).toBe(uploadPublicRead);
+    expect(urlKey).toBe(uploadKey);
+    expect(urlExpiry).toBe(604800);
+  });
+
+  it('keeps the output/<workspaceId>/<boardId>/Participant-invoices/<name> layout', async () => {
+    const deps = pdfDeps();
+
+    await generateParticipantTaxInvoicePdf({
+      req: { body: { invoiceDate: '2026-03-15T00:00:00.000Z' } },
+      res: makeRes(),
+      workspaceId: '55390',
+      boardId: 'jpjztrn14pJ',
+      business: makeBusiness(),
+      dbItems: [deliveredRecord()],
+      isLowCatBoard: false,
+      ...deps,
+    });
+
+    expect(deps.uploadFileToS3.mock.calls[0][1]).toBe(
+      'output/55390/jpjztrn14pJ/Participant-invoices/INV-1001-ISO+™-Jane-Citizen.pdf',
+    );
+  });
   it('renders the low-cat template, totals the amounts instead of the contributions', async () => {
     const { res } = await run({ isLowCatBoard: true });
 

@@ -25,6 +25,12 @@ import {
 } from '../utils/invoicePdfSupport.js';
 import { handleMonthlyStatementRoute, buildMonthlyStatementDeps } from '../utils/webhookMonthlyStatementPdfHelpers.js';
 import { mongoEq } from '../utils/securityHelpers.js';
+import {
+    GENERATED_DOCUMENT_PUBLIC_READ,
+    GENERATED_PDF_URL_EXPIRY_SECONDS,
+    OUTPUT_TYPE,
+} from '../constants/storage.js';
+import { buildOutputKey } from '../utils/s3OutputKey.js';
 
 import {
     enrichNumericAggregateFields,
@@ -1347,14 +1353,19 @@ async function processWebhookInvoiceItem(req, res, workspaceId, boardId, busines
         plugins: { text, image, line, table, multiVariableText },
     });
 
-    const filename = `output/${workspaceId}/${boardId}/invoices/${invoiceNumber + '-ISO+™-' + item.id}.pdf`;
-    const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
+    const filename = buildOutputKey({
+        workspaceId,
+        boardId,
+        type: OUTPUT_TYPE.INVOICE,
+        name: `${invoiceNumber}-ISO+™-${item.id}.pdf`,
+    });
+    const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, GENERATED_DOCUMENT_PUBLIC_READ);
 
     if (uploadResult['$metadata'].httpStatusCode !== 200) {
         throw new Error('Upload of PDF failed, please provide correct information.');
     }
 
-    const fileUrl = await getS3FileUrl(filename, 3600, true);
+    const fileUrl = await getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'Invoice', req, res);
     await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
     await saveInvoiceNumber(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`, 'PDF', fileUrl);
@@ -1463,11 +1474,16 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
                     plugins: { text, image, line, table, multiVariableText }
                 });
 
-                const filename = `output/${workspaceId}/${boardId}/purchaseorder/${purchaseOrderNumber + '-ISO+™-' + item.id}.pdf`;
-                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
+                const filename = buildOutputKey({
+                    workspaceId,
+                    boardId,
+                    type: OUTPUT_TYPE.PURCHASE_ORDER,
+                    name: `${purchaseOrderNumber}-ISO+™-${item.id}.pdf`,
+                });
+                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, GENERATED_DOCUMENT_PUBLIC_READ);
 
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
-                    const fileUrl = await getS3FileUrl(filename, 3600, true);
+                    const fileUrl = await getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
                     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'Purchase Order', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${purchaseOrderNumber} (ISO+™)`);
                     business.documentNumbering.purchaseOrder.nextNumber += 1;
@@ -1560,11 +1576,16 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
                     plugins: { text, image, line, table, multiVariableText }
                 });
 
-                const filename = `output/${workspaceId}/${boardId}/quote/${quoteNumber + '-ISO+™-' + item.id}.pdf`;
-                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
+                const filename = buildOutputKey({
+                    workspaceId,
+                    boardId,
+                    type: OUTPUT_TYPE.QUOTE,
+                    name: `${quoteNumber}-ISO+™-${item.id}.pdf`,
+                });
+                const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, GENERATED_DOCUMENT_PUBLIC_READ);
 
                 if (uploadResult['$metadata'].httpStatusCode === 200) {
-                    const fileUrl = await getS3FileUrl(filename, 3600, true);
+                    const fileUrl = await getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
                     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'Quote', req, res);
                     await setGeneratedField(workspaceId, boardId, item.id, `${quoteNumber} (ISO+™)`);
                     business.documentNumbering.quote.nextNumber += 1;
@@ -1752,7 +1773,7 @@ router.get('/uploads/:filename', async (req, res) => {
         const { filename } = req.params;
         const key = `pdfs/${filename}`;
 
-        const fileUrl = await getS3FileUrl(key, 604800, true);
+        const fileUrl = await getS3FileUrl(key, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
 
         if (fileUrl) {
             res.redirect(fileUrl);

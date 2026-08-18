@@ -13,6 +13,12 @@ import {
 import { logAuditTrail } from '../utils/auditLogger.js';
 import { extractRefId as extractNdisRefId } from '../utils/ndisServiceRecords.js';
 import { mongoEq } from '../utils/securityHelpers.js';
+import {
+  GENERATED_DOCUMENT_PUBLIC_READ,
+  GENERATED_PDF_URL_EXPIRY_SECONDS,
+  OUTPUT_TYPE,
+} from '../constants/storage.js';
+import { buildOutputKey } from './s3OutputKey.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -330,13 +336,18 @@ export async function generateParticipantTaxInvoicePdf({
     plugins: { text, image, line, table, multiVariableText },
   });
 
-  const filename = `output/${workspaceId}/${boardId}/Participant-invoices/${invoiceNumber + '-ISO+™-' + participantName.replace(/\s+/g, '-')}.pdf`;
-  const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
+  const filename = buildOutputKey({
+    workspaceId,
+    boardId,
+    type: OUTPUT_TYPE.PARTICIPANT_INVOICE,
+    name: `${invoiceNumber + '-ISO+™-' + participantName.replace(/\s+/g, '-')}.pdf`,
+  });
+  const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, GENERATED_DOCUMENT_PUBLIC_READ);
   if (uploadResult['$metadata'].httpStatusCode !== 200) {
     throw new Error('Upload of PDF failed, please provide correct information.');
   }
 
-  const fileUrl = await getS3FileUrl(filename, 3600, true);
+  const fileUrl = await getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
   await Promise.all(dbItems.map(async (item) => {
     await setIntegrationMessage(workspaceId, boardId, item.itemId, 'Invoice generated successfully');
     await setGeneratedField(workspaceId, boardId, item.itemId, `${invoiceNumber} (ISO+™)`);
