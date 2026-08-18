@@ -11,9 +11,23 @@ import { generateStatementsForBoard } from '../../../src/services/automation/gen
 
 const WS = 'ws-stmt';
 const BOARD = 'board-stmt';
+const BOARD_2 = 'board-stmt-2';
 const SLOT = new Date('2026-08-14T05:09:00.000Z');
 const TZ = 'Australia/Sydney';
 const PERIOD = '20260814-1509';
+
+async function seedSecondBoard(participant) {
+  await Board.create({
+    workspaceId: WS, boardId: BOARD_2, name: 'Stmt Board 2', label: 'Care Management',
+  });
+  await Item.create({
+    workspaceId: WS,
+    boardId: BOARD_2,
+    folderId: 'f-p',
+    itemId: 'p2-1',
+    data: { 'Full Name/Preferred Name': participant },
+  });
+}
 
 async function seedWorkspace({ label, participants = ['Alex Rivers'] }) {
   await Business.create({
@@ -121,5 +135,81 @@ describe('generateStatementsForBoard', () => {
     expect(byItem[`statement:${BOARD}:Alex Rivers`]).toBe('https://example.test/alex.pdf');
     expect(byItem[`statement:${BOARD}:Sam Lee`]).toContain('monthly-statements/');
     expect(await PDFLink.countDocuments({ workspaceId: WS, type: 'Monthly Statement' })).toBe(2);
+  });
+  // The statement counter is `documentNumbering.statement` on Business, which
+  // has existed unused since the model declared it. Without a number the email
+  // spec's {{statement_number}} renders literally in a customer's inbox.
+  it('allocates a statement number per participant and increments the counter once each', async () => {
+    await seedWorkspace({
+      label: 'Care Management',
+      participants: ['Alex Rivers', 'Sam Lee'],
+    });
+
+    const results = await generateStatementsForBoard({
+      workspaceId: WS, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: PERIOD,
+    });
+
+    expect(results.map((row) => row.statementNumber).sort()).toEqual(['STM-1000', 'STM-1001']);
+    const business = await Business.findOne({ workspaceId: WS }).lean();
+    expect(business.documentNumbering.statement.nextNumber).toBe(1002);
+    // Persisted on the PDFLink row so the replay below can hand the same
+    // number back rather than minting a second one for the same statement.
+    const links = await PDFLink.find({ workspaceId: WS, type: 'Monthly Statement' }).lean();
+    expect(links.map((link) => link.invoiceNumber).sort()).toEqual(['STM-1000', 'STM-1001']);
+  });
+
+  // A replayed slot must be inert. Re-minting would both burn a number and put
+  // a different number in the second email for a PDF the customer already has.
+  it('returns the already-allocated number on a replayed slot without re-minting', async () => {
+    await seedWorkspace({ label: 'Care Management' });
+    await PDFLink.create({
+      workspaceId: WS,
+      itemId: `statement:${BOARD}:Alex Rivers`,
+      type: 'Monthly Statement',
+      periodKey: PERIOD,
+      pdfLink: 'https://example.test/alex.pdf',
+      invoiceNumber: 'STM-77',
+      createdBy: '',
+      isDeleted: false,
+      SignatureStatus: 'Unsigned',
+    });
+
+    const results = await generateStatementsForBoard({
+      workspaceId: WS, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: PERIOD,
+    });
+
+    expect(results).toEqual([{
+      itemId: `statement:${BOARD}:Alex Rivers`,
+      participant: 'Alex Rivers',
+      pdfUrl: 'https://example.test/alex.pdf',
+      statementNumber: 'STM-77',
+    }]);
+    const business = await Business.findOne({ workspaceId: WS }).lean();
+    expect(business.documentNumbering.statement.nextNumber).toBe(1000);
+    expect(await PDFLink.countDocuments({ workspaceId: WS, type: 'Monthly Statement' })).toBe(1);
+  });
+
+  // Production runs several Elastic Beanstalk instances pulling one automation
+  // queue, so two boards in the same workspace generate at the same moment
+  // routinely. Read nextNumber, render a PDF, then write nextNumber + 1 back is
+  // a lost update across the awaits: both runs read 1000, both mint 'STM-1000'
+  // for different participants, and the counter ends on 1001 rather than 1002.
+  it('never mints the same statement number for two concurrent boards', async () => {
+    await seedWorkspace({ label: 'Care Management' });
+    await seedSecondBoard('Sam Lee');
+
+    const [first, second] = await Promise.all([
+      generateStatementsForBoard({
+        workspaceId: WS, boardId: BOARD, slot: SLOT, timezone: TZ, periodKey: PERIOD,
+      }),
+      generateStatementsForBoard({
+        workspaceId: WS, boardId: BOARD_2, slot: SLOT, timezone: TZ, periodKey: PERIOD,
+      }),
+    ]);
+
+    expect([first[0].statementNumber, second[0].statementNumber].sort())
+      .toEqual(['STM-1000', 'STM-1001']);
+    const business = await Business.findOne({ workspaceId: WS }).lean();
+    expect(business.documentNumbering.statement.nextNumber).toBe(1002);
   });
 });
