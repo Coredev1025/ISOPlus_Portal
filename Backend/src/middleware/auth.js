@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { warn, info } from '../utils/logger.js';
 import { KIND_INVOICE, KIND_STATEMENT } from '../constants/automation.js';
@@ -17,10 +18,21 @@ dotenv.config();
  */
 const scopeWidth = ({ kinds }) => (Array.isArray(kinds) ? kinds.length : Infinity);
 
+/**
+ * Constant-time equality for credentials. Hashing both sides first is what
+ * lets timingSafeEqual be used at all — it demands equal-length buffers, and
+ * the lengths here are attacker-controlled. `===` short-circuits on the first
+ * differing character, which is measurable over enough requests.
+ */
+function secretEquals(presented, configured) {
+  const digest = (value) => createHash('sha256').update(String(value)).digest();
+  return timingSafeEqual(digest(presented), digest(configured));
+}
+
 /** Every configured credential the presented key matches, narrowest first. */
 function matchingScopes(scopes, presented) {
   return scopes
-    .filter(({ envVar }) => process.env[envVar] && presented === process.env[envVar])
+    .filter(({ envVar }) => process.env[envVar] && secretEquals(presented, process.env[envVar]))
     .sort((a, b) => scopeWidth(a) - scopeWidth(b));
 }
 
