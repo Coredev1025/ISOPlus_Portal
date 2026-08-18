@@ -1,3 +1,5 @@
+import { DEFAULT_BUSINESS_TIMEZONE } from "@/constants/timezone";
+
 export function mapBusinessProfileToFormData(data: Record<string, any>, workspaceId: string) {
   return {
     name: data.name || '',
@@ -19,7 +21,7 @@ export function mapBusinessProfileToFormData(data: Record<string, any>, workspac
     paymentReference: data.bankDetails?.paymentReference || '',
     accountsReceivableTerms: data.bankDetails?.accountsReceivableTerms || '',
     accountsPayableTerms: data.bankDetails?.accountsPayableTerms || '',
-    headOfficeTimezone: (data.headOfficeTimezone as string) || 'Australia/Sydney',
+    headOfficeTimezone: (data.headOfficeTimezone as string) || DEFAULT_BUSINESS_TIMEZONE,
   };
 }
 
@@ -32,10 +34,10 @@ export const DEFAULT_SEQUENCES: Record<
   "invoice" | "purchaseOrder" | "quote" | "statement",
   NumberSequence
 > = {
-  invoice: { prefix: "INV-", nextNumber: 0 },
-  purchaseOrder: { prefix: "PO-", nextNumber: 0 },
-  quote: { prefix: "QT-", nextNumber: 0 },
-  statement: { prefix: "STM-", nextNumber: 0 },
+  invoice: { prefix: "INV-", nextNumber: 1000 },
+  purchaseOrder: { prefix: "PO-", nextNumber: 1000 },
+  quote: { prefix: "QT-", nextNumber: 1000 },
+  statement: { prefix: "STM-", nextNumber: 1000 },
 };
 
 function toSequence(

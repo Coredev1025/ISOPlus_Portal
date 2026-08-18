@@ -24,6 +24,7 @@ import {
 import Spinner from "@/components/ui/spin";
 import { PaginationControls } from "@/lib/pagination-controls";
 import { formatDateTimeDDMMYYYY } from "@/lib/timezone";
+import { DEFAULT_BUSINESS_TIMEZONE } from "@/constants/timezone";
 import {
   buildXeroAuditListParams,
   parseXeroAuditListResponse,
@@ -151,7 +152,7 @@ function isAbortError(error: unknown) {
 
 export function XeroConnectionAuditLogs({
   workspaceId,
-  timezone = "Australia/Sydney",
+  timezone = DEFAULT_BUSINESS_TIMEZONE,
   reloadKey = 0,
 }: XeroConnectionAuditLogsProps) {
   const [open, setOpen] = useState(false);

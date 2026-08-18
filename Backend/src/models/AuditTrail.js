@@ -105,4 +105,6 @@ if (!Number.isNaN(auditTtlDays) && auditTtlDays > 0) {
   );
 }
 
+AuditTrailSchema.index({ workspaceId: 1, category: 1, createdAt: -1 });
+
 export default mongoose.model('AuditTrail', AuditTrailSchema);

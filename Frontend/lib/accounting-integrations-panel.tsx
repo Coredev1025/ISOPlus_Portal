@@ -17,6 +17,7 @@ import {
 import type { XeroLineItemMapping } from "@/lib/xero-account-tax-mapping-options";
 import { XeroDisabledSyncToggles } from "@/lib/xero-disabled-sync-toggles";
 import { XeroConnectionAuditLogs } from "@/lib/xero-connection-audit-logs";
+import { DEFAULT_BUSINESS_TIMEZONE } from "@/constants/timezone";
 import { showFetchErrorToast } from "@/lib/toast-utils";
 import {
   describeXeroLoadError,
@@ -112,7 +113,7 @@ export function AccountingIntegrationsPanel({
   const [isConnected, setIsConnected] = useState(false);
   const [needsReconnect, setNeedsReconnect] = useState(false);
   const [mapping, setMapping] = useState<XeroLineItemMapping>(EMPTY_LINE_ITEM_MAPPING);
-  const [timezone, setTimezone] = useState("Australia/Sydney");
+  const [timezone, setTimezone] = useState(DEFAULT_BUSINESS_TIMEZONE);
 
   const loadProfile = useCallback(
     async (signal?: AbortSignal) => {

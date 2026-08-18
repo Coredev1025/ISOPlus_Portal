@@ -1,6 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { XERO_DEFAULT_ACCOUNT_CODES } from '../../../src/constants/xeroMapping.js';
-
 // External boundaries only: the ISO+ HTTP API, the Xero SDK, the audit
 // collection, and the two heavy builders that have their own tests. The invoice
 // and quote assembly, contact resolution, line/date maths, reference building
@@ -216,14 +214,14 @@ describe('handleXeroInvoicendis', () => {
           quantity: '2.00',
           unitAmount: 67.56,
           taxType: 'EXEMPTOUTPUT',
-          accountCode: XERO_DEFAULT_ACCOUNT_CODES.invoice,
+          accountCode: '210',
         },
         {
           description: '02_051_0108_1_1 Provider travel - 11/03/2025',
           quantity: '1.50',
           unitAmount: 4.5,
           taxType: 'EXEMPTOUTPUT',
-          accountCode: XERO_DEFAULT_ACCOUNT_CODES.invoice,
+          accountCode: '210',
         },
       ],
       date: '2025-03-15',
@@ -258,15 +256,18 @@ describe('handleXeroInvoicendis', () => {
     expect(payload.dueDate).toBe('2025-03-16');
   });
 
-  it('uses the default sales account when Xero exposes no revenue account', async () => {
+  it('does not invent revenue 200 when Xero exposes no revenue account', async () => {
     isoplus.getNDISMasterPlanReferencedItems.mockResolvedValue(MASTER_REFS);
     buildNdisMasterPlanInvoiceLines.mockResolvedValue([NDIS_LINES[0]]);
     xero.getAccounts.mockResolvedValue([{ Type: 'EXPENSE', Code: '400' }]);
-    xero.createInvoice.mockResolvedValue({ invoiceNumber: 'INV-503' });
+    const args = invoiceArgs();
 
-    await handleXeroInvoicendis(invoiceArgs());
+    await handleXeroInvoicendis(args);
 
-    expect(xero.createInvoice.mock.calls[0][0].lineItems[0].accountCode).toBe('200');
+    expect(xero.createInvoice).not.toHaveBeenCalled();
+    expect(args.res.json).toHaveBeenCalledWith({
+      message: 'Account code is required. Configure account mapping in Finance Settings.',
+    });
   });
 
   it('answers 200 with nothing to invoice when no lines are built', async () => {
@@ -419,7 +420,7 @@ describe('handleXeroQuotendis', () => {
       quantity: 3,
       unitAmount: 60.5,
       taxType: 'EXEMPTOUTPUT',
-      accountCode: XERO_DEFAULT_ACCOUNT_CODES.invoice,
+      accountCode: '210',
     }]);
     expect(payload.terms).toContain('Payment Terms: 14 days from invoice date');
     expect(isoplus.setIntegrationMessage).toHaveBeenCalledWith(
@@ -579,7 +580,7 @@ describe('handleXeroInvoicendisInvoiceGenerator', () => {
           quantity: 2,
           unitAmount: 67.56,
           taxType: 'EXEMPTOUTPUT',
-          accountCode: XERO_DEFAULT_ACCOUNT_CODES.invoice,
+          accountCode: '210',
         },
         {
           // Cancelled rows date from the scheduled date instead.
@@ -587,7 +588,7 @@ describe('handleXeroInvoicendisInvoiceGenerator', () => {
           quantity: 1,
           unitAmount: 60,
           taxType: 'EXEMPTOUTPUT',
-          accountCode: XERO_DEFAULT_ACCOUNT_CODES.invoice,
+          accountCode: '210',
         },
       ],
       date: '2025-03-15',
@@ -801,7 +802,7 @@ describe('handleXeroInvoiceParticipantTax', () => {
         quantity: 2,
         unitAmount: 15,
         lineAmount: 30,
-        accountCode: XERO_DEFAULT_ACCOUNT_CODES.invoice,
+        accountCode: '210',
         taxType: 'EXEMPTOUTPUT',
       }],
       date: '2025-03-15T00:00:00Z',

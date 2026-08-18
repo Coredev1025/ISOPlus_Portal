@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createApp } from '../../src/app.js';
-import AuditTrail from '../../src/models/AuditTrail.js';
 import Business from '../../src/models/Business.js';
 import { authenticatedAgent } from '../helpers/auth.js';
 
@@ -46,7 +45,7 @@ describe('Business routes', () => {
     expect(res.body.xeroConnectionLogs).toBeUndefined();
   });
 
-  it('records a xero-category audit trail when connecting Xero', async () => {
+  it('does not expose POST /api/business/xero/connect', async () => {
     const { agent } = await authenticatedAgent(app);
     const res = await agent.post('/api/business/xero/connect').send({
       workspaceId: 'ws-connect',
@@ -57,17 +56,6 @@ describe('Business routes', () => {
         expires_at: Date.now() + 60_000,
       },
     });
-    expect(res.status).toBe(200);
-
-    const trails = await AuditTrail.find({ workspaceId: 'ws-connect' }).lean();
-    expect(trails).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          action: 'Connected Xero',
-          category: 'Xero',
-          success: true,
-        }),
-      ])
-    );
+    expect(res.status).toBe(404);
   });
 });

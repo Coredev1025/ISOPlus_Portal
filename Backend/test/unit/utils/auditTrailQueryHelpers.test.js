@@ -12,17 +12,12 @@ describe('buildAuditListFilter', () => {
     });
   });
 
-  it('adds a case-insensitive exact match for category', () => {
-    expect(buildAuditListFilter({ workspaceId: 'ws-1', category: 'xero' })).toEqual({
+  it('filters by the closed-set category with exact equality', () => {
+    expect(buildAuditListFilter({ workspaceId: 'ws-1', category: 'Xero' })).toEqual({
       filter: {
         workspaceId: 'ws-1',
-        category: { $regex: '^xero$', $options: 'i' },
+        category: 'Xero',
       },
     });
-  });
-
-  it('escapes regex metacharacters in the category query', () => {
-    const { filter } = buildAuditListFilter({ workspaceId: 'ws-1', category: 'xero.' });
-    expect(filter.category.$regex).toBe('^xero\\.$');
   });
 });

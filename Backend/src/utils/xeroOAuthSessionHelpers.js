@@ -18,7 +18,11 @@ export function readXeroOAuthSessionUser(req) {
     const user = jwt.verify(token, process.env.JWT_SECRET);
     const userId = normalizePortalUserId(user?.userId);
     if (!userId) return null;
-    return { userId, role: user.role };
+    return {
+      userId,
+      role: user.role,
+      email: typeof user.email === 'string' ? user.email : '',
+    };
   } catch {
     return null;
   }

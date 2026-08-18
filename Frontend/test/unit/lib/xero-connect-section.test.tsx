@@ -117,7 +117,12 @@ describe('XeroConnectSection', () => {
     });
   });
 
-  it('shows Disconnect without a Reconnect button when Xero is already integrated', () => {
+  it('offers Reconnect Xero without disconnecting when organisation is missing', async () => {
+    const location = stubLocationHref();
+    (axios.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { url: 'https://login.xero.com/identity/connect/authorize?state=abc' },
+    });
+
     render(
       <XeroConnectSection
         workspaceId="ws-1"
@@ -127,9 +132,22 @@ describe('XeroConnectSection', () => {
       />
     );
 
+    expect(screen.getByRole('button', { name: /reconnect xero/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /disconnect/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /reconnect xero/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /connect xero/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^connect xero$/i })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /reconnect xero/i }));
+
+    await waitFor(() => {
+      expect(axios.get).toHaveBeenCalledWith(
+        'http://localhost:3001/api/xero/redirect',
+        expect.objectContaining({ params: { workspaceId: 'ws-1' } })
+      );
+    });
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(location.href).toBe(
+      'https://login.xero.com/identity/connect/authorize?state=abc'
+    );
   });
 
   it('shows Connect only when Xero is not integrated', () => {

@@ -18,6 +18,7 @@ import { isAxiosError } from "axios";
 import { Search, Terminal, Download, Filter, AlertTriangle, AlertCircle, Info, Bug, XCircle, ChevronRight, LayoutGrid } from "lucide-react";
 import { Header } from "@/components/ui/header";
 import { Card } from "@/components/ui/card";
+import { XeroOAuthReturnBoundary } from "@/lib/xero-oauth-return-listener";
 import { secureRandomFloat, secureRandomInt } from "@/lib/secure-random";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -1294,6 +1295,7 @@ export default function Dashboard() {
         aria-hidden
       />
       <Header />
+      <XeroOAuthReturnBoundary />
       <div className="relative container mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-1">

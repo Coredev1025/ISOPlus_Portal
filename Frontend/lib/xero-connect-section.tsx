@@ -145,11 +145,21 @@ export function XeroConnectSection({
     <div className="space-y-3">
       {needsReconnect ? (
         <p className="text-xs text-amber-700 dark:text-amber-300">
-          Xero tokens are saved, but no organisation is available. Disconnect and
-          Connect Xero again, then select an organisation.
+          Xero tokens are saved, but no organisation is available. Reconnect
+          Xero and select an organisation.
         </p>
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
+        {isConnected && needsReconnect ? (
+          <Button onClick={handleConnect} disabled={isConnecting || isDisconnecting}>
+            {isConnecting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Link2 className="h-4 w-4" />
+            )}
+            Reconnect Xero
+          </Button>
+        ) : null}
         {isConnected ? (
           <Button
             variant="destructive"

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import axios from "@/app/utils/axiosConfig";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -28,6 +27,8 @@ import {
   prepareMappingForSave,
   taxRatesForAccount,
   accountsForDocumentKind,
+  displayAccountPlaceholder,
+  displayTaxPlaceholder,
   type XeroAccountOption,
   type XeroDocMapping,
   type XeroDocumentKind,
@@ -63,7 +64,7 @@ function MappingSelect({
       <Label className="text-xs text-muted-foreground">{label}</Label>
       <Select
         disabled={disabled}
-        value={value === "" ? USE_DEFAULT : value}
+        value={value === "" ? undefined : value}
         onValueChange={(next) => onChange(next === USE_DEFAULT ? "" : next)}
       >
         <SelectTrigger>
@@ -125,7 +126,11 @@ function AccountTaxPair({
       <MappingSelect
         label="Account"
         value={doc.accountCode}
-        placeholder={accountOptions.length ? "Select account" : "No accounts available"}
+        placeholder={
+          accountOptions.length
+            ? displayAccountPlaceholder(kind)
+            : "No accounts available"
+        }
         options={accountOptions}
         disabled={disabled}
         onChange={(v) =>
@@ -135,7 +140,9 @@ function AccountTaxPair({
       <MappingSelect
         label="Tax Rate"
         value={doc.taxType}
-        placeholder={selectedAccount ? "Select tax rate" : "Select an account first"}
+        placeholder={
+          selectedAccount ? displayTaxPlaceholder(kind) : "Select an account first"
+        }
         options={taxOptions}
         disabled={disabled || !selectedAccount}
         onChange={(v) => {

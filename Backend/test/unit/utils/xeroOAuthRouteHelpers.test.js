@@ -6,12 +6,12 @@ import { signOAuthState } from '../../../src/utils/helpers.js';
 import { createXeroConnectTicket } from '../../../src/utils/xeroOAuthConnectTicketHelpers.js';
 
 vi.mock('../../../src/services/xero.js', () => ({
-  configure: vi.fn(async () => {}),
+  createXeroOAuthClient: vi.fn(async () => ({})),
   getAuthUrl: vi.fn(async (workspaceId) => `https://login.xero.com/identity/connect/authorize?workspaceId=${workspaceId}`),
   callback: vi.fn(),
 }));
 
-import { configure, getAuthUrl, callback } from '../../../src/services/xero.js';
+import { createXeroOAuthClient, getAuthUrl, callback } from '../../../src/services/xero.js';
 import {
   handleXeroOAuthCallback,
   handleXeroOAuthRedirect,
@@ -88,12 +88,13 @@ describe('xeroOAuthRouteHelpers', () => {
     };
     await handleXeroOAuthRedirect(req, res);
 
-    expect(configure).toHaveBeenCalled();
+    expect(createXeroOAuthClient).toHaveBeenCalled();
     expect(getAuthUrl).toHaveBeenCalledWith(
       'ws-1',
       'http://localhost:3100',
       'user-1',
-      expect.stringMatching(/^[a-f0-9]{64}$/i)
+      expect.stringMatching(/^[a-f0-9]{64}$/i),
+      expect.anything()
     );
     expect(res.json).toHaveBeenCalledWith({
       url: expect.stringContaining('https://login.xero.com/identity/connect/authorize'),
@@ -273,6 +274,8 @@ describe('xeroOAuthRouteHelpers', () => {
           action: 'Connected Xero',
           category: 'Xero',
           success: true,
+          userId: 'user-1',
+          userEmail: 'owner@example.com',
         }),
       ])
     );

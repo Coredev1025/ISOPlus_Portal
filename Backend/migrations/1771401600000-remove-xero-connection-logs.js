@@ -4,7 +4,8 @@
  *
  * This is not reversible: the log documents themselves are not copied out
  * before unset. `down` restores an empty array so the field exists again,
- * which is the closest inverse that does not invent history.
+ * which is the closest inverse that does not invent history. The field only
+ * ever existed on an unmerged branch; production documents never had it.
  *
  * @param {import('mongoose').Connection} connection
  */

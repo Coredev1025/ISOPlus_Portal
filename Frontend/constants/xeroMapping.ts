@@ -1,5 +1,6 @@
 /**
- * ISO+ defaults when Account code or Tax rate are not selected.
+ * ISO+ display defaults when Account code or Tax rate are not selected.
+ * Shown as Select placeholders only — never persisted unless the user picks them.
  *
  * Touchpoints: lib/xero-account-tax-mapping-options.ts
  * Keep in sync with Backend/src/constants/xeroMapping.js

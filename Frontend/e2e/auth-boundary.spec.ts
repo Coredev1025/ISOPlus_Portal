@@ -48,6 +48,12 @@ test.describe('signed-out visitor', () => {
     expect(new URL(page.url()).pathname).toBe('/dashboard');
     await expect(page.getByText(/no workspaces match your search/i)).toBeVisible();
   });
+
+  test('dashboard toasts a Xero OAuth return error from the query string', async ({ page }) => {
+    await page.goto('/dashboard?xero=error&reason=oauth_failed');
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByText('Failed to connect to Xero')).toBeVisible();
+  });
 });
 
 test('the offline sign-in path is reachable without ISO+ credentials', async ({ page }) => {

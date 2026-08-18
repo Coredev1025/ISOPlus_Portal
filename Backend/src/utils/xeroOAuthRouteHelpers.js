@@ -1,6 +1,6 @@
 import { error } from './logger.js';
 import { pickAllowedValue, toRequiredQueryString } from './securityHelpers.js';
-import { configure, getAuthUrl, callback } from '../services/xero.js';
+import { createXeroOAuthClient, getAuthUrl, callback } from '../services/xero.js';
 import { saveConnectedXeroBusiness } from './xeroConnectHelpers.js';
 import {
   XERO_OAUTH_REASON_AUTHENTICATION_REQUIRED,
@@ -56,11 +56,30 @@ function redirectXeroReturn(res, workspaceId, outcome, reason, frontendBase) {
   res.redirect(trustedFrontendRedirectUrl(location, fallback));
 }
 
+function attachXeroOAuthActor(req, actor) {
+  if (!actor?.userId) return;
+  req.user = {
+    userId: actor.userId,
+    role: actor.role,
+    email: actor.email || '',
+  };
+}
+
+/**
+ * Callback authorization is bound to the portal user captured when the
+ * consent URL was minted (session JWT userId, or the one-time connect ticket).
+ * A different signed-in user cannot complete this callback.
+ */
 async function xeroOAuthCallbackAuthorized(payload, req) {
-  if (xeroOAuthStateMatchesSession(payload, readXeroOAuthSessionUser(req))) {
+  const sessionUser = readXeroOAuthSessionUser(req);
+  if (xeroOAuthStateMatchesSession(payload, sessionUser)) {
+    attachXeroOAuthActor(req, sessionUser);
     return true;
   }
-  return claimXeroConnectTicket(payload.connectTicket, payload);
+  const claimed = await claimXeroConnectTicket(payload.connectTicket, payload);
+  if (!claimed) return false;
+  attachXeroOAuthActor(req, { userId: claimed.userId, email: claimed.email });
+  return true;
 }
 
 export async function handleXeroOAuthRedirect(req, res) {
@@ -78,18 +97,20 @@ export async function handleXeroOAuthRedirect(req, res) {
       userId,
       workspaceId,
       origin: frontendOrigin,
+      email: typeof req.user?.email === 'string' ? req.user.email : '',
     });
     if (typeof req.session?.save === 'function') {
       await new Promise((resolve, reject) => {
         req.session.save((err) => (err ? reject(err) : resolve()));
       });
     }
-    await configure();
+    const xero = await createXeroOAuthClient();
     const url = await getAuthUrl(
       workspaceId,
       frontendOrigin,
       userId,
-      connectTicket
+      connectTicket,
+      xero
     );
     if (!isTrustedXeroConsentUrl(url)) {
       await logXeroConnectFailure({
@@ -163,8 +184,8 @@ export async function handleXeroOAuthCallback(req, res) {
       );
     }
 
-    await configure();
-    const result = await callback(req.query.code, req.url);
+    const xero = await createXeroOAuthClient();
+    const result = await callback(req.query.code, req.url, xero);
     if (!result?.success) {
       return redirectXeroConnectFailure(
         res,

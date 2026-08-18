@@ -3,6 +3,8 @@ import {
   EMPTY_LINE_ITEM_MAPPING,
   accountClass,
   accountsForDocumentKind,
+  displayAccountPlaceholder,
+  displayTaxPlaceholder,
   normalizeMapping,
   prepareMappingForSave,
   taxRatesForAccount,
@@ -45,9 +47,23 @@ const TAX_RATES: XeroTaxRateOption[] = [
   },
 ];
 
+const EMPTY_DOC = { accountCode: '', taxType: '', taxRatePercent: null };
+
 describe('xero-account-tax-mapping-options', () => {
-  it('normalizeMapping fills empty docs and ignores non-finite rates', () => {
+  it('keeps unmapped docs empty instead of filling Sales 200 / OUTPUT', () => {
+    expect(EMPTY_LINE_ITEM_MAPPING).toEqual({
+      quote: EMPTY_DOC,
+      purchaseOrder: EMPTY_DOC,
+      invoice: EMPTY_DOC,
+      quoteOverrides: {
+        quoteService: EMPTY_DOC,
+        material: EMPTY_DOC,
+      },
+    });
     expect(normalizeMapping(undefined)).toEqual(EMPTY_LINE_ITEM_MAPPING);
+  });
+
+  it('normalizeMapping trims selected values and leaves unspecified fields empty', () => {
     expect(
       normalizeMapping({
         quote: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: Number.NaN },
@@ -55,25 +71,31 @@ describe('xero-account-tax-mapping-options', () => {
       })
     ).toEqual({
       quote: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: null },
-      purchaseOrder: { accountCode: '310', taxType: 'INPUT', taxRatePercent: null },
-      invoice: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: null },
+      purchaseOrder: EMPTY_DOC,
+      invoice: EMPTY_DOC,
       quoteOverrides: {
-        quoteService: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: null },
-        material: { accountCode: '400', taxType: 'OUTPUT', taxRatePercent: null },
+        quoteService: EMPTY_DOC,
+        material: { accountCode: '400', taxType: '', taxRatePercent: null },
       },
     });
   });
 
-  it('uses Sales 200 / GST on Income and COGS 310 / GST on Expenses when nothing is selected', () => {
-    expect(EMPTY_LINE_ITEM_MAPPING).toEqual({
-      quote: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: null },
-      purchaseOrder: { accountCode: '310', taxType: 'INPUT', taxRatePercent: null },
-      invoice: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: null },
+  it('prepareMappingForSave does not persist display defaults on a no-op save', () => {
+    expect(prepareMappingForSave(normalizeMapping(undefined))).toEqual(
+      EMPTY_LINE_ITEM_MAPPING
+    );
+  });
+
+  it('prepareMappingForSave keeps a cleared quote override empty', () => {
+    const mapping = normalizeMapping({
+      quote: { accountCode: '200', taxType: 'OUTPUT' },
       quoteOverrides: {
-        quoteService: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: null },
-        material: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: null },
+        quoteService: { accountCode: '', taxType: '' },
       },
     });
+    expect(prepareMappingForSave(mapping).quoteOverrides.quoteService).toEqual(
+      EMPTY_DOC
+    );
   });
 
   it('accountClass uppercases the Xero account class', () => {
@@ -116,5 +138,12 @@ describe('xero-account-tax-mapping-options', () => {
       invoice: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: 10 },
     });
     expect(prepareMappingForSave(mapping)).toEqual(mapping);
+  });
+
+  it('exposes AU demo codes as placeholders only', () => {
+    expect(displayAccountPlaceholder('invoice')).toBe('200 (default)');
+    expect(displayAccountPlaceholder('purchaseOrder')).toBe('310 (default)');
+    expect(displayTaxPlaceholder('invoice')).toBe('OUTPUT (default)');
+    expect(displayTaxPlaceholder('purchaseOrder')).toBe('INPUT (default)');
   });
 });

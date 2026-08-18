@@ -1,7 +1,7 @@
 /**
  * Persist Xero OAuth tokens on a Business document.
  *
- * Touchpoints: routes/business.js, utils/xeroOAuthRouteHelpers.js
+ * Touchpoints: utils/xeroOAuthRouteHelpers.js
  */
 import Business from '../models/Business.js';
 import { logXeroAudit } from './xeroAuditHelpers.js';

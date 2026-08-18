@@ -17,7 +17,6 @@ import {
 } from '../services/xero.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
 import { logXeroAudit } from '../utils/xeroAuditHelpers.js';
-import { saveConnectedXeroBusiness, resolveConnectTenantId } from '../utils/xeroConnectHelpers.js';
 import { collectBusinessProfileErrors } from '../validators/businessProfile.js';
 import { toRequiredQueryString } from '../utils/securityHelpers.js';
 import {
@@ -322,35 +321,6 @@ router.get('/qr-logo', authenticateToken, async (req, res) => {
       workspaceId: req.query.workspaceId
     }), req ?? null);
     res.status(500).json({ message: 'Server error' });
-  }
-});
-
-router.post('/xero/connect', authenticateToken, async (req, res) => {
-  try {
-    const workspaceId = toRequiredQueryString(req.body.workspaceId);
-    if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
-    const { tokens, organization } = req.body;
-    const saved = await saveConnectedXeroBusiness({
-      workspaceId,
-      tokens,
-      organization,
-      tenantId: resolveConnectTenantId(req.body),
-      req,
-    });
-    if (saved.error === 'missing_tokens') {
-      return res.status(400).json({ message: 'Xero tokens are required' });
-    }
-    if (saved.error === 'no_organisation') {
-      return res.status(400).json({
-        message:
-          'No Xero organisation was selected. Please connect again and choose an organisation.',
-      });
-    }
-    info('Business-Service', 'Xero integration connected', { businessId: saved.business._id }, req ?? null);
-    res.json({ success: true });
-  } catch (err) {
-    error('Business-Service', 'Server error during Xero connection', { message: err.message, stack: err.stack }, req ?? null);
-    res.status(500).json({ message: err.message || 'Server error' });
   }
 });
 

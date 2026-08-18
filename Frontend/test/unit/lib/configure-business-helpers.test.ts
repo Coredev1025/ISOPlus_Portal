@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
+import { DEFAULT_BUSINESS_TIMEZONE } from '@/constants/timezone';
 import {
   cloneDefaultSequences,
   DEFAULT_SEQUENCES,
@@ -170,13 +171,13 @@ describe('mapBusinessProfileToFormData', () => {
     expect(result.accountNumber).toBe('');
   });
 
-  it('replaces an empty headOfficeTimezone with the Sydney default but keeps a real one', () => {
+  it('replaces an empty headOfficeTimezone with the shared business default but keeps a real one', () => {
     expect(mapBusinessProfileToFormData({ headOfficeTimezone: '' }, 'ws').headOfficeTimezone).toBe(
-      'Australia/Sydney',
+      DEFAULT_BUSINESS_TIMEZONE,
     );
     expect(
       mapBusinessProfileToFormData({ headOfficeTimezone: null }, 'ws').headOfficeTimezone,
-    ).toBe('Australia/Sydney');
+    ).toBe(DEFAULT_BUSINESS_TIMEZONE);
     expect(
       mapBusinessProfileToFormData({ headOfficeTimezone: 'Australia/Perth' }, 'ws')
         .headOfficeTimezone,
@@ -219,25 +220,25 @@ describe('extractDocumentNumberingSequences', () => {
       invoice: { prefix: 'INV-', nextNumber: 1042 },
       purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
       quote: { prefix: 'QT-', nextNumber: 1007 },
-      statement: { prefix: 'STM-', nextNumber: 0 },
+      statement: { prefix: 'STM-', nextNumber: 1000 },
     });
   });
 
   it('returns schema defaults when documentNumbering is absent', () => {
     expect(extractDocumentNumberingSequences({ name: 'Hillsgrade Care' })).toEqual({
-      invoice: { prefix: 'INV-', nextNumber: 0 },
-      purchaseOrder: { prefix: 'PO-', nextNumber: 0 },
-      quote: { prefix: 'QT-', nextNumber: 0 },
-      statement: { prefix: 'STM-', nextNumber: 0 },
+      invoice: { prefix: 'INV-', nextNumber: 1000 },
+      purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
+      quote: { prefix: 'QT-', nextNumber: 1000 },
+      statement: { prefix: 'STM-', nextNumber: 1000 },
     });
   });
 
   it('returns schema defaults when documentNumbering is present but empty', () => {
     expect(extractDocumentNumberingSequences({ documentNumbering: {} })).toEqual({
-      invoice: { prefix: 'INV-', nextNumber: 0 },
-      purchaseOrder: { prefix: 'PO-', nextNumber: 0 },
-      quote: { prefix: 'QT-', nextNumber: 0 },
-      statement: { prefix: 'STM-', nextNumber: 0 },
+      invoice: { prefix: 'INV-', nextNumber: 1000 },
+      purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
+      quote: { prefix: 'QT-', nextNumber: 1000 },
+      statement: { prefix: 'STM-', nextNumber: 1000 },
     });
   });
 
@@ -248,9 +249,9 @@ describe('extractDocumentNumberingSequences', () => {
       }),
     ).toEqual({
       invoice: { prefix: 'INV-', nextNumber: 1042 },
-      purchaseOrder: { prefix: 'PO-', nextNumber: 0 },
-      quote: { prefix: 'QT-', nextNumber: 0 },
-      statement: { prefix: 'STM-', nextNumber: 0 },
+      purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
+      quote: { prefix: 'QT-', nextNumber: 1000 },
+      statement: { prefix: 'STM-', nextNumber: 1000 },
     });
   });
 
@@ -264,10 +265,10 @@ describe('extractDocumentNumberingSequences', () => {
 
   it('normalises a null documentNumbering to schema defaults rather than throwing', () => {
     expect(extractDocumentNumberingSequences({ documentNumbering: null })).toEqual({
-      invoice: { prefix: 'INV-', nextNumber: 0 },
-      purchaseOrder: { prefix: 'PO-', nextNumber: 0 },
-      quote: { prefix: 'QT-', nextNumber: 0 },
-      statement: { prefix: 'STM-', nextNumber: 0 },
+      invoice: { prefix: 'INV-', nextNumber: 1000 },
+      purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
+      quote: { prefix: 'QT-', nextNumber: 1000 },
+      statement: { prefix: 'STM-', nextNumber: 1000 },
     });
   });
 
@@ -279,12 +280,12 @@ describe('extractDocumentNumberingSequences', () => {
     ).toBe(0);
   });
 
-  it('ships invoice, PO, quote and statement defaults at nextNumber 0', () => {
+  it('ships invoice, PO, quote and statement defaults at nextNumber 1000', () => {
     expect(DEFAULT_SEQUENCES).toEqual({
-      invoice: { prefix: 'INV-', nextNumber: 0 },
-      purchaseOrder: { prefix: 'PO-', nextNumber: 0 },
-      quote: { prefix: 'QT-', nextNumber: 0 },
-      statement: { prefix: 'STM-', nextNumber: 0 },
+      invoice: { prefix: 'INV-', nextNumber: 1000 },
+      purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
+      quote: { prefix: 'QT-', nextNumber: 1000 },
+      statement: { prefix: 'STM-', nextNumber: 1000 },
     });
   });
 });

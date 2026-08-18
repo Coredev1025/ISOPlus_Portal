@@ -1,5 +1,13 @@
 import Toastify from 'toastify-js';
 
+const repositionToasts = Toastify.reposition?.bind(Toastify);
+if (typeof repositionToasts === 'function') {
+  Toastify.reposition = function safeReposition() {
+    if (typeof document === 'undefined') return;
+    return repositionToasts();
+  };
+}
+
 export interface ToastOptions {
   duration?: number;
   description?: string;
@@ -8,6 +16,24 @@ export interface ToastOptions {
 type ToastType = 'success' | 'error' | 'info' | 'warning' | 'loading';
 
 type ToastInstance = ReturnType<typeof Toastify>;
+
+type ToastifyDom = HTMLElement & { timeOutValue?: ReturnType<typeof setTimeout> };
+
+const toastElementOf = (instance: ToastInstance | undefined): ToastifyDom | undefined => {
+  const el = instance?.toastElement;
+  return el instanceof HTMLElement ? (el as ToastifyDom) : undefined;
+};
+
+const removeToastNow = (instance: ToastInstance | undefined) => {
+  const el = toastElementOf(instance);
+  if (el?.timeOutValue) {
+    clearTimeout(el.timeOutValue);
+    el.timeOutValue = undefined;
+  }
+  if (el?.parentNode) {
+    el.parentNode.removeChild(el);
+  }
+};
 
 // Track recent toasts to prevent duplicates
 const recentToasts = new Map<string, number>();
@@ -223,17 +249,18 @@ export const showLoadingToast = (message: string): number => {
 export const dismissToast = (toastId: number) => {
   const instance = activeToasts.get(toastId);
   if (instance) {
-    instance.hideToast();
+    removeToastNow(instance);
     activeToasts.delete(toastId);
   }
 };
 
 /**
- * Dismiss all toasts
+ * Dismiss all toasts without Toastify.hideToast(). That API schedules a 400ms
+ * reposition that still needs `document` after Vitest tears down jsdom.
  */
 export const dismissAllToasts = () => {
   activeToasts.forEach((instance) => {
-    instance.hideToast();
+    removeToastNow(instance);
   });
   activeToasts.clear();
 };

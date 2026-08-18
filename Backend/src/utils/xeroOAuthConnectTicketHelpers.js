@@ -1,7 +1,7 @@
 import XeroConnectTicket from '../models/XeroConnectTicket.js';
 import { normalizePortalUserId } from './xeroOAuthSessionHelpers.js';
 
-export async function createXeroConnectTicket({ userId, workspaceId, origin = '' }) {
+export async function createXeroConnectTicket({ userId, workspaceId, origin = '', email = '' }) {
   const normalizedUserId = normalizePortalUserId(userId);
   const normalizedWorkspaceId = String(workspaceId || '').trim();
   if (!normalizedUserId || !normalizedWorkspaceId) {
@@ -11,6 +11,7 @@ export async function createXeroConnectTicket({ userId, workspaceId, origin = ''
     userId: normalizedUserId,
     workspaceId: normalizedWorkspaceId,
     origin: typeof origin === 'string' ? origin.trim() : '',
+    email: typeof email === 'string' ? email.trim() : '',
   });
   return doc.ticket;
 }
@@ -19,7 +20,7 @@ export async function claimXeroConnectTicket(ticket, payload) {
   const ticketId = String(ticket || '').trim();
   const userId = normalizePortalUserId(payload?.userId);
   const workspaceId = String(payload?.workspaceId || '').trim();
-  if (!ticketId || !userId || !workspaceId) return false;
+  if (!ticketId || !userId || !workspaceId) return null;
 
   const claimed = await XeroConnectTicket.findOneAndUpdate(
     {
@@ -32,5 +33,5 @@ export async function claimXeroConnectTicket(ticket, payload) {
     { new: true }
   ).lean();
 
-  return Boolean(claimed);
+  return claimed;
 }

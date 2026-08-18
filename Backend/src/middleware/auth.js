@@ -77,6 +77,12 @@ export const authenticateToken = (req, res, next) => {
 
   try {
     const user = jwt.verify(token, process.env.JWT_SECRET);
+    if (user && typeof user === 'object' && typeof user.flow === 'string') {
+      warn('Authentication-Service', 'OAuth state token presented as session', {
+        error: 'OAuth state token presented as session',
+      }, req);
+      return res.status(401).json({ message: 'Authentication required' });
+    }
 
     applyPrivilegedSessionAuth(req, user);
 

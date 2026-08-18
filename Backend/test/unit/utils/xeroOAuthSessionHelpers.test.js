@@ -12,7 +12,25 @@ describe('xeroOAuthSessionHelpers', () => {
         token: jwt.sign({ userId: 'user-1', role: 'owner' }, process.env.JWT_SECRET),
       },
     };
-    expect(readXeroOAuthSessionUser(req)).toEqual({ userId: 'user-1', role: 'owner' });
+    expect(readXeroOAuthSessionUser(req)).toEqual({
+      userId: 'user-1',
+      role: 'owner',
+      email: '',
+    });
+    expect(
+      readXeroOAuthSessionUser({
+        session: {
+          token: jwt.sign(
+            { userId: 'user-1', role: 'owner', email: 'owner@example.com' },
+            process.env.JWT_SECRET
+          ),
+        },
+      })
+    ).toEqual({
+      userId: 'user-1',
+      role: 'owner',
+      email: 'owner@example.com',
+    });
     expect(readXeroOAuthSessionUser({})).toBeNull();
     expect(
       readXeroOAuthSessionUser({

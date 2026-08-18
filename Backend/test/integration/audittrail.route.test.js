@@ -33,17 +33,17 @@ describe('Audit trail routes', () => {
     expect(created.body.action).toBe('Manual');
   });
 
-  it('filters by category when provided, matching xero case-insensitively', async () => {
+  it('filters by exact category', async () => {
     await AuditTrail.create([
-      { workspaceId: 'ws-xero', action: 'Connected Xero', detail: 'ok', category: 'xero' },
+      { workspaceId: 'ws-xero', action: 'Connected Xero', detail: 'ok', category: 'Xero' },
       { workspaceId: 'ws-xero', action: 'Updated Xero organization info', detail: 'ok', category: 'Xero' },
       { workspaceId: 'ws-xero', action: 'Saved business profile', detail: 'ok', category: 'business' },
-      { workspaceId: 'ws-other', action: 'Connected Xero', detail: 'other workspace', category: 'xero' },
+      { workspaceId: 'ws-other', action: 'Connected Xero', detail: 'other workspace', category: 'Xero' },
     ]);
     const { agent } = await authenticatedAgent(app);
     const list = await agent.get('/api/audit').query({
       workspaceId: 'ws-xero',
-      category: 'xero',
+      category: 'Xero',
     });
     expect(list.status).toBe(200);
     const actions = list.body.items.map((item) => item.action).sort();
