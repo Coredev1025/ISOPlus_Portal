@@ -216,6 +216,13 @@ export function AccountingIntegrationsPanel({
                 onConnectedChange={setIsConnected}
                 onConnectionCleared={handleConnectionCleared}
                 onNeedsReconnectChange={setNeedsReconnect}
+                extraActions={
+                  <XeroConnectionAuditLogs
+                    workspaceId={workspaceId}
+                    timezone={timezone}
+                    reloadKey={`${isConnected}:${needsReconnect}`}
+                  />
+                }
               />
               <div className="border-t" />
               <XeroAccountTaxMapping
@@ -228,13 +235,6 @@ export function AccountingIntegrationsPanel({
               <div className="border-t" />
               <XeroDisabledSyncToggles />
             </div>
-          </div>
-          <div className="mt-5 border-t pt-5">
-            <XeroConnectionAuditLogs
-              workspaceId={workspaceId}
-              timezone={timezone}
-              reloadKey={`${isConnected}:${needsReconnect}`}
-            />
           </div>
         </>
       ) : null}

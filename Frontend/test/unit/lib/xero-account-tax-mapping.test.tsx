@@ -217,9 +217,8 @@ describe('XeroAccountTaxMapping', () => {
     );
 
     expect(
-      screen.getByRole('heading', { name: /default account & tax mapping/i })
+      screen.getByText(/^default account & tax mapping/i)
     ).toBeInTheDocument();
-    expect(screen.getByText(/^new$/i)).toBeInTheDocument();
     expect(screen.getByText(/^quote$/i)).toBeInTheDocument();
     expect(screen.getByText(/^purchase order$/i)).toBeInTheDocument();
     expect(screen.getByText(/^invoice$/i)).toBeInTheDocument();

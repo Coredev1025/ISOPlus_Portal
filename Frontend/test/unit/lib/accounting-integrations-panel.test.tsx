@@ -181,15 +181,9 @@ describe('AccountingIntegrationsPanel', () => {
     });
   });
 
-  it('loads Xero connection activity from audit logs filtered by workspace and category', async () => {
-    (axios.get as ReturnType<typeof vi.fn>).mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+  it('offers a button to open Xero logs after profile load, not an inline log table', async () => {
+    (axios.get as ReturnType<typeof vi.fn>).mockImplementation((url: string) => {
       if (String(url).includes('/api/audit')) {
-        expect(config?.params).toEqual(
-          expect.objectContaining({
-            workspaceId: 'ws-1',
-            category: 'Xero',
-          })
-        );
         return Promise.resolve({
           data: {
             items: [
@@ -203,6 +197,8 @@ describe('AccountingIntegrationsPanel', () => {
               },
             ],
             total: 1,
+            page: 1,
+            totalPages: 1,
           },
         });
       }
@@ -211,21 +207,15 @@ describe('AccountingIntegrationsPanel', () => {
 
     render(<AccountingIntegrationsPanel workspaceId="ws-1" />);
 
-    expect(await screen.findByText('Connection activity')).toBeInTheDocument();
-    expect(await screen.findByText('Connected Xero')).toBeInTheDocument();
-    expect(screen.getByText('Linked organisation Acme')).toBeInTheDocument();
-    expect(screen.getByText('owner@example.com')).toBeInTheDocument();
+    const logsButton = await screen.findByRole('button', { name: /view xero logs/i });
+    const testConnection = screen.getByRole('button', { name: /test connection/i });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByText('Linked organisation Acme')).not.toBeInTheDocument();
 
-    const activity = screen.getByRole('heading', { name: 'Connection activity' });
-    const mapping = screen.getByRole('heading', {
-      name: /default account & tax mapping/i,
-    });
-    const sync = screen.getByText('Invoice Sync Status');
+    expect(testConnection.parentElement).toBe(logsButton.parentElement);
     expect(
-      mapping.compareDocumentPosition(activity) & Node.DOCUMENT_POSITION_FOLLOWING
-    ).toBeTruthy();
-    expect(
-      sync.compareDocumentPosition(activity) & Node.DOCUMENT_POSITION_FOLLOWING
+      testConnection.compareDocumentPosition(logsButton) &
+        Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
   });
 });

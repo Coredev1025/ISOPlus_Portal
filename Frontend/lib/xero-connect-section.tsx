@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { Link2, Loader2 } from "lucide-react";
 import axios from "@/app/utils/axiosConfig";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ type XeroConnectSectionProps = Readonly<{
   onConnectedChange: (connected: boolean) => void;
   onConnectionCleared?: () => void;
   onNeedsReconnectChange?: (needsReconnect: boolean) => void;
+  extraActions?: ReactNode;
 }>;
 
 async function fetchXeroAuthUrl(workspaceId: string, signal: AbortSignal) {
@@ -42,6 +43,7 @@ export function XeroConnectSection({
   onConnectedChange,
   onConnectionCleared,
   onNeedsReconnectChange,
+  extraActions,
 }: XeroConnectSectionProps) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -177,6 +179,7 @@ export function XeroConnectSection({
           {isTesting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           Test Connection
         </Button>
+        {extraActions}
       </div>
     </div>
   );

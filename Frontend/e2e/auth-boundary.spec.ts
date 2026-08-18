@@ -17,6 +17,13 @@ test.describe('signed-out visitor', () => {
     '/workspace/55369/finance-settings?tab=accounting',
   ];
 
+  test('accounting integrations does not render Xero logs inline', async ({ page }) => {
+    await page.goto('/workspace/55369/finance-settings?tab=accounting');
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('heading', { name: 'Connection activity' })).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: /xero logs/i })).toHaveCount(0);
+  });
+
   for (const path of protectedPaths) {
     test(`${path} leaks no workspace data server-side`, async ({ page }) => {
       const response = await page.goto(path);

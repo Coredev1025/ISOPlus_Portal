@@ -374,9 +374,6 @@ export function XeroAccountTaxMapping({
       <div>
         <div className="mb-1 flex items-center gap-2">
           <h5 className="text-[13px] font-bold">Default account &amp; tax mapping</h5>
-          <Badge variant="secondary" className="text-[10px] uppercase">
-            new
-          </Badge>
         </div>
         <p className="text-[12.5px] text-muted-foreground">
           Sets the Xero account code and tax rate ISO+ uses when creating each synced

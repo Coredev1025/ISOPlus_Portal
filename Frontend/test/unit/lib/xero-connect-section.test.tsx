@@ -275,4 +275,22 @@ describe('XeroConnectSection', () => {
       );
     });
   });
+
+  it('places extra actions immediately after Test Connection', () => {
+    render(
+      <XeroConnectSection
+        workspaceId="ws-1"
+        isConnected={false}
+        onConnectedChange={vi.fn()}
+        extraActions={<button type="button">View Xero logs</button>}
+      />
+    );
+
+    const testConnection = screen.getByRole('button', { name: /test connection/i });
+    const extra = screen.getByRole('button', { name: /view xero logs/i });
+    expect(testConnection.parentElement).toBe(extra.parentElement);
+    expect(
+      testConnection.compareDocumentPosition(extra) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
 });
