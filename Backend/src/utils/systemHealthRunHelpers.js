@@ -73,6 +73,14 @@ export function buildRetrySpec(run) {
       periodKey: run.periodKey,
       // buildFanOutSpecs emits `slot` on every scheduled spec; a retry omitting
       // it would leave job.data.slot undefined once Epic 5.6/5.7 reads it.
+      //
+      // Note this is the ORIGINAL RUN'S START, not the slot it was scheduled
+      // for — AutomationRun records startedAt at enqueue time and never stores
+      // the slot. periodKey is copied from the run and is authoritative: a
+      // reader must not recompute the period from this slot, because the two
+      // disagree whenever the original dispatch crossed a minute boundary
+      // (automationPeriodKey is minute-granular). Storing the real slot on
+      // AutomationRun is the proper fix and is out of scope here.
       slot: run.startedAt,
     },
     opts: { jobId: `${RETRY_JOB_PREFIX}:${run.boardId}:${run.periodKey}:${run._id}` },

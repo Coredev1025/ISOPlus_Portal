@@ -151,6 +151,62 @@ describe("SystemHealthDrilldownView", () => {
     expect(screen.getByRole("button", { name: /next/i })).toBeDisabled();
   });
 
+  // The three writers to `runs` (page change, post-run reload, post-retry
+  // reload) are unsequenced unless the reload always targets the page the
+  // reader is actually on. A reload built from the page that was showing when
+  // the button was clicked repaints page 1's rows under a "Page 2" label —
+  // silently, on the one screen whose whole value is that the rows are what
+  // they say they are.
+  it("reloads the page currently on screen, not the one showing when the run started", async () => {
+    get.mockImplementation((url: string) =>
+      Promise.resolve({
+        data: {
+          workspaceId: "ws-1", schedules: [], total: 120, pageSize: 50,
+          page: url.includes("page=2") ? 2 : 1,
+          runs: [url.includes("page=2") ? { ...RUN, _id: "r9", boardId: "b9" } : RUN],
+        },
+      }),
+    );
+    let resolvePost!: (value: unknown) => void;
+    post.mockReturnValue(new Promise((r) => { resolvePost = r; }));
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await screen.findByText("b1");
+
+    await userEvent.click(screen.getByRole("button", { name: /run invoices now/i }));
+    await userEvent.click(screen.getByRole("button", { name: /next/i }));
+    await screen.findByText("b9");
+
+    resolvePost({ data: { enqueued: 1 } });
+
+    await waitFor(() => expect(get).toHaveBeenLastCalledWith(expect.stringContaining("page=2")));
+    expect(screen.getByText("b9")).toBeInTheDocument();
+    expect(screen.queryByText("b1")).not.toBeInTheDocument();
+  });
+
+  // An empty page must not strand the reader: gating the pager on the rows
+  // returned rather than the total means the page that comes back empty also
+  // hides the Previous button that is the only way back.
+  it("keeps the pager on an empty page so the reader can navigate back", async () => {
+    // Page 2 comes back empty — runs were deleted, or the total moved between
+    // the two requests. The reader must still be able to get back to page 1.
+    get.mockImplementation((url: string) =>
+      Promise.resolve({
+        data: {
+          workspaceId: "ws-1", schedules: [], total: 120, pageSize: 50, page: 1,
+          runs: url.includes("page=2") ? [] : [RUN],
+        },
+      }),
+    );
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await screen.findByText("b1");
+    await userEvent.click(screen.getByRole("button", { name: /next/i }));
+
+    expect(await screen.findByText(/no runs yet/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /previous/i })).toBeEnabled();
+  });
+
   it("renders the schedule summary above the run history", async () => {
     respondWith({ schedules: [SCHEDULE], runs: [RUN], total: 1 });
 

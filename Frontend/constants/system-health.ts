@@ -53,6 +53,11 @@ export const SCHEDULER_HEARTBEAT_NEVER_TICKED =
  * it); this only ever covers the render before the first response resolves,
  * and is kept in step with the backend value so the two never disagree.
  *
+ * The page NUMBER is owned by the view, not the server: the response's `page`
+ * echo is deliberately discarded, which is safe only because the route does
+ * not clamp an out-of-range page (it skips and returns an empty list plus the
+ * true total). If it ever starts clamping, the view must read `page` back.
+ *
  * Touchpoints: lib/system-health-drilldown-view.tsx.
  */
 export const HISTORY_PAGE_SIZE = 50;
