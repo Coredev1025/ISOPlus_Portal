@@ -33,6 +33,7 @@ import session from 'express-session';
 import MongoStore from 'connect-mongo';
 import syncWorker, { checkAndRetryFailedJobs } from './workers/syncWorker.js'; // Initialize sync worker
 import { startAutomationWorker } from './workers/automationWorker.js';
+import { startEmailEventsWorker } from './workers/emailEventsWorker.js';
 import { registerSchedulerHandlers } from './services/scheduler/handlers.js';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
@@ -51,6 +52,9 @@ registerSchedulerHandlers();
 
 // Drains the automation queue. Inert by design — see automationWorker.js.
 startAutomationWorker();
+
+// Polls the SES events queue. Inert by design — see emailEventsWorker.js.
+startEmailEventsWorker();
 
 axios.defaults.timeout = Math.max(parseInt(process.env.HTTP_CLIENT_TIMEOUT_MS || '30000', 10), 1000);
 axios.defaults.httpAgent = new http.Agent({ keepAlive: true, maxSockets: 100 });
