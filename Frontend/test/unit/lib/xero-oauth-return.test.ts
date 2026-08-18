@@ -45,7 +45,7 @@ describe('xero-oauth-return', () => {
     ).toEqual({
       kind: 'error',
       title: 'Failed to connect to Xero',
-      description: 'Sign in to the portal and try connecting Xero again.',
+      description: 'The Xero connection could not be verified. Click Connect Xero again while you are signed in. If this keeps happening, allow cookies for this site or try another browser.',
     });
     expect(
       parseXeroOAuthReturn(

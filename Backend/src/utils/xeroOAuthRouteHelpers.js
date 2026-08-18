@@ -18,7 +18,10 @@ import {
 import {
   readXeroOAuthSessionUser,
   xeroOAuthStateMatchesSession,
+  normalizePortalUserId,
 } from './xeroOAuthSessionHelpers.js';
+import { claimXeroConnectTicket, createXeroConnectTicket } from './xeroOAuthConnectTicketHelpers.js';
+import { logXeroConnectFailure } from './xeroOAuthAuditHelpers.js';
 import { trustedFrontendRedirectUrl, isTrustedXeroConsentUrl } from './xeroOAuthRedirectSafety.js';
 import { getFrontendBaseUrl } from './helpers.js';
 
@@ -53,9 +56,16 @@ function redirectXeroReturn(res, workspaceId, outcome, reason, frontendBase) {
   res.redirect(trustedFrontendRedirectUrl(location, fallback));
 }
 
+async function xeroOAuthCallbackAuthorized(payload, req) {
+  if (xeroOAuthStateMatchesSession(payload, readXeroOAuthSessionUser(req))) {
+    return true;
+  }
+  return claimXeroConnectTicket(payload.connectTicket, payload);
+}
+
 export async function handleXeroOAuthRedirect(req, res) {
   try {
-    const userId = toRequiredQueryString(req.user?.userId);
+    const userId = normalizePortalUserId(req.user?.userId);
     if (!userId) {
       return res.status(401).json({ message: 'Authentication required' });
     }
@@ -63,13 +73,30 @@ export async function handleXeroOAuthRedirect(req, res) {
     if (!workspaceId) {
       return res.status(400).json({ message: 'workspaceId is required' });
     }
+    const frontendOrigin = captureFrontendOriginFromRequest(req);
+    const connectTicket = await createXeroConnectTicket({
+      userId,
+      workspaceId,
+      origin: frontendOrigin,
+    });
+    if (typeof req.session?.save === 'function') {
+      await new Promise((resolve, reject) => {
+        req.session.save((err) => (err ? reject(err) : resolve()));
+      });
+    }
     await configure();
     const url = await getAuthUrl(
       workspaceId,
-      captureFrontendOriginFromRequest(req),
-      userId
+      frontendOrigin,
+      userId,
+      connectTicket
     );
     if (!isTrustedXeroConsentUrl(url)) {
+      await logXeroConnectFailure({
+        workspaceId,
+        reason: XERO_OAUTH_REASON_OAUTH_FAILED,
+        req,
+      });
       return res.status(200).json({
         message: 'Error generating redirect URL',
         error: 'Invalid Xero redirect URL',
@@ -78,6 +105,12 @@ export async function handleXeroOAuthRedirect(req, res) {
     return res.json({ url });
   } catch (err) {
     error('Xero-Service', 'Error generating redirect URL', err);
+    const workspaceId = toRequiredQueryString(req.query?.workspaceId);
+    await logXeroConnectFailure({
+      workspaceId,
+      reason: XERO_OAUTH_REASON_OAUTH_FAILED,
+      req,
+    });
     return res.status(200).json({
       message: 'Error generating redirect URL',
       error: 'Unable to generate a Xero consent URL',
@@ -99,41 +132,46 @@ function reasonForSavedConnection(saved) {
   return XERO_OAUTH_REASON_SAVE_FAILED;
 }
 
+async function redirectXeroConnectFailure(res, workspaceId, reason, frontendBase, req) {
+  await logXeroConnectFailure({ workspaceId, reason, req });
+  redirectXeroReturn(res, workspaceId, 'error', reason, frontendBase);
+}
+
 export async function handleXeroOAuthCallback(req, res) {
   const payload = payloadFromXeroOAuthState(req.query?.state);
   const frontend = resolveXeroReturnFrontend(payload.origin);
   try {
-    if (!xeroOAuthStateMatchesSession(payload, readXeroOAuthSessionUser(req))) {
-      return redirectXeroReturn(
+    if (!(await xeroOAuthCallbackAuthorized(payload, req))) {
+      return redirectXeroConnectFailure(
         res,
         payload.workspaceId,
-        'error',
         XERO_OAUTH_REASON_AUTHENTICATION_REQUIRED,
-        frontend
+        frontend,
+        req
       );
     }
     if (!payload.workspaceId) {
       return redirectXeroReturn(res, '', 'error', XERO_OAUTH_REASON_INVALID_STATE, frontend);
     }
     if (!req.query?.code) {
-      return redirectXeroReturn(
+      return redirectXeroConnectFailure(
         res,
         payload.workspaceId,
-        'error',
         XERO_OAUTH_REASON_MISSING_CODE,
-        frontend
+        frontend,
+        req
       );
     }
 
     await configure();
     const result = await callback(req.query.code, req.url);
     if (!result?.success) {
-      return redirectXeroReturn(
+      return redirectXeroConnectFailure(
         res,
         payload.workspaceId,
-        'error',
         XERO_OAUTH_REASON_OAUTH_FAILED,
-        frontend
+        frontend,
+        req
       );
     }
 
@@ -145,24 +183,24 @@ export async function handleXeroOAuthCallback(req, res) {
       req,
     });
     if (saved.error) {
-      return redirectXeroReturn(
+      return redirectXeroConnectFailure(
         res,
         payload.workspaceId,
-        'error',
         reasonForSavedConnection(saved),
-        frontend
+        frontend,
+        req
       );
     }
 
     return redirectXeroReturn(res, payload.workspaceId, 'success', undefined, frontend);
   } catch (err) {
     error('Xero-Service', 'Error in Xero callback', err);
-    return redirectXeroReturn(
+    return redirectXeroConnectFailure(
       res,
       payload.workspaceId,
-      'error',
       XERO_OAUTH_REASON_OAUTH_FAILED,
-      frontend
+      frontend,
+      req
     );
   }
 }

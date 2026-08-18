@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Business from '../../../src/models/Business.js';
 import AuditTrail from '../../../src/models/AuditTrail.js';
 import { signOAuthState } from '../../../src/utils/helpers.js';
+import { createXeroConnectTicket } from '../../../src/utils/xeroOAuthConnectTicketHelpers.js';
 
 vi.mock('../../../src/services/xero.js', () => ({
   configure: vi.fn(async () => {}),
@@ -88,7 +89,12 @@ describe('xeroOAuthRouteHelpers', () => {
     await handleXeroOAuthRedirect(req, res);
 
     expect(configure).toHaveBeenCalled();
-    expect(getAuthUrl).toHaveBeenCalledWith('ws-1', 'http://localhost:3100', 'user-1');
+    expect(getAuthUrl).toHaveBeenCalledWith(
+      'ws-1',
+      'http://localhost:3100',
+      'user-1',
+      expect.stringMatching(/^[a-f0-9]{64}$/i)
+    );
     expect(res.json).toHaveBeenCalledWith({
       url: expect.stringContaining('https://login.xero.com/identity/connect/authorize'),
     });
@@ -109,6 +115,14 @@ describe('xeroOAuthRouteHelpers', () => {
       message: 'Error generating redirect URL',
       error: 'Invalid Xero redirect URL',
     });
+    const trails = await AuditTrail.find({ workspaceId: 'ws-1' }).lean();
+    expect(trails).toEqual([
+      expect.objectContaining({
+        action: 'Failed to connect Xero',
+        success: false,
+        detail: expect.stringMatching(/could not complete the xero authentication/i),
+      }),
+    ]);
   });
 
   it('requires workspaceId once the portal user is authenticated', async () => {
@@ -132,9 +146,13 @@ describe('xeroOAuthRouteHelpers', () => {
       message: 'Error generating redirect URL',
       error: 'Unable to generate a Xero consent URL',
     });
+    const trails = await AuditTrail.find({ workspaceId: 'ws-1' }).lean();
+    expect(trails).toHaveLength(1);
+    expect(trails[0].action).toBe('Failed to connect Xero');
+    expect(trails[0].success).toBe(false);
   });
 
-  it('does not persist Xero tokens when the callback has no portal session', async () => {
+  it('does not persist Xero tokens when the callback has no portal session or connect ticket', async () => {
     callback.mockResolvedValue({
       success: true,
       tokenSet: tokenSet(),
@@ -157,6 +175,15 @@ describe('xeroOAuthRouteHelpers', () => {
     expect(res.redirect).toHaveBeenCalledWith(
       expect.stringContaining('reason=authentication_required')
     );
+    const trails = await AuditTrail.find({ workspaceId: 'ws-oauth' }).lean();
+    expect(trails).toEqual([
+      expect.objectContaining({
+        action: 'Failed to connect Xero',
+        category: 'Xero',
+        success: false,
+        detail: expect.stringMatching(/could not be verified/i),
+      }),
+    ]);
   });
 
   it('does not persist Xero tokens when the signed userId does not match the session', async () => {
@@ -179,6 +206,32 @@ describe('xeroOAuthRouteHelpers', () => {
     expect(await Business.findOne({ workspaceId: 'ws-oauth' })).toBeNull();
     expect(res.redirect).toHaveBeenCalledWith(
       expect.stringContaining('reason=authentication_required')
+    );
+  });
+
+  it('persists Xero when the callback has no portal session but a valid connect ticket', async () => {
+    const connectTicket = await createXeroConnectTicket({
+      userId: 'user-1',
+      workspaceId: 'ws-oauth',
+    });
+    callback.mockResolvedValue({
+      success: true,
+      tokenSet: tokenSet(),
+      tenants: [{ tenantId: 'tenant-1' }],
+      organization: { organisationId: 'tenant-1', name: 'Acme' },
+    });
+    const res = mockRes();
+    await handleXeroOAuthCallback(
+      {
+        query: { code: 'auth-code', state: xeroState({ connectTicket }) },
+        url: '/api/xero/callback?code=auth-code',
+      },
+      res
+    );
+
+    expect(await Business.findOne({ workspaceId: 'ws-oauth' })).toBeTruthy();
+    expect(res.redirect).toHaveBeenCalledWith(
+      'http://localhost:3100/workspace/ws-oauth/finance-settings?tab=accounting&xero=success'
     );
   });
 
@@ -289,6 +342,14 @@ describe('xeroOAuthRouteHelpers', () => {
     expect(res.redirect).toHaveBeenCalledWith(
       'http://localhost:3100/workspace/ws-fail/finance-settings?tab=accounting&xero=error&reason=oauth_failed'
     );
+    const trails = await AuditTrail.find({ workspaceId: 'ws-fail' }).lean();
+    expect(trails).toEqual([
+      expect.objectContaining({
+        action: 'Failed to connect Xero',
+        success: false,
+        detail: expect.stringMatching(/could not complete the xero authentication/i),
+      }),
+    ]);
   });
 
   it('redirects invalid_state when the signed payload has no workspaceId', async () => {
@@ -337,6 +398,16 @@ describe('xeroOAuthRouteHelpers', () => {
     expect(await Business.findOne({ workspaceId: 'ws-oauth' })).toBeNull();
     expect(resOrg.redirect).toHaveBeenCalledWith(
       expect.stringContaining('reason=no_organisation')
+    );
+    const trails = await AuditTrail.find({ workspaceId: 'ws-oauth' }).lean();
+    expect(trails.map((row) => row.detail)).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/could not complete the xero authentication/i),
+        expect.stringMatching(/no xero organisation was selected/i),
+      ])
+    );
+    expect(trails.every((row) => row.action === 'Failed to connect Xero' && row.success === false)).toBe(
+      true
     );
   });
 

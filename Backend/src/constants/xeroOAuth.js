@@ -2,7 +2,7 @@
  * Xero OAuth consent hosts and callback reason codes.
  *
  * Touchpoints: utils/xeroOAuthRedirectSafety.js, utils/xeroOAuthRouteHelpers.js,
- * Frontend/constants/xeroOAuth.ts
+ * utils/xeroOAuthAuditHelpers.js, Frontend/constants/xeroOAuth.ts
  */
 export const XERO_CONSENT_HOSTS = ['login.xero.com', 'identity.xero.com'];
 

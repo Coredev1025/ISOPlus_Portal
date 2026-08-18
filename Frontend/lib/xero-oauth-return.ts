@@ -16,7 +16,7 @@ const DEFAULT_ERROR_DESCRIPTION =
 
 const OAUTH_REASON_DESCRIPTIONS: Readonly<Record<string, string>> = {
   [XERO_OAUTH_REASON_AUTHENTICATION_REQUIRED]:
-    'Sign in to the portal and try connecting Xero again.',
+    'The Xero connection could not be verified. Click Connect Xero again while you are signed in. If this keeps happening, allow cookies for this site or try another browser.',
   [XERO_OAUTH_REASON_INVALID_STATE]: DEFAULT_ERROR_DESCRIPTION,
   [XERO_OAUTH_REASON_MISSING_CODE]: DEFAULT_ERROR_DESCRIPTION,
   [XERO_OAUTH_REASON_OAUTH_FAILED]: DEFAULT_ERROR_DESCRIPTION,

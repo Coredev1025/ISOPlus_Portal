@@ -32,6 +32,7 @@ describe('xeroOAuthStateHelpers', () => {
       workspaceId: '',
       origin: '',
       userId: '',
+      connectTicket: '',
     });
     const otherFlow = signOAuthState({ flow: 'isoplus', workspaceId: 'ws-1', userId: 'u' });
     expect(payloadFromXeroOAuthState(otherFlow).workspaceId).toBe('');

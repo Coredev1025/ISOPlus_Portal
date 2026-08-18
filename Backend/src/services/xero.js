@@ -35,13 +35,13 @@ export async function configure() {
     }
 }
 
-export async function getAuthUrl(workspaceId, frontendOrigin, userId) {
+export async function getAuthUrl(workspaceId, frontendOrigin, userId, connectTicket) {
     if (!xeroClient) {
         throw new Error('Xero client is not configured.');
     }
 
     const consentUrl = await xeroClient.buildConsentUrl();
-    return buildXeroConsentUrl(consentUrl, workspaceId, frontendOrigin, userId);
+    return buildXeroConsentUrl(consentUrl, workspaceId, frontendOrigin, userId, connectTicket);
 }
 
 export async function callback(code, url) {

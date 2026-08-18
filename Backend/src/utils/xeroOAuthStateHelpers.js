@@ -14,13 +14,23 @@ export function captureFrontendOriginFromRequest(req) {
   }
 }
 
-export function buildXeroConsentUrl(consentUrl, workspaceId, frontendOrigin, userId) {
+export function buildXeroConsentUrl(
+  consentUrl,
+  workspaceId,
+  frontendOrigin,
+  userId,
+  connectTicket
+) {
   const hasOrigin = typeof frontendOrigin === 'string' && frontendOrigin.trim() !== '';
   const state = signOAuthState({
     flow: 'xero',
     workspaceId: workspaceId != null ? String(workspaceId) : undefined,
     origin: hasOrigin ? frontendOrigin.trim() : undefined,
     userId: userId != null ? String(userId) : undefined,
+    connectTicket:
+      typeof connectTicket === 'string' && connectTicket.trim()
+        ? connectTicket.trim()
+        : undefined,
   });
   const withState = new URL(consentUrl);
   withState.searchParams.set('state', state);
@@ -39,13 +49,14 @@ export function applyIncomingOAuthStateToXeroClient(xeroClient, url) {
 export function payloadFromXeroOAuthState(state) {
   const verified = verifyOAuthState(typeof state === 'string' ? state : null);
   if (!verified.ok || verified.payload?.flow !== 'xero') {
-    return { workspaceId: '', origin: '', userId: '' };
+    return { workspaceId: '', origin: '', userId: '', connectTicket: '' };
   }
   return {
     workspaceId: toRequiredQueryString(verified.payload?.workspaceId),
     origin:
       typeof verified.payload?.origin === 'string' ? verified.payload.origin.trim() : '',
     userId: toRequiredQueryString(verified.payload?.userId),
+    connectTicket: toRequiredQueryString(verified.payload?.connectTicket),
   };
 }
 
