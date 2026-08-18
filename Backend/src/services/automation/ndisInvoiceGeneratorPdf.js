@@ -26,6 +26,10 @@ import {
 } from '../../utils/ndisInvoiceGeneratorPdfHelpers.js';
 import { uploadFileToS3, getS3FileUrl } from '../../utils/uploadS3.js';
 import {
+  GENERATED_DOCUMENT_PUBLIC_READ,
+  GENERATED_PDF_URL_EXPIRY_SECONDS,
+} from '../../constants/storage.js';
+import {
   enableRepeatHeadOnTables,
   formatDateNumericAU,
   getLogoData,
@@ -184,11 +188,11 @@ async function renderAndUploadNdisInvoice({
   const filename = ndisInvoicePdfFilename(
     workspaceId, boardId, invoiceNumberBase, participantName,
   );
-  const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
+  const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, GENERATED_DOCUMENT_PUBLIC_READ);
   if (uploadResult?.$metadata?.httpStatusCode !== 200) {
     throw new Error('Upload of PDF failed, please provide correct information.');
   }
-  return getS3FileUrl(filename, 3600, true);
+  return getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
 }
 
 async function persistGeneratedInvoice({
