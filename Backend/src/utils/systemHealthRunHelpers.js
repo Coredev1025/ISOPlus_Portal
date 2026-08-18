@@ -56,7 +56,9 @@ export function withForceJobIds({ specs, force, existing }) {
   if (!force) return specs;
   return specs.map((spec) => ({
     ...spec,
-    opts: { jobId: `${MANUAL_JOB_PREFIX}:${spec.data.boardId}:${spec.data.periodKey}:${existing}` },
+    // Spread, not replace: a future fanOut.js option (attempts, backoff,
+    // removeOnComplete) must survive a forced re-run, not just jobId.
+    opts: { ...spec.opts, jobId: `${MANUAL_JOB_PREFIX}:${spec.data.boardId}:${spec.data.periodKey}:${existing}` },
   }));
 }
 
@@ -69,6 +71,9 @@ export function buildRetrySpec(run) {
       workspaceId: run.workspaceId,
       boardId: run.boardId,
       periodKey: run.periodKey,
+      // buildFanOutSpecs emits `slot` on every scheduled spec; a retry omitting
+      // it would leave job.data.slot undefined once Epic 5.6/5.7 reads it.
+      slot: run.startedAt,
     },
     opts: { jobId: `${RETRY_JOB_PREFIX}:${run.boardId}:${run.periodKey}:${run._id}` },
   };

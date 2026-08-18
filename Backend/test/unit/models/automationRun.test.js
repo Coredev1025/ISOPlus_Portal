@@ -60,4 +60,13 @@ describe('AutomationRun', () => {
     });
     expect(run.skipReason).toBe(SKIP_DELIVERY_NOT_IMPLEMENTED);
   });
+
+  it('declares a bare startedAt index, so the overview query is not a collection scan', () => {
+    // The overview's `AutomationRun.find({ startedAt: { $gte: from } })` has no
+    // status predicate, so neither compound index below can serve it.
+    const indexSpecs = AutomationRun.schema.indexes().map(([spec]) => spec);
+    expect(indexSpecs).toContainEqual({ startedAt: -1 });
+    expect(indexSpecs).toContainEqual({ workspaceId: 1, startedAt: -1 });
+    expect(indexSpecs).toContainEqual({ status: 1, startedAt: -1 });
+  });
 });

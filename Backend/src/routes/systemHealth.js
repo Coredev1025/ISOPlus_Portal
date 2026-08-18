@@ -81,6 +81,7 @@ router.get('/overview', async (req, res) => {
 
 router.get('/clients', async (req, res) => {
   try {
+    const now = new Date();
     const settings = await AutomationSettings.find(enabledWorkspaceFilter())
       .select('workspaceId invoice.enabled statement.enabled')
       .lean();
@@ -99,7 +100,7 @@ router.get('/clients', async (req, res) => {
         invoiceEnabled: Boolean(s.invoice?.enabled),
         statementEnabled: Boolean(s.statement?.enabled),
         provider: 'xero',
-        connection: xeroConnectionStatus(byWorkspace.get(s.workspaceId)),
+        connection: xeroConnectionStatus(byWorkspace.get(s.workspaceId), now),
       })),
     });
   } catch (err) {

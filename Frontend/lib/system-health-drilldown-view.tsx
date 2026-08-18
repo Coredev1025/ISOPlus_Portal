@@ -6,60 +6,39 @@ import axios from "@/app/utils/axiosConfig";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import Spinner from "@/components/ui/spin";
-import { formatDuration, runStatusLabel } from "@/lib/system-health-helpers";
-import type { RunRow } from "@/lib/system-health-types";
+import { HISTORY_PAGE_SIZE } from "@/constants/system-health";
+import { ErrorBanner } from "@/lib/system-health-banners";
+import { RunHistoryPager } from "@/lib/system-health-pager";
+import { RunList } from "@/lib/system-health-run-row";
+import { ScheduleSummary } from "@/lib/system-health-schedule-summary";
+import type { RunRow, ScheduleRow } from "@/lib/system-health-types";
 
 type Refusal = { periodKey: string; runs: RunRow[] } | null;
 
 type Props = Readonly<{ workspaceId: string }>;
 
-/** Matches the destructive banner style Task 12's page view uses for its error. */
-function ErrorBanner({ message }: Readonly<{ message: string }>) {
-  return (
-    <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
-      {message}
-    </p>
-  );
-}
-
-function RunList({ runs }: Readonly<{ runs: readonly RunRow[] }>) {
-  // Explicit copy rather than an empty <ul>: a genuinely empty history has to
-  // read differently from "still loading" and "failed to load", the same
-  // reasoning that makes the 409 refusal explicit rather than silent.
-  if (runs.length === 0) {
-    return <p className="text-sm text-muted-foreground">No runs yet.</p>;
-  }
-
-  return (
-    <ul className="divide-y divide-border rounded-lg border border-border">
-      {runs.map((run) => (
-        <li key={run._id} className="flex items-center justify-between px-4 py-3 text-sm">
-          <span className="font-medium">{run.boardId}</span>
-          <span className="flex items-center gap-4 text-muted-foreground">
-            <span>{runStatusLabel(run.status)}</span>
-            <span>{formatDuration(run.durationMs)}</span>
-            <span>{run.recipient ?? "—"}</span>
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}
+const BASE = `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/system-health/workspace`;
 
 export function SystemHealthDrilldownView({ workspaceId }: Props) {
   const [runs, setRuns] = useState<RunRow[]>([]);
+  const [schedules, setSchedules] = useState<ScheduleRow[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(HISTORY_PAGE_SIZE);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<Refusal>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const res = await axios.get(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/system-health/workspace/${workspaceId}`,
-      );
+      const res = await axios.get(`${BASE}/${workspaceId}?page=${page}`);
       setRuns(res.data.runs ?? []);
+      setSchedules(res.data.schedules ?? []);
+      setTotal(res.data.total ?? 0);
+      setPageSize(res.data.pageSize ?? HISTORY_PAGE_SIZE);
       setLoadError(null);
     } catch {
       // Keep whatever rows are already on screen — a failed refresh should
@@ -72,7 +51,7 @@ export function SystemHealthDrilldownView({ workspaceId }: Props) {
       // screen instead of blanking them.
       setLoading(false);
     }
-  }, [workspaceId]);
+  }, [workspaceId, page]);
 
   useEffect(() => {
     load();
@@ -84,10 +63,7 @@ export function SystemHealthDrilldownView({ workspaceId }: Props) {
       setRunError(null);
       try {
         const query = force ? "?force=1" : "";
-        await axios.post(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/system-health/workspace/${workspaceId}/run${query}`,
-          { kind: "invoice" },
-        );
+        await axios.post(`${BASE}/${workspaceId}/run${query}`, { kind: "invoice" });
         setRefusal(null);
         await load();
       } catch (err) {
@@ -108,11 +84,31 @@ export function SystemHealthDrilldownView({ workspaceId }: Props) {
     [workspaceId, load],
   );
 
+  const retry = useCallback(
+    async (runId: string) => {
+      setRetryingId(runId);
+      setRunError(null);
+      try {
+        await axios.post(`${BASE}/${workspaceId}/runs/${runId}/retry`);
+        // Reload rather than patching the row in place: the retry creates a
+        // fresh run, so the history is the thing that changed, not this row.
+        await load();
+      } catch {
+        setRunError("Could not retry the run. Try again.");
+      } finally {
+        setRetryingId(null);
+      }
+    },
+    [workspaceId, load],
+  );
+
   if (loading) return <Spinner />;
 
   return (
     <div className="space-y-6">
       {loadError ? <ErrorBanner message={loadError} /> : null}
+
+      <ScheduleSummary schedules={schedules} />
 
       <div className="flex items-center gap-3">
         <Button type="button" disabled={busy} onClick={() => start(false)}>
@@ -133,7 +129,11 @@ export function SystemHealthDrilldownView({ workspaceId }: Props) {
         </Card>
       ) : null}
 
-      <RunList runs={runs} />
+      <RunList runs={runs} onRetry={retry} retryingId={retryingId} />
+
+      {runs.length > 0 ? (
+        <RunHistoryPager page={page} pageSize={pageSize} total={total} onChange={setPage} />
+      ) : null}
     </div>
   );
 }

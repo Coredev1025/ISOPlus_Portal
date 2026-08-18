@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   formatErrorRate,
   formatDuration,
+  formatStartedAt,
   runStatusLabel,
   sortClientsBySeverity,
 } from "@/lib/system-health-helpers";
@@ -30,6 +31,27 @@ describe("formatDuration", () => {
     // A skipped run has no duration. "0ms" would read as an instant success.
     expect(formatDuration(null)).toBe("—");
     expect(formatDuration(undefined)).toBe("—");
+  });
+});
+
+describe("formatStartedAt", () => {
+  it("renders an absolute timestamp in the reader's local time", () => {
+    const iso = "2026-08-13T09:00:00.000Z";
+    const expected = new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }).format(new Date(iso));
+    expect(formatStartedAt(iso)).toContain(expected);
+  });
+
+  it("renders a missing timestamp as a dash, not an empty string", () => {
+    expect(formatStartedAt(null)).toBe("—");
+    expect(formatStartedAt(undefined)).toBe("—");
+  });
+
+  it("renders an unparseable timestamp as a dash rather than 'Invalid Date'", () => {
+    expect(formatStartedAt("not-a-date")).toBe("—");
   });
 });
 

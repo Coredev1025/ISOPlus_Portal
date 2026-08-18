@@ -1,5 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
+
+vi.mock('../../src/utils/automationConnectionStatus.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, xeroConnectionStatus: vi.fn(actual.xeroConnectionStatus) };
+});
 
 import { createApp } from '../../src/app.js';
 import AutomationRun from '../../src/models/AutomationRun.js';
@@ -10,6 +15,7 @@ import Board from '../../src/models/Board.js';
 import { authenticatedAgent } from '../helpers/auth.js';
 import { RUN_FAILED, RUN_SUCCEEDED, HISTORY_PAGE_SIZE, TRIGGER_MANUAL } from '../../src/constants/systemHealth.js';
 import { recordedJobIds, resetRecordedJobs } from '../helpers/queue.js';
+import { xeroConnectionStatus } from '../../src/utils/automationConnectionStatus.js';
 
 const WS = 'ws-health-1';
 
@@ -117,6 +123,7 @@ describe('GET /api/system-health/clients', () => {
   beforeEach(async () => {
     await AutomationSettings.deleteMany({});
     await Business.deleteMany({});
+    xeroConnectionStatus.mockClear();
     app = createApp();
   });
 
@@ -125,6 +132,22 @@ describe('GET /api/system-health/clients', () => {
     // See the /verify note on the overview suite's equivalent test.
     await agent.get('/api/auth/verify');
     expect((await agent.get('/api/system-health/clients')).status).toBe(403);
+  });
+
+  // /overview passes summariseRuns(rows, now) explicitly; this route must too,
+  // so xeroConnectionStatus's "pure" docblock is actually true rather than
+  // silently depending on Date.now() at call time.
+  it('passes an explicit clock to xeroConnectionStatus rather than relying on its default', async () => {
+    await AutomationSettings.create({ workspaceId: WS, invoice: { enabled: true } });
+    await Business.create({ workspaceId: WS, xeroIntegrated: true });
+
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent.get('/api/system-health/clients');
+
+    expect(res.status).toBe(200);
+    expect(xeroConnectionStatus).toHaveBeenCalledTimes(1);
+    const [, now] = xeroConnectionStatus.mock.calls[0];
+    expect(now).toBeInstanceOf(Date);
   });
 
   it('lists each configured workspace with its connection status', async () => {

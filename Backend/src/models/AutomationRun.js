@@ -44,6 +44,10 @@ const automationRunSchema = new mongoose.Schema(
 automationRunSchema.index({ workspaceId: 1, startedAt: -1 });
 // The overview counts by outcome within a time window.
 automationRunSchema.index({ status: 1, startedAt: -1 });
+// The overview's window query (`{ startedAt: { $gte: from } }`) has no status
+// predicate, so neither compound index above can serve it — without this, every
+// poll collection-scans a week of runs across all clients.
+automationRunSchema.index({ startedAt: -1 });
 // The idempotency join. Unique, so a double fan-out cannot record twice.
 automationRunSchema.index({ jobId: 1 }, { unique: true });
 

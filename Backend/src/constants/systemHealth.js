@@ -42,7 +42,9 @@ export const RUN_STATUSES = [RUN_QUEUED, RUN_RUNNING, RUN_SUCCEEDED, RUN_FAILED,
  * workers/automationWorker.js that logs and resolves.
  *
  * Touchpoints: workers/automationWorker.js (writes them),
- * models/AutomationRun.js (enum).
+ * models/AutomationRun.js (enum). The Frontend renders the run's STATUS, not
+ * its skipReason, and could not import this file if it wanted to: it lives in
+ * the other app.
  */
 export const SKIP_SETTINGS_DISABLED = 'settings_disabled';
 export const SKIP_NO_EMAIL_BACKEND = 'no_email_backend';
@@ -61,7 +63,8 @@ export const SKIP_REASONS = [
  * read as a duplicate bug in the history it exists to help debug.
  *
  * Touchpoints: models/AutomationRun.js (enum), services/scheduler/handlers.js
- * (schedule), routes/systemHealth.js (manual).
+ * (schedule), services/automation/runs.js (default trigger),
+ * routes/systemHealth.js (manual).
  */
 export const TRIGGER_SCHEDULE = 'schedule';
 export const TRIGGER_MANUAL = 'manual';
@@ -77,7 +80,11 @@ export const RUN_TRIGGERS = [TRIGGER_SCHEDULE, TRIGGER_MANUAL];
  * coarse enough that one failure does not spike the whole chart, fine enough
  * that a burst is visible.
  *
- * Touchpoints: utils/automationRunMetrics.js, routes/systemHealth.js.
+ * Touchpoints: utils/automationRunMetrics.js (both). ERROR_RATE_WINDOW_HOURS is
+ * also read by routes/systemHealth.js, which echoes it back on the overview
+ * response as errorRateWindowHours. TREND_BUCKETS has no reader outside the
+ * metrics helper — the bucket count is a computation detail, not part of the
+ * response shape.
  */
 export const ERROR_RATE_WINDOW_HOURS = 24;
 export const TREND_BUCKETS = 12;
@@ -97,9 +104,12 @@ export const WEEK_WINDOW_HOURS = 7 * 24;
 /**
  * Rows per page in the drill-down history. The spec requires the history be
  * uncapped, so this paginates rather than truncates — the response carries a
- * total and the UI pages through it.
+ * total and the UI pages through it. The UI that does the paging is
+ * Frontend's lib/system-health-drilldown-view.tsx, which reads pageSize off
+ * the response rather than importing this file — a Backend constants file
+ * cannot be imported by a Frontend module.
  *
- * Touchpoints: routes/systemHealth.js, lib/use-system-health.ts.
+ * Touchpoints: routes/systemHealth.js.
  */
 export const HISTORY_PAGE_SIZE = 50;
 
@@ -108,7 +118,8 @@ export const HISTORY_PAGE_SIZE = 50;
  * no alerting infrastructure ships this round — just the threshold the tile
  * turns amber at.
  *
- * Touchpoints: routes/systemHealth.js, lib/system-health-helpers.ts.
+ * Touchpoints: services/automation/queueMetrics.js, which folds it into the
+ * `backlogged` flag routes/systemHealth.js and the Frontend then only read.
  */
 export const QUEUE_DEPTH_WARN = 50;
 

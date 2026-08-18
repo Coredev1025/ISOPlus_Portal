@@ -9,6 +9,7 @@ import { SCHEDULER_HEARTBEAT_NEVER_TICKED } from "@/constants/system-health";
 import { useSystemHealth } from "@/lib/use-system-health";
 import { formatErrorRate } from "@/lib/system-health-helpers";
 import { SystemHealthConnectionGrid } from "@/lib/system-health-connection-grid";
+import { ErrorBanner } from "@/lib/system-health-banners";
 
 function Tile({ label, value, hint }: Readonly<{ label: string; value: string; hint?: string }>) {
   return (
@@ -54,11 +55,7 @@ export function SystemHealthPageView() {
 
   return (
     <div className="space-y-6">
-      {error ? (
-        <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
-          {error}
-        </p>
-      ) : null}
+      {error ? <ErrorBanner message={error} /> : null}
 
       <SchedulerHeartbeat lastTickAt={overview?.lastTickAt ?? null} />
 

@@ -1,3 +1,5 @@
+import { format, isValid, parseISO } from "date-fns";
+
 import { CONNECTION_ORDER } from "@/constants/system-health";
 import type { ConnectionStatus, RunStatus } from "@/lib/system-health-types";
 
@@ -27,6 +29,18 @@ export function formatErrorRate(rate: number | undefined | null): string {
 export function formatDuration(ms: number | null | undefined): string {
   if (ms === null || ms === undefined || Number.isNaN(ms)) return "—";
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
+/**
+ * An absolute started-at timestamp, in the reader's local time. Absolute
+ * rather than relative (contrast formatDistanceToNow on the overview tiles):
+ * an operator reading a run history compares rows against each other, not
+ * against "now", matching automation-schedule-block.tsx's formatNextRun.
+ */
+export function formatStartedAt(startedAt: string | null | undefined): string {
+  if (!startedAt) return "—";
+  const parsed = parseISO(startedAt);
+  return isValid(parsed) ? format(parsed, "dd/MM/yyyy 'at' h:mm a") : "—";
 }
 
 export function runStatusLabel(status: RunStatus): string {

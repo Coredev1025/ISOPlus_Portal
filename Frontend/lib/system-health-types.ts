@@ -18,6 +18,17 @@ export type RunRow = {
   error: string | null;
 };
 
+export type ScheduleRow = {
+  kind: string;
+  enabled: boolean;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  lastError: string | null;
+  missedRuns: number;
+  consecutiveFailures: number;
+  timezone: string;
+};
+
 export type ClientRow = {
   workspaceId: string;
   invoiceEnabled: boolean;

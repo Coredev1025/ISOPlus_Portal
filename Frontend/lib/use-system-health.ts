@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import axios from "@/app/utils/axiosConfig";
 import { SYSTEM_HEALTH_POLL_MS } from "@/constants/system-health";
@@ -25,12 +25,21 @@ export function useSystemHealth() {
     error: null,
   });
 
+  // Guards against setting state from a request that was already in flight
+  // when this hook's owner unmounted — the poll runs every 30s, so navigating
+  // away mid-poll is routine, not an edge case. Cleared on unmount, matching
+  // the pattern in automation-status-panel.tsx. A ref, not an effect-local
+  // variable, because `load` is invoked repeatedly by the interval rather
+  // than once per effect run.
+  const cancelledRef = useRef(false);
+
   const load = useCallback(async () => {
     try {
       const [overview, clients] = await Promise.all([
         axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/system-health/overview`),
         axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/system-health/clients`),
       ]);
+      if (cancelledRef.current) return;
       setState({
         overview: overview.data,
         clients: clients.data.clients ?? [],
@@ -38,6 +47,7 @@ export function useSystemHealth() {
         error: null,
       });
     } catch {
+      if (cancelledRef.current) return;
       // Keep whatever is on screen: a failed poll should not blank a screen
       // someone is reading.
       setState((prev) => ({ ...prev, loading: false, error: "Could not load system health" }));
@@ -45,9 +55,13 @@ export function useSystemHealth() {
   }, []);
 
   useEffect(() => {
+    cancelledRef.current = false;
     load();
     const timer = setInterval(load, SYSTEM_HEALTH_POLL_MS);
-    return () => clearInterval(timer);
+    return () => {
+      cancelledRef.current = true;
+      clearInterval(timer);
+    };
   }, [load]);
 
   return { ...state, refresh: load };

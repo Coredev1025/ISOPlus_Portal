@@ -17,7 +17,8 @@ export const SYSTEM_HEALTH_POLL_MS = 30_000;
  * Display text for each connection state. The keys match the strings
  * Backend/src/utils/automationConnectionStatus.js returns.
  *
- * Touchpoints: lib/system-health-connection-grid.tsx, lib/system-health-helpers.ts.
+ * Touchpoints: lib/system-health-connection-grid.tsx. (system-health-helpers.ts
+ * imports CONNECTION_ORDER from this file, not this constant.)
  */
 export const CONNECTION_LABELS = {
   connected: "Connected",
@@ -45,3 +46,13 @@ export const CONNECTION_ORDER = ["needs_reauth", "disconnected", "connected"] as
 export const SCHEDULER_HEARTBEAT_NEVER_TICKED =
   "Scheduler has never ticked in this environment. This usually means a missing or " +
   "misconfigured EventBridge rule — see docs/scheduling.md.";
+
+/**
+ * Fallback page size for the drill-down history pager. The server sends the
+ * real value on every response (Backend/src/constants/systemHealth.js owns
+ * it); this only ever covers the render before the first response resolves,
+ * and is kept in step with the backend value so the two never disagree.
+ *
+ * Touchpoints: lib/system-health-drilldown-view.tsx.
+ */
+export const HISTORY_PAGE_SIZE = 50;

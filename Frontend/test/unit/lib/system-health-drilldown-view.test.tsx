@@ -8,6 +8,7 @@ const post = vi.hoisted(() => vi.fn());
 vi.mock("@/app/utils/axiosConfig", () => ({ default: { get, post } }));
 
 import { SystemHealthDrilldownView } from "@/lib/system-health-drilldown-view";
+import { formatStartedAt } from "@/lib/system-health-helpers";
 
 const RUN = {
   _id: "r1", workspaceId: "ws-1", boardId: "b1", kind: "invoice_automation",
@@ -17,13 +18,43 @@ const RUN = {
   durationMs: null, recipient: null, error: null,
 };
 
+const FAILED_RUN = {
+  ...RUN,
+  _id: "r2",
+  jobId: "inv:b1:20260201-0900",
+  status: "failed",
+  trigger: "manual",
+  error: "Xero token expired",
+};
+
+const SCHEDULE = {
+  kind: "invoice_automation",
+  enabled: true,
+  nextRunAt: "2026-09-01T09:00:00.000Z",
+  lastRunAt: "2026-08-01T09:00:00.000Z",
+  lastError: "Xero token expired",
+  missedRuns: 2,
+  consecutiveFailures: 3,
+  timezone: "Australia/Sydney",
+};
+
+function respondWith(data: Partial<{
+  schedules: unknown[];
+  runs: unknown[];
+  total: number;
+  page: number;
+  pageSize: number;
+}>) {
+  get.mockResolvedValue({
+    data: { workspaceId: "ws-1", schedules: [], runs: [], total: 0, page: 1, pageSize: 50, ...data },
+  });
+}
+
 describe("SystemHealthDrilldownView", () => {
   beforeEach(() => {
     get.mockReset();
     post.mockReset();
-    get.mockResolvedValue({
-      data: { workspaceId: "ws-1", schedules: [], runs: [RUN], total: 1, page: 1, pageSize: 50 },
-    });
+    respondWith({ runs: [RUN], total: 1 });
   });
 
   it("lists the run history", async () => {
@@ -33,6 +64,101 @@ describe("SystemHealthDrilldownView", () => {
     // A skipped run reads as "Pending setup", and has no duration.
     expect(screen.getByText("Pending setup")).toBeInTheDocument();
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+  });
+
+  it("requests the first page on initial load", async () => {
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await screen.findByText("b1");
+    expect(get).toHaveBeenCalledWith(expect.stringContaining("workspace/ws-1?page=1"));
+  });
+
+  it("renders started-at, period, kind and trigger for each row — not just boardId, status, duration and recipient", async () => {
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+
+    await screen.findByText("b1");
+    expect(screen.getByText("20260116-0900")).toBeInTheDocument();
+    expect(screen.getByText("invoice_automation")).toBeInTheDocument();
+    expect(screen.getByText("Scheduled")).toBeInTheDocument();
+    expect(screen.getByText(formatStartedAt(RUN.startedAt))).toBeInTheDocument();
+  });
+
+  it("shows the failure reason and a retry control on a failed run", async () => {
+    respondWith({ runs: [FAILED_RUN], total: 1 });
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+
+    expect(await screen.findByText("Xero token expired")).toBeInTheDocument();
+    expect(screen.getByText("Manual")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^retry$/i })).toBeInTheDocument();
+  });
+
+  it("does not offer retry on a run that has not failed", async () => {
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+
+    await screen.findByText("b1");
+    expect(screen.queryByRole("button", { name: /^retry$/i })).not.toBeInTheDocument();
+  });
+
+  it("retries a failed run and reloads the history on success", async () => {
+    respondWith({ runs: [FAILED_RUN], total: 1 });
+    post.mockResolvedValue({ data: { retried: "r2" } });
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await userEvent.click(await screen.findByRole("button", { name: /^retry$/i }));
+
+    await waitFor(() => {
+      expect(post).toHaveBeenCalledWith(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/system-health/workspace/ws-1/runs/r2/retry`,
+      );
+    });
+    // The retry reloads history rather than leaving the failed row on screen
+    // with no visible effect from the click.
+    await waitFor(() => expect(get.mock.calls.length).toBeGreaterThanOrEqual(2));
+  });
+
+  it("explains a retry failure instead of appearing to do nothing", async () => {
+    respondWith({ runs: [FAILED_RUN], total: 1 });
+    post.mockRejectedValue(new Error("boom"));
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await userEvent.click(await screen.findByRole("button", { name: /^retry$/i }));
+
+    expect(await screen.findByText(/could not retry the run/i)).toBeInTheDocument();
+  });
+
+  it("shows pager controls and requests the next page", async () => {
+    respondWith({ runs: [RUN], total: 120, page: 1 });
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await screen.findByText("b1");
+
+    expect(screen.getByText(/page 1 of 3/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /previous/i })).toBeDisabled();
+
+    await userEvent.click(screen.getByRole("button", { name: /next/i }));
+
+    await waitFor(() => {
+      expect(get).toHaveBeenLastCalledWith(expect.stringContaining("page=2"));
+    });
+  });
+
+  it("disables Next on the last page", async () => {
+    respondWith({ runs: [RUN], total: 3, page: 1, pageSize: 50 });
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await screen.findByText("b1");
+
+    expect(screen.getByRole("button", { name: /next/i })).toBeDisabled();
+  });
+
+  it("renders the schedule summary above the run history", async () => {
+    respondWith({ schedules: [SCHEDULE], runs: [RUN], total: 1 });
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+
+    expect(await screen.findByText(/missed runs: 2/i)).toBeInTheDocument();
+    expect(screen.getByText(/consecutive failures: 3/i)).toBeInTheDocument();
+    expect(screen.getByText("Xero token expired")).toBeInTheDocument();
   });
 
   it("explains a refused run instead of appearing to do nothing", async () => {
@@ -100,10 +226,7 @@ describe("SystemHealthDrilldownView", () => {
   });
 
   it("shows explicit copy when a workspace genuinely has no runs", async () => {
-    get.mockReset();
-    get.mockResolvedValue({
-      data: { workspaceId: "ws-1", schedules: [], runs: [], total: 0, page: 1, pageSize: 50 },
-    });
+    respondWith({ runs: [], total: 0 });
 
     render(<SystemHealthDrilldownView workspaceId="ws-1" />);
 
