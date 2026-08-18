@@ -106,9 +106,20 @@ describe('emailOutbox', () => {
     expect(readdirSync(join(root, 'outbox/55369'))).toHaveLength(1);
   });
 
-  it('online: refuses loudly rather than pretending to send', async () => {
+  it('online with no transport configured: refuses loudly rather than pretending to send', async () => {
+    // Delivery exists now, so the old "not implemented" wording is gone — but
+    // the property it protected has to hold: an environment that is online
+    // with no SMTP credentials must not quietly write a preview nobody reads
+    // while a client waits for an invoice.
     process.env.ISOPLUS_OFFLINE = '0';
+    const savedHost = process.env.SES_SMTP_HOST;
+    delete process.env.SES_SMTP_HOST;
 
-    await expect(deliverEmail(MESSAGE)).rejects.toThrow(/Epic 5|not implemented/i);
+    try {
+      await expect(deliverEmail(MESSAGE)).rejects.toThrow(/not configured/i);
+    } finally {
+      if (savedHost === undefined) delete process.env.SES_SMTP_HOST;
+      else process.env.SES_SMTP_HOST = savedHost;
+    }
   });
 });

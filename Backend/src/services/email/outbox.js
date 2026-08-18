@@ -1,79 +1,91 @@
-// The offline half of the delivery seam. Nothing here sends email yet — SES
-// transport is Epic 5 part 4 — so deliverEmail() composes the message the
-// automation would send and writes it to the same offline store the S3
-// stand-ins use (utils/localFileStore.js, served by GET /api/local-files).
-// Online it throws: a transport that silently drops mail is worse than no
-// transport. SES replaces the throw below; nothing upstream changes.
+// The delivery seam. Composing a message and delivering it are separate
+// concerns here: `deliverEmail` decides WHICH backend this environment has and
+// hands the message over, and the backend decides what delivery means —
+// writing a readable preview offline, or an SES SMTP send online.
+//
+// Adding a provider is a registration (services/email/registry.js), not an
+// edit to this file or to the worker.
 
+import { info, warn } from '../../utils/logger.js';
+import { localOutboxBackend, sesBackend } from './backends.js';
+import { isEmailTransportConfigured } from './sesTransport.js';
 import { isOfflineMode } from '../offlineIsoplus.js';
-import { saveLocalFile } from '../../utils/localFileStore.js';
-import { info } from '../../utils/logger.js';
+import {
+  LOCAL_OUTBOX_BACKEND,
+  SES_BACKEND,
+  clearEmailBackends,
+  registerEmailBackend,
+  resolveEmailBackend,
+  selectBackendName,
+} from './registry.js';
+
+export { outboxKeyFor } from './backends.js';
+
+let registered = false;
 
 /**
- * Path-safe form of a recipient name: anything not a letter, digit or dash
- * becomes a dash, so a name can never introduce a separator or a traversal
- * segment into the key.
+ * Idempotent because the worker, a route and a test can each be the first
+ * caller in a process, and re-registering a name is deliberately an error.
  */
-function recipientSlug(recipientKey) {
-  return String(recipientKey)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60);
+export function registerBuiltInEmailBackends() {
+  if (registered) return;
+  registerEmailBackend(LOCAL_OUTBOX_BACKEND, localOutboxBackend);
+  registerEmailBackend(SES_BACKEND, sesBackend);
+  registered = true;
+}
+
+/** Test seam: forget the built-ins so a suite can register its own. */
+export function resetEmailBackends() {
+  clearEmailBackends();
+  registered = false;
 }
 
 /**
- * One file per claimed slot, keyed like the queue jobId, so a redelivered job
- * overwrites its own preview rather than accumulating duplicates.
+ * Whether this environment can deliver at all, and how.
  *
- * `recipientKey` separates the per-participant messages a `client_participant`
- * run composes for one board and slot; without it they all resolve to the same
- * path. Absent for a billing-contact run, which keeps its historical key.
+ * The worker asks BEFORE generating: generation claims invoice numbers and
+ * writes PDFLink rows, so discovering there is no transport afterwards burns
+ * real numbers on documents nobody receives.
  */
-export function outboxKeyFor({ kind, workspaceId, boardId, periodKey, recipientKey = null }) {
-  const suffix = recipientKey ? `-${recipientSlug(recipientKey)}` : '';
-  return `outbox/${workspaceId}/${kind}-${boardId}-${periodKey}${suffix}.json`;
+export function activeEmailBackendName() {
+  return selectBackendName({
+    offline: isOfflineMode(),
+    transportConfigured: isEmailTransportConfigured(),
+  });
 }
 
 /**
- * Deliver a composed automation email. `block` is the email half of an
- * AutomationSettings block, already validated by parseAutomationSettingsBody.
- * The recipient is stored as a *type* (billing_contact | client_participant)
- * rather than an address — resolving it belongs with the real transport, so the
- * preview records the type it would resolve.
+ * Deliver a composed automation email.
+ *
+ * `block` is the email half of an AutomationSettings block, already validated
+ * by parseAutomationSettingsBody. The recipient is stored as a *type*
+ * (billing_contact | client_participant); the SES backend resolves it to a
+ * real address, and the offline one records the type it would resolve.
  */
 export async function deliverEmail(message) {
-  const { kind, workspaceId, boardId, periodKey, block, attachments = [] } = message;
+  registerBuiltInEmailBackends();
 
-  if (!isOfflineMode()) {
+  const name = activeEmailBackendName();
+  if (!name) {
+    // Louder than a silent skip: an environment that is online with no
+    // transport can neither send nor usefully pretend to.
     throw new Error(
-      'Email delivery is not implemented: SES transport is Epic 5 part 4. ' +
-      'Only the offline outbox exists — refusing rather than silently dropping mail.',
+      'Email delivery is not configured: set SES_SMTP_HOST, SES_SMTP_USER and ' +
+      'SES_SMTP_PASSWORD, or run offline to write outbox previews instead.',
     );
   }
 
-  const outboxKey = outboxKeyFor(message);
-  const composed = {
-    kind,
-    workspaceId,
-    boardId,
-    periodKey,
-    recipientType: block?.recipient ?? null,
-    sendMethod: block?.sendMethod ?? null,
-    from: block?.emailFrom || null,
-    replyTo: block?.replyTo || null,
-    copyTo: block?.sendCopyTo || null,
-    subject: block?.emailSubject || `${kind} for board ${boardId}`,
-    body: block?.emailMessage || '',
-    attachments,
-    composedAt: new Date().toISOString(),
-    note: 'Offline outbox preview — nothing was sent. SES delivery is Epic 5 part 4.',
-  };
+  const backend = resolveEmailBackend(name);
+  const result = await backend.deliver(message);
 
-  await saveLocalFile(outboxKey, Buffer.from(JSON.stringify(composed, null, 2)));
-  info('Email-Outbox', 'Composed email written to offline outbox', {
-    kind, workspaceId, boardId, periodKey, outboxKey,
-  });
-
-  return { delivered: false, outboxKey };
+  if (result.delivered === false && result.reason) {
+    warn('Email-Delivery', 'Backend delivered nothing', {
+      backend: name, kind: message.kind, reason: result.reason,
+    });
+  } else {
+    info('Email-Delivery', 'Message handed to backend', {
+      backend: name, kind: message.kind, delivered: result.delivered === true,
+    });
+  }
+  return result;
 }

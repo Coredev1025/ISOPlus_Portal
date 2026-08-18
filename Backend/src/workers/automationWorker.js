@@ -3,10 +3,9 @@ import { Worker } from 'bullmq';
 import { KIND_INVOICE, KIND_STATEMENT } from '../constants/automation.js';
 import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
 import { AUTOMATION_QUEUE_NAME } from '../services/automation/queue.js';
-import { deliverEmail } from '../services/email/outbox.js';
+import { activeEmailBackendName, deliverEmail } from '../services/email/outbox.js';
 import { generateInvoicesForBoard } from '../services/automation/generateDocuments.js';
 import { generateStatementsForBoard } from '../services/automation/generateStatements.js';
-import { isOfflineMode } from '../services/offlineIsoplus.js';
 import { buildRedisConnection } from '../services/redisConnection.js';
 import AutomationSettings from '../models/AutomationSettings.js';
 import Business from '../models/Business.js';
@@ -107,7 +106,7 @@ async function deliverGroup({ kind, workspaceId, boardId, periodKey, block, busi
   const vars = buildTemplateVars({ businessName, results: group.results });
   const attachments = group.results.map((doc) => doc.pdfUrl);
 
-  const { outboxKey } = await deliverEmail({
+  const result = await deliverEmail({
     kind,
     workspaceId,
     boardId,
@@ -116,9 +115,16 @@ async function deliverGroup({ kind, workspaceId, boardId, periodKey, block, busi
     block: composeBlock(block, vars),
     attachments,
   });
-  info('Automation', 'Automation email composed to offline outbox', {
-    kind, workspaceId, boardId, periodKey, outboxKey,
-    participant: group.participant, attachments: attachments.length,
+  // One line whichever backend ran: outboxKey for the offline preview,
+  // messageId for a real send.
+  info('Automation', 'Automation email delivered', {
+    kind, workspaceId, boardId, periodKey,
+    backend: result.backend,
+    delivered: result.delivered,
+    outboxKey: result.outboxKey ?? null,
+    messageId: result.messageId ?? null,
+    participant: group.participant,
+    attachments: attachments.length,
   });
 }
 
@@ -135,12 +141,13 @@ async function composeAndDeliver(job) {
   }
 
   // Checked BEFORE generation, which is irreversible: it claims invoice numbers
-  // and writes PDFLink rows keyed on periodKey, so discovering there is no
-  // transport afterwards burns real numbers on PDFs nobody receives and leaves
+  // and writes PDFLink rows keyed on periodKey, so discovering there is no way
+  // to deliver afterwards burns real numbers on PDFs nobody receives and leaves
   // rows that make the re-run hand back those stale documents. Resolves rather
   // than throws — nothing irreversible happened.
-  if (!isOfflineMode()) {
-    warn('Automation', 'No email transport (SES is Epic 5 part 4); generated nothing rather than discarding it', {
+  const backend = activeEmailBackendName();
+  if (!backend) {
+    warn('Automation', 'No email backend configured; generated nothing rather than discarding it', {
       kind, workspaceId, boardId, periodKey,
     });
     return;
