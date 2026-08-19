@@ -121,10 +121,47 @@ export const PDFLINK_TYPE_MONTHLY_STATEMENT = 'Monthly Statement';
 export const DEFAULT_INVOICE_DUE_DAYS = 14;
 
 /**
- * Same page/limit the Invoice Generator UI sends on GET .../invoice-generator.
+ * The `limit` an automation run sends to the Invoice Generator list helpers.
+ *
+ * `'all'` is their sentinel for "do not paginate" (utils/itemsRouteHelpers.js,
+ * parseListPagination), and it is the only correct value here. This used to be
+ * 1000 — the page size the Invoice Generator UI sends, copied across without
+ * the UI's Next button. A board with more billable rows than that in one period
+ * had the surplus silently dropped: the list is sorted by service date and only
+ * the first page was invoiced, and because the next run's window is the NEXT
+ * period, those rows were never billed at all. Silent under-billing, with no
+ * error and nothing on the invoice to show what was missing.
+ *
+ * The helpers already build and total the complete filtered set before slicing,
+ * so asking for all of it costs the transform and reference-lookup stage, not a
+ * second pass over the board.
+ *
  * Touchpoints: services/automation/generateDocuments.js.
  */
-export const GENERATOR_LIST_LIMIT = 1000;
+export const GENERATOR_LIST_LIMIT = 'all';
+
+/**
+ * How long a completed or failed automation job record is kept in Redis.
+ *
+ * Retention exists for the jobId dedupe: BullMQ refuses an add whose jobId it
+ * still holds, which is what collapses an at-least-once redelivery of the same
+ * slot. Keeping every record forever bounded nothing — one job per board per
+ * kind per slot, for the life of the deployment — and bought no durable
+ * guarantee, because the jobId is not what stops a double bill. A replayed slot
+ * regenerates nothing regardless: existingSlotResults hands back its PDFLink
+ * rows, the NDIS list asks for rows with no invoice number yet, the Age Care
+ * list drops rows that already carry one, and a statement matches its own
+ * itemId. Those rows do not expire.
+ *
+ * 90 days is chosen against the redelivery window, not the billing cycle. A
+ * redelivery is the tick re-dispatching an unadvanced slot, which happens
+ * within minutes and stops at MAX_CONSECUTIVE_FAILURES; a later slot carries a
+ * different periodKey and therefore a different jobId. Three months is margin,
+ * not a requirement.
+ *
+ * Touchpoints: services/automation/queue.js.
+ */
+export const AUTOMATION_JOB_RETENTION_SECONDS = 90 * 24 * 3600;
 
 // ── Email delivery state ────────────────────────────────────────────────────
 

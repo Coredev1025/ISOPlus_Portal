@@ -9,7 +9,13 @@ import Business from '../../../src/models/Business.js';
 import Item from '../../../src/models/Item.js';
 import InvoiceNumber from '../../../src/models/InvoiceNumber.js';
 import PDFLink from '../../../src/models/PDFLink.js';
-import { generateInvoicesForBoard } from '../../../src/services/automation/generateDocuments.js';
+import {
+  assertListNotTruncated,
+  generateInvoicesForBoard,
+  invoiceGeneratorListQuery,
+} from '../../../src/services/automation/generateDocuments.js';
+import { GENERATOR_LIST_LIMIT } from '../../../src/constants/automation.js';
+import { parseListPagination } from '../../../src/utils/itemsRouteHelpers.js';
 import { getNdisInvoiceGeneratorData } from '../../../src/utils/ndisInvoiceGeneratorRouteHelpers.js';
 import { ndisInvoiceGeneratorListDeps } from '../../../src/utils/automationInvoiceGeneratorDeps.js';
 
@@ -359,5 +365,86 @@ describe('pdflink-scheduled-xero-ids migration', () => {
     // updateMany({}) would strip theirs too.
     const manual = await collection.findOne({ itemId: 'i-manual' });
     expect(manual.invoiceNumber).toBe('IN-8');
+  });
+});
+
+/**
+ * The list window a scheduled run asks for.
+ *
+ * A scheduled run has no Next button. The limit here used to be 1000 — the
+ * Invoice Generator page's own page size, copied across — so a board with more
+ * billable rows than that in one period had the surplus dropped: the list is
+ * sorted by service date, only the first page was invoiced, and the next run's
+ * window is the NEXT period, so those rows were never billed at all.
+ */
+describe('invoiceGeneratorListQuery', () => {
+  it('asks for every row in the period rather than one page of them', () => {
+    const query = invoiceGeneratorListQuery(SLOT, TZ, MONTHLY);
+
+    // 'all' is parseListPagination's sentinel for "do not paginate".
+    expect(query.limit).toBe('all');
+    expect(GENERATOR_LIST_LIMIT).toBe('all');
+  });
+
+  it('keeps the deterministic ordering the invoice depends on', () => {
+    const query = invoiceGeneratorListQuery(SLOT, TZ, MONTHLY);
+
+    expect(query).toMatchObject({
+      status: 'pending',
+      sortBy: 'scheduledServiceDate',
+      sortOrder: 'asc',
+      page: 1,
+    });
+  });
+
+  it('carries the caller status through, for the Age Care list that wants them all', () => {
+    expect(invoiceGeneratorListQuery(SLOT, TZ, MONTHLY, { status: 'all' }).status).toBe('all');
+  });
+
+  // parseListPagination only skips pagination for 'all' or a non-positive
+  // limit; any number turns it back on. Pinning the sentinel by behaviour
+  // rather than by string means a rename of the constant cannot quietly
+  // reintroduce a page size.
+  it('sends a limit the pagination parser refuses to paginate on', () => {
+    const { applyPagination } = parseListPagination(
+      1,
+      invoiceGeneratorListQuery(SLOT, TZ, MONTHLY).limit,
+    );
+
+    expect(applyPagination).toBe(false);
+  });
+});
+
+/**
+ * The tripwire behind the limit. Both helpers report `total` as the size of the
+ * filtered set before pagination, so a shorter `items` means the run can only
+ * see part of the period.
+ */
+describe('assertListNotTruncated', () => {
+  const context = { boardId: 'board-x', periodKey: '20260801-0900' };
+
+  it('passes when the rows returned are the whole filtered set', () => {
+    expect(assertListNotTruncated({ items: [{}, {}], total: 2 }, context)).toBe(2);
+  });
+
+  it('passes when the helper reports no total at all', () => {
+    expect(assertListNotTruncated({ items: [{}] }, context)).toBe(1);
+  });
+
+  it('passes for an empty period', () => {
+    expect(assertListNotTruncated({ items: [], total: 0 }, context)).toBe(0);
+  });
+
+  // Throws rather than billing what it can see: a partial invoice reads as a
+  // complete one, and the rows it omits fall outside the next run's window.
+  it('refuses to bill part of a period, naming both counts', () => {
+    expect(() => assertListNotTruncated({ items: [{}, {}], total: 1500 }, context))
+      .toThrow(/returned 2 of 1500 rows for board board-x slot 20260801-0900/);
+  });
+
+  it('does not trip on a total smaller than the rows returned', () => {
+    // Defensive: a helper that under-reports its own total is a different bug,
+    // and must not stop a run that has every row it needs.
+    expect(assertListNotTruncated({ items: [{}, {}], total: 1 }, context)).toBe(2);
   });
 });

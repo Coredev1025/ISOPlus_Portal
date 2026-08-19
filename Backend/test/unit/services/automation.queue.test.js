@@ -142,26 +142,61 @@ describe('getAutomationQueue', () => {
     expect(queue.opts.defaultJobOptions.backoff).toEqual({ type: 'exponential', delay: 5000 });
   });
 
-  // Deliberately asymmetric with sync/queue.js, which sets both. The whole
-  // double-billing guarantee is the per-board jobId from buildFanOutSpecs, and
-  // BullMQ only refuses a duplicate jobId while it still HOLDS that job's
-  // record. Set removeOnComplete and the record is evicted, the jobId becomes
-  // available again, and a redelivered at-least-once dispatch bills the board
-  // a second time.
-  it('retains completed and failed job records, or the jobId dedupe evaporates', async () => {
+  // This test used to pin the opposite — no retention settings at all, so no
+  // completed job record is ever evicted — and the expectation was wrong
+  // because its premise was incomplete, not because the risk it named is fake.
+  //
+  // The risk is real: BullMQ only refuses a duplicate jobId while it still
+  // HOLDS that job's record, so evicting one frees the id and a redelivered
+  // at-least-once dispatch re-enqueues the board. What the original reasoning
+  // missed is that the jobId is not the only guard, and not the durable one.
+  // A re-run of the same slot regenerates nothing: existingSlotResults hands
+  // back the slot's PDFLink rows, the NDIS list asks for `pending` (no invoice
+  // number yet), the Age Care list drops rows that already carry one, and
+  // existingStatementLinks matches on the statement's own itemId. The jobId
+  // saves the WORK; PDFLink is what stops the double bill, and it does not
+  // expire.
+  //
+  // Retaining every job forever therefore bought nothing durable and cost an
+  // unbounded Redis key set — one job per board per kind per slot, kept for the
+  // life of the deployment.
+  it('bounds retained job records without shortening the redelivery window', async () => {
     const { getAutomationQueue } = await loadQueueModule();
-    const queue = getAutomationQueue();
+    const { AUTOMATION_JOB_RETENTION_SECONDS } = await import('../../../src/constants/automation.js');
+    const { defaultJobOptions } = getAutomationQueue().opts;
 
-    expect(queue.opts.defaultJobOptions.removeOnComplete).toBeUndefined();
-    expect(queue.opts.defaultJobOptions.removeOnFail).toBeUndefined();
+    expect(defaultJobOptions.removeOnComplete).toEqual({ age: AUTOMATION_JOB_RETENTION_SECONDS });
+    expect(defaultJobOptions.removeOnFail).toEqual({ age: AUTOMATION_JOB_RETENTION_SECONDS });
   });
 
-  // The consequence of the retention setting above, spelled out. There is no
-  // Redis in this suite, so this models BullMQ's documented jobId semantics —
-  // an add whose jobId is already known is discarded, and removeOnComplete is
-  // what makes it stop being known — driven by the options queue.js really
-  // passes. It fails the moment queue.js starts discarding completed jobs.
-  it('discards a re-add of the same spec after that job has completed', async () => {
+  // `count` is deliberately absent where sync/queue.js sets it. A count cap
+  // evicts by recency rather than by age, so a busy queue could drop a job that
+  // completed minutes ago — inside the window where an at-least-once
+  // redelivery of that very slot is still plausible. Age alone cannot do that.
+  it('caps retention by age only, never by count', async () => {
+    const { getAutomationQueue } = await loadQueueModule();
+    const { defaultJobOptions } = getAutomationQueue().opts;
+
+    expect(defaultJobOptions.removeOnComplete.count).toBeUndefined();
+    expect(defaultJobOptions.removeOnFail.count).toBeUndefined();
+  });
+
+  // The retention has to outlast every redelivery of a slot by a wide margin.
+  // Redeliveries cluster within minutes — the tick re-dispatches an unadvanced
+  // slot until it succeeds or gives up at MAX_CONSECUTIVE_FAILURES — so the
+  // margin here is measured in months, and a later slot is a different
+  // periodKey and therefore a different jobId regardless.
+  it('keeps a completed job far longer than any slot can be redelivered', async () => {
+    const { AUTOMATION_JOB_RETENTION_SECONDS } = await import('../../../src/constants/automation.js');
+
+    expect(AUTOMATION_JOB_RETENTION_SECONDS).toBeGreaterThanOrEqual(30 * 24 * 3600);
+  });
+
+  // The dedupe itself, modelled on BullMQ's documented jobId semantics: an add
+  // whose jobId is already known is discarded. Within the retention window
+  // that is still exactly what happens, which is the property the eviction
+  // change must not break.
+  it('discards a re-add of the same spec while that job is still retained', async () => {
     const { getAutomationQueue } = await loadQueueModule();
     const { buildFanOutSpecs } = await import('../../../src/services/automation/fanOut.js');
     const { KIND_INVOICE } = await import('../../../src/constants/automation.js');
@@ -176,16 +211,16 @@ describe('getAutomationQueue', () => {
     });
 
     const known = new Set();
-    const add = () => {
+    // Seconds since the job completed, against the configured age cap.
+    const add = (ageSeconds = 0) => {
+      if (ageSeconds > defaultJobOptions.removeOnComplete.age) known.delete(spec.opts.jobId);
       if (known.has(spec.opts.jobId)) return null;
       known.add(spec.opts.jobId);
       return spec.opts.jobId;
     };
 
     expect(add()).toBe(spec.opts.jobId);
-    // ...the job completes...
-    if (defaultJobOptions.removeOnComplete) known.delete(spec.opts.jobId);
-
-    expect(add()).toBeNull();
+    // ...the job completes, and a redelivery arrives minutes later...
+    expect(add(600)).toBeNull();
   });
 });

@@ -34,7 +34,13 @@ import { liveParticipantTaxDeps } from '../../routes/webhook.js';
 import { mongoEq } from '../../utils/securityHelpers.js';
 import { info, warn } from '../../utils/logger.js';
 
-function invoiceGeneratorListQuery(slot, timezone, schedule, { status = 'pending' } = {}) {
+/**
+ * The list window for one claimed slot. `limit` is GENERATOR_LIST_LIMIT — the
+ * helpers' "do not paginate" sentinel — because a scheduled run has no Next
+ * button: every billable row in the period has to be on the invoice or it is
+ * never billed at all.
+ */
+export function invoiceGeneratorListQuery(slot, timezone, schedule, { status = 'pending' } = {}) {
   return {
     status,
     sortBy: 'scheduledServiceDate',
@@ -43,6 +49,30 @@ function invoiceGeneratorListQuery(slot, timezone, schedule, { status = 'pending
     limit: GENERATOR_LIST_LIMIT,
     ...schedulePeriodServiceDeliveryWindow(slot, timezone, schedule),
   };
+}
+
+/**
+ * A tripwire, not a filter. Both list helpers report `total` as the size of the
+ * filtered set before pagination, so a shorter `items` means the run is looking
+ * at part of the period — which is exactly the silent under-billing
+ * GENERATOR_LIST_LIMIT exists to prevent.
+ *
+ * It throws rather than billing what it can see. A partial invoice reads as a
+ * complete one to whoever receives it, and the rows it left out fall outside
+ * the next run's window, so nothing ever picks them up. A thrown job retries,
+ * fails visibly, and leaves the slot unbilled — recoverable, where a
+ * half-billed period is not.
+ */
+export function assertListNotTruncated(listed, context) {
+  const returned = (listed?.items || []).length;
+  const total = Number(listed?.total ?? returned);
+  if (Number.isFinite(total) && total > returned) {
+    throw new Error(
+      `automation: invoice generator returned ${returned} of ${total} rows for `
+      + `board ${context.boardId} slot ${context.periodKey}; refusing to bill part of a period`,
+    );
+  }
+  return returned;
 }
 
 function uniquePdfResults(links) {
@@ -144,6 +174,7 @@ async function generateNdisGeneratorInvoices({ workspaceId, boardId, periodKey, 
     { workspaceId, boardId, query: listQuery, req: null },
     ndisInvoiceGeneratorListDeps(),
   );
+  assertListNotTruncated(listed, { boardId, periodKey });
   const groups = groupItemIdsByParticipant(listed.items || [], {
     idKey: 'sourceItemId',
     participantKey: 'participant',
@@ -216,6 +247,7 @@ async function generateAgeCareGeneratorInvoices({
     });
     return existing;
   }
+  assertListNotTruncated(listed, { boardId, periodKey });
   const pending = (listed.items || []).filter((row) => !row.invoiceNumber);
   const groups = groupItemIdsByParticipant(pending, { idKey: 'id', participantKey: 'participant' });
   if (groups.length === 0) return existing;
