@@ -9,6 +9,8 @@ description: >-
   when asked to prove the generated invoices or statements are populated rather
   than blank, to check an email is not carrying another board's documents, or
   to export a run's PDFs and composed emails somewhere reviewable. Also use
+  when sending a run for real through SES, or when asked why an automation
+  email bounced, shows no delivery state, or never left the outbox. Also use
   when driving board `eNiJpH14PN3` / workspace `55369` (Care Management NDIS
   2026 Pricing) locally, or replaying its ISO+ webhook bodies.
 ---
@@ -17,33 +19,47 @@ description: >-
 
 ## The boundary — read this before promising anyone a result
 
-**KAN-10's scheduled pipeline sends nothing, to anyone, in any mode — and it
-never touches Xero.** SES delivery is Epic 5 part 4; only its first slice
-exists: offline, the worker composes the email its settings block describes and
-writes it to the **outbox**, a file a person can open and verify:
+**Where a KAN-10 run ends depends on the environment, not on the code path.**
+The worker never branches on how mail leaves the building: `selectBackendName`
+resolves a delivery backend *by name*, and the run ends wherever that backend
+takes it. Work out which row you are in first; the rows fail differently.
+
+| Environment | Backend | Terminal observable |
+|---|---|---|
+| Offline (`ISOPLUS_OFFLINE=1`, or a blank `PERSONAL_ACCESS_TOKEN` outside production) | `local-outbox` | an outbox JSON file per claimed slot, plus the completed queue job |
+| Online, `EMAIL_FROM` + the AWS variables set | `ses` | a real send — `SES-Transport: Email sent`, a row in `emailsends`, then a `Delivery`/`Bounce` row in `emailevents` |
+| Online, no transport configured | none — resolves to `null` | **nothing generated.** The worker refuses *before* claiming invoice numbers |
+
+Offline, the composed email is a file a person can open and verify:
 
 ```
 Backend/.local-s3/outbox/<workspaceId>/<kind>-<boardId>-<periodKey>.json
 ```
 
 One file per claimed slot, named like the queue jobId, so an at-least-once
-redelivery overwrites its own preview rather than duplicating it. Online there
-is still no transport — the worker completes with a warn, and calling the
-outbox directly online throws rather than silently dropping mail.
+redelivery overwrites its own preview rather than duplicating it. **A run that
+ends at that file is a *passing* run** — offline there is nothing further to
+wait for, and no amount of re-ticking will produce a send.
 
-So "did it reach Xero?" is the wrong success criterion for KAN-10. **The
-terminal observable offline is the outbox file (plus the completed queue job);
-online it is a warn that delivery is unimplemented.** A run that ends there is
-a *passing* run. Xero *is* reachable in this repo, but only by a different,
-older, webhook-driven system (Track B, and the `xero-sync-local` skill) — do
-not report a Track B success as evidence KAN-10 works.
+**KAN-10 does now reach Xero, on exactly one route:** an invoice block whose
+`sendMethod` is `accounting` generates its invoices and creates them as Xero
+DRAFTs *instead of* emailing them. Statements always email — Xero has no
+statement object here — and a statement block carrying `accounting` says so
+once in the log rather than silently ignoring the setting. Xero-not-connected
+is settled before generation, so that misconfiguration logs an error and
+produces nothing, rather than burning invoice numbers on drafts it cannot
+create.
+
+Every *other* way Xero is reachable in this repo is Track B — a different,
+older, webhook-driven system (and the `xero-sync-local` skill). Do not report a
+Track B success as evidence KAN-10 works.
 
 | | Track A — KAN-10 | Track B — board automations |
 |---|---|---|
 | Trigger | `POST /api/scheduler/tick` (EventBridge in prod, `npm run tick` locally) | ISO+ `ButtonTrigger`/`ValueChange` node → `TriggerWebhook` |
 | Config lives in | Finance Settings → Automation tab | the ISO+ board itself |
-| Ends at | generated PDFs + an outbox file per claimed slot | `/api/pdf`, `/api/xero`, `/api/care-management-ndis-pricing` |
-| Reaches Xero | **no, by design** | yes (2 ButtonTrigger automations) |
+| Ends at | offline: generated PDFs + an outbox file per claimed slot. Online: a real SES send, or Xero DRAFTs on the `accounting` route | `/api/pdf`, `/api/xero`, `/api/care-management-ndis-pricing` |
+| Reaches Xero | only via `sendMethod: 'accounting'` — invoices, as DRAFTs | yes (2 ButtonTrigger automations) |
 | Needs ngrok | **no** | yes, for a live board |
 
 ## Preconditions
@@ -321,7 +337,7 @@ periodKey, and an explicit nothing-was-sent note:
 { "kind": "invoice_automation", "periodKey": "20260814-1652",
   "recipientType": "billing_contact", "replyTo": "billing@iso-plus.com.au",
   "subject": "Your ISO+ invoice run",
-  "note": "Offline outbox preview — nothing was sent. SES delivery is Epic 5 part 4." }
+  "note": "Offline outbox preview — nothing was sent." }
 ```
 
 Invoice slots carry **Invoice Generator** attachments: one NDIS (or Age Care)
@@ -341,10 +357,13 @@ Confirm Invoice Generator shows those rows as invoiced, not merely that an
 `auto/` quote-line PDF exists.
 
 **That file is the end of KAN-10 offline.** It is also served at
-`/api/local-files/outbox/…`. Jobs land in `completed`, not `waiting` — the
-worker completes them so BullMQ does not retry against a transport that does
-not exist. An empty outbox with completed jobs means the settings block is
-disabled, or the backend is not in offline mode.
+`/api/local-files/outbox/…`. Jobs land in `completed`, not `waiting`. An empty
+outbox with completed jobs means the settings block is disabled, the block
+chose `sendMethod: 'accounting'` (invoices go to Xero and no email is composed),
+or the backend is not in offline mode.
+
+Online the same job ends at a real send instead — see **Sending for real**
+below.
 
 ### 11. Check what the run actually produced
 
@@ -386,6 +405,48 @@ pins a page of lines and boxes as zero.
 What a populated run looks like, for comparison: NDIS invoices ~2.6-3.1k text
 characters, Age Care ~3.6k, 14-page statements ~48k.
 
+### 12. Sending for real
+
+Everything above runs offline and stops at the outbox. To make the same tick
+actually send, put the AWS credential, `EMAIL_FROM` and `SES_EVENTS_QUEUE_URL`
+in `Backend/.env` and recreate the backend — nothing else about the pipeline
+changes, because only the resolved backend changes.
+
+**`docs/ongoing/KAN-10-email-delivery.md` is the reference** for the variables,
+the rotated-key status, and the go-live checklist. Do not restate it here. Two
+of its rules matter enough to repeat, because getting them wrong reaches
+production:
+
+- **Send only to the SES simulator addresses** — `success@`, `bounce@`,
+  `complaint@simulator.amazonses.com`. The suppression list is account-level and
+  shared with production; one careless bounce in dev can silently stop a real
+  client's mail. The dev IAM key allowlists three domains and returns
+  `AccessDenied` for anything else, which the SES backend records as a refusal
+  (`reason: 'access_denied'`) rather than retrying — a backstop, not the plan.
+- **The SQS queue is shared with the deployed dev environment.** SQS delivers
+  each message to one consumer, so a local consumer steals its events. Leave
+  `SES_EVENTS_QUEUE_URL` unset and read the queue by hand if anything is
+  deployed.
+
+What a real send looks like, end to end:
+
+```bash
+npm run tick -- --once
+# backend log: SES-Transport: Email sent   (bare messageId; never an address)
+
+docker exec -i isoplus-mongo mongosh business-dashboard --quiet --eval '
+  db.emailsends.find({}, {messageId:1, kind:1, recipientType:1, _id:0}).forEach(printjson)'
+
+# ~a minute later the SQS consumer applies the event
+docker exec -i isoplus-mongo mongosh business-dashboard --quiet --eval '
+  db.emailevents.find({}, {sesMessageId:1, eventType:1, eventAt:1, _id:0}).forEach(printjson)'
+```
+
+`emailsends.messageId` is the **bare** SES id and the only join between an event
+and the run that caused it. Events apply to the stamped `PDFLink` rows through a
+ranked state machine, so a duplicate matches nothing and a late `Delivery`
+cannot erase a `Bounce`.
+
 ### Track A quick reference
 
 | Symptom | Cause |
@@ -399,6 +460,10 @@ characters, Age Care ~3.6k, 14-page statements ~48k.
 | Tick green, nothing generated | `AUTOMATION_ENABLED` unset — the pipeline is gated off by default |
 | PDFs generated but blank | real defect — run step 11; the source rows resolved no values |
 | An email lists another board's PDFs | real defect — a PDF lookup lost its `boardId` scope |
+| Online, tick green, nothing generated at all | no delivery backend resolved — `EMAIL_FROM` or an AWS variable is blank, so the worker refused before claiming invoice numbers |
+| Invoices generated, no email, no outbox file | the block chose `sendMethod: 'accounting'` — they went to Xero as DRAFTs |
+| `accounting` block logs an error, generates nothing | Xero not connected for that workspace; settled before generation, on purpose |
+| Send succeeds, `emailevents` stays empty | `SES_EVENTS_QUEUE_URL` unset, or the deployed dev consumer took the message first |
 
 ## Track B — the path that does reach Xero
 
