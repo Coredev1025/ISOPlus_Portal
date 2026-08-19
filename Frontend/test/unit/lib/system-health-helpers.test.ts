@@ -57,7 +57,7 @@ describe("formatStartedAt", () => {
 
 describe("runStatusLabel", () => {
   it("names a skipped run for what it is", () => {
-    expect(runStatusLabel("skipped")).toBe("Pending setup");
+    expect(runStatusLabel("skipped")).toBe("Skipped");
   });
 
   it("passes through the ordinary states", () => {

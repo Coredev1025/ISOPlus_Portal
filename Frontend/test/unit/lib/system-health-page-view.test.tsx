@@ -42,9 +42,9 @@ describe("SystemHealthPageView", () => {
     expect(screen.getByText("2.3%")).toBeInTheDocument();
   });
 
-  it("says delivery is not enabled yet rather than showing an empty bounce count", () => {
+  it("says bounce reporting is unbuilt rather than showing an empty bounce count", () => {
     render(<SystemHealthPageView />);
-    expect(screen.getByText(/delivery is not enabled yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/bounce and delivery reporting is not built yet/i)).toBeInTheDocument();
   });
 
   it("flags a queue backlog", () => {

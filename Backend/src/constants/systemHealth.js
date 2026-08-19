@@ -123,10 +123,3 @@ export const HISTORY_PAGE_SIZE = 50;
  */
 export const QUEUE_DEPTH_WARN = 50;
 
-/**
- * How many runs the client-facing panel shows. The admin drill-down is
- * deliberately not capped this way.
- *
- * Touchpoints: routes/automation.js.
- */
-export const CLIENT_PANEL_RUN_LIMIT = 10;

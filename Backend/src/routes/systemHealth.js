@@ -18,7 +18,7 @@ import {
 } from '../utils/systemHealthRunHelpers.js';
 import { readQueueDepth } from '../services/automation/queueMetrics.js';
 import { getAutomationQueue } from '../services/automation/queue.js';
-import { KIND_INVOICE } from '../services/automation/fanOut.js';
+import { KIND_INVOICE } from '../constants/automation.js';
 import { recordQueuedRuns } from '../services/automation/runs.js';
 import {
   ERROR_RATE_WINDOW_HOURS,

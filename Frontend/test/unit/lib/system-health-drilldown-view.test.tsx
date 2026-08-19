@@ -13,7 +13,7 @@ import { formatStartedAt } from "@/lib/system-health-helpers";
 const RUN = {
   _id: "r1", workspaceId: "ws-1", boardId: "b1", kind: "invoice_automation",
   periodKey: "20260116-0900", jobId: "inv:b1:20260116-0900", status: "skipped",
-  skipReason: "delivery_not_implemented", trigger: "schedule",
+  skipReason: "no_recipient", trigger: "schedule",
   startedAt: "2026-08-13T00:00:00.000Z", finishedAt: null,
   durationMs: null, recipient: null, error: null,
 };
@@ -61,8 +61,8 @@ describe("SystemHealthDrilldownView", () => {
     render(<SystemHealthDrilldownView workspaceId="ws-1" />);
 
     expect(await screen.findByText("b1")).toBeInTheDocument();
-    // A skipped run reads as "Pending setup", and has no duration.
-    expect(screen.getByText("Pending setup")).toBeInTheDocument();
+    // A skipped run reads as "Skipped", and has no duration.
+    expect(screen.getByText("Skipped")).toBeInTheDocument();
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
   });
 

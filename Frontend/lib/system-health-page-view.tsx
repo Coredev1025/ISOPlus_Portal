@@ -88,7 +88,7 @@ export function SystemHealthPageView() {
       <section className="space-y-2">
         <h2 className="text-sm font-semibold">Bounces &amp; complaints</h2>
         <p className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
-          Email delivery is not enabled yet, so there is nothing to report here.
+          Bounce and delivery reporting is not built yet, so there is nothing to show here.
         </p>
       </section>
     </div>

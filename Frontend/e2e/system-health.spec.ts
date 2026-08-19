@@ -79,7 +79,7 @@ test.describe("System Health", () => {
 
     await expect(page.getByText(/active automations/i)).toBeVisible();
     await expect(page.getByText(/error rate/i)).toBeVisible();
-    await expect(page.getByText(/email delivery is not enabled yet/i)).toBeVisible();
+    await expect(page.getByText(/bounce and delivery reporting is not built yet/i)).toBeVisible();
   });
 
   test("clicking a client navigates to the drill-down", async ({ page }) => {

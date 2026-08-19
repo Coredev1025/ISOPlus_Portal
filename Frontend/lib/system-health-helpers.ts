@@ -8,9 +8,12 @@ const RUN_STATUS_LABELS: Record<RunStatus, string> = {
   running: "Running",
   succeeded: "Succeeded",
   failed: "Failed",
-  // Not "Skipped": to a reader that implies the system chose to pass this one
-  // over. The truth is that delivery is not built yet.
-  skipped: "Pending setup",
+  // "Skipped" is now literally what happened: the worker refused to generate
+  // rather than burn invoice numbers on documents it could not deliver — no
+  // recipient address, no email backend, or the block switched off. While the
+  // worker was inert this said "Pending setup", which stopped being true when
+  // delivery landed.
+  skipped: "Skipped",
 };
 
 /** A 0–1 rate as a percentage, or an em dash when there is no rate to show. */

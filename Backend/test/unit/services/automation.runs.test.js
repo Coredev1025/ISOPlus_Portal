@@ -14,7 +14,7 @@ import {
   RUN_FAILED,
   TRIGGER_SCHEDULE,
   TRIGGER_MANUAL,
-  SKIP_DELIVERY_NOT_IMPLEMENTED,
+  SKIP_NO_RECIPIENT,
 } from '../../../src/constants/systemHealth.js';
 
 const spec = (boardId) => ({
@@ -86,11 +86,11 @@ describe('closing a run', () => {
   const jobId = 'inv:board-a:20260116-0900';
 
   it('marks skipped with a reason and no duration', async () => {
-    await markRunSkipped({ jobId, skipReason: SKIP_DELIVERY_NOT_IMPLEMENTED });
+    await markRunSkipped({ jobId, skipReason: SKIP_NO_RECIPIENT });
 
     const row = await AutomationRun.findOne({ jobId }).lean();
     expect(row.status).toBe(RUN_SKIPPED);
-    expect(row.skipReason).toBe(SKIP_DELIVERY_NOT_IMPLEMENTED);
+    expect(row.skipReason).toBe(SKIP_NO_RECIPIENT);
     expect(row.finishedAt).toBeInstanceOf(Date);
     // Nothing ran, so there is no duration to report.
     expect(row.durationMs).toBeNull();

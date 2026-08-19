@@ -1,5 +1,6 @@
 import ScheduledJob from '../models/ScheduledJob.js';
-import { buildFanOutSpecs, KIND_INVOICE, KIND_STATEMENT } from '../services/automation/fanOut.js';
+import { buildFanOutSpecs } from '../services/automation/fanOut.js';
+import { KIND_INVOICE, KIND_STATEMENT } from '../constants/automation.js';
 import { countRunsForPeriod } from '../services/automation/runs.js';
 import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
 
