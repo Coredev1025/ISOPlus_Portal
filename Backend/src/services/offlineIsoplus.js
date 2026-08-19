@@ -33,16 +33,25 @@ let announced = false;
 /**
  * True when the backend should serve ISO+ collections from Mongo.
  *
- * Never in production. A blank token there is a misconfiguration that must fail
- * loudly, and quietly serving stub data instead would hide it — so the implicit
- * branch is gated on NODE_ENV. ISOPLUS_OFFLINE=1 forces it on for deliberate
- * offline work; ISOPLUS_OFFLINE=0 forces it off even without a token, which is
- * how you reproduce the real "credentials missing" failure locally.
+ * Never in production — and NODE_ENV is checked first, so ISOPLUS_OFFLINE=1
+ * cannot override it. That ordering is the whole point: utils/uploadS3.js sends
+ * generated PDFs to local disk whenever this is true, while routes/localFiles.js,
+ * which serves them back, is gated on NODE_ENV and answers 404 on a deployed
+ * host. A flag that won here would not give production an offline mode; it would
+ * write invoices and statements somewhere nothing can fetch them, and the
+ * automation email would carry attachments that cannot be loaded. Relaxing the
+ * read gate to match is not the alternative — that route has no auth, so it
+ * would expose generated invoices and the outbox's participant addresses.
+ *
+ * A blank token in production is a misconfiguration that must fail loudly, and
+ * quietly serving stub data would hide it. ISOPLUS_OFFLINE=1 forces offline on
+ * for deliberate local work; ISOPLUS_OFFLINE=0 forces it off even without a
+ * token, which is how you reproduce the real "credentials missing" failure.
  */
 export function isOfflineMode() {
+    if (process.env.NODE_ENV === 'production') return false;
     if (process.env.ISOPLUS_OFFLINE === '1') return true;
     if (process.env.ISOPLUS_OFFLINE === '0') return false;
-    if (process.env.NODE_ENV === 'production') return false;
     return !hasIsoplusToken();
 }
 

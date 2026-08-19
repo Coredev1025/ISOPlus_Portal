@@ -67,11 +67,13 @@ describe('GET /api/local-files', () => {
   });
 
   it('404s in production even when ISOPLUS_OFFLINE=1 says otherwise', async () => {
-    // isOfflineMode() checks ISOPLUS_OFFLINE before NODE_ENV, so this env
-    // combination — what someone reaches for to debug a credentials problem on
-    // a deployed host — used to turn this mount into an unauthenticated read of
-    // Backend/.local-s3, which holds generated invoice PDFs and the composed
-    // email outbox. The route refuses in production unconditionally.
+    // isOfflineMode() now checks NODE_ENV first, so this env combination — what
+    // someone reaches for to debug a credentials problem on a deployed host —
+    // no longer reports offline at all. This stays as the second lock: the route
+    // refuses in production on its own, without consulting that function, so a
+    // later change to the precedence cannot quietly turn this mount into an
+    // unauthenticated read of Backend/.local-s3, which holds generated invoice
+    // PDFs and the composed email outbox with participant addresses.
     process.env.ISOPLUS_OFFLINE = '1';
     process.env.NODE_ENV = 'production';
 

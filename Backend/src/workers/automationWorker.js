@@ -3,7 +3,7 @@ import { Worker } from 'bullmq';
 import { KIND_INVOICE, KIND_STATEMENT } from '../constants/automation.js';
 import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
 import { AUTOMATION_QUEUE_NAME } from '../services/automation/queue.js';
-import { activeEmailBackendName, deliverEmail } from '../services/email/outbox.js';
+import { activeEmailBackendName, deliverEmail, preflightRecipient } from '../services/email/outbox.js';
 import { generateInvoicesForBoard } from '../services/automation/generateDocuments.js';
 import { generateStatementsForBoard } from '../services/automation/generateStatements.js';
 import {
@@ -220,6 +220,27 @@ async function composeAndDeliver(job) {
       kind, workspaceId, boardId, periodKey,
     });
     return;
+  }
+
+  // Second half of the same guarantee: a transport with no address to send to
+  // delivers as little as no transport at all, and SES records that refusal
+  // rather than throwing it, so the job would resolve as a success having burnt
+  // invoice numbers on documents nobody received. Skipped for the
+  // per-participant route, whose addresses are not knowable until the documents
+  // exist — see preflightRecipient.
+  if (block.recipient !== RECIPIENT_PER_PARTICIPANT) {
+    const reachable = await preflightRecipient({
+      workspaceId, boardId, recipientType: block.recipient,
+    });
+    if (!reachable.ok) {
+      // error, not warn: unlike a missing transport, this is per-workspace data
+      // an operator has to go and fix on a profile, and every run until they do
+      // produces nothing.
+      error('Automation', 'No recipient address; generated nothing rather than burning invoice numbers', {
+        kind, workspaceId, boardId, periodKey, reason: reachable.reason,
+      });
+      return;
+    }
   }
 
   const results = await generateDocumentResults(job);

@@ -139,6 +139,11 @@ async function recordSend({ messageId, kind, workspaceId, boardId, periodKey, re
  */
 export const sesBackend = {
   name: 'ses',
+  // Declared here rather than branched on in the worker, so adding a provider
+  // stays a registration. The local outbox omits it: a preview is written for
+  // whatever the recipient turns out to be, so a run that cannot resolve one is
+  // still worth generating offline.
+  requiresResolvedRecipient: true,
   async deliver(message) {
     const { workspaceId, boardId, kind, periodKey, block, recipientKey = null } = message;
     const record = composeRecord(message);

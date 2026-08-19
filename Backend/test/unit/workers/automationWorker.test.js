@@ -571,6 +571,43 @@ describe('startAutomationWorker', () => {
       spy.mockRestore();
     });
 
+    // The transport check above stops a run with nowhere to send. This stops a
+    // run with no one to send to, which had slipped through: `billing_contact`
+    // is the default, and deliveryGroups gives that route one group with no
+    // participant, so resolveRecipient answers no_participant_name every time.
+    // The refusal was recorded rather than thrown, so the job resolved as a
+    // success — after generation had already claimed invoice numbers and
+    // written PDFLink rows for documents SES then refused to send.
+    it('online with an unresolvable recipient: consumes no invoice number', async () => {
+      process.env.ISOPLUS_OFFLINE = '0';
+      process.env.EMAIL_FROM = 'billing@dev.isoplus.online';
+      process.env.AWS_ACCESS_KEY_ID = 'test-key';
+      process.env.AWS_SECRET_ACCESS_KEY = 'test-secret';
+      process.env.AWS_REGION = 'ap-southeast-2';
+      await AutomationSettings.create({
+        workspaceId: 'ws-1',
+        invoice: { enabled: true, recipient: 'billing_contact', emailSubject: 'Invoice run' },
+      });
+      await seedWorkerNdisBoard();
+      const genSpy = vi.spyOn(generateDocuments, 'generateInvoicesForBoard');
+      const deliverSpy = vi.spyOn(outbox, 'deliverEmail');
+      startAutomationWorker();
+
+      // Resolves rather than throws: a missing address needs a human to fix a
+      // profile, so three BullMQ attempts would only repeat the same line.
+      await expect(registeredHandler()(JOB)).resolves.toBeUndefined();
+
+      expect(genSpy).not.toHaveBeenCalled();
+      expect(deliverSpy).not.toHaveBeenCalled();
+      const business = await Business.findOne({ workspaceId: 'ws-1' }).lean();
+      expect(business.documentNumbering.invoice.nextNumber).toBe(900);
+      expect(await InvoiceNumber.countDocuments({ workspaceId: 'ws-1' })).toBe(0);
+
+      genSpy.mockRestore();
+      deliverSpy.mockRestore();
+      await cleanupWorkerNdisBoard();
+    });
+
     it('online with no transport: consumes no invoice number', async () => {
       process.env.ISOPLUS_OFFLINE = '0';
       delete process.env.EMAIL_FROM;

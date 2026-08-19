@@ -55,10 +55,18 @@ describe('offlineIsoplus', () => {
       });
     }
 
-    it('forced on still wins in production, because the flag is explicit', () => {
+    // This pinned the opposite until a review pointed out what the flag winning
+    // in production actually costs. uploadS3.js routes generated PDFs to local
+    // disk whenever this is true, while routes/localFiles.js — which serves them
+    // back — is gated on NODE_ENV and answers 404 on a deployed host. So the
+    // flag winning here does not enable offline mode in production; it only
+    // writes invoices somewhere nothing can read them. Relaxing the read gate
+    // instead is not an option: it has no auth, so it would expose generated
+    // invoices and the outbox's participant addresses to anyone who asked.
+    it('forced on loses in production, because a deployed host is never offline', () => {
       process.env.ISOPLUS_OFFLINE = '1';
       process.env.NODE_ENV = 'production';
-      expect(isOfflineMode()).toBe(true);
+      expect(isOfflineMode()).toBe(false);
     });
   });
 
