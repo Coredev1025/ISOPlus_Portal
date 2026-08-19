@@ -3,7 +3,7 @@ import { Worker } from 'bullmq';
 import { KIND_INVOICE, KIND_STATEMENT } from '../constants/automation.js';
 import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
 import { AUTOMATION_QUEUE_NAME } from '../services/automation/queue.js';
-import { activeEmailBackendName, deliverEmail, preflightRecipient } from '../services/email/outbox.js';
+import { activeEmailBackendName, deliverEmail } from '../services/email/outbox.js';
 import { generateInvoicesForBoard } from '../services/automation/generateDocuments.js';
 import { generateStatementsForBoard } from '../services/automation/generateStatements.js';
 import {
@@ -19,10 +19,6 @@ import { info, warn, error } from '../utils/logger.js';
 
 const LOG_LABEL = 'Automation-Worker';
 const BLOCK_FOR_KIND = { [KIND_INVOICE]: 'invoice', [KIND_STATEMENT]: 'statement' };
-
-// AutomationSettings.recipient. 'billing_contact' is one message for the whole
-// board; this one is one message per participant.
-const RECIPIENT_PER_PARTICIPANT = 'client_participant';
 
 // AutomationSettings.sendMethod. 'isoplus' composes and emails; this one hands
 // the run's invoices to the workspace's accounting platform instead, and sends
@@ -78,17 +74,26 @@ function buildTemplateVars({ businessName, results }) {
 }
 
 /**
- * How many messages one job produces. Flattening every participant's rows into
- * one attachments array is correct for `billing_contact` and catastrophic for
- * `client_participant`, where each person would receive everyone else's
- * documents; a row with no participant collects under a null key rather than
- * being dropped.
+ * How many messages one job produces: one per participant, for every recipient
+ * type.
+ *
+ * `billing_contact` used to flatten the whole board into a single message with
+ * no participant, and that was wrong twice over. It cannot be delivered — the
+ * recipient type only chooses WHICH address on a participant's profile is used
+ * (Billing Email, or their own Email when no Billing Contact is named), so a
+ * group with no participant has no profile to read and resolveRecipient
+ * answered no_participant_name for the DEFAULT setting, every time. And if it
+ * had resolved, one message carrying every participant's invoices addressed to
+ * one of them is a cross-client data leak.
+ *
+ * There is no board-level or workspace-level billing contact to send that
+ * shared message to: selectBillingAddress reads a participant profile, and
+ * Business.email is the provider's own address, not the client's.
+ *
+ * A row with no participant collects under a null key rather than being
+ * dropped; the generators always carry one, so this is a floor, not a path.
  */
-function deliveryGroups(block, results) {
-  if (block?.recipient !== RECIPIENT_PER_PARTICIPANT) {
-    return [{ participant: null, results }];
-  }
-
+function deliveryGroups(results) {
   const byParticipant = new Map();
   for (const doc of results) {
     const key = doc.participant ?? null;
@@ -128,6 +133,25 @@ async function deliverGroup({ kind, workspaceId, boardId, periodKey, block, busi
     block: composeBlock(block, vars),
     attachments,
   });
+  // A backend that refuses names a reason, and every reason here is data an
+  // operator has to go and fix on a profile — so it is an error, not the info
+  // line a successful hand-over gets. The documents survive: their PDFLink rows
+  // carry this slot's periodKey, so the next run hands back the same documents
+  // rather than minting new invoice numbers, and the status panel keeps showing
+  // them as 'generated' until the send succeeds. Nothing is thrown: the other
+  // participants' messages have already gone, and a BullMQ retry would send
+  // them a second time to fix a profile it cannot reach.
+  if (result.delivered === false && result.reason) {
+    error('Automation', 'Automation email was not delivered; documents kept for a re-send', {
+      kind, workspaceId, boardId, periodKey,
+      backend: result.backend,
+      reason: result.reason,
+      participant: group.participant,
+      documents: attachments.length,
+    });
+    return;
+  }
+
   // One line whichever backend ran: outboxKey for the offline preview,
   // messageId for a real send.
   info('Automation', 'Automation email delivered', {
@@ -222,31 +246,16 @@ async function composeAndDeliver(job) {
     return;
   }
 
-  // Second half of the same guarantee: a transport with no address to send to
-  // delivers as little as no transport at all, and SES records that refusal
-  // rather than throwing it, so the job would resolve as a success having burnt
-  // invoice numbers on documents nobody received. Skipped for the
-  // per-participant route, whose addresses are not knowable until the documents
-  // exist — see preflightRecipient.
-  if (block.recipient !== RECIPIENT_PER_PARTICIPANT) {
-    const reachable = await preflightRecipient({
-      workspaceId, boardId, recipientType: block.recipient,
-    });
-    if (!reachable.ok) {
-      // error, not warn: unlike a missing transport, this is per-workspace data
-      // an operator has to go and fix on a profile, and every run until they do
-      // produces nothing.
-      error('Automation', 'No recipient address; generated nothing rather than burning invoice numbers', {
-        kind, workspaceId, boardId, periodKey, reason: reachable.reason,
-      });
-      return;
-    }
-  }
-
+  // There is deliberately no second, pre-generation check that the recipients
+  // resolve. A recipient is a participant, and the participants are what
+  // generation discovers — so the only way to ask beforehand is to run the
+  // generators' list step twice. An address that turns out to be missing is
+  // handled per message in deliverGroup instead, where the documents are
+  // already durable and re-sendable.
   const results = await generateDocumentResults(job);
   const business = await Business.findOne({ workspaceId: mongoEq(String(workspaceId)) }).lean();
 
-  for (const group of deliveryGroups(block, results)) {
+  for (const group of deliveryGroups(results)) {
     await deliverGroup({
       kind, workspaceId, boardId, periodKey, block, businessName: business?.name, group,
     });

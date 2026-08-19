@@ -32,6 +32,33 @@ const NDIS_BOARD_ID = "o24sGM1FoST";
 // The Age Care (SaH) board — the one generator branch that completes end to end.
 const AGE_CARE_BOARD = BOARDS[0];
 
+// The participants the fixture puts on each board, under
+// 'Full Name/Preferred Name'. They matter to the URLs below because the worker
+// composes ONE MESSAGE PER PARTICIPANT for every recipient type — including
+// 'billing_contact', which is what this fixture's blocks are set to. A single
+// message for the whole board could not resolve an address (there is no
+// board-level billing contact to read one from) and would have carried every
+// participant's documents to whoever it did resolve.
+const BOARD_PARTICIPANTS: Record<string, readonly string[]> = {
+  jpjztrn14pJ: ["David Brown", "Jane Smith", "Lisa Morphy"],
+  o24sGM1FoST: ["David Smith", "Martin Space"],
+  dwV23F5WcQL: ["Mike Bird"],
+};
+
+/**
+ * The outbox key the worker writes for one composed message. Mirrors
+ * `outboxKeyFor` / `recipientSlug` in Backend/src/services/email/backends.js:
+ * anything not a letter or digit becomes a dash, trimmed at both ends.
+ */
+function outboxUrl(kind: string, boardId: string, participant: string) {
+  const slug = participant
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return `${BACKEND}/api/local-files/outbox/${WORKSPACE}/${kind}-${boardId}-${PERIOD_KEY}-${slug}.json`;
+}
+
 // The two NDIS boards, which mint invoice numbers but produce no PDF or email.
 const NDIS_BOARDS = [BOARDS[1], BOARDS[2]];
 
@@ -144,27 +171,60 @@ test.describe("Care Management automation (KAN-10 fixture)", () => {
     });
     expect(tick.status(), "scheduler tick should be accepted").toBe(200);
 
-    // The worker writes one outbox JSON per (kind, board) for the claimed
-    // period; poll until each exists, then check its identifying fields.
+    // The worker writes one outbox JSON per (kind, board, PARTICIPANT) for the
+    // claimed period. Statements are generated for every participant on the
+    // board, so all three must appear; invoices only for participants with
+    // billable rows this period, so at least one must.
     //
     // Scoped to the Age Care board deliberately. The two NDIS boards produce
     // nothing on this path today — see the `test.fail()` case below, which
     // holds the defect rather than letting it hide inside this loop.
-    for (const kind of ["invoice_automation", "statement_automation"]) {
-      for (const board of [AGE_CARE_BOARD]) {
-        const url = `${BACKEND}/api/local-files/outbox/${WORKSPACE}/${kind}-${board.id}-${PERIOD_KEY}.json`;
+    const participants = BOARD_PARTICIPANTS[AGE_CARE_BOARD.id];
 
-        await expect
-          .poll(async () => (await request.get(url)).status(), {
-            timeout: 60_000,
-            message: `outbox file never appeared: ${url}`,
-          })
-          .toBe(200);
+    for (const participant of participants) {
+      const url = outboxUrl("statement_automation", AGE_CARE_BOARD.id, participant);
 
-        const outbox = await (await request.get(url)).json();
-        expect(outbox.kind, `kind in ${url}`).toBe(kind);
-        expect(outbox.periodKey, `periodKey in ${url}`).toBe(PERIOD_KEY);
-      }
+      await expect
+        .poll(async () => (await request.get(url)).status(), {
+          timeout: 60_000,
+          message: `statement outbox file never appeared: ${url}`,
+        })
+        .toBe(200);
+
+      const outbox = await (await request.get(url)).json();
+      expect(outbox.kind, `kind in ${url}`).toBe("statement_automation");
+      expect(outbox.periodKey, `periodKey in ${url}`).toBe(PERIOD_KEY);
+      // One participant's documents, not the whole board's. The message that
+      // carried every participant's statements to one address is the shape this
+      // per-participant grouping replaced.
+      expect(outbox.attachments, `attachments in ${url}`).toHaveLength(1);
+    }
+
+    const invoiceUrls = participants.map((participant) =>
+      outboxUrl("invoice_automation", AGE_CARE_BOARD.id, participant),
+    );
+
+    await expect
+      .poll(
+        async () => {
+          const statuses = await Promise.all(
+            invoiceUrls.map(async (url) => (await request.get(url)).status()),
+          );
+          return statuses.filter((status) => status === 200).length;
+        },
+        {
+          timeout: 60_000,
+          message: `no per-participant invoice outbox file appeared: ${invoiceUrls.join(", ")}`,
+        },
+      )
+      .toBeGreaterThan(0);
+
+    for (const url of invoiceUrls) {
+      const response = await request.get(url);
+      if (response.status() !== 200) continue;
+      const outbox = await response.json();
+      expect(outbox.kind, `kind in ${url}`).toBe("invoice_automation");
+      expect(outbox.periodKey, `periodKey in ${url}`).toBe(PERIOD_KEY);
     }
 
     // The run must also have written invoice numbers back to the board rows —
@@ -212,12 +272,15 @@ test.describe("Care Management automation (KAN-10 fixture)", () => {
 
     // Runs after the tick test in this serial file, so the run has happened.
     for (const board of NDIS_BOARDS) {
-      const url = `${BACKEND}/api/local-files/outbox/${WORKSPACE}/invoice_automation-${board.id}-${PERIOD_KEY}.json`;
-      const response = await request.get(url);
+      const statuses = await Promise.all(
+        BOARD_PARTICIPANTS[board.id].map(async (participant) =>
+          (await request.get(outboxUrl("invoice_automation", board.id, participant))).status(),
+        ),
+      );
       expect(
-        response.status(),
+        statuses.filter((status) => status === 200).length,
         `no invoice email was composed for NDIS board ${board.id}`,
-      ).toBe(200);
+      ).toBeGreaterThan(0);
     }
   });
 

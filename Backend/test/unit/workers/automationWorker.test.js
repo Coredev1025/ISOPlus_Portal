@@ -45,6 +45,7 @@ import InvoiceNumber from '../../../src/models/InvoiceNumber.js';
 import PDFLink from '../../../src/models/PDFLink.js';
 import { outboxKeyFor } from '../../../src/services/email/outbox.js';
 
+import * as logger from '../../../src/utils/logger.js';
 import * as generateDocuments from '../../../src/services/automation/generateDocuments.js';
 import * as outbox from '../../../src/services/email/outbox.js';
 import * as pushXero from '../../../src/services/automation/pushDraftInvoicesToXero.js';
@@ -209,19 +210,27 @@ describe('startAutomationWorker', () => {
       await cleanupWorkerNdisBoard();
     });
 
+    // The board is seeded now because messages are composed per participant:
+    // a run with nothing to bill has no participant to address and therefore
+    // composes nothing at all. That is the subject of its own test below.
     it('offline, enabled block: writes the composed email to the outbox', async () => {
       process.env.ISOPLUS_OFFLINE = '1';
       await AutomationSettings.create({
         workspaceId: 'ws-1',
         invoice: { enabled: true, emailSubject: 'Invoice run', emailMessage: 'Attached.', replyTo: 'a@b.com' },
       });
+      await seedWorkerNdisBoard();
       startAutomationWorker();
 
       await registeredHandler()(JOB);
 
-      const path = join(root, outboxKeyFor(JOB.data));
+      const path = join(root, outboxKeyFor({ ...JOB.data, recipientKey: 'Samuel Rivers' }));
       expect(existsSync(path)).toBe(true);
-      expect(JSON.parse(readFileSync(path, 'utf8')).subject).toBe('Invoice run');
+      const written = JSON.parse(readFileSync(path, 'utf8'));
+      expect(written.subject).toBe('Invoice run');
+      expect(written.replyTo).toBe('a@b.com');
+
+      await cleanupWorkerNdisBoard();
     });
 
     it('offline, block disabled or settings missing: writes nothing', async () => {
@@ -244,7 +253,9 @@ describe('startAutomationWorker', () => {
 
       await registeredHandler()(JOB);
 
-      const written = JSON.parse(readFileSync(join(root, outboxKeyFor(JOB.data)), 'utf8'));
+      const written = JSON.parse(readFileSync(
+        join(root, outboxKeyFor({ ...JOB.data, recipientKey: 'Samuel Rivers' })), 'utf8',
+      ));
       expect(written.attachments).toHaveLength(1);
       expect(written.attachments[0]).toContain('/api/local-files/');
       expect(written.attachments[0]).toContain('NDIS-invoices/');
@@ -256,7 +267,11 @@ describe('startAutomationWorker', () => {
       await cleanupWorkerNdisBoard();
     });
 
-    it('offline: a quote-shaped item without an approved timesheet is not billed', async () => {
+    // Also the pin for "nothing to bill composes nothing". Messages are grouped
+    // by participant, so a board that generated no documents has no group and
+    // no email — where the whole-board group used to compose one carrying zero
+    // attachments, which is a message no client should receive.
+    it('offline: a quote-shaped item without an approved timesheet is not billed, and no empty email is composed', async () => {
       process.env.ISOPLUS_OFFLINE = '1';
       await AutomationSettings.create({
         workspaceId: 'ws-1',
@@ -282,8 +297,7 @@ describe('startAutomationWorker', () => {
 
       await registeredHandler()(JOB);
 
-      const written = JSON.parse(readFileSync(join(root, outboxKeyFor(JOB.data)), 'utf8'));
-      expect(written.attachments).toHaveLength(0);
+      expect(existsSync(join(root, 'outbox'))).toBe(false);
       expect(await InvoiceNumber.countDocuments({ workspaceId: 'ws-1' })).toBe(0);
 
       await cleanupWorkerNdisBoard();
@@ -309,7 +323,9 @@ describe('startAutomationWorker', () => {
 
       await registeredHandler()(JOB);
 
-      const written = JSON.parse(readFileSync(join(root, outboxKeyFor(JOB.data)), 'utf8'));
+      const written = JSON.parse(readFileSync(
+        join(root, outboxKeyFor({ ...JOB.data, recipientKey: 'Samuel Rivers' })), 'utf8',
+      ));
       // {{statement_number}} has no data-model backing, and {{mystery_token}}
       // is unknown — both must survive verbatim, never become 'undefined'.
       expect(written.subject).toBe(
@@ -357,7 +373,9 @@ describe('startAutomationWorker', () => {
       const statementJob = { data: { ...JOB.data, kind: 'statement_automation' } };
       await registeredHandler()(statementJob);
 
-      const written = JSON.parse(readFileSync(join(root, outboxKeyFor(statementJob.data)), 'utf8'));
+      const written = JSON.parse(readFileSync(
+        join(root, outboxKeyFor({ ...statementJob.data, recipientKey: 'Tom & <b>Jerry</b>' })), 'utf8',
+      ));
       expect(written.body).toBe('<p>Dear Tom &amp; &lt;b&gt;Jerry&lt;/b&gt;, your statement is attached.</p>');
       expect(written.subject).toBe('Statement for Tom & <b>Jerry</b>');
 
@@ -402,7 +420,9 @@ describe('startAutomationWorker', () => {
       const statementJob = { data: { ...JOB.data, kind: 'statement_automation' } };
       await registeredHandler()(statementJob);
 
-      const written = JSON.parse(readFileSync(join(root, outboxKeyFor(statementJob.data)), 'utf8'));
+      const written = JSON.parse(readFileSync(
+        join(root, outboxKeyFor({ ...statementJob.data, recipientKey: 'Alex Rivers' })), 'utf8',
+      ));
       expect(written.subject).toBe('Statement STM-500 for Alex Rivers');
       // Still only substituted for a value the run produced: an unknown token
       // survives verbatim rather than rendering 'undefined'.
@@ -471,7 +491,23 @@ describe('startAutomationWorker', () => {
       await cleanupWorkerNdisBoard();
     });
 
-    it('offline: keeps one message per board when the recipient is the billing contact', async () => {
+    // This test used to pin the opposite — one message per board — and the
+    // expectation was the part that was wrong.
+    //
+    // 'billing_contact' chooses WHICH address on a participant's profile
+    // receives their documents (Billing Email, falling back to their own Email
+    // only when no Billing Contact is named); it does not mean one shared
+    // mailbox for the board. There is no board-level or workspace-level billing
+    // contact in the data model to send that message to — selectBillingAddress
+    // reads off a participant profile, and Business.email is the provider's own
+    // address. So the whole-board group had no name to resolve, resolveRecipient
+    // answered no_participant_name every time, and the DEFAULT recipient could
+    // never send anything.
+    //
+    // Grouping per participant is also the only shape that is safe if it did
+    // resolve: one message carrying every participant's invoices, addressed to
+    // one of them, is a cross-client data leak.
+    it('offline: composes one message per participant for the billing contact too', async () => {
       process.env.ISOPLUS_OFFLINE = '1';
       await AutomationSettings.create({
         workspaceId: 'ws-1',
@@ -500,8 +536,16 @@ describe('startAutomationWorker', () => {
 
       await registeredHandler()({ data: { ...JOB.data, kind: 'statement_automation' } });
 
-      expect(spy).toHaveBeenCalledTimes(1);
-      expect(spy.mock.calls[0][0].attachments).toHaveLength(2);
+      expect(spy).toHaveBeenCalledTimes(2);
+      // recipientKey is the name sesBackend resolves the Billing Email from,
+      // so it has to be the participant rather than null.
+      const byRecipient = Object.fromEntries(
+        spy.mock.calls.map(([msg]) => [msg.recipientKey, msg.attachments]),
+      );
+      expect(Object.keys(byRecipient).sort()).toEqual(['Alex Rivers', 'Sam Lee']);
+      expect(byRecipient['Alex Rivers']).toHaveLength(1);
+      expect(byRecipient['Sam Lee']).toHaveLength(1);
+      expect(byRecipient['Alex Rivers'][0]).not.toBe(byRecipient['Sam Lee'][0]);
 
       spy.mockRestore();
       await cleanupWorkerNdisBoard();
@@ -532,7 +576,9 @@ describe('startAutomationWorker', () => {
       const statementJob = { data: { ...JOB.data, kind: 'statement_automation' } };
       await registeredHandler()(statementJob);
 
-      const written = JSON.parse(readFileSync(join(root, outboxKeyFor(statementJob.data)), 'utf8'));
+      const written = JSON.parse(readFileSync(
+        join(root, outboxKeyFor({ ...statementJob.data, recipientKey: 'Alex Rivers' })), 'utf8',
+      ));
       expect(written.attachments).toHaveLength(1);
       expect(written.attachments[0]).toContain('monthly-statements/');
       // Statement runs derive {{client_name}} from the participants generated.
@@ -571,14 +617,86 @@ describe('startAutomationWorker', () => {
       spy.mockRestore();
     });
 
-    // The transport check above stops a run with nowhere to send. This stops a
-    // run with no one to send to, which had slipped through: `billing_contact`
-    // is the default, and deliveryGroups gives that route one group with no
-    // participant, so resolveRecipient answers no_participant_name every time.
-    // The refusal was recorded rather than thrown, so the job resolved as a
-    // success — after generation had already claimed invoice numbers and
-    // written PDFLink rows for documents SES then refused to send.
-    it('online with an unresolvable recipient: consumes no invoice number', async () => {
+    // The transport check above stops a run with nowhere to send. This one
+    // covers the DEFAULT recipient end to end, because that is the path a pilot
+    // takes and it was the path that did nothing at all.
+    //
+    // Two shapes have been wrong here in turn. First, deliveryGroups gave
+    // 'billing_contact' one whole-board group with participant null, so
+    // resolveRecipient answered no_participant_name, SES recorded the refusal
+    // rather than throwing it, and the job resolved as a success having burnt
+    // invoice numbers. Then a pre-generation recipient preflight was added to
+    // stop that, and — because the group still had no name — it turned the
+    // default path into a guaranteed silent no-op: generated nothing, billed
+    // nobody, schedule advanced.
+    //
+    // The grouping was the bug both times. With one group per participant the
+    // name is real, so the run generates and hands one message per participant
+    // to the backend.
+    // Online here means "the SES backend is the active one", so the generators
+    // are stubbed: rendering a real PDF online would need a live S3 bucket, and
+    // what this test is about is the shape of what reaches the backend. The
+    // generators' own output is covered against the real renderer by the
+    // offline tests above and by automation.generateDocuments.test.js.
+    it('online: the billing-contact default generates and delivers per participant', async () => {
+      process.env.ISOPLUS_OFFLINE = '0';
+      process.env.EMAIL_FROM = 'billing@dev.isoplus.online';
+      process.env.AWS_ACCESS_KEY_ID = 'test-key';
+      process.env.AWS_SECRET_ACCESS_KEY = 'test-secret';
+      process.env.AWS_REGION = 'ap-southeast-2';
+      await AutomationSettings.create({
+        workspaceId: 'ws-1',
+        invoice: {
+          enabled: true,
+          recipient: 'billing_contact',
+          emailSubject: 'Invoice {{invoice_number}} for {{client_name}}',
+        },
+      });
+      const genSpy = vi.spyOn(generateDocuments, 'generateInvoicesForBoard').mockResolvedValue([
+        { itemId: 'i-1', invoiceNumber: 'IN-900', participant: 'Samuel Rivers', pdfUrl: 'https://b.s3.ap-southeast-2.amazonaws.com/out/1.pdf?X-Amz-Signature=x' },
+        { itemId: 'i-2', invoiceNumber: 'IN-901', participant: 'Dana Cole', pdfUrl: 'https://b.s3.ap-southeast-2.amazonaws.com/out/2.pdf?X-Amz-Signature=y' },
+      ]);
+      // Stubbed so the assertion is about what the worker hands over, not about
+      // SES: the real backend would try to resolve an address and send.
+      const deliverSpy = vi.spyOn(outbox, 'deliverEmail')
+        .mockResolvedValue({ delivered: true, backend: 'ses', messageId: 'm-1' });
+      startAutomationWorker();
+
+      await expect(registeredHandler()(JOB)).resolves.toBeUndefined();
+
+      expect(genSpy).toHaveBeenCalled();
+      // Two participants, two messages — not one message carrying both
+      // participants' invoices, which is what the whole-board group would have
+      // composed and what makes that shape a cross-client leak.
+      expect(deliverSpy).toHaveBeenCalledTimes(2);
+      const byRecipient = Object.fromEntries(
+        deliverSpy.mock.calls.map(([msg]) => [msg.recipientKey, msg.attachments]),
+      );
+      expect(Object.keys(byRecipient).sort()).toEqual(['Dana Cole', 'Samuel Rivers']);
+      expect(byRecipient['Samuel Rivers']).toEqual(['https://b.s3.ap-southeast-2.amazonaws.com/out/1.pdf?X-Amz-Signature=x']);
+      expect(byRecipient['Dana Cole']).toEqual(['https://b.s3.ap-southeast-2.amazonaws.com/out/2.pdf?X-Amz-Signature=y']);
+      // And each subject carries only its own participant's name and number,
+      // which is the other half of what the whole-board group got wrong.
+      expect(deliverSpy.mock.calls.map(([msg]) => msg.block.emailSubject).sort()).toEqual([
+        'Invoice IN-900 for Samuel Rivers',
+        'Invoice IN-901 for Dana Cole',
+      ].sort());
+
+      genSpy.mockRestore();
+      deliverSpy.mockRestore();
+      await cleanupWorkerNdisBoard();
+    });
+
+    // The residual risk the preflight was reaching for, stated honestly.
+    //
+    // A participant whose profile carries no address cannot be discovered
+    // before generation — their name comes out of the generator. So the
+    // documents exist and SES refuses that one message. Nothing is lost: the
+    // PDFLink rows carry the slot's periodKey, so the next run hands back the
+    // same documents instead of minting new numbers, and the status panel keeps
+    // showing them as 'generated' rather than 'sent' until someone fixes the
+    // profile. It is reported at error, not warn — it needs a human.
+    it('online with a participant who has no address: reports it and does not throw', async () => {
       process.env.ISOPLUS_OFFLINE = '0';
       process.env.EMAIL_FROM = 'billing@dev.isoplus.online';
       process.env.AWS_ACCESS_KEY_ID = 'test-key';
@@ -588,23 +706,29 @@ describe('startAutomationWorker', () => {
         workspaceId: 'ws-1',
         invoice: { enabled: true, recipient: 'billing_contact', emailSubject: 'Invoice run' },
       });
-      await seedWorkerNdisBoard();
-      const genSpy = vi.spyOn(generateDocuments, 'generateInvoicesForBoard');
-      const deliverSpy = vi.spyOn(outbox, 'deliverEmail');
+      const genSpy = vi.spyOn(generateDocuments, 'generateInvoicesForBoard').mockResolvedValue([
+        { itemId: 'i-1', invoiceNumber: 'IN-900', participant: 'Samuel Rivers', pdfUrl: 'https://b.s3.ap-southeast-2.amazonaws.com/out/1.pdf' },
+      ]);
+      const deliverSpy = vi.spyOn(outbox, 'deliverEmail')
+        .mockResolvedValue({ delivered: false, backend: 'ses', reason: 'no_address_on_profile' });
+      const errorSpy = vi.spyOn(logger, 'error');
       startAutomationWorker();
 
-      // Resolves rather than throws: a missing address needs a human to fix a
-      // profile, so three BullMQ attempts would only repeat the same line.
+      // Resolves rather than throws: a BullMQ retry cannot fix a profile, and
+      // it would re-send to the participants whose messages did go.
       await expect(registeredHandler()(JOB)).resolves.toBeUndefined();
 
-      expect(genSpy).not.toHaveBeenCalled();
-      expect(deliverSpy).not.toHaveBeenCalled();
-      const business = await Business.findOne({ workspaceId: 'ws-1' }).lean();
-      expect(business.documentNumbering.invoice.nextNumber).toBe(900);
-      expect(await InvoiceNumber.countDocuments({ workspaceId: 'ws-1' })).toBe(0);
+      // Reported at error, not swallowed into the info line a delivered
+      // message gets — this is data a human has to go and fix.
+      expect(errorSpy.mock.calls.some(([, message, meta]) => (
+        message === 'Automation email was not delivered; documents kept for a re-send'
+        && meta.reason === 'no_address_on_profile'
+        && meta.participant === 'Samuel Rivers'
+      ))).toBe(true);
 
       genSpy.mockRestore();
       deliverSpy.mockRestore();
+      errorSpy.mockRestore();
       await cleanupWorkerNdisBoard();
     });
 
@@ -673,7 +797,7 @@ describe('startAutomationWorker', () => {
       await registeredHandler()(JOB);
 
       expect(pushSpy).not.toHaveBeenCalled();
-      expect(existsSync(join(root, outboxKeyFor(JOB.data)))).toBe(true);
+      expect(existsSync(join(root, outboxKeyFor({ ...JOB.data, recipientKey: 'Samuel Rivers' })))).toBe(true);
     });
 
     it("sendMethod 'accounting' pushes the generated invoices as drafts and sends no email", async () => {
@@ -690,7 +814,7 @@ describe('startAutomationWorker', () => {
       await registeredHandler()(JOB);
 
       expect(deliverSpy).not.toHaveBeenCalled();
-      expect(existsSync(join(root, outboxKeyFor(JOB.data)))).toBe(false);
+      expect(existsSync(join(root, 'outbox'))).toBe(false);
       expect(pushSpy).toHaveBeenCalledTimes(1);
       const args = pushSpy.mock.calls[0][0];
       expect(args).toMatchObject({ workspaceId: 'ws-1', boardId: 'board-a', periodKey: '20260116-0900' });
@@ -755,7 +879,9 @@ describe('startAutomationWorker', () => {
       await registeredHandler()(statementJob);
 
       expect(pushSpy).not.toHaveBeenCalled();
-      const written = JSON.parse(readFileSync(join(root, outboxKeyFor(statementJob.data)), 'utf8'));
+      const written = JSON.parse(readFileSync(
+        join(root, outboxKeyFor({ ...statementJob.data, recipientKey: 'Alex Rivers' })), 'utf8',
+      ));
       expect(written.attachments).toHaveLength(1);
     });
   });

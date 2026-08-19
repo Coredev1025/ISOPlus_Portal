@@ -26,19 +26,27 @@ takes it. Work out which row you are in first; the rows fail differently.
 
 | Environment | Backend | Terminal observable |
 |---|---|---|
-| Offline (`ISOPLUS_OFFLINE=1`, or a blank `PERSONAL_ACCESS_TOKEN` outside production) | `local-outbox` | an outbox JSON file per claimed slot, plus the completed queue job |
+| Offline (`ISOPLUS_OFFLINE=1`, or a blank `PERSONAL_ACCESS_TOKEN` outside production) | `local-outbox` | an outbox JSON file per composed message, plus the completed queue job |
 | Online, `EMAIL_FROM` + the AWS variables set | `ses` | a real send — `SES-Transport: Email sent`, a row in `emailsends`, then a `Delivery`/`Bounce` row in `emailevents` |
 | Online, no transport configured | none — resolves to `null` | **nothing generated.** The worker refuses *before* claiming invoice numbers |
 
 Offline, the composed email is a file a person can open and verify:
 
 ```
-Backend/.local-s3/outbox/<workspaceId>/<kind>-<boardId>-<periodKey>.json
+Backend/.local-s3/outbox/<workspaceId>/<kind>-<boardId>-<periodKey>-<participant>.json
 ```
 
-One file per claimed slot, named like the queue jobId, so an at-least-once
+One file per **composed message**, and a message is composed **per
+participant** — for every recipient type, `billing_contact` included. The
+recipient type chooses which address on that participant's profile receives
+their documents (Billing Email, or their own Email when no Billing Contact is
+named); it does not mean one shared message for the board, and there is no
+board-level billing contact to send one to. A board with nothing to bill
+therefore writes no file at all rather than an email carrying no documents.
+
+The name is the queue jobId plus the participant slug, so an at-least-once
 redelivery overwrites its own preview rather than duplicating it. **A run that
-ends at that file is a *passing* run** — offline there is nothing further to
+ends at those files is a *passing* run** — offline there is nothing further to
 wait for, and no amount of re-ticking will produce a send.
 
 **KAN-10 does now reach Xero, on exactly one route:** an invoice block whose
@@ -141,7 +149,7 @@ runs are repeatable:
 ```bash
 npm run dev:fixture -- --file test/fixtures/care-management-automation.json
 npm run tick -- --once     # claimed=2 dispatched=2
-find Backend/.local-s3/outbox/55390 -type f    # 6 files, all *-20250201-0900.json
+find Backend/.local-s3/outbox/55390 -type f    # one file per participant, all *-20250201-0900-*.json
 ```
 
 Playwright covers this journey in `Frontend/e2e/care-management-automation.spec.ts`
@@ -326,7 +334,7 @@ query's `nextRunAt <= now` guard is broken.
 ### 10. Confirm the terminal state, and stop
 
 ```bash
-find Backend/.local-s3/outbox -type f          # one file per claimed slot
+find Backend/.local-s3/outbox -type f          # one file per composed message
 cat Backend/.local-s3/outbox/55369/invoice_automation-*.json
 ```
 

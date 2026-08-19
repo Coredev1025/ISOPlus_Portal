@@ -10,7 +10,6 @@ import { info, warn } from '../../utils/logger.js';
 import { localOutboxBackend, sesBackend } from './backends.js';
 import { isEmailTransportConfigured } from './sesTransport.js';
 import { isOfflineMode } from '../offlineIsoplus.js';
-import { resolveRecipient } from './recipients.js';
 import {
   LOCAL_OUTBOX_BACKEND,
   SES_BACKEND,
@@ -53,32 +52,6 @@ export function activeEmailBackendName() {
     offline: isOfflineMode(),
     transportConfigured: isEmailTransportConfigured(),
   });
-}
-
-/**
- * Whether this run could reach anyone, asked BEFORE generation for the same
- * reason activeEmailBackendName is: generation claims invoice numbers and
- * writes PDFLink rows, so discovering there is no address afterwards burns real
- * numbers on documents SES then refuses to send — and the refusal is recorded,
- * not thrown, so the job resolves as a success while nothing was delivered.
- *
- * Only asked of a backend that declares requiresResolvedRecipient; the offline
- * outbox writes a preview regardless, and local work should not need a
- * resolvable profile to see what a run produces.
- *
- * `participant` is null for the whole-board group, which is what every
- * recipient type except client_participant produces. That route is deliberately
- * not checked here: its addresses come from the documents this run has not
- * generated yet, so there is nothing to resolve until generation has happened.
- */
-export async function preflightRecipient({ workspaceId, boardId, recipientType, participant = null }) {
-  registerBuiltInEmailBackends();
-
-  const backend = resolveEmailBackend(activeEmailBackendName());
-  if (!backend?.requiresResolvedRecipient) return { ok: true };
-
-  const recipient = await resolveRecipient({ workspaceId, boardId, participant, recipientType });
-  return recipient.address ? { ok: true } : { ok: false, reason: recipient.reason };
 }
 
 /**
