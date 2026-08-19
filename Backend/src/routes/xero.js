@@ -39,6 +39,12 @@ import {
 } from '../utils/xeroOAuthRouteHelpers.js';
 import { resolveSalesLineMapping } from '../utils/xeroLineItemMapping.js';
 import {
+  appendXeroLineDateSuffix as appendDateSuffix,
+  xeroRound2 as round2,
+  xeroRound4 as round4,
+  xeroServiceRowDate as getXeroServiceRowDate,
+} from '../utils/xeroLineFormatting.js';
+import {
   loadXeroChartOptions,
   rejectIfAccountTaxMismatch,
 } from '../utils/xeroAccountTaxHelpers.js';
@@ -97,47 +103,10 @@ function formatValue(val) {
   }
 }
 
-function roundTo(value, dp) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return 0;
-  const factor = Math.pow(10, dp);
-  return Math.round((num + Number.EPSILON) * factor) / factor;
-}
-
-function round2(value) {
-  return roundTo(value, 2);
-}
-
-function round4(value) {
-  return roundTo(value, 4);
-}
-
-function escapeRegExp(str) {
-  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function getXeroServiceRowDate(item) {
-  const status = (item?.transactionStatus ?? '').toString().trim();
-  const scheduled = (item?.scheduledServiceDate ?? '').toString().trim();
-  const delivered = (item?.serviceDeliveryDate ?? '').toString().trim();
-
-  const isDelivered =
-    status === 'Delivered - To be claimed and invoiced.' ||
-    status.toLowerCase().startsWith('delivered');
-
-  const preferred = isDelivered ? delivered : scheduled;
-  const fallback = isDelivered ? scheduled : delivered;
-  return preferred || fallback || '';
-}
-
-function appendDateSuffix(description, rowDate) {
-  const base = (description ?? '').toString().trim() || 'Service';
-  const date = (rowDate ?? '').toString().trim();
-  if (!date) return base;
-
-  const alreadyHasDateSuffix = new RegExp(`\\s*-\\s*${escapeRegExp(date)}\\s*$`).test(base);
-  return alreadyHasDateSuffix ? base : `${base} - ${date}`;
-}
+// round2/round4/getXeroServiceRowDate/appendDateSuffix now live in
+// utils/xeroLineFormatting.js, so the scheduled push (which runs in the BullMQ
+// worker and cannot import this router) shapes its lines by exactly the same
+// rules. Aliased on import to keep every call site below unchanged.
 
 async function initializeXeroOperation(workspaceId, boardId, item) {
   const business = await Business.findOne({ workspaceId: mongoEq(workspaceId) });

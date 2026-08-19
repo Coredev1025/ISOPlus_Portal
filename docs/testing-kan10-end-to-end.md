@@ -51,12 +51,16 @@ wait for, and no amount of re-ticking will produce a send.
 
 **KAN-10 does now reach Xero, on exactly one route:** an invoice block whose
 `sendMethod` is `accounting` generates its invoices and creates them as Xero
-DRAFTs *instead of* emailing them. Statements always email — Xero has no
-statement object here — and a statement block carrying `accounting` says so
-once in the log rather than silently ignoring the setting. Xero-not-connected
-is settled before generation, so that misconfiguration logs an error and
-produces nothing, rather than burning invoice numbers on drafts it cannot
-create.
+DRAFTs *instead of* emailing them. Both generator branches are wired — NDIS
+through `handleXeroInvoicendisInvoiceGenerator`, Age Care through
+`handleXeroInvoiceParticipantTax` — which are the same handlers the Invoice
+Generator page's own buttons call, so a scheduled draft carries the same
+contact, lines and account/tax mapping as one pushed by hand. Statements always
+email — Xero has no statement object here — and a statement block carrying
+`accounting` says so once in the log rather than silently ignoring the setting.
+Xero-not-connected is settled before generation, so that misconfiguration logs
+an error and produces nothing, rather than burning invoice numbers on drafts it
+cannot create; so is a board neither generator serves.
 
 Every *other* way Xero is reachable in this repo is Track B — a different,
 older, webhook-driven system (and the `xero-sync-local` skill). Do not report a
@@ -470,7 +474,8 @@ cannot erase a `Bounce`.
 | An email lists another board's PDFs | real defect — a PDF lookup lost its `boardId` scope |
 | Online, tick green, nothing generated at all | no delivery backend resolved — `EMAIL_FROM` or an AWS variable is blank, so the worker refused before claiming invoice numbers |
 | Invoices generated, no email, no outbox file | the block chose `sendMethod: 'accounting'` — they went to Xero as DRAFTs |
-| `accounting` block logs an error, generates nothing | Xero not connected for that workspace; settled before generation, on purpose |
+| `accounting` block logs an error, generates nothing | Xero not connected for that workspace, or the board is not a Care Management board; both settled before generation, on purpose |
+| Automation schedules never fire, tick reports `heldBack` | `AUTOMATION_ENABLED` is off. The slots are held, not skipped — each is billed when the switch comes on |
 | Send succeeds, `emailevents` stays empty | `SES_EVENTS_QUEUE_URL` unset, or the deployed dev consumer took the message first |
 
 ## Track B — the path that does reach Xero

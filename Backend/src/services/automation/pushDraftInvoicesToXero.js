@@ -19,17 +19,33 @@
 import Board from '../../models/Board.js';
 import Business from '../../models/Business.js';
 import PDFLink from '../../models/PDFLink.js';
-import { isNdisBoardLabel } from '../../utils/automationBoardFlags.js';
-import { invoiceDatesFromSlot } from '../../utils/automationInvoiceDates.js';
 import {
-  appendXeroLineDateSuffix,
+  isCareManagementLabel,
+  isLowCatCareManagementLabel,
+  isNdisBoardLabel,
+} from '../../utils/automationBoardFlags.js';
+import { invoiceDatesFromSlot } from '../../utils/automationInvoiceDates.js';
+import { ageCareInvoiceGeneratorListDeps } from '../../utils/automationInvoiceGeneratorDeps.js';
+import {
   captureRouteRes,
   isXeroConnectedBusiness,
   xeroPushDocuments,
 } from '../../utils/automationXeroInvoiceHelpers.js';
+import { getInvoiceGeneratorData } from '../../utils/invoiceGeneratorRouteHelpers.js';
 import { saveInvoiceNumber } from '../../utils/invoicePdfSupport.js';
+import { formatDdMmYyyy } from '../../utils/ndisServiceRecords.js';
 import { mongoEq } from '../../utils/securityHelpers.js';
-import { handleXeroInvoicendisInvoiceGenerator } from '../../utils/xeroNdisRouteHandlers.js';
+import {
+  appendXeroLineDateSuffix,
+  xeroRound2,
+  xeroRound4,
+  xeroServiceRowDate,
+} from '../../utils/xeroLineFormatting.js';
+import {
+  handleXeroInvoiceParticipantTax,
+  handleXeroInvoicendisInvoiceGenerator,
+} from '../../utils/xeroNdisRouteHandlers.js';
+import { assertListNotTruncated, invoiceGeneratorListQuery } from './generateDocuments.js';
 import { error, info } from '../../utils/logger.js';
 
 /**
@@ -52,14 +68,21 @@ export async function xeroDeliveryPreflight({ workspaceId, boardId }) {
     return { ok: false, reason: 'Xero is not connected for this workspace' };
   }
 
+  // Both generator branches are wired now. This used to refuse anything but an
+  // NDIS board, because the Age Care handler wants the Invoice Generator's own
+  // row objects rather than the item ids PDFLink stores — so a workspace that
+  // chose "Send from Accounting Platform" on an Age Care board generated
+  // nothing, month after month, with only a line in the log to say why. The
+  // rows are re-read from the generator now (see ageCareRowsForSlot).
+  //
+  // A board that is neither is still refused: there is no generator for it, so
+  // there is nothing to push.
   const board = await Board.findOne({ boardId: mongoEq(String(boardId)) }).lean();
-  if (!isNdisBoardLabel(board?.label || '')) {
-    // Age Care invoices go to Xero through handleXeroInvoiceParticipantTax,
-    // which wants the Invoice Generator's own row objects rather than the item
-    // ids PDFLink stores. Refusing here is what keeps a slot from minting
-    // numbers for documents this path cannot deliver — see the report's
-    // follow-ups.
-    return { ok: false, reason: 'Accounting delivery currently supports NDIS boards only' };
+  if (!isCareManagementLabel(board?.label || '')) {
+    return {
+      ok: false,
+      reason: 'Accounting delivery supports Care Management boards only',
+    };
   }
   return { ok: true };
 }
@@ -78,24 +101,102 @@ async function coveredItemIds({ workspaceId, boardId, periodKey, invoiceNumber }
   };
 }
 
-async function createDraft({ workspaceId, boardId, itemIds, participant, dates }) {
-  const { res, captured } = captureRouteRes();
-  await handleXeroInvoicendisInvoiceGenerator({
-    req: {
-      body: {
-        itemIds,
-        participantName: participant,
-        invoiceDate: dates.invoiceDate,
-        dueDate: dates.dueDate,
-      },
+/**
+ * The Invoice Generator rows for this slot, re-read rather than carried.
+ *
+ * The Age Care handler builds its Xero lines from the generator's own row
+ * objects — quantity, unit price, participant contribution, service — where the
+ * NDIS one rebuilds everything from item ids. Threading those rows out of
+ * generateDocuments would have looked simpler and been wrong: a retry, or any
+ * replay of the slot, takes the `existingSlotResults` path and hands back
+ * PDFLink rows, which carry no such fields. Re-reading gives the same answer on
+ * the first attempt and on the third.
+ *
+ * `status: 'all'`, because by the time a push happens the rows have been
+ * invoiced and a `pending` list would be empty. Same window generation used —
+ * that is why the caller passes timezone and schedule through.
+ */
+async function ageCareRowsForSlot({ workspaceId, boardId, slot, timezone, schedule, periodKey }) {
+  const listed = await getInvoiceGeneratorData(
+    {
+      workspaceId,
+      boardId,
+      query: invoiceGeneratorListQuery(slot, timezone, schedule, { status: 'all' }),
+      req: null,
     },
-    res,
-    workspaceId,
-    boardId,
+    ageCareInvoiceGeneratorListDeps(),
+  );
+  if (listed.error) {
+    throw new Error(`Invoice Generator list failed: ${listed.error?.body?.message || 'unknown error'}`);
+  }
+  assertListNotTruncated(listed, { boardId, periodKey });
+  return listed.items || [];
+}
+
+/** The deps routes/xero.js hands the same handler, minus the router. */
+function participantTaxHandlerDeps() {
+  return {
     saveInvoiceNumber,
+    getXeroServiceRowDate: xeroServiceRowDate,
     appendDateSuffix: appendXeroLineDateSuffix,
+    formatDdMmYyyy,
+    round2: xeroRound2,
+    round4: xeroRound4,
     error,
-  });
+  };
+}
+
+/**
+ * One Xero DRAFT, through whichever shipping handler the board's generator
+ * feeds. Both are the same handlers their Invoice Generator page buttons call,
+ * so a scheduled draft carries the same contact, lines and account/tax mapping
+ * as one pushed by hand.
+ */
+async function createDraft({ workspaceId, boardId, itemIds, participant, dates, board, rows }) {
+  const { res, captured } = captureRouteRes();
+  const label = board?.label || '';
+
+  if (isNdisBoardLabel(label)) {
+    await handleXeroInvoicendisInvoiceGenerator({
+      req: {
+        body: {
+          itemIds,
+          participantName: participant,
+          invoiceDate: dates.invoiceDate,
+          dueDate: dates.dueDate,
+        },
+      },
+      res,
+      workspaceId,
+      boardId,
+      saveInvoiceNumber,
+      appendDateSuffix: appendXeroLineDateSuffix,
+      error,
+    });
+  } else {
+    const covered = new Set(itemIds.map(String));
+    const items = rows.filter((row) => covered.has(String(row?.id)));
+    if (items.length === 0) {
+      throw new Error(
+        `Invoice ${participant || boardId} has no Invoice Generator rows for slot ${dates.invoiceDate}`,
+      );
+    }
+    await handleXeroInvoiceParticipantTax({
+      req: {
+        body: {
+          items,
+          participantName: participant,
+          invoiceDate: dates.invoiceDate,
+          dueDate: dates.dueDate,
+          isLowCat: isLowCatCareManagementLabel(label),
+        },
+      },
+      res,
+      workspaceId,
+      boardId,
+      ...participantTaxHandlerDeps(),
+    });
+  }
 
   const xeroInvoiceNumber = captured.body?.invoiceNumber;
   if (!xeroInvoiceNumber) {
@@ -106,7 +207,7 @@ async function createDraft({ workspaceId, boardId, itemIds, participant, dates }
   return xeroInvoiceNumber;
 }
 
-async function pushDocument({ workspaceId, boardId, periodKey, document, dates }) {
+async function pushDocument({ workspaceId, boardId, periodKey, document, dates, board, rows }) {
   const { invoiceNumber, participant } = document;
   const { itemIds, alreadyPushed } = await coveredItemIds({
     workspaceId, boardId, periodKey, invoiceNumber,
@@ -119,7 +220,7 @@ async function pushDocument({ workspaceId, boardId, periodKey, document, dates }
   }
 
   const xeroInvoiceNumber = await createDraft({
-    workspaceId, boardId, itemIds, participant, dates,
+    workspaceId, boardId, itemIds, participant, dates, board, rows,
   });
   await PDFLink.updateMany(
     {
@@ -141,6 +242,8 @@ export async function pushDraftInvoicesToXero({
   workspaceId,
   boardId,
   slot,
+  timezone,
+  schedule,
   periodKey,
   documents,
 }) {
@@ -154,10 +257,17 @@ export async function pushDraftInvoicesToXero({
   // rather than on whenever the worker happened to drain the queue.
   const dates = invoiceDatesFromSlot(slot, business?.bankDetails?.accountsReceivableTerms);
 
+  const board = await Board.findOne({ boardId: mongoEq(String(boardId)) }).lean();
+  // Listed once for the whole board, not once per participant: the query is the
+  // same for every document in the slot, and it is the expensive part.
+  const rows = isNdisBoardLabel(board?.label || '')
+    ? []
+    : await ageCareRowsForSlot({ workspaceId, boardId, slot, timezone, schedule, periodKey });
+
   const pushed = [];
   for (const document of toPush) {
     const result = await pushDocument({
-      workspaceId, boardId, periodKey, document, dates,
+      workspaceId, boardId, periodKey, document, dates, board, rows,
     });
     if (result) pushed.push(result);
   }

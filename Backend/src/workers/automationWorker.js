@@ -206,6 +206,10 @@ async function deliverToAccountingPlatform(job) {
     workspaceId,
     boardId,
     slot: new Date(job.data.slot),
+    // Carried through so the Age Care push can rebuild the SAME list window
+    // generation used, rather than guessing at one.
+    timezone: job.data.timezone || DEFAULT_TIMEZONE,
+    schedule: job.data.schedule,
     periodKey,
     documents: results,
   });

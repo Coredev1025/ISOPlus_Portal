@@ -64,25 +64,14 @@ export function isXeroConnectedBusiness(business) {
   return Boolean(business?.xeroIntegrated && business?.xeroTokens?.accessToken);
 }
 
-function escapeRegExpLiteral(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/**
- * The Xero line description rule: "<service> - <dd/mm/yyyy>", idempotent.
- *
- * A verbatim copy of the private `appendDateSuffix` in routes/xero.js, which
- * the UI's Xero push hands to the same handler. It is duplicated rather than
- * imported because importing it would pull an Express router — and its whole
- * model and service graph — into the BullMQ worker's import graph for one pure
- * six-line function. Its behaviour is pinned by test, and exporting the
- * canonical one so both callers share it is a follow-up, not this ticket.
- */
-export function appendXeroLineDateSuffix(description, rowDate) {
-  const base = (description ?? '').toString().trim() || 'Service';
-  const date = (rowDate ?? '').toString().trim();
-  if (!date) return base;
-
-  const alreadySuffixed = new RegExp(`\\s*-\\s*${escapeRegExpLiteral(date)}\\s*$`).test(base);
-  return alreadySuffixed ? base : `${base} - ${date}`;
-}
+// appendXeroLineDateSuffix used to be re-implemented here, verbatim, to keep an
+// Express router out of the worker's import graph. It now lives in
+// utils/xeroLineFormatting.js alongside the rounding and row-date rules, which
+// routes/xero.js imports too — so there is one copy rather than two, and the
+// scheduled push and the UI push cannot drift apart.
+export {
+  appendXeroLineDateSuffix,
+  xeroRound2,
+  xeroRound4,
+  xeroServiceRowDate,
+} from './xeroLineFormatting.js';
