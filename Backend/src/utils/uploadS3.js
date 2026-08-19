@@ -23,13 +23,36 @@ const checkS3ENV = (publicRead) => {
     }
 }
 
-const s3Client = new S3Client({
-    region: process.env.AWS_REGION,
-    credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-    },
-});
+// Built on first use, not at import. Reading the region and credentials at
+// module scope captured whatever the environment held the instant this file was
+// first imported — before a caller had loaded them — and the client kept those
+// values for the life of the process. checkS3ENV reads the same variables at
+// call time, so the guard would pass while the client still held `undefined`
+// credentials and every presign failed with "Resolved credential object is not
+// valid". The cache key rebuilds the client if any of the three change.
+let s3ClientCache = null;
+let s3ClientCacheKey = null;
+
+const getS3Client = () => {
+    const key = [
+        process.env.AWS_REGION,
+        process.env.AWS_ACCESS_KEY_ID,
+        process.env.AWS_SECRET_ACCESS_KEY,
+    ].map((part) => part ?? '').join('\n');
+
+    if (!s3ClientCache || s3ClientCacheKey !== key) {
+        s3ClientCache = new S3Client({
+            region: process.env.AWS_REGION,
+            credentials: {
+                accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+                secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+            },
+        });
+        s3ClientCacheKey = key;
+    }
+
+    return s3ClientCache;
+};
 
 export const uploadFileToS3 = async (fileBuffer, key, publicRead = false) => {
     if (isOfflineMode()) {
@@ -46,7 +69,7 @@ export const uploadFileToS3 = async (fileBuffer, key, publicRead = false) => {
     };
 
     try {
-        const data = await s3Client.send(new PutObjectCommand(params));
+        const data = await getS3Client().send(new PutObjectCommand(params));
         console.log('File uploaded successfully:', data);
         return data;
     } catch (err) {
@@ -68,7 +91,7 @@ export const downloadFileFromS3Stream = async (key, downloadPath) => {
     };
 
     try {
-        const data = await s3Client.send(new GetObjectCommand(params));
+        const data = await getS3Client().send(new GetObjectCommand(params));
         const s3Stream = data.Body;
 
         const fileStream = fs.createWriteStream(downloadPath);
@@ -106,7 +129,7 @@ export const getS3FileUrl = async (key, expiration = 3600, publicRead = false) =
     };
 
     try {
-        const url = await getSignedUrl(s3Client, new GetObjectCommand(params), { expiresIn: expiration });
+        const url = await getSignedUrl(getS3Client(), new GetObjectCommand(params), { expiresIn: expiration });
         return url;
     } catch (err) {
         console.error('Error generating signed URL:', err);
@@ -128,7 +151,7 @@ export const deleteFileFromS3 = async (key, publicRead = false) => {
     };
 
     try {
-        const data = await s3Client.send(new DeleteObjectCommand(params));
+        const data = await getS3Client().send(new DeleteObjectCommand(params));
         console.log('File deleted successfully:', data);
         return data;
     } catch (err) {
@@ -148,7 +171,7 @@ export const getS3File = async (key, publicRead = false) => {
     };
 
     try {
-        const data = await s3Client.send(new GetObjectCommand(params));
+        const data = await getS3Client().send(new GetObjectCommand(params));
         const chunks = [];
         
         for await (const chunk of data.Body) {
