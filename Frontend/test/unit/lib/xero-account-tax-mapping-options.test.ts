@@ -6,7 +6,6 @@ import {
   displayAccountPlaceholder,
   displayTaxPlaceholder,
   normalizeMapping,
-  prepareMappingForSave,
   taxRatesForAccount,
   type XeroAccountOption,
   type XeroTaxRateOption,
@@ -80,22 +79,14 @@ describe('xero-account-tax-mapping-options', () => {
     });
   });
 
-  it('prepareMappingForSave does not persist display defaults on a no-op save', () => {
-    expect(prepareMappingForSave(normalizeMapping(undefined))).toEqual(
-      EMPTY_LINE_ITEM_MAPPING
-    );
-  });
-
-  it('prepareMappingForSave keeps a cleared quote override empty', () => {
+  it('normalizeMapping keeps a cleared quote override empty', () => {
     const mapping = normalizeMapping({
       quote: { accountCode: '200', taxType: 'OUTPUT' },
       quoteOverrides: {
         quoteService: { accountCode: '', taxType: '' },
       },
     });
-    expect(prepareMappingForSave(mapping).quoteOverrides.quoteService).toEqual(
-      EMPTY_DOC
-    );
+    expect(normalizeMapping(mapping).quoteOverrides.quoteService).toEqual(EMPTY_DOC);
   });
 
   it('accountClass uppercases the Xero account class', () => {
@@ -133,11 +124,15 @@ describe('xero-account-tax-mapping-options', () => {
     ).toEqual(['200', '400']);
   });
 
-  it('prepareMappingForSave round-trips through normalizeMapping', () => {
+  it('normalizeMapping round-trips a saved mapping payload', () => {
     const mapping = normalizeMapping({
       invoice: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: 10 },
     });
-    expect(prepareMappingForSave(mapping)).toEqual(mapping);
+    expect(normalizeMapping(mapping)).toEqual(mapping);
+  });
+
+  it('normalizeMapping does not persist display defaults on a no-op save', () => {
+    expect(normalizeMapping(undefined)).toEqual(EMPTY_LINE_ITEM_MAPPING);
   });
 
   it('exposes AU demo codes as placeholders only', () => {

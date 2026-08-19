@@ -2,21 +2,15 @@
 
 import { Suspense, useEffect } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { showErrorToast, showSuccessToast } from "@/lib/toast-utils";
 import { applyXeroOAuthReturn } from "@/lib/xero-oauth-return";
 
-export function XeroOAuthReturnListener() {
+function XeroOAuthReturnListener() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
 
   useEffect(() => {
-    applyXeroOAuthReturn(searchParams, {
-      showSuccessToast,
-      showErrorToast,
-      replace: (href) => router.replace(href),
-      pathname,
-    });
+    applyXeroOAuthReturn(searchParams, pathname, (href) => router.replace(href));
   }, [pathname, router, searchParams]);
 
   return null;

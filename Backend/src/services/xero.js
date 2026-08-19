@@ -29,14 +29,7 @@ function buildXeroClient() {
     return new XeroClient(config);
 }
 
-export async function createXeroOAuthClient() {
-    try {
-        return buildXeroClient();
-    } catch (err) {
-        error('Xero-Service', 'Error configuring Xero client', err);
-        throw new Error('Error configuring Xero client');
-    }
-}
+export const createXeroOAuthClient = buildXeroClient;
 
 export async function configure() {
     try {

@@ -6,16 +6,6 @@
 import Business from '../models/Business.js';
 import { logXeroAudit } from './xeroAuditHelpers.js';
 
-export function resolveConnectTenantId(body) {
-  const fromBody = typeof body?.tenantId === 'string' ? body.tenantId.trim() : '';
-  if (fromBody) return fromBody;
-  const fromOrg =
-    typeof body?.organization?.organisationId === 'string'
-      ? body.organization.organisationId.trim()
-      : '';
-  return fromOrg || null;
-}
-
 export function buildXeroTokenPayload(tokens) {
   if (!tokens?.access_token || !tokens?.refresh_token) return null;
   return {
@@ -26,13 +16,24 @@ export function buildXeroTokenPayload(tokens) {
   };
 }
 
-export async function persistXeroConnection({
+function resolveConnectTenantId(tenantId, organization) {
+  const fromTenant = typeof tenantId === 'string' ? tenantId.trim() : '';
+  if (fromTenant) return fromTenant;
+  const fromOrg =
+    typeof organization?.organisationId === 'string'
+      ? organization.organisationId.trim()
+      : '';
+  return fromOrg || null;
+}
+
+export async function saveConnectedXeroBusiness({
   workspaceId,
   tokens,
   organization,
   tenantId,
+  req,
 }) {
-  const xeroTenantId = resolveConnectTenantId({ tenantId, organization });
+  const xeroTenantId = resolveConnectTenantId(tenantId, organization);
   const tokenPayload = buildXeroTokenPayload(tokens);
   if (!xeroTenantId) return { error: 'no_organisation' };
   if (!tokenPayload) return { error: 'missing_tokens' };
@@ -55,23 +56,6 @@ export async function persistXeroConnection({
     }
   }
   await business.save();
-  return { business };
-}
-
-export async function saveConnectedXeroBusiness({
-  workspaceId,
-  tokens,
-  organization,
-  tenantId,
-  req,
-}) {
-  const result = await persistXeroConnection({
-    workspaceId,
-    tokens,
-    organization,
-    tenantId,
-  });
-  if (result.error) return result;
 
   await logXeroAudit({
     workspaceId,
@@ -79,8 +63,8 @@ export async function saveConnectedXeroBusiness({
     detail: 'Xero integration connected',
     req,
     entityType: 'Business',
-    entityId: result.business?._id?.toString(),
+    entityId: business._id?.toString(),
     success: true,
   });
-  return result;
+  return { business };
 }

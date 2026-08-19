@@ -5,6 +5,13 @@ import {
   stripXeroOAuthSearchParams,
 } from '@/lib/xero-oauth-return';
 
+vi.mock('@/lib/toast-utils', () => ({
+  showSuccessToast: vi.fn(),
+  showErrorToast: vi.fn(),
+}));
+
+import { showErrorToast, showSuccessToast } from '@/lib/toast-utils';
+
 describe('xero-oauth-return', () => {
   it('parses a successful redirect return from Xero', () => {
     expect(parseXeroOAuthReturn(new URLSearchParams('tab=accounting&xero=success'))).toEqual({
@@ -59,17 +66,12 @@ describe('xero-oauth-return', () => {
   });
 
   it('applyXeroOAuthReturn toasts a failed return and replaces the URL', () => {
-    const showErrorToast = vi.fn();
     const replace = vi.fn();
     expect(
       applyXeroOAuthReturn(
         new URLSearchParams('tab=accounting&xero=error&reason=no_organisation'),
-        {
-          showSuccessToast: vi.fn(),
-          showErrorToast,
-          replace,
-          pathname: '/workspace/ws-1/finance-settings',
-        }
+        '/workspace/ws-1/finance-settings',
+        replace
       )
     ).toBe(true);
     expect(showErrorToast).toHaveBeenCalledWith('Failed to connect to Xero', {
@@ -81,15 +83,13 @@ describe('xero-oauth-return', () => {
   });
 
   it('applyXeroOAuthReturn toasts a successful return and replaces the URL', () => {
-    const showSuccessToast = vi.fn();
     const replace = vi.fn();
     expect(
-      applyXeroOAuthReturn(new URLSearchParams('tab=accounting&xero=success'), {
-        showSuccessToast,
-        showErrorToast: vi.fn(),
-        replace,
-        pathname: '/workspace/ws-1/finance-settings',
-      })
+      applyXeroOAuthReturn(
+        new URLSearchParams('tab=accounting&xero=success'),
+        '/workspace/ws-1/finance-settings',
+        replace
+      )
     ).toBe(true);
     expect(showSuccessToast).toHaveBeenCalledWith('Successfully connected to Xero!');
     expect(replace).toHaveBeenCalledWith(

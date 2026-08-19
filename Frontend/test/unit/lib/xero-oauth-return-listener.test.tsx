@@ -15,22 +15,11 @@ vi.mock('@/lib/toast-utils', () => ({
   showErrorToast: vi.fn(),
 }));
 
-import { XeroOAuthReturnBoundary, XeroOAuthReturnListener } from '@/lib/xero-oauth-return-listener';
+import { XeroOAuthReturnBoundary } from '@/lib/xero-oauth-return-listener';
 import { showErrorToast } from '@/lib/toast-utils';
 
-describe('XeroOAuthReturnListener', () => {
+describe('XeroOAuthReturnBoundary', () => {
   it('toasts a Xero OAuth error on the dashboard when workspace id is missing', () => {
-    render(<XeroOAuthReturnListener />);
-    expect(showErrorToast).toHaveBeenCalledWith(
-      'Failed to connect to Xero',
-      expect.objectContaining({
-        description: expect.stringMatching(/could not complete the xero authentication/i),
-      })
-    );
-    expect(replace).toHaveBeenCalledWith('/dashboard');
-  });
-
-  it('toasts through the Suspense boundary the dashboard mounts', () => {
     render(<XeroOAuthReturnBoundary />);
     expect(showErrorToast).toHaveBeenCalledWith(
       'Failed to connect to Xero',
@@ -38,5 +27,6 @@ describe('XeroOAuthReturnListener', () => {
         description: expect.stringMatching(/could not complete the xero authentication/i),
       })
     );
+    expect(replace).toHaveBeenCalledWith('/dashboard');
   });
 });

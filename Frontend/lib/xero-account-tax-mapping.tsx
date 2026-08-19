@@ -24,7 +24,6 @@ import {
 } from "@/lib/xero-integration-errors";
 import {
   normalizeMapping,
-  prepareMappingForSave,
   taxRatesForAccount,
   accountsForDocumentKind,
   displayAccountPlaceholder,
@@ -354,7 +353,7 @@ export function XeroAccountTaxMapping({
   const handleSave = useCallback(async () => {
     try {
       setIsSaving(true);
-      const payload = prepareMappingForSave(mapping);
+      const payload = normalizeMapping(mapping);
       const response = await axios.put(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/xero/line-item-mapping`,
         { workspaceId, mapping: payload }

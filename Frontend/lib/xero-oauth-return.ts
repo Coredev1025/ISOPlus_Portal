@@ -6,6 +6,7 @@ import {
   XERO_OAUTH_REASON_OAUTH_FAILED,
   XERO_OAUTH_REASON_SAVE_FAILED,
 } from '@/constants/xeroOAuth';
+import { showErrorToast, showSuccessToast } from '@/lib/toast-utils';
 
 export type XeroOAuthReturn =
   | { kind: 'success'; title: string }
@@ -55,24 +56,18 @@ export function stripXeroOAuthSearchParams(searchParams: URLSearchParams): strin
   return query ? `?${query}` : '';
 }
 
-type ApplyXeroOAuthReturnOptions = Readonly<{
-  showSuccessToast: (title: string) => void;
-  showErrorToast: (title: string, options?: { description?: string }) => void;
-  replace: (href: string) => void;
-  pathname: string;
-}>;
-
 export function applyXeroOAuthReturn(
   searchParams: URLSearchParams,
-  options: ApplyXeroOAuthReturnOptions
+  pathname: string,
+  replace: (href: string) => void
 ): boolean {
   const parsed = parseXeroOAuthReturn(searchParams);
   if (!parsed) return false;
   if (parsed.kind === 'success') {
-    options.showSuccessToast(parsed.title);
+    showSuccessToast(parsed.title);
   } else {
-    options.showErrorToast(parsed.title, { description: parsed.description });
+    showErrorToast(parsed.title, { description: parsed.description });
   }
-  options.replace(`${options.pathname}${stripXeroOAuthSearchParams(searchParams)}`);
+  replace(`${pathname}${stripXeroOAuthSearchParams(searchParams)}`);
   return true;
 }

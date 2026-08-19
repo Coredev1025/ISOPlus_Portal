@@ -2,6 +2,12 @@ import jwt from 'jsonwebtoken';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Business from '../../../src/models/Business.js';
 import AuditTrail from '../../../src/models/AuditTrail.js';
+import {
+  XERO_OAUTH_REASON_AUTHENTICATION_REQUIRED,
+  XERO_OAUTH_REASON_MISSING_CODE,
+  XERO_OAUTH_REASON_NO_ORGANISATION,
+  XERO_OAUTH_REASON_OAUTH_FAILED,
+} from '../../../src/constants/xeroOAuth.js';
 import { signOAuthState } from '../../../src/utils/helpers.js';
 import { createXeroConnectTicket } from '../../../src/utils/xeroOAuthConnectTicketHelpers.js';
 
@@ -121,7 +127,7 @@ describe('xeroOAuthRouteHelpers', () => {
       expect.objectContaining({
         action: 'Failed to connect Xero',
         success: false,
-        detail: expect.stringMatching(/could not complete the xero authentication/i),
+        detail: XERO_OAUTH_REASON_OAUTH_FAILED,
       }),
     ]);
   });
@@ -182,7 +188,7 @@ describe('xeroOAuthRouteHelpers', () => {
         action: 'Failed to connect Xero',
         category: 'Xero',
         success: false,
-        detail: expect.stringMatching(/could not be verified/i),
+        detail: XERO_OAUTH_REASON_AUTHENTICATION_REQUIRED,
       }),
     ]);
   });
@@ -350,7 +356,7 @@ describe('xeroOAuthRouteHelpers', () => {
       expect.objectContaining({
         action: 'Failed to connect Xero',
         success: false,
-        detail: expect.stringMatching(/could not complete the xero authentication/i),
+        detail: XERO_OAUTH_REASON_OAUTH_FAILED,
       }),
     ]);
   });
@@ -405,8 +411,8 @@ describe('xeroOAuthRouteHelpers', () => {
     const trails = await AuditTrail.find({ workspaceId: 'ws-oauth' }).lean();
     expect(trails.map((row) => row.detail)).toEqual(
       expect.arrayContaining([
-        expect.stringMatching(/could not complete the xero authentication/i),
-        expect.stringMatching(/no xero organisation was selected/i),
+        XERO_OAUTH_REASON_MISSING_CODE,
+        XERO_OAUTH_REASON_NO_ORGANISATION,
       ])
     );
     expect(trails.every((row) => row.action === 'Failed to connect Xero' && row.success === false)).toBe(

@@ -30,6 +30,7 @@ import {
   parseXeroAuditListResponse,
   type XeroAuditLogItem,
 } from "@/lib/xero-connection-audit-logs-helpers";
+import { isCanceledError } from "@/lib/xero-integration-errors";
 
 type XeroConnectionAuditLogsProps = Readonly<{
   workspaceId: string;
@@ -145,11 +146,6 @@ async function fetchXeroAuditPage(
   return parseXeroAuditListResponse(response.data);
 }
 
-function isAbortError(error: unknown) {
-  const err = error as { name?: string };
-  return err.name === "CanceledError" || err.name === "AbortError";
-}
-
 export function XeroConnectionAuditLogs({
   workspaceId,
   timezone = DEFAULT_BUSINESS_TIMEZONE,
@@ -171,7 +167,7 @@ export function XeroConnectionAuditLogs({
         setItems(parsed.items);
         setTotalPages(parsed.totalPages);
       } catch (error: unknown) {
-        if (isAbortError(error)) return;
+        if (isCanceledError(error)) return;
         setItems([]);
         setTotalPages(1);
       } finally {

@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  persistXeroConnection,
-  resolveConnectTenantId,
-  saveConnectedXeroBusiness,
-} from '../../../src/utils/xeroConnectHelpers.js';
+import { saveConnectedXeroBusiness } from '../../../src/utils/xeroConnectHelpers.js';
 import Business from '../../../src/models/Business.js';
 import AuditTrail from '../../../src/models/AuditTrail.js';
 
@@ -14,14 +10,6 @@ const tokens = {
 };
 
 describe('xeroConnectHelpers', () => {
-  it('prefers tenantId then organisation.organisationId', () => {
-    expect(resolveConnectTenantId({ tenantId: ' t1 ' })).toBe('t1');
-    expect(
-      resolveConnectTenantId({ organization: { organisationId: ' org-1 ' } })
-    ).toBe('org-1');
-    expect(resolveConnectTenantId({})).toBeNull();
-  });
-
   it('updates an existing business and writes a Xero audit row', async () => {
     await Business.create({ workspaceId: 'ws-existing', name: 'Old' });
     const saved = await saveConnectedXeroBusiness({
@@ -37,12 +25,35 @@ describe('xeroConnectHelpers', () => {
     expect(await AuditTrail.countDocuments({ workspaceId: 'ws-existing' })).toBe(1);
   });
 
+  it('prefers tenantId then organisation.organisationId', async () => {
+    const fromTenant = await saveConnectedXeroBusiness({
+      workspaceId: 'ws-tenant-id',
+      tokens,
+      tenantId: ' t1 ',
+      organization: { organisationId: 'org-ignored' },
+    });
+    expect(fromTenant.error).toBeUndefined();
+    expect(
+      (await Business.findOne({ workspaceId: 'ws-tenant-id' }).lean()).xeroTenantId
+    ).toBe('t1');
+
+    const fromOrg = await saveConnectedXeroBusiness({
+      workspaceId: 'ws-org-id',
+      tokens,
+      organization: { organisationId: ' org-1 ' },
+    });
+    expect(fromOrg.error).toBeUndefined();
+    expect(
+      (await Business.findOne({ workspaceId: 'ws-org-id' }).lean()).xeroTenantId
+    ).toBe('org-1');
+  });
+
   it('updates an existing business without replacing organisation when none is sent', async () => {
     await Business.create({
       workspaceId: 'ws-keep-org',
       xeroOrganization: { organisationId: 'old', name: 'Keep' },
     });
-    const saved = await persistXeroConnection({
+    const saved = await saveConnectedXeroBusiness({
       workspaceId: 'ws-keep-org',
       tokens,
       tenantId: 'tenant-3',
@@ -54,7 +65,7 @@ describe('xeroConnectHelpers', () => {
   });
 
   it('returns missing_tokens when the token set is incomplete', async () => {
-    const result = await persistXeroConnection({
+    const result = await saveConnectedXeroBusiness({
       workspaceId: 'ws-tokens',
       tokens: { access_token: 'only' },
       organization: { organisationId: 't' },

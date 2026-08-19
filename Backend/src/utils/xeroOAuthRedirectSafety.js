@@ -29,14 +29,16 @@ export function isSafeXeroFrontendReturnUrl(urlString) {
   }
 }
 
+function serializeSafeReturnUrl(urlString) {
+  const url = new URL(urlString);
+  return `${url.origin}${url.pathname}${url.search}`;
+}
+
 export function trustedFrontendRedirectUrl(urlString, fallbackUrl) {
-  if (isSafeXeroFrontendReturnUrl(urlString)) {
-    const url = new URL(urlString);
-    return `${url.origin}${url.pathname}${url.search}`;
-  }
-  if (isSafeXeroFrontendReturnUrl(fallbackUrl)) {
-    const url = new URL(fallbackUrl);
-    return `${url.origin}${url.pathname}${url.search}`;
+  for (const candidate of [urlString, fallbackUrl]) {
+    if (isSafeXeroFrontendReturnUrl(candidate)) {
+      return serializeSafeReturnUrl(candidate);
+    }
   }
   const origin = stripTrailingSlashes(getFrontendBaseUrl());
   return `${origin}/dashboard?xero=error`;

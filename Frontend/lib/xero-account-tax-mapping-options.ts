@@ -37,18 +37,6 @@ export type XeroLineItemMapping = {
   quoteOverrides: Record<XeroQuoteOverrideKind, XeroDocMapping>;
 };
 
-export const DISPLAY_SALES_DOC: XeroDocMapping = {
-  accountCode: XERO_DEFAULT_SALES_ACCOUNT_CODE,
-  taxType: XERO_DEFAULT_INCOME_TAX_TYPE,
-  taxRatePercent: null,
-};
-
-export const DISPLAY_EXPENSE_DOC: XeroDocMapping = {
-  accountCode: XERO_DEFAULT_COGS_ACCOUNT_CODE,
-  taxType: XERO_DEFAULT_EXPENSE_TAX_TYPE,
-  taxRatePercent: null,
-};
-
 const EMPTY_DOC: XeroDocMapping = {
   accountCode: "",
   taxType: "",
@@ -140,24 +128,18 @@ export function accountsForDocumentKind(
   return selected ? [...filtered, selected] : filtered;
 }
 
-export function prepareMappingForSave(
-  mapping: XeroLineItemMapping
-): XeroLineItemMapping {
-  return normalizeMapping(mapping);
-}
-
 export function displayAccountPlaceholder(kind: XeroDocumentKind): string {
   const code =
     kind === "purchaseOrder"
-      ? DISPLAY_EXPENSE_DOC.accountCode
-      : DISPLAY_SALES_DOC.accountCode;
+      ? XERO_DEFAULT_COGS_ACCOUNT_CODE
+      : XERO_DEFAULT_SALES_ACCOUNT_CODE;
   return `${code} (default)`;
 }
 
 export function displayTaxPlaceholder(kind: XeroDocumentKind): string {
   const taxType =
     kind === "purchaseOrder"
-      ? DISPLAY_EXPENSE_DOC.taxType
-      : DISPLAY_SALES_DOC.taxType;
+      ? XERO_DEFAULT_EXPENSE_TAX_TYPE
+      : XERO_DEFAULT_INCOME_TAX_TYPE;
   return `${taxType} (default)`;
 }

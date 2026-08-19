@@ -43,15 +43,17 @@ export function isExpectedMissingIntegrationData(error: unknown): boolean {
   return false;
 }
 
-export function describeXeroLoadError(error: unknown): string {
+export function describeXeroLoadError(
+  error: unknown,
+  fallback = 'Please try again later'
+): string {
   if (isXeroLoadTimeoutError(error)) return XERO_LOAD_TIMEOUT_MESSAGE;
-  return responseMessage(error) || 'Please try again later';
+  return responseMessage(error) || fallback;
 }
 
 export function xeroOptionsLoadDescription(error: unknown): string {
-  if (isXeroLoadTimeoutError(error)) return XERO_LOAD_TIMEOUT_MESSAGE;
-  return (
-    asError(error).response?.data?.message
-    || 'Disconnect and Connect Xero again, then select an organisation.'
+  return describeXeroLoadError(
+    error,
+    'Disconnect and Connect Xero again, then select an organisation.'
   );
 }

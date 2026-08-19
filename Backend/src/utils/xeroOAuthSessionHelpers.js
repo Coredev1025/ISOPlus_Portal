@@ -1,14 +1,8 @@
 import jwt from 'jsonwebtoken';
 
 export function normalizePortalUserId(value) {
-  if (value == null || value === '') return '';
-  if (typeof value === 'string') return value.trim();
-  if (typeof value === 'number' || typeof value === 'bigint') return String(value);
-  if (typeof value === 'object' && typeof value.toString === 'function') {
-    const text = value.toString();
-    return text && text !== '[object Object]' ? text.trim() : '';
-  }
-  return '';
+  const text = String(value ?? '').trim();
+  return text && text !== '[object Object]' ? text : '';
 }
 
 export function readXeroOAuthSessionUser(req) {

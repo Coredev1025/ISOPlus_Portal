@@ -10,15 +10,14 @@ describe('dismissAllToasts', () => {
     }
   });
 
-  it('does not leave a Toastify.reposition timer that needs document after teardown', async () => {
+  it('dismisses active toasts without throwing after jsdom teardown', async () => {
     vi.useFakeTimers();
     showSuccessToast('Saved', { duration: 4000 });
-    const reposition = vi.spyOn(Toastify, 'reposition');
 
     dismissAllToasts();
     await vi.advanceTimersByTimeAsync(1000);
 
-    expect(reposition).not.toHaveBeenCalled();
+    expect(document.querySelectorAll('.toastify')).toHaveLength(0);
   });
 
   it('does not throw if Toastify.reposition runs after document is gone', () => {

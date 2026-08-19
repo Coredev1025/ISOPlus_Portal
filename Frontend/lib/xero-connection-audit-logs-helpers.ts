@@ -17,9 +17,9 @@ export type XeroAuditLogItem = {
 
 export type XeroAuditListParams = {
   workspaceId: string;
-  category: typeof AUDIT_CATEGORY_XERO;
-  sortBy: typeof AUDIT_SORT_BY_CREATED_AT;
-  sortOrder: typeof AUDIT_SORT_ORDER_DESC;
+  category: string;
+  sortBy: string;
+  sortOrder: string;
   page: number;
   limit: number;
 };
@@ -34,12 +34,6 @@ export type XeroAuditListResult = {
 function asRecord(value: unknown): Record<string, unknown> {
   if (value && typeof value === 'object') return value as Record<string, unknown>;
   return {};
-}
-
-function asInt(value: unknown, fallback: number, min: number): number {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n < min) return fallback;
-  return Math.floor(n);
 }
 
 export function mapXeroAuditItems(items: unknown): XeroAuditLogItem[] {
@@ -69,7 +63,7 @@ export function buildXeroAuditListParams({
     category: AUDIT_CATEGORY_XERO,
     sortBy: AUDIT_SORT_BY_CREATED_AT,
     sortOrder: AUDIT_SORT_ORDER_DESC,
-    page: asInt(page, 1, 1),
+    page: Math.max(1, Math.floor(Number(page) || 1)),
     limit: XERO_AUDIT_PAGE_SIZE,
   };
 }
@@ -77,12 +71,9 @@ export function buildXeroAuditListParams({
 export function parseXeroAuditListResponse(data: unknown): XeroAuditListResult {
   const row = asRecord(data);
   const items = mapXeroAuditItems(row.items);
-  const page = asInt(row.page, 1, 1);
-  const total = asInt(row.total, items.length, 0);
-  const totalPages = asInt(
-    row.totalPages,
-    Math.ceil(total / XERO_AUDIT_PAGE_SIZE) || 1,
-    1
-  );
+  const page = Number(row.page) || 1;
+  const total = Number(row.total) || items.length;
+  const totalPages =
+    Number(row.totalPages) || Math.ceil(total / XERO_AUDIT_PAGE_SIZE) || 1;
   return { items, page, totalPages, total };
 }

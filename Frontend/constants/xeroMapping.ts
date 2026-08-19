@@ -3,7 +3,6 @@
  * Shown as Select placeholders only — never persisted unless the user picks them.
  *
  * Touchpoints: lib/xero-account-tax-mapping-options.ts
- * Keep in sync with Backend/src/constants/xeroMapping.js
  */
 export const XERO_DEFAULT_SALES_ACCOUNT_CODE = '200';
 export const XERO_DEFAULT_COGS_ACCOUNT_CODE = '310';
