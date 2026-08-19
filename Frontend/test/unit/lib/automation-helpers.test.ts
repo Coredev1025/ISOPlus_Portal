@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   blockNeedsAttention,
   deliveryStatus,
   formatNextRun,
   hasInvalidEmail,
+  documentHref,
   recentDocumentLabel,
   toDateInputValue,
 } from '@/lib/automation-helpers';
@@ -104,6 +105,53 @@ describe('recentDocumentLabel', () => {
     expect(
       recentDocumentLabel(document({ pdfUrl: 'https://files.test/%E0%A4%A.pdf' }))
     ).toBe('Monthly Statement');
+  });
+
+  // pdfUrl is now a link to the backend's re-signing route, whose last segment
+  // is a Mongo id. Labelling a document '6a84f789c9d48680d19276c1' is worse
+  // than labelling it by its type, so only a URL that actually names a file is
+  // allowed to supply one.
+  it('does not label a document with the id in a download link', () => {
+    expect(
+      recentDocumentLabel(
+        document({ pdfUrl: '/api/pdf-links/download/6a84f789c9d48680d19276c1' })
+      )
+    ).toBe('Monthly Statement');
+  });
+});
+
+/**
+ * The panel links to the backend, which returns a PATH: it does not reliably
+ * know its own public origin, and the frontend already prefixes
+ * NEXT_PUBLIC_BACKEND_URL for every other call.
+ */
+describe('documentHref', () => {
+  const saved = process.env.NEXT_PUBLIC_BACKEND_URL;
+
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_BACKEND_URL = 'https://api.test';
+  });
+
+  afterEach(() => {
+    if (saved === undefined) delete process.env.NEXT_PUBLIC_BACKEND_URL;
+    else process.env.NEXT_PUBLIC_BACKEND_URL = saved;
+  });
+
+  it('prefixes the backend origin onto a path', () => {
+    expect(documentHref('/api/pdf-links/download/abc')).toBe(
+      'https://api.test/api/pdf-links/download/abc'
+    );
+  });
+
+  // Older rows, and anything a future backend sends absolute, must still work.
+  it('leaves an absolute URL alone', () => {
+    expect(documentHref('https://files.test/a.pdf')).toBe(
+      'https://files.test/a.pdf'
+    );
+  });
+
+  it('leaves an empty value alone rather than linking to the backend root', () => {
+    expect(documentHref('')).toBe('');
   });
 });
 

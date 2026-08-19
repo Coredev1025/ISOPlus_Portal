@@ -448,6 +448,11 @@ async function loadRecentAutomationDocuments(workspaceId) {
     {
       $group: {
         _id: '$pdfLink',
+        // The row that carries this document, so the panel can link to the
+        // re-signing route rather than to the signature captured at generation
+        // time. Any of the grouped rows will do: they share a pdfLink, which is
+        // the same S3 object.
+        pdfLinkId: { $first: '$_id' },
         type: { $first: '$type' },
         invoiceNumber: { $first: '$invoiceNumber' },
         periodKey: { $first: '$periodKey' },
@@ -470,7 +475,14 @@ async function loadRecentAutomationDocuments(workspaceId) {
     type: row.type,
     invoiceNumber: row.invoiceNumber ?? null,
     periodKey: row.periodKey,
-    pdfUrl: row._id,
+    // A backend PATH, not the stored URL. The stored one is a presigned S3 link
+    // captured when the document was generated, and seven days is the longest
+    // signature AWS will issue — so the panel's links used to stop working a
+    // week after the run, with nothing in the UI to say why. This one re-signs
+    // per request. Relative because the API does not reliably know its own
+    // public origin; the frontend prefixes NEXT_PUBLIC_BACKEND_URL, as it does
+    // for every other call.
+    pdfUrl: `/api/pdf-links/download/${row.pdfLinkId}`,
     createdAt: row.createdAt,
     deliveryState: row.deliveryState,
     // A sentence the client can act on, and only for the states that have

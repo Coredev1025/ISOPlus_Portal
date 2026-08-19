@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import {
   blockNeedsAttention,
   deliveryStatus,
+  documentHref,
   formatNextRun,
   recentDocumentLabel,
 } from "@/lib/automation-helpers";
@@ -72,7 +73,7 @@ function RecentDocumentRow({ doc }: Readonly<{ doc: AutomationRecentDocument }>)
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px]">
       <a
-        href={doc.pdfUrl}
+        href={documentHref(doc.pdfUrl)}
         target="_blank"
         rel="noreferrer"
         className="font-medium text-primary hover:underline"

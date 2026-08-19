@@ -11,6 +11,7 @@ import { basename } from 'node:path';
 
 import EmailSend from '../../models/EmailSend.js';
 import { saveLocalFile } from '../../utils/localFileStore.js';
+import { s3ObjectKeyFromUrl } from '../../utils/s3ObjectKey.js';
 import { getS3File } from '../../utils/uploadS3.js';
 import { error as logError, info, warn } from '../../utils/logger.js';
 import { recordEmailSend } from './deliveryEvents.js';
@@ -87,36 +88,6 @@ export const localOutboxBackend = {
 };
 
 /**
- * The stored object key behind a document URL.
- *
- * The query string is stripped FIRST, and that is the whole point: a private
- * bucket is read through a presigned URL, so every production attachment URL
- * carries `?X-Amz-Algorithm=...`. Keeping it made the key
- * `output/.../INV-1.pdf?X-Amz-Algorithm=...`, which GetObject cannot find —
- * and an unreadable attachment is skipped rather than thrown, so the client
- * received an invoice email with no invoice in it. Offline URLs have no query
- * string, which is why every test and every local run missed it.
- *
- * Stripped before the split, not after, so a query value can never contribute
- * a '/api/local-files/' or '.amazonaws.com/' of its own. Decoded last, for the
- * same reason: the key S3 stores is the decoded one ('Jane Smith+Co'), but
- * decoding before the split would let an encoded separator through.
- */
-export function attachmentObjectKey(url) {
-  const withoutQuery = String(url).split(/[?#]/)[0];
-  const key = withoutQuery.split('/api/local-files/')[1]
-    ?? withoutQuery.split('.amazonaws.com/')[1]
-    ?? withoutQuery;
-  try {
-    return decodeURIComponent(key);
-  } catch {
-    // A stray '%' is not a reason to lose the attachment: try the literal key,
-    // which is what an unencoded URL would have given anyway.
-    return key;
-  }
-}
-
-/**
  * Attachment bytes for the generated PDFs.
  *
  * Read back through the same store that wrote them, so an offline URL and an
@@ -128,7 +99,7 @@ async function loadAttachments(urls) {
   let skipped = 0;
 
   for (const url of urls) {
-    const key = attachmentObjectKey(url);
+    const key = s3ObjectKeyFromUrl(url);
     try {
       attachments.push({ filename: basename(key), content: await getS3File(key) });
     } catch (err) {

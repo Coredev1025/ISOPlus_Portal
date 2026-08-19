@@ -330,9 +330,14 @@ describe('GET/PUT /api/workspaces/:workspaceId/automation-settings', () => {
 
     const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
     expect(res.status).toBe(200);
+    // Links point at the re-signing route, not at the presigned URL captured
+    // when the document was generated — AWS SigV4 will not sign for longer than
+    // seven days, so a stored link stops working a week after its run.
+    const statement = await PDFLink.findOne({ pdfLink: 'https://example.test/stmt-1.pdf' }).lean();
+    const invoice = await PDFLink.findOne({ pdfLink: 'https://example.test/inv-1.pdf' }).lean();
     expect(res.body.recentDocuments.map((d) => d.pdfUrl)).toEqual([
-      'https://example.test/stmt-1.pdf',
-      'https://example.test/inv-1.pdf',
+      `/api/pdf-links/download/${statement._id}`,
+      `/api/pdf-links/download/${invoice._id}`,
     ]);
     expect(res.body.recentDocuments[0].type).toBe('Monthly Statement');
     expect(res.body.recentDocuments[1].invoiceNumber).toBe('INV-1004 (ISO+™)');
@@ -388,7 +393,8 @@ describe('GET/PUT /api/workspaces/:workspaceId/automation-settings', () => {
 
     const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
     expect(res.body.recentDocuments).toHaveLength(10);
-    expect(res.body.recentDocuments[0].pdfUrl).toBe('https://example.test/doc-11.pdf');
+    const newest = await PDFLink.findOne({ pdfLink: 'https://example.test/doc-11.pdf' }).lean();
+    expect(res.body.recentDocuments[0].pdfUrl).toBe(`/api/pdf-links/download/${newest._id}`);
   });
 
   it('still returns ten documents when one run wrote fifty rows for a single PDF', async () => {
@@ -414,8 +420,36 @@ describe('GET/PUT /api/workspaces/:workspaceId/automation-settings', () => {
 
     const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
     expect(res.body.recentDocuments).toHaveLength(10);
-    expect(res.body.recentDocuments[0].pdfUrl).toBe('https://example.test/bulk-invoice.pdf');
+    // Still one entry per DOCUMENT, not per row: the 50 rows sharing one
+    // pdfLink collapse to a single link, and it resolves to one of them.
     expect(new Set(res.body.recentDocuments.map((d) => d.pdfUrl)).size).toBe(10);
+    const bulkRowIds = (await PDFLink.find({ pdfLink: 'https://example.test/bulk-invoice.pdf' }).lean())
+      .map((row) => `/api/pdf-links/download/${row._id}`);
+    expect(bulkRowIds).toContain(res.body.recentDocuments[0].pdfUrl);
+  });
+
+  // The link has to survive the seven-day signature expiry that motivated it:
+  // following it re-signs from the stored key rather than replaying a stale
+  // signature. Proved end to end here, through the same session the panel uses.
+  it('hands back a link that still resolves after the stored signature has expired', async () => {
+    const savedOffline = process.env.ISOPLUS_OFFLINE;
+    process.env.ISOPLUS_OFFLINE = '1';
+    try {
+      await automationPdfLink({
+        pdfLink: 'https://iso-bucket.s3.ap-southeast-2.amazonaws.com/output/ws/INV-9.pdf?X-Amz-Signature=stale',
+        periodKey: '20250201-0900',
+      });
+
+      const listed = await agent.get(`/api/workspaces/${WS}/automation-settings`);
+      const followed = await agent.get(listed.body.recentDocuments[0].pdfUrl);
+
+      expect(followed.status).toBe(302);
+      expect(followed.headers.location).toContain('output/ws/INV-9.pdf');
+      expect(followed.headers.location).not.toContain('X-Amz-Signature=stale');
+    } finally {
+      if (savedOffline === undefined) delete process.env.ISOPLUS_OFFLINE;
+      else process.env.ISOPLUS_OFFLINE = savedOffline;
+    }
   });
 
   it('returns 400 and leaves the settings unwritten when the schedule write fails', async () => {

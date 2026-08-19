@@ -39,15 +39,38 @@ export function toDateInputValue(startDate: string | null | undefined): string {
  * Last resort, behind the structured fields: the PDF's file name is an S3
  * naming convention, not an interface, so a backend rename would silently
  * degrade every label with nothing failing on either side.
+ *
+ * Only a URL that actually names a `.pdf` supplies one. `pdfUrl` is a link to
+ * the backend's re-signing route now, and its last segment is a Mongo id —
+ * labelling a document '6a84f789c9d48680d19276c1' is worse than labelling it
+ * by its type.
  */
 function basenameLabel(pdfUrl: string): string {
   const basename = pdfUrl.split("/").pop() ?? "";
-  if (!basename) return "";
+  if (!basename || !/\.pdf$/i.test(basename)) return "";
   try {
     return decodeURIComponent(basename).replace(/\.pdf$/i, "");
   } catch {
     return "";
   }
+}
+
+/**
+ * Where a recent document's link points.
+ *
+ * The backend hands back a PATH (`/api/pdf-links/download/<id>`) rather than
+ * the presigned S3 URL captured when the document was generated: AWS SigV4
+ * will not sign for longer than seven days, so a stored link stopped working a
+ * week after the run that produced it. The API does not reliably know its own
+ * public origin, so the prefix is applied here — the same NEXT_PUBLIC_BACKEND_URL
+ * every other call uses.
+ *
+ * An absolute URL is passed through, so rows written before this change still
+ * open.
+ */
+export function documentHref(pdfUrl: string): string {
+  if (!pdfUrl || !pdfUrl.startsWith("/")) return pdfUrl;
+  return `${process.env.NEXT_PUBLIC_BACKEND_URL ?? ""}${pdfUrl}`;
 }
 
 export function recentDocumentLabel(doc: AutomationRecentDocument): string {
