@@ -26,6 +26,7 @@ export default defineConfig({
         'src/utils/dynamicLinking.js',
         'src/utils/auditLogger.js',
         'src/utils/workspaceFeatureToggleHelpers.js',
+        'src/utils/workspaceAccessHelpers.js',
         'src/utils/automationScheduleHelpers.js',
         'src/utils/automationSettingsHelpers.js',
         'src/utils/automationPeriodKey.js',

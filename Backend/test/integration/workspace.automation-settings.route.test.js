@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
+import { http, HttpResponse } from 'msw';
+import { server } from '../msw/server.js';
 import { createApp } from '../../src/app.js';
 import AutomationSettings from '../../src/models/AutomationSettings.js';
 import Business from '../../src/models/Business.js';
@@ -607,5 +609,131 @@ describe('GET/PUT /api/workspaces/:workspaceId/automation-settings', () => {
     const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
     expect(res.body.invoice.nextRun).toBe(invoiceJob.nextRunAt.toISOString());
     expect(res.body.statement.nextRun).toBeNull();
+  });
+});
+
+/**
+ * Tenancy. These two routes read and write a workspace's billing configuration
+ * and hand back presigned S3 URLs to its generated invoices, and they were
+ * gated on authenticateToken alone. For an isoplus_user that middleware calls
+ * authorizeIsoplusUser, which checks only that an ISO+ session EXISTS — never
+ * that it belongs to the workspace in the URL. So any logged-in ISO+ user could
+ * read or rewrite any other client's schedules, email addresses and invoice
+ * links by changing the id in the path.
+ *
+ * The board listing route did not have this hole because it proxies the call to
+ * ISO+ with the caller's own token and lets ISO+ refuse. These routes read
+ * Mongo directly, so they have to ask the same question themselves.
+ */
+describe('automation-settings tenancy', () => {
+  const OTHER_WS = 'ws-automation-other';
+  const V2 = 'https://app.isoplus.online/api/v2';
+  let app;
+
+  /**
+   * A session shaped like a real ISO+ login: role isoplus_user AND
+   * session.Authorization set, which is the combination authorizeIsoplusUser
+   * lets through. A password login cannot produce it — applyPrivilegedSessionAuth
+   * only sets Authorization for owner/support_admin — so the hole is only
+   * reachable from the OAuth path, and only this route builds that session.
+   */
+  async function isoplusUserAgent(email) {
+    const agent = request.agent(app);
+    const res = await agent
+      .post('/api/auth/oauth-login')
+      .set('Authorization', 'Bearer isoplus-user-token')
+      .send({ oauthData: { id: `oauth-${email}`, email, name: 'ISO+ User' } });
+    expect(res.status).toBe(200);
+    return agent;
+  }
+
+  /** ISO+ answering "who are the members of this workspace". */
+  function membersOf(byWorkspace) {
+    server.use(http.get(`${V2}/workspaces/:workspaceId/members`, ({ params }) => HttpResponse.json({
+      data: byWorkspace[params.workspaceId] ?? [],
+      has_more: false,
+      after: null,
+    })));
+  }
+
+  beforeEach(async () => {
+    process.env.JWT_SECRET = 'test-jwt-secret';
+    process.env.PERSONAL_ACCESS_TOKEN = 'test-pat';
+    // Offline mode skips the membership call by design (one local user, no ISO+
+    // to ask), so it has to be off for these tests to mean anything.
+    process.env.ISOPLUS_OFFLINE = '0';
+    await AutomationSettings.deleteMany({});
+    await Business.deleteMany({});
+    await Business.create({
+      workspaceId: WS, name: 'Mine', featureToggles: { invoiceStatementAutomation: true },
+    });
+    await Business.create({
+      workspaceId: OTHER_WS, name: 'Somebody else', featureToggles: { invoiceStatementAutomation: true },
+    });
+    app = createApp();
+  });
+
+  it('refuses to read another workspace\'s automation settings', async () => {
+    membersOf({ [WS]: [{ email: 'member@client.test', role: 'admin' }] });
+    const agent = await isoplusUserAgent('member@client.test');
+
+    const mine = await agent.get(`/api/workspaces/${WS}/automation-settings`);
+    expect(mine.status).toBe(200);
+
+    const theirs = await agent.get(`/api/workspaces/${OTHER_WS}/automation-settings`);
+    expect(theirs.status).toBe(403);
+    // Nothing about the other workspace leaks in the refusal — not its
+    // schedules, and not the presigned pdfUrls of its invoices.
+    expect(theirs.body.recentDocuments).toBeUndefined();
+  });
+
+  it('refuses to write another workspace\'s automation settings', async () => {
+    membersOf({ [WS]: [{ email: 'member@client.test', role: 'admin' }] });
+    const agent = await isoplusUserAgent('member@client.test');
+
+    const res = await agent
+      .put(`/api/workspaces/${OTHER_WS}/automation-settings`)
+      .send({ invoice: MONTHLY_INVOICE });
+
+    expect(res.status).toBe(403);
+    expect(await AutomationSettings.countDocuments({ workspaceId: OTHER_WS })).toBe(0);
+    expect(await ScheduledJob.countDocuments({ targetId: OTHER_WS })).toBe(0);
+  });
+
+  it('lets a member of the workspace through', async () => {
+    membersOf({ [OTHER_WS]: [{ email: 'member@client.test', role: 'member' }] });
+    const agent = await isoplusUserAgent('member@client.test');
+
+    const res = await agent
+      .put(`/api/workspaces/${OTHER_WS}/automation-settings`)
+      .send({ invoice: MONTHLY_INVOICE });
+
+    expect(res.status).toBe(200);
+  });
+
+  // Portal staff are not ISO+ members of every client workspace, and support
+  // has always been able to open any of them — applyPrivilegedSessionAuth hands
+  // them the personal access token for exactly that reason. Closing the hole
+  // must not close that door, so the check applies to isoplus_user only.
+  it('leaves support_admin able to reach any workspace', async () => {
+    const { agent } = await authenticatedAgent(app, { role: 'support_admin' });
+
+    const res = await agent.get(`/api/workspaces/${OTHER_WS}/automation-settings`);
+
+    expect(res.status).toBe(200);
+  });
+
+  // A membership lookup that could not be completed is not a permission
+  // decision. Saying 403 there sends the client to their account manager over
+  // an ISO+ outage; the honest answer names it as an upstream failure.
+  it('reports an unreachable ISO+ as an upstream failure, not a refusal', async () => {
+    server.use(http.get(`${V2}/workspaces/:workspaceId/members`, () => HttpResponse.json(
+      { message: 'upstream exploded' }, { status: 500 },
+    )));
+    const agent = await isoplusUserAgent('member@client.test');
+
+    const res = await agent.get(`/api/workspaces/${WS}/automation-settings`);
+
+    expect(res.status).toBe(502);
   });
 });

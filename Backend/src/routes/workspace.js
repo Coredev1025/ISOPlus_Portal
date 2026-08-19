@@ -35,6 +35,7 @@ import {
   getBoardPageOffline,
   getMemberRoleOffline,
 } from '../services/offlineIsoplus.js';
+import { requireWorkspaceMember } from '../utils/workspaceAccessHelpers.js';
 import {
   requireOwnerOrSupportAdmin,
   parseWorkspaceIdParam,
@@ -512,6 +513,13 @@ router.get('/:workspaceId/automation-settings', authenticateToken, async (req, r
     const workspaceId = parseWorkspaceIdParam(req.params.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
 
+    // Tenancy, and it belongs on the read as much as on the write: the payload
+    // carries the workspace's schedules, its billing email addresses and
+    // presigned S3 URLs to its generated invoices. authenticateToken only
+    // establishes that an ISO+ session exists, never that it belongs to this
+    // workspace — see utils/workspaceAccessHelpers.js.
+    if (!(await requireWorkspaceMember(req, res, workspaceId))) return;
+
     const settings = await AutomationSettings.findOne({ workspaceId: { $eq: workspaceId } }).lean();
     const jobs = await loadAutomationJobs(workspaceId);
     const recentDocuments = await loadRecentAutomationDocuments(workspaceId);
@@ -534,6 +542,11 @@ router.put('/:workspaceId/automation-settings', authenticateToken, async (req, r
   try {
     const workspaceId = parseWorkspaceIdParam(req.params.workspaceId);
     if (!workspaceId) return res.status(400).json({ message: 'Invalid workspaceId' });
+
+    // Membership before the feature flag, because the flag is a property of the
+    // workspace and answering it for a workspace the caller cannot see is
+    // already a disclosure.
+    if (!(await requireWorkspaceMember(req, res, workspaceId))) return;
 
     // The feature flag, read on the write path so it is a gate and not a
     // label. GET stays open: a workspace that has lost the feature still needs
