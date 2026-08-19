@@ -96,6 +96,24 @@ async function getValidatedBusiness(workspaceId) {
     return business;
 }
 
+/**
+ * These routes answer once, but the work does not stop there: a PDF route sends
+ * its response and then keeps going — writing the invoice number back, saving
+ * the business, advancing the numbering. When any of that trailing work throws,
+ * the catch around it tries to answer a request that has already been answered,
+ * which throws ERR_HTTP_HEADERS_SENT out of the catch itself. That second throw
+ * escapes to the route's outer catch, which answers again and throws again, this
+ * time with nothing left to catch it — an unhandled rejection that fails the
+ * whole test run while every test still passes.
+ *
+ * The first answer is the one the caller already has, so a later one has nothing
+ * to add. Skip it rather than crash.
+ */
+function respondOnce(res, status, body) {
+    if (res.headersSent) return res;
+    return res.status(status).json(body);
+}
+
 async function handlePDFError(err, workspaceId, boardId, itemId, action, req, res) {
     const errorMessage = (err && err.message) ? err.message : 'Server error: An unknown error occurred. Please contact support via ISO+™ Portal.';
     await setIntegrationMessage(workspaceId, boardId, itemId, errorMessage);
@@ -106,7 +124,7 @@ async function handlePDFError(err, workspaceId, boardId, itemId, action, req, re
         detail: `Resource ID: ${itemId}, Error: ${errorMessage}`,
         req
     });
-    return res.status(200).json({ message: errorMessage });
+    return respondOnce(res, 200, { message: errorMessage });
 }
 
 async function fetchImageUrlAsBase64(url) {
@@ -1242,7 +1260,7 @@ async function handlePDFSuccess(workspaceId, boardId, itemId, fileUrl, docType, 
         SignatureStatus: "Unsigned"
     });
     info('Webhook-Service', `Successfully generating PDF ${docType.toLowerCase()}`, { link: fileUrl }, req ?? null);
-    return res.json({ pdfUrl: fileUrl });
+    return respondOnce(res, 200, { pdfUrl: fileUrl });
 }
 
 function appendInvoiceLine(description, label, amount, gst) {
@@ -1387,7 +1405,7 @@ router.post('/:workspaceId/:boardId/invoice', async (req, res) => {
         }));
     } catch (err) {
         error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
-        return res.status(200).json({ message: err.message });
+        return respondOnce(res, 200, { message: err.message });
     }
 });
 
@@ -1497,7 +1515,7 @@ router.post('/:workspaceId/:boardId/purchaseorder', async (req, res) => {
         }));
     } catch (err) {
         error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
-        return res.status(200).json({ message: err.message });
+        return respondOnce(res, 200, { message: err.message });
     }
 });
 
@@ -1599,7 +1617,7 @@ router.post('/:workspaceId/:boardId/quote', async (req, res) => {
         }));
     } catch (err) {
         error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
-        return res.status(200).json({ message: err.message });
+        return respondOnce(res, 200, { message: err.message });
     }
 });
 
@@ -1626,7 +1644,7 @@ router.post('/:workspaceId/:boardId/quotendis', async (req, res) => {
         })));
     } catch (err) {
         error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
-        return res.status(200).json({ message: err.message });
+        return respondOnce(res, 200, { message: err.message });
     }
 });
 
@@ -1653,7 +1671,7 @@ router.post('/:workspaceId/:boardId/invoicendis', async (req, res) => {
         })));
     } catch (err) {
         error('Webhook-Service', 'Server error', { message: err.message, stack: err.stack }, req ?? null);
-        return res.status(200).json({ message: err.message });
+        return respondOnce(res, 200, { message: err.message });
     }
 });
 
@@ -1679,7 +1697,7 @@ router.post('/:workspaceId/:boardId/invoicendis-invoice-generator', async (req, 
         });
     } catch (err) {
         error('Webhook-Service', 'Server error (NDIS invoice generator PDF)', { message: err.message, stack: err.stack }, req ?? null);
-        return res.status(200).json({ message: err.message });
+        return respondOnce(res, 200, { message: err.message });
     }
 });
 
