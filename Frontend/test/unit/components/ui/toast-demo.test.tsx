@@ -16,7 +16,14 @@ const hideToast = vi.fn();
 const Toastify = vi.fn(() => {
   const toastElement = document.createElement('div');
   document.body.appendChild(toastElement);
-  return { showToast, hideToast, toastElement };
+  return {
+    showToast,
+    hideToast: vi.fn(() => {
+      toastElement.remove();
+      hideToast();
+    }),
+    toastElement,
+  };
 });
 
 vi.mock('toastify-js', () => ({ default: Toastify }));
