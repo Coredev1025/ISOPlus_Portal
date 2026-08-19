@@ -15,11 +15,10 @@ Ticket: KAN-15.
 
 - It claims due `ScheduledJob` documents from Mongo and dispatches each one to
   a handler registered for its `kind`.
-- A handler's job is to **enqueue and return**. For `board_sync` that means a
-  BullMQ job on the existing `board-sync` queue
+- A handler's job is to **enqueue and return**. For `board_sync` that means
+  `scheduled_sync` jobs on the existing `board-sync` queue
   (`Backend/src/services/sync/queue.js`); the sync worker
-  (`Backend/src/workers/syncWorker.js`) does the actual work, on its own
-  existing retry and concurrency settings.
+  (`Backend/src/workers/syncWorker.js`) runs them at concurrency 1.
 - The scheduler holds no business logic for any feature. It does not know what
   a board sync or an invoice is — only that a `kind` has a handler and a
   policy.
@@ -324,17 +323,26 @@ stale volume over the newly built image, because volumes outlive containers.
 
 Handlers live in `Backend/src/services/scheduler/handlers.js`, imported for
 its side effects at boot (`registerSchedulerHandlers()`, called once from
-`Backend/src/index.js:48`, before any tick can arrive). The registered
+`Backend/src/index.js:49`, before any tick can arrive). The registered
 example, `board_sync`:
 
 ```js
 // Backend/src/services/scheduler/handlers.js
-register('board_sync', {
+register(BOARD_SYNC_KIND, {
   policy: AT_LEAST_ONCE,
-  handler: ({ targetId, workspaceId }) =>
-    triggerManualSync(getSchedulerAuthorization(), workspaceId, targetId),
+  handler: (job) => runBoardSyncSweep(job),
 });
 ```
+
+## Portal board catch-up (`board_sync`)
+
+One `ScheduledJob` (`kind: board_sync`, `targetId: portal`) is upserted on
+Mongo connect (`ensurePortalBoardSyncSchedule`). Cadence is `BOARD_SYNC_CRON`
+or `0 2 * * *`. Each tick fans out `scheduled_sync` jobs for every
+`syncData: true` board onto `board-sync`. The worker runs them at
+concurrency 1. Enable-time backlog and ISO+ webhooks are unchanged.
+Board Configuration reads previous / current / next from
+`GET /api/sync/board/status/:boardId`.
 
 Five rules apply to every handler. Only the first is enforced in code
 (`register()` in `Backend/src/services/scheduler/registry.js` throws at boot

@@ -63,6 +63,7 @@ const boardSchema = new mongoose.Schema({
       'data_backlog_sync',    // Initial sync of all data
       'realtime_sync',        // Listening to webhooks for real-time updates
       'manual_triggered_sync', // Manual re-sync triggered
+      'scheduled_sync',       // Portal-wide scheduled catch-up
       'sync_stopped',         // Sync stopped
       'sync_cancelled',       // Sync cancelled
       'failed'                // Sync failed

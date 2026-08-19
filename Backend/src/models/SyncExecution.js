@@ -22,7 +22,7 @@ const syncExecutionSchema = new mongoose.Schema({
   syncType: {
     type: String,
     required: true,
-    enum: ['data_backlog_sync', 'manual_triggered_sync', 'realtime_sync', 'board_validation']
+    enum: ['data_backlog_sync', 'manual_triggered_sync', 'realtime_sync', 'board_validation', 'scheduled_sync']
   },
   
   status: {

@@ -63,7 +63,7 @@ export async function unregisterBoardHook(board, authorization, logContext) {
 }
 
 export async function checkActiveQueueJob(boardId, syncJobId, syncStatus) {
-  if (!syncJobId || !['board_validation', 'data_backlog_sync', 'manual_triggered_sync'].includes(syncStatus)) {
+  if (!syncJobId || !['board_validation', 'data_backlog_sync', 'manual_triggered_sync', 'scheduled_sync'].includes(syncStatus)) {
     return null;
   }
 

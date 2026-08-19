@@ -2,6 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { server } from '../../msw/server.js';
 import Board from '../../../src/models/Board.js';
+import ScheduledJob from '../../../src/models/ScheduledJob.js';
+import {
+  BOARD_SYNC_CRON_DEFAULT,
+  BOARD_SYNC_KIND,
+  BOARD_SYNC_TARGET_ID,
+} from '../../../src/constants/scheduler.js';
 import {
   enableBoardSync,
   disableBoardSync,
@@ -277,5 +283,26 @@ describe('getBoardSyncStatus', () => {
       syncExecution: null,
     });
     expect(status.syncStats.itemsSynced).toBe(12);
+  });
+
+  it('attaches the portal next run on schedule.upcoming', async () => {
+    const boardId = await seedBoard({
+      syncData: true,
+      syncStatus: 'realtime_sync',
+    });
+    const nextRunAt = new Date('2026-08-20T16:00:00Z');
+    await ScheduledJob.create({
+      kind: BOARD_SYNC_KIND,
+      targetId: BOARD_SYNC_TARGET_ID,
+      cron: BOARD_SYNC_CRON_DEFAULT,
+      timezone: 'Australia/Sydney',
+      nextRunAt,
+    });
+
+    const status = await getBoardSyncStatus(boardId);
+
+    expect(status.schedule.upcoming.at.toISOString()).toBe(nextRunAt.toISOString());
+    expect(status.schedule.cron).toBe(BOARD_SYNC_CRON_DEFAULT);
+    expect(status.schedule.current).toBeNull();
   });
 });

@@ -1,6 +1,7 @@
 import syncQueue from './sync/queue.js';
 import Board from '../models/Board.js';
 import SyncExecution from '../models/SyncExecution.js';
+import ScheduledJob from '../models/ScheduledJob.js';
 import { registerBoardWebhooks } from './webhookService.js';
 import { info, error, warn } from '../utils/logger.js';
 import {
@@ -9,6 +10,8 @@ import {
   checkActiveQueueJob,
 } from './syncBoardHelpers.js';
 import { sanitizeApiPathSegment } from '../utils/securityHelpers.js';
+import { BOARD_SYNC_KIND, BOARD_SYNC_TARGET_ID } from '../constants/scheduler.js';
+import { buildBoardSyncScheduleView } from '../utils/boardSyncScheduleViewHelpers.js';
 
 export async function enableBoardSync(authorization, workspaceId, boardId) {
   try {
@@ -585,6 +588,16 @@ export async function getBoardSyncStatus(boardId) {
       }
     }
 
+    const [lastCompleted, portalSchedule] = await Promise.all([
+      SyncExecution.findOne({ boardId, status: 'completed' })
+        .sort({ endTime: -1 })
+        .select('endTime status syncType')
+        .lean(),
+      ScheduledJob.findOne({ kind: BOARD_SYNC_KIND, targetId: BOARD_SYNC_TARGET_ID })
+        .select('cron timezone nextRunAt')
+        .lean(),
+    ]);
+
     return {
       boardId: board.boardId,
       boardName: board.name,
@@ -595,7 +608,14 @@ export async function getBoardSyncStatus(boardId) {
       validationErrors: board.validationErrors,
       syncStats: board.syncStats,
       jobStatus,
-      syncExecution
+      syncExecution,
+      schedule: buildBoardSyncScheduleView({
+        board,
+        jobStatus,
+        syncExecution,
+        lastCompleted,
+        portalSchedule,
+      }),
     };
 
   } catch (err) {

@@ -121,10 +121,10 @@ beforeEach(() => {
 });
 
 describe('the worker registration itself', () => {
-  it('subscribes to the board-sync queue with a concurrency of two', () => {
+  it('subscribes to the board-sync queue with a concurrency of one', () => {
     expect(bull.workers).toHaveLength(1);
     expect(bull.workers[0].name).toBe('board-sync');
-    expect(bull.workers[0].opts.concurrency).toBe(2);
+    expect(bull.workers[0].opts.concurrency).toBe(1);
     expect(bull.workers[0].opts.limiter).toEqual({ max: 10, duration: 1000 });
   });
 });
@@ -496,6 +496,34 @@ describe('manual_triggered_sync jobs', () => {
   });
 });
 
+describe('scheduled_sync jobs', () => {
+  it('runs the catch-up path and records scheduled_sync on the execution', async () => {
+    const workspaceId = nextId('ws');
+    const boardId = nextId('board');
+    await Board.create({ boardId, name: 'Board', workspaceId, syncStatus: 'realtime_sync' });
+    stubBacklogUpstream({ workspaceId, boardId, pages: [[isoPlusItem('item-1', 'One')]] });
+
+    const result = await processJob(
+      makeJob({
+        jobType: 'scheduled_sync',
+        authorization: 'Bearer t',
+        workspaceId,
+        boardId,
+      })
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.nextStep).toBe('realtime_sync');
+
+    const execution = await SyncExecution.findOne({ syncGUID: result.syncGUID }).lean();
+    expect(execution.syncType).toBe('scheduled_sync');
+    expect(execution.status).toBe('completed');
+
+    const stored = await Board.findOne({ boardId }).lean();
+    expect(stored.syncStatus).toBe('realtime_sync');
+  });
+});
+
 describe('checkAndRetryFailedJobs', () => {
   const makeFailedJob = (overrides = {}) => {
     const job = {
@@ -591,6 +619,7 @@ describe('checkAndRetryFailedJobs', () => {
     ['board_validation', 'board_validation'],
     ['data_backlog_sync', 'backlog_sync'],
     ['manual_triggered_sync', 'manual_sync'],
+    ['scheduled_sync', 'scheduled_sync'],
   ])('maps the %s job type to the %s queue name', async (jobType, expectedName) => {
     bull.state.counts = { waiting: 0, active: 0, failed: 1 };
     bull.state.failedJobs = [makeFailedJob({ name: 'whatever', data: { jobType } })];
