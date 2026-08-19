@@ -41,13 +41,18 @@ Ticket: KAN-15.
 - **Response** (200):
 
   ```json
-  { "claimed": 3, "dispatched": 3, "failed": 0, "capped": false }
+  { "claimed": 3, "dispatched": 3, "failed": 0, "heldBack": 0, "capped": false }
   ```
 
   `claimed` is how many due schedules this tick took, and `dispatched` and
   `failed` split that by outcome; `capped` is `true` only when the 100-per-tick
   batch limit was hit, so remaining due schedules waited for the next tick
   rather than being silently dropped.
+
+  `heldBack` counts due schedules this tick deliberately did **not** claim
+  because `AUTOMATION_ENABLED` is off. Those slots stay due and are billed when
+  the switch comes on — they are held, not skipped. A non-zero value on a
+  deployment that is meant to be running automation means the switch is off.
 
   `dispatched + failed` normally equals `claimed`, but is not guaranteed to.
   A schedule whose next slot cannot be computed is never claimed at all —

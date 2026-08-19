@@ -9,23 +9,10 @@ import { triggerManualSync } from '../sync.js';
 import { isOfflineMode } from '../offlineIsoplus.js';
 import { getSchedulerAuthorization } from './auth.js';
 import { register } from './registry.js';
+import { isAutomationEnabled } from '../../utils/automationEnabled.js';
 import { AT_LEAST_ONCE } from '../../constants/scheduler.js';
 
 const BLOCK_FOR_KIND = { [KIND_INVOICE]: 'invoice', [KIND_STATEMENT]: 'statement' };
-
-// An allow-list: anything else — unset, '', 'false', a typo — is off, because
-// guessing wrong in the permissive direction consumes a customer's invoice
-// numbers on mail nobody can send.
-const AUTOMATION_ENABLED_VALUES = new Set(['true', '1', 'yes', 'on']);
-
-/**
- * The master switch for the automation pipeline. Read at dispatch rather than
- * at boot, so a change does not need a restart and the refusal can name the
- * kind and the workspace.
- */
-function isAutomationEnabled() {
-  return AUTOMATION_ENABLED_VALUES.has(String(process.env.AUTOMATION_ENABLED ?? '').trim().toLowerCase());
-}
 
 /**
  * triggerManualSync does not throw for every failure — some outcomes come back
@@ -63,15 +50,16 @@ function requireSlot({ scheduledFor, nextRunAt }) {
 export async function runAutomationKind(kind, job) {
   const { targetId, workspaceId, timezone, schedule } = job;
 
-  // The gate goes here rather than in workers/automationWorker.js: refusing in
-  // the worker would still mint a Redis job per board per slot, those jobs
-  // would complete successfully doing nothing, and their retained jobIds (see
-  // queue.js) would dedupe away the first real run after SES lands — turning
-  // the disabled period into an unbillable hole.
+  // Defence in depth. The tick now holds automation kinds back before claiming
+  // them (services/scheduler/tick.js), so this is not the path a disabled
+  // deployment normally takes — but runAutomationKind is also reachable
+  // directly, and returning here still beats fanning out.
   //
-  // Not registering the handler at all is also wrong: registry.resolve() throws
-  // for an unknown kind, so every tick would climb consecutiveFailures on a
-  // workspace that is merely switched off.
+  // Returning rather than throwing, and refusing HERE rather than in
+  // workers/automationWorker.js: refusing in the worker would still mint a
+  // Redis job per board per slot, those jobs would complete successfully doing
+  // nothing, and their retained jobIds (see queue.js) would dedupe away the
+  // first real run — turning the disabled period into an unbillable hole.
   if (!isAutomationEnabled()) {
     warn('Automation', 'Automation is configured but disabled (AUTOMATION_ENABLED); nothing generated or sent', {
       kind, targetId, workspaceId,

@@ -57,6 +57,25 @@ export function resolveTickInterval(raw, fallback = DEFAULT_TICK_SECONDS) {
 }
 
 /**
+ * One tick's outcome, as a line an operator reads in a terminal.
+ *
+ * `heldBack` is printed only when it is non-zero, and printed loudly: it counts
+ * due automation schedules the tick deliberately did not claim because
+ * AUTOMATION_ENABLED is off. Their slots stay due and are billed when the
+ * switch comes on, but "claimed=0 dispatched=0" on its own reads as "nothing
+ * was due", which is the misreading this exists to prevent.
+ */
+export function formatTickSummary(summary) {
+  const heldBack = Number(summary?.heldBack) || 0
+  return (
+    `claimed=${summary.claimed} dispatched=${summary.dispatched} ` +
+    `failed=${summary.failed}` +
+    `${heldBack > 0 ? ` HELD BACK=${heldBack} (AUTOMATION_ENABLED is off)` : ''}` +
+    `${summary.capped ? ' CAPPED' : ''}`
+  )
+}
+
+/**
  * A printable reason for a failed tick.
  *
  * Node's fetch rejects with a bare "fetch failed" and puts the real reason —
@@ -115,10 +134,7 @@ export async function tickOnce({ url, key, timeoutMs = TICK_TIMEOUT_MS }) {
     }
 
     const summary = await res.json()
-    return (
-      `claimed=${summary.claimed} dispatched=${summary.dispatched} ` +
-      `failed=${summary.failed}${summary.capped ? ' CAPPED' : ''} (${ms}ms)`
-    )
+    return `${formatTickSummary(summary)} (${ms}ms)`
   } catch (err) {
     // Rethrown here rather than described in the catch upstream, because this
     // is the only scope that knows which timeout was actually applied.

@@ -7,7 +7,7 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { resolveTickInterval, describeFetchFailure } from '../lib/tick.mjs'
+import { resolveTickInterval, describeFetchFailure, formatTickSummary } from '../lib/tick.mjs'
 
 describe('resolveTickInterval', () => {
   test('falls back when no value is given', () => {
@@ -90,5 +90,41 @@ describe('describeFetchFailure', () => {
     const err = new Error('self')
     err.cause = err
     assert.match(describeFetchFailure(err), /self/)
+  })
+})
+
+describe('formatTickSummary', () => {
+  test('reports the three outcome counts', () => {
+    assert.equal(
+      formatTickSummary({ claimed: 3, dispatched: 2, failed: 1, heldBack: 0, capped: false }),
+      'claimed=3 dispatched=2 failed=1'
+    )
+  })
+
+  test('flags the batch cap', () => {
+    assert.match(
+      formatTickSummary({ claimed: 100, dispatched: 100, failed: 0, heldBack: 0, capped: true }),
+      /CAPPED$/
+    )
+  })
+
+  // 'claimed=0 dispatched=0' on its own reads as "nothing was due", which is
+  // exactly the misreading a switched-off deployment produces.
+  test('names the kill switch when schedules were held back', () => {
+    const line = formatTickSummary({ claimed: 0, dispatched: 0, failed: 0, heldBack: 2, capped: false })
+    assert.match(line, /HELD BACK=2/)
+    assert.match(line, /AUTOMATION_ENABLED is off/)
+  })
+
+  test('says nothing about the kill switch when nothing was held', () => {
+    const line = formatTickSummary({ claimed: 1, dispatched: 1, failed: 0, heldBack: 0, capped: false })
+    assert.ok(!line.includes('HELD BACK'))
+  })
+
+  // An older backend answers without the field at all; the line must not read
+  // 'HELD BACK=NaN'.
+  test('tolerates a summary from a backend that predates the field', () => {
+    const line = formatTickSummary({ claimed: 1, dispatched: 1, failed: 0, capped: false })
+    assert.equal(line, 'claimed=1 dispatched=1 failed=0')
   })
 })

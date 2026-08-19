@@ -5,7 +5,43 @@ import { missedSlotsFor } from './missedSlots.js';
 import { resolve } from './registry.js';
 import { recordSuccess, recordFailure, quarantineSchedule } from './outcome.js';
 import { recordHeartbeat } from './heartbeat.js';
+import { isAutomationEnabled } from '../../utils/automationEnabled.js';
+import { KIND_INVOICE, KIND_STATEMENT } from '../../constants/automation.js';
 import { AT_MOST_ONCE, BATCH_LIMIT, LOG_SCOPE } from '../../constants/scheduler.js';
+
+const AUTOMATION_KINDS = [KIND_INVOICE, KIND_STATEMENT];
+
+/**
+ * The kinds this tick may claim, once the AUTOMATION_ENABLED kill switch has
+ * had its say, plus the kinds it withheld.
+ *
+ * The switch used to be read only inside the automation handler, which returned
+ * without fanning out — and returning is success, so recordSuccess advanced
+ * nextRunAt past the slot. A deployment that spent three months switched off
+ * consumed three billing periods and generated nothing for any of them, with no
+ * error and no trace that the periods had existed. Holding the kinds back
+ * BEFORE the claim leaves each slot due, so it is billed when the switch comes
+ * on; only the oldest fires then, because recordSuccess advances straight past
+ * the rest and counts them in missedRuns.
+ *
+ * It NARROWS an existing scope rather than replacing it: a per-kind EventBridge
+ * rule's tick must not start claiming another rule's kinds because the switch
+ * went off.
+ */
+export function tickKindScope(requestedKinds) {
+  if (isAutomationEnabled()) return { kinds: requestedKinds, heldKinds: [] };
+
+  const held = requestedKinds
+    ? requestedKinds.filter((kind) => AUTOMATION_KINDS.includes(kind))
+    : AUTOMATION_KINDS;
+  const allowed = requestedKinds
+    ? requestedKinds.filter((kind) => !AUTOMATION_KINDS.includes(kind))
+    // null means "every kind", and there is no list of every kind to subtract
+    // from — so express the exclusion as a negative filter instead.
+    : null;
+
+  return { kinds: allowed, heldKinds: held, excludeKinds: allowed === null ? AUTOMATION_KINDS : [] };
+}
 
 
 /**
@@ -19,15 +55,18 @@ import { AT_MOST_ONCE, BATCH_LIMIT, LOG_SCOPE } from '../../constants/scheduler.
  * Under at-least-once nextRunAt is deliberately left alone until the handler
  * succeeds, so the caller must exclude what it has already seen.
  */
-async function claimNext(now, excludeIds, stats, kinds) {
+async function claimNext(now, excludeIds, stats, scope) {
+  const { kinds, excludeKinds = [] } = scope;
   for (;;) {
     const candidate = await ScheduledJob.findOne({
       enabled: true,
       nextRunAt: { $lte: now },
       _id: { $nin: excludeIds },
       // A scoped tick (a per-kind EventBridge rule's credential) claims only
-      // its own kinds; everything else stays due for its own rule.
+      // its own kinds; everything else stays due for its own rule. An unscoped
+      // tick with the automation kill switch off carries the exclusion instead.
       ...(kinds ? { kind: { $in: kinds } } : {}),
+      ...(excludeKinds.length > 0 ? { kind: { $nin: excludeKinds } } : {}),
     })
       .sort({ nextRunAt: 1 })
       .lean();
@@ -134,6 +173,31 @@ async function dispatch(job, now) {
 }
 
 /**
+ * How many schedules the kill switch is holding back right now.
+ *
+ * A backlog count, not an inventory: it counts only what is DUE, so a healthy
+ * deployment with the switch off and nothing due reports zero. It is the
+ * operator-facing half of the change — without it a switched-off deployment
+ * looks identical to one with no automation configured at all.
+ */
+async function countHeldBack(now, heldKinds) {
+  if (heldKinds.length === 0) return 0;
+
+  const heldBack = await ScheduledJob.countDocuments({
+    enabled: true,
+    nextRunAt: { $lte: now },
+    kind: { $in: heldKinds },
+  });
+  if (heldBack > 0) {
+    warn(LOG_SCOPE, 'Automation schedules are due but AUTOMATION_ENABLED is off; their slots are held, not skipped', {
+      heldBack,
+      kinds: heldKinds,
+    });
+  }
+  return heldBack;
+}
+
+/**
  * Claim every due schedule, up to `limit`, and dispatch each one. `kinds`
  * (an array, or null for all) scopes the claim to those kinds only.
  */
@@ -146,8 +210,11 @@ export async function runTick({ now = new Date(), limit = BATCH_LIMIT, kinds = n
   // at all is still a schedule that did not run, and must show in the summary.
   const stats = { dispatched: 0, failed: 0 };
 
+  const scope = tickKindScope(kinds);
+  const heldBack = await countHeldBack(now, scope.heldKinds);
+
   while (claimedIds.length < limit) {
-    const job = await claimNext(now, excludeIds, stats, kinds);
+    const job = await claimNext(now, excludeIds, stats, scope);
     if (!job) break;
 
     claimedIds.push(job._id);
@@ -172,7 +239,7 @@ export async function runTick({ now = new Date(), limit = BATCH_LIMIT, kinds = n
     });
   }
 
-  const summary = { claimed: claimedIds.length, ...stats, capped };
+  const summary = { claimed: claimedIds.length, ...stats, heldBack, capped };
   info(LOG_SCOPE, 'Tick complete', summary);
   await recordHeartbeat(now);
   return summary;
