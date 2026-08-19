@@ -17,7 +17,22 @@ const PASSWORD = process.env.E2E_PASSWORD;
 
 // The workspace must have invoiceStatementAutomation enabled, or the tab is
 // hidden by design and every assertion here is meaningless.
+//
+// Keep this OFF the Care Management fixture's workspace (55390). That spec
+// resets run state and reloads its fixture mid-run, so sharing a workspace
+// makes both files fail under the config's fullyParallel for reasons that look
+// nothing like the real cause.
 const WORKSPACE = process.env.E2E_WORKSPACE_ID ?? "55369";
+
+// A workspace whose flag is OFF, for the two tests that prove the gate. Create
+// one locally — it needs no boards or items, only the toggle:
+//
+//   docker exec -i isoplus-mongo mongosh business-dashboard --quiet --eval '
+//     db.businesses.updateOne({workspaceId:"55999"},
+//       {$set:{workspaceId:"55999",name:"Flag-off fixture (e2e)",
+//              "featureToggles.invoiceStatementAutomation":false}},
+//       {upsert:true})'
+const WORKSPACE_NO_FLAG = process.env.E2E_WORKSPACE_ID_NO_FLAG;
 
 // Login is a backend call; the frontend proxies nothing. Ports differ per
 // worktree, so read it rather than assuming 4001.
@@ -50,6 +65,11 @@ async function signIn(page: Page) {
 /** The invoice block. Both blocks render identical fields, so scope every query. */
 function invoiceBlock(page: Page) {
   return page.getByRole("region", { name: /invoice automation/i });
+}
+
+/** The statement block, which is configured entirely independently. */
+function statementBlock(page: Page) {
+  return page.getByRole("region", { name: /statement automation/i });
 }
 
 /**
@@ -197,14 +217,150 @@ test.describe("Invoice & Statement Automation", () => {
   });
 
   test("the tab is absent when the workspace flag is off", async ({ page }) => {
-    const disabled = process.env.E2E_WORKSPACE_ID_NO_FLAG;
-    test.skip(!disabled, "needs a workspace with the flag disabled");
+    test.skip(!WORKSPACE_NO_FLAG, "set E2E_WORKSPACE_ID_NO_FLAG — see the constant");
 
-    await page.goto(`/workspace/${disabled}/finance-settings?tab=automation`);
+    await page.goto(`/workspace/${WORKSPACE_NO_FLAG}/finance-settings?tab=automation`);
 
     await expect(
       page.getByRole("tab", { name: /invoice & statement automation/i }),
     ).toHaveCount(0);
+  });
+
+  test("the two blocks are independent — enabling Statement leaves Invoice off", async ({
+    page,
+  }) => {
+    // One shared Save writes both blocks, so the risk is a save that arms the
+    // schedule the client did not ask for. Epic 5 bills real money off these
+    // rows: an Invoice schedule switched on by accident invoices customers.
+    await page.goto(AUTOMATION_URL);
+
+    const statement = statementBlock(page);
+    await statement.getByRole("switch").click();
+    await statement.getByLabel(/reply-to email/i).fill("statements@example.com");
+
+    await page.getByRole("button", { name: /save changes/i }).click();
+    await expect(page.getByText(/saved successfully/i)).toBeVisible();
+
+    await page.reload();
+
+    await expect(statementBlock(page).getByRole("switch")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await expect(invoiceBlock(page).getByRole("switch")).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+    // The disabled block collapses to its switch, so its fields must be gone
+    // rather than merely hidden behind a style.
+    await expect(invoiceBlock(page).getByLabel(/reply-to email/i)).toHaveCount(0);
+  });
+
+  test("Recipient and Send Method survive a save and reload", async ({ page }) => {
+    // Send Method is not cosmetic: 'accounting' routes the run's invoices to
+    // Xero as DRAFTs instead of emailing them, so a value that fails to persist
+    // silently changes where a client's invoices go.
+    await page.goto(AUTOMATION_URL);
+
+    const invoice = invoiceBlock(page);
+    await invoice.getByRole("switch").click();
+
+    await invoice.getByLabel("Recipient").click();
+    await page.getByRole("option", { name: /participant/i }).click();
+    await invoice.getByLabel("Send Method").click();
+    await page.getByRole("option", { name: /accounting|xero/i }).click();
+
+    await page.getByRole("button", { name: /save changes/i }).click();
+    await expect(page.getByText(/saved successfully/i)).toBeVisible();
+
+    await page.reload();
+
+    const reloaded = invoiceBlock(page);
+    await expect(reloaded.getByLabel("Recipient")).toContainText(/participant/i);
+    await expect(reloaded.getByLabel("Send Method")).toContainText(/accounting|xero/i);
+  });
+
+  test("Restore Defaults clears the form without saving over the server", async ({
+    page,
+  }) => {
+    await page.goto(AUTOMATION_URL);
+
+    const invoice = invoiceBlock(page);
+    await invoice.getByRole("switch").click();
+    await invoice.getByLabel(/send a copy to/i).fill("someone@example.com");
+
+    await page.getByRole("button", { name: /restore defaults/i }).click();
+
+    // Defaults mean both blocks off, so the invoice fields unmount with them.
+    await expect(invoice.getByRole("switch")).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+    await expect(invoice.getByLabel(/send a copy to/i)).toHaveCount(0);
+
+    // Restore is a form action, not a save: a reload must show the server's
+    // state, which still has nothing stored for this workspace either way.
+    await page.reload();
+    await expect(invoiceBlock(page)).toBeVisible();
+  });
+
+  test("a failed settings load offers no Save button to lose data with", async ({
+    page,
+  }) => {
+    // The review-round data-loss fix. The panel's defaults say "both
+    // automations off, no email settings", so a Save over a load that failed
+    // would disable both live schedules and erase their email configuration —
+    // from a form that never showed what it was replacing.
+    await page.route("**/api/workspaces/*/automation-settings", (route) =>
+      route.request().method() === "GET"
+        ? route.fulfill({ status: 500, body: "{}" })
+        : route.continue(),
+    );
+
+    await page.goto(AUTOMATION_URL);
+
+    await expect(page.getByText(/could not load automation settings/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: /save changes/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /restore defaults/i })).toHaveCount(0);
+  });
+
+  test("no Save button is offered while the settings load is still in flight", async ({
+    page,
+  }) => {
+    // Same defect, earlier moment: Save was live before the GET resolved.
+    let release: (() => void) | undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await page.route("**/api/workspaces/*/automation-settings", async (route) => {
+      if (route.request().method() !== "GET") return route.continue();
+      await held;
+      return route.continue();
+    });
+
+    await page.goto(AUTOMATION_URL);
+
+    await expect(page.getByRole("status")).toBeVisible();
+    await expect(page.getByRole("button", { name: /save changes/i })).toHaveCount(0);
+
+    release?.();
+    await expect(page.getByRole("button", { name: /save changes/i })).toBeVisible();
+  });
+
+  test("the API refuses a write for a workspace whose feature flag is off", async ({
+    page,
+  }) => {
+    // Server-side gate added in the review round: the tab being hidden is not
+    // access control, because the PUT is reachable without the UI.
+    test.skip(!WORKSPACE_NO_FLAG, "set E2E_WORKSPACE_ID_NO_FLAG — see the constant");
+
+    const response = await page.request.put(
+      `${BACKEND}/api/workspaces/${WORKSPACE_NO_FLAG}/automation-settings`,
+      { data: { invoice: { enabled: true } } },
+    );
+
+    expect(response.status()).toBe(403);
   });
 
   test("Invoice Generator for the KAN-10 board is reachable after sign-in", async ({
