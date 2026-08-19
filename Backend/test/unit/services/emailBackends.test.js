@@ -182,6 +182,41 @@ describe('sesBackend', () => {
     await expect(sesBackend.deliver(MESSAGE)).rejects.toThrow(/sending rate/);
   });
 
+  // A private-bucket URL is presigned, so it carries a query string. Splitting
+  // on '.amazonaws.com/' and keeping the remainder made the S3 key
+  // 'output/.../INV-1.pdf?X-Amz-Algorithm=...', which GetObject cannot find —
+  // and an unreadable attachment is skipped rather than thrown, so the client
+  // received an invoice email with no invoice in it. Every earlier test here
+  // used an /api/local-files/ URL, which has no query string, so the whole
+  // production shape went uncovered.
+  it('reads the object key from a presigned S3 URL without its query string', async () => {
+    const key = 'output/55390/board-a/NDIS-invoices/INV-1.pdf';
+    const presigned = `https://iso-bucket.s3.ap-southeast-2.amazonaws.com/${key}`
+      + '?X-Amz-Algorithm=AWS4-HMAC-SHA256'
+      + '&X-Amz-Credential=AKIA%2F20260819%2Fap-southeast-2%2Fs3%2Faws4_request'
+      + '&X-Amz-Expires=604800&X-Amz-Signature=deadbeef&X-Amz-SignedHeaders=host';
+
+    const result = await sesBackend.deliver({ ...MESSAGE, attachments: [presigned] });
+
+    expect(getS3File).toHaveBeenCalledWith(key);
+    expect(result.skippedAttachments).toBe(0);
+    const [{ attachments }] = sendEmail.mock.calls[0];
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0].filename).toBe('INV-1.pdf');
+  });
+
+  // The public-bucket URL getS3FileUrl builds percent-encodes '+' in the key,
+  // and a generated filename can carry a space. Both have to survive back into
+  // the literal key S3 stored.
+  it('decodes a percent-encoded key and ignores a fragment', async () => {
+    await sesBackend.deliver({
+      ...MESSAGE,
+      attachments: ['https://iso-public.s3.ap-southeast-2.amazonaws.com/output/55390/Jane%20Smith%2BCo/INV-2.pdf#page=1'],
+    });
+
+    expect(getS3File).toHaveBeenCalledWith('output/55390/Jane Smith+Co/INV-2.pdf');
+  });
+
   it('does not let one unreadable attachment silence the whole send', async () => {
     // A missing PDF must not cost the client their invoice email; the send
     // proceeds with what could be read and the gap is reported.
