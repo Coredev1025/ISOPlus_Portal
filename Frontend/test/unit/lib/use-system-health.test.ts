@@ -10,14 +10,6 @@ import { useSystemHealth } from "@/lib/use-system-health";
 const OVERVIEW = { activeAutomations: 1, runsToday: 0, failed: 0, errorRate24h: 0, trend: [] };
 const CLIENTS = { clients: [{ workspaceId: "ws-1", connection: "connected" }] };
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((r) => {
-    resolve = r;
-  });
-  return { promise, resolve };
-}
-
 describe("useSystemHealth", () => {
   beforeEach(() => {
     get.mockReset();
@@ -68,18 +60,7 @@ describe("useSystemHealth", () => {
   // assert: React 18 silently drops a state update scheduled on an unmounted
   // fiber — no render, no warning, no throw — so a hook with the guard and one
   // without are indistinguishable from outside. It is defensive code, verified
-  // by inspection, and deliberately has no test rather than a test that would
-  // pass with the guard deleted.
-  it("resolves an in-flight request after unmount without throwing", async () => {
-    const overviewDeferred = deferred<{ data: typeof OVERVIEW }>();
-    get.mockImplementation((url: string) =>
-      url.endsWith("/overview") ? overviewDeferred.promise : Promise.resolve({ data: CLIENTS }),
-    );
-
-    const { unmount } = renderHook(() => useSystemHealth());
-    unmount();
-
-    overviewDeferred.resolve({ data: OVERVIEW });
-    await expect(overviewDeferred.promise).resolves.toBeDefined();
-  });
+  // by inspection, and deliberately has NO test here rather than one that would
+  // pass with the guard deleted. An earlier version of this file carried such a
+  // test twice over; both are gone.
 });

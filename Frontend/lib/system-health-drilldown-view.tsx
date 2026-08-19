@@ -48,6 +48,17 @@ export function SystemHealthDrilldownView({ workspaceId }: Props) {
 
   const reload = useCallback(() => setReloadToken((token) => token + 1), []);
 
+  // A different workspace has a different number of pages, so carrying the page
+  // number across would request page N of a workspace that has one. Adjusted
+  // during render rather than in an effect: an effect would let the fetch below
+  // run once for the new workspace paired with the old page number, firing a
+  // request that is cancelled a commit later and answered by nobody.
+  const [loadedWorkspaceId, setLoadedWorkspaceId] = useState(workspaceId);
+  if (workspaceId !== loadedWorkspaceId) {
+    setLoadedWorkspaceId(workspaceId);
+    setPage(1);
+  }
+
   useEffect(() => {
     // A page change or an unmount cancels the request it supersedes, so the
     // three writers to `runs` can never land out of order.
@@ -79,10 +90,6 @@ export function SystemHealthDrilldownView({ workspaceId }: Props) {
       cancelled = true;
     };
   }, [workspaceId, page, reloadToken]);
-
-  // A different workspace has a different number of pages, so carrying the
-  // page number across would request page N of a workspace that has one.
-  useEffect(() => setPage(1), [workspaceId]);
 
   const start = useCallback(
     async (force: boolean) => {
@@ -165,7 +172,7 @@ export function SystemHealthDrilldownView({ workspaceId }: Props) {
         </Card>
       ) : null}
 
-      <RunList runs={runs} onRetry={retry} retryingId={retryingId} />
+      <RunList runs={runs} onRetry={retry} retryingId={retryingId} dispatching={dispatching} />
 
       {/* Gated on `total`, not on the rows returned: a page that comes back
           empty still needs the Previous button that is the only way off it. */}

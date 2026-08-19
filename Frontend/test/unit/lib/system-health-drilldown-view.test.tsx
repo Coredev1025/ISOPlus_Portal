@@ -217,6 +217,35 @@ describe("SystemHealthDrilldownView", () => {
     expect(screen.getByText("Xero token expired")).toBeInTheDocument();
   });
 
+  // The shared dispatch gate has to cover BOTH directions. A retry fired while
+  // a run is in flight races it for the same period; the server's 409 and
+  // jobId dedupe limit the damage, but the UI should not offer the click.
+  it("disables Retry while a run is in flight", async () => {
+    respondWith({ runs: [FAILED_RUN], total: 1 });
+    post.mockReturnValue(new Promise(() => {}));
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await screen.findByText("b1");
+    await userEvent.click(screen.getByRole("button", { name: /run invoices now/i }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /^retry$/i })).toBeDisabled());
+  });
+
+  // Guards the reload itself, not just that it cannot clobber: without it, a
+  // successful run leaves the history exactly as it was, which reads as a
+  // button that did nothing.
+  it("reloads the history after a run succeeds", async () => {
+    post.mockResolvedValue({ data: { enqueued: 1 } });
+
+    render(<SystemHealthDrilldownView workspaceId="ws-1" />);
+    await screen.findByText("b1");
+    const callsBefore = get.mock.calls.length;
+
+    await userEvent.click(screen.getByRole("button", { name: /run invoices now/i }));
+
+    await waitFor(() => expect(get.mock.calls.length).toBeGreaterThan(callsBefore));
+  });
+
   it("explains a refused run instead of appearing to do nothing", async () => {
     post.mockRejectedValue({
       response: { status: 409, data: { error: "already_run", periodKey: "20260116-0900", runs: [RUN] } },

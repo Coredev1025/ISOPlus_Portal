@@ -15,6 +15,7 @@ type RowProps = Readonly<{
   run: RunRow;
   onRetry: (runId: string) => void;
   retrying: boolean;
+  dispatching: boolean;
 }>;
 
 /**
@@ -23,7 +24,7 @@ type RowProps = Readonly<{
  * today (the worker is inert), so this branch is only exercised by a fixture
  * in tests until Epic 5.6/5.7 ships a worker that can actually fail a run.
  */
-function RunRowItem({ run, onRetry, retrying }: RowProps) {
+function RunRowItem({ run, onRetry, retrying, dispatching }: RowProps) {
   const isFailed = run.status === RETRIABLE_STATUS;
   const showFooter = isFailed || Boolean(run.error);
 
@@ -50,7 +51,7 @@ function RunRowItem({ run, onRetry, retrying }: RowProps) {
               type="button"
               variant="outline"
               size="sm"
-              disabled={retrying}
+              disabled={retrying || dispatching}
               onClick={() => onRetry(run._id)}
             >
               Retry
@@ -66,9 +67,13 @@ type ListProps = Readonly<{
   runs: readonly RunRow[];
   onRetry: (runId: string) => void;
   retryingId: string | null;
+  // True while ANY dispatch is in flight — a run, or another row's retry. Every
+  // Retry is disabled for the duration, not just the row that was clicked:
+  // two dispatches for the same period race each other.
+  dispatching: boolean;
 }>;
 
-export function RunList({ runs, onRetry, retryingId }: ListProps) {
+export function RunList({ runs, onRetry, retryingId, dispatching }: ListProps) {
   // Explicit copy rather than an empty <ul>: a genuinely empty history has to
   // read differently from "still loading" and "failed to load", the same
   // reasoning that makes the 409 refusal explicit rather than silent.
@@ -79,7 +84,13 @@ export function RunList({ runs, onRetry, retryingId }: ListProps) {
   return (
     <ul className="divide-y divide-border rounded-lg border border-border">
       {runs.map((run) => (
-        <RunRowItem key={run._id} run={run} onRetry={onRetry} retrying={retryingId === run._id} />
+        <RunRowItem
+          key={run._id}
+          run={run}
+          onRetry={onRetry}
+          retrying={retryingId === run._id}
+          dispatching={dispatching}
+        />
       ))}
     </ul>
   );
