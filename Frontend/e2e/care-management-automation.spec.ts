@@ -35,6 +35,10 @@ const PASSWORD = process.env.E2E_PASSWORD;
 // Workspace 55390 is what the fixture seeds; overridable for reruns elsewhere.
 const WORKSPACE = process.env.E2E_CM_WORKSPACE_ID ?? "55390";
 
+// The automation tab is a query param on the finance-settings page, not a route
+// of its own. Both the tab test and the status-panel test land here.
+const AUTOMATION_URL = `/workspace/${WORKSPACE}/finance-settings?tab=automation`;
+
 // Login and the outbox are backend calls; ports differ per worktree, so read
 // the URL rather than assuming 4001.
 const BACKEND =
@@ -97,7 +101,7 @@ test.describe("Care Management automation (KAN-10 fixture)", () => {
   test("automation tab is available when the feature toggle is on", async ({
     page,
   }) => {
-    await page.goto(`/workspace/${WORKSPACE}/finance-settings?tab=automation`);
+    await page.goto(AUTOMATION_URL);
 
     // The tab only renders when the fixture's feature toggle is on; if this
     // fails, the fixture was not loaded rather than the tab regressing.
