@@ -6,6 +6,7 @@ import { generate } from '@pdfme/generator';
 import { text, table, line, image, multiVariableText } from '@pdfme/schemas';
 
 import Business from '../../models/Business.js';
+import { claimDocumentNumber } from '../../utils/documentNumberAllocator.js';
 import { mongoEq } from '../../utils/securityHelpers.js';
 import { formatLabelValue } from '../../utils/ndisServiceRecords.js';
 import {
@@ -42,22 +43,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /**
  * Claim the next invoice number for this workspace, atomically.
  *
- * `$inc` inside findOneAndUpdate is what stops two Elastic Beanstalk instances
- * pulling one automation queue from minting the same number for different
- * participants. `new: true` returns the counter after the increment, so the
- * number this run owns is one below.
+ * The claim itself lives in utils/documentNumberAllocator.js — one
+ * implementation shared with the statement generator and the Age Care
+ * participant tax invoice, because there were three and one of them read the
+ * counter, rendered a PDF, and only then wrote it back.
  *
  * The number is claimed before the rows are collected, so a run that fails
  * leaves a gap in the sequence. A gap is cosmetic; a duplicate is a billing bug.
  */
-async function allocateInvoiceNumberBase(workspaceId, business) {
-  const claimed = await Business.findOneAndUpdate(
-    { workspaceId: mongoEq(workspaceId) },
-    { $inc: { 'documentNumbering.invoice.nextNumber': 1 } },
-    { new: true },
-  ).lean();
-  const nextNumber = claimed.documentNumbering.invoice.nextNumber - 1;
-  return business.documentNumbering.invoice.prefix + nextNumber;
+async function allocateInvoiceNumberBase(workspaceId) {
+  const claimed = await claimDocumentNumber(workspaceId, 'invoice');
+  if (!claimed) throw new Error('Business not found');
+  return claimed;
 }
 
 export async function generateNdisInvoiceGeneratorPdf({
@@ -89,7 +86,7 @@ export async function generateNdisInvoiceGeneratorPdf({
   const { participantProfile, participantName } = prepared;
   const profileItem = prepared.participantProfileItem;
   const timezone = business?.headOfficeTimezone || DEFAULT_TIMEZONE;
-  const invoiceNumberBase = await allocateInvoiceNumberBase(workspaceId, business);
+  const invoiceNumberBase = await allocateInvoiceNumberBase(workspaceId);
   const invoiceNumber = `${invoiceNumberBase} (ISO+™)`;
 
   const allRows = await collectNdisInvoiceRows({

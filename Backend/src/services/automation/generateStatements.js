@@ -1,5 +1,4 @@
 import Board from '../../models/Board.js';
-import Business from '../../models/Business.js';
 import Item from '../../models/Item.js';
 import PDFLink from '../../models/PDFLink.js';
 import { PDFLINK_TYPE_MONTHLY_STATEMENT } from '../../constants/automation.js';
@@ -8,6 +7,7 @@ import { canGenerateMonthlyStatement } from '../../utils/automationBoardFlags.js
 import { previousCalendarMonth } from '../../utils/automationPreviousMonth.js';
 import { renderMonthlyStatementPdf } from '../../utils/webhookMonthlyStatementPdfHelpers.js';
 import { liveMonthlyStatementDeps } from '../../routes/webhook.js';
+import { claimDocumentNumber } from '../../utils/documentNumberAllocator.js';
 import { mongoEq } from '../../utils/securityHelpers.js';
 import { info, warn } from '../../utils/logger.js';
 
@@ -37,47 +37,19 @@ async function existingStatementLinks(workspaceId, periodKey) {
   return new Map(existing.map((link) => [link.itemId, link]));
 }
 
-/** A schema default, read from the model so the counter has one definition. */
-function statementNumberingDefault(field) {
-  return Business.schema.path(`documentNumbering.statement.${field}`)?.defaultValue;
-}
-
 /**
  * Claim the next statement number for this workspace, atomically.
  *
- * Same reasoning as allocateInvoiceNumberBase in ndisInvoiceGeneratorPdf.js:
- * incrementing inside findOneAndUpdate with `new: true` is what stops two
- * Elastic Beanstalk instances processing different boards of one workspace from
- * minting the same number. A read, then a render, then a write back would lose
- * an update across those awaits and put one number on two participants'
- * statements. The number this run owns is one below the returned counter.
- *
- * The increment is an aggregation pipeline rather than `$inc` because
- * `documentNumbering.statement` is a schema default and a schema default does
- * not backfill stored documents: a bare `$inc` on a Business saved before the
- * field existed would create the counter at 1 and mint 'STM-0'. `$ifNull`
- * starts such a workspace at the declared default instead.
+ * The claim lives in utils/documentNumberAllocator.js, shared with both invoice
+ * generators. Empty string rather than a throw for a workspace with no Business
+ * row: a statement number is a nicety ({{statement_number}} survives verbatim
+ * without one), where an invoice cannot go out unnumbered.
  *
  * A run that fails after claiming leaves a gap in the sequence. A gap is
  * cosmetic; a duplicate is a document-identity bug.
  */
 async function allocateStatementNumber(workspaceId) {
-  const start = statementNumberingDefault('nextNumber');
-  const claimed = await Business.findOneAndUpdate(
-    { workspaceId: mongoEq(String(workspaceId)) },
-    [{
-      $set: {
-        'documentNumbering.statement.nextNumber': {
-          $add: [{ $ifNull: ['$documentNumbering.statement.nextNumber', start] }, 1],
-        },
-      },
-    }],
-    { new: true },
-  ).lean();
-  if (!claimed) return '';
-  const numbering = claimed.documentNumbering?.statement ?? {};
-  const prefix = numbering.prefix ?? statementNumberingDefault('prefix');
-  return `${prefix}${numbering.nextNumber - 1}`;
+  return (await claimDocumentNumber(workspaceId, 'statement')) ?? '';
 }
 
 async function generateOneStatement({
