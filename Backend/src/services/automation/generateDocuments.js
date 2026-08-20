@@ -23,6 +23,7 @@ import { invoiceDatesFromSlot } from '../../utils/automationInvoiceDates.js';
 import { generateUnderClaim } from '../../utils/automationInvoiceClaim.js';
 import { groupItemIdsByParticipant } from '../../utils/automationInvoiceGrouping.js';
 import { invoiceTypeFromBoardLabel } from '../../utils/invoiceTypeFromLabel.js';
+import { reportStaleClaims } from '../../utils/staleInvoiceClaims.js';
 import { schedulePeriodServiceDeliveryWindow } from '../../utils/automationScheduleWindow.js';
 import {
   ageCareInvoiceGeneratorListDeps,
@@ -163,6 +164,15 @@ export async function generateInvoicesForBoard({
   }
 
   const periodKey = periodKeyOverride ?? automationPeriodKey({ slot, timezone });
+
+  // Before selecting anything, say what this run is about to skip and cannot
+  // bill. A `pending:` token older than the cutoff belongs to a run that died
+  // between its claim and its release (utils/staleInvoiceClaims.js), and those
+  // items are excluded from this invoice and from every one after it. The run
+  // continues — the rest of the period is still billable, and clearing the
+  // token automatically would risk double billing a run that is merely slow.
+  await reportStaleClaims({ workspaceId, boardId });
+
   const board = await Board.findOne({ boardId: mongoEq(String(boardId)) }).lean();
   const label = board?.label || '';
   const dates = invoiceDatesFromSlot(slot, business.bankDetails?.accountsReceivableTerms);

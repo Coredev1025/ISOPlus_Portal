@@ -26,6 +26,7 @@
  * deadlocking against the claim its previous attempt left behind.
  */
 
+import { PROVISIONAL_CLAIM_PREFIX } from '../constants/invoiceSelection.js';
 import { info, warn } from './logger.js';
 import {
   claimItemsForInvoice,
@@ -42,7 +43,7 @@ import {
  * clear.
  */
 export function provisionalClaimToken({ type, periodKey, participant }) {
-  return `pending:${type}:${periodKey}:${participant}`;
+  return `${PROVISIONAL_CLAIM_PREFIX}${type}:${periodKey}:${participant}`;
 }
 
 /**
@@ -85,12 +86,16 @@ export async function generateUnderClaim({
   try {
     generated = await produce(claimed);
   } catch (err) {
-    await releaseItemClaim({ itemIds: claimed, invoiceNumber: token });
+    await releaseItemClaim({
+      workspaceId, boardId, itemIds: claimed, invoiceNumber: token,
+    });
     throw err;
   }
 
   if (!generated || generated.empty || !generated.invoiceNumber) {
-    await releaseItemClaim({ itemIds: claimed, invoiceNumber: token });
+    await releaseItemClaim({
+      workspaceId, boardId, itemIds: claimed, invoiceNumber: token,
+    });
     return null;
   }
 

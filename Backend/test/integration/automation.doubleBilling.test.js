@@ -42,6 +42,13 @@ const SCHEDULE = { every: { n: 1, unit: 'month' } };
 const listed = { items: [], total: 0 };
 let renderedInvoices = 0;
 
+vi.mock('../../src/utils/logger.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual, info: vi.fn(), warn: vi.fn(), error: vi.fn(),
+  };
+});
+
 vi.mock('../../src/utils/ndisInvoiceGeneratorRouteHelpers.js', () => ({
   getNdisInvoiceGeneratorData: vi.fn(async () => listed),
 }));
@@ -60,6 +67,7 @@ vi.mock('../../src/services/automation/ndisInvoiceGeneratorPdf.js', () => ({
   }),
 }));
 
+const { error } = await import('../../src/utils/logger.js');
 const { generateInvoicesForBoard } = await import('../../src/services/automation/generateDocuments.js');
 
 const shift = (itemId) => ({
@@ -83,6 +91,7 @@ const runOnce = () => generateInvoicesForBoard({
 const markerOn = async (itemId) => (await Item.findOne({ itemId }).lean())?.invoicedBy ?? null;
 
 beforeEach(async () => {
+  vi.clearAllMocks();
   renderedInvoices = 0;
   listed.items = [listRow('shift-1'), listRow('shift-2')];
   listed.total = 2;
@@ -190,5 +199,59 @@ describe('a failed render leaves the items billable', () => {
     const results = await runOnce();
     expect(results).toHaveLength(1);
     expect(await markerOn('shift-1')).toBe(results[0].invoiceNumber);
+  });
+});
+
+describe('a claim left behind by a run that never finished', () => {
+  /**
+   * The gap section 3.4 accepts: a process that dies between the claim and the
+   * release leaves a `pending:` token on items nothing will ever bill. The
+   * items are excluded from this run and from every run after it, so without
+   * an alarm the participant is quietly under-billed and the marker is the
+   * only evidence.
+   */
+  it('raises an alarm naming the items it is silently skipping', async () => {
+    await Item.updateOne(
+      { itemId: 'shift-1' },
+      {
+        $set: {
+          invoicedBy: 'pending:NDIS Invoice:20260115-0900:Jane Smith',
+          invoicedAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      },
+    );
+
+    await runOnce();
+
+    const alarm = error.mock.calls.find(([, message]) => /never completed/i.test(message));
+    expect(alarm).toBeTruthy();
+    expect(alarm[2]).toMatchObject({ workspaceId: WS, boardId: BOARD, count: 1 });
+    expect(alarm[2].itemIds).toEqual(['shift-1']);
+  });
+
+  it('still bills the items that are free, rather than failing the whole run', async () => {
+    await Item.updateOne(
+      { itemId: 'shift-1' },
+      {
+        $set: {
+          invoicedBy: 'pending:NDIS Invoice:20260115-0900:Jane Smith',
+          invoicedAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      },
+    );
+
+    const results = await runOnce();
+
+    expect(results).toHaveLength(1);
+    // The held item keeps its stale token — detection does not clear it, since
+    // clearing a claim a live run might still hold is the double bill the
+    // protocol exists to prevent.
+    expect(await markerOn('shift-1')).toMatch(/^pending:/);
+    expect(await markerOn('shift-2')).toMatch(/^INV-/);
+  });
+
+  it('says nothing on an ordinary run', async () => {
+    await runOnce();
+    expect(error.mock.calls.filter(([, m]) => /never completed/i.test(m))).toEqual([]);
   });
 });

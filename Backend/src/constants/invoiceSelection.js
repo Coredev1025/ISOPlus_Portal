@@ -18,6 +18,40 @@
  * SPELLING_VARIANTS below and section 2.4.
  */
 
+/**
+ * The prefix on the provisional marker an automated run holds while it is
+ * producing a document (section 3.4). It is what distinguishes "a run is
+ * working on this" from "an invoice was issued for this", and every reader
+ * below depends on that distinction rather than on the rest of the token.
+ *
+ * Read by: utils/automationInvoiceClaim.js (mints the token),
+ * utils/staleInvoiceClaims.js (finds tokens no run is still behind),
+ * utils/invoicePdfSupport.js (does not report one as a competing invoice).
+ */
+export const PROVISIONAL_CLAIM_PREFIX = 'pending:';
+
+/**
+ * How old a provisional claim has to be before a run is assumed dead.
+ *
+ * One hour, and the margin is enormous: a single participant's invoice is one
+ * render and one upload. The generous side is the safe side — a cutoff shorter
+ * than a legitimately slow run turns the alarm into noise, and a noisy alarm is
+ * the same as no alarm. Nothing acts on this automatically, so being late costs
+ * only lateness.
+ *
+ * Read by: utils/staleInvoiceClaims.js.
+ */
+export const STALE_CLAIM_MAX_AGE_MS = 60 * 60 * 1000;
+
+/**
+ * How many item ids one stale-claim alarm carries. The rest are counted, not
+ * listed: the logger's storage sanitizer drops oversized metadata, so an
+ * uncapped list can cost the alarm its whole payload.
+ *
+ * Read by: utils/staleInvoiceClaims.js.
+ */
+export const STALE_CLAIM_ID_LOG_LIMIT = 50;
+
 export const INVOICE_TYPE_NDIS_CERTIFICATION = 'ndis-certification';
 export const INVOICE_TYPE_NDIS_VERIFICATION = 'ndis-verification';
 export const INVOICE_TYPE_SAH = 'sah';
