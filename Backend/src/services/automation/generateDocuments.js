@@ -20,7 +20,9 @@ import {
   isNdisBoardLabel,
 } from '../../utils/automationBoardFlags.js';
 import { invoiceDatesFromSlot } from '../../utils/automationInvoiceDates.js';
+import { generateUnderClaim } from '../../utils/automationInvoiceClaim.js';
 import { groupItemIdsByParticipant } from '../../utils/automationInvoiceGrouping.js';
+import { invoiceTypeFromBoardLabel } from '../../utils/invoiceTypeFromLabel.js';
 import { schedulePeriodServiceDeliveryWindow } from '../../utils/automationScheduleWindow.js';
 import {
   ageCareInvoiceGeneratorListDeps,
@@ -113,8 +115,21 @@ async function existingSlotResults(workspaceId, boardId, periodKey, type) {
   return uniquePdfResults(links);
 }
 
+/**
+ * `period` and `invoiceType` are the audit trail of section 3.2: periodKey is
+ * the slot's identity, these are the bounds selection actually ran against and
+ * the conditions it ran under. A schedule that later changes cadence cannot be
+ * used to re-derive them, so they are stored rather than recomputed.
+ *
+ * The unique index automation_period_item_unique makes a duplicate row here
+ * throw rather than silently double-record. That is the intended behaviour: a
+ * replayed slot should have been caught by existingSlotResults before reaching
+ * this point, so a collision means something upstream is wrong and the job
+ * should fail visibly.
+ */
 async function recordPdfLinks({
   workspaceId, boardId, itemIds, periodKey, invoiceNumber, participant, pdfUrl, type,
+  period, invoiceType,
 }) {
   await Promise.all(itemIds.map((itemId) => PDFLink.create({
     workspaceId,
@@ -122,6 +137,9 @@ async function recordPdfLinks({
     itemId,
     type,
     periodKey,
+    periodStart: period?.start ? new Date(period.start) : undefined,
+    periodEnd: period?.end ? new Date(period.end) : undefined,
+    invoiceType: invoiceType ?? undefined,
     invoiceNumber,
     participant,
     pdfLink: pdfUrl,
@@ -145,9 +163,17 @@ export async function generateInvoicesForBoard({
   const label = board?.label || '';
   const dates = invoiceDatesFromSlot(slot, business.bankDetails?.accountsReceivableTerms);
 
+  // The same window the list query filters on, kept so the bounds selection ran
+  // against can be stored on each document. Recomputed rather than threaded out
+  // of invoiceGeneratorListQuery because the call is pure and cheap, and
+  // changing that function's signature would churn its callers and tests.
+  const window = schedulePeriodServiceDeliveryWindow(slot, timezone, schedule);
+  const period = { start: window.serviceDeliveryStart, end: window.serviceDeliveryEnd };
+  const invoiceType = invoiceTypeFromBoardLabel(label);
+
   if (isNdisBoardLabel(label)) {
     return generateNdisGeneratorInvoices({
-      workspaceId, boardId, periodKey, dates,
+      workspaceId, boardId, periodKey, dates, period, invoiceType,
       listQuery: invoiceGeneratorListQuery(slot, timezone, schedule),
     });
   }
@@ -161,12 +187,14 @@ export async function generateInvoicesForBoard({
     return [];
   }
   return generateAgeCareGeneratorInvoices({
-    workspaceId, boardId, periodKey, dates, business, label,
+    workspaceId, boardId, periodKey, dates, business, label, period, invoiceType,
     listQuery: invoiceGeneratorListQuery(slot, timezone, schedule, { status: 'all' }),
   });
 }
 
-async function generateNdisGeneratorInvoices({ workspaceId, boardId, periodKey, dates, listQuery }) {
+async function generateNdisGeneratorInvoices({
+  workspaceId, boardId, periodKey, dates, listQuery, period, invoiceType,
+}) {
   const existing = await existingSlotResults(
     workspaceId, boardId, periodKey, PDFLINK_TYPE_NDIS_INVOICE,
   );
@@ -183,20 +211,36 @@ async function generateNdisGeneratorInvoices({ workspaceId, boardId, periodKey, 
 
   const results = [...existing];
   for (const group of groups) {
-    const generated = await generateNdisInvoiceGeneratorPdf({
-      workspaceId,
-      boardId,
-      masterItemIds: group.itemIds,
-      participantName: group.participant,
-      invoiceDate: dates.invoiceDate,
-      dueDate: dates.dueDate,
-    });
-    if (generated.empty) continue;
-    await recordPdfLinks({
+    // The claim is what stops a second run billing these items again, and it
+    // hands the generator only the items it actually took — anything another
+    // invoice already holds is left off this PDF rather than double billed.
+    const generated = await generateUnderClaim({
       workspaceId,
       boardId,
       itemIds: group.itemIds,
+      type: PDFLINK_TYPE_NDIS_INVOICE,
       periodKey,
+      participant: group.participant,
+      produce: (claimedItemIds) => generateNdisInvoiceGeneratorPdf({
+        workspaceId,
+        boardId,
+        masterItemIds: claimedItemIds,
+        participantName: group.participant,
+        invoiceDate: dates.invoiceDate,
+        dueDate: dates.dueDate,
+      }),
+    });
+    // Null covers both "everything was already invoiced" and "the generator
+    // found nothing billable". Section 3.5: no invoice, no email, and the run
+    // still completes so the period is not retried forever.
+    if (!generated) continue;
+    await recordPdfLinks({
+      workspaceId,
+      boardId,
+      itemIds: generated.itemIds,
+      periodKey,
+      period,
+      invoiceType,
       invoiceNumber: generated.invoiceNumber,
       participant: group.participant,
       pdfUrl: generated.fileUrl,
@@ -206,7 +250,7 @@ async function generateNdisGeneratorInvoices({ workspaceId, boardId, periodKey, 
       workspaceId, boardId, periodKey, invoiceNumber: generated.invoiceNumber,
     });
     results.push({
-      itemId: group.itemIds[0],
+      itemId: generated.itemIds[0],
       invoiceNumber: generated.invoiceNumber,
       participant: group.participant,
       pdfUrl: generated.fileUrl,
@@ -226,8 +270,42 @@ function captureRes() {
   };
 }
 
+/**
+ * One Age Care participant tax invoice, shaped like the NDIS generator's
+ * return value so both can run through generateUnderClaim.
+ *
+ * `generateParticipantTaxInvoicePdf` answers through an Express-style `res`
+ * rather than returning, which is why captureRes exists. Normalising it here
+ * keeps that quirk out of the claim helper.
+ */
+async function produceAgeCareInvoice({
+  workspaceId, boardId, business, dates, isLowCatBoard, itemIds,
+}) {
+  const dbItems = await Item.find({
+    workspaceId: mongoEq(String(workspaceId)),
+    boardId: mongoEq(String(boardId)),
+    itemId: { $in: itemIds.map((id) => mongoEq(String(id))) },
+  }).lean();
+  if (dbItems.length === 0) return { empty: true };
+
+  const { res, captured } = captureRes();
+  await generateParticipantTaxInvoicePdf({
+    req: { body: { invoiceDate: dates.invoiceDate, dueDate: dates.dueDate } },
+    res,
+    workspaceId,
+    boardId,
+    business,
+    dbItems,
+    isLowCatBoard,
+    ...liveParticipantTaxDeps(),
+  });
+  const body = captured.body;
+  if (!body?.fileUrl) return { empty: true };
+  return { invoiceNumber: body.invoiceNumber, fileUrl: body.fileUrl };
+}
+
 async function generateAgeCareGeneratorInvoices({
-  workspaceId, boardId, periodKey, dates, business, label, listQuery,
+  workspaceId, boardId, periodKey, dates, business, label, listQuery, period, invoiceType,
 }) {
   const existing = await existingSlotResults(
     workspaceId, boardId, periodKey, PDFLINK_TYPE_AGE_CARE_INVOICE,
@@ -255,40 +333,35 @@ async function generateAgeCareGeneratorInvoices({
   const results = [...existing];
   const isLowCatBoard = isLowCatCareManagementLabel(label);
   for (const group of groups) {
-    const dbItems = await Item.find({
-      workspaceId: mongoEq(String(workspaceId)),
-      boardId: mongoEq(String(boardId)),
-      itemId: { $in: group.itemIds },
-    }).lean();
-    if (dbItems.length === 0) continue;
-    const { res, captured } = captureRes();
-    await generateParticipantTaxInvoicePdf({
-      req: { body: { invoiceDate: dates.invoiceDate, dueDate: dates.dueDate } },
-      res,
-      workspaceId,
-      boardId,
-      business,
-      dbItems,
-      isLowCatBoard,
-      ...liveParticipantTaxDeps(),
-    });
-    const body = captured.body;
-    if (!body?.fileUrl) continue;
-    await recordPdfLinks({
+    const generated = await generateUnderClaim({
       workspaceId,
       boardId,
       itemIds: group.itemIds,
+      type: PDFLINK_TYPE_AGE_CARE_INVOICE,
       periodKey,
-      invoiceNumber: body.invoiceNumber,
       participant: group.participant,
-      pdfUrl: body.fileUrl,
+      produce: (claimedItemIds) => produceAgeCareInvoice({
+        workspaceId, boardId, business, dates, isLowCatBoard, itemIds: claimedItemIds,
+      }),
+    });
+    if (!generated) continue;
+    await recordPdfLinks({
+      workspaceId,
+      boardId,
+      itemIds: generated.itemIds,
+      periodKey,
+      period,
+      invoiceType,
+      invoiceNumber: generated.invoiceNumber,
+      participant: group.participant,
+      pdfUrl: generated.fileUrl,
       type: PDFLINK_TYPE_AGE_CARE_INVOICE,
     });
     results.push({
-      itemId: group.itemIds[0],
-      invoiceNumber: body.invoiceNumber,
+      itemId: generated.itemIds[0],
+      invoiceNumber: generated.invoiceNumber,
       participant: group.participant,
-      pdfUrl: body.fileUrl,
+      pdfUrl: generated.fileUrl,
     });
   }
   return uniquePdfResults(results);
