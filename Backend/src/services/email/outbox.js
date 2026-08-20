@@ -47,10 +47,10 @@ export function resetEmailBackends() {
  * writes PDFLink rows, so discovering there is no transport afterwards burns
  * real numbers on documents nobody receives.
  */
-export function activeEmailBackendName() {
+export function activeEmailBackendName({ from = null } = {}) {
   return selectBackendName({
     offline: isOfflineMode(),
-    transportConfigured: isEmailTransportConfigured(),
+    transportConfigured: isEmailTransportConfigured({ from }),
   });
 }
 
@@ -65,7 +65,7 @@ export function activeEmailBackendName() {
 export async function deliverEmail(message) {
   registerBuiltInEmailBackends();
 
-  const name = activeEmailBackendName();
+  const name = activeEmailBackendName({ from: message?.block?.emailFrom ?? null });
   if (!name) {
     // Louder than a silent skip: an environment that is online with no
     // transport can neither send nor usefully pretend to.

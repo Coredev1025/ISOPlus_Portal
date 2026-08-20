@@ -247,3 +247,39 @@ describe('sesTransport', () => {
     });
   });
 });
+
+describe('isEmailTransportConfigured with a settings-provided From', () => {
+  // A workspace that has filled in Email From has named its sending identity.
+  // Requiring EMAIL_FROM as well refused to send an email whose sender was
+  // already known — which is how a fully configured workspace could sit unable
+  // to deliver on an environment that simply had no default.
+  beforeEach(() => {
+    process.env.AWS_ACCESS_KEY_ID = 'key';
+    process.env.AWS_SECRET_ACCESS_KEY = 'secret';
+    process.env.AWS_REGION = 'ap-southeast-2';
+    delete process.env.EMAIL_FROM;
+  });
+
+  it('is configured when the settings supply a From and EMAIL_FROM is unset', () => {
+    expect(isEmailTransportConfigured({ from: 'billing@dev.isoplus.online' })).toBe(true);
+  });
+
+  it('is still not configured when neither is set', () => {
+    expect(isEmailTransportConfigured({ from: null })).toBe(false);
+    expect(isEmailTransportConfigured()).toBe(false);
+  });
+
+  it('treats a blank settings From as absent, not as a sender', () => {
+    expect(isEmailTransportConfigured({ from: '   ' })).toBe(false);
+  });
+
+  it('still requires the AWS credential — a From alone is not enough', () => {
+    delete process.env.AWS_SECRET_ACCESS_KEY;
+    expect(isEmailTransportConfigured({ from: 'billing@dev.isoplus.online' })).toBe(false);
+  });
+
+  it('falls back to EMAIL_FROM when the settings supply none', () => {
+    process.env.EMAIL_FROM = 'no-reply@dev.isoplus.online';
+    expect(isEmailTransportConfigured()).toBe(true);
+  });
+});

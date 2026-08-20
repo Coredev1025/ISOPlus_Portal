@@ -31,15 +31,27 @@ function envValue(name) {
 }
 
 /**
- * True only when the AWS credential, region and default From are all present.
+ * True only when the AWS credential, region and a From address are all present.
  * Any one missing means delivery is off, rather than half on.
+ *
+ * `from` is the workspace's own Email From, off the automation settings block.
+ * When a workspace has configured one, that IS the sending identity, so
+ * requiring EMAIL_FROM as well would refuse to send an email whose sender is
+ * already known — which is what it did, and why a fully configured workspace
+ * could sit unable to deliver on an environment that simply had no default.
+ *
+ * The deployment-level gate is not lost by this. AUTOMATION_ENABLED still has
+ * to be on for the scheduler to fan out at all, and the AWS credential still
+ * has to be present here; what changes is that the *sender address* may come
+ * from the workspace rather than only from the environment.
  */
-export function isEmailTransportConfigured() {
+export function isEmailTransportConfigured({ from = null } = {}) {
+  const sender = String(from ?? '').trim() || envValue('EMAIL_FROM');
   return Boolean(
     envValue('AWS_ACCESS_KEY_ID')
     && envValue('AWS_SECRET_ACCESS_KEY')
     && envValue('AWS_REGION')
-    && envValue('EMAIL_FROM'),
+    && sender,
   );
 }
 
