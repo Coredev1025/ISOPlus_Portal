@@ -1,0 +1,615 @@
+{
+  "schemas": [
+    [
+      {
+        "type": "text",
+        "name": "title",
+        "content": "STATEMENT OF ACCOUNT",
+        "position": {
+          "x": 20,
+          "y": 22
+        },
+        "width": 100,
+        "height": 10,
+        "fontName": "Roboto",
+        "fontSize": 19,
+        "fontColor": "#111827",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "lineHeight": 1.3,
+        "characterSpacing": 0,
+        "readOnly": true
+      },
+      {
+        "type": "multiVariableText",
+        "name": "provider",
+        "content": "",
+        "position": {
+          "x": 110,
+          "y": 21
+        },
+        "width": 80,
+        "height": 26,
+        "fontName": "Roboto",
+        "fontSize": 8.5,
+        "fontColor": "#6b7280",
+        "alignment": "right",
+        "verticalAlignment": "top",
+        "lineHeight": 1.3,
+        "characterSpacing": 0,
+        "readOnly": false,
+        "text": "{providerName}\nABN {providerAbn}\n{providerAddress}",
+        "variables": [
+          "providerName",
+          "providerAbn",
+          "providerAddress"
+        ]
+      },
+      {
+        "type": "line",
+        "name": "headerRule",
+        "position": {
+          "x": 20,
+          "y": 52
+        },
+        "width": 170,
+        "height": 0.4,
+        "color": "#d1d5db",
+        "readOnly": true
+      },
+      {
+        "type": "text",
+        "name": "statementToLabel",
+        "content": "STATEMENT TO",
+        "position": {
+          "x": 20,
+          "y": 58
+        },
+        "width": 60,
+        "height": 4,
+        "fontName": "Roboto",
+        "fontSize": 7,
+        "fontColor": "#6b7280",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "lineHeight": 1.3,
+        "characterSpacing": 0.6,
+        "readOnly": true
+      },
+      {
+        "type": "multiVariableText",
+        "name": "recipient",
+        "content": "",
+        "position": {
+          "x": 20,
+          "y": 64
+        },
+        "width": 85,
+        "height": 22,
+        "fontName": "Roboto",
+        "fontSize": 10,
+        "fontColor": "#111827",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "lineHeight": 1.3,
+        "characterSpacing": 0,
+        "readOnly": false,
+        "text": "{recipientName}\n{recipientAddress}",
+        "variables": [
+          "recipientName",
+          "recipientAddress"
+        ]
+      },
+      {
+        "type": "text",
+        "name": "metaLabels",
+        "content": "Statement number\nStatement date\nPeriod\nAccount number",
+        "position": {
+          "x": 100,
+          "y": 58
+        },
+        "width": 45,
+        "height": 24,
+        "fontName": "Roboto",
+        "fontSize": 8.5,
+        "fontColor": "#6b7280",
+        "alignment": "right",
+        "verticalAlignment": "top",
+        "lineHeight": 1.3,
+        "characterSpacing": 0,
+        "readOnly": true
+      },
+      {
+        "type": "multiVariableText",
+        "name": "metaValues",
+        "content": "",
+        "position": {
+          "x": 146,
+          "y": 58
+        },
+        "width": 44,
+        "height": 24,
+        "fontName": "Roboto",
+        "fontSize": 8.5,
+        "fontColor": "#111827",
+        "alignment": "right",
+        "verticalAlignment": "top",
+        "lineHeight": 1.3,
+        "characterSpacing": 0,
+        "readOnly": false,
+        "text": "{statementNumber}\n{statementDate}\n{period}\n{accountNumber}",
+        "variables": [
+          "statementNumber",
+          "statementDate",
+          "period",
+          "accountNumber"
+        ]
+      },
+      {
+        "type": "table",
+        "name": "summary",
+        "position": {
+          "x": 20,
+          "y": 92
+        },
+        "width": 170,
+        "height": 20,
+        "content": "[[\"\",\"\",\"\",\"\"]]",
+        "showHead": true,
+        "head": [
+          "OPENING BALANCE",
+          "CHARGES",
+          "PAYMENTS",
+          "CLOSING BALANCE"
+        ],
+        "headWidthPercentages": [
+          25,
+          25,
+          25,
+          25
+        ],
+        "fontName": "",
+        "readOnly": false,
+        "tableStyles": {
+          "borderWidth": 0,
+          "borderColor": "#d1d5db"
+        },
+        "headStyles": {
+          "fontName": "Roboto",
+          "fontSize": 8,
+          "characterSpacing": 0.4,
+          "alignment": "left",
+          "verticalAlignment": "middle",
+          "lineHeight": 1.2,
+          "fontColor": "#6b7280",
+          "borderColor": "#d1d5db",
+          "backgroundColor": "#f9fafb",
+          "borderWidth": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0.4,
+            "left": 0
+          },
+          "padding": {
+            "top": 3,
+            "right": 2,
+            "bottom": 3,
+            "left": 2
+          }
+        },
+        "bodyStyles": {
+          "fontName": "Roboto",
+          "fontSize": 8.5,
+          "characterSpacing": 0,
+          "alignment": "left",
+          "verticalAlignment": "middle",
+          "lineHeight": 1.35,
+          "fontColor": "#111827",
+          "borderColor": "#d1d5db",
+          "backgroundColor": "",
+          "alternateBackgroundColor": "#fafafa",
+          "borderWidth": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0.2,
+            "left": 0
+          },
+          "padding": {
+            "top": 2.6,
+            "right": 2,
+            "bottom": 2.6,
+            "left": 2
+          }
+        },
+        "columnStyles": {
+          "alignment": {
+            "0": "left",
+            "1": "left",
+            "2": "left",
+            "3": "left"
+          }
+        }
+      },
+      {
+        "type": "table",
+        "name": "transactions",
+        "position": {
+          "x": 20,
+          "y": 122
+        },
+        "width": 170,
+        "height": 40,
+        "content": "[[\"\",\"\",\"\",\"\",\"\",\"\"]]",
+        "showHead": true,
+        "head": [
+          "Date",
+          "Reference",
+          "Description",
+          "Charges",
+          "Payments",
+          "Balance"
+        ],
+        "headWidthPercentages": [
+          12,
+          14,
+          40,
+          11.5,
+          11.5,
+          11
+        ],
+        "fontName": "",
+        "readOnly": false,
+        "tableStyles": {
+          "borderWidth": 0,
+          "borderColor": "#d1d5db"
+        },
+        "headStyles": {
+          "fontName": "Roboto",
+          "fontSize": 8,
+          "characterSpacing": 0.4,
+          "alignment": "left",
+          "verticalAlignment": "middle",
+          "lineHeight": 1.2,
+          "fontColor": "#6b7280",
+          "borderColor": "#d1d5db",
+          "backgroundColor": "",
+          "borderWidth": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0.4,
+            "left": 0
+          },
+          "padding": {
+            "top": 3,
+            "right": 2,
+            "bottom": 3,
+            "left": 2
+          }
+        },
+        "bodyStyles": {
+          "fontName": "Roboto",
+          "fontSize": 8.5,
+          "characterSpacing": 0,
+          "alignment": "left",
+          "verticalAlignment": "middle",
+          "lineHeight": 1.35,
+          "fontColor": "#111827",
+          "borderColor": "#d1d5db",
+          "backgroundColor": "",
+          "alternateBackgroundColor": "#fafafa",
+          "borderWidth": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0.2,
+            "left": 0
+          },
+          "padding": {
+            "top": 2.6,
+            "right": 2,
+            "bottom": 2.6,
+            "left": 2
+          }
+        },
+        "columnStyles": {
+          "alignment": {
+            "0": "left",
+            "1": "left",
+            "2": "left",
+            "3": "right",
+            "4": "right",
+            "5": "right"
+          },
+          "headAlignment": {
+            "0": "left",
+            "1": "left",
+            "2": "left",
+            "3": "right",
+            "4": "right",
+            "5": "right"
+          }
+        }
+      },
+      {
+        "type": "text",
+        "name": "ageingLabel",
+        "content": "AGEING SUMMARY",
+        "position": {
+          "x": 20,
+          "y": 172
+        },
+        "width": 60,
+        "height": 4,
+        "fontName": "Roboto",
+        "fontSize": 7,
+        "fontColor": "#6b7280",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "lineHeight": 1.3,
+        "characterSpacing": 0.6,
+        "readOnly": true
+      },
+      {
+        "type": "table",
+        "name": "ageing",
+        "position": {
+          "x": 20,
+          "y": 178
+        },
+        "width": 170,
+        "height": 18,
+        "content": "[[\"\",\"\",\"\",\"\",\"\"]]",
+        "showHead": true,
+        "head": [
+          "Current",
+          "1-30 days",
+          "31-60 days",
+          "61-90 days",
+          "90+ days"
+        ],
+        "headWidthPercentages": [
+          20,
+          20,
+          20,
+          20,
+          20
+        ],
+        "fontName": "",
+        "readOnly": false,
+        "tableStyles": {
+          "borderWidth": 0,
+          "borderColor": "#d1d5db"
+        },
+        "headStyles": {
+          "fontName": "Roboto",
+          "fontSize": 8,
+          "characterSpacing": 0.4,
+          "alignment": "left",
+          "verticalAlignment": "middle",
+          "lineHeight": 1.2,
+          "fontColor": "#6b7280",
+          "borderColor": "#d1d5db",
+          "backgroundColor": "#f9fafb",
+          "borderWidth": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0.4,
+            "left": 0
+          },
+          "padding": {
+            "top": 3,
+            "right": 2,
+            "bottom": 3,
+            "left": 2
+          }
+        },
+        "bodyStyles": {
+          "fontName": "Roboto",
+          "fontSize": 10,
+          "characterSpacing": 0,
+          "alignment": "left",
+          "verticalAlignment": "middle",
+          "lineHeight": 1.35,
+          "fontColor": "#111827",
+          "borderColor": "#d1d5db",
+          "backgroundColor": "",
+          "alternateBackgroundColor": "#fafafa",
+          "borderWidth": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0.2,
+            "left": 0
+          },
+          "padding": {
+            "top": 2.6,
+            "right": 2,
+            "bottom": 2.6,
+            "left": 2
+          }
+        },
+        "columnStyles": {
+          "alignment": {
+            "0": "center",
+            "1": "center",
+            "2": "center",
+            "3": "center",
+            "4": "center"
+          },
+          "headAlignment": {
+            "0": "center",
+            "1": "center",
+            "2": "center",
+            "3": "center",
+            "4": "center"
+          }
+        }
+      },
+      {
+        "type": "line",
+        "name": "payRule",
+        "position": {
+          "x": 20,
+          "y": 204
+        },
+        "width": 170,
+        "height": 0.4,
+        "color": "#d1d5db",
+        "readOnly": true
+      },
+      {
+        "type": "text",
+        "name": "paymentLabel",
+        "content": "PAYMENT DETAILS",
+        "position": {
+          "x": 20,
+          "y": 209
+        },
+        "width": 60,
+        "height": 4,
+        "fontName": "Roboto",
+        "fontSize": 7,
+        "fontColor": "#6b7280",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "lineHeight": 1.3,
+        "characterSpacing": 0.6,
+        "readOnly": true
+      },
+      {
+        "type": "text",
+        "name": "paymentLabels",
+        "content": "Account name\nBank\nBSB\nAccount number\nReference",
+        "position": {
+          "x": 20,
+          "y": 216
+        },
+        "width": 30,
+        "height": 22,
+        "fontName": "Roboto",
+        "fontSize": 8.5,
+        "fontColor": "#6b7280",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "lineHeight": 1.3,
+        "characterSpacing": 0,
+        "readOnly": true
+      },
+      {
+        "type": "multiVariableText",
+        "name": "paymentValues",
+        "content": "",
+        "position": {
+          "x": 52,
+          "y": 216
+        },
+        "width": 70,
+        "height": 22,
+        "fontName": "Roboto",
+        "fontSize": 8.5,
+        "fontColor": "#111827",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "lineHeight": 1.3,
+        "characterSpacing": 0,
+        "readOnly": false,
+        "text": "{bankAccountName}\n{bankName}\n{bankBsb}\n{bankAccountNumber}\n{paymentReference}",
+        "variables": [
+          "bankAccountName",
+          "bankName",
+          "bankBsb",
+          "bankAccountNumber",
+          "paymentReference"
+        ]
+      },
+      {
+        "type": "text",
+        "name": "totalDueLabel",
+        "content": "TOTAL AMOUNT DUE",
+        "position": {
+          "x": 120,
+          "y": 209
+        },
+        "width": 70,
+        "height": 4,
+        "fontName": "Roboto",
+        "fontSize": 7,
+        "fontColor": "#6b7280",
+        "alignment": "right",
+        "verticalAlignment": "top",
+        "lineHeight": 1.3,
+        "characterSpacing": 0.6,
+        "readOnly": true
+      },
+      {
+        "type": "multiVariableText",
+        "name": "totalDue",
+        "content": "",
+        "position": {
+          "x": 120,
+          "y": 215
+        },
+        "width": 70,
+        "height": 11,
+        "fontName": "Roboto",
+        "fontSize": 17,
+        "fontColor": "#111827",
+        "alignment": "right",
+        "verticalAlignment": "top",
+        "lineHeight": 1.3,
+        "characterSpacing": 0,
+        "readOnly": false,
+        "text": "{totalDue}",
+        "variables": [
+          "totalDue"
+        ]
+      },
+      {
+        "type": "text",
+        "name": "notice",
+        "content": "This statement summarises activity on your account for the period shown. It is not a tax invoice and raises no new charges. Every amount listed here appears on a tax invoice already issued to you. When making a payment, please quote the invoice number as the reference so it is applied correctly. If any entry looks wrong, contact us before paying and we will check it.",
+        "position": {
+          "x": 20,
+          "y": 244
+        },
+        "width": 170,
+        "height": 14,
+        "fontName": "Roboto",
+        "fontSize": 7.5,
+        "fontColor": "#6b7280",
+        "alignment": "left",
+        "verticalAlignment": "top",
+        "lineHeight": 1.4,
+        "characterSpacing": 0,
+        "readOnly": true
+      }
+    ]
+  ],
+  "basePdf": {
+    "width": 210,
+    "height": 297,
+    "padding": [
+      20,
+      20,
+      20,
+      20
+    ],
+    "staticSchema": [
+      {
+        "name": "pageNumber",
+        "type": "text",
+        "content": "{currentPage} / {totalPages}",
+        "position": {
+          "x": 20,
+          "y": 283
+        },
+        "width": 170,
+        "height": 5,
+        "fontName": "Roboto",
+        "fontSize": 8,
+        "fontColor": "#6b7280",
+        "alignment": "center",
+        "readOnly": true
+      }
+    ]
+  },
+  "pdfmeVersion": "5.5.6"
+}
