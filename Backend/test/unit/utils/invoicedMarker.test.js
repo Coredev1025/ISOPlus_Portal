@@ -105,7 +105,9 @@ describe('releaseItemClaim', () => {
     await claimItemsForInvoice({
       workspaceId: WS, boardId: BOARD, itemIds: ['a'], invoiceNumber: INVOICE, periodKey: PERIOD,
     });
-    await releaseItemClaim({ itemIds: ['a'], invoiceNumber: INVOICE });
+    await releaseItemClaim({
+      workspaceId: WS, boardId: BOARD, itemIds: ['a'], invoiceNumber: INVOICE,
+    });
     const row = await Item.findOne({ itemId: 'a' }).lean();
     expect(row.invoicedBy).toBeUndefined();
     expect(row.invoicedPeriodKey).toBeUndefined();
@@ -115,7 +117,28 @@ describe('releaseItemClaim', () => {
     await claimItemsForInvoice({
       workspaceId: WS, boardId: BOARD, itemIds: ['a'], invoiceNumber: INVOICE, periodKey: PERIOD,
     });
-    await releaseItemClaim({ itemIds: ['a'], invoiceNumber: OTHER_INVOICE });
+    await releaseItemClaim({
+      workspaceId: WS, boardId: BOARD, itemIds: ['a'], invoiceNumber: OTHER_INVOICE,
+    });
+    expect(await invoicedBy('a')).toBe(INVOICE);
+  });
+
+  it('is scoped to the workspace and board, matching the claim it reverses', async () => {
+    // The claim narrows by workspace + board + item; an unscoped release would
+    // reach outside that. itemId is a globally unique id today, which is the
+    // only reason the asymmetry was harmless — the release must not depend on
+    // that staying true.
+    await claimItemsForInvoice({
+      workspaceId: WS, boardId: BOARD, itemIds: ['a'], invoiceNumber: INVOICE, periodKey: PERIOD,
+    });
+    await releaseItemClaim({
+      workspaceId: 'other-ws', boardId: BOARD, itemIds: ['a'], invoiceNumber: INVOICE,
+    });
+    expect(await invoicedBy('a')).toBe(INVOICE);
+
+    await releaseItemClaim({
+      workspaceId: WS, boardId: 'other-board', itemIds: ['a'], invoiceNumber: INVOICE,
+    });
     expect(await invoicedBy('a')).toBe(INVOICE);
   });
 });

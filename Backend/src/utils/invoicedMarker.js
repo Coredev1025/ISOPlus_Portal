@@ -85,6 +85,23 @@ export async function claimItemsForInvoice({
 }
 
 /**
+ * Which invoice currently holds an item, or null if nobody does.
+ *
+ * Only for reporting a refusal. A caller that wants to *take* the item must go
+ * through `claimItemsForInvoice` — deciding on the strength of this read and
+ * then writing would be exactly the check-then-act race the conditional update
+ * exists to avoid.
+ */
+export async function claimHolder({ workspaceId, boardId, itemId }) {
+  const row = await Item.findOne({
+    workspaceId: mongoEq(String(workspaceId)),
+    boardId: mongoEq(String(boardId)),
+    itemId: mongoEq(String(itemId)),
+  }).select('invoicedBy').lean();
+  return row?.invoicedBy ?? null;
+}
+
+/**
  * Give back a claim this invoice made.
  *
  * Scoped to `invoiceNumber` deliberately: an unscoped clear would release
@@ -92,11 +109,21 @@ export async function claimItemsForInvoice({
  * successful — invoice holds, which would hand those items to the next run and
  * bill them twice. The failure this compensates for must not be able to cause
  * the failure it exists to prevent.
+ *
+ * Scoped to workspace and board for the same reason, and to match
+ * `claimItemsForInvoice` exactly — a compensating action that reaches wider
+ * than the action it reverses is a bug waiting for the day `itemId` stops
+ * being a globally unique id. It is unique today, which is the only reason the
+ * narrower filter changes nothing about current behaviour.
  */
-export async function releaseItemClaim({ itemIds, invoiceNumber }) {
+export async function releaseItemClaim({
+  workspaceId, boardId, itemIds, invoiceNumber,
+}) {
   if (!Array.isArray(itemIds) || itemIds.length === 0) return;
   await Item.updateMany(
     {
+      workspaceId: mongoEq(String(workspaceId)),
+      boardId: mongoEq(String(boardId)),
       itemId: { $in: itemIds.map((id) => mongoEq(String(id))) },
       invoicedBy: mongoEq(String(invoiceNumber)),
     },
@@ -107,14 +134,20 @@ export async function releaseItemClaim({ itemIds, invoiceNumber }) {
 /**
  * Mark items as invoiced, unconditionally.
  *
- * This is the manual path of section 3.3. Manual invoicing is how a late or
- * corrected item gets billed, and if it did not set the same marker the next
- * scheduled run would find those items unmarked and bill them a second time.
+ * **Not the manual path.** An earlier version of this comment said it was, and
+ * that reading makes the function look dangerous — an unconditional write that
+ * an operator could aim at items a completed invoice already holds, moving the
+ * marker and erasing the record of the first billing.
  *
- * Unconditional, unlike the claim: the operator has chosen these items and
- * produced a document for them, so the most recent invoice is the one that
- * owns them. Refusing here would leave the marker disagreeing with the invoice
- * the participant actually received.
+ * It has exactly one caller: `generateUnderClaim`, which uses it as the final
+ * step of the claim protocol — rewriting its own `pending:` token to the real
+ * invoice number once the document exists. Unconditional is safe there and
+ * only there, because the items being written are the ones this run already
+ * holds. Section 3.3's manual path goes through
+ * `invoicePdfSupport.saveInvoiceNumber`, which calls `claimItemsForInvoice`
+ * and is therefore conditional: it cannot take an item another invoice holds.
+ *
+ * If a second caller is ever added, it needs the conditional claim, not this.
  */
 export async function markItemsInvoiced({
   workspaceId, boardId, itemIds, invoiceNumber, periodKey = null,
