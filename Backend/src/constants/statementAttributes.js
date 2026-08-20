@@ -20,10 +20,19 @@ export const STATEMENT_AMOUNT_RECEIVED = 'Amount Received($)';
 /**
  * The date the payment is placed on.
  *
- * **Unconfirmed.** The attribute exists and is a date, but its name reads as
- * easily as "the date the payer received the invoice" as "the date we received
- * the money", and every row was empty when it was checked, so there was no data
- * to settle it. Masoud has been asked which it is.
+ * Verified against the running product: the attribute is configured as a date
+ * with format `31/03/2019` and "Include a Time Field" switched off, so it is
+ * **date-only**. Two consequences. Ordering within a day cannot come from this
+ * field, which is why `orderTransactions` falls back to a sequence tiebreaker
+ * — without it, a payment and an invoice on the same day could swap between
+ * renders. And a day is the finest granularity a statement row can claim,
+ * which matches the sample.
+ *
+ * **What it means is still unconfirmed.** The name reads as easily as "the date
+ * the payer received the invoice" as "the date we received the money". ISO+
+ * attributes carry no description field — the edit dialog exposes only name,
+ * format and the time toggle — and every row was empty on the board checked, so
+ * neither the definition nor the data settles it. Masoud has been asked.
  *
  * It is a single named constant precisely so that answer costs one line to
  * apply. If it turns out not to be the payment date, the fallback is
