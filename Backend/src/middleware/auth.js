@@ -46,16 +46,16 @@ function matchingScopes(scopes, presented) {
  * `scopes` is the ordered list of credentials this gate accepts; the admin gate
  * has exactly one, the scheduler gate one per EventBridge rule. The matched
  * entry is handed to `onMatch` so a gate can record what the presented key is
- * allowed to do. `requiredEnvVar` names the variable whose absence is a server
- * misconfiguration rather than a rejected request.
+ * allowed to do. A gate with none of its credentials configured is a server
+ * misconfiguration rather than a rejected request; `requiredMessage` is what
+ * the log line says when that happens.
  *
  * The variables are read per request, not captured at module load, because the
  * process environment is mutated by tests and by dotenv ordering.
  */
 const apiKeyValidator = ({
   scopes,
-  requiredEnvVar,
-  requiredMessage = `${requiredEnvVar} environment variable not set`,
+  requiredMessage = null,
   onMatch = null,
 }) => (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -67,9 +67,20 @@ const apiKeyValidator = ({
     return res.status(401).json({ message: 'Authorization header required' });
   }
 
-  if (!process.env[requiredEnvVar]) {
-    warn('Authentication-Service', `${requiredEnvVar} not configured`, {
-      error: requiredMessage,
+  // Configured means "at least one credential this gate accepts is set", not
+  // "one particular variable is set". The scheduler previously demanded the
+  // master SCHEDULER_API_KEY even when the per-kind keys were present, so an
+  // environment configured only for its EventBridge rules answered every tick
+  // with a 500 — which is exactly how dev sat unable to run.
+  //
+  // Still fails closed, and still loudly: with nothing configured no scope can
+  // match, so this is a 500 naming the accepted variables rather than a 401
+  // that reads like a bad key and sends the operator hunting the wrong thing.
+  const configured = scopes.filter(({ envVar }) => process.env[envVar]);
+  if (configured.length === 0) {
+    const names = scopes.map(({ envVar }) => envVar).join(', ');
+    warn('Authentication-Service', 'No API key configured for this route', {
+      error: requiredMessage ?? `None of these environment variables are set: ${names}`,
     }, req);
     return res.status(500).json({ message: 'Server configuration error' });
   }
@@ -104,7 +115,6 @@ const apiKeyValidator = ({
 /** Admin and webhook routes. */
 export const validateApiKey = apiKeyValidator({
   scopes: [{ envVar: 'Admin_API_Key', kinds: null }],
-  requiredEnvVar: 'Admin_API_Key',
 });
 
 /**
@@ -112,9 +122,8 @@ export const validateApiKey = apiKeyValidator({
  * Admin_API_Key deliberately: they live in EventBridge rules, rotate on their
  * own schedules, and leak a strictly smaller capability than the admin key.
  *
- * The presented key IS the scope: the master SCHEDULER_API_KEY (required
- * configuration — the boot warning in index.js keys on it) ticks every kind
- * and is what `npm run tick` sends; each per-kind key scopes its tick to its
+ * The presented key IS the scope: the master SCHEDULER_API_KEY ticks every
+ * kind and is what `npm run tick` sends; each per-kind key scopes its tick to its
  * own kind, so the invoice rule cannot fire statement schedules by
  * misconfiguration. An unset or blank per-kind variable simply makes that key
  * unavailable — the non-empty check in matchingScopes is what stops a blank
@@ -128,13 +137,13 @@ const SCHEDULER_KEY_SCOPES = [
 
 export const validateSchedulerApiKey = apiKeyValidator({
   scopes: SCHEDULER_KEY_SCOPES,
-  requiredEnvVar: 'SCHEDULER_API_KEY',
-  // Named explicitly because the per-kind keys look like a substitute for it
-  // and are not: an environment configured with only SCHEDULER_API_KEY_INVOICE
-  // gets a 500 here, and "Server configuration error" alone sends the operator
-  // looking at the wrong variable.
+  // Any one of the three is enough. SCHEDULER_API_KEY is no longer required
+  // alongside the per-kind keys: an environment wired only for its invoice and
+  // statement EventBridge rules is a legitimate deployment, and demanding the
+  // master key there turned every tick into a 500.
   requiredMessage:
-    'SCHEDULER_API_KEY is required even when per-kind scheduler keys are configured',
+    'Set SCHEDULER_API_KEY for a gate over every kind, or SCHEDULER_API_KEY_INVOICE / '
+    + 'SCHEDULER_API_KEY_STATEMENT to scope a tick to one kind',
   onMatch: (req, scope) => {
     req.schedulerKinds = scope.kinds;
   },

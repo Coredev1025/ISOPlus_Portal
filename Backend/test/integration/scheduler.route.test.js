@@ -212,10 +212,17 @@ describe('POST /api/scheduler/tick', () => {
     );
   });
 
-  it('names the master key when it is the only thing missing', async () => {
-    // An operator who configured only the per-kind rules gets a bare 500 and
-    // "Server configuration error". The log line has to say which variable,
-    // and that the per-kind keys do not substitute for it.
+  it('accepts a per-kind key when the master key is not configured', async () => {
+    // This assertion is the reverse of what it was. It used to require
+    // SCHEDULER_API_KEY alongside the per-kind keys, on the reasoning that the
+    // per-kind ones "do not substitute for it".
+    //
+    // That reasoning did not survive contact with a deployment. An environment
+    // wired only for its invoice and statement EventBridge rules is a
+    // legitimate one, and demanding the master key there answered every tick
+    // with a 500 — which is precisely how dev sat unable to run anything. The
+    // expectation was wrong, not the deployment: any credential this gate
+    // accepts is now enough to authenticate a tick, scoped to that key's kind.
     delete process.env.SCHEDULER_API_KEY;
     process.env.SCHEDULER_API_KEY_INVOICE = 'test-invoice-key';
 
@@ -223,11 +230,26 @@ describe('POST /api/scheduler/tick', () => {
       .post('/api/scheduler/tick')
       .set('Authorization', 'test-invoice-key');
 
+    expect(res.status).toBe(200);
+  });
+
+  it('still refuses when no scheduler credential is configured at all', async () => {
+    // The guard the change must not lose. Nothing configured is a
+    // misconfigured deployment, and it has to say so — a 401 here would read
+    // as a bad key and send the operator hunting the wrong problem.
+    delete process.env.SCHEDULER_API_KEY;
+    delete process.env.SCHEDULER_API_KEY_INVOICE;
+    delete process.env.SCHEDULER_API_KEY_STATEMENT;
+
+    const res = await request(app)
+      .post('/api/scheduler/tick')
+      .set('Authorization', 'anything');
+
     expect(res.status).toBe(500);
     expect(warn).toHaveBeenCalledWith(
       'Authentication-Service',
-      'SCHEDULER_API_KEY not configured',
-      { error: expect.stringMatching(/SCHEDULER_API_KEY is required even when per-kind/i) },
+      'No API key configured for this route',
+      { error: expect.stringMatching(/SCHEDULER_API_KEY_INVOICE/) },
       expect.anything(),
     );
   });
