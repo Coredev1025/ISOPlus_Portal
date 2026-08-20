@@ -55,6 +55,14 @@ const PDFLinkSchema = new Schema({
     // Distinct from `type`, which is the document kind (NDIS Invoice, Age Care
     // Invoice, Monthly Statement).
     invoiceType: { type: String },
+    // The figure this document billed, as a number. Written by the scheduled
+    // generators, which are the only paths that know it: the Age Care total is
+    // the participant contribution on most boards and the full service amount
+    // on Low Cat, so it cannot be re-derived from the items without
+    // replicating that branch. Section 4.2 of the invoice selection spec asks
+    // the statement to carry the billed figure through unchanged, and this is
+    // where it is carried.
+    invoiceTotal: { type: Number },
     invoiceNumber: { type: String },
     // The number Xero gave the DRAFT this document was pushed as, when the
     // workspace's send method is 'accounting'. It is the idempotency key for

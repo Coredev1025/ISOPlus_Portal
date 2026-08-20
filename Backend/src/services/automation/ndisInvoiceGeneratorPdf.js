@@ -110,7 +110,7 @@ export async function generateNdisInvoiceGeneratorPdf({
   const invoiceDate = invoiceDateRaw ? String(invoiceDateRaw).replace('Z', '') : '';
   const dueDate = resolveDueDate(invoiceDateRaw, dueDateInput);
 
-  const fileUrl = await renderAndUploadNdisInvoice({
+  const { fileUrl, invoiceTotal } = await renderAndUploadNdisInvoice({
     business,
     workspaceId,
     boardId,
@@ -132,6 +132,7 @@ export async function generateNdisInvoiceGeneratorPdf({
   return {
     invoiceNumber,
     fileUrl,
+    invoiceTotal,
     itemCount: masterItems.length,
     lineCount: allRows.length,
   };
@@ -147,7 +148,11 @@ async function renderAndUploadNdisInvoice({
 
   const { ordersArr, subTotal } = buildNdisInvoiceOrders(enrichedRows, timezone);
   const gstTotal = formatInvoiceMoney(0);
-  const total = formatInvoiceMoney(Number(subTotal) + Number(gstTotal));
+  // Kept as a number as well as the formatted string: the statement of account
+  // carries the figure the invoice billed through unchanged rather than
+  // recomputing it from the source items.
+  const invoiceTotal = Number(subTotal) + Number(gstTotal);
+  const total = formatInvoiceMoney(invoiceTotal);
   const pdfBytes = await generate({
     template,
     inputs: [{
@@ -189,7 +194,10 @@ async function renderAndUploadNdisInvoice({
   if (uploadResult?.$metadata?.httpStatusCode !== 200) {
     throw new Error('Upload of PDF failed, please provide correct information.');
   }
-  return getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
+  return {
+    fileUrl: await getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ),
+    invoiceTotal,
+  };
 }
 
 async function persistGeneratedInvoice({

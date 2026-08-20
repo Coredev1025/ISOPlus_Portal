@@ -713,6 +713,11 @@ describe('generateParticipantTaxInvoicePdf', () => {
       invoiceNumber: 'INV-1001 (ISO+™)',
       fileUrl: 'https://s3.example.com/signed/invoice.pdf',
       itemCount: 2,
+      // The figure this invoice billed — the participant contribution, since
+      // this is not a Low Cat board. Returned so the statement of account can
+      // carry it through unchanged instead of re-deriving which of the two
+      // totals applies.
+      invoiceTotal: 45.75,
     });
   });
 

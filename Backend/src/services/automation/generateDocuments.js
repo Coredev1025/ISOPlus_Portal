@@ -129,7 +129,7 @@ async function existingSlotResults(workspaceId, boardId, periodKey, type) {
  */
 async function recordPdfLinks({
   workspaceId, boardId, itemIds, periodKey, invoiceNumber, participant, pdfUrl, type,
-  period, invoiceType,
+  period, invoiceType, invoiceTotal,
 }) {
   await Promise.all(itemIds.map((itemId) => PDFLink.create({
     workspaceId,
@@ -140,6 +140,10 @@ async function recordPdfLinks({
     periodStart: period?.start ? new Date(period.start) : undefined,
     periodEnd: period?.end ? new Date(period.end) : undefined,
     invoiceType: invoiceType ?? undefined,
+    // The figure the invoice billed. Recorded once, on the row that represents
+    // the document, so the statement never has to recompute it — the Age Care
+    // total in particular depends on whether the board is Low Cat.
+    invoiceTotal: Number.isFinite(Number(invoiceTotal)) ? Number(invoiceTotal) : undefined,
     invoiceNumber,
     participant,
     pdfLink: pdfUrl,
@@ -242,6 +246,7 @@ async function generateNdisGeneratorInvoices({
       period,
       invoiceType,
       invoiceNumber: generated.invoiceNumber,
+      invoiceTotal: generated.invoiceTotal,
       participant: group.participant,
       pdfUrl: generated.fileUrl,
       type: PDFLINK_TYPE_NDIS_INVOICE,
@@ -301,7 +306,11 @@ async function produceAgeCareInvoice({
   });
   const body = captured.body;
   if (!body?.fileUrl) return { empty: true };
-  return { invoiceNumber: body.invoiceNumber, fileUrl: body.fileUrl };
+  return {
+    invoiceNumber: body.invoiceNumber,
+    fileUrl: body.fileUrl,
+    invoiceTotal: body.invoiceTotal,
+  };
 }
 
 async function generateAgeCareGeneratorInvoices({
@@ -353,6 +362,7 @@ async function generateAgeCareGeneratorInvoices({
       period,
       invoiceType,
       invoiceNumber: generated.invoiceNumber,
+      invoiceTotal: generated.invoiceTotal,
       participant: group.participant,
       pdfUrl: generated.fileUrl,
       type: PDFLINK_TYPE_AGE_CARE_INVOICE,

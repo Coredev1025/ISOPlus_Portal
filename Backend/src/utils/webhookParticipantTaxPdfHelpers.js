@@ -302,9 +302,13 @@ export async function generateParticipantTaxInvoicePdf({
     return res.status(400).json({ message: 'There is nothing to invoice!' });
   }
 
-  const subtotalValue = isLowCatBoard
-    ? formatCurrencyValue(totalAmountSum)
-    : formatCurrencyValue(totalParticipantContribution);
+  // Low Cat bills the full service amount; every other Age Care board bills
+  // only the participant's contribution. Kept as a number alongside the
+  // formatted string because the statement of account has to carry the figure
+  // the invoice billed through unchanged rather than recompute it — and
+  // recomputing would mean replicating this branch in a second place.
+  const invoiceTotalRaw = isLowCatBoard ? totalAmountSum : totalParticipantContribution;
+  const subtotalValue = formatCurrencyValue(invoiceTotalRaw);
   const totalAUDValue = subtotalValue;
 
   const billingContact = (receiverName && receiverName.trim() !== '' && receiverName.trim() !== ' ')
@@ -389,6 +393,7 @@ export async function generateParticipantTaxInvoicePdf({
     invoiceNumber: `${invoiceNumber} (ISO+™)`,
     fileUrl,
     itemCount: dbItems.length,
+    invoiceTotal: Number(invoiceTotalRaw) || 0,
   });
 }
 

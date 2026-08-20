@@ -40,10 +40,12 @@
  * keeps those outside the index entirely, so this cannot fail against existing
  * data.
  *
- * **No backfill.** `periodStart`, `periodEnd` and `invoiceType` are optional
- * and absent on every existing row. Nothing reads them for a document that
- * predates the feature: `periodKey` remains the slot lookup, and these three
- * are the audit trail for what a period actually covered.
+ * **No backfill.** `periodStart`, `periodEnd`, `invoiceType` and `invoiceTotal`
+ * are optional and absent on every existing row. Nothing reads them for a
+ * document that predates the feature: `periodKey` remains the slot lookup, and
+ * the rest are the audit trail for what a period covered and what it billed.
+ * `invoiceTotal` in particular cannot be backfilled — the figure an old
+ * invoice billed is in its PDF, not in any collection.
  */
 
 const INDEX_NAME = 'automation_period_item_unique';
@@ -83,6 +85,8 @@ export async function down(connection) {
 
   await collection.updateMany(
     { periodStart: { $exists: true } },
-    { $unset: { periodStart: '', periodEnd: '', invoiceType: '' } },
+    { $unset: {
+      periodStart: '', periodEnd: '', invoiceType: '', invoiceTotal: '',
+    } },
   );
 }
