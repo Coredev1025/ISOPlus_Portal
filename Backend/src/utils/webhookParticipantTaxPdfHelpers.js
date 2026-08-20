@@ -14,6 +14,8 @@ import { logAuditTrail } from '../utils/auditLogger.js';
 import { claimDocumentNumber } from '../utils/documentNumberAllocator.js';
 import { extractRefId as extractNdisRefId } from '../utils/ndisServiceRecords.js';
 import { mongoEq } from '../utils/securityHelpers.js';
+import { invoicePeriodSuffix } from '../utils/invoicePeriodSuffix.js';
+import { DEFAULT_TIMEZONE } from '../constants/scheduler.js';
 import {
   GENERATED_DOCUMENT_PUBLIC_READ,
   GENERATED_PDF_URL_EXPIRY_SECONDS,
@@ -363,11 +365,16 @@ export async function generateParticipantTaxInvoicePdf({
     plugins: { text, image, line, table, multiVariableText },
   });
 
+  // '' for manual generation, which carries no period — so those keys are
+  // byte-identical to before and the PDFLink rows storing them stay valid.
+  const periodSuffix = invoicePeriodSuffix(
+    req.body?.period, business?.headOfficeTimezone || DEFAULT_TIMEZONE,
+  );
   const filename = buildOutputKey({
     workspaceId,
     boardId,
     type: OUTPUT_TYPE.PARTICIPANT_INVOICE,
-    name: `${invoiceNumber + '-ISO+™-' + participantName.replace(/\s+/g, '-')}.pdf`,
+    name: `${invoiceNumber + '-ISO+™-' + participantName.replace(/\s+/g, '-')}${periodSuffix}.pdf`,
   });
   const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, GENERATED_DOCUMENT_PUBLIC_READ);
   if (uploadResult['$metadata'].httpStatusCode !== 200) {

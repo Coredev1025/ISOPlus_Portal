@@ -242,6 +242,7 @@ async function generateNdisGeneratorInvoices({
         participantName: group.participant,
         invoiceDate: dates.invoiceDate,
         dueDate: dates.dueDate,
+        period,
       }),
     });
     // Null covers both "everything was already invoiced" and "the generator
@@ -294,7 +295,7 @@ function captureRes() {
  * keeps that quirk out of the claim helper.
  */
 async function produceAgeCareInvoice({
-  workspaceId, boardId, business, dates, isLowCatBoard, itemIds,
+  workspaceId, boardId, business, dates, isLowCatBoard, itemIds, period = null,
 }) {
   const dbItems = await Item.find({
     workspaceId: mongoEq(String(workspaceId)),
@@ -305,7 +306,7 @@ async function produceAgeCareInvoice({
 
   const { res, captured } = captureRes();
   await generateParticipantTaxInvoicePdf({
-    req: { body: { invoiceDate: dates.invoiceDate, dueDate: dates.dueDate } },
+    req: { body: { invoiceDate: dates.invoiceDate, dueDate: dates.dueDate, period } },
     res,
     workspaceId,
     boardId,
@@ -360,7 +361,7 @@ async function generateAgeCareGeneratorInvoices({
       periodKey,
       participant: group.participant,
       produce: (claimedItemIds) => produceAgeCareInvoice({
-        workspaceId, boardId, business, dates, isLowCatBoard, itemIds: claimedItemIds,
+        workspaceId, boardId, business, dates, isLowCatBoard, itemIds: claimedItemIds, period,
       }),
     });
     if (!generated) continue;

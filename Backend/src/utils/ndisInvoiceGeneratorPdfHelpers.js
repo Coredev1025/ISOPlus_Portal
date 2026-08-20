@@ -84,11 +84,16 @@ export function buildNdisInvoiceOrders(enrichedRows, timezone) {
   return { ordersArr, subTotal: formatInvoiceMoney(subTotalNum) };
 }
 
-export function ndisInvoicePdfFilename(workspaceId, boardId, invoiceNumberBase, participantName) {
+export function ndisInvoicePdfFilename(
+  workspaceId, boardId, invoiceNumberBase, participantName, periodSuffix = '',
+) {
   const safeSuffix = (participantName || 'Multiple')
     .replace(/[^a-zA-Z0-9-_]+/g, '_')
     .slice(0, 40);
-  return `output/${workspaceId}/${boardId}/NDIS-invoices/${invoiceNumberBase}-ISO+™-${safeSuffix}.pdf`;
+  // `periodSuffix` is '' for manual generation, which has no period — so those
+  // keys are byte-identical to before, and the PDFLink rows already storing
+  // them stay valid.
+  return `output/${workspaceId}/${boardId}/NDIS-invoices/${invoiceNumberBase}-ISO+™-${safeSuffix}${periodSuffix}.pdf`;
 }
 
 export function resolveDueDate(invoiceDateRaw, dueDateRaw) {

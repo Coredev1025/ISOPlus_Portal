@@ -37,6 +37,7 @@ import {
   saveInvoiceNumber,
 } from '../../utils/invoicePdfSupport.js';
 import { DEFAULT_TIMEZONE } from '../../constants/scheduler.js';
+import { invoicePeriodSuffix } from '../../utils/invoicePeriodSuffix.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -64,6 +65,7 @@ export async function generateNdisInvoiceGeneratorPdf({
   participantName: fallbackName,
   invoiceDate: invoiceDateInput,
   dueDate: dueDateInput,
+  period = null,
 }) {
   const business = await Business.findOne({ workspaceId: mongoEq(workspaceId) });
   if (!business) throw new Error('Business not found');
@@ -123,6 +125,7 @@ export async function generateNdisInvoiceGeneratorPdf({
     enrichedRows: enrichNdisInvoiceGeneratorRows(
       allRows, buildMasterItemsMap(masterItems), timezone,
     ),
+    periodSuffix: invoicePeriodSuffix(period, timezone),
   });
 
   await persistGeneratedInvoice({
@@ -140,7 +143,7 @@ export async function generateNdisInvoiceGeneratorPdf({
 
 async function renderAndUploadNdisInvoice({
   business, workspaceId, boardId, invoiceNumberBase, participantName,
-  clientDetails, invoiceDate, dueDate, timezone, enrichedRows,
+  clientDetails, invoiceDate, dueDate, timezone, enrichedRows, periodSuffix = '',
 }) {
   const templatePath = path.join(__dirname, '..', '..', 'assets', 'NDISinvoice.json');
   const template = JSON.parse(await readFile(templatePath, 'utf8'));
@@ -188,7 +191,7 @@ async function renderAndUploadNdisInvoice({
   });
 
   const filename = ndisInvoicePdfFilename(
-    workspaceId, boardId, invoiceNumberBase, participantName,
+    workspaceId, boardId, invoiceNumberBase, participantName, periodSuffix,
   );
   const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, GENERATED_DOCUMENT_PUBLIC_READ);
   if (uploadResult?.$metadata?.httpStatusCode !== 200) {

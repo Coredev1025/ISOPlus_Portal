@@ -125,3 +125,51 @@ describe('an unrecognised kind', () => {
     expect(body).toContain('Martin Space');
   });
 });
+
+describe('the Automation Settings form wins over these defaults', () => {
+  // The WYSIWYG Email Message and Email Subject are the source of truth. These
+  // defaults exist only to fill a blank — a workspace that has written its own
+  // copy must never have it replaced or appended to.
+  it('composeRecord uses the block values when they are set', async () => {
+    const { composeRecord } = await import('../../../src/services/email/backends.js');
+
+    const record = composeRecord({
+      kind: KIND_INVOICE,
+      workspaceId: 'ws',
+      boardId: 'b',
+      periodKey: '2026-08',
+      businessName: 'ISO Consulting Services',
+      boardName: 'Care Management',
+      recipientKey: 'Martin Space',
+      documentNumbers: ['INV-1004'],
+      block: {
+        emailSubject: 'Our own subject',
+        emailMessage: '<p>Our own <strong>WYSIWYG</strong> body.</p>',
+      },
+    });
+
+    expect(record.subject).toBe('Our own subject');
+    expect(record.body).toBe('<p>Our own <strong>WYSIWYG</strong> body.</p>');
+    // Nothing of the default leaks in alongside it.
+    expect(record.body).not.toMatch(/Hello Martin Space/);
+  });
+
+  it('falls back to the default only when the form value is blank', async () => {
+    const { composeRecord } = await import('../../../src/services/email/backends.js');
+
+    const record = composeRecord({
+      kind: KIND_INVOICE,
+      workspaceId: 'ws',
+      boardId: 'b',
+      periodKey: '2026-08',
+      businessName: 'ISO Consulting Services',
+      boardName: 'Care Management',
+      recipientKey: 'Martin Space',
+      documentNumbers: ['INV-1004'],
+      block: { emailSubject: '', emailMessage: '' },
+    });
+
+    expect(record.subject).toBe('Invoice INV-1004 from ISO Consulting Services');
+    expect(record.body).toMatch(/Hello Martin Space/);
+  });
+});
