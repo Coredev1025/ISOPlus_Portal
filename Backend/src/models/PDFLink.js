@@ -42,6 +42,19 @@ const PDFLinkSchema = new Schema({
     // the generator list can still resolve the email's {{client_name}}.
     participant: { type: String },
     periodKey: { type: String },
+    // ── The period this document covers (invoice selection spec, 3.2) ───────
+    // periodKey is the slot's identity and is what the replay lookup matches
+    // on; these two are the actual bounds the selection ran against, kept so a
+    // billing query ("what window produced this invoice") can be answered from
+    // the document rather than by re-deriving it from the schedule, which may
+    // since have changed cadence.
+    periodStart: { type: Date },
+    periodEnd: { type: Date },
+    // Which of the five invoice types' conditions selected the items on this
+    // document — one of the INVOICE_TYPE_* values in constants/invoiceSelection.js.
+    // Distinct from `type`, which is the document kind (NDIS Invoice, Age Care
+    // Invoice, Monthly Statement).
+    invoiceType: { type: String },
     invoiceNumber: { type: String },
     // The number Xero gave the DRAFT this document was pushed as, when the
     // workspace's send method is 'accounting'. It is the idempotency key for
