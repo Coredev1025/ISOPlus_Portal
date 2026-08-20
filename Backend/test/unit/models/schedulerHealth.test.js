@@ -12,7 +12,13 @@ describe('SchedulerHealth model', () => {
 
   it('refuses a second document with the same key', async () => {
     await SchedulerHealth.create({ key: SCHEDULER_HEALTH_KEY });
-    await SchedulerHealth.syncIndexes();
+    // init(), not syncIndexes(): syncIndexes diffs against listIndexes, which
+    // already shows autoIndex's in-flight build of this same index — so under
+    // load it returns before the build commits and the duplicate insert
+    // succeeds, failing this test only in a full-suite run. init() awaits the
+    // schema's own index builds. scheduledJob.test.js carries the same note
+    // for the same reason.
+    await SchedulerHealth.init();
 
     await expect(SchedulerHealth.create({ key: SCHEDULER_HEALTH_KEY })).rejects.toThrow();
   });
