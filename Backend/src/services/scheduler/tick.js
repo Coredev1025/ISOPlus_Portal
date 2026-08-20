@@ -159,7 +159,7 @@ async function claimAtMostOnce(candidate, now, excludeIds, stats) {
  * fan-out does — must use the claimed row, not leftover Invoice Generator
  * filters and not the server's zone.
  */
-async function dispatch(job, now) {
+async function dispatch(job, now, bypassEmail = null) {
   const { handler } = resolve(job.kind);
   await handler({
     kind: job.kind,
@@ -168,6 +168,8 @@ async function dispatch(job, now) {
     timezone: job.timezone,
     scheduledFor: job.dueAt,
     schedule: job.schedule,
+    // Absent unless this tick asked for it, so a normal run carries nothing.
+    ...(bypassEmail ? { bypassEmail } : {}),
   });
   await recordSuccess(job, job.policy, now);
 }
@@ -201,7 +203,9 @@ async function countHeldBack(now, heldKinds) {
  * Claim every due schedule, up to `limit`, and dispatch each one. `kinds`
  * (an array, or null for all) scopes the claim to those kinds only.
  */
-export async function runTick({ now = new Date(), limit = BATCH_LIMIT, kinds = null } = {}) {
+export async function runTick({
+  now = new Date(), limit = BATCH_LIMIT, kinds = null, bypassEmail = null,
+} = {}) {
   // Two lists, deliberately. `excludeIds` also collects rows we lost a race
   // for, which must not count towards the batch cap or the claimed total.
   const excludeIds = [];
@@ -221,7 +225,7 @@ export async function runTick({ now = new Date(), limit = BATCH_LIMIT, kinds = n
     excludeIds.push(job._id);
 
     try {
-      await dispatch(job, now);
+      await dispatch(job, now, bypassEmail);
       stats.dispatched += 1;
     } catch (err) {
       stats.failed += 1;

@@ -22,7 +22,9 @@ function pickerForJob(schedule) {
  * sync, not billing), so whether a board has anything to bill is the generation
  * step's question.
  */
-export function buildFanOutSpecs({ kind, workspaceId, boards, slot, timezone, schedule }) {
+export function buildFanOutSpecs({
+  kind, workspaceId, boards, slot, timezone, schedule, bypassEmail = null,
+}) {
   const periodKey = automationPeriodKey({ slot, timezone });
   const prefix = KIND_PREFIX[kind];
   const picker = pickerForJob(schedule);
@@ -37,6 +39,11 @@ export function buildFanOutSpecs({ kind, workspaceId, boards, slot, timezone, sc
       periodKey,
       timezone,
       ...(picker ? { schedule: picker } : {}),
+      // Rides on the job so the worker, which runs long after the tick has
+      // returned, still knows this run was redirected. Omitted entirely when
+      // unset, so an ordinary job's payload is unchanged and its jobId-based
+      // dedupe is unaffected.
+      ...(bypassEmail ? { bypassEmail } : {}),
     },
     opts: { jobId: `${prefix}:${board.boardId}:${periodKey}` },
   }));

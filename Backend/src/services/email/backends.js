@@ -139,15 +139,29 @@ async function recordSend({ messageId, kind, workspaceId, boardId, periodKey, re
 export const sesBackend = {
   name: 'ses',
   async deliver(message) {
-    const { workspaceId, boardId, kind, periodKey, block, recipientKey = null } = message;
+    const {
+      workspaceId, boardId, kind, periodKey, block, recipientKey = null, bypassEmail = null,
+    } = message;
     const record = composeRecord(message);
 
-    const recipient = await resolveRecipient({
-      workspaceId,
-      boardId,
-      participant: recipientKey,
-      recipientType: block?.recipient,
-    });
+    // The tick's recipient override. When present it replaces the resolved
+    // address entirely, so a deployment can be verified end to end without a
+    // message reaching a participant. Logged at warn every time, and never
+    // defaulted: it only applies when a tick explicitly asked for it.
+    const recipient = bypassEmail?.length
+      ? { address: bypassEmail.join(', '), source: 'bypass_email' }
+      : await resolveRecipient({
+        workspaceId,
+        boardId,
+        participant: recipientKey,
+        recipientType: block?.recipient,
+      });
+
+    if (bypassEmail?.length) {
+      warn(LOG_SCOPE, 'bypassEmail is set; sending to the override address instead of the participant', {
+        kind, workspaceId, boardId, periodKey, to: recipient.address, participant: recipientKey,
+      });
+    }
 
     if (!recipient.address) {
       warn(LOG_SCOPE, 'No recipient address; nothing sent', {
