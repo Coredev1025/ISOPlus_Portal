@@ -177,6 +177,16 @@ describe('formatBusinessProfileResponse', () => {
       invoiceStatementAutomation: true,
     });
   });
+
+  it('omits leftover xeroConnectionLogs so the profile API is not a log store', async () => {
+    const response = await formatBusinessProfileResponse({
+      workspaceId: 'ws_4821',
+      name: 'Hillsgrade Care Services',
+      xeroConnectionLogs: [{ message: 'Connected', outcome: 'success' }],
+    });
+
+    expect(response).not.toHaveProperty('xeroConnectionLogs');
+  });
 });
 
 describe('resolveQrLogoField', () => {

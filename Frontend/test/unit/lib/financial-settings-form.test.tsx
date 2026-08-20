@@ -184,4 +184,12 @@ describe('FinancialSettingsForm', () => {
     expect(onSequenceNextChange).toHaveBeenCalledWith('quote', 3001);
     expect(onSequenceNextChange).toHaveBeenCalledWith('statement', 4001);
   });
+
+  it('allows a next number of 0 on invoice, PO, quote and statement inputs', () => {
+    const { container } = renderForm();
+    expect(container.querySelector('#invoice-next')).toHaveAttribute('min', '0');
+    expect(container.querySelector('#po-next')).toHaveAttribute('min', '0');
+    expect(container.querySelector('#quote-next')).toHaveAttribute('min', '0');
+    expect(container.querySelector('#statement-next')).toHaveAttribute('min', '0');
+  });
 });

@@ -139,7 +139,7 @@ describe('FinancialSettingsPanel', () => {
 
     await user.click(screen.getByRole('button', { name: /restore defaults/i }));
     expect(await screen.findByDisplayValue('STM-')).toBeInTheDocument();
-    expect(screen.getAllByDisplayValue('1000').length).toBeGreaterThan(0);
+    expect(screen.getAllByDisplayValue('1000').length).toBeGreaterThanOrEqual(4);
 
     await user.click(screen.getByRole('button', { name: /save changes/i }));
 

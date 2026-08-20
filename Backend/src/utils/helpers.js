@@ -189,14 +189,24 @@ export async function processParallel(items, processor, concurrencyLimit = 50) {
     return results;
 }
 
+export function stripTrailingSlashes(value) {
+    if (typeof value !== 'string') return '';
+    return value.replace(/\/+$/, '');
+}
+
+export function getAllowedOrigins() {
+    return (process.env.ALLOWED_ORIGINS || '')
+        .split(/[\s,]+/)
+        .filter(Boolean)
+        .map(stripTrailingSlashes);
+}
+
 export function getFrontendBaseUrl() {
     const explicit = process.env.FRONTEND_URL;
-    if (explicit) return explicit.replace(/\/+$/, '');
+    if (explicit) return stripTrailingSlashes(explicit);
 
-    const origins = (process.env.ALLOWED_ORIGINS || '')
-        .split(/[\s,]+/)
-        .filter(Boolean);
-    if (origins.length > 0) return origins[0].replace(/\/+$/, '');
+    const origins = getAllowedOrigins();
+    if (origins.length > 0) return origins[0];
 
     return 'http://localhost:3000';
 }

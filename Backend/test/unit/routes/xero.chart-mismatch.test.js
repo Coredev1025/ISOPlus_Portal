@@ -32,6 +32,7 @@ vi.mock('../../../src/services/xero.js', () => ({
   createQuote: vi.fn(),
   createPurchaseOrder: vi.fn(),
   getAuthUrl: vi.fn(),
+  createXeroOAuthClient: vi.fn(async () => ({})),
   refreshTokenSet: vi.fn(),
   callback: vi.fn(),
   getContactByEmail: vi.fn(),

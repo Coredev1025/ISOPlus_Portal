@@ -13,7 +13,16 @@ test.describe('signed-out visitor', () => {
     // Epic 3 — Financial Settings lives here; signed-out visitors must not see
     // relocated bank / document-numbering values from the seed.
     '/workspace/55369/finance-settings',
+    // Epic 4 — Accounting Integrations tab (Connect Xero / mapping) same shell.
+    '/workspace/55369/finance-settings?tab=accounting',
   ];
+
+  test('accounting integrations does not render Xero logs inline', async ({ page }) => {
+    await page.goto('/workspace/55369/finance-settings?tab=accounting');
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('heading', { name: 'Connection activity' })).toHaveCount(0);
+    await expect(page.getByRole('dialog', { name: /xero logs/i })).toHaveCount(0);
+  });
 
   for (const path of protectedPaths) {
     test(`${path} leaks no workspace data server-side`, async ({ page }) => {
@@ -38,6 +47,12 @@ test.describe('signed-out visitor', () => {
     // renders and the list is empty because every API call behind it 401s.
     expect(new URL(page.url()).pathname).toBe('/dashboard');
     await expect(page.getByText(/no workspaces match your search/i)).toBeVisible();
+  });
+
+  test('dashboard toasts a Xero OAuth return error from the query string', async ({ page }) => {
+    await page.goto('/dashboard?xero=error&reason=oauth_failed');
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByText('Failed to connect to Xero')).toBeVisible();
   });
 });
 

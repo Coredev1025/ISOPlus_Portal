@@ -16,7 +16,14 @@ import {
 } from "@/lib/xero-account-tax-mapping";
 import type { XeroLineItemMapping } from "@/lib/xero-account-tax-mapping-options";
 import { XeroDisabledSyncToggles } from "@/lib/xero-disabled-sync-toggles";
+import { XeroConnectionAuditLogs } from "@/lib/xero-connection-audit-logs";
+import { DEFAULT_BUSINESS_TIMEZONE } from "@/constants/timezone";
 import { showFetchErrorToast } from "@/lib/toast-utils";
+import {
+  describeXeroLoadError,
+  isCanceledError,
+  isExpectedMissingIntegrationData,
+} from "@/lib/xero-integration-errors";
 
 type ProviderTab = "xero" | "myob" | "quickbooks";
 
@@ -106,6 +113,7 @@ export function AccountingIntegrationsPanel({
   const [isConnected, setIsConnected] = useState(false);
   const [needsReconnect, setNeedsReconnect] = useState(false);
   const [mapping, setMapping] = useState<XeroLineItemMapping>(EMPTY_LINE_ITEM_MAPPING);
+  const [timezone, setTimezone] = useState(DEFAULT_BUSINESS_TIMEZONE);
 
   const loadProfile = useCallback(
     async (signal?: AbortSignal) => {
@@ -115,6 +123,9 @@ export function AccountingIntegrationsPanel({
       );
       setIsConnected(Boolean(response.data?.xeroIntegrated));
       setMapping(normalizeMapping(response.data?.xeroLineItemMapping));
+      if (response.data?.headOfficeTimezone) {
+        setTimezone(String(response.data.headOfficeTimezone));
+      }
     },
     [workspaceId]
   );
@@ -126,9 +137,16 @@ export function AccountingIntegrationsPanel({
         setLoading(true);
         await loadProfile(abortController.signal);
       } catch (error: unknown) {
-        const err = error as { name?: string };
-        if (err.name === "CanceledError" || err.name === "AbortError") return;
-        showFetchErrorToast("accounting integration settings");
+        if (isCanceledError(error)) return;
+        if (isExpectedMissingIntegrationData(error)) {
+          setIsConnected(false);
+          setNeedsReconnect(false);
+          return;
+        }
+        showFetchErrorToast(
+          "accounting integration settings",
+          describeXeroLoadError(error)
+        );
       } finally {
         if (!abortController.signal.aborted) setLoading(false);
       }
@@ -172,44 +190,54 @@ export function AccountingIntegrationsPanel({
       <ProviderSubTabs active={providerTab} onChange={setProviderTab} />
 
       {providerTab === "xero" ? (
-        <div className="flex flex-col gap-5 md:flex-row md:gap-6">
-          <div className="w-full flex-none border-b pb-4 text-center md:w-[190px] md:border-b-0 md:border-r md:pb-0 md:pr-4">
-            <div className="mx-auto mb-2.5 flex h-14 w-14 items-center justify-center overflow-hidden rounded-full">
-              <Image
-                src="/assets/xero-icon.png"
-                alt="Xero"
-                width={56}
-                height={56}
-                className="h-14 w-14 object-cover"
+        <>
+          <div className="flex flex-col gap-5 md:flex-row md:gap-6">
+            <div className="w-full flex-none border-b pb-4 text-center md:w-[190px] md:border-b-0 md:border-r md:pb-0 md:pr-4">
+              <div className="mx-auto mb-2.5 flex h-14 w-14 items-center justify-center overflow-hidden rounded-full">
+                <Image
+                  src="/assets/xero-icon.png"
+                  alt=""
+                  width={56}
+                  height={56}
+                  className="h-14 w-14 object-cover"
+                />
+              </div>
+              <h5 className="mb-2 text-[13px] font-bold">Xero</h5>
+              <ConnectionStatusDot
+                connected={isConnected}
+                needsReconnect={needsReconnect}
               />
             </div>
-            <ConnectionStatusDot
-              connected={isConnected}
-              needsReconnect={needsReconnect}
-            />
-          </div>
 
-          <div className="min-w-0 flex-1 space-y-5">
-            <XeroConnectSection
-              workspaceId={workspaceId}
-              isConnected={isConnected}
-              needsReconnect={needsReconnect}
-              onConnectedChange={setIsConnected}
-              onConnectionCleared={handleConnectionCleared}
-              onNeedsReconnectChange={setNeedsReconnect}
-            />
-            <div className="border-t" />
-            <XeroAccountTaxMapping
-              workspaceId={workspaceId}
-              isConnected={isConnected && !needsReconnect}
-              initialMapping={mapping}
-              onMappingSaved={setMapping}
-              onOptionsLoadFailed={handleOptionsLoadFailed}
-            />
-            <div className="border-t" />
-            <XeroDisabledSyncToggles />
+            <div className="min-w-0 flex-1 space-y-5">
+              <XeroConnectSection
+                workspaceId={workspaceId}
+                isConnected={isConnected}
+                needsReconnect={needsReconnect}
+                onConnectedChange={setIsConnected}
+                onConnectionCleared={handleConnectionCleared}
+                onNeedsReconnectChange={setNeedsReconnect}
+                extraActions={
+                  <XeroConnectionAuditLogs
+                    workspaceId={workspaceId}
+                    timezone={timezone}
+                    reloadKey={`${isConnected}:${needsReconnect}`}
+                  />
+                }
+              />
+              <div className="border-t" />
+              <XeroAccountTaxMapping
+                workspaceId={workspaceId}
+                isConnected={isConnected && !needsReconnect}
+                initialMapping={mapping}
+                onMappingSaved={setMapping}
+                onOptionsLoadFailed={handleOptionsLoadFailed}
+              />
+              <div className="border-t" />
+              <XeroDisabledSyncToggles />
+            </div>
           </div>
-        </div>
+        </>
       ) : null}
     </Card>
   );

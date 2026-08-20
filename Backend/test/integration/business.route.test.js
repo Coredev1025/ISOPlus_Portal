@@ -31,4 +31,31 @@ describe('Business routes', () => {
     expect(res.status).toBe(200);
     expect(res.body.name).toBe('Biz Co');
   });
+
+  it('omits leftover xeroConnectionLogs from the profile response', async () => {
+    await Business.collection.insertOne({
+      workspaceId: 'ws-logs',
+      name: 'Biz Co',
+      xeroConnectionLogs: [{ message: 'Connected', outcome: 'success' }],
+    });
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent.get('/api/business/profile').query({ workspaceId: 'ws-logs' });
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('Biz Co');
+    expect(res.body.xeroConnectionLogs).toBeUndefined();
+  });
+
+  it('does not expose POST /api/business/xero/connect', async () => {
+    const { agent } = await authenticatedAgent(app);
+    const res = await agent.post('/api/business/xero/connect').send({
+      workspaceId: 'ws-connect',
+      tenantId: 'tenant-1',
+      tokens: {
+        access_token: 'access',
+        refresh_token: 'refresh',
+        expires_at: Date.now() + 60_000,
+      },
+    });
+    expect(res.status).toBe(404);
+  });
 });

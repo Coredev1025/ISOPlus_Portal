@@ -14,6 +14,7 @@ import {
 } from "@/lib/finance-settings-page";
 import { fetchInvoiceStatementAutomationFlag } from "@/lib/workspace-feature-toggles";
 import Spinner from "@/components/ui/spin";
+import { XeroOAuthReturnBoundary } from "@/lib/xero-oauth-return-listener";
 
 function FinanceSettingsLoading() {
   return (
@@ -122,6 +123,7 @@ export default function FinanceSettingsPage() {
       <Header />
       <div className="container mx-auto px-4 py-8 sm:px-6 lg:px-8">
         <Suspense fallback={<FinanceSettingsLoading />}>
+          <XeroOAuthReturnBoundary />
           <FinanceSettingsContent />
         </Suspense>
       </div>

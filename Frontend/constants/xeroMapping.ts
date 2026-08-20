@@ -1,0 +1,10 @@
+/**
+ * ISO+ display defaults when Account code or Tax rate are not selected.
+ * Shown as Select placeholders only — never persisted unless the user picks them.
+ *
+ * Touchpoints: lib/xero-account-tax-mapping-options.ts
+ */
+export const XERO_DEFAULT_SALES_ACCOUNT_CODE = '200';
+export const XERO_DEFAULT_COGS_ACCOUNT_CODE = '310';
+export const XERO_DEFAULT_INCOME_TAX_TYPE = 'OUTPUT';
+export const XERO_DEFAULT_EXPENSE_TAX_TYPE = 'INPUT';

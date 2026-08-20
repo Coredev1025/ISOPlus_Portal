@@ -18,11 +18,19 @@ import {
   showSaveSuccessToast,
 } from "@/lib/toast-utils";
 import {
+  isCanceledError,
+  isExpectedMissingIntegrationData,
+  xeroOptionsLoadDescription,
+} from "@/lib/xero-integration-errors";
+import {
   normalizeMapping,
-  prepareMappingForSave,
   taxRatesForAccount,
+  accountsForDocumentKind,
+  displayAccountPlaceholder,
+  displayTaxPlaceholder,
   type XeroAccountOption,
   type XeroDocMapping,
+  type XeroDocumentKind,
   type XeroLineItemMapping,
   type XeroQuoteOverrideKind,
   type XeroTaxRateOption,
@@ -55,7 +63,7 @@ function MappingSelect({
       <Label className="text-xs text-muted-foreground">{label}</Label>
       <Select
         disabled={disabled}
-        value={value === "" ? USE_DEFAULT : value}
+        value={value === "" ? undefined : value}
         onValueChange={(next) => onChange(next === USE_DEFAULT ? "" : next)}
       >
         <SelectTrigger>
@@ -76,6 +84,7 @@ function MappingSelect({
 
 type AccountTaxPairProps = Readonly<{
   doc: XeroDocMapping;
+  kind: XeroDocumentKind;
   accounts: XeroAccountOption[];
   taxRates: XeroTaxRateOption[];
   disabled: boolean;
@@ -84,20 +93,25 @@ type AccountTaxPairProps = Readonly<{
 
 function AccountTaxPair({
   doc,
+  kind,
   accounts,
   taxRates,
   disabled,
   onChange,
 }: AccountTaxPairProps) {
+  const scopedAccounts = useMemo(
+    () => accountsForDocumentKind(accounts, kind, doc.accountCode),
+    [accounts, kind, doc.accountCode]
+  );
   const selectedAccount = useMemo(
-    () => accounts.find((account) => account.code === doc.accountCode),
-    [accounts, doc.accountCode]
+    () => scopedAccounts.find((account) => account.code === doc.accountCode),
+    [scopedAccounts, doc.accountCode]
   );
   const availableTaxRates = useMemo(
     () => taxRatesForAccount(taxRates, selectedAccount),
     [taxRates, selectedAccount]
   );
-  const accountOptions = accounts.map((account) => ({
+  const accountOptions = scopedAccounts.map((account) => ({
     value: account.code,
     label: account.name ? `${account.code} – ${account.name}` : account.code,
   }));
@@ -111,7 +125,11 @@ function AccountTaxPair({
       <MappingSelect
         label="Account"
         value={doc.accountCode}
-        placeholder={accountOptions.length ? "Select account" : "No accounts available"}
+        placeholder={
+          accountOptions.length
+            ? displayAccountPlaceholder(kind)
+            : "No accounts available"
+        }
         options={accountOptions}
         disabled={disabled}
         onChange={(v) =>
@@ -121,7 +139,9 @@ function AccountTaxPair({
       <MappingSelect
         label="Tax Rate"
         value={doc.taxType}
-        placeholder={selectedAccount ? "Select tax rate" : "Select an account first"}
+        placeholder={
+          selectedAccount ? displayTaxPlaceholder(kind) : "Select an account first"
+        }
         options={taxOptions}
         disabled={disabled || !selectedAccount}
         onChange={(v) => {
@@ -163,7 +183,12 @@ function QuoteOverrideRow({
   disabled,
   onChange,
 }: QuoteOverrideRowProps) {
-  const selectedAccount = accounts.find((a) => a.code === doc.accountCode);
+  const scopedAccounts = accountsForDocumentKind(
+    accounts,
+    "quote",
+    doc.accountCode
+  );
+  const selectedAccount = scopedAccounts.find((a) => a.code === doc.accountCode);
   const rowTaxRates = taxRatesForAccount(taxRates, selectedAccount);
 
   return (
@@ -186,7 +211,7 @@ function QuoteOverrideRow({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={USE_DEFAULT}>Use quote default</SelectItem>
-            {accounts.map((account) => (
+            {scopedAccounts.map((account) => (
               <SelectItem key={account.code} value={account.code}>
                 {account.name ? `${account.code} – ${account.name}` : account.code}
               </SelectItem>
@@ -277,13 +302,15 @@ export function XeroAccountTaxMapping({
         setTaxRates(response.data?.taxRates || []);
       } catch (error: unknown) {
         if (cancelled) return;
-        const err = error as { name?: string; response?: { data?: { message?: string } } };
-        if (err.name === "CanceledError" || err.name === "AbortError") return;
+        if (isCanceledError(error)) return;
+        if (isExpectedMissingIntegrationData(error)) {
+          setAccounts([]);
+          setTaxRates([]);
+          return;
+        }
         onOptionsLoadFailedRef.current?.();
         showErrorToast("Failed to load Xero accounts/tax rates", {
-          description:
-            err.response?.data?.message ||
-            "Disconnect and Connect Xero again, then select an organisation.",
+          description: xeroOptionsLoadDescription(error),
         });
       } finally {
         if (!cancelled) setIsLoadingOptions(false);
@@ -326,7 +353,7 @@ export function XeroAccountTaxMapping({
   const handleSave = useCallback(async () => {
     try {
       setIsSaving(true);
-      const payload = prepareMappingForSave(mapping);
+      const payload = normalizeMapping(mapping);
       const response = await axios.put(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/business/xero/line-item-mapping`,
         { workspaceId, mapping: payload }
@@ -377,6 +404,7 @@ export function XeroAccountTaxMapping({
         </div>
         <AccountTaxPair
           doc={mapping.quote}
+          kind="quote"
           accounts={accounts}
           taxRates={taxRates}
           disabled={disabled}
@@ -415,6 +443,7 @@ export function XeroAccountTaxMapping({
         </div>
         <AccountTaxPair
           doc={mapping.purchaseOrder}
+          kind="purchaseOrder"
           accounts={accounts}
           taxRates={taxRates}
           disabled={disabled}
@@ -428,6 +457,7 @@ export function XeroAccountTaxMapping({
         </div>
         <AccountTaxPair
           doc={mapping.invoice}
+          kind="invoice"
           accounts={accounts}
           taxRates={taxRates}
           disabled={disabled}

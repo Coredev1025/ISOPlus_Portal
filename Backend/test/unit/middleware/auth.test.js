@@ -135,6 +135,20 @@ describe('authenticateToken middleware', () => {
     expect(next).toHaveBeenCalledOnce();
     expect(req.user.role).toBe('isoplus_user');
   });
+
+  it('rejects an OAuth-state JWT so Xero/login state cannot become a session', () => {
+    const token = jwt.sign(
+      { flow: 'xero', userId: 'u1', role: 'owner', workspaceId: 'ws-1' },
+      'test-secret'
+    );
+    const req = mockReq({ session: { token } });
+    const res = mockRes();
+    const next = vi.fn();
+    authenticateToken(req, res, next);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(401);
+    expect(res.json).toHaveBeenCalledWith({ message: 'Authentication required' });
+  });
 });
 
 describe('requirePortalOwnerOrSupport middleware', () => {

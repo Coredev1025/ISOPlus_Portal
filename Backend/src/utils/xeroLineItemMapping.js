@@ -136,7 +136,7 @@ function resolveFallbackAccountCode(accounts, options = {}) {
   if (Object.hasOwn(options, 'defaultAccountCode')) {
     return options.defaultAccountCode || undefined;
   }
-  return '200';
+  return undefined;
 }
 
 export function resolveSalesLineMapping(

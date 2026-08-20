@@ -13,7 +13,18 @@ import userEvent from '@testing-library/user-event';
 
 const showToast = vi.fn();
 const hideToast = vi.fn();
-const Toastify = vi.fn(() => ({ showToast, hideToast }));
+const Toastify = vi.fn(() => {
+  const toastElement = document.createElement('div');
+  document.body.appendChild(toastElement);
+  return {
+    showToast,
+    hideToast: vi.fn(() => {
+      toastElement.remove();
+      hideToast();
+    }),
+    toastElement,
+  };
+});
 
 vi.mock('toastify-js', () => ({ default: Toastify }));
 
@@ -44,6 +55,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  document.querySelectorAll('.toastify').forEach((node) => node.remove());
 });
 
 describe('ToastDemo rendering', () => {
@@ -172,14 +184,19 @@ describe('ToastDemo actions', () => {
   });
 
   it('hides the open toasts when Dismiss All is pressed', async () => {
-    const user = await renderDemo();
+    // Loading toasts skip the 2s duplicate window, so this click always
+    // creates a node even when earlier tests already showed a success toast.
+    const { ToastDemo } = await import('@/components/ui/toast-demo');
+    render(<ToastDemo />);
+    vi.useFakeTimers();
 
-    await user.click(screen.getByRole('button', { name: 'Success Toast' }));
-    hideToast.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'Loading Toast' }));
+    const toastElement = Toastify.mock.results.at(-1)?.value.toastElement as HTMLElement;
+    expect(toastElement.parentNode).toBe(document.body);
 
-    await user.click(screen.getByRole('button', { name: 'Dismiss All' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss All' }));
 
-    expect(hideToast).toHaveBeenCalled();
+    expect(toastElement.parentNode).toBeNull();
   });
 
   it('raises the loading toast immediately, and the success toast only after 3s', async () => {
@@ -190,16 +207,18 @@ describe('ToastDemo actions', () => {
     vi.useFakeTimers();
 
     fireEvent.click(screen.getByRole('button', { name: 'Loading Toast' }));
+    const loadingElement = Toastify.mock.results.at(-1)?.value.toastElement as HTMLElement;
 
     expect(shownText().join('\n')).toContain('Processing your request...');
     expect(shownText().join('\n')).not.toContain('Request completed!');
+    expect(loadingElement.parentNode).toBe(document.body);
 
     await act(async () => {
       vi.advanceTimersByTime(3000);
     });
 
     expect(shownText().join('\n')).toContain('Request completed!');
-    expect(hideToast).toHaveBeenCalled();
+    expect(loadingElement.parentNode).toBeNull();
   });
 
   it('does not raise the follow-up success toast early', async () => {

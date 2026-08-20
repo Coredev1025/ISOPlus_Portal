@@ -36,6 +36,21 @@ describe('xeroLineItemMapping', () => {
     expect(normalized.invoice.taxRatePercent).toBeNull();
   });
 
+  it('does not let an empty stored mapping flip GST-free NDIS lines to OUTPUT', () => {
+    expect(
+      resolveLineItemTax(
+        { xeroLineItemMapping: { invoice: { accountCode: '', taxType: '' } } },
+        'invoice',
+        'GST Free',
+        undefined,
+        { unmappedTaxFreeType: 'EXEMPTOUTPUT' }
+      )
+    ).toEqual({
+      accountCode: undefined,
+      taxType: 'EXEMPTOUTPUT',
+    });
+  });
+
   it('resolveLineItemTax prefers mapped Tax Rate (taxType) over board GST', () => {
     const business = {
       xeroLineItemMapping: {
@@ -144,7 +159,23 @@ describe('xeroLineItemMapping', () => {
     ).toEqual({ accountCode: '210', taxType: 'EXEMPTOUTPUT' });
   });
 
-  it('resolveSalesLineMapping does not invent revenue 200 for purchase orders', () => {
+  it('does not invent revenue 200 for purchase orders — uses the tenant chart', () => {
+    expect(
+      resolveSalesLineMapping(
+        {},
+        'purchaseOrder',
+        '10%',
+        [
+          { Type: 'REVENUE', Code: '200' },
+          { Type: 'EXPENSE', Code: '400' },
+        ],
+        undefined,
+        { fallbackAccountType: 'EXPENSE' }
+      )
+    ).toEqual({ accountCode: '400', taxType: 'INPUT' });
+  });
+
+  it('does not invent COGS 310 when the chart has no expense account', () => {
     expect(
       resolveSalesLineMapping(
         {},
@@ -155,17 +186,6 @@ describe('xeroLineItemMapping', () => {
         { fallbackAccountType: 'EXPENSE', defaultAccountCode: undefined }
       )
     ).toEqual({ accountCode: undefined, taxType: 'INPUT' });
-
-    expect(
-      resolveSalesLineMapping(
-        {},
-        'purchaseOrder',
-        '10%',
-        [{ Type: 'EXPENSE', Code: '400' }],
-        undefined,
-        { fallbackAccountType: 'EXPENSE', defaultAccountCode: undefined }
-      )
-    ).toEqual({ accountCode: '400', taxType: 'INPUT' });
   });
 
   it('exports tax-free defaults for invoice and purchaseOrder', () => {

@@ -1,3 +1,5 @@
+import { DEFAULT_BUSINESS_TIMEZONE } from "@/constants/timezone";
+
 export function mapBusinessProfileToFormData(data: Record<string, any>, workspaceId: string) {
   return {
     name: data.name || '',
@@ -19,7 +21,7 @@ export function mapBusinessProfileToFormData(data: Record<string, any>, workspac
     paymentReference: data.bankDetails?.paymentReference || '',
     accountsReceivableTerms: data.bankDetails?.accountsReceivableTerms || '',
     accountsPayableTerms: data.bankDetails?.accountsPayableTerms || '',
-    headOfficeTimezone: (data.headOfficeTimezone as string) || 'Australia/Sydney',
+    headOfficeTimezone: (data.headOfficeTimezone as string) || DEFAULT_BUSINESS_TIMEZONE,
   };
 }
 
@@ -45,7 +47,9 @@ function toSequence(
   return {
     prefix: typeof value?.prefix === "string" ? value.prefix : fallback.prefix,
     nextNumber:
-      typeof value?.nextNumber === "number" && value.nextNumber >= 1
+      typeof value?.nextNumber === "number" &&
+      Number.isInteger(value.nextNumber) &&
+      value.nextNumber >= 0
         ? value.nextNumber
         : fallback.nextNumber,
   };

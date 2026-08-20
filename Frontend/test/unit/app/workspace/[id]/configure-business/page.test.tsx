@@ -165,6 +165,16 @@ async function expectNoAdditionalSettingsTab() {
   ).not.toBeInTheDocument();
 }
 
+/** userEvent.click is too slow on this 1000-line tree under a contended suite
+ * (pointer hover + full rerender) and can leave the PUT in flight when the
+ * next test starts — that leaked request is what made `savedForms` look like
+ * a double submit. fireEvent hits the same onClick without the extra work. */
+function clickSave() {
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Save Business Configuration' }),
+  );
+}
+
 beforeEach(() => {
   localStorage.clear();
   Object.values(router).forEach((fn) => fn.mockClear());
@@ -289,15 +299,12 @@ describe('configure business page', () => {
 
   it('saves every field as one multipart body carrying the workspace id and the numbering', async () => {
     stubBusiness();
-    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await waitFor(() => {
       expect(screen.getByLabelText('Company Name')).toHaveValue('Hillsgrade Care');
     });
-    await user.click(
-      screen.getByRole('button', { name: 'Save Business Configuration' }),
-    );
+    clickSave();
 
     await waitFor(() => expect(savedForms).toHaveLength(1));
     const { documentNumbering, ...fields } = savedForms[0];
@@ -323,7 +330,6 @@ describe('configure business page', () => {
       saveStatus: 400,
       saveBody: { errors: ['email must be a valid email address'] },
     });
-    const user = userEvent.setup({ pointerEventsCheck: 0 });
     renderPage();
 
     await waitFor(() => {
@@ -337,9 +343,7 @@ describe('configure business page', () => {
       target: { value: 'not-an-email' },
     });
 
-    await user.click(
-      screen.getByRole('button', { name: 'Save Business Configuration' }),
-    );
+    clickSave();
 
     // The request went out with the bad value; the server is the only gate.
     await waitFor(() => expect(savedForms).toHaveLength(1));
@@ -363,15 +367,12 @@ describe('configure business page', () => {
       saveStatus: 500,
       saveBody: { message: 'Storage is temporarily unavailable' },
     });
-    const user = userEvent.setup({ pointerEventsCheck: 0 });
     const { container } = renderPage();
 
     await waitFor(() => {
       expect(screen.getByLabelText('Company Name')).toHaveValue('Hillsgrade Care');
     });
-    await user.click(
-      screen.getByRole('button', { name: 'Save Business Configuration' }),
-    );
+    clickSave();
 
     // Scoped to the page: the same wording is also the description of a toast
     // that Toastify appends straight to document.body.
@@ -410,9 +411,7 @@ describe('configure business page', () => {
 
     expect(screen.queryByAltText('Default Logo Preview')).not.toBeInTheDocument();
 
-    await user.click(
-      screen.getByRole('button', { name: 'Save Business Configuration' }),
-    );
+    clickSave();
 
     await waitFor(() => expect(savedForms).toHaveLength(1));
     expect(savedForms[0].defaultLogoRemoved).toBe('true');

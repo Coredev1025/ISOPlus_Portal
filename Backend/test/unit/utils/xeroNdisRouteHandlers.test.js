@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-
 // External boundaries only: the ISO+ HTTP API, the Xero SDK, the audit
 // collection, and the two heavy builders that have their own tests. The invoice
 // and quote assembly, contact resolution, line/date maths, reference building
@@ -257,15 +256,18 @@ describe('handleXeroInvoicendis', () => {
     expect(payload.dueDate).toBe('2025-03-16');
   });
 
-  it('uses the default sales account when Xero exposes no revenue account', async () => {
+  it('does not invent revenue 200 when Xero exposes no revenue account', async () => {
     isoplus.getNDISMasterPlanReferencedItems.mockResolvedValue(MASTER_REFS);
     buildNdisMasterPlanInvoiceLines.mockResolvedValue([NDIS_LINES[0]]);
     xero.getAccounts.mockResolvedValue([{ Type: 'EXPENSE', Code: '400' }]);
-    xero.createInvoice.mockResolvedValue({ invoiceNumber: 'INV-503' });
+    const args = invoiceArgs();
 
-    await handleXeroInvoicendis(invoiceArgs());
+    await handleXeroInvoicendis(args);
 
-    expect(xero.createInvoice.mock.calls[0][0].lineItems[0].accountCode).toBe('200');
+    expect(xero.createInvoice).not.toHaveBeenCalled();
+    expect(args.res.json).toHaveBeenCalledWith({
+      message: 'Account code is required. Configure account mapping in Finance Settings.',
+    });
   });
 
   it('answers 200 with nothing to invoice when no lines are built', async () => {

@@ -1,3 +1,10 @@
+import {
+  XERO_DEFAULT_COGS_ACCOUNT_CODE,
+  XERO_DEFAULT_EXPENSE_TAX_TYPE,
+  XERO_DEFAULT_INCOME_TAX_TYPE,
+  XERO_DEFAULT_SALES_ACCOUNT_CODE,
+} from "@/constants/xeroMapping";
+
 export type XeroAccountOption = {
   code: string;
   name: string;
@@ -33,7 +40,7 @@ export type XeroLineItemMapping = {
 const EMPTY_DOC: XeroDocMapping = {
   accountCode: "",
   taxType: "",
-  taxRatePercent: null
+  taxRatePercent: null,
 };
 
 export const EMPTY_LINE_ITEM_MAPPING: XeroLineItemMapping = {
@@ -46,14 +53,18 @@ export const EMPTY_LINE_ITEM_MAPPING: XeroLineItemMapping = {
   },
 };
 
-function pickDoc(d?: Partial<XeroDocMapping>): XeroDocMapping {
+function selectedOrEmpty(value: unknown): string {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function pickDoc(d: Partial<XeroDocMapping> | undefined): XeroDocMapping {
   const rate =
     typeof d?.taxRatePercent === "number" && Number.isFinite(d.taxRatePercent)
       ? d.taxRatePercent
       : null;
   return {
-    accountCode: d?.accountCode ?? "",
-    taxType: d?.taxType ?? "",
+    accountCode: selectedOrEmpty(d?.accountCode),
+    taxType: selectedOrEmpty(d?.taxType),
     taxRatePercent: rate,
   };
 }
@@ -90,8 +101,45 @@ export function taxRatesForAccount(
   );
 }
 
-export function prepareMappingForSave(
-  mapping: XeroLineItemMapping
-): XeroLineItemMapping {
-  return normalizeMapping(mapping);
+export type XeroDocumentKind = "quote" | "purchaseOrder" | "invoice";
+
+/**
+ * Prefer REVENUE accounts for Quote/Invoice and EXPENSE for Purchase Order.
+ * If a saved code falls outside that class, keep it in the list so the UI can
+ * still display the current mapping.
+ *
+ * Touchpoints: xero-account-tax-mapping.tsx (AccountTaxPair, QuoteOverrideRow).
+ */
+export function accountsForDocumentKind(
+  accounts: readonly XeroAccountOption[],
+  kind: XeroDocumentKind,
+  selectedCode = ""
+): XeroAccountOption[] {
+  const preferred = kind === "purchaseOrder" ? "EXPENSE" : "REVENUE";
+  const filtered = accounts.filter(
+    (account) => accountClass(account) === preferred
+  );
+  if (!selectedCode) return filtered;
+
+  const alreadyIncluded = filtered.some((account) => account.code === selectedCode);
+  if (alreadyIncluded) return filtered;
+
+  const selected = accounts.find((account) => account.code === selectedCode);
+  return selected ? [...filtered, selected] : filtered;
+}
+
+export function displayAccountPlaceholder(kind: XeroDocumentKind): string {
+  const code =
+    kind === "purchaseOrder"
+      ? XERO_DEFAULT_COGS_ACCOUNT_CODE
+      : XERO_DEFAULT_SALES_ACCOUNT_CODE;
+  return `${code} (default)`;
+}
+
+export function displayTaxPlaceholder(kind: XeroDocumentKind): string {
+  const taxType =
+    kind === "purchaseOrder"
+      ? XERO_DEFAULT_EXPENSE_TAX_TYPE
+      : XERO_DEFAULT_INCOME_TAX_TYPE;
+  return `${taxType} (default)`;
 }

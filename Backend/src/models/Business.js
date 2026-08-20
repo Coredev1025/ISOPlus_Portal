@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { DEFAULT_DOCUMENT_NEXT_NUMBER } from '../constants/documentNumbering.js';
 
 const businessSchema = new mongoose.Schema({
   workspaceId: {
@@ -133,7 +134,7 @@ const businessSchema = new mongoose.Schema({
       },
       nextNumber: {
         type: Number,
-        default: 1000
+        default: DEFAULT_DOCUMENT_NEXT_NUMBER
       }
     },
     purchaseOrder: {
@@ -143,7 +144,7 @@ const businessSchema = new mongoose.Schema({
       },
       nextNumber: {
         type: Number,
-        default: 1000
+        default: DEFAULT_DOCUMENT_NEXT_NUMBER
       }
     },
     quote: {
@@ -153,7 +154,7 @@ const businessSchema = new mongoose.Schema({
       },
       nextNumber: {
         type: Number,
-        default: 1000
+        default: DEFAULT_DOCUMENT_NEXT_NUMBER
       }
     },
     statement: {
@@ -163,7 +164,7 @@ const businessSchema = new mongoose.Schema({
       },
       nextNumber: {
         type: Number,
-        default: 1000
+        default: DEFAULT_DOCUMENT_NEXT_NUMBER
       }
     }
   },

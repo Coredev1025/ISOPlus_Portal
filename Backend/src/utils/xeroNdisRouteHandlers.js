@@ -3,7 +3,7 @@ import Item from '../models/Item.js';
 import { setIntegrationMessage, setGeneratedField, getQuoteNDISReferencedItems, getNDISMasterPlanReferencedItems, validateItemBelongsToTenant } from '../services/isoplus.js';
 import { createInvoice, createQuote, createOrUpdateContact, getContactByEmail, getContactByName, configure, ensureAuthenticated } from '../services/xero.js';
 import { Item as ItemPayloadDTO } from '../dto/itemsPayload.js';
-import { logAuditTrail } from '../utils/auditLogger.js';
+import { logXeroAudit } from '../utils/xeroAuditHelpers.js';
 import { getDateOnlyIso } from '../utils/ndisServiceRecords.js';
 import { mongoEq } from '../utils/securityHelpers.js';
 import {
@@ -302,7 +302,7 @@ export async function handleXeroInvoicendis({
 
     const createdInvoice = await createInvoice(invoice);
     await setIntegrationMessage(workspaceId, boardId, item.id, 'Your invoice has been created successfully in Xero.');
-    logAuditTrail({
+    logXeroAudit({
       workspaceId,
       action: 'Create Xero Invoice',
       detail: `Invoice created successfully, invoice number: ${createdInvoice.invoiceNumber}`,
@@ -395,7 +395,7 @@ export async function handleXeroQuotendis({
 
     const createdQuote = await createQuote(xeroQuote);
     await setIntegrationMessage(workspaceId, boardId, item.id, 'Your quote has been created successfully in Xero.');
-    logAuditTrail({
+    logXeroAudit({
       workspaceId,
       action: 'Create Xero Quote',
       detail: `Quote created successfully, quote number: ${createdQuote.quoteNumber}`,
@@ -709,7 +709,7 @@ export async function handleXeroInvoiceParticipantTax({
       saveInvoiceNumber,
     );
 
-    logAuditTrail({
+    logXeroAudit({
       workspaceId,
       action: labels.auditAction,
       detail: `Invoice created successfully, invoice number: ${createdInvoice.invoiceNumber}, ${labels.auditRoleLabel}: ${effectiveParticipantName}, items: ${items.length}`,

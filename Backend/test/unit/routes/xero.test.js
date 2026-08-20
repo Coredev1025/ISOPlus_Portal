@@ -4,9 +4,10 @@ import { createApp } from '../../../src/app.js';
 import Business from '../../../src/models/Business.js';
 
 /**
- * src/routes/xero.js, mounted at /api/xero. Like the PDF webhook routes these
- * are called by ISO+ automations, so they are unauthenticated and answer 200
- * with an error body rather than a 4xx/5xx.
+ * src/routes/xero.js, mounted at /api/xero. Invoice/quote/PO sync routes are
+ * called by ISO+ automations, so they are unauthenticated and answer 200 with
+ * an error body rather than a 4xx/5xx. GET /redirect is the OAuth start URL
+ * and requires a portal session.
  *
  * Every case below stops at a guard — payload validation, the Joi DTO, or the
  * missing Business / missing Xero token — so no request reaches Xero. The one
@@ -41,6 +42,14 @@ const validContractorValues = {
   'Phone Number': '0400000001',
   Postcode: 2000,
 };
+
+describe('GET /api/xero/redirect', () => {
+  it('requires a portal session before minting a Xero consent URL', async () => {
+    const res = await request(app).get('/api/xero/redirect').query({ workspaceId: 'ws-1' });
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ message: 'Authentication required' });
+  });
+});
 
 describe('GET /api/xero/services', () => {
   it('lists the six integration capabilities with their statuses', async () => {

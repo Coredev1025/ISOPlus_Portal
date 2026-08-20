@@ -139,7 +139,7 @@ function SequenceField({
           type="number"
           value={sequence.nextNumber}
           onChange={(e) => onNextChange?.(e.target.value)}
-          min={1}
+          min={0}
           disabled={disabled}
           className="min-w-0 flex-1"
         />

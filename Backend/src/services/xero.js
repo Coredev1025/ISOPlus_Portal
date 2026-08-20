@@ -2,29 +2,38 @@ import { XeroClient } from 'xero-node';
 import Business from '../models/Business.js';
 import { error } from '../utils/logger.js';
 import { buildXeroContactErrorMessage } from '../utils/xeroContactErrorHelpers.js';
-import { randomAlphanumeric } from '../utils/securityHelpers.js';
 import {
     IsoPlusInvoiceValues
 } from '../dto/itemsPayload.js';
+import {
+    applyIncomingOAuthStateToXeroClient,
+    buildXeroConsentUrl,
+} from '../utils/xeroOAuthStateHelpers.js';
 
 let xeroClient = null;
 
+function buildXeroClient() {
+    const config = {
+        clientId: process.env.XERO_CLIENT_ID,
+        clientSecret: process.env.XERO_CLIENT_SECRET,
+        scopes: 'openid profile email accounting.settings accounting.contacts accounting.transactions accounting.reports.read accounting.attachments offline_access'.split(" "),
+    };
+
+    if (process.env.XERO_REDIRECT_URL) {
+        config.grantType = 'authorization_code';
+        config.redirectUris = [process.env.XERO_REDIRECT_URL];
+    } else {
+        config.grantType = 'client_credentials';
+    }
+
+    return new XeroClient(config);
+}
+
+export const createXeroOAuthClient = buildXeroClient;
+
 export async function configure() {
     try {
-        const config = {
-            clientId: process.env.XERO_CLIENT_ID,
-            clientSecret: process.env.XERO_CLIENT_SECRET,
-            scopes: 'openid profile email accounting.settings accounting.contacts accounting.transactions accounting.reports.read accounting.attachments offline_access'.split(" "),
-        };
-
-        if (process.env.XERO_REDIRECT_URL) {
-            config.grantType = 'authorization_code';
-            config.redirectUris = [process.env.XERO_REDIRECT_URL];
-        } else {
-            config.grantType = 'client_credentials';
-        }
-
-        xeroClient = new XeroClient(config);
+        xeroClient = buildXeroClient();
         return xeroClient;
     } catch (err) {
         error('Xero-Service', 'Error configuring Xero client', err);
@@ -32,34 +41,50 @@ export async function configure() {
     }
 }
 
-export async function getAuthUrl() {
-    if (!xeroClient) {
+function requireXeroClient(client) {
+    const resolved = client || xeroClient;
+    if (!resolved) {
         throw new Error('Xero client is not configured.');
     }
-
-    const scopes = 'openid profile email accounting.settings accounting.contacts accounting.transactions accounting.reports.read accounting.attachments offline_access'.split(" ");
-    const state = randomAlphanumeric(16);
-    const url = await xeroClient.buildConsentUrl(scopes, state);
-    return url;
+    return resolved;
 }
 
-export async function callback(code, url) {
+export async function getAuthUrl(workspaceId, frontendOrigin, userId, connectTicket, client) {
+    const xero = requireXeroClient(client);
+    const consentUrl = await xero.buildConsentUrl();
+    return buildXeroConsentUrl(consentUrl, workspaceId, frontendOrigin, userId, connectTicket);
+}
+
+export async function callback(code, url, client) {
     try {
-        await xeroClient.apiCallback(url);
-        const tokenSet = xeroClient.readTokenSet();
-        const tenants = await xeroClient.updateTenants(false);
-        
-        // Get organization information
+        const xero = requireXeroClient(client);
+        applyIncomingOAuthStateToXeroClient(xero, url);
+        const requestUrl = new URL(url || '', 'https://placeholder.local');
+        if (requestUrl.searchParams.get('error')) {
+            return {
+                success: false,
+                message: 'Xero authorization was denied or could not be completed. Please try again.',
+            };
+        }
+        await xero.apiCallback(url);
+        const tokenSet = xero.readTokenSet();
+        const tenants = await xero.updateTenants(false);
+
         let organizationInfo = null;
         if (tenants && tenants.length > 0) {
-            organizationInfo = await getOrganizationInfo(tenants[0].tenantId);
+            try {
+                organizationInfo = await readOrganizationFromClient(xero, tenants[0].tenantId);
+            } catch (err) {
+                error('Xero-Service', 'Error getting organization info', err);
+            }
         }
-        
+
         return {
             success: true,
             message: 'Successfully connected to Xero!',
             tokenSet,
             tenants,
+            tenantId: tenants?.[0]?.tenantId,
             organization: organizationInfo
         };
     } catch (err) {
@@ -102,19 +127,22 @@ function organizationFromTenantConnection(tenant) {
     };
 }
 
+async function readOrganizationFromClient(client, tenantId) {
+    const response = await client.accountingApi.getOrganisations(tenantId);
+    const orgs = response.body?.organisations || response.body?.Organisations || [];
+    if (orgs.length > 0) {
+        return organizationFromApiOrg(orgs[0]);
+    }
+    return null;
+}
+
 export async function getOrganizationInfo(tenantId) {
     try {
         if (!xeroClient) {
             throw new Error('Xero client is not configured.');
         }
 
-        const response = await xeroClient.accountingApi.getOrganisations(tenantId);
-        const orgs = response.body?.organisations || response.body?.Organisations || [];
-        if (orgs.length > 0) {
-            return organizationFromApiOrg(orgs[0]);
-        }
-
-        return null;
+        return await readOrganizationFromClient(xeroClient, tenantId);
     } catch (err) {
         error('Xero-Service', 'Error getting organization info', err);
         // Don't throw error here as it's not critical for the OAuth flow

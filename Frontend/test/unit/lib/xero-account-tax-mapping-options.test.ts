@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   EMPTY_LINE_ITEM_MAPPING,
   accountClass,
+  accountsForDocumentKind,
+  displayAccountPlaceholder,
+  displayTaxPlaceholder,
   normalizeMapping,
-  prepareMappingForSave,
   taxRatesForAccount,
   type XeroAccountOption,
   type XeroTaxRateOption,
@@ -44,9 +46,23 @@ const TAX_RATES: XeroTaxRateOption[] = [
   },
 ];
 
+const EMPTY_DOC = { accountCode: '', taxType: '', taxRatePercent: null };
+
 describe('xero-account-tax-mapping-options', () => {
-  it('normalizeMapping fills empty docs and ignores non-finite rates', () => {
+  it('keeps unmapped docs empty instead of filling Sales 200 / OUTPUT', () => {
+    expect(EMPTY_LINE_ITEM_MAPPING).toEqual({
+      quote: EMPTY_DOC,
+      purchaseOrder: EMPTY_DOC,
+      invoice: EMPTY_DOC,
+      quoteOverrides: {
+        quoteService: EMPTY_DOC,
+        material: EMPTY_DOC,
+      },
+    });
     expect(normalizeMapping(undefined)).toEqual(EMPTY_LINE_ITEM_MAPPING);
+  });
+
+  it('normalizeMapping trims selected values and leaves unspecified fields empty', () => {
     expect(
       normalizeMapping({
         quote: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: Number.NaN },
@@ -54,13 +70,23 @@ describe('xero-account-tax-mapping-options', () => {
       })
     ).toEqual({
       quote: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: null },
-      purchaseOrder: { accountCode: '', taxType: '', taxRatePercent: null },
-      invoice: { accountCode: '', taxType: '', taxRatePercent: null },
+      purchaseOrder: EMPTY_DOC,
+      invoice: EMPTY_DOC,
       quoteOverrides: {
-        quoteService: { accountCode: '', taxType: '', taxRatePercent: null },
+        quoteService: EMPTY_DOC,
         material: { accountCode: '400', taxType: '', taxRatePercent: null },
       },
     });
+  });
+
+  it('normalizeMapping keeps a cleared quote override empty', () => {
+    const mapping = normalizeMapping({
+      quote: { accountCode: '200', taxType: 'OUTPUT' },
+      quoteOverrides: {
+        quoteService: { accountCode: '', taxType: '' },
+      },
+    });
+    expect(normalizeMapping(mapping).quoteOverrides.quoteService).toEqual(EMPTY_DOC);
   });
 
   it('accountClass uppercases the Xero account class', () => {
@@ -78,10 +104,41 @@ describe('xero-account-tax-mapping-options', () => {
     ]);
   });
 
-  it('prepareMappingForSave round-trips through normalizeMapping', () => {
+  // Epic 4.5 — Quote/Invoice prefer REVENUE; Purchase Order prefers EXPENSE.
+  it('accountsForDocumentKind filters by document kind and keeps a saved outlier', () => {
+    const accounts = [REVENUE_ACCOUNT, EXPENSE_ACCOUNT];
+
+    expect(accountsForDocumentKind(accounts, 'quote').map((a) => a.code)).toEqual([
+      '200',
+    ]);
+    expect(accountsForDocumentKind(accounts, 'invoice').map((a) => a.code)).toEqual([
+      '200',
+    ]);
+    expect(
+      accountsForDocumentKind(accounts, 'purchaseOrder').map((a) => a.code)
+    ).toEqual(['400']);
+
+    // Saved expense code on a quote still appears so the dropdown can show it.
+    expect(
+      accountsForDocumentKind(accounts, 'quote', '400').map((a) => a.code)
+    ).toEqual(['200', '400']);
+  });
+
+  it('normalizeMapping round-trips a saved mapping payload', () => {
     const mapping = normalizeMapping({
       invoice: { accountCode: '200', taxType: 'OUTPUT', taxRatePercent: 10 },
     });
-    expect(prepareMappingForSave(mapping)).toEqual(mapping);
+    expect(normalizeMapping(mapping)).toEqual(mapping);
+  });
+
+  it('normalizeMapping does not persist display defaults on a no-op save', () => {
+    expect(normalizeMapping(undefined)).toEqual(EMPTY_LINE_ITEM_MAPPING);
+  });
+
+  it('exposes AU demo codes as placeholders only', () => {
+    expect(displayAccountPlaceholder('invoice')).toBe('200 (default)');
+    expect(displayAccountPlaceholder('purchaseOrder')).toBe('310 (default)');
+    expect(displayTaxPlaceholder('invoice')).toBe('OUTPUT (default)');
+    expect(displayTaxPlaceholder('purchaseOrder')).toBe('INPUT (default)');
   });
 });

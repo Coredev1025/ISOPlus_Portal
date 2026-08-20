@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
+import { DEFAULT_BUSINESS_TIMEZONE } from '@/constants/timezone';
 import {
   cloneDefaultSequences,
   DEFAULT_SEQUENCES,
@@ -170,13 +171,13 @@ describe('mapBusinessProfileToFormData', () => {
     expect(result.accountNumber).toBe('');
   });
 
-  it('replaces an empty headOfficeTimezone with the Sydney default but keeps a real one', () => {
+  it('replaces an empty headOfficeTimezone with the shared business default but keeps a real one', () => {
     expect(mapBusinessProfileToFormData({ headOfficeTimezone: '' }, 'ws').headOfficeTimezone).toBe(
-      'Australia/Sydney',
+      DEFAULT_BUSINESS_TIMEZONE,
     );
     expect(
       mapBusinessProfileToFormData({ headOfficeTimezone: null }, 'ws').headOfficeTimezone,
-    ).toBe('Australia/Sydney');
+    ).toBe(DEFAULT_BUSINESS_TIMEZONE);
     expect(
       mapBusinessProfileToFormData({ headOfficeTimezone: 'Australia/Perth' }, 'ws')
         .headOfficeTimezone,
@@ -264,6 +265,23 @@ describe('extractDocumentNumberingSequences', () => {
 
   it('normalises a null documentNumbering to schema defaults rather than throwing', () => {
     expect(extractDocumentNumberingSequences({ documentNumbering: null })).toEqual({
+      invoice: { prefix: 'INV-', nextNumber: 1000 },
+      purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
+      quote: { prefix: 'QT-', nextNumber: 1000 },
+      statement: { prefix: 'STM-', nextNumber: 1000 },
+    });
+  });
+
+  it('keeps a stored nextNumber of 0 instead of substituting the default', () => {
+    expect(
+      extractDocumentNumberingSequences({
+        documentNumbering: { invoice: { prefix: 'INV-', nextNumber: 0 } },
+      }).invoice.nextNumber,
+    ).toBe(0);
+  });
+
+  it('ships invoice, PO, quote and statement defaults at nextNumber 1000', () => {
+    expect(DEFAULT_SEQUENCES).toEqual({
       invoice: { prefix: 'INV-', nextNumber: 1000 },
       purchaseOrder: { prefix: 'PO-', nextNumber: 1000 },
       quote: { prefix: 'QT-', nextNumber: 1000 },
