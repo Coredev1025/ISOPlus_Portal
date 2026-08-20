@@ -177,5 +177,10 @@ export function normalizeFixture(fixture) {
     scheduledJobs: (fixture.scheduledJobs ?? []).map(normalizeScheduledJob),
     invoiceNumbers: (fixture.invoiceNumbers ?? [])
       .map((entry) => normalizeInvoiceNumber(entry, boardIds, workspaceId)),
+    // Files the offline store must hold for the fixture to render as it does
+    // in production — the business logo, chiefly. Keyed exactly as the
+    // application asks for them, so `business.defaultLogo` and this key are
+    // the same string.
+    localFiles: fixture.localFiles ?? {},
   };
 }

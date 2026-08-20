@@ -59,6 +59,7 @@ import {
   isGeneratorFixturePath,
   fixtureFromModule,
 } from './devFixtureShape.mjs'
+import { saveLocalFile } from '../src/utils/localFileStore.js'
 
 const backendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const DEFAULT_FIXTURE = join(backendRoot, 'test', 'fixtures', 'ndis-quote-board.json')
@@ -120,7 +121,10 @@ try {
   console.error(`error: ${err.message}`)
   process.exit(1)
 }
-const { workspaceId, business, boards, items, automationSettings, scheduledJobs, invoiceNumbers } = shape
+const {
+  workspaceId, business, boards, items, automationSettings, scheduledJobs, invoiceNumbers,
+  localFiles,
+} = shape
 
 // --- replay ------------------------------------------------------------------
 //
@@ -383,6 +387,15 @@ if (business) {
     { upsert: true, new: true, setDefaultsOnInsert: true },
   )
   console.log(`  business  ${workspaceId} — ${business.name}`)
+}
+
+// Written before anything reads them. `getS3File` resolves a key against the
+// offline store, so a business whose defaultLogo names a file that is not there
+// throws mid-generation rather than rendering a blank corner — worse than the
+// missing logo it was meant to fix.
+for (const [key, base64] of Object.entries(localFiles ?? {})) {
+  await saveLocalFile(key, Buffer.from(base64, 'base64'))
+  console.log(`  file      ${key}`)
 }
 
 for (const b of boards) {

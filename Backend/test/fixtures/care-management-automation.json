@@ -70,7 +70,8 @@
     },
     "featureToggles": {
       "invoiceStatementAutomation": true
-    }
+    },
+    "defaultLogo": "logos/55390/fixture-logo.png"
   },
   "boards": [
     {
@@ -224,7 +225,12 @@
         "Address": "12 Fixture Street",
         "Suburb": "Demoville",
         "State": "NSW",
-        "Postcode": "2001"
+        "Postcode": "2001",
+        "Funding Source": [
+          "55390000-ffff-4001-8001-000000000001",
+          "55390000-ffff-4002-8002-000000000001",
+          "55390000-ffff-4003-8003-000000000001"
+        ]
       }
     },
     {
@@ -241,7 +247,10 @@
         "Address": "14 Fixture Street",
         "Suburb": "Demoville",
         "State": "NSW",
-        "Postcode": "2001"
+        "Postcode": "2001",
+        "Funding Source": [
+          "55390000-ffff-4001-8001-000000000002"
+        ]
       }
     },
     {
@@ -254,7 +263,10 @@
         "My Aged Care ID Number": "AC12347",
         "Provider ID": "AA111",
         "Billing Contact": "Lisa Morphy",
-        "Billing Address": "16 Fixture Street, Demoville NSW 2001"
+        "Billing Address": "16 Fixture Street, Demoville NSW 2001",
+        "Funding Source": [
+          "55390000-ffff-4001-8001-000000000003"
+        ]
       }
     },
     {
@@ -601,6 +613,170 @@
         "Actual Shift Duration(Hr.)": 3,
         "Support Value($)": 195
       }
+    },
+    {
+      "$case": "SaH service — medication assistance, HSQ funding, gov/participant split",
+      "itemId": "55390000-eeee-4001-8001-000000000001",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Transaction Status": "Delivered - To be claimed and invoiced.",
+        "Scheduled Shift Start Date & Time": "2025-01-14T00:00:00+11:00",
+        "Actual Shift End Date & Time": "2025-01-14T00:00:00+11:00",
+        "Unit": "",
+        "Quantity": 0,
+        "Unit Price ($)": 0,
+        "Total Amount ($)": 0,
+        "Government Subsidy ($)": 0,
+        "Participant Contribution ($)": 0
+      }
+    },
+    {
+      "$case": "SaH service — medication assistance, HSQ funding, gov/participant split",
+      "itemId": "55390000-eeee-4002-8002-000000000001",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Participant Profile": [
+          "55390000-aaaa-4001-8001-000000000001"
+        ],
+        "Task Name": "Assistance with the self-administration of medication",
+        "Transaction Status": "Delivered - To be claimed and invoiced.",
+        "Funding Source": "Home Support(HS) Quarterly",
+        "Scheduled Shift Start Date & Time": "2025-01-15T00:00:00+11:00",
+        "Actual Shift End Date & Time": "2025-01-15T00:00:00+11:00",
+        "Unit": "Hours",
+        "Quantity": 0,
+        "Unit Price ($)": 0,
+        "Total Amount ($)": 0,
+        "Government Subsidy ($)": 0,
+        "Participant Contribution ($)": 0
+      }
+    },
+    {
+      "itemId": "55390000-ffff-4001-8001-000000000001",
+      "workspaceId": "55390",
+      "boardId": "jpjztrn14pJ",
+      "data": {
+        "Funding Stream": "Home Support(HS) Quarterly",
+        "Funding Start Date": "2025-01-01",
+        "Funding End Date": "2025-03-31",
+        "Fund Amount ($)": 3000,
+        "Total Available Budget for Home Support ($)": 3250,
+        "Available Fund at the Start of the Month ($)": 3250,
+        "Classification Quarterly Budget Adjustment ($)": 0,
+        "Primary Supplement ($)": 0,
+        "Carryover Funding from the Previous Quarter ($)": 250,
+        "Unspent Budget at the End of the Quarter – Returned ($-)": 0,
+        "Unspent HCP Funds - Commonwealth Portion (Provider-held) ($)": 0,
+        "Provider-held HCP Unspent Funds ($)": 0,
+        "Unspent HCP Funds - Participant Portion (Provider-held) ($)": 0,
+        "Spending from Previous Month(s) within same Quarter ($)": 0,
+        "Remaining Home Support Balance as at the End of the Month ($)": 2853,
+        "Participant Profile": [
+          "55390000-aaaa-4001-8001-000000000001"
+        ],
+        "Month": "January",
+        "Year": "2025",
+        "FY Quarter": "Q1",
+        "Quarterly Budget ($)": 3000,
+        "Home Support Delivered During the Month ($-)": 397
+      },
+      "folderId": "Home Support Quarterly Budget"
+    },
+    {
+      "itemId": "55390000-ffff-4002-8002-000000000001",
+      "workspaceId": "55390",
+      "boardId": "jpjztrn14pJ",
+      "data": {
+        "Funding Stream": "Restorative Care Pathway",
+        "Funding Start Date": "2025-01-01",
+        "Funding End Date": "2025-03-31",
+        "Total Available Budget for Restorative Care ($)": 1200,
+        "Remaining Restorative Care Balance as at the End of the Month ($)": 1107.5
+      },
+      "folderId": "Restorative Care Pathway Budget"
+    },
+    {
+      "itemId": "55390000-ffff-4003-8003-000000000001",
+      "workspaceId": "55390",
+      "boardId": "jpjztrn14pJ",
+      "data": {
+        "Funding Stream": "Assistive Technology - Short-term",
+        "Funding Start Date": "2025-01-01",
+        "Funding End Date": "2025-03-31",
+        "Total Available Budget for Assistive Technology - Short-term ($)": 6000,
+        "Remaining AT - Short-term Balance for Allocation Period ($)": 930,
+        "Committed AT Short-term Funds - to be delivered ($-)": 0
+      },
+      "folderId": "Assistive Technology - Short-term Budget"
+    },
+    {
+      "itemId": "55390000-ffff-4001-8001-000000000002",
+      "workspaceId": "55390",
+      "boardId": "jpjztrn14pJ",
+      "data": {
+        "Funding Stream": "Home Support(HS) Quarterly",
+        "Funding Start Date": "2025-01-01",
+        "Funding End Date": "2025-03-31",
+        "Fund Amount ($)": 2400,
+        "Total Available Budget for Home Support ($)": 2400,
+        "Available Fund at the Start of the Month ($)": 2080,
+        "Classification Quarterly Budget Adjustment ($)": 0,
+        "Primary Supplement ($)": 0,
+        "Carryover Funding from the Previous Quarter ($)": 0,
+        "Unspent Budget at the End of the Quarter – Returned ($-)": 0,
+        "Unspent HCP Funds - Commonwealth Portion (Provider-held) ($)": 0,
+        "Provider-held HCP Unspent Funds ($)": 0,
+        "Unspent HCP Funds - Participant Portion (Provider-held) ($)": 0,
+        "Spending from Previous Month(s) within same Quarter ($)": 320,
+        "Remaining Home Support Balance as at the End of the Month ($)": 2005,
+        "Participant Profile": [
+          "55390000-aaaa-4001-8001-000000000002"
+        ],
+        "Month": "January",
+        "Year": "2025",
+        "FY Quarter": "Q1",
+        "Quarterly Budget ($)": 2400,
+        "Home Support Delivered During the Month ($-)": 75
+      },
+      "folderId": "Home Support Quarterly Budget"
+    },
+    {
+      "itemId": "55390000-ffff-4001-8001-000000000003",
+      "workspaceId": "55390",
+      "boardId": "jpjztrn14pJ",
+      "data": {
+        "Funding Stream": "Home Support(HS) Quarterly",
+        "Funding Start Date": "2025-01-01",
+        "Funding End Date": "2025-03-31",
+        "Fund Amount ($)": 2000,
+        "Total Available Budget for Home Support ($)": 2100,
+        "Available Fund at the Start of the Month ($)": 2100,
+        "Classification Quarterly Budget Adjustment ($)": 0,
+        "Primary Supplement ($)": 0,
+        "Carryover Funding from the Previous Quarter ($)": 100,
+        "Unspent Budget at the End of the Quarter – Returned ($-)": 0,
+        "Unspent HCP Funds - Commonwealth Portion (Provider-held) ($)": 0,
+        "Provider-held HCP Unspent Funds ($)": 0,
+        "Unspent HCP Funds - Participant Portion (Provider-held) ($)": 0,
+        "Spending from Previous Month(s) within same Quarter ($)": 0,
+        "Remaining Home Support Balance as at the End of the Month ($)": 2100,
+        "Participant Profile": [
+          "55390000-aaaa-4001-8001-000000000003"
+        ],
+        "Month": "January",
+        "Year": "2025",
+        "FY Quarter": "Q1",
+        "Quarterly Budget ($)": 2000,
+        "Home Support Delivered During the Month ($-)": 0
+      },
+      "folderId": "Home Support Quarterly Budget"
     }
-  ]
+  ],
+  "$localFilesNote": "Files the offline store must hold for the fixture to render as production does. getS3File resolves a key against .local-s3, so business.defaultLogo and this key are the same string. Without it the invoice renders a blank corner and nothing says why.",
+  "localFiles": {
+    "logos/55390/fixture-logo.png": "iVBORw0KGgoAAAANSUhEUgAAAKAAAAAwCAYAAACWqXFuAAABBElEQVR4nO3bsQ3CMBCG0axAxwRh/33YBSpEY+SQs/lR8p50XU5OpK9wk+UBQUv6BTg3ARIlQKIESJQAiRIgUQIkSoBECZAoARIlQKI2B3i53prz7fPV+ZfzGEOAEwO8r2tzeBOgAKMEKMAoAQowSoACjPp5gLNUzxNghgAnvq8A+wRY3P8U2d45m8PfAWd934sAawRY3BdgjQCL+wKsEWBxX4A1AizuC7BGgIP2W0TWNy3AKgGegwAH7bcIsE+Ag/ZbBNh3+DvgrPO2EGCfAAUYJUABRglwYoD0CVCAUQIUYJQf04kSIFECJEqARAmQKAESJUCiBEiUAIkSIFECJEqARD0BzMrPkqlb6RAAAAAASUVORK5CYII="
+  },
+  "$edgeCaseNote": "The last two items reproduce the data that produced INV-1005 on dev: rows that exist but bill nothing, one with no participant at all. They must NOT produce an invoice. A run that numbers them also marks them invoiced, which excludes them from every future invoice."
 }
