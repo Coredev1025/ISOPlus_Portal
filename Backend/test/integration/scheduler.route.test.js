@@ -20,11 +20,20 @@ const app = createApp();
 describe('POST /api/scheduler/tick', () => {
   const originalSchedulerApiKey = process.env.SCHEDULER_API_KEY;
   const originalAdminApiKey = process.env.Admin_API_Key;
+  // AUTOMATION_ENABLED defaults OFF, and tickKindScope holds KIND_INVOICE and
+  // KIND_STATEMENT back before the claim when it is — so the per-kind scope
+  // tests below, which use those two kinds because the per-kind env vars are
+  // named after them, would claim nothing and read as an auth failure. This
+  // suite is about which kinds a CREDENTIAL may claim; the kill switch that
+  // decides which kinds a TICK may claim is orthogonal, and is covered by
+  // scheduler.tick.test.js and scheduler.handlers.test.js.
+  const originalAutomationEnabled = process.env.AUTOMATION_ENABLED;
 
   beforeEach(() => {
     clearRegistry();
     vi.clearAllMocks();
     process.env.SCHEDULER_API_KEY = 'test-scheduler-key';
+    process.env.AUTOMATION_ENABLED = 'true';
     delete process.env.SCHEDULER_API_KEY_INVOICE;
     delete process.env.SCHEDULER_API_KEY_STATEMENT;
   });
@@ -39,6 +48,11 @@ describe('POST /api/scheduler/tick', () => {
       delete process.env.Admin_API_Key;
     } else {
       process.env.Admin_API_Key = originalAdminApiKey;
+    }
+    if (originalAutomationEnabled === undefined) {
+      delete process.env.AUTOMATION_ENABLED;
+    } else {
+      process.env.AUTOMATION_ENABLED = originalAutomationEnabled;
     }
     delete process.env.SCHEDULER_API_KEY_INVOICE;
     delete process.env.SCHEDULER_API_KEY_STATEMENT;
