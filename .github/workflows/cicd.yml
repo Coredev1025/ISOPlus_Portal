@@ -16,6 +16,11 @@ on:
       - 'Backend/**'
       - 'Frontend/**'
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: 'Deploy the backend after building, instead of only build-checking it'
+        type: boolean
+        default: false
 
 jobs:
   detect-changes:
@@ -53,7 +58,12 @@ jobs:
   test-backend:
     name: Backend Unit Tests
     needs: detect-changes
-    if: needs.detect-changes.outputs.backend == 'true'
+    # A manual deploy has no diff to filter on, so detect-changes reports
+    # backend=false and this would be skipped — which would then skip the
+    # deploy, because it requires these tests to have passed. Opening the gate
+    # here is what keeps a manual deploy tested rather than unblocking it by
+    # accepting a skipped test result downstream.
+    if: needs.detect-changes.outputs.backend == 'true' || (github.event_name == 'workflow_dispatch' && inputs.deploy)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -207,9 +217,17 @@ jobs:
   # below each build their own zip and are mutually exclusive on the trigger event:
   # exactly one of them runs per event, and neither duplicates the other's work.
   #
-  #   pull_request     -> package-backend only  (build check, no AWS)
-  #   workflow_dispatch-> package-backend only  (build check, no AWS)
-  #   push main/develop-> deploy-backend only   (build + deploy)
+  #   pull_request              -> package-backend only  (build check, no AWS)
+  #   workflow_dispatch          -> package-backend only  (build check, no AWS)
+  #   workflow_dispatch deploy=1 -> deploy-backend only   (build + deploy)
+  #   push main/develop          -> deploy-backend only   (build + deploy)
+  #
+  # The manual deploy exists because the push trigger is path-filtered to
+  # Backend/** and Frontend/**, so a commit that touches neither — a workflow
+  # change, most often — produces no push run and therefore no deploy. That is
+  # how dev came to sit on 13 August code: every push since died at SonarQube
+  # before build-and-deploy, and the merge that disabled Sonar touched only
+  # this file, so it could not deploy itself.
   #
   # They were previously one job named "build-and-deploy" whose AWS steps carried
   # `if: github.event_name == 'push'`. Nothing ever deployed from a PR, but the job
@@ -225,6 +243,7 @@ jobs:
     if: >
       always() &&
       github.event_name != 'push' &&
+      !(github.event_name == 'workflow_dispatch' && inputs.deploy) &&
       needs.detect-changes.result == 'success' &&
       needs.detect-changes.outputs.backend == 'true' &&
       needs.test-backend.result == 'success' &&
@@ -264,9 +283,11 @@ jobs:
       - test-frontend
     if: >
       always() &&
-      github.event_name == 'push' &&
+      (
+        (github.event_name == 'push' && needs.detect-changes.outputs.backend == 'true') ||
+        (github.event_name == 'workflow_dispatch' && inputs.deploy)
+      ) &&
       needs.detect-changes.result == 'success' &&
-      needs.detect-changes.outputs.backend == 'true' &&
       needs.test-backend.result == 'success' &&
       (needs.test-frontend.result == 'success' || needs.test-frontend.result == 'skipped')
     runs-on: [ ubuntu-latest ]
