@@ -15,7 +15,6 @@
     "readOn": "2026-08-06",
     "via": "GET /api/55369/eNiJpH14PN3/attributes, /items, POST /items/values"
   },
-
   "business": {
     "workspaceId": "55369",
     "name": "Local Fixture Care Services",
@@ -32,12 +31,20 @@
       "accountsReceivableTerms": "Payment due within 14 days of invoice date."
     },
     "documentNumbering": {
-      "quote": { "prefix": "QT-", "nextNumber": 1090 },
-      "invoice": { "prefix": "IN-", "nextNumber": 1000 },
-      "purchaseOrder": { "prefix": "PO-", "nextNumber": 1000 }
+      "quote": {
+        "prefix": "QT-",
+        "nextNumber": 1090
+      },
+      "invoice": {
+        "prefix": "IN-",
+        "nextNumber": 1000
+      },
+      "purchaseOrder": {
+        "prefix": "PO-",
+        "nextNumber": 1000
+      }
     }
   },
-
   "board": {
     "boardId": "eNiJpH14PN3",
     "workspaceId": "55369",
@@ -55,7 +62,6 @@
       "name": "Generated PDF Link"
     }
   },
-
   "$attributesNote": [
     "The subset of board attributes that the pricing-dispatch rule keys on.",
     "ndisPricingRules.js reads these from the LIVE ISO+ API, not from Mongo, so",
@@ -70,22 +76,77 @@
     "the live board resolves to the NEW pricing path."
   ],
   "attributes": [
-    { "id": "019efd37-866f-7266-a2d6-6de8458096c9", "name": "Support Item Number", "type": "reference" },
-    { "id": "cebce714-5d25-4b94-9fef-cc57d4113b0b", "name": "Support Item Number", "type": "text" },
-    { "id": "019f1a87-9c98-77ee-ae5c-d094e35e23f1", "name": "Activity Based Transport Item Number", "type": "reference" },
-    { "id": "ebca140d-8cf8-473d-affe-03c34fa73a06", "name": "OLD Direct Support Item Number", "type": "reference" },
-    { "id": "fixture-attr-old-provider-travel", "name": "OLD Provider Travel - Non-Labour Cost Item Number", "type": "reference" },
-    { "id": "fixture-attr-provider-travel", "name": "Provider Travel - Non-Labour Cost Item Number", "type": "reference" },
-    { "id": "fixture-attr-centre-capital", "name": "Centre Capital Costs Item", "type": "reference" },
-    { "id": "fixture-attr-cancellation", "name": "Cancellation Item Number", "type": "reference" },
-    { "id": "fixture-attr-labour-travel", "name": "Provider Travel - Labour Travel Time Costs Item Number", "type": "reference" },
-    { "id": "fixture-attr-service-area", "name": "Service Area", "type": "reference" },
-    { "id": "1b9d68df-553b-4f2d-bcf2-59a240bb4176", "name": "Generated PDF Link", "type": "longtext" },
-    { "id": "05344a1b-cc91-4eb9-b9bd-fe708e023cf2", "name": "Integration Message", "type": "longtext" },
-    { "id": "276ca02c-e555-4d22-8cdc-4d52b125fd8b", "name": "Generated NDIS Quote Number", "type": "text" },
-    { "id": "f6297f38-4745-4d52-a485-2b0f1540f747", "name": "Recipient of the Quote", "type": "text" }
+    {
+      "id": "019efd37-866f-7266-a2d6-6de8458096c9",
+      "name": "Support Item Number",
+      "type": "reference"
+    },
+    {
+      "id": "cebce714-5d25-4b94-9fef-cc57d4113b0b",
+      "name": "Support Item Number",
+      "type": "text"
+    },
+    {
+      "id": "019f1a87-9c98-77ee-ae5c-d094e35e23f1",
+      "name": "Activity Based Transport Item Number",
+      "type": "reference"
+    },
+    {
+      "id": "ebca140d-8cf8-473d-affe-03c34fa73a06",
+      "name": "OLD Direct Support Item Number",
+      "type": "reference"
+    },
+    {
+      "id": "fixture-attr-old-provider-travel",
+      "name": "OLD Provider Travel - Non-Labour Cost Item Number",
+      "type": "reference"
+    },
+    {
+      "id": "fixture-attr-provider-travel",
+      "name": "Provider Travel - Non-Labour Cost Item Number",
+      "type": "reference"
+    },
+    {
+      "id": "fixture-attr-centre-capital",
+      "name": "Centre Capital Costs Item",
+      "type": "reference"
+    },
+    {
+      "id": "fixture-attr-cancellation",
+      "name": "Cancellation Item Number",
+      "type": "reference"
+    },
+    {
+      "id": "fixture-attr-labour-travel",
+      "name": "Provider Travel - Labour Travel Time Costs Item Number",
+      "type": "reference"
+    },
+    {
+      "id": "fixture-attr-service-area",
+      "name": "Service Area",
+      "type": "reference"
+    },
+    {
+      "id": "1b9d68df-553b-4f2d-bcf2-59a240bb4176",
+      "name": "Generated PDF Link",
+      "type": "longtext"
+    },
+    {
+      "id": "05344a1b-cc91-4eb9-b9bd-fe708e023cf2",
+      "name": "Integration Message",
+      "type": "longtext"
+    },
+    {
+      "id": "276ca02c-e555-4d22-8cdc-4d52b125fd8b",
+      "name": "Generated NDIS Quote Number",
+      "type": "text"
+    },
+    {
+      "id": "f6297f38-4745-4d52-a485-2b0f1540f747",
+      "name": "Recipient of the Quote",
+      "type": "text"
+    }
   ],
-
   "$itemsNote": [
     "Item.data is keyed by ATTRIBUTE NAME, matching both the webhook payload",
     "shape and inferPricingRuleFromServicePlanData(). The three items below give",
@@ -116,7 +177,9 @@
         "Suburb": "Testville",
         "State": "NSW",
         "Postcode": "2000",
-        "Support Item Number": ["fixture-support-item-ref"],
+        "Support Item Number": [
+          "fixture-support-item-ref"
+        ],
         "Quantity (Direct Support)": 4,
         "Unit Price for Direct Support($)": 67.56,
         "Total Price for Direct Support($)": 270.24
@@ -134,14 +197,23 @@
         "Suburb": "Testville",
         "State": "VIC",
         "Postcode": "3000",
-        "Direct Support Item Number": ["fixture-direct-support-ref"],
+        "Direct Support Item Number": [
+          "fixture-direct-support-ref"
+        ],
         "Quantity (Direct Support)": 2,
         "Unit Price for Direct Support($)": 62.17,
         "Total Price for Direct Support($)": 124.34
       }
+    },
+    {
+      "$case": "Referenced by every quote item's Service Area reference. Lives on an invented reference-data folder; the real board keeps these under Reference Data. 'Non-Remote (NSW)' is a key of LEGACY_SERVICE_AREA_MAP, so the NSW($) pricing column applies.",
+      "itemId": "fixture-ref-service-area",
+      "folderId": "fixture-folder-reference-data",
+      "data": {
+        "Service Area": "Non-Remote (NSW)"
+      }
     }
   ],
-
   "$keyingNote": [
     "Three hops, three different keyings. This is the whole reason a rename in the",
     "ISO+ UI can silently repoint backend dispatch. Observed end to end 2026-08-06.",
@@ -179,7 +251,6 @@
     },
     "$attributeIdSource": "board.attribute.id in Mongo, falling back to env INTEGRATION_MESSAGE_ATTRIBUTE_ID, then a hardcoded id. If board.attribute.id is unset the write throws 'Internal message attribute not found in board configuration' — which is why this fixture sets it."
   },
-
   "$webhookNote": [
     "Bodies as ISO+ posts them. `values` is keyed by attribute name, which is why",
     "a rename in ISO+ silently changes backend dispatch. Replay with:",
@@ -204,7 +275,12 @@
     "xero-quotendis": {
       "$url": "POST /api/xero/55369/eNiJpH14PN3/quotendis",
       "$automation": "Portal - Xero (for NDIS Quote)  [ButtonTrigger]",
-      "items": [{ "id": "cfd84160-cb3d-4b86-b9d0-a5cb20c674ce", "values": {} }]
+      "items": [
+        {
+          "id": "cfd84160-cb3d-4b86-b9d0-a5cb20c674ce",
+          "values": {}
+        }
+      ]
     },
     "participants-service-plan-support": {
       "$url": "POST /api/care-management-ndis-pricing/55369/eNiJpH14PN3/participants-service-plan?type=support",
@@ -213,7 +289,11 @@
       "items": [
         {
           "id": "fixture-quote-new-pricing",
-          "values": { "Support Item Number": ["fixture-support-item-ref"] }
+          "values": {
+            "Support Item Number": [
+              "fixture-support-item-ref"
+            ]
+          }
         }
       ]
     },
@@ -224,9 +304,31 @@
       "items": [
         {
           "id": "fixture-quote-legacy-pricing",
-          "values": { "Direct Support Item Number": ["fixture-direct-support-ref"] }
+          "values": {
+            "Direct Support Item Number": [
+              "fixture-direct-support-ref"
+            ]
+          }
         }
       ]
     }
-  }
+  },
+  "$referencesNote": "Item-to-item references, served offline by getReferencesOffline() in the shape GET /api/v2/.../references returns: data[] of {attribute_id, to_item_id}. The PDF handlers walk these before generating — getAttribute(attribute_id).name keys the handler map, and 'Service Area' is mandatory (webhookNdisPdfHandlers throws without it). Quote 17 (cfd84160) is included so a live Button fire from the real board — which sends exactly that item id — completes offline; on the live platform its references still resolve only via the ISO+ API.",
+  "references": [
+    {
+      "from_item_id": "fixture-quote-new-pricing",
+      "attribute_id": "fixture-attr-service-area",
+      "to_item_id": "fixture-ref-service-area"
+    },
+    {
+      "from_item_id": "fixture-quote-legacy-pricing",
+      "attribute_id": "fixture-attr-service-area",
+      "to_item_id": "fixture-ref-service-area"
+    },
+    {
+      "from_item_id": "cfd84160-cb3d-4b86-b9d0-a5cb20c674ce",
+      "attribute_id": "fixture-attr-service-area",
+      "to_item_id": "fixture-ref-service-area"
+    }
+  ]
 }

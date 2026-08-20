@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { server } from '../../msw/server.js';
 import Board from '../../../src/models/Board.js';
@@ -770,5 +770,42 @@ describe('getMyWorkspace', () => {
     );
 
     expect(await getMyWorkspace(AUTH)).toEqual({ message: 'Server error', status: 500 });
+  });
+});
+
+// --- offline write-backs ------------------------------------------------------
+
+// Offline, the three ISO+ write-backs must not attempt the network at all. The
+// items are local inventions the live platform has never heard of, so the PUTs
+// can only 404 — and setPDFLinkAttribute/setGeneratedField rethrow from their
+// catch, which killed an offline PDF run *after* the PDF was already stored.
+// A skip is the honest behaviour, same as the board_sync handler's offline skip.
+describe('write-backs in offline mode', () => {
+  const saved = {};
+
+  beforeEach(() => {
+    saved.ISOPLUS_OFFLINE = process.env.ISOPLUS_OFFLINE;
+    process.env.ISOPLUS_OFFLINE = '1';
+    server.use(
+      http.all(/app\.isoplus\.online/, () => {
+        throw new Error('offline write-back reached the network');
+      }),
+    );
+  });
+
+  afterEach(() => {
+    process.env.ISOPLUS_OFFLINE = saved.ISOPLUS_OFFLINE;
+  });
+
+  it('setIntegrationMessage resolves false without a request', async () => {
+    await expect(setIntegrationMessage('55369', 'b1', 'i1', 'Running...')).resolves.toBe(false);
+  });
+
+  it('setPDFLinkAttribute resolves false without a request', async () => {
+    await expect(setPDFLinkAttribute('55369', 'b1', 'i1', 'http://x/y.pdf', 'NDIS Quote')).resolves.toBe(false);
+  });
+
+  it('setGeneratedField resolves false without a request', async () => {
+    await expect(setGeneratedField('55369', 'b1', 'i1', 'QT-1 (ISO+™)')).resolves.toBe(false);
   });
 });

@@ -194,6 +194,7 @@ describe('configure', () => {
     XERO_CLIENT_ID: process.env.XERO_CLIENT_ID,
     XERO_CLIENT_SECRET: process.env.XERO_CLIENT_SECRET,
     XERO_REDIRECT_URL: process.env.XERO_REDIRECT_URL,
+    XERO_SCOPES: process.env.XERO_SCOPES,
   };
 
   const restore = () => {
@@ -207,6 +208,11 @@ describe('configure', () => {
     process.env.XERO_CLIENT_ID = 'client-id';
     process.env.XERO_CLIENT_SECRET = 'client-secret';
     process.env.XERO_REDIRECT_URL = 'https://portal.example.com/xero/callback';
+    // This test asserts the built-in default scopes, so the ambient override
+    // must not leak in: a developer's Backend/.env sets XERO_SCOPES for local
+    // Xero work and dotenv loads it into every test process. restore() puts it
+    // back — the key is in ORIGINAL.
+    delete process.env.XERO_SCOPES;
 
     const client = await configure();
 
@@ -215,6 +221,39 @@ describe('configure', () => {
     expect(client.config.clientId).toBe('client-id');
     expect(client.config.scopes).toContain('accounting.transactions');
     expect(client.config.scopes).toContain('offline_access');
+
+    restore();
+  });
+
+  // Xero apps created after 2 March 2026 only receive the new granular scopes,
+  // so the broad 'accounting.transactions' consent request is refused for them.
+  // XERO_SCOPES lets an environment name the scopes its app actually has,
+  // without touching the default the production app (older, broad-scoped,
+  // grandfathered to Sept 2027) still uses.
+  it('honours XERO_SCOPES over the built-in default', async () => {
+    process.env.XERO_CLIENT_ID = 'client-id';
+    process.env.XERO_CLIENT_SECRET = 'client-secret';
+    process.env.XERO_REDIRECT_URL = 'https://portal.example.com/xero/callback';
+    process.env.XERO_SCOPES = 'openid profile email accounting.settings accounting.contacts accounting.invoices accounting.attachments offline_access';
+
+    const client = await configure();
+
+    expect(client.config.scopes).toContain('accounting.invoices');
+    expect(client.config.scopes).not.toContain('accounting.transactions');
+
+    restore();
+  });
+
+  it('keeps the broad default scopes when XERO_SCOPES is unset', async () => {
+    process.env.XERO_CLIENT_ID = 'client-id';
+    process.env.XERO_CLIENT_SECRET = 'client-secret';
+    process.env.XERO_REDIRECT_URL = 'https://portal.example.com/xero/callback';
+    delete process.env.XERO_SCOPES;
+
+    const client = await configure();
+
+    expect(client.config.scopes).toContain('accounting.transactions');
+    expect(client.config.scopes).toContain('accounting.reports.read');
 
     restore();
   });

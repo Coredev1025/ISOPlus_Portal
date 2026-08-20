@@ -10,6 +10,22 @@ vi.mock('@/lib/accounting-integrations-panel', () => ({
   AccountingIntegrationsPanel: () => <div>Accounting panel</div>,
 }));
 
+// The automation panel loads its settings on mount. Left unmocked it would hit
+// axios in jsdom, so this file stays about tab gating and nothing else.
+vi.mock('@/lib/automation-settings', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/automation-settings')>(
+    '@/lib/automation-settings'
+  );
+  return {
+    ...actual,
+    fetchAutomationSettings: vi.fn(async () => ({
+      invoice: structuredClone(actual.DEFAULT_BLOCK),
+      statement: structuredClone(actual.DEFAULT_BLOCK),
+    })),
+    saveAutomationSettings: vi.fn(),
+  };
+});
+
 import { FinanceSettingsTabs } from '@/lib/finance-settings-page';
 
 function renderTabs(
@@ -51,7 +67,7 @@ describe('FinanceSettingsTabs', () => {
     expect(screen.getByText('Financial panel')).toBeInTheDocument();
   });
 
-  it('shows the automation placeholder when enabled and selected', async () => {
+  it('shows the automation panel when enabled and selected', async () => {
     const { onTabChange } = renderTabs({
       activeTab: 'automation',
       automationEnabled: true,
@@ -60,11 +76,13 @@ describe('FinanceSettingsTabs', () => {
     expect(
       screen.getByRole('tab', { name: /invoice & statement automation/i })
     ).toBeInTheDocument();
+    // The placeholder heading and its copy were deleted with the placeholder;
+    // the real panel renders an invoice section and a statement section.
     expect(
-      screen.getByRole('heading', { name: /invoice & statement automation/i })
+      await screen.findByRole('heading', { name: 'Invoice Automation' })
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/automation schedule and email settings will be built/i)
+      screen.getByRole('heading', { name: 'Statement Automation' })
     ).toBeInTheDocument();
 
     await userEvent.click(

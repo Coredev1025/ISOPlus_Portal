@@ -10,6 +10,7 @@ import {
   validateInvoiceGenerationInputs,
   buildInvoiceItemIds,
   getInvoiceGeneratorBoardFlags,
+  applyExclusiveInvoiceDateRange,
   type InvoiceGeneratorFilterParams,
 } from '@/lib/invoice-generator-helpers';
 
@@ -276,6 +277,25 @@ describe('buildInvoiceGeneratorSearchParams', () => {
     expect(params.has('startDate')).toBe(false);
   });
 
+  it('does not AND scheduled and service delivery ranges when both are set', () => {
+    const params = buildInvoiceGeneratorSearchParams(
+      makeFilters({
+        scheduledServiceDateRange: {
+          from: new Date('2026-08-03T00:00:00.000Z'),
+          to: new Date('2026-08-15T00:00:00.000Z'),
+        },
+        serviceDeliveryDateRange: {
+          from: new Date('2026-07-25T00:00:00.000Z'),
+          to: new Date('2026-07-30T00:00:00.000Z'),
+        },
+      }),
+    );
+    expect(params.has('startDate')).toBe(false);
+    expect(params.has('endDate')).toBe(false);
+    expect(params.get('serviceDeliveryStart')).toBe('START(2026-07-25T00:00:00.000Z)');
+    expect(params.get('serviceDeliveryEnd')).toBe('END(2026-07-30T00:00:00.000Z)');
+  });
+
   it('passes the business timezone to both date helpers', () => {
     const dateToStartOfDayISO = vi.fn(() => 'start');
     const dateToEndOfDayISO = vi.fn(() => 'end');
@@ -289,6 +309,41 @@ describe('buildInvoiceGeneratorSearchParams', () => {
     );
     expect(dateToStartOfDayISO).toHaveBeenCalledWith(expect.any(Date), 'Australia/Perth');
     expect(dateToEndOfDayISO).toHaveBeenCalledWith(expect.any(Date), 'Australia/Perth');
+  });
+});
+
+describe('applyExclusiveInvoiceDateRange', () => {
+  const scheduled = { from: new Date('2026-08-03T00:00:00.000Z'), to: new Date('2026-08-15T00:00:00.000Z') };
+  const delivery = { from: new Date('2026-07-25T00:00:00.000Z'), to: new Date('2026-07-30T00:00:00.000Z') };
+
+  it('clears Service Delivery Date when a Scheduled range is chosen', () => {
+    expect(applyExclusiveInvoiceDateRange('scheduled', scheduled, {
+      scheduledServiceDateRange: undefined,
+      serviceDeliveryDateRange: delivery,
+    })).toEqual({
+      scheduledServiceDateRange: scheduled,
+      serviceDeliveryDateRange: undefined,
+    });
+  });
+
+  it('clears Scheduled Service Date when a Service Delivery range is chosen', () => {
+    expect(applyExclusiveInvoiceDateRange('serviceDelivery', delivery, {
+      scheduledServiceDateRange: scheduled,
+      serviceDeliveryDateRange: undefined,
+    })).toEqual({
+      scheduledServiceDateRange: undefined,
+      serviceDeliveryDateRange: delivery,
+    });
+  });
+
+  it('keeps the other range when a picker is cleared', () => {
+    expect(applyExclusiveInvoiceDateRange('scheduled', undefined, {
+      scheduledServiceDateRange: scheduled,
+      serviceDeliveryDateRange: delivery,
+    })).toEqual({
+      scheduledServiceDateRange: undefined,
+      serviceDeliveryDateRange: delivery,
+    });
   });
 });
 

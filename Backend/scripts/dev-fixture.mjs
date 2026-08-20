@@ -5,7 +5,7 @@
 //   npm run dev:fixture                     upsert Business, Board and Items
 //   npm run dev:fixture -- --list           show what is already there, change nothing
 //   npm run dev:fixture -- --remove         delete only the documents this script wrote
-//   npm run dev:fixture -- --file <path>    use a different fixture
+//   npm run dev:fixture -- --file <path>    use a different fixture (.json or a generator .mjs)
 //   npm run dev:fixture -- --replay <name>  POST a recorded webhook body at the local API
 //   npm run dev:fixture -- --replay <name> --dry-run   print the request, send nothing
 //
@@ -28,10 +28,37 @@
 // 1 or 2, before anything touches the network.
 //
 // This adds NO application code. It writes documents through the app's own models.
+//
+// A fixture may declare a single `board` (the original shape) or a `boards`
+// array; with multiple boards every item must name its `boardId`. Optional
+// `automationSettings` (one doc per workspace) and `scheduledJobs` (keyed on
+// {kind, targetId}) sections seed the KAN-10 automation rows; an optional
+// `invoiceNumbers` section (keyed on {itemId, workspaceId, boardId, type})
+// seeds already-invoiced rows. Shape rules are pure and unit-tested in
+// devFixtureShape.mjs.
+//
+// A fixture is either committed JSON or a generator module. `--file` decides on
+// the extension: a `.mjs`/`.js` path is imported and its default export (an
+// object, or a function returning one) is the fixture. That is how the
+// statement-picker permutations are produced —
+//
+//   npm run dev:fixture -- --file test/fixtures/generators/statementPermutations.mjs
+//
+// — 1,639 items that used to be a committed 38k-line JSON file, of which every
+// service and budget row was formula output. Every other flag behaves the same
+// either way, because both paths produce the same fixture object.
 
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+
+import {
+  normalizeFixture,
+  stripDollarKeys,
+  isLocalMongoUri,
+  isGeneratorFixturePath,
+  fixtureFromModule,
+} from './devFixtureShape.mjs'
 
 const backendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const DEFAULT_FIXTURE = join(backendRoot, 'test', 'fixtures', 'ndis-quote-board.json')
@@ -67,19 +94,33 @@ if (!existsSync(fixturePath)) {
 }
 
 let fixture
-try {
-  fixture = JSON.parse(readFileSync(fixturePath, 'utf8'))
-} catch (err) {
-  console.error(`error: ${fixturePath} is not valid JSON — ${err.message}`)
-  process.exit(1)
+if (isGeneratorFixturePath(fixturePath)) {
+  try {
+    fixture = fixtureFromModule(await import(pathToFileURL(fixturePath).href), fixturePath)
+  } catch (err) {
+    console.error(`error: ${fixturePath} did not produce a fixture — ${err.message}`)
+    process.exit(1)
+  }
+} else {
+  try {
+    fixture = JSON.parse(readFileSync(fixturePath, 'utf8'))
+  } catch (err) {
+    console.error(`error: ${fixturePath} is not valid JSON — ${err.message}`)
+    process.exit(1)
+  }
 }
 
-const { business, board, items = [], webhookPayloads = {} } = fixture
-const workspaceId = business?.workspaceId ?? board?.workspaceId
-if (!workspaceId || !board?.boardId) {
-  console.error('error: fixture needs business.workspaceId and board.boardId')
+// Shape rules (single `board` vs `boards`, per-item boardId, automation
+// sections, date coercion) live in devFixtureShape.mjs so they are unit-tested.
+const { webhookPayloads = {} } = fixture
+let shape
+try {
+  shape = normalizeFixture(fixture)
+} catch (err) {
+  console.error(`error: ${err.message}`)
   process.exit(1)
 }
+const { workspaceId, business, boards, items, automationSettings, scheduledJobs, invoiceNumbers } = shape
 
 // --- replay ------------------------------------------------------------------
 //
@@ -163,7 +204,12 @@ if (!uri) {
 // dev-user.mjs has none: this writes invented business and participant records.
 // Landing those in a real database would be a data-integrity incident, not a
 // risky-but-sometimes-justified change.
-if (!/(?:@|\/\/)(?:localhost|127\.0\.0\.1|mongo)[:/]/.test(uri)) {
+//
+// isLocalMongoUri parses the authority and requires EVERY host in it to be
+// local — see devFixtureShape.mjs for what the substring match this replaces
+// let through, and for the one thing no string check can see (a tunnel on
+// localhost:27017 that ends in production).
+if (!isLocalMongoUri(uri)) {
   console.error(`error: refusing to run — MONGODB_URI is not local: ${mask(uri)}`)
   console.error('  This writes invented fixture data, so it is restricted to local databases.')
   console.error('  There is no override flag. Point MONGODB_URI at your local Mongo.')
@@ -182,6 +228,9 @@ const model = async (name) => (await import(
 const Business = await model('Business')
 const Board = await model('Board')
 const Item = await model('Item')
+const AutomationSettings = await model('AutomationSettings')
+const ScheduledJob = await model('ScheduledJob')
+const InvoiceNumber = await model('InvoiceNumber')
 
 const done = async (code) => {
   await mongoose.disconnect()
@@ -189,30 +238,87 @@ const done = async (code) => {
 }
 
 const itemIds = items.map((i) => i.itemId)
+const boardIds = boards.map((b) => b.boardId)
+// The exact upsert/delete keys for the fixture's ScheduledJob rows — the
+// {kind, targetId} pair carries the collection's unique index.
+const jobKeys = scheduledJobs.map((j) => ({ kind: j.kind, targetId: j.targetId }))
+// InvoiceNumber rows are removed by exactly the key they are written under —
+// {itemId, boardId, type} within the fixture's workspaceId. The two used to
+// disagree (the write included boardId, the delete did not), which both left
+// rows behind and risked taking a real row for the same item on another board.
+// normalizeInvoiceNumber pins workspaceId, so n.workspaceId is the fixture's.
+const invoiceKeys = invoiceNumbers.map((n) => ({
+  itemId: n.itemId,
+  boardId: n.boardId,
+  type: n.type,
+}))
 const dbName = mongoose.connection.db.databaseName
+
+const pricingRule = (keys) => (keys.includes('Support Item Number') ? 'new'
+  : keys.includes('Direct Support Item Number') ? 'legacy'
+    : null)
 
 // --- list --------------------------------------------------------------------
 
+const listBoardItems = (boardItems, found) => {
+  for (const i of boardItems) {
+    const hit = found.find((f) => f.itemId === i.itemId)
+    console.log(`    ${hit ? '✓' : '✗'} ${i.itemId}`)
+    if (!hit) continue
+    const rule = pricingRule(Object.keys(hit.data || {}))
+      ?? 'falls through to the board rule (needs live ISO+)'
+    console.log(`        pricing rule: ${rule}`)
+  }
+}
+
+const listAutomationSections = async () => {
+  if (automationSettings) {
+    const doc = await AutomationSettings.findOne({ workspaceId }).lean()
+    console.log(`  automationSettings       ${doc ? 'present' : 'MISSING'}`)
+  }
+  if (jobKeys.length === 0) return
+  const foundJobs = await ScheduledJob.find({ $or: jobKeys }, 'kind targetId nextRunAt enabled').lean()
+  console.log(`  scheduledJobs            ${foundJobs.length}/${jobKeys.length} present`)
+  for (const key of jobKeys) {
+    const hit = foundJobs.find((f) => f.kind === key.kind && f.targetId === key.targetId)
+    const detail = hit ? `  next ${hit.nextRunAt?.toISOString() ?? '(unset)'}${hit.enabled ? '' : '  DISABLED'}` : ''
+    console.log(`    ${hit ? '✓' : '✗'} ${key.kind} → ${key.targetId}${detail}`)
+  }
+}
+
+const listInvoiceNumbers = async () => {
+  if (invoiceKeys.length === 0) return
+  const found = await InvoiceNumber.find(
+    { workspaceId, $or: invoiceKeys }, 'itemId boardId type invoiceNumber',
+  ).lean()
+  console.log(`  invoiceNumbers           ${found.length}/${invoiceKeys.length} present`)
+  for (const n of invoiceNumbers) {
+    const hit = found.find(
+      (f) => f.itemId === n.itemId && f.boardId === n.boardId && f.type === n.type,
+    )
+    console.log(`    ${hit ? '✓' : '✗'} ${n.itemId} [${n.type}] ${n.invoiceNumber}`)
+  }
+}
+
 if (flags['--list']) {
-  const [biz, brd, found] = await Promise.all([
+  const [biz, foundBoards, found] = await Promise.all([
     Business.findOne({ workspaceId }).lean(),
-    Board.findOne({ workspaceId, boardId: board.boardId }).lean(),
+    Board.find({ workspaceId, boardId: { $in: boardIds } }).lean(),
     Item.find({ workspaceId, itemId: { $in: itemIds } }, 'itemId folderId data').lean(),
   ])
 
   console.log(`\nfixture "${fixturePath}" against "${dbName}":\n`)
   console.log(`  business ${workspaceId}  ${biz ? `present — ${biz.name}` : 'MISSING'}`)
-  console.log(`  board ${board.boardId}   ${brd ? `present — ${brd.name}` : 'MISSING'}`)
-  console.log(`  items                    ${found.length}/${items.length} present`)
-  for (const i of items) {
-    const hit = found.find((f) => f.itemId === i.itemId)
-    const keys = hit ? Object.keys(hit.data || {}) : []
-    const rule = keys.includes('Support Item Number') ? 'new'
-      : keys.includes('Direct Support Item Number') ? 'legacy'
-        : 'falls through to the board rule (needs live ISO+)'
-    console.log(`    ${hit ? '✓' : '✗'} ${i.itemId}`)
-    if (hit) console.log(`        pricing rule: ${rule}`)
+  for (const b of boards) {
+    const brd = foundBoards.find((f) => f.boardId === b.boardId)
+    const boardItems = items.filter((i) => i.boardId === b.boardId)
+    const present = boardItems.filter((i) => found.some((f) => f.itemId === i.itemId))
+    console.log(`  board ${b.boardId}   ${brd ? `present — ${brd.name}` : 'MISSING'}`)
+    console.log(`  items                    ${present.length}/${boardItems.length} present`)
+    listBoardItems(boardItems, found)
   }
+  await listAutomationSections()
+  await listInvoiceNumbers()
   console.log('')
   await done(0)
 }
@@ -225,58 +331,77 @@ if (flags['--list']) {
 
 if (flags['--remove']) {
   const removedItems = await Item.deleteMany({ workspaceId, itemId: { $in: itemIds } })
-  const removedBoard = await Board.deleteMany({ workspaceId, boardId: board.boardId })
-  const removedBiz = await Business.deleteMany({ workspaceId, name: business.name })
+  const removedBoards = await Board.deleteMany({ workspaceId, boardId: { $in: boardIds } })
+  const removedBiz = business
+    ? await Business.deleteMany({ workspaceId, name: business.name })
+    : { deletedCount: 0 }
 
   console.log(`\nremoved from "${dbName}":`)
   console.log(`  items     ${removedItems.deletedCount}`)
-  console.log(`  board     ${removedBoard.deletedCount}`)
+  console.log(`  boards    ${removedBoards.deletedCount}`)
   console.log(`  business  ${removedBiz.deletedCount}  (matched on the fixture's name only)`)
+  // Automation rows go only when the fixture declares them — never by
+  // workspace alone, since a seeded database can hold real settings and jobs
+  // under the same workspace.
+  if (automationSettings) {
+    const removed = await AutomationSettings.deleteMany({ workspaceId })
+    console.log(`  automationSettings  ${removed.deletedCount}`)
+  }
+  if (jobKeys.length > 0) {
+    const removed = await ScheduledJob.deleteMany({ $or: jobKeys })
+    console.log(`  scheduledJobs       ${removed.deletedCount}  (matched on the fixture's kind/targetId pairs only)`)
+  }
+  if (invoiceKeys.length > 0) {
+    const removed = await InvoiceNumber.deleteMany({ workspaceId, $or: invoiceKeys })
+    console.log(`  invoiceNumbers      ${removed.deletedCount}  (matched on the fixture's itemId/type pairs only)`)
+  }
   console.log('')
   await done(0)
 }
 
 // --- load --------------------------------------------------------------------
 
-const strip = (obj) => Object.fromEntries(Object.entries(obj).filter(([k]) => !k.startsWith('$')))
-
 console.log(`\nloading ${fixturePath}`)
 console.log(`  into "${dbName}"\n`)
 
-const existingBiz = await Business.findOne({ workspaceId }).lean()
-if (existingBiz && existingBiz.name !== business.name) {
-  // The seed dump defines a real Business for this workspace. Overwriting it
-  // would change document numbering and company details under the operator's
-  // feet, and they would find out via a wrong PDF.
-  console.error(`error: workspace ${workspaceId} already has a different business: "${existingBiz.name}"`)
-  console.error('  Refusing to overwrite it. Either:')
-  console.error('    - drop it first, if it is disposable, or')
-  console.error('    - change business.workspaceId in the fixture to an unused workspace.')
-  await done(1)
+if (business) {
+  const existingBiz = await Business.findOne({ workspaceId }).lean()
+  if (existingBiz && existingBiz.name !== business.name) {
+    // The seed dump defines a real Business for this workspace. Overwriting it
+    // would change document numbering and company details under the operator's
+    // feet, and they would find out via a wrong PDF.
+    console.error(`error: workspace ${workspaceId} already has a different business: "${existingBiz.name}"`)
+    console.error('  Refusing to overwrite it. Either:')
+    console.error('    - drop it first, if it is disposable, or')
+    console.error('    - change business.workspaceId in the fixture to an unused workspace.')
+    await done(1)
+  }
+
+  await Business.findOneAndUpdate(
+    { workspaceId },
+    { $set: stripDollarKeys(business) },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  )
+  console.log(`  business  ${workspaceId} — ${business.name}`)
 }
 
-await Business.findOneAndUpdate(
-  { workspaceId },
-  { $set: strip(business) },
-  { upsert: true, new: true, setDefaultsOnInsert: true },
-)
-console.log(`  business  ${workspaceId} — ${business.name}`)
-
-await Board.findOneAndUpdate(
-  { workspaceId, boardId: board.boardId },
-  { $set: strip(board) },
-  { upsert: true, new: true, setDefaultsOnInsert: true },
-)
-console.log(`  board     ${board.boardId} — ${board.name}`)
+for (const b of boards) {
+  await Board.findOneAndUpdate(
+    { workspaceId, boardId: b.boardId },
+    { $set: stripDollarKeys(b) },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  )
+  console.log(`  board     ${b.boardId} — ${b.name}`)
+}
 
 for (const item of items) {
-  const { itemId, folderId, data } = item
+  const { itemId, boardId, folderId, data } = item
   await Item.findOneAndUpdate(
     { itemId },
     {
       $set: {
         workspaceId,
-        boardId: board.boardId,
+        boardId,
         folderId,
         itemId,
         isoPlusItemId: itemId,
@@ -286,11 +411,42 @@ for (const item of items) {
     },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   )
-  const keys = Object.keys(data || {})
-  const rule = keys.includes('Support Item Number') ? 'new'
-    : keys.includes('Direct Support Item Number') ? 'legacy'
-      : 'board rule'
+  const rule = pricingRule(Object.keys(data || {})) ?? 'board rule'
   console.log(`  item      ${itemId}  [${rule}]`)
+}
+
+if (automationSettings) {
+  await AutomationSettings.findOneAndUpdate(
+    { workspaceId },
+    { $set: stripDollarKeys(automationSettings) },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  )
+  console.log(`  automationSettings  workspace ${workspaceId}`)
+}
+
+for (const job of scheduledJobs) {
+  // Keyed on the collection's unique {kind, targetId} index. findOneAndUpdate
+  // skips document middleware, so the schema's cron/schedule XOR hook does not
+  // run here — the fixture rows carry `schedule` with `cron: null`, matching
+  // what upsertSchedule writes in production.
+  await ScheduledJob.findOneAndUpdate(
+    { kind: job.kind, targetId: job.targetId },
+    { $set: stripDollarKeys(job) },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  )
+  console.log(`  scheduledJob        ${job.kind} → ${job.targetId}`)
+}
+
+for (const n of invoiceNumbers) {
+  // Keyed the way the UI reads these rows: one row per item/type within a
+  // workspace+board. findOneAndUpdate skips the schema's pre('save') hook, so
+  // updatedAt keeps whatever the fixture (or the insert default) set.
+  await InvoiceNumber.findOneAndUpdate(
+    { itemId: n.itemId, workspaceId: n.workspaceId, boardId: n.boardId, type: n.type },
+    { $set: stripDollarKeys(n) },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  )
+  console.log(`  invoiceNumber       ${n.itemId} [${n.type}] ${n.invoiceNumber}`)
 }
 
 console.log(`\n  ${items.length} item(s) loaded. Inspect with: npm run dev:fixture -- --list`)

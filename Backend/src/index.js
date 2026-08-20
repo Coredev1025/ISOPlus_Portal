@@ -28,9 +28,12 @@ import itemsRoutes from './routes/items.js';
 import exportOptimizedRoutes from './routes/exportOptimized.js';
 import subscriptionRoutes from './routes/subscription.js';
 import schedulerRoutes from './routes/scheduler.js';
+import localFilesRoutes from './routes/localFiles.js';
 import session from 'express-session';
 import MongoStore from 'connect-mongo';
 import syncWorker, { checkAndRetryFailedJobs } from './workers/syncWorker.js'; // Initialize sync worker
+import { startAutomationWorker } from './workers/automationWorker.js';
+import { startEmailEventsWorker } from './workers/emailEventsWorker.js';
 import { registerSchedulerHandlers } from './services/scheduler/handlers.js';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
@@ -46,6 +49,12 @@ dotenv.config();
 // Register scheduler job handlers alongside the other background wiring
 // (sync worker, queue) so the registry is populated before the first tick.
 registerSchedulerHandlers();
+
+// Drains the automation queue. Inert by design — see automationWorker.js.
+startAutomationWorker();
+
+// Polls the SES events queue. Inert by design — see emailEventsWorker.js.
+startEmailEventsWorker();
 
 axios.defaults.timeout = Math.max(parseInt(process.env.HTTP_CLIENT_TIMEOUT_MS || '30000', 10), 1000);
 axios.defaults.httpAgent = new http.Agent({ keepAlive: true, maxSockets: 100 });
@@ -162,6 +171,10 @@ app.use('/api/items', itemsRoutes);
 app.use('/api/export', exportOptimizedRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/scheduler', schedulerRoutes);
+// SES delivery notifications, delivered by SNS. Unauthenticated by
+// nature — the router verifies the SNS signature itself.
+// Offline-mode PDF store; 404s entirely outside offline mode.
+app.use('/api/local-files', localFilesRoutes);
 
 // Setup Bull Board for queue monitoring
 const serverAdapter = new ExpressAdapter();

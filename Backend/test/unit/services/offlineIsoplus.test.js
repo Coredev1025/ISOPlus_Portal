@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Business from '../../../src/models/Business.js';
 import Board from '../../../src/models/Board.js';
+import Item from '../../../src/models/Item.js';
 import {
   isOfflineMode,
   hasIsoplusToken,
@@ -8,6 +9,9 @@ import {
   getBoardPageOffline,
   getBoardAttributesOffline,
   getMemberRoleOffline,
+  getItemValuesOffline,
+  getReferencesOffline,
+  getAttributeOffline,
 } from '../../../src/services/offlineIsoplus.js';
 
 // Offline mode decides whether the local stack serves ISO+ collections from
@@ -51,10 +55,18 @@ describe('offlineIsoplus', () => {
       });
     }
 
-    it('forced on still wins in production, because the flag is explicit', () => {
+    // This pinned the opposite until a review pointed out what the flag winning
+    // in production actually costs. uploadS3.js routes generated PDFs to local
+    // disk whenever this is true, while routes/localFiles.js — which serves them
+    // back — is gated on NODE_ENV and answers 404 on a deployed host. So the
+    // flag winning here does not enable offline mode in production; it only
+    // writes invoices somewhere nothing can read them. Relaxing the read gate
+    // instead is not an option: it has no auth, so it would expose generated
+    // invoices and the outbox's participant addresses to anyone who asked.
+    it('forced on loses in production, because a deployed host is never offline', () => {
       process.env.ISOPLUS_OFFLINE = '1';
       process.env.NODE_ENV = 'production';
-      expect(isOfflineMode()).toBe(true);
+      expect(isOfflineMode()).toBe(false);
     });
   });
 
@@ -198,5 +210,97 @@ describe('offlineIsoplus', () => {
       // one here would create a second, competing answer.
       expect(await getMemberRoleOffline(null, '55369', 'a@b.com')).toEqual({ role: null, status: 200 });
     });
+  });
+});
+
+// --- item values -------------------------------------------------------------
+
+// The webhook path's tenancy guard (validateItemBelongsToTenant) calls
+// getItemValues, which is an ISO+ API call. Offline that 401s and every webhook
+// is refused as an intrusion attempt, so the offline stand-in has to answer it
+// from Mongo in the same shape consumers read: values[].attribute.name.
+describe('getItemValuesOffline', () => {
+  const WS = '55369';
+  const BOARD = 'eNiJpH14PN3';
+  const ITEM = 'offline-item-values-test';
+
+  beforeEach(async () => {
+    await Item.deleteMany({ itemId: ITEM });
+    await Item.create({
+      workspaceId: WS,
+      boardId: BOARD,
+      itemId: ITEM,
+      folderId: 'BFMUenisoQ4',
+      data: { 'Issue Date': '2026-08-07', 'Type of Lead': 'Current Participant' },
+    });
+  });
+
+  afterEach(async () => {
+    await Item.deleteMany({ itemId: ITEM });
+  });
+
+  it('returns the stored values keyed by attribute name', async () => {
+    const result = await getItemValuesOffline(WS, BOARD, ITEM);
+
+    expect(result).not.toBeNull();
+    const byName = Object.fromEntries(
+      result.values.map((v) => [v.attribute.name, v.data]),
+    );
+    expect(byName['Issue Date']).toBe('2026-08-07');
+    expect(byName['Type of Lead']).toBe('Current Participant');
+  });
+
+  it('carries the item id, so a caller can tell which item it got', async () => {
+    const result = await getItemValuesOffline(WS, BOARD, ITEM);
+    expect(result.id).toBe(ITEM);
+  });
+
+  // Null, not an empty item: the guard treats a falsy result as "does not
+  // exist", which is exactly the right answer for an item that does not.
+  it('returns null for an item that is not stored', async () => {
+    expect(await getItemValuesOffline(WS, BOARD, 'no-such-item')).toBeNull();
+  });
+
+  // Returning another board's item would defeat the tenancy guard rather than
+  // stand in for it.
+  it('returns null when the item belongs to a different board', async () => {
+    expect(await getItemValuesOffline(WS, 'some-other-board', ITEM)).toBeNull();
+  });
+});
+
+// --- references and attributes ----------------------------------------------
+
+// The quote/invoice PDF handlers walk item references before generating:
+// getReferences() lists {attribute_id, to_item_id} pairs, getAttribute() names
+// each one, and the handler map keys on that name ('Service Area' first, which
+// is mandatory). Both are ISO+ calls with no local fallback, so offline the
+// walk returned nothing and every PDF webhook died on "Service Area value is
+// required." even with the fixture loaded. These serve the fixture's recorded
+// references instead.
+describe('getReferencesOffline', () => {
+  it('lists the fixture references for a quote item, in the live shape', async () => {
+    const result = await getReferencesOffline('55369', 'eNiJpH14PN3', 'fixture-quote-legacy-pricing');
+
+    expect(result).not.toBeNull();
+    expect(Array.isArray(result.data)).toBe(true);
+    const serviceArea = result.data.find((r) => r.attribute_id === 'fixture-attr-service-area');
+    expect(serviceArea).toBeDefined();
+    expect(serviceArea.to_item_id).toBe('fixture-ref-service-area');
+  });
+
+  it('returns an empty list, not null, for an item with no recorded references', async () => {
+    const result = await getReferencesOffline('55369', 'eNiJpH14PN3', 'no-such-item');
+    expect(result).toEqual({ data: [], status: 200 });
+  });
+});
+
+describe('getAttributeOffline', () => {
+  it('resolves a fixture attribute by id, carrying the name the handler map keys on', async () => {
+    const attr = await getAttributeOffline('55369', 'eNiJpH14PN3', 'fixture-attr-service-area');
+    expect(attr).toMatchObject({ id: 'fixture-attr-service-area', name: 'Service Area' });
+  });
+
+  it('returns null for an unknown attribute id', async () => {
+    expect(await getAttributeOffline('55369', 'eNiJpH14PN3', 'nope')).toBeNull();
   });
 });

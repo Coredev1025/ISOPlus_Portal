@@ -142,6 +142,9 @@ export const REF_ATTRIBUTE_NAMES = {
     PROFILE_POST_CODE: 'Post Code',
     PROFILE_BILLING_CONTACT: 'Billing Contact',
     PROFILE_BILLING_ADDRESS: 'Billing Address',
+    // The mailbox an automation with recipient `billing_contact` sends to.
+    // Touchpoints: services/email/recipients.js (selectProfileAddress).
+    PROFILE_BILLING_EMAIL: 'Billing Email',
 
     // Client/Contractor attributes
     CLIENT: 'Client',

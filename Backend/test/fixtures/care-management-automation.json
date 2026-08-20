@@ -1,0 +1,606 @@
+{
+  "$description": [
+    "Source: workspace 55390 'ISO+™ NDIS & SaH Demo' on portal-dev.isoplus.online — the",
+    "three Care Management boards the KAN-10 invoice/statement automation fans out to.",
+    "Board ids, labels, participant names, funding sources, service codes and price points",
+    "are captured from the live dev portal; all person, address, bank and contact data is",
+    "invented. Contract-tested by test/unit/fixtures/careManagementAutomationFixture.test.js,",
+    "which drives these items through the real invoice row builders.",
+    "Billable dates are aligned into January 2025 so the seeded scheduledJobs slot",
+    "(2025-02-01T09:00 Australia/Sydney, periodKey 20250201-0900) bills every board in one",
+    "tick: dev's captured Mike Bird rows were dated 2026-06-29 and are re-dated here.",
+    "itemIds are UUID-shaped (prefix 55390000-) because the NDIS generator drops any",
+    "Participant Profile / Service Plan reference that is not UUID-like."
+  ],
+  "capturedFrom": {
+    "workspaceId": "55390",
+    "workspaceName": "ISO+™ NDIS & SaH Demo",
+    "boards": [
+      {
+        "boardId": "jpjztrn14pJ",
+        "boardName": "🧑‍⚕️ Care Management",
+        "label": "Care Management - SaH"
+      },
+      {
+        "boardId": "o24sGM1FoST",
+        "boardName": "🧑‍⚕️ Care Management",
+        "label": "Care Management - NDIS - Certification"
+      },
+      {
+        "boardId": "dwV23F5WcQL",
+        "boardName": "🧑‍⚕️ Care Management (NEW)",
+        "label": "Care Management - NDIS - Certification"
+      }
+    ],
+    "readOn": "2026-08-17",
+    "via": "portal-be-dev.isoplus.online /api/boards, /api/business/profile, /api/items/*/invoice-generator, /api/items/*/monthly-statement"
+  },
+  "business": {
+    "workspaceId": "55390",
+    "name": "ISO Consulting Services (Fixture)",
+    "abn": "98 765 432 109",
+    "headOfficeTimezone": "Australia/Sydney",
+    "address": {
+      "street": "2 Fixture Avenue",
+      "suburb": "Demoville",
+      "state": "NSW",
+      "postcode": "2001",
+      "country": "Australia"
+    },
+    "bankDetails": {
+      "accountName": "ISO Consulting Services Fixture",
+      "bankName": "Fixture Bank",
+      "bsb": "000-000",
+      "accountNumber": "12345678",
+      "accountsReceivableTerms": "Payment due within 14 days of invoice date."
+    },
+    "documentNumbering": {
+      "quote": {
+        "prefix": "QT-",
+        "nextNumber": 1000
+      },
+      "invoice": {
+        "prefix": "INV-",
+        "nextNumber": 1004
+      },
+      "purchaseOrder": {
+        "prefix": "PO-",
+        "nextNumber": 1000
+      }
+    },
+    "featureToggles": {
+      "invoiceStatementAutomation": true
+    }
+  },
+  "boards": [
+    {
+      "boardId": "jpjztrn14pJ",
+      "workspaceId": "55390",
+      "name": "🧑‍⚕️ Care Management",
+      "label": "Care Management - SaH",
+      "syncData": true,
+      "syncStatus": "realtime_sync",
+      "attribute": {
+        "id": "24682234-d689-4504-879b-5bd0ae89b031",
+        "name": "Integration Message"
+      },
+      "pdfAttribute": {
+        "id": ""
+      }
+    },
+    {
+      "boardId": "o24sGM1FoST",
+      "workspaceId": "55390",
+      "name": "🧑‍⚕️ Care Management",
+      "label": "Care Management - NDIS - Certification",
+      "syncData": true,
+      "syncStatus": "realtime_sync",
+      "attribute": {
+        "id": ""
+      },
+      "pdfAttribute": {
+        "id": ""
+      }
+    },
+    {
+      "boardId": "dwV23F5WcQL",
+      "workspaceId": "55390",
+      "name": "🧑‍⚕️ Care Management (NEW)",
+      "label": "Care Management - NDIS - Certification",
+      "syncData": true,
+      "syncStatus": "realtime_sync",
+      "attribute": {
+        "id": "5f6ce8ae-ea66-49d0-92fb-ed67af9086e2",
+        "name": "Integration Message"
+      },
+      "pdfAttribute": {
+        "id": ""
+      }
+    }
+  ],
+  "automationSettings": {
+    "workspaceId": "55390",
+    "invoice": {
+      "enabled": true,
+      "every": {
+        "n": 1,
+        "unit": "month"
+      },
+      "runOn": 1,
+      "runAt": "09:00",
+      "startDate": "2025-01-01T00:00:00.000Z",
+      "sendMethod": "isoplus",
+      "recipient": "billing_contact",
+      "sendCopyTo": "",
+      "replyTo": "billing@fixture-cm.test",
+      "emailFrom": "",
+      "emailSubject": "Your ISO+ invoice run",
+      "emailMessage": "Automated invoice run for the period just ended."
+    },
+    "statement": {
+      "enabled": true,
+      "every": {
+        "n": 1,
+        "unit": "month"
+      },
+      "runOn": 1,
+      "runAt": "09:00",
+      "startDate": "2025-01-01T00:00:00.000Z",
+      "sendMethod": "isoplus",
+      "recipient": "billing_contact",
+      "sendCopyTo": "",
+      "replyTo": "billing@fixture-cm.test",
+      "emailFrom": "",
+      "emailSubject": "Your ISO+ monthly statement",
+      "emailMessage": "Automated monthly statement for the previous calendar month."
+    }
+  },
+  "$scheduledJobsNote": [
+    "nextRunAt 2025-01-31T22:00:00Z is 2025-02-01 09:00 Australia/Sydney — already due, so",
+    "the first `npm run tick` claims both rows and bills January 2025. Re-running",
+    "`npm run dev:fixture -- --file test/fixtures/care-management-automation.json` resets",
+    "nextRunAt back to this slot, making tick runs repeatable. cron stays null: exactly one",
+    "of cron/schedule may be set (ScheduledJob XOR)."
+  ],
+  "scheduledJobs": [
+    {
+      "kind": "invoice_automation",
+      "targetId": "55390",
+      "workspaceId": "55390",
+      "enabled": true,
+      "cron": null,
+      "timezone": "Australia/Sydney",
+      "schedule": {
+        "every": {
+          "n": 1,
+          "unit": "month"
+        },
+        "runOn": 1,
+        "runAt": "09:00",
+        "startDate": "2025-01-01T00:00:00.000Z"
+      },
+      "nextRunAt": "2025-01-31T22:00:00.000Z"
+    },
+    {
+      "kind": "statement_automation",
+      "targetId": "55390",
+      "workspaceId": "55390",
+      "enabled": true,
+      "cron": null,
+      "timezone": "Australia/Sydney",
+      "schedule": {
+        "every": {
+          "n": 1,
+          "unit": "month"
+        },
+        "runOn": 1,
+        "runAt": "09:00",
+        "startDate": "2025-01-01T00:00:00.000Z"
+      },
+      "nextRunAt": "2025-01-31T22:00:00.000Z"
+    }
+  ],
+  "$itemsNote": [
+    "Item.data is a flat map keyed by ISO+ attribute NAME. NDIS master items use",
+    "'Actual Shift Start Date and Time' (the word 'and'); the SaH/Age Care and statement",
+    "paths read 'Actual Shift End Date & Time' (ampersand). Both spellings are real and",
+    "load-bearing — see NDIS_MASTERPLAN_ATTR vs constants/monthlyStatementAttributes.",
+    "Legacy-pricing service plans carry 'Direct Support Item Number'; 2026-pricing plans",
+    "carry 'Support Item Number'. That sentinel key is what keeps pricing resolution off",
+    "the network in offline mode."
+  ],
+  "items": [
+    {
+      "$case": "SaH participant profile — Jane Smith (careRecipientIdentifier AC12345 on dev)",
+      "itemId": "55390000-aaaa-4001-8001-000000000001",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "📋 Participants Intake",
+      "data": {
+        "Full Name/Preferred Name": "Jane Smith",
+        "My Aged Care ID Number": "AC12345",
+        "Provider ID": "AA111",
+        "Billing Contact": "Jane Smith",
+        "Billing Address": "12 Fixture Street, Demoville NSW 2001",
+        "Address": "12 Fixture Street",
+        "Suburb": "Demoville",
+        "State": "NSW",
+        "Postcode": "2001"
+      }
+    },
+    {
+      "$case": "SaH participant profile — David Brown",
+      "itemId": "55390000-aaaa-4001-8001-000000000002",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "📋 Participants Intake",
+      "data": {
+        "Full Name/Preferred Name": "David Brown",
+        "My Aged Care ID Number": "AC12346",
+        "Provider ID": "AA111",
+        "Billing Contact": "David Brown",
+        "Billing Address": "14 Fixture Street, Demoville NSW 2001",
+        "Address": "14 Fixture Street",
+        "Suburb": "Demoville",
+        "State": "NSW",
+        "Postcode": "2001"
+      }
+    },
+    {
+      "$case": "SaH participant profile — Lisa Morphy (statement participant with no billables)",
+      "itemId": "55390000-aaaa-4001-8001-000000000003",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "📋 Participants Intake",
+      "data": {
+        "Full Name/Preferred Name": "Lisa Morphy",
+        "My Aged Care ID Number": "AC12347",
+        "Provider ID": "AA111",
+        "Billing Contact": "Lisa Morphy",
+        "Billing Address": "16 Fixture Street, Demoville NSW 2001"
+      }
+    },
+    {
+      "$case": "SaH service — medication assistance, HSQ funding, gov/participant split",
+      "itemId": "55390000-aaaa-4003-8003-000000000001",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Participant Profile": [
+          "55390000-aaaa-4001-8001-000000000001"
+        ],
+        "Task Name": "Assistance with the self-administration of medication",
+        "Transaction Status": "Delivered - To be claimed and invoiced.",
+        "Funding Source": "Home Support(HS) Quarterly",
+        "Scheduled Shift Start Date & Time": "2025-01-06T06:00:00+11:00",
+        "Actual Shift End Date & Time": "2025-01-06T07:00:00+11:00",
+        "Unit": "Hours",
+        "Quantity": 1,
+        "Unit Price ($)": 100,
+        "Total Amount ($)": 100,
+        "Government Subsidy ($)": 95,
+        "Participant Contribution ($)": 5
+      }
+    },
+    {
+      "$case": "SaH service — flexible respite, third-party delivered",
+      "itemId": "55390000-aaaa-4003-8003-000000000002",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Participant Profile": [
+          "55390000-aaaa-4001-8001-000000000001"
+        ],
+        "Task Name": "Flexible respite",
+        "Transaction Status": "Delivered - To be claimed and invoiced.",
+        "Funding Source": "Home Support(HS) Quarterly",
+        "Scheduled Shift Start Date & Time": "2025-01-02T06:00:00+11:00",
+        "Actual Shift End Date & Time": "2025-01-02T09:00:00+11:00",
+        "Unit": "Hours",
+        "Quantity": 3,
+        "Unit Price ($)": 99,
+        "Total Amount ($)": 297,
+        "Government Subsidy ($)": 282.15,
+        "Participant Contribution ($)": 14.85
+      }
+    },
+    {
+      "$case": "SaH service — physiotherapy, Restorative Care Pathway, fully subsidised",
+      "itemId": "55390000-aaaa-4003-8003-000000000003",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Participant Profile": [
+          "55390000-aaaa-4001-8001-000000000001"
+        ],
+        "Task Name": "Physiotherapy",
+        "Transaction Status": "Delivered - To be claimed and invoiced.",
+        "Funding Source": "Restorative Care Pathway",
+        "Scheduled Shift Start Date & Time": "2025-01-09T09:00:00+11:00",
+        "Actual Shift End Date & Time": "2025-01-09T10:34:00+11:00",
+        "Unit": "Hours",
+        "Quantity": 0.5,
+        "Unit Price ($)": 185,
+        "Total Amount ($)": 92.5,
+        "Government Subsidy ($)": 92.5,
+        "Participant Contribution ($)": 0
+      }
+    },
+    {
+      "$case": "SaH item purchase — assistive technology bed, high-value single item",
+      "itemId": "55390000-aaaa-4003-8003-000000000004",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Participant Profile": [
+          "55390000-aaaa-4001-8001-000000000001"
+        ],
+        "Task Name": "Beds and detachable bed boards/mattress support platforms, non-adjustable",
+        "Transaction Status": "Delivered - To be claimed and invoiced.",
+        "Funding Source": "Assistive Technology - Short-term",
+        "Scheduled Shift Start Date & Time": "2025-01-07T09:00:00+11:00",
+        "Actual Shift End Date & Time": "2025-01-07T09:00:00+11:00",
+        "Unit": "Item",
+        "Quantity": 1,
+        "Unit Price ($)": 5100,
+        "Total Amount ($)": 5100,
+        "Government Subsidy ($)": 4845,
+        "Participant Contribution ($)": 255
+      }
+    },
+    {
+      "$case": "SaH adjustment — refund row with negative total (captured shape)",
+      "itemId": "55390000-aaaa-4003-8003-000000000005",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Participant Profile": [
+          "55390000-aaaa-4001-8001-000000000001"
+        ],
+        "Task Name": "Assistive technology hire adjustment",
+        "Transaction Status": "Adjustment (Refund) - To be claimed and invoiced.",
+        "Funding Source": "Assistive Technology - Short-term",
+        "Scheduled Shift Start Date & Time": "2025-01-15T06:00:00+11:00",
+        "Actual Shift End Date & Time": "2025-01-15T06:30:00+11:00",
+        "Unit": "Hours",
+        "Quantity": 0.5,
+        "Unit Price ($)": 60,
+        "Total Amount ($)": -30,
+        "Government Subsidy ($)": -30,
+        "Participant Contribution ($)": 5,
+        "Additional Notes": "Refund: services delivered with incorrect charge on 22 Dec 2024"
+      }
+    },
+    {
+      "$case": "SaH service — David Brown house cleaning",
+      "itemId": "55390000-aaaa-4003-8003-000000000006",
+      "boardId": "jpjztrn14pJ",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Participant Profile": [
+          "55390000-aaaa-4001-8001-000000000002"
+        ],
+        "Task Name": "General house cleaning",
+        "Transaction Status": "Delivered - To be claimed and invoiced.",
+        "Funding Source": "Home Support(HS) Quarterly",
+        "Scheduled Shift Start Date & Time": "2025-01-14T11:00:00+11:00",
+        "Actual Shift End Date & Time": "2025-01-14T11:45:00+11:00",
+        "Unit": "Hours",
+        "Quantity": 0.75,
+        "Unit Price ($)": 100,
+        "Total Amount ($)": 75,
+        "Government Subsidy ($)": 71.25,
+        "Participant Contribution ($)": 3.75
+      }
+    },
+    {
+      "$case": "NDIS (legacy) participant profile — David Smith",
+      "itemId": "55390000-bbbb-4001-8001-000000000001",
+      "boardId": "o24sGM1FoST",
+      "folderId": "📋 Participants Intake",
+      "data": {
+        "Full Name/Preferred Name": "David Smith",
+        "NDIS Number": "430111222",
+        "Billing Contact": "David Smith",
+        "Billing Address": "21 Fixture Road, Demoville NSW 2001"
+      }
+    },
+    {
+      "$case": "NDIS (legacy) participant profile — Martin Space",
+      "itemId": "55390000-bbbb-4001-8001-000000000002",
+      "boardId": "o24sGM1FoST",
+      "folderId": "📋 Participants Intake",
+      "data": {
+        "Full Name/Preferred Name": "Martin Space",
+        "NDIS Number": "430333444",
+        "Billing Contact": "Martin Space",
+        "Billing Address": "23 Fixture Road, Demoville NSW 2001"
+      }
+    },
+    {
+      "$case": "NDIS (legacy) service plan — David Smith, code captured from dev board",
+      "itemId": "55390000-bbbb-4002-8002-000000000001",
+      "boardId": "o24sGM1FoST",
+      "folderId": "fixture-cm-ndis-folder",
+      "data": {
+        "Direct Support Item Number": "15_410_0114_1_3",
+        "Unit (Direct Support)": "Hour",
+        "Agreed Unit Price for Direct Support ($)": 165
+      }
+    },
+    {
+      "$case": "NDIS (legacy) service plan — Martin Space",
+      "itemId": "55390000-bbbb-4002-8002-000000000002",
+      "boardId": "o24sGM1FoST",
+      "folderId": "fixture-cm-ndis-folder",
+      "data": {
+        "Direct Support Item Number": "04_104_0125_6_1",
+        "Unit (Direct Support)": "Hour",
+        "Agreed Unit Price for Direct Support ($)": 120
+      }
+    },
+    {
+      "$case": "NDIS (legacy) master — David Smith 2h shift, approved, in the Jan 2025 window",
+      "itemId": "55390000-bbbb-4003-8003-000000000001",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Timesheet Approval": "Approved",
+        "Participant Profile": [
+          "55390000-bbbb-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390000-bbbb-4002-8002-000000000001"
+        ],
+        "Job Status": "Completed",
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2025-01-10T09:00:00+11:00",
+        "Actual Shift Start Date and Time": "2025-01-10T09:00:00+11:00",
+        "Actual Shift End Date and Time": "2025-01-10T11:00:00+11:00",
+        "Actual Shift Duration(Hr.)": 2,
+        "Direct Support Value($) - Time Based Support": 330
+      }
+    },
+    {
+      "$case": "NDIS (legacy) master — David Smith 1.5h shift",
+      "itemId": "55390000-bbbb-4003-8003-000000000002",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Timesheet Approval": "Approved",
+        "Participant Profile": [
+          "55390000-bbbb-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390000-bbbb-4002-8002-000000000001"
+        ],
+        "Job Status": "Completed",
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2025-01-13T13:00:00+11:00",
+        "Actual Shift Start Date and Time": "2025-01-13T13:00:00+11:00",
+        "Actual Shift End Date and Time": "2025-01-13T14:30:00+11:00",
+        "Actual Shift Duration(Hr.)": 1.5,
+        "Direct Support Value($) - Time Based Support": 247.5
+      }
+    },
+    {
+      "$case": "NDIS (legacy) master — Martin Space 2h shift",
+      "itemId": "55390000-bbbb-4003-8003-000000000003",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Timesheet Approval": "Approved",
+        "Participant Profile": [
+          "55390000-bbbb-4001-8001-000000000002"
+        ],
+        "Service Plan": [
+          "55390000-bbbb-4002-8002-000000000002"
+        ],
+        "Job Status": "Completed",
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2025-01-28T09:00:00+11:00",
+        "Actual Shift Start Date and Time": "2025-01-28T09:00:00+11:00",
+        "Actual Shift End Date and Time": "2025-01-28T11:00:00+11:00",
+        "Actual Shift Duration(Hr.)": 2,
+        "Direct Support Value($) - Time Based Support": 240
+      }
+    },
+    {
+      "$case": "NDIS (legacy) master — DECOY, timesheet not approved, must never bill",
+      "itemId": "55390000-bbbb-4003-8003-000000000004",
+      "boardId": "o24sGM1FoST",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Timesheet Approval": "Pending",
+        "Participant Profile": [
+          "55390000-bbbb-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390000-bbbb-4002-8002-000000000001"
+        ],
+        "Job Status": "Completed",
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2025-01-15T09:00:00+11:00",
+        "Actual Shift Start Date and Time": "2025-01-15T09:00:00+11:00",
+        "Actual Shift End Date and Time": "2025-01-15T10:00:00+11:00",
+        "Actual Shift Duration(Hr.)": 1,
+        "Direct Support Value($) - Time Based Support": 165
+      }
+    },
+    {
+      "$case": "NDIS (2026 pricing) participant profile — Mike Bird",
+      "itemId": "55390000-cccc-4001-8001-000000000001",
+      "boardId": "dwV23F5WcQL",
+      "folderId": "📋 Participants Intake",
+      "data": {
+        "Full Name/Preferred Name": "Mike Bird",
+        "NDIS Number": "430555666",
+        "Billing Contact": "Mike Bird",
+        "Billing Address": "31 Fixture Lane, Demoville NSW 2001"
+      }
+    },
+    {
+      "$case": "NDIS (2026 pricing) service plan — captured 2026-shaped support code",
+      "itemId": "55390000-cccc-4002-8002-000000000001",
+      "boardId": "dwV23F5WcQL",
+      "folderId": "fixture-cm-new-folder",
+      "data": {
+        "Support Item Number": "05_040312811_0103_1_1",
+        "Unit (Support)": "Hour",
+        "Agreed Unit Price for Support ($)": 100
+      }
+    },
+    {
+      "$case": "NDIS (2026 pricing) service plan — second captured code",
+      "itemId": "55390000-cccc-4002-8002-000000000002",
+      "boardId": "dwV23F5WcQL",
+      "folderId": "fixture-cm-new-folder",
+      "data": {
+        "Support Item Number": "01_720_0118_1_3",
+        "Unit (Support)": "Hour",
+        "Agreed Unit Price for Support ($)": 65
+      }
+    },
+    {
+      "$case": "NDIS (2026 pricing) master — Mike Bird 2h shift (dev rows were 2026-06-29; re-dated into the fixture window)",
+      "itemId": "55390000-cccc-4003-8003-000000000001",
+      "boardId": "dwV23F5WcQL",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Timesheet Approval": "Approved",
+        "Participant Profile": [
+          "55390000-cccc-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390000-cccc-4002-8002-000000000001"
+        ],
+        "Job Status": "Completed",
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2025-01-08T06:30:00+11:00",
+        "Actual Shift Start Date and Time": "2025-01-08T06:30:00+11:00",
+        "Actual Shift End Date and Time": "2025-01-08T08:30:00+11:00",
+        "Actual Shift Duration(Hr.)": 2,
+        "Support Value($)": 200
+      }
+    },
+    {
+      "$case": "NDIS (2026 pricing) master — Mike Bird 3h shift on the second plan",
+      "itemId": "55390000-cccc-4003-8003-000000000002",
+      "boardId": "dwV23F5WcQL",
+      "folderId": "Shift Planning and Reporting",
+      "data": {
+        "Timesheet Approval": "Approved",
+        "Participant Profile": [
+          "55390000-cccc-4001-8001-000000000001"
+        ],
+        "Service Plan": [
+          "55390000-cccc-4002-8002-000000000002"
+        ],
+        "Job Status": "Completed",
+        "Payment Status": "Awaiting Payment",
+        "Scheduled Shift Start Date & Time": "2025-01-22T06:30:00+11:00",
+        "Actual Shift Start Date and Time": "2025-01-22T06:30:00+11:00",
+        "Actual Shift End Date and Time": "2025-01-22T09:30:00+11:00",
+        "Actual Shift Duration(Hr.)": 3,
+        "Support Value($)": 195
+      }
+    }
+  ]
+}

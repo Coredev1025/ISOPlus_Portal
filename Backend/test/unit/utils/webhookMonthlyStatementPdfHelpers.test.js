@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import path from 'path';
+import { inflateSync } from 'node:zlib';
 
 import {
   buildMonthlyStatementDeps,
@@ -201,7 +202,7 @@ const TEMPLATE_FIXTURE = {
 };
 
 const TRANSPARENT_PNG_DATA_URI =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=';
 
 function makeFs({ miniChart = null, footer = Buffer.from('FOOT') } = {}) {
   const readFile = vi.fn(async (filePath) => {
@@ -342,12 +343,12 @@ describe('handleMonthlyStatementRoute', () => {
     expect(deps.uploadFileToS3).toHaveBeenCalledWith(
       Buffer.from(new Uint8Array([9, 9, 9])),
       'output/ws_1/bd_1/monthly-statements/Jane-Roe_March_2025_Statement.pdf',
-      true,
+      false,
     );
     expect(deps.getS3FileUrl).toHaveBeenCalledWith(
       'output/ws_1/bd_1/monthly-statements/Jane-Roe_March_2025_Statement.pdf',
-      3600,
-      true,
+      604800,
+      false,
     );
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
@@ -539,6 +540,24 @@ describe('handleMonthlyStatementRoute', () => {
     await handleMonthlyStatementRoute(req, makeRes(), deps);
 
     expect(inputsFrom(deps)['Summary Table']).toBe(TRANSPARENT_PNG_DATA_URI);
+  });
+
+  it('hides the chart area with a genuinely transparent pixel when there is no budget data', async () => {
+    const deps = makeDeps();
+    const req = makeReq();
+    req.body.statementData.budgetCategories = [];
+
+    await handleMonthlyStatementRoute(req, makeRes(), deps);
+
+    // The placeholder exists to make the chart area invisible, so its one
+    // pixel must carry alpha 0. A tinted pixel gets aspect-fit by pdfme into
+    // a large coloured square on every statement generated without a chart.
+    const dataUri = inputsFrom(deps)['Summary Table'];
+    const png = Buffer.from(dataUri.replace('data:image/png;base64,', ''), 'base64');
+    expect(png[25]).toBe(6); // IHDR colour type 6 = RGBA
+    const idat = png.indexOf('IDAT');
+    const raw = inflateSync(png.subarray(idat + 4, idat + 4 + png.readUInt32BE(idat - 4)));
+    expect(raw[4]).toBe(0); // [filter, R, G, B, alpha]
   });
 
   it('falls back to the packaged mini-chart when a category carries a non-zero amount', async () => {
@@ -943,5 +962,43 @@ describe('handleMonthlyStatementRoute', () => {
     expect(deps.enableRepeatHeadOnTables).toHaveBeenCalledWith(call.template);
     expect(deps.ensureMonthlyStatementHeaderFromPage2).toHaveBeenCalledWith(call.template);
     expect(deps.applyTemplateTextDefaults).toHaveBeenCalledWith(call.template, call.inputs[0]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// KAN-10: a monthly statement carries a participant's name, address and funding
+// amounts, so it belongs in the non-public bucket behind an expiring presigned
+// URL — not at a permanent world-readable public-bucket address.
+// ---------------------------------------------------------------------------
+
+describe('monthly statement storage', () => {
+  it('uploads to the non-public bucket and signs the same bucket for seven days', async () => {
+    const deps = makeDeps();
+
+    await handleMonthlyStatementRoute(makeReq(), makeRes(), deps);
+
+    const [, uploadKey, uploadPublicRead] = deps.uploadFileToS3.mock.calls[0];
+    const [urlKey, urlExpiry, urlPublicRead] = deps.getS3FileUrl.mock.calls[0];
+
+    expect(uploadPublicRead).toBe(false);
+    expect(urlPublicRead).toBe(false);
+    expect(urlPublicRead).toBe(uploadPublicRead);
+    expect(urlKey).toBe(uploadKey);
+    expect(urlExpiry).toBe(604800);
+  });
+
+  it('keeps the output/<workspaceId>/<boardId>/monthly-statements/<name> layout', async () => {
+    const deps = makeDeps();
+    const req = makeReq();
+    req.params = { workspaceId: '55390', boardId: 'jpjztrn14pJ' };
+    req.body.statementData.participant = 'Jane Smith';
+    req.body.statementData.month = 'January';
+    req.body.statementData.year = '2025';
+
+    await handleMonthlyStatementRoute(req, makeRes(), deps);
+
+    expect(deps.uploadFileToS3.mock.calls[0][1]).toBe(
+      'output/55390/jpjztrn14pJ/monthly-statements/Jane-Smith_January_2025_Statement.pdf',
+    );
   });
 });

@@ -1,5 +1,11 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  GENERATED_DOCUMENT_PUBLIC_READ,
+  GENERATED_PDF_URL_EXPIRY_SECONDS,
+  OUTPUT_TYPE,
+} from '../constants/storage.js';
+import { buildOutputKey } from './s3OutputKey.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -269,7 +275,10 @@ function areAllBudgetCategoriesZero(chartBudgetCats) {
   });
 }
 
-const TRANSPARENT_PNG_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+// A 1x1 RGBA pixel with alpha 0. The previous value here decoded to red at
+// 50% alpha, which pdfme aspect-fit into a large pink square on every
+// statement rendered without a chart image.
+const TRANSPARENT_PNG_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=';
 
 async function resolveSummaryTableImage(chartImage, statementData, deps, req) {
   const { path, fs, info, warn } = deps;
@@ -578,14 +587,19 @@ async function uploadMonthlyStatementPdf({
 }) {
   const participantSlug = participantName.replace(/[^a-zA-Z0-9]/g, '-');
   const monthYear = `${statementData.month || 'Month'}_${yearValue || 'Year'}`.replace(/\s+/g, '_');
-  const filename = `output/${workspaceId}/${boardId}/monthly-statements/${participantSlug}_${monthYear}_Statement.pdf`;
-  const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
+  const filename = buildOutputKey({
+    workspaceId,
+    boardId,
+    type: OUTPUT_TYPE.MONTHLY_STATEMENT,
+    name: `${participantSlug}_${monthYear}_Statement.pdf`,
+  });
+  const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, GENERATED_DOCUMENT_PUBLIC_READ);
 
   if (uploadResult['$metadata'].httpStatusCode !== 200) {
     throw new Error('Upload of PDF failed, please provide correct information.');
   }
 
-  const fileUrl = await getS3FileUrl(filename, 3600, true);
+  const fileUrl = await getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
   info('Webhook-Service', 'Monthly statement PDF generated successfully', {
     participant: participantName,
     month: statementData.month,
@@ -601,8 +615,11 @@ async function uploadMonthlyStatementPdf({
   };
 }
 
-async function generateMonthlyStatementPdf(req, res, ctx) {
-  const { workspaceId, boardId, statementData, businessDetails, chartImage, clientTimezone, requestStartDate, requestEndDate, deps } = ctx;
+export async function renderMonthlyStatementPdf({
+  workspaceId, boardId, statementData, businessDetails, chartImage,
+  timezone: clientTimezone, startDate: requestStartDate, endDate: requestEndDate,
+  deps, req = null,
+}) {
   const {
     path, fs, getValidatedBusiness, enableRepeatHeadOnTables, ensureMonthlyStatementHeaderFromPage2,
     getLogoData, resolveTemplateImageUrls, getTemplateImageContentByName, applyTemplateTextDefaults,
@@ -673,7 +690,7 @@ async function generateMonthlyStatementPdf(req, res, ctx) {
     plugins: { text, image, line, table, multiVariableText },
   });
 
-  const upload = await uploadMonthlyStatementPdf({
+  return uploadMonthlyStatementPdf({
     pdfBytes,
     workspaceId,
     boardId,
@@ -687,7 +704,21 @@ async function generateMonthlyStatementPdf(req, res, ctx) {
     info,
     req,
   });
+}
 
+async function generateMonthlyStatementPdf(req, res, ctx) {
+  const upload = await renderMonthlyStatementPdf({
+    workspaceId: ctx.workspaceId,
+    boardId: ctx.boardId,
+    statementData: ctx.statementData,
+    businessDetails: ctx.businessDetails,
+    chartImage: ctx.chartImage,
+    timezone: ctx.clientTimezone,
+    startDate: ctx.requestStartDate,
+    endDate: ctx.requestEndDate,
+    deps: ctx.deps,
+    req,
+  });
   return res.status(200).json({
     message: 'Monthly statement PDF generated successfully',
     fileUrl: upload.fileUrl,

@@ -5,6 +5,7 @@ import {
   upsertSchedule,
   disableSchedule,
 } from '../../../src/services/scheduler/schedules.js';
+import { advanceSchedule } from '../../../src/services/scheduler/advance.js';
 import { getSchedulerAuthorization } from '../../../src/services/scheduler/auth.js';
 import { register, clearRegistry } from '../../../src/services/scheduler/registry.js';
 import {
@@ -183,6 +184,300 @@ describe('upsertSchedule', () => {
     ).rejects.toThrow(/invalid schedule/i);
 
     expect(await ScheduledJob.countDocuments({ targetId: 'board-tz' })).toBe(0);
+  });
+
+  // CHARACTERIZATION — pins the behaviour before it is changed.
+  // routes/workspace.js calls upsertSchedule on every automation-settings PUT,
+  // including a save that only touches emailFrom: toScheduleInput carries the
+  // cadence fields alone, so such a save re-upserts a byte-identical schedule.
+  // upsertSchedule recomputed nextRunAt unconditionally, so if the row was
+  // already due (tick backed up, admin edits the reply-to address) the save
+  // pushed it to the following slot. That month is never billed, missedRuns is
+  // not incremented, and nothing logs an anomaly.
+  it('leaves a due nextRunAt alone when the save changed nothing about the cadence', async () => {
+    const schedule = {
+      every: { n: 1, unit: 'month' },
+      runOn: 15,
+      runAt: '09:00',
+      startDate: '2026-01-15',
+    };
+    const created = await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-unrelated-save',
+      workspaceId: 'ws-unrelated-save',
+      schedule,
+      timezone: 'Australia/Sydney',
+      now: NOW, // 2026-08-11
+    });
+    // 15 Aug 2026 09:00 Sydney (AEST, UTC+10).
+    expect(created.nextRunAt.toISOString()).toBe('2026-08-14T23:00:00.000Z');
+
+    // The slot has come due and the tick has not claimed it yet.
+    const resaved = await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-unrelated-save',
+      workspaceId: 'ws-unrelated-save',
+      schedule,
+      timezone: 'Australia/Sydney',
+      now: new Date('2026-08-16T00:00:00Z'),
+    });
+
+    expect(resaved.nextRunAt.toISOString()).toBe('2026-08-14T23:00:00.000Z');
+  });
+
+  it('still recomputes nextRunAt when the cadence itself changes', async () => {
+    const base = {
+      every: { n: 1, unit: 'month' },
+      runOn: 15,
+      runAt: '09:00',
+      startDate: '2026-01-15',
+    };
+    await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-cadence-change',
+      workspaceId: 'ws-cadence-change',
+      schedule: base,
+      timezone: 'Australia/Sydney',
+      now: NOW,
+    });
+
+    const moved = await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-cadence-change',
+      workspaceId: 'ws-cadence-change',
+      schedule: { ...base, runOn: 20 },
+      timezone: 'Australia/Sydney',
+      now: new Date('2026-08-16T00:00:00Z'),
+    });
+
+    // 20 Aug 2026 09:00 Sydney — recomputed, not the preserved 15 Aug slot.
+    expect(moved.nextRunAt.toISOString()).toBe('2026-08-19T23:00:00.000Z');
+  });
+
+  it('recomputes nextRunAt when a disabled schedule is re-enabled', async () => {
+    // A paused schedule's stored nextRunAt is stale by definition — it is the
+    // slot that was due when it was paused. Re-enabling must move it forward,
+    // or the schedule fires the moment it is switched back on.
+    const schedule = {
+      every: { n: 1, unit: 'month' },
+      runOn: 15,
+      runAt: '09:00',
+      startDate: '2026-01-15',
+    };
+    await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-reenable',
+      workspaceId: 'ws-reenable',
+      schedule,
+      timezone: 'Australia/Sydney',
+      now: NOW,
+    });
+    await disableSchedule({ kind: 'invoice_automation', targetId: 'ws-reenable' });
+
+    const job = await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-reenable',
+      workspaceId: 'ws-reenable',
+      schedule,
+      timezone: 'Australia/Sydney',
+      now: new Date('2026-08-16T00:00:00Z'),
+    });
+
+    expect(job.enabled).toBe(true);
+    expect(job.nextRunAt.toISOString()).toBe('2026-09-14T23:00:00.000Z');
+  });
+
+  it('still recomputes nextRunAt when only the timezone changes', async () => {
+    const schedule = {
+      every: { n: 1, unit: 'month' },
+      runOn: 15,
+      runAt: '09:00',
+      startDate: '2026-01-15',
+    };
+    await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-tz-change',
+      workspaceId: 'ws-tz-change',
+      schedule,
+      timezone: 'Australia/Sydney',
+      now: NOW,
+    });
+
+    const job = await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-tz-change',
+      workspaceId: 'ws-tz-change',
+      schedule,
+      timezone: 'Australia/Perth',
+      now: NOW,
+    });
+
+    // 15 Aug 2026 09:00 Perth (AWST, UTC+8).
+    expect(job.nextRunAt.toISOString()).toBe('2026-08-15T01:00:00.000Z');
+  });
+
+  it('upserts a picker schedule and computes nextRunAt from it', async () => {
+    const job = await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-1',
+      workspaceId: 'ws-1',
+      schedule: {
+        every: { n: 1, unit: 'month' },
+        runOn: 15,
+        runAt: '09:00',
+        startDate: new Date('2026-08-01T00:00:00+10:00'),
+      },
+      timezone: 'Australia/Sydney',
+      now: new Date('2026-08-12T00:00:00Z'),
+    });
+
+    expect(job.cron).toBeNull();
+    expect(job.schedule.every.unit).toBe('month');
+    // Pinned to the exact instant, not just toBeInstanceOf(Date): a value
+    // produced by cron arithmetic, by the wrong argument order, or with the
+    // startDate silently dropped would also be a Date and would pass a
+    // looser assertion. 15 Aug 2026 09:00 Sydney (AEST, UTC+10).
+    expect(job.nextRunAt.toISOString()).toBe('2026-08-14T23:00:00.000Z');
+  });
+
+  it('anchors the first run and every later advance on the same startDate, west of UTC', async () => {
+    // The write path used to compute the first nextRunAt from the raw client
+    // string ('2026-09-01'), while every later advance re-read the
+    // Mongoose-cast Date and reformatted it in the job's timezone. Cast to
+    // 2026-09-01T00:00:00Z and read back in New York, that is 31 August — so
+    // the series silently moved a month off phase from its second run onward:
+    // 1 Sep, then 1 Oct instead of 1 Nov.
+    //
+    // Every Australian zone is east of Greenwich, so nothing in production is
+    // exposed today; Business.headOfficeTimezone is a free-form String with no
+    // enum, so nothing stops one being stored.
+    const schedule = {
+      every: { n: 2, unit: 'month' },
+      runOn: 1,
+      runAt: '09:00',
+      startDate: '2026-09-01',
+    };
+
+    const job = await upsertSchedule({
+      kind: 'invoice_automation',
+      targetId: 'ws-west-of-utc',
+      workspaceId: 'ws-west-of-utc',
+      schedule,
+      timezone: 'America/New_York',
+      now: new Date('2026-08-12T00:00:00Z'),
+    });
+
+    // 1 Sep 2026 09:00 New York, EDT (UTC-4).
+    expect(job.nextRunAt.toISOString()).toBe('2026-09-01T13:00:00.000Z');
+
+    // Advance from the stored document, exactly as the tick does.
+    const stored = await ScheduledJob.findOne({ targetId: 'ws-west-of-utc' }).lean();
+    const second = advanceSchedule(stored, job.nextRunAt);
+
+    // 1 Nov 2026 09:00 New York — two months later, and EST (UTC-5) by then,
+    // because US DST ends that morning. 2026-10-01T13:00:00.000Z is the drift.
+    expect(second.toISOString()).toBe('2026-11-01T14:00:00.000Z');
+
+    const dayOf = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(d);
+    expect(dayOf(job.nextRunAt)).toBe('2026-09-01');
+    expect(dayOf(second)).toBe('2026-11-01');
+  });
+
+  it('refuses a job given both cron and schedule, before writing anything', async () => {
+    // Match the full message upsertSchedule itself throws, not just
+    // /exactly one/i — that fragment also matches the message
+    // advanceSchedule throws, so a looser regex would still pass if the
+    // guard here were deleted and upsertSchedule fell through to
+    // advanceSchedule's own check instead. The point under test is that
+    // upsertSchedule enforces this itself, in application code, before any
+    // write — see the module comment on why (the model's pre('validate')
+    // hook never runs for findOneAndUpdate).
+    await expect(
+      upsertSchedule({
+        kind: 'invoice_automation',
+        targetId: 'ws-2',
+        cron: '0 9 * * *',
+        schedule: { every: { n: 1, unit: 'month' }, runAt: '09:00' },
+        timezone: 'Australia/Sydney',
+      }),
+    ).rejects.toThrow('Scheduler: exactly one of cron or schedule is required for "invoice_automation"');
+
+    expect(await ScheduledJob.countDocuments({ targetId: 'ws-2' })).toBe(0);
+  });
+
+  it('refuses a job given neither cron nor schedule, before writing anything', async () => {
+    await expect(
+      upsertSchedule({
+        kind: 'invoice_automation',
+        targetId: 'ws-3',
+        timezone: 'Australia/Sydney',
+      }),
+    ).rejects.toThrow('Scheduler: exactly one of cron or schedule is required for "invoice_automation"');
+
+    expect(await ScheduledJob.countDocuments({ targetId: 'ws-3' })).toBe(0);
+  });
+
+  it('rejects an unknown timezone for a picker schedule before writing anything, mirroring the cron case', async () => {
+    // Contrast with the cron path: isValidSchedule (and its friendly
+    // "invalid schedule" message) only runs `if (cron)`, so a picker
+    // schedule's timezone is never explicitly pre-checked. That is still
+    // safe — advanceSchedule is called before the ScheduledJob write, and it
+    // fails fast via Intl.DateTimeFormat rejecting the unknown zone — but the
+    // guarantee rested on an unasserted implementation detail of another
+    // module until this test pinned it.
+    await expect(
+      upsertSchedule({
+        kind: 'invoice_automation',
+        targetId: 'ws-bad-tz',
+        schedule: {
+          every: { n: 1, unit: 'month' },
+          runOn: 15,
+          runAt: '09:00',
+          startDate: new Date('2026-08-01T00:00:00+10:00'),
+        },
+        timezone: 'Mars/Olympus',
+      }),
+    ).rejects.toThrow(/invalid time zone/i);
+
+    expect(await ScheduledJob.countDocuments({ targetId: 'ws-bad-tz' })).toBe(0);
+  });
+
+  // The ScheduledJob schema's enum / min / required rules for the picker
+  // shape run on document middleware only, and every write here is a
+  // findOneAndUpdate. Each of these was persisted before upsertSchedule
+  // validated the picker half the way it already validated cron.
+  //
+  // None is a liveness bug — advanceSchedule always moves forward, so a bad
+  // `n` behaves as 1 and a bad `runAt` resolves to some other time. That is
+  // the reason to reject them: a schedule quietly billing on a cadence nobody
+  // chose is harder to notice than one that refuses to save.
+  describe.each([
+    ['a unit outside the enum', { every: { n: 1, unit: 'fortnight' } }, /every\.unit/],
+    ['an every.n of zero', { every: { n: 0, unit: 'month' } }, /every\.n/],
+    ['a negative every.n', { every: { n: -3, unit: 'month' } }, /every\.n/],
+    ['a non-integer every.n', { every: { n: 1.5, unit: 'month' } }, /every\.n/],
+    ['a malformed runAt', { runAt: '99:99' }, /runAt/],
+    ['an unparseable startDate', { startDate: 'not-a-date' }, /startDate/],
+  ])('rejects %s before writing anything', (_label, override, expected) => {
+    it('throws and leaves the collection empty', async () => {
+      const targetId = `ws-invalid-${_label.replace(/\s+/g, '-')}`;
+
+      await expect(
+        upsertSchedule({
+          kind: 'invoice_automation',
+          targetId,
+          schedule: {
+            every: { n: 1, unit: 'month' },
+            runOn: 15,
+            runAt: '09:00',
+            ...override,
+          },
+          timezone: 'Australia/Sydney',
+        }),
+      ).rejects.toThrow(expected);
+
+      expect(await ScheduledJob.countDocuments({ targetId })).toBe(0);
+    });
   });
 });
 

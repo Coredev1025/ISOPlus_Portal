@@ -11,8 +11,15 @@ import {
   setGeneratedField,
 } from '../services/isoplus.js';
 import { logAuditTrail } from '../utils/auditLogger.js';
+import { claimDocumentNumber } from '../utils/documentNumberAllocator.js';
 import { extractRefId as extractNdisRefId } from '../utils/ndisServiceRecords.js';
 import { mongoEq } from '../utils/securityHelpers.js';
+import {
+  GENERATED_DOCUMENT_PUBLIC_READ,
+  GENERATED_PDF_URL_EXPIRY_SECONDS,
+  OUTPUT_TYPE,
+} from '../constants/storage.js';
+import { buildOutputKey } from './s3OutputKey.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -180,6 +187,28 @@ export function buildParticipantTaxOrders(dbItems, ctx) {
   return { ordersArr, totalParticipantContribution, totalAmountSum };
 }
 
+/**
+ * Claimed atomically, and claimed BEFORE the render, the upload and the
+ * write-back to ISO+. This used to read the counter off the passed-in
+ * `business`, run all of that, then increment and save; two generations
+ * overlapping anywhere across those awaits both read the same number and both
+ * put it on an invoice. Same allocator the NDIS and statement generators use.
+ *
+ * A run that fails after this leaves a gap in the sequence. That is the trade:
+ * a gap is cosmetic, a duplicate invoice number is a billing bug a client sees.
+ *
+ * Its own function so the guard does not add a branch to
+ * generateParticipantTaxInvoicePdf, which is already over the cognitive
+ * complexity gate.
+ */
+async function claimInvoiceNumber(workspaceId) {
+  const invoiceNumber = await claimDocumentNumber(workspaceId, 'invoice');
+  if (!invoiceNumber) {
+    throw new Error(`Business not found for workspace ${workspaceId}; cannot number an invoice`);
+  }
+  return invoiceNumber;
+}
+
 export async function generateParticipantTaxInvoicePdf({
   req,
   res,
@@ -212,7 +241,7 @@ export async function generateParticipantTaxInvoicePdf({
   enableRepeatHeadOnTables(template);
 
   const logoBase64 = await getLogoData(business);
-  const invoiceNumber = business.documentNumbering.invoice.prefix + business.documentNumbering.invoice.nextNumber;
+  const invoiceNumber = await claimInvoiceNumber(workspaceId);
   let invoiceDate = req.body?.invoiceDate || new Date().toISOString();
   let dueDate = req.body?.dueDate || '';
   if (!dueDate) {
@@ -330,21 +359,23 @@ export async function generateParticipantTaxInvoicePdf({
     plugins: { text, image, line, table, multiVariableText },
   });
 
-  const filename = `output/${workspaceId}/${boardId}/Participant-invoices/${invoiceNumber + '-ISO+™-' + participantName.replace(/\s+/g, '-')}.pdf`;
-  const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
+  const filename = buildOutputKey({
+    workspaceId,
+    boardId,
+    type: OUTPUT_TYPE.PARTICIPANT_INVOICE,
+    name: `${invoiceNumber + '-ISO+™-' + participantName.replace(/\s+/g, '-')}.pdf`,
+  });
+  const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, GENERATED_DOCUMENT_PUBLIC_READ);
   if (uploadResult['$metadata'].httpStatusCode !== 200) {
     throw new Error('Upload of PDF failed, please provide correct information.');
   }
 
-  const fileUrl = await getS3FileUrl(filename, 3600, true);
+  const fileUrl = await getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
   await Promise.all(dbItems.map(async (item) => {
     await setIntegrationMessage(workspaceId, boardId, item.itemId, 'Invoice generated successfully');
     await setGeneratedField(workspaceId, boardId, item.itemId, `${invoiceNumber} (ISO+™)`);
     await saveInvoiceNumber(workspaceId, boardId, item.itemId, `${invoiceNumber} (ISO+™)`, 'PDF', fileUrl);
   }));
-
-  business.documentNumbering.invoice.nextNumber += 1;
-  await business.save();
 
   logAuditTrail({
     workspaceId,

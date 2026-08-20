@@ -46,6 +46,58 @@ describe('recordSuccess', () => {
     expect(fresh.nextRunAt.toISOString()).toBe('2026-08-11T04:30:00.000Z');
     expect(fresh.lastRunAt.toISOString()).toBe(NOW.toISOString());
   });
+
+  it('counts the slots skipped while an at-least-once schedule went unticked', async () => {
+    // missedRuns was only ever incremented on the at-most-once claim, so it
+    // stayed permanently zero for both automation kinds and board_sync —
+    // every at-least-once schedule there is. Anything alerting on it could
+    // never fire.
+    const job = await makeJob({ nextRunAt: new Date('2026-08-11T02:00:00Z') });
+
+    // Due 02:00, recorded at 04:05, every 30 minutes: 02:30, 03:00, 03:30 and
+    // 04:00 went by. The advance then jumps past all of them.
+    await recordSuccess(job, AT_LEAST_ONCE, NOW);
+
+    const fresh = await ScheduledJob.findById(job._id);
+    expect(fresh.missedRuns).toBe(4);
+  });
+
+  it('counts skipped slots for a picker schedule too', async () => {
+    const created = await makeJob({
+      cron: null,
+      schedule: { every: { n: 1, unit: 'month' }, runOn: 15, runAt: '09:00', startDate: null },
+      nextRunAt: new Date('2026-05-14T23:00:00Z'),
+    });
+    // Lean, because that is what the tick passes: claimNext reads .lean() and
+    // claimAtMostOnce writes with lean: true. Passing the hydrated document
+    // instead used to yield 93 rather than 3 — see the plainSchedule guard in
+    // advance.js, which now makes both agree.
+    const job = await ScheduledJob.findById(created._id).lean();
+
+    await recordSuccess(job, AT_LEAST_ONCE, new Date('2026-08-16T00:00:00Z'));
+
+    // 15 Jun, 15 Jul and 15 Aug passed between the due slot and now.
+    const fresh = await ScheduledJob.findById(created._id);
+    expect(fresh.missedRuns).toBe(3);
+  });
+
+  it('leaves missedRuns alone when nothing was skipped', async () => {
+    const job = await makeJob({ nextRunAt: new Date('2026-08-11T04:00:00Z') });
+
+    await recordSuccess(job, AT_LEAST_ONCE, NOW);
+
+    const fresh = await ScheduledJob.findById(job._id);
+    expect(fresh.missedRuns).toBe(0);
+  });
+
+  it('does not double-count under at-most-once, where the claim already counted', async () => {
+    const job = await makeJob({ nextRunAt: new Date('2026-08-11T02:00:00Z'), missedRuns: 4 });
+
+    await recordSuccess(job, AT_MOST_ONCE, NOW);
+
+    const fresh = await ScheduledJob.findById(job._id);
+    expect(fresh.missedRuns).toBe(4);
+  });
 });
 
 describe('recordFailure', () => {

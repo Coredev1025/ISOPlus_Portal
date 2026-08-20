@@ -1,6 +1,7 @@
 import ScheduledJob from '../../models/ScheduledJob.js';
 import { error as logError } from '../../utils/logger.js';
-import { computeNextRun } from './nextRun.js';
+import { advanceSchedule } from './advance.js';
+import { missedSlotsFor } from './missedSlots.js';
 import {
   AT_LEAST_ONCE,
   AT_MOST_ONCE,
@@ -30,10 +31,37 @@ export async function recordSuccess(job, policy, now) {
 
   // Under at-most-once the claim already advanced nextRunAt. Advancing again
   // here would skip a slot.
+  //
+  // advanceSchedule, not computeNextRun: a picker schedule carries no cron,
+  // and cron-parser reads that null as '* * * * *' rather than failing — so
+  // this line used to move a picker job on by one minute, and the automation
+  // kinds that use it would have re-fired every 60 seconds.
   if (policy === AT_LEAST_ONCE) {
-    update.$set.nextRunAt = computeNextRun(job.cron, job.timezone, now);
+    update.$set.nextRunAt = advanceSchedule(job, now);
+
+    // That advance jumps straight past every slot between the due one and
+    // now, so this is the only place they can be counted. The claim counts
+    // them for at-most-once; nothing counted them here, which left missedRuns
+    // permanently zero for every at-least-once schedule — both automation
+    // kinds and board_sync — so anything alerting on it could never fire.
+    const missed = missedSlotsFor(job, now);
+    if (missed > 0) update.$inc = { missedRuns: missed };
   }
 
+  // Deliberately NOT compare-and-swapped on `job.nextRunAt`, unlike
+  // recordFailure below. Under at-least-once two instances may dispatch the
+  // same slot and both succeed, so both reach this line with the same
+  // `nextRunAt` and the `$inc` above applies twice.
+  //
+  // That is accepted rather than overlooked. Everything in `$set` is
+  // idempotent — the second write stores the same cleared error, the same zero
+  // failure count and a marginally later lastRunAt — and both instances
+  // compute the same `nextRunAt`, so the schedule lands on the same slot
+  // either way. Only `missedRuns` double-counts, and it is a health signal
+  // ("at least this many slots were skipped"), not an accounting record; the
+  // alert fires on non-zero, which an over-count cannot suppress. A CAS here
+  // would instead drop the loser's clearing of `lastError`, which is the one
+  // field an operator reads to decide whether a schedule is healthy.
   await ScheduledJob.updateOne({ _id: job._id }, update);
 }
 
@@ -66,13 +94,20 @@ async function disableUnrunnable(job, err) {
  * failure itself is: a concurrent success may already have moved the schedule
  * on. cron/timezone come from the caller's copy rather than the re-read row,
  * because it is that copy the dispatch was made against.
+ *
+ * advanceSchedule, not computeNextRun: a picker schedule carries no cron, and
+ * cron-parser reads that null as '* * * * *' rather than failing — so this
+ * gave up on a slot by moving the schedule on by one minute, and the
+ * automation kinds that use it would then have re-fired every 60 seconds.
+ * advanceSchedule also throws for a row carrying neither or both schedule
+ * representations, which disableUnrunnable below is the right answer to.
  */
 async function advancePastFailureLimit(job, failures, policy, now) {
   if (policy !== AT_LEAST_ONCE || failures < MAX_CONSECUTIVE_FAILURES) return false;
 
   let nextRunAt;
   try {
-    nextRunAt = computeNextRun(job.cron, job.timezone, now);
+    nextRunAt = advanceSchedule(job, now);
   } catch (err) {
     await disableUnrunnable(job, err);
     return false;

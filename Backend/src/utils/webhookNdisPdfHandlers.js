@@ -19,6 +19,12 @@ import {
   sumNdisLineAmounts,
 } from '../utils/ndisMasterPlanLineHelpers.js';
 import { buildNdisQuotePdfOrders } from '../utils/ndisQuoteLineHelpers.js';
+import {
+  GENERATED_DOCUMENT_PUBLIC_READ,
+  GENERATED_PDF_URL_EXPIRY_SECONDS,
+  OUTPUT_TYPE,
+} from '../constants/storage.js';
+import { buildOutputKey } from '../utils/s3OutputKey.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -113,13 +119,18 @@ export async function processWebhookNdisQuotePdfItem({
       plugins: { text, image, line, table, multiVariableText },
     });
 
-    const filename = `output/${workspaceId}/${boardId}/NDIS-quote/${quoteNumber + '-ISO+™-' + item.id}.pdf`;
-    const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
+    const filename = buildOutputKey({
+      workspaceId,
+      boardId,
+      type: OUTPUT_TYPE.NDIS_QUOTE,
+      name: `${quoteNumber}-ISO+™-${item.id}.pdf`,
+    });
+    const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, GENERATED_DOCUMENT_PUBLIC_READ);
     if (uploadResult['$metadata'].httpStatusCode !== 200) {
       throw new Error('Upload of PDF failed, please provide correct information.');
     }
 
-    const fileUrl = await getS3FileUrl(filename, 3600, true);
+    const fileUrl = await getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS Quote', req, res);
     await setGeneratedField(workspaceId, boardId, item.id, `${quoteNumber} (ISO+™)`);
     business.documentNumbering.quote.nextNumber += 1;
@@ -237,13 +248,18 @@ export async function processWebhookNdisInvoicePdfItem({
       plugins: { text, image, line, table, multiVariableText },
     });
 
-    const filename = `output/${workspaceId}/${boardId}/NDIS-invoices/${invoiceNumber + '-ISO+™-' + item.id}.pdf`;
-    const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, true);
+    const filename = buildOutputKey({
+      workspaceId,
+      boardId,
+      type: OUTPUT_TYPE.NDIS_INVOICE,
+      name: `${invoiceNumber}-ISO+™-${item.id}.pdf`,
+    });
+    const uploadResult = await uploadFileToS3(Buffer.from(pdfBytes), filename, GENERATED_DOCUMENT_PUBLIC_READ);
     if (uploadResult['$metadata'].httpStatusCode !== 200) {
       throw new Error('Upload of PDF failed, please provide correct information.');
     }
 
-    const fileUrl = await getS3FileUrl(filename, 3600, true);
+    const fileUrl = await getS3FileUrl(filename, GENERATED_PDF_URL_EXPIRY_SECONDS, GENERATED_DOCUMENT_PUBLIC_READ);
     await handlePDFSuccess(workspaceId, boardId, item.id, fileUrl, 'NDIS Invoice', req, res);
     await setGeneratedField(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`);
     await saveInvoiceNumber(workspaceId, boardId, item.id, `${invoiceNumber} (ISO+™)`, 'PDF', fileUrl);

@@ -188,15 +188,19 @@ describe('processWebhookNdisQuotePdfItem', () => {
       'Days of the week': 'Monday, Wednesday',
     });
 
+    // The quote is a client billing document, so it goes to the non-public
+    // bucket and is served by a presigned URL. `publicRead` is asserted as
+    // exactly false, not merely falsy: uploading to one bucket and signing
+    // against the other yields a URL that 404s.
     expect(args.uploadFileToS3).toHaveBeenCalledWith(
       Buffer.from(new Uint8Array([1, 2, 3, 4])),
       'output/ws_1/bd_1/NDIS-quote/QT-7-ISO+™-itm_quote_1.pdf',
-      true,
+      false,
     );
     expect(args.getS3FileUrl).toHaveBeenCalledWith(
       'output/ws_1/bd_1/NDIS-quote/QT-7-ISO+™-itm_quote_1.pdf',
-      3600,
-      true,
+      604800,
+      false,
     );
     expect(args.handlePDFSuccess).toHaveBeenCalledWith(
       'ws_1', 'bd_1', 'itm_quote_1', 'https://s3.example.com/signed.pdf', 'NDIS Quote', args.req, args.res,
@@ -346,7 +350,12 @@ describe('processWebhookNdisInvoicePdfItem', () => {
     expect(args.uploadFileToS3).toHaveBeenCalledWith(
       Buffer.from(new Uint8Array([1, 2, 3, 4])),
       'output/ws_1/bd_1/NDIS-invoices/INV-41-ISO+™-itm_master_1.pdf',
-      true,
+      false,
+    );
+    expect(args.getS3FileUrl).toHaveBeenCalledWith(
+      'output/ws_1/bd_1/NDIS-invoices/INV-41-ISO+™-itm_master_1.pdf',
+      604800,
+      false,
     );
     expect(args.handlePDFSuccess).toHaveBeenCalledWith(
       'ws_1', 'bd_1', 'itm_master_1', 'https://s3.example.com/signed.pdf', 'NDIS Invoice', args.req, args.res,
@@ -503,5 +512,59 @@ describe('processWebhookNdisInvoicePdfItem', () => {
     });
 
     expect(JSON.parse(generate.mock.calls[0][0].inputs[0].orders)[0][0]).toBe('02/03/2025');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Where the generated PDFs land. These documents carry participant names,
+// addresses and amounts at keys built from sequential document numbers, so the
+// bucket they go to is the point of this suite: AWS_BUCKET (publicRead false),
+// never AWS_BUCKET_PUBLIC.
+// ---------------------------------------------------------------------------
+
+/** The publicRead argument both S3 calls take, read off the recorded calls. */
+function s3Destination(args) {
+  return {
+    uploadKey: args.uploadFileToS3.mock.calls[0][1],
+    uploadPublicRead: args.uploadFileToS3.mock.calls[0][2],
+    urlKey: args.getS3FileUrl.mock.calls[0][0],
+    urlExpiry: args.getS3FileUrl.mock.calls[0][1],
+    urlPublicRead: args.getS3FileUrl.mock.calls[0][2],
+  };
+}
+
+describe('generated NDIS documents go to the non-public bucket', () => {
+  it('uploads and signs an NDIS quote against the same, non-public bucket', async () => {
+    isoplus.getQuoteNDISReferencedItems.mockResolvedValue(QUOTE_REFS);
+    const args = makeHandlerArgs();
+
+    await processWebhookNdisQuotePdfItem({ ...args, business: makeBusiness(), item: quoteItem() });
+
+    const s3 = s3Destination(args);
+    expect(s3.uploadPublicRead).toBe(false);
+    expect(s3.urlPublicRead).toBe(false);
+    // Upload and URL must agree, or the signature is against the wrong bucket.
+    expect(s3.urlPublicRead).toBe(s3.uploadPublicRead);
+    expect(s3.urlKey).toBe(s3.uploadKey);
+    expect(s3.urlExpiry).toBe(604800);
+    // output/<workspaceId>/<boardId>/<type>/<name>, with the type folder
+    // exactly the one already in the bucket.
+    expect(s3.uploadKey).toBe('output/ws_1/bd_1/NDIS-quote/QT-7-ISO+™-itm_quote_1.pdf');
+  });
+
+  it('uploads and signs an NDIS invoice against the same, non-public bucket', async () => {
+    isoplus.getNDISMasterPlanReferencedItems.mockResolvedValue(MASTER_PLAN_REFS);
+    buildNdisMasterPlanInvoiceLines.mockResolvedValue(NDIS_LINES);
+    const args = makeHandlerArgs();
+
+    await processWebhookNdisInvoicePdfItem({ ...args, business: makeBusiness(), item: invoiceItem() });
+
+    const s3 = s3Destination(args);
+    expect(s3.uploadPublicRead).toBe(false);
+    expect(s3.urlPublicRead).toBe(false);
+    expect(s3.urlPublicRead).toBe(s3.uploadPublicRead);
+    expect(s3.urlKey).toBe(s3.uploadKey);
+    expect(s3.urlExpiry).toBe(604800);
+    expect(s3.uploadKey).toBe('output/ws_1/bd_1/NDIS-invoices/INV-41-ISO+™-itm_master_1.pdf');
   });
 });

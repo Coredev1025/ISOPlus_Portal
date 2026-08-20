@@ -25,6 +25,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import Business from '../models/Business.js';
 import Board from '../models/Board.js';
+import Item from '../models/Item.js';
 import { warn } from '../utils/logger.js';
 
 let announced = false;
@@ -32,16 +33,25 @@ let announced = false;
 /**
  * True when the backend should serve ISO+ collections from Mongo.
  *
- * Never in production. A blank token there is a misconfiguration that must fail
- * loudly, and quietly serving stub data instead would hide it — so the implicit
- * branch is gated on NODE_ENV. ISOPLUS_OFFLINE=1 forces it on for deliberate
- * offline work; ISOPLUS_OFFLINE=0 forces it off even without a token, which is
- * how you reproduce the real "credentials missing" failure locally.
+ * Never in production — and NODE_ENV is checked first, so ISOPLUS_OFFLINE=1
+ * cannot override it. That ordering is the whole point: utils/uploadS3.js sends
+ * generated PDFs to local disk whenever this is true, while routes/localFiles.js,
+ * which serves them back, is gated on NODE_ENV and answers 404 on a deployed
+ * host. A flag that won here would not give production an offline mode; it would
+ * write invoices and statements somewhere nothing can fetch them, and the
+ * automation email would carry attachments that cannot be loaded. Relaxing the
+ * read gate to match is not the alternative — that route has no auth, so it
+ * would expose generated invoices and the outbox's participant addresses.
+ *
+ * A blank token in production is a misconfiguration that must fail loudly, and
+ * quietly serving stub data would hide it. ISOPLUS_OFFLINE=1 forces offline on
+ * for deliberate local work; ISOPLUS_OFFLINE=0 forces it off even without a
+ * token, which is how you reproduce the real "credentials missing" failure.
  */
 export function isOfflineMode() {
+    if (process.env.NODE_ENV === 'production') return false;
     if (process.env.ISOPLUS_OFFLINE === '1') return true;
     if (process.env.ISOPLUS_OFFLINE === '0') return false;
-    if (process.env.NODE_ENV === 'production') return false;
     return !hasIsoplusToken();
 }
 
@@ -228,4 +238,127 @@ export async function getBoardAttributesOffline(_workspaceId, boardId) {
     }
 
     return { attribute: fixture.attributes ?? [], status: 200 };
+}
+
+// --- item values -------------------------------------------------------------
+
+/**
+ * Mirrors getItemValues(workspaceId, boardId, itemId) from services/isoplus.js.
+ *
+ * That function is the tenancy guard's only source of truth:
+ * validateItemBelongsToTenant() treats a falsy return as "this item does not
+ * belong to this tenant" and throws. Offline it always 401s, so every inbound
+ * webhook is refused as an intrusion attempt while the item sits in Mongo the
+ * whole time — the guard never consults the database.
+ *
+ * Stored items keep `data` as a flat map of attribute NAME to value, which is
+ * also how ISO+ keys webhook bodies. The live endpoint instead returns
+ * `values[]` with the attribute expanded, and consumers read
+ * `values[].attribute.name`, so the map is projected into that shape here.
+ * Attribute ids are not stored anywhere locally and are therefore null: code
+ * that keys on `attribute.id` will not work offline, and should not pretend to.
+ *
+ * Scoped by board as well as item, deliberately. Returning an item that belongs
+ * to another board would not stand in for the tenancy check — it would defeat
+ * it, which is worse than being offline.
+ */
+export async function getItemValuesOffline(_workspaceId, boardId, itemId) {
+    try {
+        const item = await Item.findOne({
+            itemId: String(itemId),
+            boardId: String(boardId),
+        }).lean();
+
+        if (!item) return null;
+
+        const values = Object.entries(item.data ?? {}).map(([name, data]) => ({
+            attribute: { id: null, name },
+            data,
+        }));
+
+        return { id: item.itemId, values };
+    } catch (err) {
+        warn('Offline-Mode', 'Offline item lookup failed', {
+            boardId,
+            itemId,
+            error: err.message,
+        });
+        return null;
+    }
+}
+
+// --- folders ------------------------------------------------------------------
+
+/**
+ * Mirrors getFolder(workspaceId, boardId) — { folder: [{id, name}], status }.
+ *
+ * There is no Folder model; the only folder knowledge Mongo holds is the
+ * folderId already stamped on each Item. Offline, each distinct folderId
+ * becomes a folder whose name IS the id, so fixtures that use real folder
+ * names as folderIds ('Shift Planning and Reporting', '📋 Participants
+ * Intake', the budget stream names) light up every name-matched folder
+ * filter: the statement budget classifier, the invoice-generator list
+ * scopes, and the participants scans. A folderId that matches no filter
+ * (e.g. a fixture's reference-item folder) is silently excluded, exactly
+ * as an unrelated live folder would be.
+ */
+export async function getFolderOffline(workspaceId, boardId) {
+    try {
+        const ids = await Item.distinct('folderId', {
+            workspaceId: String(workspaceId),
+            boardId: String(boardId),
+        });
+        const folder = ids
+            .filter((id) => typeof id === 'string' && id.trim())
+            .map((id) => ({ id, name: id }));
+        return { folder, status: 200 };
+    } catch (err) {
+        warn('Offline-Mode', 'Offline folder lookup failed', {
+            workspaceId,
+            boardId,
+            error: err.message,
+        });
+        return { folder: [], status: 200 };
+    }
+}
+
+// --- references and attributes -----------------------------------------------
+
+/**
+ * Mirrors getReferences(workspaceId, boardId, itemId) — { data: [...] } where
+ * each entry is {attribute_id, to_item_id}.
+ *
+ * The PDF handlers walk references before generating: getReferences() lists
+ * them, getAttribute() names each one, and the handler map keys on the name,
+ * with 'Service Area' mandatory. All three are ISO+ calls, so offline the walk
+ * produced nothing and every PDF webhook failed with "Service Area value is
+ * required." even though the items were local. References come from the
+ * fixture, like board attributes do — the Portal has no Reference model, so
+ * the fixture is the only local record of them.
+ *
+ * An empty list (item has no recorded references) is `{ data: [] }`, not null:
+ * null means "the lookup itself failed", and fetchLegacyNdisReferencedItems
+ * treats it as such.
+ */
+export async function getReferencesOffline(_workspaceId, _boardId, itemId) {
+    const fixture = loadFixture();
+    const references = (fixture?.references ?? []).filter(
+        (r) => String(r.from_item_id) === String(itemId),
+    );
+    return {
+        data: references.map(({ attribute_id, to_item_id }) => ({ attribute_id, to_item_id })),
+        status: 200,
+    };
+}
+
+/**
+ * Mirrors getAttribute(workspaceId, boardId, attributeId) — the attribute
+ * object itself, with the `.name` the reference walk keys on. Null for an
+ * unknown id, matching the live function's null on any failure.
+ */
+export async function getAttributeOffline(_workspaceId, _boardId, attributeId) {
+    const fixture = loadFixture();
+    return (
+        (fixture?.attributes ?? []).find((a) => String(a.id) === String(attributeId)) ?? null
+    );
 }

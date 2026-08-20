@@ -1,9 +1,9 @@
 "use client";
 
-import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AccountingIntegrationsPanel } from "@/lib/accounting-integrations-panel";
 import { FinancialSettingsPanel } from "@/lib/financial-settings-panel";
+import { InvoiceStatementAutomationPanel } from "@/lib/invoice-statement-automation-panel";
 import {
   parseFinanceSettingsTab,
   type FinanceSettingsTab,
@@ -14,21 +14,6 @@ export {
   parseFinanceSettingsTab,
   resolveActiveFinanceTab,
 } from "@/lib/finance-settings-tab";
-
-function PlaceholderPanel({
-  title,
-  description,
-}: Readonly<{
-  title: string;
-  description: string;
-}>) {
-  return (
-    <Card className="p-6 shadow-sm">
-      <h3 className="mb-2 text-lg font-semibold">{title}</h3>
-      <p className="text-sm text-muted-foreground">{description}</p>
-    </Card>
-  );
-}
 
 type FinanceSettingsTabsProps = Readonly<{
   workspaceId: string;
@@ -71,10 +56,7 @@ export function FinanceSettingsTabs({
 
       {automationEnabled ? (
         <TabsContent value="automation" className="mt-0">
-          <PlaceholderPanel
-            title="Invoice & Statement Automation"
-            description="Automation schedule and email settings will be built in a later update. This tab is visible because the workspace feature flag is enabled."
-          />
+          <InvoiceStatementAutomationPanel workspaceId={workspaceId} />
         </TabsContent>
       ) : null}
     </Tabs>

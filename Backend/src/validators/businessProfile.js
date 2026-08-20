@@ -1,3 +1,5 @@
+import { EMAIL_PATTERN } from '../constants/validation.js';
+
 const DOC_NUMBERING_TYPES = ['invoice', 'purchaseOrder', 'quote', 'statement'];
 
 function validateSequenceFields(type, sequence, errors) {
@@ -25,7 +27,7 @@ function validateIdentityFields(body, errors) {
   if (body.phone && !/^\+?[\d\s-]{8,20}$/.test(body.phone)) {
     errors.push('Invalid phone number format');
   }
-  if (body.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) {
+  if (body.email && !EMAIL_PATTERN.test(body.email)) {
     errors.push('Invalid email format');
   }
 }

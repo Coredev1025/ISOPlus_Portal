@@ -18,6 +18,7 @@ const isoplus = await import('../../../src/services/isoplus.js');
 const { logAuditTrail } = await import('../../../src/utils/auditLogger.js');
 const Board = (await import('../../../src/models/Board.js')).default;
 const Item = (await import('../../../src/models/Item.js')).default;
+const Business = (await import('../../../src/models/Business.js')).default;
 
 const {
   resolveLowCatBoardFlag,
@@ -584,6 +585,10 @@ describe('fetchValidatedDbItems', () => {
 
 // ---------------------------------------------------------------------------
 
+// The company details the PDF renders. The invoice NUMBER no longer comes from
+// this object: it is claimed atomically from the workspace's Business row (see
+// seedBusinessCounter), because a number read off an in-memory copy and written
+// back after the render is lost the moment two generations overlap.
 function makeBusiness() {
   return {
     name: 'Hillsgrade Care Pty Ltd',
@@ -592,8 +597,17 @@ function makeBusiness() {
     address: { street: '5 Depot Rd', suburb: 'Parramatta', state: 'NSW', postcode: '2150', country: 'Australia' },
     bankDetails: { accountName: 'Hillsgrade Care', bankName: 'CBA', bsb: '062-000', accountNumber: '12345678' },
     documentNumbering: { invoice: { prefix: 'INV-', nextNumber: 1001 } },
-    save: vi.fn().mockResolvedValue(undefined),
   };
+}
+
+/** The stored counter the run claims from, for a workspace. */
+async function seedBusinessCounter(workspaceId, nextNumber = 1001) {
+  await Business.deleteMany({ workspaceId });
+  await Business.create({
+    workspaceId,
+    name: 'Hillsgrade Care Pty Ltd',
+    documentNumbering: { invoice: { prefix: 'INV-', nextNumber } },
+  });
 }
 
 function makeRes() {
@@ -629,12 +643,13 @@ function pdfDeps(overrides = {}) {
 }
 
 describe('generateParticipantTaxInvoicePdf', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.mocked(generate).mockReset();
     vi.mocked(generate).mockResolvedValue(new Uint8Array([37, 80, 68, 70])); // "%PDF"
     isoplus.setIntegrationMessage.mockReset().mockResolvedValue(undefined);
     isoplus.setGeneratedField.mockReset().mockResolvedValue(undefined);
     vi.mocked(logAuditTrail).mockReset();
+    await seedBusinessCounter('ws_1');
   });
 
   const run = (overrides = {}) => {
@@ -707,10 +722,10 @@ describe('generateParticipantTaxInvoicePdf', () => {
     expect(deps.uploadFileToS3).toHaveBeenCalledWith(
       Buffer.from(new Uint8Array([37, 80, 68, 70])),
       'output/ws_1/b_1/Participant-invoices/INV-1001-ISO+™-Jane-Citizen.pdf',
-      true,
+      false,
     );
     expect(deps.getS3FileUrl).toHaveBeenCalledWith(
-      'output/ws_1/b_1/Participant-invoices/INV-1001-ISO+™-Jane-Citizen.pdf', 3600, true,
+      'output/ws_1/b_1/Participant-invoices/INV-1001-ISO+™-Jane-Citizen.pdf', 604800, false,
     );
 
     expect(isoplus.setGeneratedField.mock.calls).toEqual([
@@ -722,8 +737,9 @@ describe('generateParticipantTaxInvoicePdf', () => {
       ['ws_1', 'b_1', 'item_2', 'INV-1001 (ISO+™)', 'PDF', 'https://s3.example.com/signed/invoice.pdf'],
     ]);
 
-    expect(business.documentNumbering.invoice.nextNumber).toBe(1002);
-    expect(business.save).toHaveBeenCalledTimes(1);
+    // The stored counter moved, not a field on an in-memory copy.
+    const stored = await Business.findOne({ workspaceId: 'ws_1' }).lean();
+    expect(stored.documentNumbering.invoice.nextNumber).toBe(1002);
     expect(logAuditTrail).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: 'ws_1',
       action: 'Generate PDF Participant Tax Invoice',
@@ -731,6 +747,87 @@ describe('generateParticipantTaxInvoicePdf', () => {
     }));
   });
 
+  /**
+   * The number used to be read off the passed-in business object at the top of
+   * this function, and written back with `business.save()` at the bottom —
+   * after rendering the PDF, uploading it to S3 and writing the number back to
+   * every ISO+ row. Two generations overlapping anywhere across those awaits
+   * both read the same counter and both put the same invoice number on a
+   * different participant's invoice.
+   *
+   * The NDIS generator and the statement generator had already been fixed to
+   * claim inside a single findOneAndUpdate; this path was the copy that had
+   * not.
+   */
+  it('never puts one invoice number on two concurrent generations', async () => {
+    const [first, second, third] = await Promise.all([run(), run(), run()]);
+
+    const numbers = [first, second, third].map(({ res }) => res.body.invoiceNumber);
+    expect(new Set(numbers).size).toBe(3);
+    expect([...numbers].sort()).toEqual([
+      'INV-1001 (ISO+™)', 'INV-1002 (ISO+™)', 'INV-1003 (ISO+™)',
+    ]);
+
+    const stored = await Business.findOne({ workspaceId: 'ws_1' }).lean();
+    expect(stored.documentNumbering.invoice.nextNumber).toBe(1004);
+  });
+
+  // The number is claimed before the render, so a failed render leaves a gap in
+  // the sequence rather than reissuing the number. Deliberate: a gap is
+  // cosmetic, a duplicate invoice number is a billing bug a client sees.
+  it('leaves a gap rather than reissuing a number after a failed render', async () => {
+    vi.mocked(generate).mockRejectedValueOnce(new Error('pdfme exploded'));
+
+    await expect(run()).rejects.toThrow(/pdfme exploded/);
+
+    const { res } = await run();
+    expect(res.body.invoiceNumber).toBe('INV-1002 (ISO+™)');
+  });
+
+  // A workspace with no Business row cannot number an invoice, and inventing
+  // one would collide with whatever the real counter holds.
+  it('refuses to generate for a workspace with no business profile', async () => {
+    await Business.deleteMany({ workspaceId: 'ws_1' });
+
+    await expect(run()).rejects.toThrow(/business/i);
+  });
+
+  // KAN-10: a participant tax invoice names the participant and their billing
+  // address, and its key is a sequential invoice number, so it must land in the
+  // non-public bucket behind an expiring presigned URL rather than at a
+  // permanent guessable public-bucket address.
+  it('uploads to the non-public bucket and signs the same bucket for seven days', async () => {
+    const { deps } = await run();
+
+    const [, uploadKey, uploadPublicRead] = deps.uploadFileToS3.mock.calls[0];
+    const [urlKey, urlExpiry, urlPublicRead] = deps.getS3FileUrl.mock.calls[0];
+
+    expect(uploadPublicRead).toBe(false);
+    expect(urlPublicRead).toBe(false);
+    expect(urlPublicRead).toBe(uploadPublicRead);
+    expect(urlKey).toBe(uploadKey);
+    expect(urlExpiry).toBe(604800);
+  });
+
+  it('keeps the output/<workspaceId>/<boardId>/Participant-invoices/<name> layout', async () => {
+    const deps = pdfDeps();
+    await seedBusinessCounter('55390');
+
+    await generateParticipantTaxInvoicePdf({
+      req: { body: { invoiceDate: '2026-03-15T00:00:00.000Z' } },
+      res: makeRes(),
+      workspaceId: '55390',
+      boardId: 'jpjztrn14pJ',
+      business: makeBusiness(),
+      dbItems: [deliveredRecord()],
+      isLowCatBoard: false,
+      ...deps,
+    });
+
+    expect(deps.uploadFileToS3.mock.calls[0][1]).toBe(
+      'output/55390/jpjztrn14pJ/Participant-invoices/INV-1001-ISO+™-Jane-Citizen.pdf',
+    );
+  });
   it('renders the low-cat template, totals the amounts instead of the contributions', async () => {
     const { res } = await run({ isLowCatBoard: true });
 
@@ -808,6 +905,9 @@ describe('handleParticipantTaxInvoiceRoute', () => {
     isoplus.setGeneratedField.mockReset().mockResolvedValue(undefined);
     vi.mocked(generate).mockReset().mockResolvedValue(new Uint8Array([37, 80, 68, 70]));
     vi.mocked(logAuditTrail).mockReset();
+    // The stored counter the invoice number is claimed from. getValidatedBusiness
+    // is stubbed below for the company details; the number is not read off it.
+    await seedBusinessCounter('ws_1');
   });
 
   const routeDeps = (overrides = {}) => ({

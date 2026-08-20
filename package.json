@@ -20,6 +20,7 @@
     "schema": "node scripts/dev.mjs schema",
     "dev:user": "node scripts/dev.mjs user",
     "agents": "node scripts/dev.mjs agents",
-    "tick": "node scripts/dev.mjs tick"
+    "tick": "node scripts/dev.mjs tick",
+    "test:scripts": "node --test \"scripts/test/**/*.test.mjs\""
   }
 }

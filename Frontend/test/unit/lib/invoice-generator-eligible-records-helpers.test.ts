@@ -127,6 +127,24 @@ describe('buildEligibleRecordsSearchParams', () => {
     expect(params.has('startDate')).toBe(false);
   });
 
+  it('does not AND scheduled and service delivery ranges when both are set', () => {
+    const params = buildEligibleRecordsSearchParams({
+      ...baseParamOptions,
+      scheduledServiceDateRange: {
+        from: new Date('2026-08-03T00:00:00.000Z'),
+        to: new Date('2026-08-15T00:00:00.000Z'),
+      },
+      serviceDeliveryDateRange: {
+        from: new Date('2026-07-25T00:00:00.000Z'),
+        to: new Date('2026-07-30T00:00:00.000Z'),
+      },
+    });
+    expect(params.has('startDate')).toBe(false);
+    expect(params.has('endDate')).toBe(false);
+    expect(params.get('serviceDeliveryStart')).toBe('2026-07-25T00:00:00.000Z');
+    expect(params.get('serviceDeliveryEnd')).toBe('2026-07-30T23:59:59.999Z');
+  });
+
   it('maps the transaction status filter to the ISO+ string and drops it for "all"', () => {
     expect(
       buildEligibleRecordsSearchParams({ ...baseParamOptions, transactionStatusFilter: 'cancelled' }).get(

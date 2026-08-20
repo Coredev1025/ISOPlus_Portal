@@ -26,7 +26,7 @@ import * as docker from './lib/docker.mjs'
 import * as seed from './lib/seed.mjs'
 import * as wt from './lib/worktree.mjs'
 import * as branchLib from './lib/branch.mjs'
-import { tickConfig, tickOnce } from './lib/tick.mjs'
+import { tickConfig, tickOnce, resolveTickInterval, describeFetchFailure } from './lib/tick.mjs'
 import {
   copyAppEnvFiles, missingAppEnvFiles, readEnv, setBackendMongoUri, writeEnv, DEFAULTS,
 } from './lib/env.mjs'
@@ -698,21 +698,48 @@ EventBridge rule. Reads the port from .env and SCHEDULER_API_KEY from Backend/.e
   const config = tickConfig(process.cwd(), { url: flags['--url'] })
 
   if (!config.key) {
+    // Backend/.env is gitignored, so a .env created before this key was added
+    // to .env.example will not have it. That is the common case, not an edge
+    // case, so say how to fix it rather than only what is wrong.
     console.error('SCHEDULER_API_KEY is not set in Backend/.env — the endpoint will answer 401')
+    // Node, not a shell pipeline: `$(openssl rand -hex 32)` is not command
+    // substitution in PowerShell and openssl is not installed on a default
+    // Windows box, so the printed remediation silently wrote the literal
+    // string. Everything here already requires Node, and nothing else.
+    // No backticks and no $ in the printed command, deliberately: in
+    // PowerShell a backtick is the escape character and $ interpolates, and in
+    // bash/zsh both are substitution. Only single quotes and \n, which all
+    // three shells pass through to Node untouched.
+    console.error(
+      '  generate one:  node -e "require(\'fs\').appendFileSync(\'Backend/.env\','
+      + "'\\nSCHEDULER_API_KEY='+require('crypto').randomBytes(32).toString('hex')+'\\n')\"",
+    )
+    console.error('  then restart:  docker compose restart backend')
+    console.error('  see Backend/.env.example and docs/scheduling.md')
+  }
+
+  // Parsed before the first call, not after it: an unusable --every should
+  // stop the command rather than tick once and then reveal the problem.
+  const { seconds, error } = resolveTickInterval(flags['--every'])
+  if (error) {
+    console.error(error)
+    process.exitCode = 1
+    return
   }
 
   const run = async () => {
     try {
       console.log(`[${new Date().toISOString()}] ${await tickOnce(config)}`)
     } catch (err) {
-      console.error(`[${new Date().toISOString()}] ${err.message}`)
+      // describeFetchFailure, not err.message: Node's fetch rejects with a
+      // bare "fetch failed" and keeps ECONNREFUSED in err.cause.
+      console.error(`[${new Date().toISOString()}] ${describeFetchFailure(err)}`)
     }
   }
 
   await run()
   if (flags['--once']) return
 
-  const seconds = Number(flags['--every'] || 60)
   console.log(`ticking ${config.url} every ${seconds}s — Ctrl-C to stop`)
   setInterval(run, seconds * 1000)
 }

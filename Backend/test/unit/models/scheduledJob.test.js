@@ -25,7 +25,11 @@ describe('ScheduledJob model', () => {
       cron: '*/30 * * * *',
       nextRunAt: new Date('2026-08-11T00:00:00Z'),
     });
-    await ScheduledJob.syncIndexes();
+    // init(), not syncIndexes(): syncIndexes diffs against listIndexes, which
+    // already shows autoIndex's in-flight build of this same index — so under
+    // load it returned before the build committed and a duplicate insert
+    // slipped through. init() awaits the schema's own index builds.
+    await ScheduledJob.init();
 
     await expect(
       ScheduledJob.create({
@@ -44,7 +48,11 @@ describe('ScheduledJob model', () => {
       cron: '*/30 * * * *',
       nextRunAt: new Date('2026-08-11T00:00:00Z'),
     });
-    await ScheduledJob.syncIndexes();
+    // init(), not syncIndexes(): syncIndexes diffs against listIndexes, which
+    // already shows autoIndex's in-flight build of this same index — so under
+    // load it returned before the build committed and a duplicate insert
+    // slipped through. init() awaits the schema's own index builds.
+    await ScheduledJob.init();
 
     const other = await ScheduledJob.create({
       kind: 'invoice_issuance',
@@ -83,5 +91,60 @@ describe('ScheduledJob model', () => {
         nextRunAt: new Date('2026-08-11T00:00:00Z'),
       }),
     ).rejects.toThrow();
+  });
+});
+
+describe('ScheduledJob cron/schedule exclusivity', () => {
+  const base = {
+    kind: 'invoice_automation',
+    targetId: 'ws-1',
+    timezone: 'Australia/Sydney',
+    nextRunAt: new Date('2026-09-01T09:00:00+10:00'),
+  };
+  const picker = {
+    every: { n: 1, unit: 'month' },
+    runOn: 15,
+    runAt: '09:00',
+    startDate: new Date('2026-08-01T00:00:00+10:00'),
+  };
+
+  it('accepts a cron-only job', async () => {
+    const doc = new ScheduledJob({ ...base, cron: '0 9 * * *' });
+    await expect(doc.validate()).resolves.toBeUndefined();
+  });
+
+  it('accepts a schedule-only job', async () => {
+    const doc = new ScheduledJob({ ...base, schedule: picker });
+    await expect(doc.validate()).resolves.toBeUndefined();
+  });
+
+  it('rejects a job with both', async () => {
+    const doc = new ScheduledJob({ ...base, cron: '0 9 * * *', schedule: picker });
+    await expect(doc.validate()).rejects.toThrow(/exactly one/i);
+  });
+
+  it('rejects a job with neither', async () => {
+    const doc = new ScheduledJob({ ...base });
+    await expect(doc.validate()).rejects.toThrow(/exactly one/i);
+  });
+
+  // Pins that timezone validation still runs on a schedule-only job (cron is
+  // null). Note this does NOT pin the `this.cron ?? PROBE_CRON` fallback
+  // specifically: cron-parser treats a null cron like '* * * * *' rather
+  // than throwing, so isValidSchedule(null, 'Not/AZone') already rejects via
+  // the Intl timezone check alone, before PROBE_CRON's value matters. The
+  // fallback is defensive (guards against a future cron-parser version that
+  // does throw on null) rather than load-bearing for this assertion.
+  it('validates timezone on a schedule-only job', async () => {
+    const doc = new ScheduledJob({ ...base, timezone: 'Not/AZone', schedule: picker });
+    await expect(doc.validate()).rejects.toThrow(/timezone/i);
+  });
+
+  it('rejects an unknown unit', async () => {
+    const doc = new ScheduledJob({
+      ...base,
+      schedule: { ...picker, every: { n: 1, unit: 'fortnight' } },
+    });
+    await expect(doc.validate()).rejects.toThrow(/unit/);
   });
 });

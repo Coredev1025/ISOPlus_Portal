@@ -33,8 +33,16 @@ const ORIGINAL_AWS = {
   AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
   AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
   AWS_REGION: process.env.AWS_REGION,
+  AWS_BUCKET: process.env.AWS_BUCKET,
   AWS_BUCKET_PUBLIC: process.env.AWS_BUCKET_PUBLIC,
 };
+
+function setAwsEnv() {
+  process.env.AWS_ACCESS_KEY_ID = 'test-key';
+  process.env.AWS_SECRET_ACCESS_KEY = 'test-secret';
+  process.env.AWS_REGION = 'ap-southeast-2';
+  process.env.AWS_BUCKET = 'isoplus-private-test';
+}
 
 afterEach(() => {
   for (const [key, value] of Object.entries(ORIGINAL_AWS)) {
@@ -134,40 +142,39 @@ describe('POST /api/pdf/:workspaceId/:boardId/monthly-statement', () => {
   });
 });
 
+/**
+ * This route serves a generated document, so it reads from the non-public
+ * bucket and hands back a presigned URL that expires. It previously redirected
+ * to a permanent, world-readable URL in AWS_BUCKET_PUBLIC; those expectations
+ * are updated here deliberately, because that shape is the defect.
+ */
 describe('GET /api/pdf/uploads/:filename', () => {
-  it('redirects to the public bucket URL for the pdfs/ prefix', async () => {
-    process.env.AWS_ACCESS_KEY_ID = 'test-key';
-    process.env.AWS_SECRET_ACCESS_KEY = 'test-secret';
-    process.env.AWS_REGION = 'ap-southeast-2';
-    process.env.AWS_BUCKET_PUBLIC = 'isoplus-public-test';
+  it('redirects to a presigned non-public-bucket URL for the pdfs/ prefix', async () => {
+    setAwsEnv();
 
     const res = await request(app).get('/api/pdf/uploads/invoice-42.pdf');
 
     expect(res.status).toBe(302);
-    expect(res.headers.location).toBe(
-      'https://isoplus-public-test.s3.ap-southeast-2.amazonaws.com/pdfs/invoice-42.pdf'
-    );
+    const url = new URL(res.headers.location);
+    expect(url.origin).toBe('https://isoplus-private-test.s3.ap-southeast-2.amazonaws.com');
+    expect(url.pathname).toBe('/pdfs/invoice-42.pdf');
+    // A presigned URL, not a permanent public one, and good for seven days.
+    expect(url.searchParams.get('X-Amz-Signature')).toBeTruthy();
+    expect(url.searchParams.get('X-Amz-Expires')).toBe('604800');
   });
 
   it('percent-encodes a plus sign in the filename', async () => {
-    process.env.AWS_ACCESS_KEY_ID = 'test-key';
-    process.env.AWS_SECRET_ACCESS_KEY = 'test-secret';
-    process.env.AWS_REGION = 'ap-southeast-2';
-    process.env.AWS_BUCKET_PUBLIC = 'isoplus-public-test';
+    setAwsEnv();
 
     const res = await request(app).get('/api/pdf/uploads/invoice%2B1.pdf');
 
     expect(res.status).toBe(302);
-    expect(res.headers.location).toBe(
-      'https://isoplus-public-test.s3.ap-southeast-2.amazonaws.com/pdfs/invoice%2B1.pdf'
-    );
+    expect(res.headers.location).toContain('/pdfs/invoice%2B1.pdf?');
   });
 
-  it('answers 404 when the public bucket is not configured', async () => {
-    process.env.AWS_ACCESS_KEY_ID = 'test-key';
-    process.env.AWS_SECRET_ACCESS_KEY = 'test-secret';
-    process.env.AWS_REGION = 'ap-southeast-2';
-    delete process.env.AWS_BUCKET_PUBLIC;
+  it('answers 404 when the non-public bucket is not configured', async () => {
+    setAwsEnv();
+    delete process.env.AWS_BUCKET;
 
     const res = await request(app).get('/api/pdf/uploads/invoice-42.pdf');
 

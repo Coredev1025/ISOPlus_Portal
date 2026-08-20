@@ -228,6 +228,7 @@ describe('createApp route mounting', () => {
       '/api/export',
       '/api/subscriptions',
       '/api/scheduler',
+      '/api/local-files',
     ]);
   });
 

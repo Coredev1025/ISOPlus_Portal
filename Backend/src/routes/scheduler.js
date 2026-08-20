@@ -13,7 +13,9 @@ const router = express.Router();
  */
 router.post('/tick', validateSchedulerApiKey, async (req, res) => {
   try {
-    const summary = await runTick({ now: new Date() });
+    // schedulerKinds carries the presented credential's scope: null for the
+    // master key, one kind for a per-kind EventBridge rule's key.
+    const summary = await runTick({ now: new Date(), kinds: req.schedulerKinds ?? null });
     res.json(summary);
   } catch (err) {
     logError(

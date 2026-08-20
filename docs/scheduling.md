@@ -31,19 +31,28 @@ Ticket: KAN-15.
 `POST /api/scheduler/tick`
 
 - **Auth**: `validateSchedulerApiKey` (`Backend/src/middleware/auth.js`) — the
-  raw `Authorization` header must equal `process.env.SCHEDULER_API_KEY`
-  exactly. No session, no JWT. Missing header → 401. Wrong value → 401.
+  raw `Authorization` header must equal one of the configured scheduler keys
+  exactly: the master `SCHEDULER_API_KEY`, or either optional per-kind key,
+  which scopes the tick to its own kind. See
+  ["One rule per kind, optionally"](#one-rule-per-kind-optionally) for the
+  scope table. No session, no JWT. Missing header → 401. Wrong value → 401.
+  `SCHEDULER_API_KEY` unset → 500, whatever else is configured.
 - **Body**: none required.
 - **Response** (200):
 
   ```json
-  { "claimed": 3, "dispatched": 3, "failed": 0, "capped": false }
+  { "claimed": 3, "dispatched": 3, "failed": 0, "heldBack": 0, "capped": false }
   ```
 
   `claimed` is how many due schedules this tick took, and `dispatched` and
   `failed` split that by outcome; `capped` is `true` only when the 100-per-tick
   batch limit was hit, so remaining due schedules waited for the next tick
   rather than being silently dropped.
+
+  `heldBack` counts due schedules this tick deliberately did **not** claim
+  because `AUTOMATION_ENABLED` is off. Those slots stay due and are billed when
+  the switch comes on — they are held, not skipped. A non-zero value on a
+  deployment that is meant to be running automation means the switch is off.
 
   `dispatched + failed` normally equals `claimed`, but is not guaranteed to.
   A schedule whose next slot cannot be computed is never claimed at all —
@@ -53,22 +62,13 @@ Ticket: KAN-15.
   from the summary entirely. See "`enabled: false` on a schedule nobody
   disabled" below.
 
-Verified against the local stack:
+Verified against the local stack — the route is live and the gate is closed to
+a call with no `Authorization` header at all:
 
 ```
-$ curl -s localhost:4001/api/healthcheck
-{"status":"OK"}
-
-$ npm run tick -- --once
-[2026-08-11T08:14:40.871Z] claimed=0 dispatched=0 failed=0 (81ms)
-
 $ curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:4001/api/scheduler/tick
 401
 ```
-
-The 401 above is `curl` sending no `Authorization` header at all — the point
-being that the route is live and the auth gate is doing its job, not that
-this particular call was a misconfiguration.
 
 ## Deploying: the indexes
 
@@ -149,15 +149,40 @@ table, then confirm with the verification steps below.
 | Header name | `Authorization` |
 | Header value | the environment's `SCHEDULER_API_KEY`, **verbatim** |
 
-**The header value must be the key exactly — no `Bearer ` prefix, no leading
-or trailing whitespace.** `validateSchedulerApiKey` compares the raw header
-against `process.env.SCHEDULER_API_KEY` with `!==`:
+### One rule per kind, optionally
 
-```js
-if (authHeader !== process.env.SCHEDULER_API_KEY) {
-  // ... 401 Invalid API key
-}
-```
+The automation kinds can each get their own rule and their own credential:
+set `SCHEDULER_API_KEY_INVOICE` and/or `SCHEDULER_API_KEY_STATEMENT` on the
+environment and point one rule at each, same table as above but with the
+per-kind key as the header value. **The presented key is the scope** — a tick
+authenticated with the invoice key claims only `invoice_automation`
+schedules, the statement key only `statement_automation`, and the master
+`SCHEDULER_API_KEY` claims everything (including `board_sync`), so the two
+rules cannot fire each other's schedules however they are misconfigured. The
+master key remains required configuration either way: it is what
+`npm run tick` sends, and the boot warning keys on it. An unset — or blank —
+per-kind variable simply makes that credential unavailable. Configuring only
+the per-kind keys gets every tick a **500**, not a 401; the log line names
+`SCHEDULER_API_KEY` explicitly for exactly that case.
+
+**Do not paste the same secret into two of these variables.** If a per-kind
+key is set to the master key's value, the narrowest matching scope wins — the
+tick claims only that kind — and `validateSchedulerApiKey` logs
+`API key matches more than one configured credential`. It is deliberately not
+the master scope: a credential that leaked a narrow capability must not
+silently acquire a wide one. Give each rule its own secret.
+
+`validateSchedulerApiKey` and `validateApiKey` are both built by the one
+`apiKeyValidator({ scopes, requiredEnvVar, requiredMessage, onMatch })` factory
+in `Backend/src/middleware/auth.js` — add a gate by calling it, not by copying
+it. A gate that accepts several credentials passes several `scopes` and reads
+the matched one in `onMatch`, which is how the tick learns its scope.
+
+**The header value must be the key exactly — no `Bearer ` prefix, no leading
+or trailing whitespace.** The factory compares the raw header against each
+configured key with strict equality (see `SCHEDULER_KEY_SCOPES` in the same
+file); a non-empty match is required, so a blank env var can never authorize
+anything.
 
 Anything other than the bare key value — a `Bearer ` prefix, a stray space
 from copy-paste — fails that comparison and produces a 401. This is not a
@@ -183,8 +208,8 @@ you set up first.
 
 Once the rule exists, confirm on the target environment (not locally):
 
-1. Create or leave enabled a test schedule (or wait for a real `board_sync` /
-   `invoice_issuance` one already registered).
+1. Create or leave enabled a test schedule (or wait for a real `board_sync`,
+   `invoice_automation` or `statement_automation` one already registered).
 2. Watch that record's `lastRunAt` advance on its own, with nobody calling the
    endpoint by hand, and `missedRuns` staying at `0`.
 3. If `lastRunAt` is not moving, the rule is either missing, disabled, pointed
@@ -240,14 +265,12 @@ not something to route around here.
 `Backend/src/index.js` is the production entry point. It does **not** call
 `createApp()` from `Backend/src/app.js` — they are two parallel Express apps
 that happen to wire up nearly the same routes. `Backend/test/` builds its app
-via `createApp()` (see `Backend/test/integration/scheduler.route.test.js:11`),
-so a route mounted only in `app.js` is fully covered by the test suite and
+via `createApp()` (`Backend/test/integration/scheduler.route.test.js`), so a
+route mounted only in `app.js` is fully covered by the test suite and
 **404s in production**, because `index.js` never mounted it.
 
-The scheduler route is correctly mounted in both places:
-
-- `Backend/src/app.js:127` — `app.use('/api/scheduler', schedulerRoutes);`
-- `Backend/src/index.js:155` — `app.use('/api/scheduler', schedulerRoutes);`
+The scheduler route is correctly mounted in both places — search each file for
+`app.use('/api/scheduler', schedulerRoutes)`.
 
 During this work the route was initially added only to `app.js`. Every test
 passed — the integration suite exercises `createApp()` — and the endpoint
@@ -260,11 +283,10 @@ green test suite does not prove `index.js` was touched. This is the single
 most important thing to remember from this document if you are adding routes
 rather than working with the scheduler specifically.
 
-Also note `index.js` calls `registerSchedulerHandlers()` once at module load
-(`Backend/src/index.js:48`) so the registry is populated before the first
-tick can arrive. `createApp()` in `app.js` does not call it — tests register
-their own handlers per-case via `register()` /
-`clearRegistry()` (see `scheduler.route.test.js`).
+Also note `index.js` calls `registerSchedulerHandlers()` once at module load,
+so the registry is populated before the first tick can arrive. `createApp()`
+in `app.js` does not call it — tests register their own handlers per-case via
+`register()` / `clearRegistry()` (see `scheduler.route.test.js`).
 
 ## Trap: adding `cron-parser` needs a container rebuild, not just a restart
 
@@ -292,13 +314,11 @@ Elastic Beanstalk always resolves the lockfile fresh, so the deployed
 environments are never affected — this is purely a stale local Docker image
 issue.
 
-**If `dev:build` did not fix it, check you have this branch's `scripts/dev.mjs`.**
-The discard step used to be skipped whenever the project had no *running*
-containers — and volumes outlive containers, so rebuilding a stopped stack
-remounted the stale volume over the newly built image. The giveaway is a
-`dev:build` whose output has no `==> discarding this project's
-node_modules/.next volumes` line. That is fixed here; on an older commit, run
-`docker compose down -v` first.
+The giveaway that the discard did not happen is a `dev:build` whose output has
+no `==> discarding this project's node_modules/.next volumes` line. It is now
+unconditional in `scripts/dev.mjs`; it used to be gated on the project having
+*running* containers, which skipped it for a stopped stack and remounted the
+stale volume over the newly built image, because volumes outlive containers.
 
 ## Registering a handler
 
@@ -349,12 +369,110 @@ Schedules themselves are only ever written through
 `Backend/src/services/scheduler/schedules.js` — `upsertSchedule` /
 `disableSchedule`. Nothing should write `ScheduledJob` documents directly.
 
+**`upsertSchedule` recomputes `nextRunAt` only when the cadence actually
+changed.** If the stored `cron`/`schedule`/`timezone` are identical and the row
+is already enabled, the existing `nextRunAt` is kept. That matters because
+`routes/workspace.js` calls `upsertSchedule` on every automation-settings PUT,
+including a save that only edits an email address: recomputing there would push
+a slot that was already due into the next cycle, and that cycle would never be
+billed — with `missedRuns` still reading zero, because nothing was skipped as
+far as the tick could tell. A disabled row is excluded deliberately, so
+re-enabling a paused schedule moves it forward rather than firing it
+immediately.
+
 **Do not write a monthly cron on the 29th, 30th or 31st.** Cron does not clamp
 to the end of a short month — it simply does not fire. A `0 9 31 * *` schedule
 skips every month with fewer than 31 days, and `29`/`30` skip most Februaries.
 For invoice issuance that is not cosmetic: the client does not get billed that
 month, and nobody finds out until someone notices the missing invoice. Use 1–28,
 or an explicit last-day expression, and check `lastRunAt` after the first month.
+
+## The picker schedule — a second representation, not a cron string
+
+The Epic 5 UI exposes user-facing schedule fields — *Generate Invoices Every /
+Run On / Run At / Start Date / Next Run* — not a cron expression. An end user
+picks an interval, and where relevant a day, from a constrained set; they never
+type cron syntax.
+
+**Cron cannot express what that picker offers.** "Every 2 weeks" and "every 3
+months from a start date" both need an anchor date and an interval count, and
+cron has neither — `*/2` on the day-of-month field restarts at the 1st of every
+month, and there is no week-of-year field at all. So a `ScheduledJob` carries
+**exactly one** of two representations, enforced in `upsertSchedule` and by the
+model's `pre('validate')` hook:
+
+- `cron` — a traditional expression, evaluated by `nextRun.js`.
+- `schedule` — the picker shape, evaluated by
+  `Backend/src/utils/automationScheduleHelpers.js`:
+
+  ```js
+  { every: { n, unit }, runOn, runAt: 'HH:MM', startDate }
+  ```
+
+  `unit` is one of `day | week | month | quarter | year` (`AUTOMATION_UNITS` in
+  `constants/automation.js`), and `runOn` changes shape with it:
+
+  | `unit` | `runOn` |
+  |---|---|
+  | `day` | ignored |
+  | `week` | a weekday name, `'monday'` … `'sunday'` |
+  | `month` | an integer day-of-month, **1–31** (29–31 clamp in short months) |
+  | `quarter` | `{ month, day }` — `month` selects the month within the quarter cycle |
+  | `year` | `{ month, day }` — month-of-year and day-of-month |
+
+  The API validates these shapes in `utils/automationSettingsHelpers.js`
+  (`validateRunOn`), and the arithmetic in `automationScheduleHelpers.js`
+  reads exactly the same ones. They have to agree: a shape one accepts and the
+  other cannot read is a save that throws, or a run at the wrong time.
+
+**The clamp is what makes 29–31 safe for `month`, and it is the guarantee to
+rely on.** A picker schedule on the 31st fires on 30 April and on 28 or 29
+February — `addMonthsClamped` in `automationScheduleHelpers.js` shortens the
+day to the target month's length. It never rolls over into the next month,
+because rolling over shifts every subsequent run and can fire twice in one
+calendar month. `validateRunOn` therefore accepts the full 1–31 range; it was
+narrowed to 1–28 at one point and widened again deliberately (commit
+`ceaefe3`) once the clamp existed, so a client who wants the last few days of
+the month can have them.
+
+This is the picker's advantage over cron, not a shared weakness — see "Do not
+write a monthly cron on the 29th, 30th or 31st" above for what raw cron does
+with the same day.
+
+**All picker arithmetic is wall-clock in the job's timezone**, so "09:00" stays
+09:00 across a daylight-saving transition. That makes `startDate` a *calendar
+date*, not an instant — and `ScheduledJob.schedule.startDate` is a Mongoose
+`Date`. `services/scheduler/advance.js` owns both halves of that conversion:
+`canonicalStartDate` normalises the value once on the way in (anchoring on
+local midnight in the job's timezone), and `normaliseStartDate` reads it back
+the same way. They only stay correct as a pair — anchoring the write on the raw
+client string and the read on the timezone-formatted Date puts the series a
+calendar day, and therefore a whole cadence, off phase for any zone west of
+Greenwich.
+
+**`computeNextRun` guarantees an instant strictly after the `from` it was
+given, and asserts it.** A candidate at or before `from` is the one failure
+nothing downstream catches: `upsertSchedule` stores it, every tick claims it,
+`advanceSchedule` returns the same instant so the claim's compare-and-swap
+succeeds, and `missedSlotsFor` reports `0` because its own "did not move
+forward" guard fires — a schedule that re-runs every minute forever with
+`missedRuns` still at zero. If the arithmetic ever produces one, it throws with
+a `Scheduler: ` prefix instead, which `isScheduleClientError` turns into a 400
+on the save path and `claimAtMostOnce` turns into a quarantined row on the tick
+path.
+
+**Raw cron remains a fully-supported escape hatch.** The `cron` field accepts
+anything `isValidSchedule` (`nextRun.js`) accepts, not only what the picker can
+produce — "last business day of the month" and similar shapes the picker was
+never meant to express are configured by hand-editing the schedule record, no
+UI work required.
+
+> An earlier iteration of this work shipped `cadence.js`, a picker→cron
+> translator over a `daily | weekly | monthly` vocabulary. It was deleted once
+> the picker above existed: cron cannot express what Epic 5 actually
+> specified, the module had no production callers, and a second incompatible
+> encoding of the same domain knowledge is exactly how someone later wires the
+> wrong one.
 
 ## The two delivery policies
 
@@ -364,8 +482,8 @@ cannot survive.
 
 | Policy | `nextRunAt` advances | Used by | Why |
 |---|---|---|---|
-| `AT_MOST_ONCE` | At claim, before the handler runs | `invoice_issuance` | A duplicated invoice sent to an NDIS participant is a client-facing incident. A lost run is a different kind of problem: it shows up in `missedRuns` and is recoverable by hand. |
-| `AT_LEAST_ONCE` | Only after the handler's enqueue succeeds | `board_sync` | Board sync is idempotent and cheap to repeat. A silent skip just makes data staler — worse than an occasional duplicate that the idempotency guard absorbs anyway. |
+| `AT_MOST_ONCE` | At claim, before the handler runs | Nothing registered today | For work where a duplicate is the worse failure — a duplicated invoice sent to an NDIS participant is a client-facing incident, while a lost run shows up in `missedRuns` and is recoverable by hand. |
+| `AT_LEAST_ONCE` | Only after the handler's enqueue succeeds | `board_sync`, `invoice_automation`, `statement_automation` | Board sync is idempotent and cheap to repeat. The automation kinds fan out per board, which breaks both policies on its own; their safety comes from the per-board `jobId` (`buildFanOutSpecs`), so missing a month is the failure left worth designing against. See the comment in `registerAutomationHandlers`. |
 
 Choose `AT_MOST_ONCE` when a duplicate is the worse failure mode. Choose
 `AT_LEAST_ONCE` only when the handler is genuinely idempotent — if it is not,
@@ -407,27 +525,44 @@ a race between two Elastic Beanstalk instances will double-dispatch it.
 Per `ScheduledJob` document (`Backend/src/models/ScheduledJob.js`), for the
 schedule-level detail `lastTickAt` cannot provide on its own:
 
-- **`missedRuns > 0`, but only for `AT_MOST_ONCE` schedules.** `claimNext`
-  (`Backend/src/services/scheduler/tick.js:40`) returns early for any policy
-  that is not `AT_MOST_ONCE`, so the `$inc` on `missedRuns` only ever runs on
-  the at-most-once claim path. For `AT_LEAST_ONCE` schedules — `board_sync` —
-  `missedRuns` is **permanently zero**, no matter how long the app was down;
-  do not build a per-`board_sync` alert on this field, it can never fire.
-  For `AT_MOST_ONCE` schedules (`invoice_issuance`), a missed slot really does
-  increment it, and a missed monthly statement or invoice run should not be
-  silent. The underlying asymmetry is worth knowing before you go looking for
-  a count that isn't there: an `AT_LEAST_ONCE` schedule that comes due after
-  downtime just runs once and advances to the next slot, with no record of
-  how many slots it skipped.
-- **`consecutiveFailures > 0`** — the handler is throwing. A failing handler is
-  never auto-disabled, so this counter is the main signal that a schedule is
-  failing every time it fires. For `AT_LEAST_ONCE` schedules it does not mean
-  "still retrying the same slot forever," though: once `consecutiveFailures`
-  reaches `MAX_CONSECUTIVE_FAILURES` (5,
-  `Backend/src/services/scheduler/outcome.js:12`), `recordFailure` advances
-  `nextRunAt` to the next cron slot instead of continuing to retry the failed
-  one — that slot is abandoned and the schedule degrades to at-most-once
-  behaviour from then on.
+- **`missedRuns > 0`, for every policy and both schedule shapes.** A slot that
+  came and went while the app was down increments it, whether the schedule is
+  `AT_MOST_ONCE` or `AT_LEAST_ONCE` and whether it is expressed as cron or as
+  an "every {n, unit}" picker cadence. Alert on it for any `kind`.
+
+  Counted in two places, because the two policies skip slots at different
+  moments: `AT_MOST_ONCE` counts on the claim
+  (`Backend/src/services/scheduler/tick.js`), which is where its `nextRunAt`
+  advances, and `AT_LEAST_ONCE` counts in `recordSuccess`
+  (`Backend/src/services/scheduler/outcome.js`), which is where its advance
+  actually happens. Both call the same `missedSlotsFor`
+  (`Backend/src/services/scheduler/missedSlots.js`), so the count cannot
+  disagree between them.
+
+  A picker cadence is counted in **its own steps**: an "every 3 months"
+  schedule that missed nine calendar months reports 3, not 9. The walk is
+  capped at 1000 slots — it is a health signal, not an accounting record, so
+  a very stale row reports "at least this many".
+
+  > **Changed 2026-08-13.** This field used to be permanently zero for every
+  > `AT_LEAST_ONCE` schedule — which is both automation kinds and
+  > `board_sync` — because only the at-most-once claim path incremented it.
+  > Any alert written against it before that date could never fire, and
+  > `lastRunAt` staleness was the documented substitute. Both now work.
+- **`consecutiveFailures > 0`** — the handler is throwing. Reaching this count
+  never disables a schedule, so it is the main signal that one is failing every
+  time it fires. For `AT_LEAST_ONCE` schedules it does not mean "still retrying
+  the same slot forever": once it reaches `MAX_CONSECUTIVE_FAILURES` (5, in
+  `Backend/src/constants/scheduler.js`), `advancePastFailureLimit` in
+  `outcome.js` moves `nextRunAt` on to the following slot rather than retrying
+  the failed one — that slot is abandoned and the schedule degrades to
+  at-most-once behaviour from then on.
+
+  A schedule *is* disabled in one other case, which is not this one: when its
+  own next slot cannot be computed at all, `disableUnrunnable` flips `enabled`
+  off. Such a row can never run again, so leaving it enabled would mean
+  re-reading and re-failing it on every tick forever. `lastRunAt`, `missedRuns`
+  and `lastError` all survive the disable for whoever investigates.
 
   `consecutiveFailures` is never reset except by success, so once it passes 5
   it keeps climbing on every subsequent slot the handler still fails on. It is
@@ -466,9 +601,10 @@ schedule-level detail `lastTickAt` cannot provide on its own:
   is not firing at all: a misconfigured or missing EventBridge rule, a
   disabled schedule, or a `kind` whose handler throws before recording
   anything. This is also the check to run after creating a new AWS rule
-  (see "Verifying a rule after creating it" above), and it is the correct
-  substitute for `missedRuns` when the schedule in question is
-  `AT_LEAST_ONCE`. Note this still requires at least one `ScheduledJob`
+  (see "Verifying a rule after creating it" above). It complements `missedRuns`
+  rather than substituting for it, as it had to before 2026-08-13 —
+  `missedRuns` says how many slots were skipped, `lastRunAt` says whether the
+  schedule is firing at all. Note this still requires at least one `ScheduledJob`
   document to exist and be due before it says anything; `lastTickAt` above is
   what to watch when there may be none.
 
@@ -479,8 +615,9 @@ directly for now; there is no admin screen for either.
 
 - Design: [`docs/superpowers/specs/2026-08-11-scheduled-job-trigger-design.md`](./superpowers/specs/2026-08-11-scheduled-job-trigger-design.md)
 - Code: `Backend/src/services/scheduler/` (`tick.js`, `registry.js`,
-  `handlers.js`, `nextRun.js`, `outcome.js`, `schedules.js`, `auth.js`,
-  `heartbeat.js`), `Backend/src/routes/scheduler.js`,
+  `handlers.js`, `nextRun.js`, `advance.js`, `outcome.js`, `schedules.js`,
+  `auth.js`, `heartbeat.js`), `Backend/src/utils/automationScheduleHelpers.js`,
+  `Backend/src/routes/scheduler.js`,
   `Backend/src/models/ScheduledJob.js`, `Backend/src/models/SchedulerHealth.js`.
 - Conventions for branching, commits, migrations and the complexity gate live
   in [`CLAUDE.md`](../CLAUDE.md) — not restated here.

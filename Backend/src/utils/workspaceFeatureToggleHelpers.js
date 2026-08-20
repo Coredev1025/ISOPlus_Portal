@@ -24,6 +24,20 @@ export function getInvoiceStatementAutomationFlag(business) {
   return Boolean(business?.featureToggles?.invoiceStatementAutomation);
 }
 
+/**
+ * Is the workspace on the invoice/statement automation feature?
+ *
+ * The flag used to be read only by this module and the Business model, which
+ * made it a label rather than a gate: the automation-settings PUT never
+ * consulted it, so any admitted session could create an enabled schedule for a
+ * workspace the flag said was not on the feature. A workspace with no Business
+ * row at all has no flag, and so is off.
+ */
+export async function isInvoiceStatementAutomationEnabled(workspaceId) {
+  const business = await findBusinessByWorkspaceId(workspaceId);
+  return getInvoiceStatementAutomationFlag(business);
+}
+
 export function buildFeatureTogglesPayload(business) {
   return {
     invoiceStatementAutomation: getInvoiceStatementAutomationFlag(business),

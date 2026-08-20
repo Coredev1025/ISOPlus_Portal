@@ -180,3 +180,7 @@ seed/*
 # `npm run e2e`; `npm run e2e:report` opens the report locally.
 Frontend/playwright-report/
 Frontend/test-results/
+
+# Offline-mode stand-in for S3 (Backend/src/utils/localFileStore.js). Holds
+# locally generated PDFs; never committed, recreated on demand.
+Backend/.local-s3/

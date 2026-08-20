@@ -34,6 +34,18 @@ function resolveSystemMongod() {
 // documents into the developer's own business-dashboard.
 process.env.NODE_ENV = 'test';
 
+// Pin the suite to the real ISO+ providers, not the offline stand-ins.
+//
+// isOfflineMode() is implicitly true whenever PERSONAL_ACCESS_TOKEN is blank
+// outside production, which is every test run. Without this pin, the moment a
+// function in services/isoplus.js gained an offline branch, every test that
+// mocks its HTTP call would silently be served from Mongo instead and assert
+// against stub data — 34 of them did exactly that when getItemValues gained
+// one. Tests that want offline behaviour set the variable themselves and
+// restore it (see test/unit/services/offlineIsoplus.test.js); this is the
+// documented purpose of the '0' value.
+process.env.ISOPLUS_OFFLINE = process.env.ISOPLUS_OFFLINE ?? '0';
+
 vi.mock('ioredis', () => {
   class RedisMock {
     constructor() {}
@@ -50,12 +62,34 @@ vi.mock('ioredis', () => {
   return { default: RedisMock };
 });
 
+// Recorded fan-out jobs, read through test/helpers/queue.js.
+//
+// On globalThis because `vi.mock` factories are hoisted above every
+// module-scope binding in this file and cannot close over one. The factory
+// body runs on the first import of 'bullmq' from a test file, which is after
+// this assignment, so the array is always there by the time addBulk fires.
+globalThis.__BULLMQ_BULK_JOBS__ = [];
+
 vi.mock('bullmq', () => {
   class QueueMock {
-    constructor() {}
+    constructor(name) {
+      this.name = name;
+    }
     on() {}
     add() {
       return { id: 'job_test_1' };
+    }
+    // The automation fan-out enqueues with addBulk, not add. Without this the
+    // mock throws 'addBulk is not a function' and every schedule dispatch is
+    // recorded as a handler failure — which reads like a broken scheduler
+    // rather than a stale mock, and is why the fan-out went untested through
+    // the route for so long.
+    addBulk(jobs = []) {
+      const recorded = jobs.map((job) => ({ ...job, queueName: this.name }));
+      globalThis.__BULLMQ_BULK_JOBS__.push(...recorded);
+      return recorded.map((job, index) => ({
+        id: job.opts?.jobId ?? `job_bulk_${index}`,
+      }));
     }
     getWaitingCount() {
       return 0;
@@ -97,6 +131,9 @@ beforeAll(async () => {
 
 afterEach(async () => {
   server.resetHandlers();
+
+  // In place, not a reassignment: the mock factory captured this array.
+  globalThis.__BULLMQ_BULK_JOBS__.length = 0;
 
   const collections = mongoose.connection.collections;
   for (const name of Object.keys(collections)) {
